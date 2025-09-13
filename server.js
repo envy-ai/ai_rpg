@@ -6,6 +6,9 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 
+// Import Player class
+const Player = require('./Player.js');
+
 // Load configuration
 let config;
 try {
@@ -21,6 +24,10 @@ const PORT = config.server.port;
 
 // In-memory chat history storage
 let chatHistory = [];
+
+// In-memory player storage (temporary - will be replaced with persistent storage later)
+let currentPlayer = null;
+const players = new Map(); // Store multiple players by ID
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
@@ -252,6 +259,208 @@ app.delete('/api/chat/history', (req, res) => {
         message: 'Chat history cleared',
         count: chatHistory.length 
     });
+});
+
+// Player management API endpoints
+
+// Create a new player
+app.post('/api/player', (req, res) => {
+    try {
+        const { name, attributes, level } = req.body;
+        
+        const player = new Player({
+            name: name || 'New Player',
+            attributes: attributes || {},
+            level: level || 1
+        });
+        
+        players.set(player.id, player);
+        currentPlayer = player;
+        
+        res.json({
+            success: true,
+            player: player.getStatus(),
+            message: 'Player created successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get current player status
+app.get('/api/player', (req, res) => {
+    if (!currentPlayer) {
+        return res.status(404).json({
+            success: false,
+            error: 'No current player found'
+        });
+    }
+    
+    res.json({
+        success: true,
+        player: currentPlayer.getStatus()
+    });
+});
+
+// Update player attributes
+app.put('/api/player/attributes', (req, res) => {
+    if (!currentPlayer) {
+        return res.status(404).json({
+            success: false,
+            error: 'No current player found'
+        });
+    }
+    
+    try {
+        const { attributes } = req.body;
+        
+        for (const [attrName, value] of Object.entries(attributes || {})) {
+            currentPlayer.setAttribute(attrName, value);
+        }
+        
+        res.json({
+            success: true,
+            player: currentPlayer.getStatus(),
+            message: 'Attributes updated successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Modify player health
+app.put('/api/player/health', (req, res) => {
+    if (!currentPlayer) {
+        return res.status(404).json({
+            success: false,
+            error: 'No current player found'
+        });
+    }
+    
+    try {
+        const { amount, reason } = req.body;
+        
+        if (typeof amount !== 'number') {
+            throw new Error('Health amount must be a number');
+        }
+        
+        const result = currentPlayer.modifyHealth(amount, reason || '');
+        
+        res.json({
+            success: true,
+            healthChange: result,
+            player: currentPlayer.getStatus(),
+            message: `Health ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}`
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Level up player
+app.post('/api/player/levelup', (req, res) => {
+    if (!currentPlayer) {
+        return res.status(404).json({
+            success: false,
+            error: 'No current player found'
+        });
+    }
+    
+    try {
+        const oldLevel = currentPlayer.level;
+        currentPlayer.levelUp();
+        
+        res.json({
+            success: true,
+            player: currentPlayer.getStatus(),
+            message: `Player leveled up from ${oldLevel} to ${currentPlayer.level}!`
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all players (for future multi-player support)
+app.get('/api/players', (req, res) => {
+    const playerList = Array.from(players.values()).map(player => player.getStatus());
+    
+    res.json({
+        success: true,
+        players: playerList,
+        count: playerList.length,
+        currentPlayer: currentPlayer ? currentPlayer.id : null
+    });
+});
+
+// Get attribute definitions
+app.get('/api/attributes', (req, res) => {
+    if (!currentPlayer) {
+        // Create a temporary player to get definitions
+        const tempPlayer = new Player();
+        res.json({
+            success: true,
+            attributes: tempPlayer.attributeDefinitions,
+            generationMethods: tempPlayer.getGenerationMethods(),
+            systemConfig: tempPlayer.systemConfig
+        });
+    } else {
+        res.json({
+            success: true,
+            attributes: currentPlayer.attributeDefinitions,
+            generationMethods: currentPlayer.getGenerationMethods(),
+            systemConfig: currentPlayer.systemConfig
+        });
+    }
+});
+
+// Generate new attributes for current player
+app.post('/api/player/generate-attributes', (req, res) => {
+    if (!currentPlayer) {
+        return res.status(404).json({
+            success: false,
+            error: 'No current player found'
+        });
+    }
+    
+    try {
+        const { method } = req.body;
+        const availableMethods = Object.keys(currentPlayer.getGenerationMethods());
+        
+        if (method && !availableMethods.includes(method)) {
+            return res.status(400).json({
+                success: false,
+                error: `Invalid generation method. Available: ${availableMethods.join(', ')}`
+            });
+        }
+        
+        const diceModule = require('./nunjucks_dice.js');
+        const newAttributes = currentPlayer.generateAttributes(method || 'standard', diceModule);
+        
+        res.json({
+            success: true,
+            player: currentPlayer.getStatus(),
+            generatedAttributes: newAttributes,
+            method: method || 'standard',
+            message: `Attributes generated using ${method || 'standard'} method`
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
 });
 
 // Additional API endpoint for JSON response
