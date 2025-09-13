@@ -47,6 +47,10 @@ const JOB_STATUS = {
     TIMEOUT: 'timeout'
 };
 
+// Debouncing for player image regeneration
+const playerImageRegenerationTimeouts = new Map(); // Player ID -> timeout ID
+const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
+
 // Create a new image generation job
 function createImageJob(jobId, payload) {
     const job = {
@@ -486,6 +490,133 @@ function renderSystemPrompt() {
     }
 }
 
+// Function to render player portrait prompt from template
+function renderPlayerPortraitPrompt(player) {
+    try {
+        const templateName = 'player-portrait.yaml.njk';
+
+        if (!player) {
+            throw new Error('Player object is required');
+        }
+
+        const variables = {
+            playerName: player.name,
+            playerDescription: player.description,
+            playerLevel: player.level,
+            playerAttributes: player.getAttributeNames().reduce((attrs, name) => {
+                attrs[name] = player.getAttribute(name);
+                return attrs;
+            }, {})
+        };
+
+        // Render the template
+        const renderedTemplate = promptEnv.render(templateName, variables);
+
+        // Parse the YAML and extract imagePrompt
+        const parsedYaml = yaml.load(renderedTemplate);
+        const imagePrompt = parsedYaml.imagePrompt;
+
+        if (!imagePrompt) {
+            throw new Error('No imagePrompt found in player portrait template');
+        }
+
+        console.log(`Generated player portrait prompt for ${player.name}:`, imagePrompt);
+        return imagePrompt.trim();
+
+    } catch (error) {
+        console.error('Error rendering player portrait template:', error);
+        // Fallback to simple prompt
+        return `Fantasy RPG character portrait of ${player ? player.name : 'unnamed character'}: ${player ? player.description : 'A mysterious adventurer'}, high quality fantasy art, detailed character portrait`;
+    }
+}
+
+// Function to generate player portrait image
+async function generatePlayerImage(player) {
+    try {
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            console.log('Image generation is not enabled, skipping player portrait generation');
+            return null;
+        }
+
+        if (!comfyUIClient) {
+            console.log('ComfyUI client not initialized, skipping player portrait generation');
+            return null;
+        }
+
+        if (!player) {
+            throw new Error('Player object is required');
+        }
+
+        // Generate the portrait prompt
+        const portraitPrompt = renderPlayerPortraitPrompt(player);
+
+        // Create image generation job with player-specific settings
+        const jobId = generateImageId();
+        const payload = {
+            prompt: portraitPrompt,
+            width: config.imagegen.default_settings.image.width || 1024,
+            height: config.imagegen.default_settings.image.height || 1024,
+            seed: Math.floor(Math.random() * 1000000),
+            negative_prompt: 'blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions'
+        };
+
+        console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
+
+        // Create and queue the job
+        const job = createImageJob(jobId, payload);
+        jobQueue.push(jobId);
+
+        // Start processing if not already running
+        setTimeout(() => processJobQueue(), 0);
+
+        // Update player's imageId to track the generation job
+        player.imageId = jobId;
+
+        return {
+            jobId: jobId,
+            status: job.status,
+            message: 'Player portrait generation job queued',
+            estimatedTime: '30-90 seconds'
+        };
+
+    } catch (error) {
+        console.error('Error generating player image:', error);
+        throw error;
+    }
+}
+
+// Debounced function to generate player portrait image
+function generatePlayerImageDebounced(player) {
+    if (!player || !player.id) {
+        console.warn('Cannot debounce image generation: invalid player');
+        return;
+    }
+
+    // Clear existing timeout for this player
+    const existingTimeout = playerImageRegenerationTimeouts.get(player.id);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+    }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+        try {
+            console.log(`🔄 Debounced image regeneration executing for player ${player.name}...`);
+            const imageResult = await generatePlayerImage(player);
+            console.log(`🎨 Debounced portrait regeneration initiated:`, imageResult);
+        } catch (error) {
+            console.error('Error in debounced player image generation:', error);
+        } finally {
+            // Clean up timeout tracking
+            playerImageRegenerationTimeouts.delete(player.id);
+        }
+    }, IMAGE_REGENERATION_DEBOUNCE_MS);
+
+    playerImageRegenerationTimeouts.set(player.id, timeoutId);
+    console.log(`⏱️  Debounced image regeneration scheduled for player ${player.name} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
+}
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -727,7 +858,7 @@ app.delete('/api/chat/history', (req, res) => {
 // Player management API endpoints
 
 // Create a new player
-app.post('/api/player', (req, res) => {
+app.post('/api/player', async (req, res) => {
     try {
         const { name, attributes, level } = req.body;
 
@@ -739,6 +870,15 @@ app.post('/api/player', (req, res) => {
 
         players.set(player.id, player);
         currentPlayer = player;
+
+        // Automatically generate player portrait if image generation is enabled
+        try {
+            const imageResult = await generatePlayerImage(player);
+            console.log(`🎨 Player portrait generation initiated for ${player.name}:`, imageResult);
+        } catch (imageError) {
+            console.warn('Failed to generate player portrait:', imageError.message);
+            // Don't fail player creation if image generation fails
+        }
 
         res.json({
             success: true,
@@ -1036,13 +1176,21 @@ app.post('/api/player/update-stats', (req, res) => {
             });
         }
 
+        // Track if description changed for image regeneration
+        const originalDescription = currentPlayer.description;
+        let descriptionChanged = false;
+
         // Update basic information
         if (name && name.trim()) {
             currentPlayer.setName(name.trim());
         }
 
         if (description !== undefined) {
-            currentPlayer.setDescription(description.trim());
+            const newDescription = description.trim();
+            if (originalDescription !== newDescription) {
+                descriptionChanged = true;
+            }
+            currentPlayer.setDescription(newDescription);
         }
 
         if (level && !isNaN(level) && level >= 1 && level <= 20) {
@@ -1066,6 +1214,11 @@ app.post('/api/player/update-stats', (req, res) => {
             }
         }
 
+        // Trigger image regeneration if description changed
+        if (descriptionChanged) {
+            generatePlayerImageDebounced(currentPlayer);
+        }
+
         res.json({
             success: true,
             player: currentPlayer.getStatus(),
@@ -1082,7 +1235,7 @@ app.post('/api/player/update-stats', (req, res) => {
 });
 
 // Create new player from stats form
-app.post('/api/player/create-from-stats', (req, res) => {
+app.post('/api/player/create-from-stats', async (req, res) => {
     try {
         const { name, description, level, health, maxHealth, attributes } = req.body;
 
@@ -1118,6 +1271,15 @@ app.post('/api/player/create-from-stats', (req, res) => {
         players.set(player.id, player);
         currentPlayer = player;
 
+        // Automatically generate player portrait if image generation is enabled
+        try {
+            const imageResult = await generatePlayerImage(player);
+            console.log(`🎨 Player portrait generation initiated for ${player.name}:`, imageResult);
+        } catch (imageError) {
+            console.warn('Failed to generate player portrait:', imageError.message);
+            // Don't fail player creation if image generation fails
+        }
+
         res.json({
             success: true,
             player: player.getStatus(),
@@ -1126,6 +1288,58 @@ app.post('/api/player/create-from-stats', (req, res) => {
 
     } catch (error) {
         console.error('Error creating player from stats:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Generate player portrait manually
+app.post('/api/players/:id/portrait', async (req, res) => {
+    try {
+        const playerId = req.params.id;
+
+        // Find the player by ID
+        const player = players.get(playerId);
+        if (!player) {
+            return res.status(404).json({
+                success: false,
+                error: `Player with ID '${playerId}' not found`
+            });
+        }
+
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            return res.status(503).json({
+                success: false,
+                error: 'Image generation is not enabled'
+            });
+        }
+
+        if (!comfyUIClient) {
+            return res.status(503).json({
+                success: false,
+                error: 'ComfyUI client not initialized or unavailable'
+            });
+        }
+
+        // Generate the portrait
+        const imageResult = await generatePlayerImage(player);
+
+        res.json({
+            success: true,
+            player: {
+                id: player.id,
+                name: player.name,
+                imageId: player.imageId
+            },
+            imageGeneration: imageResult,
+            message: `Portrait regeneration initiated for ${player.name}`
+        });
+
+    } catch (error) {
+        console.error('Error generating player portrait:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1279,11 +1493,11 @@ app.post('/api/load', (req, res) => {
         const gameWorldPath = path.join(saveDir, 'gameWorld.json');
         if (fs.existsSync(gameWorldPath)) {
             const gameWorldData = JSON.parse(fs.readFileSync(gameWorldPath, 'utf8'));
-            
+
             // Clear existing game world
             gameLocations.clear();
             gameLocationExits.clear();
-            
+
             // Recreate Location instances
             for (const [id, locationData] of Object.entries(gameWorldData.locations || {})) {
                 const location = new Location({
@@ -1293,7 +1507,7 @@ app.post('/api/load', (req, res) => {
                 });
                 gameLocations.set(id, location);
             }
-            
+
             // Recreate LocationExit instances
             for (const [id, exitData] of Object.entries(gameWorldData.locationExits || {})) {
                 const exit = new LocationExit({
@@ -1350,7 +1564,7 @@ app.post('/api/load', (req, res) => {
 app.get('/api/saves', (req, res) => {
     try {
         const savesDir = path.join(__dirname, 'saves');
-        
+
         if (!fs.existsSync(savesDir)) {
             return res.json({
                 success: true,
@@ -1368,7 +1582,7 @@ app.get('/api/saves', (req, res) => {
         const saves = saveDirectories.map(saveName => {
             const saveDir = path.join(savesDir, saveName);
             const metadataPath = path.join(saveDir, 'metadata.json');
-            
+
             let metadata = {
                 saveName: saveName,
                 timestamp: 'Unknown',

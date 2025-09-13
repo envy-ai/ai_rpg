@@ -1,0 +1,84 @@
+role: "Character Portrait Generator"
+systemPrompt: |
+  You are a specialized prompt generator for creating fantasy RPG character portraits.
+
+  Player Information:
+  Name: {{ playerName }}
+  Description: {{ playerDescription }}
+  Level: {{ playerLevel }}
+
+  {% if playerAttributes %}
+  Character Attributes:
+  - Strength: {{ playerAttributes.strength }} (Physical power and build)
+  - Dexterity: {{ playerAttributes.dexterity }} (Agility and grace)
+  - Constitution: {{ playerAttributes.constitution }} (Health and endurance)
+  - Intelligence: {{ playerAttributes.intelligence }} (Mental acuity and knowledge)
+  - Wisdom: {{ playerAttributes.wisdom }} (Insight and perception)
+  - Charisma: {{ playerAttributes.charisma }} (Presence and social ability)
+  {% endif %}
+
+imagePrompt: |
+  Create a fantasy RPG character portrait of {{ playerName }}.
+
+  Character Description: {{ playerDescription }}
+
+  Physical Appearance Based on Attributes:
+  {% if playerAttributes %}
+  {% if playerAttributes.strength >= 15 %}
+  - Muscular and powerful build, broad shoulders, strong jawline
+  {% elif playerAttributes.strength <= 8 %}
+  - Lean and wiry build, less muscular definition
+  {% else %}
+  - Average build with moderate muscle tone
+  {% endif %}
+
+  {% if playerAttributes.dexterity >= 15 %}
+  - Graceful posture, alert and nimble appearance, quick eyes
+  {% elif playerAttributes.dexterity <= 8 %}
+  - Slightly clumsy bearing, more deliberate movements
+  {% else %}
+  - Balanced and coordinated stance
+  {% endif %}
+
+  {% if playerAttributes.constitution >= 15 %}
+  - Healthy complexion, robust appearance, bright eyes
+  {% elif playerAttributes.constitution <= 8 %}
+  - Pale or tired appearance, slightly gaunt features
+  {% else %}
+  - Normal healthy appearance
+  {% endif %}
+
+  {% if playerAttributes.intelligence >= 15 %}
+  - Keen, intelligent eyes, thoughtful expression, scholarly bearing
+  {% elif playerAttributes.intelligence <= 8 %}
+  - Simple, honest expression, less complex features
+  {% else %}
+  - Alert and aware expression
+  {% endif %}
+
+  {% if playerAttributes.wisdom >= 15 %}
+  - Wise, perceptive gaze, mature features, calm demeanor
+  {% elif playerAttributes.wisdom <= 8 %}
+  - Younger or more naive appearance, less worldly bearing
+  {% else %}
+  - Balanced and observant expression
+  {% endif %}
+
+  {% if playerAttributes.charisma >= 15 %}
+  - Attractive features, confident bearing, magnetic presence
+  {% elif playerAttributes.charisma <= 8 %}
+  - Plain or unremarkable features, shy demeanor
+  {% else %}
+  - Pleasant and approachable appearance
+  {% endif %}
+  {% endif %}
+
+  Art Style: High-quality fantasy art, detailed character portrait, professional digital painting, fantasy RPG character concept art
+
+  Setting: Medieval fantasy world with magical elements
+
+  Lighting: Dramatic portrait lighting that highlights the character's features
+
+  Composition: Head and shoulders portrait, facing slightly toward viewer, heroic pose
+
+  Quality Tags: masterpiece, best quality, highly detailed, fantasy character portrait, RPG art style, professional concept art

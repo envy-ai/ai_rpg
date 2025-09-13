@@ -95,6 +95,52 @@
         .refresh-btn:hover {
             background: #5a6fd8;
         }
+        .player-portrait {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .portrait-image {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        .portrait-placeholder {
+            width: 300px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 48px;
+            margin: 0 auto;
+        }
+        .portrait-controls {
+            margin-top: 15px;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+        .btn:hover {
+            background: #5a6fd8;
+        }
+        .btn:disabled {
+            background: rgba(255, 255, 255, 0.2);
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -147,6 +193,37 @@
                             <div class="stat-value">{{ player.currentLocation }}</div>
                         </div>
                         {% endif %}
+                    </div>
+                </div>
+
+                <!-- Player Portrait -->
+                <div class="debug-section">
+                    <h2>🎨 Player Portrait</h2>
+                    <div class="player-portrait">
+                        {% if playerJson.imageId %}
+                            {% set imageUrl = '/generated-images/' + playerJson.imageId + '.png' %}
+                            <img src="{{ imageUrl }}" alt="Portrait of {{ player.name }}" class="portrait-image" 
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="portrait-placeholder" style="display: none;">🎭</div>
+                        {% else %}
+                            <div class="portrait-placeholder">🎭</div>
+                        {% endif %}
+                        
+                        <div class="portrait-controls">
+                            {% if playerJson.imageId %}
+                                <div style="margin-bottom: 10px; color: rgba(255, 255, 255, 0.7); font-size: 14px;">
+                                    Image ID: {{ playerJson.imageId }}
+                                </div>
+                            {% endif %}
+                            <button id="regeneratePortrait" class="btn" onclick="regeneratePlayerPortrait('{{ player.id }}')">
+                                🔄 Regenerate Portrait
+                            </button>
+                            {% if playerJson.imageId %}
+                                <button class="btn" onclick="checkImageStatus('{{ playerJson.imageId }}')">
+                                    📊 Check Status
+                                </button>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
 
@@ -877,6 +954,67 @@ GET  /player-stats           - Player stats configuration page</pre>
                 } catch (error) {
                     showStatus(`❌ Delete failed: ${error.message}`, 'error');
                     console.error('Delete error:', error);
+                }
+            };
+
+            // Player portrait functions
+            window.regeneratePlayerPortrait = async function(playerId) {
+                const button = document.getElementById('regeneratePortrait');
+                const originalText = button.textContent;
+                
+                try {
+                    button.disabled = true;
+                    button.textContent = '🔄 Generating...';
+                    
+                    const response = await fetch(`/api/players/${playerId}/portrait`, {
+                        method: 'POST'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus(`✅ ${result.message}`, 'success');
+                        console.log('Portrait regeneration initiated:', result);
+                        
+                        // Auto-refresh the page in 3 seconds to show updated imageId
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 3000);
+                    } else {
+                        showStatus(`❌ Portrait generation failed: ${result.error}`, 'error');
+                        console.error('Portrait generation failed:', result);
+                    }
+                } catch (error) {
+                    showStatus(`❌ Portrait generation failed: ${error.message}`, 'error');
+                    console.error('Portrait generation error:', error);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
+            };
+
+            window.checkImageStatus = async function(imageId) {
+                try {
+                    const response = await fetch(`/api/jobs/${imageId}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus(`📊 Image Status: ${result.job.status} - ${result.job.message}`, 'info');
+                        console.log('Image job status:', result);
+                        
+                        // If completed, refresh to show the image
+                        if (result.job.status === 'completed') {
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        }
+                    } else {
+                        showStatus(`❌ Status check failed: ${result.error}`, 'error');
+                        console.error('Status check failed:', result);
+                    }
+                } catch (error) {
+                    showStatus(`❌ Status check failed: ${error.message}`, 'error');
+                    console.error('Status check error:', error);
                 }
             };
         });

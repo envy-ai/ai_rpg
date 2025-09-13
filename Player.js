@@ -13,6 +13,7 @@ class Player {
     #description;
     #id;
     #currentLocation;
+    #imageId;
     #createdAt;
     #lastUpdated;
 
@@ -40,6 +41,9 @@ class Player {
 
         // Location (can be Location ID string or Location object)
         this.#currentLocation = options.location ?? null;
+
+        // Player image ID for generated portrait
+        this.#imageId = options.imageId ?? null;
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -173,6 +177,18 @@ class Player {
             throw new Error('Description must be a string');
         }
         this.#description = newDescription.trim();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get imageId() {
+        return this.#imageId;
+    }
+
+    set imageId(newImageId) {
+        if (newImageId !== null && typeof newImageId !== 'string') {
+            throw new Error('Image ID must be a string or null');
+        }
+        this.#imageId = newImageId;
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -525,6 +541,7 @@ class Player {
      */
     getStatus() {
         return {
+            id: this.#id,
             name: this.#name,
             description: this.#description,
             level: this.#level,
@@ -532,6 +549,7 @@ class Player {
             maxHealth: this.#maxHealth,
             alive: this.isAlive(),
             currentLocation: this.#currentLocation,
+            imageId: this.#imageId,
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo()
@@ -550,6 +568,7 @@ class Player {
             health: this.#health,
             maxHealth: this.#maxHealth,
             currentLocation: this.#currentLocation,
+            imageId: this.#imageId,
             attributes: this.#attributes,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
@@ -565,6 +584,7 @@ class Player {
             level: data.level,
             health: data.health,
             attributes: data.attributes,
+            imageId: data.imageId,
             id: data.id
         });
         player.#maxHealth = data.maxHealth;
