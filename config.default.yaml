@@ -1,0 +1,51 @@
+# AI RPG Configuration Template
+# Copy this file to config.yaml and update with your settings
+
+server:
+  port: 7777
+  host: 0.0.0.0  # Use localhost for local development, 0.0.0.0 for external access
+
+# OpenAI-compatible API configuration
+ai:
+  # API endpoint URL (examples):
+  # OpenAI: "https://api.openai.com/v1"
+  # LocalAI: "http://localhost:8080/v1"
+  # Ollama: "http://localhost:11434/v1"
+  # nano-gpt: "https://nano-gpt.com/api/v1"
+  endpoint: "https://nano-gpt.com/api/v1"
+  
+  # Your API key (keep this secure!)
+  apiKey: "your-api-key-here"
+  
+  # Model to use (examples):
+  # OpenAI: "gpt-3.5-turbo", "gpt-4"
+  # LocalAI: depends on your models
+  # Ollama: "llama2", "mistral", etc.
+  model: zai-org/GLM-4.5-FP8"
+  
+  # Optional: Additional parameters
+  maxTokens: 1000
+  temperature: 0.7
+
+# Game Master configuration
+gamemaster:
+  # Prompt template to use (options: gamemaster.njk, fantasy-adventure.njk, mystery-investigation.njk)
+  promptTemplate: "gamemaster.njk"
+  
+  # Variables to pass to the prompt template (customize based on your chosen template)
+  promptVariables:
+    playerName: ""           # Player's character name
+    gameStyle: "narrative-focused"  # narrative-focused, action-packed, puzzle-heavy, etc.
+    setting: "fantasy"       # fantasy, sci-fi, modern, historical, etc.
+    additionalInstructions: ""  # Any custom instructions
+    
+    # For fantasy-adventure.njk template:
+    # magicLevel: "common"     # rare, uncommon, common, abundant
+    # techLevel: "medieval"    # stone-age, medieval, renaissance, industrial, modern, futuristic
+    # tone: "heroic"          # heroic, gritty, comedic, dark, lighthearted
+    # playerClass: ""         # warrior, mage, rogue, etc.
+    # currentLocation: ""     # starting location
+    
+    # For mystery-investigation.njk template:
+    # mysteryType: ""         # murder, theft, conspiracy, supernatural, etc.
+    # difficultyLevel: "medium"  # easy, medium, hard 

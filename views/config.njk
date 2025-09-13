@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default("AI RPG Configuration") }}</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ AI RPG Configuration</h1>
+            <p>Configure server settings and AI parameters</p>
+        </div>
+        
+        <div class="config-content">
+            <form id="configForm" method="POST">
+                <!-- Server Configuration -->
+                <div class="config-section">
+                    <h2>🖥️ Server Configuration</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="server-host">Host:</label>
+                            <input type="text" id="server-host" name="server.host" value="{{ config.server.host }}" required>
+                            <span class="help-text">Use 'localhost' for local only, '0.0.0.0' for external access</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="server-port">Port:</label>
+                            <input type="number" id="server-port" name="server.port" value="{{ config.server.port }}" min="1" max="65535" required>
+                            <span class="help-text">Port number (1-65535)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI Configuration -->
+                <div class="config-section">
+                    <h2>🤖 AI Configuration</h2>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="ai-endpoint">API Endpoint:</label>
+                            <input type="url" id="ai-endpoint" name="ai.endpoint" value="{{ config.ai.endpoint }}" required>
+                            <span class="help-text">OpenAI-compatible API endpoint URL</span>
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="ai-apiKey">API Key:</label>
+                            <input type="password" id="ai-apiKey" name="ai.apiKey" value="{{ config.ai.apiKey }}" required>
+                            <span class="help-text">Your API key (keep this secure!)</span>
+                            <button type="button" class="toggle-password" onclick="togglePassword('ai-apiKey')">👁️</button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ai-model">Model:</label>
+                            <input type="text" id="ai-model" name="ai.model" value="{{ config.ai.model }}" required>
+                            <span class="help-text">AI model name (e.g., gpt-3.5-turbo)</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ai-maxTokens">Max Tokens:</label>
+                            <input type="number" id="ai-maxTokens" name="ai.maxTokens" value="{{ config.ai.maxTokens }}" min="1" max="4000">
+                            <span class="help-text">Maximum response length</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ai-temperature">Temperature:</label>
+                            <input type="number" id="ai-temperature" name="ai.temperature" value="{{ config.ai.temperature }}" min="0" max="2" step="0.1">
+                            <span class="help-text">Creativity level (0.0 - 2.0)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
+                    <button type="button" class="btn btn-secondary" onclick="testConnection()">🔗 Test Connection</button>
+                    <a href="/" class="btn btn-secondary">🏠 Back to Chat</a>
+                </div>
+                
+                <!-- Status Messages -->
+                <div id="status-message" class="status-message" style="display: none;"></div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="/js/config.js"></script>
+</body>
+</html>

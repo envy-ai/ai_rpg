@@ -1,0 +1,390 @@
+// Variables
+$primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$glass-bg: rgba(255, 255, 255, 0.1);
+$glass-bg-light: rgba(255, 255, 255, 0.2);
+$glass-bg-dark: rgba(255, 255, 255, 0.05);
+$white: #ffffff;
+$white-70: rgba(255, 255, 255, 0.7);
+$white-80: rgba(255, 255, 255, 0.8);
+$white-30: rgba(255, 255, 255, 0.3);
+$primary-blue: #667eea;
+$primary-blue-hover: #5a6fd8;
+$user-message-bg: rgba(100, 200, 255, 0.3);
+$error-bg: rgba(255, 100, 100, 0.3);
+$error-border: #ff6b6b;
+$border-radius: 8px;
+$border-radius-lg: 15px;
+$font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+// Mixins
+@mixin glass-effect($bg: $glass-bg) {
+  background: $bg;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+}
+
+@mixin transition($property: all, $duration: 0.3s) {
+  transition: $property $duration ease;
+}
+
+// Base styles
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: $font-family;
+  background: $primary-gradient;
+  height: 100vh;
+  padding: 20px;
+  overflow: hidden;
+}
+
+// Main container
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  @include glass-effect();
+  border-radius: $border-radius-lg;
+  overflow: hidden;
+}
+
+// Header
+.header {
+  @include glass-effect($glass-bg-light);
+  padding: 20px;
+  color: $white;
+  text-align: center;
+  border-bottom: 1px solid $glass-bg-light;
+
+  h1 {
+    margin-bottom: 10px;
+  }
+
+  p {
+    opacity: 0.9;
+  }
+}
+
+// Chat container
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-log {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  color: $white;
+  font-size: 14px;
+  line-height: 1.6;
+
+  // Custom scrollbar
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $glass-bg;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $white-30;
+    border-radius: 4px;
+  }
+}
+
+// Messages
+.message {
+  margin-bottom: 15px;
+  padding: 12px;
+  border-radius: $border-radius;
+  max-width: 85%;
+  word-wrap: break-word;
+
+  &.user-message {
+    background: $user-message-bg;
+    margin-left: auto;
+    text-align: right;
+  }
+
+  &.ai-message {
+    @include glass-effect($glass-bg-light);
+    margin-right: auto;
+  }
+
+  &.error {
+    background: $error-bg !important;
+    border-left: 3px solid $error-border;
+  }
+
+  &.loading {
+    opacity: 0.7;
+    font-style: italic;
+  }
+}
+
+.message-sender {
+  font-weight: bold;
+  margin-bottom: 5px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+// Input area
+.input-area {
+  padding: 20px;
+  @include glass-effect();
+  border-top: 1px solid $glass-bg-light;
+  display: flex;
+  gap: 10px;
+}
+
+.message-input {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: $border-radius;
+  @include glass-effect($glass-bg-light);
+  color: $white;
+  font-size: 16px;
+  resize: none;
+  min-height: 50px;
+  max-height: 150px;
+  font-family: $font-family;
+  @include transition(background);
+
+  &::placeholder {
+    color: $white-70;
+  }
+
+  &:focus {
+    outline: none;
+    background: $white-30;
+  }
+}
+
+.send-button {
+  padding: 12px 24px;
+  background: $primary-blue;
+  color: $white;
+  border: none;
+  border-radius: $border-radius;
+  cursor: pointer;
+  font-weight: bold;
+  @include transition(background);
+  align-self: flex-end;
+  font-family: $font-family;
+
+  &:hover:not(:disabled) {
+    background: $primary-blue-hover;
+  }
+
+  &:disabled {
+    background: $white-30;
+    cursor: not-allowed;
+  }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+
+  .input-area {
+    flex-direction: column;
+  }
+
+  .send-button {
+    align-self: stretch;
+  }
+
+  .message {
+    max-width: 95%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Configuration page styles
+.config-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  color: $white;
+}
+
+.config-section {
+  margin-bottom: 30px;
+  @include glass-effect($glass-bg-light);
+  padding: 20px;
+  border-radius: $border-radius-lg;
+
+  h2 {
+    margin-bottom: 20px;
+    color: $white;
+    font-size: 1.4em;
+    border-bottom: 2px solid $white-30;
+    padding-bottom: 10px;
+  }
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+
+  &.full-width {
+    grid-column: 1 / -1;
+  }
+
+  label {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: $white;
+    font-size: 0.9em;
+  }
+
+  input, select, textarea {
+    padding: 12px;
+    border: none;
+    border-radius: $border-radius;
+    @include glass-effect($glass-bg-light);
+    color: $white;
+    font-size: 16px;
+    @include transition(background);
+
+    &::placeholder {
+      color: $white-70;
+    }
+
+    &:focus {
+      outline: none;
+      background: $white-30;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+    }
+
+    &:invalid {
+      box-shadow: 0 0 0 2px rgba(255, 100, 100, 0.5);
+    }
+  }
+
+  .help-text {
+    font-size: 0.8em;
+    color: $white-70;
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  .toggle-password {
+    position: absolute;
+    right: 10px;
+    top: 38px;
+    background: none;
+    border: none;
+    color: $white-70;
+    cursor: pointer;
+    font-size: 16px;
+    @include transition(color);
+
+    &:hover {
+      color: $white;
+    }
+  }
+}
+
+.form-actions {
+  margin-top: 30px;
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: $border-radius;
+  font-weight: bold;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+  @include transition(background);
+  font-family: $font-family;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  &.btn-primary {
+    background: $primary-blue;
+    color: $white;
+
+    &:hover:not(:disabled) {
+      background: $primary-blue-hover;
+    }
+  }
+
+  &.btn-secondary {
+    background: $white-30;
+    color: $white;
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.status-message {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: $border-radius;
+  font-weight: bold;
+  text-align: center;
+
+  &.success {
+    background: rgba(100, 255, 100, 0.2);
+    border: 2px solid rgba(100, 255, 100, 0.5);
+    color: rgb(150, 255, 150);
+  }
+
+  &.error {
+    background: $error-bg;
+    border: 2px solid $error-border;
+    color: rgb(255, 150, 150);
+  }
+
+  &.info {
+    background: rgba(100, 150, 255, 0.2);
+    border: 2px solid rgba(100, 150, 255, 0.5);
+    color: rgb(150, 200, 255);
+  }
+}

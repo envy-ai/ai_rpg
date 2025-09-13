@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default("AI RPG Chat") }}</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 AI RPG Chat Interface 🤖</h1>
+            <p>Welcome! Your AI Game Master is ready for adventure.</p>
+        </div>
+        
+        <div class="chat-container">
+            <div class="chat-log" id="chatLog">
+                <div class="message ai-message">
+                    <div class="message-sender">🤖 AI Game Master</div>
+                    <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
+                <button class="send-button" id="sendButton">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/chat.js"></script>
+    <script>
+        // Initialize with system prompt from server
+        document.addEventListener('DOMContentLoaded', () => {
+            window.systemPrompt = {{ systemPrompt | dump | safe }};
+            new AIRPGChat();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+attributes:
+  strength:
+    label: Strength
+    description: A measure of your physical power.
+  dexterity:
+    label: Dexterity
+    description: A measure of your agility and reflexes.
+  constitution:
+    label: Constitution
+    description: A measure of your health and stamina.
+  intelligence:
+    label: Intelligence
+    description: A measure of your mental acuity and problem-solving ability.
+  wisdom:
+    label: Wisdom
+    description: A measure of your insight, perception, and willpower.
+  charisma:
+    label: Charisma
+    description: A measure of your charm and influence over others.
