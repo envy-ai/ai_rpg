@@ -15,10 +15,26 @@
         
         <div class="chat-container">
             <div class="chat-log" id="chatLog">
-                <div class="message ai-message">
-                    <div class="message-sender">🤖 AI Game Master</div>
-                    <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
-                </div>
+                {% if chatHistory and chatHistory.length > 0 %}
+                    {% for message in chatHistory %}
+                        <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                            <div class="message-sender">
+                                {% if message.role == 'user' %}
+                                    👤 You
+                                {% else %}
+                                    🤖 AI Game Master
+                                {% endif %}
+                            </div>
+                            <div>{{ message.content }}</div>
+                            <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="message ai-message">
+                        <div class="message-sender">🤖 AI Game Master</div>
+                        <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
+                    </div>
+                {% endif %}
             </div>
             
             <div class="input-area">

@@ -18,6 +18,9 @@ try {
 
 const app = express();
 const PORT = config.server.port;
+
+// In-memory chat history storage
+let chatHistory = [];
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
@@ -54,7 +57,8 @@ app.get('/', (req, res) => {
     const systemPrompt = renderSystemPrompt();
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
-        systemPrompt: systemPrompt
+        systemPrompt: systemPrompt,
+        chatHistory: chatHistory
     });
 });
 
@@ -129,6 +133,16 @@ app.post('/api/chat', async (req, res) => {
             return res.status(400).json({ error: 'Missing messages parameter' });
         }
         
+        // Store user message in history (last message from the request)
+        const userMessage = messages[messages.length - 1];
+        if (userMessage && userMessage.role === 'user') {
+            chatHistory.push({
+                role: 'user',
+                content: userMessage.content,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
         // Use configuration from config.yaml
         const endpoint = config.ai.endpoint;
         const apiKey = config.ai.apiKey;
@@ -156,6 +170,14 @@ app.post('/api/chat', async (req, res) => {
         
         if (response.data && response.data.choices && response.data.choices.length > 0) {
             const aiResponse = response.data.choices[0].message.content;
+            
+            // Store AI response in history
+            chatHistory.push({
+                role: 'assistant',
+                content: aiResponse,
+                timestamp: new Date().toISOString()
+            });
+            
             res.json({ response: aiResponse });
         } else {
             res.status(500).json({ error: 'Invalid response from AI API' });
@@ -180,6 +202,23 @@ app.post('/api/chat', async (req, res) => {
             res.status(500).json({ error: `Request failed: ${error.message}` });
         }
     }
+});
+
+// Chat history API endpoint
+app.get('/api/chat/history', (req, res) => {
+    res.json({ 
+        history: chatHistory,
+        count: chatHistory.length 
+    });
+});
+
+// Clear chat history API endpoint (for testing/reset)
+app.delete('/api/chat/history', (req, res) => {
+    chatHistory = [];
+    res.json({ 
+        message: 'Chat history cleared',
+        count: chatHistory.length 
+    });
 });
 
 // Additional API endpoint for JSON response

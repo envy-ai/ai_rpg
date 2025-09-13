@@ -4,6 +4,7 @@ class AIRPGChat {
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         
+        // Start with system prompt for AI context
         this.chatHistory = [
             {
                 role: "system",
@@ -11,7 +12,30 @@ class AIRPGChat {
             }
         ];
         
+        // Load any existing chat history for AI context
+        this.loadExistingHistory();
+        
         this.init();
+    }
+    
+    async loadExistingHistory() {
+        try {
+            const response = await fetch('/api/chat/history');
+            const data = await response.json();
+            
+            if (data.history && data.history.length > 0) {
+                // Add existing messages to chat history for AI context
+                // Convert server format to AI API format
+                data.history.forEach(msg => {
+                    this.chatHistory.push({
+                        role: msg.role === 'assistant' ? 'assistant' : 'user',
+                        content: msg.content
+                    });
+                });
+            }
+        } catch (error) {
+            console.log('No existing history to load:', error.message);
+        }
     }
     
     init() {
@@ -47,8 +71,14 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.textContent = content;
         
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+        
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
         this.chatLog.appendChild(messageDiv);
         
         this.scrollToBottom();

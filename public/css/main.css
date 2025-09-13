@@ -105,6 +105,13 @@ body {
   opacity: 0.8;
 }
 
+.message-timestamp {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 5px;
+  font-style: italic;
+}
+
 .input-area {
   padding: 20px;
   background: rgba(255, 255, 255, 0.1);
