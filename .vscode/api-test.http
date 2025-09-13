@@ -1,0 +1,103 @@
+### AI RPG API Testing
+### Use Ctrl+Shift+P -> "Rest Client: Send Request" or click "Send Request" above each request
+
+@baseUrl = http://localhost:7777
+@contentType = application/json
+
+### Health Check
+GET {{baseUrl}}/api/hello
+
+### Get Current Player
+GET {{baseUrl}}/api/player
+
+### Create New Player
+POST {{baseUrl}}/api/player
+Content-Type: {{contentType}}
+
+{
+    "name": "Test Hero",
+    "attributes": {
+        "strength": 15,
+        "dexterity": 12,
+        "constitution": 14,
+        "intelligence": 13,
+        "wisdom": 11,
+        "charisma": 10
+    }
+}
+
+### Get All Players
+GET {{baseUrl}}/api/players
+
+### Get Attribute Definitions
+GET {{baseUrl}}/api/attributes
+
+### Update Player Attributes
+PUT {{baseUrl}}/api/player/attributes
+Content-Type: {{contentType}}
+
+{
+    "attributes": {
+        "strength": 16,
+        "wisdom": 13
+    }
+}
+
+### Modify Player Health (Damage)
+PUT {{baseUrl}}/api/player/health
+Content-Type: {{contentType}}
+
+{
+    "amount": -5,
+    "reason": "orc attack"
+}
+
+### Modify Player Health (Healing)
+PUT {{baseUrl}}/api/player/health
+Content-Type: {{contentType}}
+
+{
+    "amount": 3,
+    "reason": "healing potion"
+}
+
+### Level Up Player
+POST {{baseUrl}}/api/player/levelup
+
+### Generate Attributes (Standard Array)
+POST {{baseUrl}}/api/player/generate-attributes
+Content-Type: {{contentType}}
+
+{
+    "method": "standard"
+}
+
+### Generate Attributes (Rolled)
+POST {{baseUrl}}/api/player/generate-attributes
+Content-Type: {{contentType}}
+
+{
+    "method": "rolled"
+}
+
+### Get Chat History
+GET {{baseUrl}}/api/chat/history
+
+### Clear Chat History
+DELETE {{baseUrl}}/api/chat/history
+
+### Send Chat Message
+POST {{baseUrl}}/api/chat
+Content-Type: {{contentType}}
+
+{
+    "messages": [
+        {
+            "role": "user",
+            "content": "I want to start a fantasy adventure!"
+        }
+    ]
+}
+
+### Test Config Page
+GET {{baseUrl}}/config

@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-vscode.vscode-typescript-next",
+    "formulahendry.auto-rename-tag",
+    "bradlc.vscode-tailwindcss",
+    "syler.sass-indented",
+    "humao.rest-client",
+    "ms-vscode.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "formulahendry.code-runner",
+    "ms-vscode.vscode-node-azure-pack",
+    "ronnidc.nunjucks"
+  ]
+}

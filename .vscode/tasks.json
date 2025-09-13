@@ -1,0 +1,160 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm-install",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start AI RPG Server",
+      "type": "shell",
+      "command": "npm",
+      "args": ["start"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "nodejs",
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*Server is starting.*$",
+          "endsPattern": "^.*Server is running on.*$"
+        }
+      }
+    },
+    {
+      "label": "Stop Server",
+      "type": "shell",
+      "command": "taskkill",
+      "args": ["/F", "/IM", "node.exe"],
+      "windows": {
+        "command": "taskkill",
+        "args": ["/F", "/IM", "node.exe"]
+      },
+      "linux": {
+        "command": "pkill",
+        "args": ["-f", "node.*server.js"]
+      },
+      "osx": {
+        "command": "pkill",
+        "args": ["-f", "node.*server.js"]
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Restart Server",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Stop Server", "Start AI RPG Server"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Test Player Class",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "-e",
+        "const Player = require('./Player.js'); const p = new Player({name: 'Test Player'}); console.log('Player created:', p.toString()); console.log('Attributes:', p.getAttributeNames()); console.log('Generation methods:', Object.keys(p.getGenerationMethods()));"
+      ],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Test Dice Module",
+      "type": "shell",
+      "command": "node",
+      "args": ["nunjucks_dice.js"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Open Browser",
+      "type": "shell",
+      "command": "start",
+      "args": ["http://localhost:7777"],
+      "windows": {
+        "command": "start",
+        "args": ["http://localhost:7777"]
+      },
+      "linux": {
+        "command": "xdg-open",
+        "args": ["http://localhost:7777"]
+      },
+      "osx": {
+        "command": "open",
+        "args": ["http://localhost:7777"]
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate SCSS",
+      "type": "shell",
+      "command": "sass",
+      "args": ["public/css/main.scss", "public/css/main.css"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

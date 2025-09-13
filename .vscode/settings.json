@@ -1,0 +1,40 @@
+{
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/package-lock.json": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true
+  },
+  "emmet.includeLanguages": {
+    "nunjucks": "html"
+  },
+  "files.associations": {
+    "*.njk": "nunjucks",
+    "*.yaml.njk": "yaml"
+  },
+  "yaml.schemas": {
+    "./defs/attributes.yaml": ["**/defs/*.yaml"]
+  },
+  "css.validate": true,
+  "scss.validate": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "javascript.preferences.includePackageJsonAutoImports": "on",
+  "typescript.preferences.includePackageJsonAutoImports": "on",
+  "debug.node.autoAttach": "on",
+  "terminal.integrated.env.windows": {
+    "NODE_ENV": "development"
+  },
+  "rest-client.defaultHeaders": {
+    "Content-Type": "application/json"
+  }
+}
