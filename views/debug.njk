@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <style>
+        /* Override main.css to allow scrolling on debug page */
+        body {
+            overflow: auto !important;
+            height: auto !important;
+            min-height: 100vh;
+        }
+        .container {
+            height: auto !important;
+        }
+        
+        .debug-container {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .debug-section {
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .debug-section h2 {
+            color: #ffffff;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        .debug-json {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            padding: 15px;
+            color: #ffffff;
+            font-size: 14px;
+            line-height: 1.4;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .no-player {
+            color: rgba(255, 255, 255, 0.7);
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .refresh-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 Debug: Player Information</h1>
+            <p>Current player status and detailed information</p>
+            <div class="nav-buttons">
+                <a href="/" class="btn btn-secondary">
+                    <span>🎮</span> Back to Game
+                </a>
+                <a href="/player-stats" class="btn btn-secondary">
+                    <span>🎲</span> Player Stats
+                </a>
+                <a href="/config" class="btn btn-secondary">
+                    <span>⚙️</span> Configuration
+                </a>
+            </div>
+        </div>
+
+        <div class="debug-container">
+            <a href="/debug" class="refresh-btn">🔄 Refresh</a>
+
+            {% if player %}
+                <!-- Quick Stats Summary -->
+                <div class="debug-section">
+                    <h2>📊 Quick Stats Overview</h2>
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <div class="stat-label">Name</div>
+                            <div class="stat-value">{{ player.name }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Level</div>
+                            <div class="stat-value">{{ player.level }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Health</div>
+                            <div class="stat-value">{{ player.health }}/{{ player.maxHealth }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Status</div>
+                            <div class="stat-value" style="color: {{ 'rgb(150, 255, 150)' if player.alive else 'rgb(255, 150, 150)' }}">
+                                {{ 'Alive' if player.alive else 'Dead' }}
+                            </div>
+                        </div>
+                        {% if player.currentLocation %}
+                        <div class="stat-card">
+                            <div class="stat-label">Location</div>
+                            <div class="stat-value">{{ player.currentLocation }}</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Full Player Status (getStatus() output) -->
+                <div class="debug-section">
+                    <h2>🎯 Player Status (getStatus())</h2>
+                    <pre class="debug-json">{{ playerStatus | dump(2) }}</pre>
+                </div>
+
+                <!-- Full Player JSON (toJSON() output) -->
+                <div class="debug-section">
+                    <h2>💾 Player JSON Data (toJSON())</h2>
+                    <pre class="debug-json">{{ playerJson | dump(2) }}</pre>
+                </div>
+
+                <!-- Player Storage Info -->
+                <div class="debug-section">
+                    <h2>🗃️ Storage Information</h2>
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Players</div>
+                            <div class="stat-value">{{ totalPlayers }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Current Player ID</div>
+                            <div class="stat-value">{{ currentPlayerId }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Created At</div>
+                            <div class="stat-value" style="font-size: 12px;">{{ playerJson.createdAt | replace('T', ' ') | replace('Z', '') if playerJson.createdAt else 'Unknown' }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Last Updated</div>
+                            <div class="stat-value" style="font-size: 12px;">{{ playerJson.lastUpdated | replace('T', ' ') | replace('Z', '') if playerJson.lastUpdated else 'Unknown' }}</div>
+                        </div>
+                    </div>
+                </div>
+
+            {% else %}
+                <!-- No Current Player -->
+                <div class="debug-section">
+                    <h2>❌ No Current Player</h2>
+                    <div class="no-player">
+                        <p>No player is currently set.</p>
+                        <p>
+                            <a href="/player-stats" class="btn btn-primary" style="margin-top: 10px;">
+                                <span>➕</span> Create Player
+                            </a>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Storage Info for No Player -->
+                <div class="debug-section">
+                    <h2>🗃️ Storage Information</h2>
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Players</div>
+                            <div class="stat-value">{{ totalPlayers }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Current Player</div>
+                            <div class="stat-value" style="color: rgba(255, 255, 255, 0.5);">None</div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+
+            <!-- All Players Data -->
+            <div class="debug-section">
+                <h2>👥 All Players</h2>
+                {% if allPlayers and (allPlayers | length) > 0 %}
+                    <details>
+                        <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
+                            Click to expand all players data ({{ allPlayers | length }} players)
+                        </summary>
+                        <pre class="debug-json">{{ allPlayers | dump(2) }}</pre>
+                    </details>
+                {% else %}
+                    <div class="no-player">
+                        <p>No players in storage.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- All Locations Data -->
+            <div class="debug-section">
+                <h2>🗺️ All Locations</h2>
+                {% if allLocations and (allLocations | length) > 0 %}
+                    <details>
+                        <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
+                            Click to expand all locations data
+                        </summary>
+                        <pre class="debug-json">{{ allLocations | dump(2) }}</pre>
+                    </details>
+                {% else %}
+                    <div class="no-player">
+                        <p>No locations defined in defs/locations.yaml</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Available API Endpoints -->
+            <div class="debug-section">
+                <h2>🔌 Available Player API Endpoints</h2>
+                <pre class="debug-json">GET  /api/player              - Get current player status
+POST /api/player              - Create new player
+POST /api/player/update-stats - Update player stats
+POST /api/player/set-current  - Set current player
+POST /api/player/levelup      - Level up current player
+POST /api/player/generate-attributes - Generate new attributes
+
+GET  /debug                   - This debug page
+GET  /player-stats           - Player stats configuration page</pre>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

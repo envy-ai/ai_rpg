@@ -14,7 +14,7 @@ $error-bg: rgba(255, 100, 100, 0.3);
 $error-border: #ff6b6b;
 $border-radius: 8px;
 $border-radius-lg: 15px;
-$font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+$font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 
 // Mixins
 @mixin glass-effect($bg: $glass-bg) {
@@ -73,6 +73,19 @@ body {
 
   p {
     opacity: 0.9;
+    margin-bottom: 15px;
+  }
+
+  .nav-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+
+    .btn {
+      font-size: 14px;
+      padding: 8px 16px;
+    }
   }
 }
 
@@ -276,7 +289,9 @@ body {
     font-size: 0.9em;
   }
 
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     padding: 12px;
     border: none;
     border-radius: $border-radius;
@@ -393,5 +408,254 @@ body {
     background: rgba(100, 150, 255, 0.2);
     border: 2px solid rgba(100, 150, 255, 0.5);
     color: rgb(150, 200, 255);
+  }
+}
+
+// Debug details styling
+.debug-details {
+  margin-top: 10px;
+  border: 1px solid $white-30;
+  border-radius: $border-radius;
+  @include glass-effect($glass-bg-dark);
+  @include transition(background);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  summary.debug-summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    color: $white-70;
+    user-select: none;
+    @include transition(color);
+    border-radius: $border-radius;
+
+    &:hover {
+      color: $white-80;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    &::marker {
+      color: $white-70;
+    }
+
+    // Custom arrow for better styling
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: "▶";
+      margin-right: 6px;
+      @include transition(transform);
+      display: inline-block;
+    }
+  }
+
+  &[open] summary.debug-summary::before {
+    transform: rotate(90deg);
+  }
+
+  .debug-content {
+    padding: 12px;
+    border-top: 1px solid $white-30;
+    font-size: 11px;
+    line-height: 1.4;
+    background: rgba(0, 0, 0, 0.1);
+
+    .debug-section {
+      margin-bottom: 12px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .debug-label {
+        font-weight: bold;
+        color: $white-80;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .debug-value {
+        color: $white-70;
+        font-family: "Consolas", "Monaco", "Courier New", monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    }
+
+    .debug-prompt {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid $white-30;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: "Consolas", "Monaco", "Courier New", monospace;
+      font-size: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      color: $white-70;
+
+      &::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      &::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background: $white-30;
+        border-radius: 2px;
+      }
+    }
+  }
+}
+
+// Player Stats Page Specific Styles
+.player-stats-form {
+  width: 100%;
+}
+
+.attributes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin-top: 15px;
+}
+
+.attribute-group {
+  @include glass-effect($glass-bg-dark);
+  padding: 15px;
+  border-radius: $border-radius;
+  border: 1px solid $white-30;
+  @include transition(all);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .attribute-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+
+    label {
+      font-size: 1em;
+      font-weight: bold;
+      color: $white;
+      margin-bottom: 0;
+    }
+
+    .attribute-abbr {
+      font-size: 0.8em;
+      color: $white-70;
+      font-weight: bold;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  }
+
+  .attribute-input-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+
+    .attribute-input {
+      flex: 1;
+      text-align: center;
+      font-weight: bold;
+      font-size: 18px;
+      margin-bottom: 0;
+    }
+
+    .attribute-modifier {
+      min-width: 40px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 16px;
+      color: $primary-blue;
+      background: rgba(102, 126, 234, 0.2);
+      padding: 8px;
+      border-radius: $border-radius;
+      border: 1px solid rgba(102, 126, 234, 0.3);
+
+      &.positive {
+        color: rgb(150, 255, 150);
+        background: rgba(100, 255, 100, 0.2);
+        border-color: rgba(100, 255, 100, 0.3);
+      }
+
+      &.negative {
+        color: rgb(255, 150, 150);
+        background: rgba(255, 100, 100, 0.2);
+        border-color: rgba(255, 100, 100, 0.3);
+      }
+    }
+  }
+
+  .help-text {
+    margin-top: 0;
+  }
+}
+
+.status-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 15px;
+
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    @include glass-effect($glass-bg-dark);
+    padding: 10px 15px;
+    border-radius: $border-radius;
+    border: 1px solid $white-30;
+
+    .status-label {
+      font-weight: bold;
+      color: $white-80;
+      font-size: 0.9em;
+    }
+
+    .status-value {
+      color: $white;
+      font-weight: bold;
+
+      &.alive {
+        color: rgb(150, 255, 150);
+      }
+
+      &.dead {
+        color: rgb(255, 150, 150);
+      }
+    }
+  }
+}
+
+// Responsive adjustments for player stats
+@media (max-width: 768px) {
+  .attributes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-display {
+    flex-direction: column;
+
+    .status-item {
+      justify-content: space-between;
+    }
   }
 }
