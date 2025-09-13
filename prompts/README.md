@@ -1,42 +1,69 @@
 # Prompt Templates
 
-This directory contains Nunjucks templates for AI prompts. This allows for dynamic, configurable prompts with variables.
+This directory contains AI Game Master prompt templates in YAML+Nunjucks format (.yaml.njk).
+
+## Template Format
+
+The new .yaml.njk format provides structured, parseable prompts with the following structure:
+
+```yaml
+role: "Game Master Type"
+description: "Brief description of the GM's specialty"
+
+systemPrompt: |
+  The main prompt text that gets sent to the AI.
+  This can be multiple lines and contain detailed instructions.
+
+guidelines:
+  - "List of guidelines"
+  - "That the AI should follow"
+
+# Conditional sections based on template variables
+{% if variableName %}
+setting: "{{ variableName }}"
+{% endif %}
+```
 
 ## Available Templates
 
-### `gamemaster.njk`
-The default general-purpose Game Master prompt.
+- **gamemaster.yaml.njk**: General-purpose game master template
+- **fantasy-adventure.yaml.njk**: Specialized for fantasy adventure campaigns
+- **mystery-investigation.yaml.njk**: Optimized for mystery and investigation scenarios
 
-**Variables:**
+## Benefits of YAML Format
+
+- **Structured Data**: Each template defines role, guidelines, and settings in organized sections
+- **Template Variables**: Nunjucks templating allows dynamic content based on config.yaml variables
+- **Extensible**: Easy to add new fields and metadata without breaking existing functionality
+- **Parseable**: The YAML structure allows the server to extract specific fields like systemPrompt
+
+## Template Variables
+
+### gamemaster.yaml.njk
 - `playerName` - The player's character name
 - `gameStyle` - Style of gameplay (narrative-focused, action-packed, etc.)
 - `setting` - Game world setting (fantasy, sci-fi, modern, etc.)
 - `additionalInstructions` - Any custom instructions
 
-### `fantasy-adventure.njk`
-Specialized for fantasy adventure RPGs with epic quests and magic.
-
-**Variables:**
+### fantasy-adventure.yaml.njk
 - `magicLevel` - How common magic is (rare, uncommon, common, abundant)
 - `techLevel` - Technology level (medieval, renaissance, etc.)
 - `tone` - Overall tone (heroic, gritty, comedic, etc.)
 - `playerClass` - Character class (warrior, mage, rogue, etc.)
 - `currentLocation` - Starting location
 
-### `mystery-investigation.njk`
-Optimized for mystery and investigation scenarios.
-
-**Variables:**
+### mystery-investigation.yaml.njk
 - `mysteryType` - Type of mystery (murder, theft, conspiracy, etc.)
 - `setting` - Where the mystery takes place
 - `difficultyLevel` - How challenging the mystery should be
 
-## Using Templates
+## Usage
 
-1. **Configure in config.yaml:**
+Templates are configured in `config.yaml` under the `gamemaster.promptTemplate` setting:
+
 ```yaml
 gamemaster:
-  promptTemplate: "fantasy-adventure.njk"
+  promptTemplate: "fantasy-adventure.yaml.njk"
   promptVariables:
     magicLevel: "common"
     techLevel: "medieval"
@@ -44,34 +71,21 @@ gamemaster:
     playerClass: "wizard"
 ```
 
-2. **Create custom templates:**
-   - Add new `.njk` files to this directory
-   - Use Nunjucks syntax for variables: `{{ variableName }}`
-   - Use conditionals: `{% if variableName %}...{% endif %}`
-   - Use defaults: `{{ variableName | default("fallback") }}`
+The server automatically detects .yaml.njk files and parses them to extract the systemPrompt field for the AI.
 
-## Template Syntax Examples
+## Migration from .njk
 
-```njk
-You are a {{ role | default("Game Master") }}.
+The old .njk format is still supported for backward compatibility. To use the new structured format:
 
-{% if playerName %}
-The player's name is {{ playerName }}.
-{% endif %}
+1. Convert templates to .yaml.njk extension
+2. Wrap the main prompt content in a `systemPrompt: |` field
+3. Add structured metadata like `role`, `description`, and `guidelines`
+4. Update config.yaml to reference the new filename
 
-{% if difficulty == "hard" %}
-Make challenges very difficult.
-{% elif difficulty == "easy" %}
-Keep things simple and accessible.
-{% else %}
-Provide moderate challenges.
-{% endif %}
-```
+## Creating Custom Templates
 
-## Best Practices
-
-1. **Always provide defaults** for optional variables
-2. **Use descriptive variable names**
-3. **Include clear instructions** in the prompt
-4. **Test prompts** with different variable combinations
-5. **Document variables** in comments or README
+1. Create a new `.yaml.njk` file in this directory
+2. Use the structured YAML format with required `systemPrompt` field
+3. Add Nunjucks variables: `{{ variableName }}`
+4. Use conditionals: `{% if variableName %}...{% endif %}`
+5. Update config.yaml to reference your new template

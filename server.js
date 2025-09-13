@@ -39,7 +39,18 @@ function renderSystemPrompt() {
     try {
         const templateName = config.gamemaster.promptTemplate;
         const variables = config.gamemaster.promptVariables || {};
-        return promptEnv.render(templateName, variables);
+        
+        // Render the template
+        const renderedTemplate = promptEnv.render(templateName, variables);
+        
+        // If the template is a .yaml.njk file, parse the YAML and extract systemPrompt
+        if (templateName.endsWith('.yaml.njk')) {
+            const parsedYaml = yaml.load(renderedTemplate);
+            return parsedYaml.systemPrompt || renderedTemplate;
+        }
+        
+        // For regular .njk files, return the rendered content directly
+        return renderedTemplate;
     } catch (error) {
         console.error('Error rendering prompt template:', error);
         // Fallback to default prompt
