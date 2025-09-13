@@ -303,6 +303,67 @@
                 {% endif %}
             </div>
 
+            <!-- Game World Data -->
+            <div class="debug-section">
+                <h2>🌍 Game World Data (In-Memory)</h2>
+                {% if gameWorld %}
+                    <p><strong>Counts:</strong> 
+                        Locations: {{ gameWorldCounts.locations }}, 
+                        Location Exits: {{ gameWorldCounts.locationExits }}
+                    </p>
+                    <details>
+                        <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
+                            Click to expand game world data
+                        </summary>
+                        <pre class="debug-json">{{ gameWorld | dump(2) }}</pre>
+                    </details>
+                {% else %}
+                    <div class="no-player">
+                        <p>No game world data in memory</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Save/Load Functionality -->
+            <div class="debug-section">
+                <h2>💾 Save/Load Game State</h2>
+                
+                <div style="margin-bottom: 20px;">
+                    <button id="saveGameBtn" style="
+                        background: linear-gradient(135deg, #28a745, #20c997);
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        margin-right: 10px;
+                    ">💾 Save Current Game</button>
+                    
+                    <button id="loadSavesBtn" style="
+                        background: linear-gradient(135deg, #007bff, #6f42c1);
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-weight: bold;
+                    ">📂 Load Game</button>
+                </div>
+
+                <div id="saveStatus" style="
+                    margin: 10px 0;
+                    padding: 10px;
+                    border-radius: 5px;
+                    display: none;
+                "></div>
+
+                <div id="savesContainer" style="display: none;">
+                    <h3 style="color: #ffffff;">Available Saves:</h3>
+                    <div id="savesList"></div>
+                </div>
+            </div>
+
             <!-- Available API Endpoints -->
             <div class="debug-section">
                 <h2>🔌 Available API Endpoints</h2>
@@ -313,6 +374,12 @@ POST /api/player/update-stats - Update player stats
 POST /api/player/set-current  - Set current player
 POST /api/player/levelup      - Level up current player
 POST /api/player/generate-attributes - Generate new attributes
+
+SAVE/LOAD ENDPOINTS:
+POST /api/save                - Save current game state
+POST /api/load                - Load game state from save
+GET  /api/saves               - List available saves
+DELETE /api/save/:saveName    - Delete a save
 
 IMAGE GENERATION ENDPOINTS:
 POST /api/generate-image      - Generate new image from prompt
@@ -404,7 +471,8 @@ GET  /player-stats           - Player stats configuration page</pre>
                 width: parseInt(formData.get('width')),
                 height: parseInt(formData.get('height')),
                 seed: parseInt(formData.get('seed')),
-                negative_prompt: formData.get('negative_prompt') || undefined
+                negative_prompt: formData.get('negative_prompt') || undefined,
+                async: true // Enable async mode
             };
 
             const statusDiv = document.getElementById('imageGenStatus');
@@ -415,14 +483,15 @@ GET  /player-stats           - Player stats configuration page</pre>
             statusDiv.style.background = 'rgba(102, 126, 234, 0.3)';
             statusDiv.style.border = '1px solid #667eea';
             statusDiv.style.color = '#ffffff';
-            statusDiv.innerHTML = '🎨 Generating image... This may take 30-60 seconds.';
+            statusDiv.innerHTML = '🎨 Submitting image generation job...';
             
             // Disable form
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '⏳ Generating...';
+            submitBtn.innerHTML = '⏳ Processing...';
 
             try {
+                // Submit job
                 const response = await fetch('/api/generate-image', {
                     method: 'POST',
                     headers: {
@@ -433,57 +502,142 @@ GET  /player-stats           - Player stats configuration page</pre>
 
                 const result = await response.json();
 
-                if (result.success) {
-                    // Show success
-                    statusDiv.style.background = 'rgba(72, 187, 120, 0.3)';
-                    statusDiv.style.border = '1px solid #48bb78';
-                    statusDiv.innerHTML = `✅ Image generated successfully! ID: ${result.imageId}`;
+                if (result.success && result.jobId) {
+                    // Start progress tracking
+                    statusDiv.innerHTML = `🎨 Job queued: ${result.jobId}<br>⏳ ${result.message}`;
                     
-                    // Display generated image
-                    const imageCard = document.createElement('div');
-                    imageCard.style.cssText = `
-                        background: rgba(255, 255, 255, 0.1);
-                        border: 1px solid rgba(255, 255, 255, 0.3);
-                        border-radius: 8px;
-                        padding: 15px;
-                        text-align: center;
-                    `;
-                    
-                    imageCard.innerHTML = `
-                        <img src="${result.images[0].url}" alt="Generated image" 
-                             style="width: 100%; border-radius: 4px; margin-bottom: 10px;">
-                        <div style="color: rgba(255, 255, 255, 0.8); font-size: 12px;">
-                            <div style="margin-bottom: 5px; font-weight: bold;">${payload.prompt}</div>
-                            <div>${payload.width}×${payload.height} | Seed: ${payload.seed}</div>
-                            <div style="margin-top: 5px;">
-                                <a href="${result.images[0].url}" target="_blank" 
-                                   style="color: #667eea; text-decoration: none;">View Full Size</a>
-                            </div>
-                        </div>
-                    `;
-                    
-                    resultsDiv.appendChild(imageCard);
-                    
-                    // Load recent images
-                    loadRecentImages();
+                    // Track progress
+                    trackJobProgress(result.jobId, statusDiv, resultsDiv, payload);
                     
                 } else {
                     // Show error
                     statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
                     statusDiv.style.border = '1px solid #f56565';
-                    statusDiv.innerHTML = `❌ Generation failed: ${result.error}`;
+                    statusDiv.innerHTML = `❌ Job submission failed: ${result.error}`;
+                    
+                    // Re-enable form
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '🎨 Generate Image';
                 }
                 
             } catch (error) {
                 statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
                 statusDiv.style.border = '1px solid #f56565';
                 statusDiv.innerHTML = `❌ Request failed: ${error.message}`;
+                
+                // Re-enable form
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '🎨 Generate Image';
             }
-            
-            // Re-enable form
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '🎨 Generate Image';
         });
+
+        // Track job progress
+        async function trackJobProgress(jobId, statusDiv, resultsDiv, originalPayload) {
+            let completed = false;
+            let attempts = 0;
+            const maxAttempts = 60; // 2 minutes max
+            
+            const checkProgress = async () => {
+                attempts++;
+                
+                try {
+                    const response = await fetch(`/api/jobs/${jobId}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        const job = result.job;
+                        
+                        // Update status display
+                        const progressBar = `
+                            <div style="width: 100%; background: rgba(0,0,0,0.3); border-radius: 4px; margin: 10px 0;">
+                                <div style="width: ${job.progress}%; background: #667eea; height: 8px; border-radius: 4px; transition: width 0.3s;"></div>
+                            </div>
+                        `;
+                        
+                        statusDiv.innerHTML = `
+                            🎨 Job: ${jobId}<br>
+                            📊 Status: ${job.status} (${job.progress}%)<br>
+                            💬 ${job.message}
+                            ${progressBar}
+                            <small style="opacity: 0.7;">Attempt ${attempts}/${maxAttempts}</small>
+                        `;
+                        
+                        if (job.status === 'completed') {
+                            // Show success
+                            statusDiv.style.background = 'rgba(72, 187, 120, 0.3)';
+                            statusDiv.style.border = '1px solid #48bb78';
+                            statusDiv.innerHTML = `✅ Image generated successfully!<br>Job: ${jobId}<br>⏱️ Processing time: ${Math.round((new Date(job.completedAt) - new Date(job.createdAt)) / 1000)}s`;
+                            
+                            // Display generated image
+                            if (result.result && result.result.images.length > 0) {
+                                const imageCard = document.createElement('div');
+                                imageCard.style.cssText = `
+                                    background: rgba(255, 255, 255, 0.1);
+                                    border: 1px solid rgba(255, 255, 255, 0.3);
+                                    border-radius: 8px;
+                                    padding: 15px;
+                                    text-align: center;
+                                    margin-bottom: 15px;
+                                `;
+                                
+                                imageCard.innerHTML = `
+                                    <img src="${result.result.images[0].url}" alt="Generated image" 
+                                         style="width: 100%; border-radius: 4px; margin-bottom: 10px;">
+                                    <div style="color: rgba(255, 255, 255, 0.8); font-size: 12px;">
+                                        <div style="margin-bottom: 5px; font-weight: bold;">${originalPayload.prompt}</div>
+                                        <div>${originalPayload.width}×${originalPayload.height} | Seed: ${originalPayload.seed}</div>
+                                        <div style="margin-top: 5px;">
+                                            <a href="${result.result.images[0].url}" target="_blank" 
+                                               style="color: #667eea; text-decoration: none;">View Full Size</a>
+                                        </div>
+                                    </div>
+                                `;
+                                
+                                resultsDiv.appendChild(imageCard);
+                                
+                                // Load recent images
+                                loadRecentImages();
+                            }
+                            
+                            completed = true;
+                            
+                        } else if (job.status === 'failed' || job.status === 'timeout') {
+                            // Show error
+                            statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
+                            statusDiv.style.border = '1px solid #f56565';
+                            statusDiv.innerHTML = `❌ Generation failed: ${result.error || job.status}`;
+                            completed = true;
+                        }
+                    } else {
+                        throw new Error(result.error || 'Failed to get job status');
+                    }
+                    
+                } catch (error) {
+                    console.error('Progress tracking error:', error);
+                    statusDiv.innerHTML += `<br><small style="color: #f56565;">⚠️ Status check failed: ${error.message}</small>`;
+                }
+                
+                // Continue tracking if not completed and within limits
+                if (!completed && attempts < maxAttempts) {
+                    setTimeout(checkProgress, 2000); // Check every 2 seconds
+                } else if (!completed) {
+                    statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
+                    statusDiv.style.border = '1px solid #f56565';
+                    statusDiv.innerHTML = `❌ Job tracking timed out after ${maxAttempts} attempts`;
+                    completed = true;
+                }
+                
+                // Re-enable form when completed
+                if (completed) {
+                    const submitBtn = document.querySelector('#imageGenForm button[type="submit"]');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '🎨 Generate Image';
+                }
+            };
+            
+            // Start progress checking
+            setTimeout(checkProgress, 1000); // Start after 1 second
+        }
 
         // Load recent images
         async function loadRecentImages() {
@@ -535,6 +689,197 @@ GET  /player-stats           - Player stats configuration page</pre>
 
         // Load recent images on page load
         document.addEventListener('DOMContentLoaded', loadRecentImages);
+
+        // Save/Load Functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const saveGameBtn = document.getElementById('saveGameBtn');
+            const loadSavesBtn = document.getElementById('loadSavesBtn');
+            const saveStatus = document.getElementById('saveStatus');
+            const savesContainer = document.getElementById('savesContainer');
+            const savesList = document.getElementById('savesList');
+
+            // Save current game
+            saveGameBtn.addEventListener('click', async function() {
+                try {
+                    showStatus('Saving game...', 'info');
+                    
+                    const response = await fetch('/api/save', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus(`✅ ${result.message}`, 'success');
+                        console.log('Game saved successfully:', result);
+                    } else {
+                        showStatus(`❌ Save failed: ${result.error}`, 'error');
+                        console.error('Save failed:', result);
+                    }
+                } catch (error) {
+                    showStatus(`❌ Save failed: ${error.message}`, 'error');
+                    console.error('Save error:', error);
+                }
+            });
+
+            // Load saves list
+            loadSavesBtn.addEventListener('click', async function() {
+                try {
+                    showStatus('Loading saves list...', 'info');
+                    
+                    const response = await fetch('/api/saves');
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        displaySaves(result.saves);
+                        savesContainer.style.display = 'block';
+                        showStatus(`📂 Found ${result.count} save(s)`, 'success');
+                    } else {
+                        showStatus(`❌ Failed to load saves: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    showStatus(`❌ Failed to load saves: ${error.message}`, 'error');
+                    console.error('Load saves error:', error);
+                }
+            });
+
+            function showStatus(message, type) {
+                saveStatus.textContent = message;
+                saveStatus.style.display = 'block';
+                
+                if (type === 'success') {
+                    saveStatus.style.background = 'rgba(40, 167, 69, 0.3)';
+                    saveStatus.style.border = '1px solid #28a745';
+                    saveStatus.style.color = '#ffffff';
+                } else if (type === 'error') {
+                    saveStatus.style.background = 'rgba(220, 53, 69, 0.3)';
+                    saveStatus.style.border = '1px solid #dc3545';
+                    saveStatus.style.color = '#ffffff';
+                } else {
+                    saveStatus.style.background = 'rgba(0, 123, 255, 0.3)';
+                    saveStatus.style.border = '1px solid #007bff';
+                    saveStatus.style.color = '#ffffff';
+                }
+            }
+
+            function displaySaves(saves) {
+                savesList.innerHTML = '';
+                
+                if (saves.length === 0) {
+                    savesList.innerHTML = '<p style="color: #ffffff;">No saves found</p>';
+                    return;
+                }
+
+                saves.forEach(save => {
+                    const saveDiv = document.createElement('div');
+                    saveDiv.style.cssText = `
+                        background: rgba(255, 255, 255, 0.1);
+                        border: 1px solid rgba(255, 255, 255, 0.3);
+                        border-radius: 5px;
+                        padding: 15px;
+                        margin: 10px 0;
+                        color: #ffffff;
+                    `;
+                    
+                    const timestamp = new Date(save.timestamp).toLocaleString();
+                    
+                    saveDiv.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h4 style="margin: 0 0 5px 0;">${save.playerName} (Level ${save.playerLevel})</h4>
+                                <p style="margin: 0; font-size: 12px; opacity: 0.8;">${timestamp}</p>
+                                <p style="margin: 5px 0 0 0; font-size: 12px;">Save: ${save.saveName}</p>
+                            </div>
+                            <div>
+                                <button onclick="loadSave('${save.saveName}')" style="
+                                    background: linear-gradient(135deg, #007bff, #6f42c1);
+                                    color: white;
+                                    border: none;
+                                    padding: 8px 15px;
+                                    border-radius: 3px;
+                                    cursor: pointer;
+                                    margin-right: 5px;
+                                ">📂 Load</button>
+                                <button onclick="deleteSave('${save.saveName}')" style="
+                                    background: linear-gradient(135deg, #dc3545, #c82333);
+                                    color: white;
+                                    border: none;
+                                    padding: 8px 15px;
+                                    border-radius: 3px;
+                                    cursor: pointer;
+                                ">🗑️ Delete</button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    savesList.appendChild(saveDiv);
+                });
+            }
+
+            // Global functions for load and delete (needed for inline onclick handlers)
+            window.loadSave = async function(saveName) {
+                try {
+                    showStatus(`Loading save: ${saveName}...`, 'info');
+                    
+                    const response = await fetch('/api/load', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ saveName: saveName })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus(`✅ ${result.message}`, 'success');
+                        console.log('Game loaded successfully:', result);
+                        // Refresh the page to show loaded data
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        showStatus(`❌ Load failed: ${result.error}`, 'error');
+                        console.error('Load failed:', result);
+                    }
+                } catch (error) {
+                    showStatus(`❌ Load failed: ${error.message}`, 'error');
+                    console.error('Load error:', error);
+                }
+            };
+
+            window.deleteSave = async function(saveName) {
+                if (!confirm(`Are you sure you want to delete save: ${saveName}?`)) {
+                    return;
+                }
+                
+                try {
+                    showStatus(`Deleting save: ${saveName}...`, 'info');
+                    
+                    const response = await fetch(`/api/save/${saveName}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus(`✅ ${result.message}`, 'success');
+                        console.log('Save deleted successfully:', result);
+                        // Refresh the saves list
+                        loadSavesBtn.click();
+                    } else {
+                        showStatus(`❌ Delete failed: ${result.error}`, 'error');
+                        console.error('Delete failed:', result);
+                    }
+                } catch (error) {
+                    showStatus(`❌ Delete failed: ${error.message}`, 'error');
+                    console.error('Delete error:', error);
+                }
+            };
+        });
     </script>
 </body>
 </html>

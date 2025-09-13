@@ -21,6 +21,12 @@
                 <a href="/debug" class="btn btn-secondary">
                     <span>🔧</span> Debug
                 </a>
+                <button id="saveGameBtn" class="btn btn-secondary" title="Save Current Game">
+                    <span>💾</span> Save Game
+                </button>
+                <button id="loadGameBtn" class="btn btn-secondary" title="Load Saved Game">
+                    <span>📂</span> Load Game
+                </button>
             </div>
         </div>
         
@@ -61,7 +67,96 @@
         document.addEventListener('DOMContentLoaded', () => {
             window.systemPrompt = {{ systemPrompt | dump | safe }};
             new AIRPGChat();
+            
+            // Add save/load functionality
+            initSaveLoadButtons();
         });
+
+        function initSaveLoadButtons() {
+            const saveGameBtn = document.getElementById('saveGameBtn');
+            const loadGameBtn = document.getElementById('loadGameBtn');
+            
+            saveGameBtn.addEventListener('click', async function() {
+                try {
+                    this.disabled = true;
+                    this.innerHTML = '<span>⏳</span> Saving...';
+                    
+                    const response = await fetch('/api/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.innerHTML = '<span>✅</span> Saved!';
+                        alert(`Game saved successfully!\n\nSave: ${result.saveName}`);
+                    } else {
+                        this.innerHTML = '<span>❌</span> Save Failed';
+                        alert(`Save failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    this.innerHTML = '<span>❌</span> Save Failed';
+                    alert(`Save failed: ${error.message}`);
+                } finally {
+                    setTimeout(() => {
+                        this.disabled = false;
+                        this.innerHTML = '<span>💾</span> Save Game';
+                    }, 2000);
+                }
+            });
+
+            loadGameBtn.addEventListener('click', async function() {
+                try {
+                    const response = await fetch('/api/saves');
+                    const result = await response.json();
+                    
+                    if (!result.success || result.saves.length === 0) {
+                        alert('No saves found!');
+                        return;
+                    }
+                    
+                    // Create a selection dialog
+                    let saveOptions = 'Select a save to load:\n\n';
+                    result.saves.forEach((save, index) => {
+                        const timestamp = new Date(save.timestamp).toLocaleString();
+                        saveOptions += `${index + 1}. ${save.playerName} (Level ${save.playerLevel}) - ${timestamp}\n`;
+                    });
+                    
+                    const selection = prompt(saveOptions + '\nEnter the number of the save to load (or 0 to cancel):');
+                    const saveIndex = parseInt(selection) - 1;
+                    
+                    if (saveIndex >= 0 && saveIndex < result.saves.length) {
+                        const selectedSave = result.saves[saveIndex];
+                        
+                        if (confirm(`Load save: ${selectedSave.playerName} (${new Date(selectedSave.timestamp).toLocaleString()})?`)) {
+                            this.disabled = true;
+                            this.innerHTML = '<span>⏳</span> Loading...';
+                            
+                            const loadResponse = await fetch('/api/load', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ saveName: selectedSave.saveName })
+                            });
+                            
+                            const loadResult = await loadResponse.json();
+                            
+                            if (loadResult.success) {
+                                alert(`Game loaded successfully!\n\n${loadResult.message}`);
+                                window.location.reload();
+                            } else {
+                                alert(`Load failed: ${loadResult.error}`);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    alert(`Load failed: ${error.message}`);
+                } finally {
+                    this.disabled = false;
+                    this.innerHTML = '<span>📂</span> Load Game';
+                }
+            });
+        }
     </script>
 </body>
 </html>

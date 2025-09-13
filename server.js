@@ -9,6 +9,10 @@ const path = require('path');
 // Import Player class
 const Player = require('./Player.js');
 
+// Import Location and LocationExit classes  
+const Location = require('./Location.js');
+const LocationExit = require('./LocationExit.js');
+
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 
@@ -28,6 +32,264 @@ const PORT = config.server.port;
 // Initialize ComfyUI client if image generation is enabled
 let comfyUIClient = null;
 const generatedImages = new Map(); // Store image metadata by ID
+
+// Image generation job queue and tracking
+const imageJobs = new Map(); // Store job status by ID
+const jobQueue = []; // Queue of pending jobs
+let isProcessingJob = false; // Flag to prevent concurrent processing
+
+// Job status constants
+const JOB_STATUS = {
+    QUEUED: 'queued',
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+    TIMEOUT: 'timeout'
+};
+
+// Create a new image generation job
+function createImageJob(jobId, payload) {
+    const job = {
+        id: jobId,
+        status: JOB_STATUS.QUEUED,
+        payload: payload,
+        progress: 0,
+        message: 'Job queued for processing',
+        createdAt: new Date().toISOString(),
+        startedAt: null,
+        completedAt: null,
+        result: null,
+        error: null,
+        timeout: 120000 // 2 minutes timeout
+    };
+
+    imageJobs.set(jobId, job);
+    return job;
+}
+
+// Enhanced error handling wrapper
+async function withRetry(operation, maxRetries = 3, delay = 1000) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+
+            // Don't retry certain types of errors
+            if (error.code === 'ENOTFOUND' || error.response?.status === 404 || error.response?.status === 401) {
+                throw error;
+            }
+
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, delay * attempt));
+            }
+        }
+    }
+
+    throw lastError;
+}
+
+// Process the job queue
+async function processJobQueue() {
+    if (isProcessingJob || jobQueue.length === 0 || !comfyUIClient) {
+        return;
+    }
+
+    isProcessingJob = true;
+
+    try {
+        const jobId = jobQueue.shift();
+        const job = imageJobs.get(jobId);
+
+        if (!job || job.status !== JOB_STATUS.QUEUED) {
+            return;
+        }
+
+        // Update job status
+        job.status = JOB_STATUS.PROCESSING;
+        job.startedAt = new Date().toISOString();
+        job.progress = 10;
+        job.message = 'Starting image generation...';
+
+        // Set timeout
+        const timeoutId = setTimeout(() => {
+            if (job.status === JOB_STATUS.PROCESSING) {
+                job.status = JOB_STATUS.TIMEOUT;
+                job.error = 'Job timed out after 2 minutes';
+                job.completedAt = new Date().toISOString();
+            }
+        }, job.timeout);
+
+        try {
+            const result = await processImageGeneration(job);
+
+            clearTimeout(timeoutId);
+
+            if (job.status !== JOB_STATUS.TIMEOUT) {
+                job.status = JOB_STATUS.COMPLETED;
+                job.progress = 100;
+                job.result = result;
+                job.message = 'Image generation completed successfully';
+                job.completedAt = new Date().toISOString();
+            }
+
+        } catch (error) {
+            clearTimeout(timeoutId);
+
+            if (job.status !== JOB_STATUS.TIMEOUT) {
+                job.status = JOB_STATUS.FAILED;
+                job.error = error.message;
+                job.message = `Generation failed: ${error.message}`;
+                job.completedAt = new Date().toISOString();
+            }
+        }
+
+    } finally {
+        isProcessingJob = false;
+
+        // Process next job if available
+        setTimeout(() => processJobQueue(), 100);
+    }
+}
+
+// Process a single image generation job
+async function processImageGeneration(job) {
+    const { prompt, width, height, seed, negative_prompt } = job.payload;
+
+    // Generate unique image ID
+    const imageId = generateImageId();
+
+    // Prepare template variables
+    const templateVars = {
+        image: {
+            prompt: prompt.trim(),
+            width: width || config.imagegen.default_settings.image.width || 1024,
+            height: height || config.imagegen.default_settings.image.height || 1024,
+            seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000)
+        },
+        negative_prompt: negative_prompt || 'blurry, low quality, distorted'
+    };
+
+    job.progress = 20;
+    job.message = 'Rendering workflow template...';
+
+    // Render ComfyUI workflow template with error handling
+    let workflowJson;
+    try {
+        workflowJson = await withRetry(() => {
+            return imagePromptEnv.render(config.imagegen.api_template, templateVars);
+        });
+    } catch (error) {
+        throw new Error(`Template rendering failed: ${error.message}`);
+    }
+
+    let workflow;
+    try {
+        workflow = JSON.parse(workflowJson);
+    } catch (parseError) {
+        throw new Error(`Invalid workflow JSON: ${parseError.message}`);
+    }
+
+    job.progress = 30;
+    job.message = 'Submitting to ComfyUI...';
+
+    // Queue the prompt with retry logic
+    const queueResult = await withRetry(async () => {
+        return await comfyUIClient.queuePrompt(workflow);
+    });
+
+    if (!queueResult.success) {
+        throw new Error(`Failed to queue prompt: ${queueResult.error}`);
+    }
+
+    job.progress = 50;
+    job.message = 'Waiting for generation to complete...';
+
+    // Wait for completion with enhanced error handling
+    const completionResult = await withRetry(async () => {
+        return await comfyUIClient.waitForCompletion(queueResult.promptId);
+    });
+
+    if (!completionResult.success) {
+        throw new Error(`Generation failed: ${completionResult.error}`);
+    }
+
+    job.progress = 80;
+    job.message = 'Downloading and saving images...';
+
+    // Download and save images with error handling
+    const savedImages = [];
+    const saveDirectory = path.join(__dirname, 'public', 'generated-images');
+
+    // Ensure directory exists
+    if (!fs.existsSync(saveDirectory)) {
+        try {
+            fs.mkdirSync(saveDirectory, { recursive: true });
+        } catch (dirError) {
+            throw new Error(`Failed to create images directory: ${dirError.message}`);
+        }
+    }
+
+    for (const imageInfo of completionResult.images) {
+        try {
+            // Download image from ComfyUI with retry
+            const imageData = await withRetry(async () => {
+                return await comfyUIClient.getImage(
+                    imageInfo.filename,
+                    imageInfo.subfolder,
+                    imageInfo.type
+                );
+            });
+
+            // Save image with unique ID
+            const saveResult = await comfyUIClient.saveImage(
+                imageData,
+                imageId,
+                imageInfo.filename,
+                saveDirectory
+            );
+
+            if (saveResult.success) {
+                savedImages.push({
+                    imageId: imageId,
+                    filename: saveResult.filename,
+                    url: `/generated-images/${saveResult.filename}`,
+                    size: saveResult.size
+                });
+            }
+        } catch (imageError) {
+            console.error(`Failed to process image ${imageInfo.filename}:`, imageError.message);
+            // Continue with other images rather than failing completely
+        }
+    }
+
+    if (savedImages.length === 0) {
+        throw new Error('No images were successfully saved');
+    }
+
+    // Store image metadata
+    const imageMetadata = {
+        id: imageId,
+        prompt: templateVars.image.prompt,
+        negative_prompt: templateVars.negative_prompt,
+        width: templateVars.image.width,
+        height: templateVars.image.height,
+        seed: templateVars.image.seed,
+        createdAt: new Date().toISOString(),
+        comfyUIPromptId: queueResult.promptId,
+        images: savedImages
+    };
+
+    generatedImages.set(imageId, imageMetadata);
+
+    return {
+        imageId: imageId,
+        images: savedImages,
+        metadata: imageMetadata
+    };
+}
 
 // Configuration validation function
 async function validateConfiguration() {
@@ -155,6 +417,10 @@ let chatHistory = [];
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
 const players = new Map(); // Store multiple players by ID
+
+// In-memory game world storage
+const gameLocations = new Map(); // Store Location instances by ID
+const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
@@ -729,6 +995,16 @@ app.get('/debug', (req, res) => {
         locationsData = { error: 'Failed to load locations data' };
     }
 
+    // Convert game world Maps to objects for display
+    const gameWorldData = {
+        locations: Object.fromEntries(
+            Array.from(gameLocations.entries()).map(([id, location]) => [id, location.toJSON()])
+        ),
+        locationExits: Object.fromEntries(
+            Array.from(gameLocationExits.entries()).map(([id, exit]) => [id, exit.toJSON()])
+        )
+    };
+
     const debugData = {
         title: 'Debug: Player Information',
         player: currentPlayer ? currentPlayer.getStatus() : null,
@@ -737,7 +1013,12 @@ app.get('/debug', (req, res) => {
         totalPlayers: players.size,
         currentPlayerId: currentPlayer ? currentPlayer.toJSON().id : null,
         allPlayers: allPlayersData,
-        allLocations: locationsData
+        allLocations: locationsData, // YAML-loaded locations for reference
+        gameWorld: gameWorldData, // In-memory game world data
+        gameWorldCounts: {
+            locations: gameLocations.size,
+            locationExits: gameLocationExits.size
+        }
     };
 
     res.render('debug.njk', debugData);
@@ -852,6 +1133,308 @@ app.post('/api/player/create-from-stats', (req, res) => {
     }
 });
 
+// ==================== SAVE/LOAD FUNCTIONALITY ====================
+
+// Save current game state
+app.post('/api/save', (req, res) => {
+    try {
+        if (!currentPlayer) {
+            return res.status(400).json({
+                success: false,
+                error: 'No current player to save'
+            });
+        }
+
+        // Create save directory name with timestamp and player name
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const playerName = currentPlayer.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const saveName = `${timestamp}_${playerName}`;
+        const saveDir = path.join(__dirname, 'saves', saveName);
+
+        // Create save directory
+        if (!fs.existsSync(saveDir)) {
+            fs.mkdirSync(saveDir, { recursive: true });
+        }
+
+        // Save game world data (locations and exits)
+        const gameWorldData = {
+            locations: Object.fromEntries(
+                Array.from(gameLocations.entries()).map(([id, location]) => [id, location.toJSON()])
+            ),
+            locationExits: Object.fromEntries(
+                Array.from(gameLocationExits.entries()).map(([id, exit]) => [id, exit.toJSON()])
+            )
+        };
+        fs.writeFileSync(
+            path.join(saveDir, 'gameWorld.json'),
+            JSON.stringify(gameWorldData, null, 2)
+        );
+
+        // Save chat history
+        fs.writeFileSync(
+            path.join(saveDir, 'chatHistory.json'),
+            JSON.stringify(chatHistory, null, 2)
+        );
+
+        // Save generated images metadata
+        const imagesData = Object.fromEntries(generatedImages);
+        fs.writeFileSync(
+            path.join(saveDir, 'images.json'),
+            JSON.stringify(imagesData, null, 2)
+        );
+
+        // Save all players data
+        const allPlayersData = Object.fromEntries(
+            Array.from(players.entries()).map(([id, player]) => [id, player.toJSON()])
+        );
+        fs.writeFileSync(
+            path.join(saveDir, 'allPlayers.json'),
+            JSON.stringify(allPlayersData, null, 2)
+        );
+
+        // Save metadata about the save
+        const metadata = {
+            saveName: saveName,
+            timestamp: new Date().toISOString(),
+            playerName: currentPlayer.name,
+            playerId: currentPlayer.toJSON().id,
+            playerLevel: currentPlayer.level,
+            gameVersion: '1.0.0',
+            chatHistoryLength: chatHistory.length,
+            totalPlayers: players.size,
+            totalLocations: gameLocations.size,
+            totalLocationExits: gameLocationExits.size,
+            totalGeneratedImages: generatedImages.size
+        };
+        fs.writeFileSync(
+            path.join(saveDir, 'metadata.json'),
+            JSON.stringify(metadata, null, 2)
+        );
+
+        res.json({
+            success: true,
+            saveName: saveName,
+            saveDir: saveDir,
+            metadata: metadata,
+            message: `Game saved successfully as: ${saveName}`
+        });
+
+    } catch (error) {
+        console.error('Error saving game:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Load game state from a save
+app.post('/api/load', (req, res) => {
+    try {
+        const { saveName } = req.body;
+
+        if (!saveName) {
+            return res.status(400).json({
+                success: false,
+                error: 'Save name is required'
+            });
+        }
+
+        const saveDir = path.join(__dirname, 'saves', saveName);
+
+        // Check if save directory exists
+        if (!fs.existsSync(saveDir)) {
+            return res.status(404).json({
+                success: false,
+                error: `Save '${saveName}' not found`
+            });
+        }
+
+        // Load metadata
+        const metadataPath = path.join(saveDir, 'metadata.json');
+        let metadata = {};
+        if (fs.existsSync(metadataPath)) {
+            metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        }
+
+        // Load all players first
+        const allPlayersPath = path.join(saveDir, 'allPlayers.json');
+        if (fs.existsSync(allPlayersPath)) {
+            players.clear();
+            const allPlayersData = JSON.parse(fs.readFileSync(allPlayersPath, 'utf8')) || {};
+            for (const [id, playerData] of Object.entries(allPlayersData)) {
+                const player = Player.fromJSON(playerData);
+                players.set(id, player);
+            }
+        }
+
+        // Set current player from metadata
+        if (metadata.playerId && players.has(metadata.playerId)) {
+            currentPlayer = players.get(metadata.playerId);
+        } else {
+            currentPlayer = null;
+        }
+
+        // Load game world data
+        const gameWorldPath = path.join(saveDir, 'gameWorld.json');
+        if (fs.existsSync(gameWorldPath)) {
+            const gameWorldData = JSON.parse(fs.readFileSync(gameWorldPath, 'utf8'));
+            
+            // Clear existing game world
+            gameLocations.clear();
+            gameLocationExits.clear();
+            
+            // Recreate Location instances
+            for (const [id, locationData] of Object.entries(gameWorldData.locations || {})) {
+                const location = new Location({
+                    description: locationData.description,
+                    baseLevel: locationData.baseLevel,
+                    id: locationData.id
+                });
+                gameLocations.set(id, location);
+            }
+            
+            // Recreate LocationExit instances
+            for (const [id, exitData] of Object.entries(gameWorldData.locationExits || {})) {
+                const exit = new LocationExit({
+                    description: exitData.description,
+                    destination: exitData.destination,
+                    bidirectional: exitData.bidirectional,
+                    id: exitData.id
+                });
+                gameLocationExits.set(id, exit);
+            }
+        }
+
+        // Load chat history
+        const chatHistoryPath = path.join(saveDir, 'chatHistory.json');
+        if (fs.existsSync(chatHistoryPath)) {
+            chatHistory = JSON.parse(fs.readFileSync(chatHistoryPath, 'utf8')) || [];
+        }
+
+        // Load generated images
+        const imagesPath = path.join(saveDir, 'images.json');
+        if (fs.existsSync(imagesPath)) {
+            generatedImages.clear();
+            const imagesData = JSON.parse(fs.readFileSync(imagesPath, 'utf8')) || {};
+            for (const [id, imageData] of Object.entries(imagesData)) {
+                generatedImages.set(id, imageData);
+            }
+        }
+
+        res.json({
+            success: true,
+            saveName: saveName,
+            metadata: metadata,
+            loadedData: {
+                currentPlayer: currentPlayer ? currentPlayer.getStatus() : null,
+                totalPlayers: players.size,
+                totalLocations: gameLocations.size,
+                totalLocationExits: gameLocationExits.size,
+                chatHistoryLength: chatHistory.length,
+                totalGeneratedImages: generatedImages.size
+            },
+            message: `Game loaded successfully from: ${saveName}`
+        });
+
+    } catch (error) {
+        console.error('Error loading game:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// List available saves
+app.get('/api/saves', (req, res) => {
+    try {
+        const savesDir = path.join(__dirname, 'saves');
+        
+        if (!fs.existsSync(savesDir)) {
+            return res.json({
+                success: true,
+                saves: [],
+                message: 'No saves directory found'
+            });
+        }
+
+        const saveDirectories = fs.readdirSync(savesDir)
+            .filter(item => {
+                const itemPath = path.join(savesDir, item);
+                return fs.statSync(itemPath).isDirectory();
+            });
+
+        const saves = saveDirectories.map(saveName => {
+            const saveDir = path.join(savesDir, saveName);
+            const metadataPath = path.join(saveDir, 'metadata.json');
+            
+            let metadata = {
+                saveName: saveName,
+                timestamp: 'Unknown',
+                playerName: 'Unknown',
+                playerLevel: 'Unknown'
+            };
+
+            if (fs.existsSync(metadataPath)) {
+                try {
+                    const metadataContent = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                    metadata = { ...metadata, ...metadataContent };
+                } catch (error) {
+                    console.error(`Error reading metadata for save ${saveName}:`, error);
+                }
+            }
+
+            return metadata;
+        }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by newest first
+
+        res.json({
+            success: true,
+            saves: saves,
+            count: saves.length,
+            message: `Found ${saves.length} save(s)`
+        });
+
+    } catch (error) {
+        console.error('Error listing saves:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Delete a save
+app.delete('/api/save/:saveName', (req, res) => {
+    try {
+        const { saveName } = req.params;
+        const saveDir = path.join(__dirname, 'saves', saveName);
+
+        if (!fs.existsSync(saveDir)) {
+            return res.status(404).json({
+                success: false,
+                error: `Save '${saveName}' not found`
+            });
+        }
+
+        // Remove the save directory and all its contents
+        fs.rmSync(saveDir, { recursive: true, force: true });
+
+        res.json({
+            success: true,
+            saveName: saveName,
+            message: `Save '${saveName}' deleted successfully`
+        });
+
+    } catch (error) {
+        console.error('Error deleting save:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Additional API endpoint for JSON response
 app.get('/api/hello', (req, res) => {
     res.json({
@@ -921,7 +1504,7 @@ function generateImageId() {
     return `img_${timestamp}_${random}`;
 }
 
-// API endpoint for image generation
+// API endpoint for async image generation
 app.post('/api/generate-image', async (req, res) => {
     try {
         // Check if image generation is enabled
@@ -935,13 +1518,13 @@ app.post('/api/generate-image', async (req, res) => {
         if (!comfyUIClient) {
             return res.status(503).json({
                 success: false,
-                error: 'ComfyUI client not initialized'
+                error: 'ComfyUI client not initialized or unavailable'
             });
         }
 
-        const { prompt, width, height, seed, negative_prompt } = req.body;
+        const { prompt, width, height, seed, negative_prompt, async: isAsync } = req.body;
 
-        // Validate required parameters
+        // Enhanced parameter validation
         if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
             return res.status(400).json({
                 success: false,
@@ -949,140 +1532,194 @@ app.post('/api/generate-image', async (req, res) => {
             });
         }
 
-        // Generate unique image ID
-        const imageId = generateImageId();
+        if (prompt.trim().length > 1000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Prompt must be less than 1000 characters'
+            });
+        }
 
-        // Prepare template variables
-        const templateVars = {
-            image: {
-                prompt: prompt.trim(),
-                width: width || config.imagegen.default_settings.image.width || 1024,
-                height: height || config.imagegen.default_settings.image.height || 1024,
-                seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000)
-            },
+        // Validate dimensions
+        const validatedWidth = width ? parseInt(width) : config.imagegen.default_settings.image.width || 1024;
+        const validatedHeight = height ? parseInt(height) : config.imagegen.default_settings.image.height || 1024;
+
+        if (validatedWidth < 64 || validatedWidth > 4096 || validatedHeight < 64 || validatedHeight > 4096) {
+            return res.status(400).json({
+                success: false,
+                error: 'Image dimensions must be between 64 and 4096 pixels'
+            });
+        }
+
+        // Validate seed
+        const validatedSeed = seed !== undefined ? parseInt(seed) : Math.floor(Math.random() * 1000000);
+        if (validatedSeed < 0 || validatedSeed > 1000000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Seed must be between 0 and 1000000'
+            });
+        }
+
+        const jobId = generateImageId();
+        const payload = {
+            prompt: prompt.trim(),
+            width: validatedWidth,
+            height: validatedHeight,
+            seed: validatedSeed,
             negative_prompt: negative_prompt || 'blurry, low quality, distorted'
         };
 
-        console.log(`🎨 Starting image generation ${imageId} with prompt: "${templateVars.image.prompt}"`);
-        console.log(`📁 Template file: ${config.imagegen.api_template}`);
-        console.log(`📋 Template variables:`, templateVars);
+        // Create and queue the job
+        const job = createImageJob(jobId, payload);
+        jobQueue.push(jobId);
 
-        // Render ComfyUI workflow template using pre-configured environment
-        let workflowJson;
-        try {
-            workflowJson = imagePromptEnv.render(config.imagegen.api_template, templateVars);
-            console.log(`✅ Template rendered successfully, length: ${workflowJson.length} characters`);
-        } catch (templateError) {
-            console.error('❌ Template rendering failed:', templateError.message);
-            return res.status(500).json({
-                success: false,
-                error: `Template rendering failed: ${templateError.message}`
+        // Start processing if not already running
+        setTimeout(() => processJobQueue(), 0);
+
+        // Return job ID for async tracking, or wait for completion if sync
+        if (isAsync !== false) {
+            return res.json({
+                success: true,
+                jobId: jobId,
+                status: job.status,
+                message: 'Image generation job queued. Use /api/jobs/:jobId to track progress.',
+                estimatedTime: '30-90 seconds'
+            });
+        } else {
+            // Legacy sync mode - wait for completion
+            return new Promise((resolve) => {
+                const checkJob = () => {
+                    const currentJob = imageJobs.get(jobId);
+
+                    if (currentJob.status === JOB_STATUS.COMPLETED) {
+                        resolve(res.json({
+                            success: true,
+                            imageId: currentJob.result.imageId,
+                            images: currentJob.result.images,
+                            metadata: currentJob.result.metadata,
+                            processingTime: new Date(currentJob.completedAt) - new Date(currentJob.createdAt)
+                        }));
+                    } else if (currentJob.status === JOB_STATUS.FAILED || currentJob.status === JOB_STATUS.TIMEOUT) {
+                        resolve(res.status(500).json({
+                            success: false,
+                            error: currentJob.error || 'Image generation failed'
+                        }));
+                    } else {
+                        setTimeout(checkJob, 1000);
+                    }
+                };
+
+                checkJob();
             });
         }
-
-        let workflow;
-        try {
-            workflow = JSON.parse(workflowJson);
-        } catch (parseError) {
-            console.error('Failed to parse workflow JSON:', parseError.message);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to parse workflow template'
-            });
-        }
-
-        // Queue the prompt
-        const queueResult = await comfyUIClient.queuePrompt(workflow);
-
-        if (!queueResult.success) {
-            return res.status(500).json({
-                success: false,
-                error: `Failed to queue prompt: ${queueResult.error}`
-            });
-        }
-
-        // Wait for completion
-        const completionResult = await comfyUIClient.waitForCompletion(queueResult.promptId);
-
-        if (!completionResult.success) {
-            return res.status(500).json({
-                success: false,
-                error: `Generation failed: ${completionResult.error}`
-            });
-        }
-
-        // Download and save images
-        const savedImages = [];
-        const saveDirectory = path.join(__dirname, 'public', 'generated-images');
-
-        for (const imageInfo of completionResult.images) {
-            try {
-                // Download image from ComfyUI
-                const imageData = await comfyUIClient.getImage(
-                    imageInfo.filename,
-                    imageInfo.subfolder,
-                    imageInfo.type
-                );
-
-                // Save image with unique ID
-                const saveResult = await comfyUIClient.saveImage(
-                    imageData,
-                    imageId,
-                    imageInfo.filename,
-                    saveDirectory
-                );
-
-                if (saveResult.success) {
-                    savedImages.push({
-                        imageId: imageId,
-                        filename: saveResult.filename,
-                        url: `/generated-images/${saveResult.filename}`,
-                        size: saveResult.size
-                    });
-                }
-            } catch (imageError) {
-                console.error(`Failed to process image ${imageInfo.filename}:`, imageError.message);
-            }
-        }
-
-        if (savedImages.length === 0) {
-            return res.status(500).json({
-                success: false,
-                error: 'No images were successfully saved'
-            });
-        }
-
-        // Store image metadata
-        const imageMetadata = {
-            id: imageId,
-            prompt: templateVars.image.prompt,
-            negative_prompt: templateVars.negative_prompt,
-            width: templateVars.image.width,
-            height: templateVars.image.height,
-            seed: templateVars.image.seed,
-            createdAt: new Date().toISOString(),
-            comfyUIPromptId: queueResult.promptId,
-            images: savedImages
-        };
-
-        generatedImages.set(imageId, imageMetadata);
-
-        console.log(`✅ Image generation ${imageId} completed successfully`);
-
-        res.json({
-            success: true,
-            imageId: imageId,
-            images: savedImages,
-            metadata: imageMetadata
-        });
 
     } catch (error) {
-        console.error('Image generation error:', error);
-        res.status(500).json({
+        console.error('Image generation request error:', error.message);
+        return res.status(500).json({
             success: false,
-            error: `Image generation failed: ${error.message}`
+            error: `Request failed: ${error.message}`
         });
     }
+});
+
+// API endpoint for job status tracking
+app.get('/api/jobs/:jobId', (req, res) => {
+    const jobId = req.params.jobId;
+    const job = imageJobs.get(jobId);
+
+    if (!job) {
+        return res.status(404).json({
+            success: false,
+            error: 'Job not found'
+        });
+    }
+
+    const response = {
+        success: true,
+        job: {
+            id: job.id,
+            status: job.status,
+            progress: job.progress,
+            message: job.message,
+            createdAt: job.createdAt,
+            startedAt: job.startedAt,
+            completedAt: job.completedAt
+        }
+    };
+
+    // Include result if completed
+    if (job.status === JOB_STATUS.COMPLETED && job.result) {
+        response.result = {
+            imageId: job.result.imageId,
+            images: job.result.images,
+            metadata: job.result.metadata
+        };
+    }
+
+    // Include error if failed
+    if (job.status === JOB_STATUS.FAILED || job.status === JOB_STATUS.TIMEOUT) {
+        response.error = job.error;
+    }
+
+    res.json(response);
+});
+
+// API endpoint to cancel a job
+app.delete('/api/jobs/:jobId', (req, res) => {
+    const jobId = req.params.jobId;
+    const job = imageJobs.get(jobId);
+
+    if (!job) {
+        return res.status(404).json({
+            success: false,
+            error: 'Job not found'
+        });
+    }
+
+    if (job.status === JOB_STATUS.COMPLETED || job.status === JOB_STATUS.FAILED || job.status === JOB_STATUS.TIMEOUT) {
+        return res.status(400).json({
+            success: false,
+            error: 'Cannot cancel completed job'
+        });
+    }
+
+    // Remove from queue if queued
+    const queueIndex = jobQueue.indexOf(jobId);
+    if (queueIndex > -1) {
+        jobQueue.splice(queueIndex, 1);
+    }
+
+    // Mark as failed
+    job.status = JOB_STATUS.FAILED;
+    job.error = 'Job cancelled by user';
+    job.completedAt = new Date().toISOString();
+
+    res.json({
+        success: true,
+        message: 'Job cancelled successfully'
+    });
+});
+
+// API endpoint to list all jobs
+app.get('/api/jobs', (req, res) => {
+    const jobs = Array.from(imageJobs.values()).map(job => ({
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        message: job.message,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        prompt: job.payload.prompt.substring(0, 50) + (job.payload.prompt.length > 50 ? '...' : '')
+    })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({
+        success: true,
+        jobs: jobs,
+        queue: {
+            pending: jobQueue.length,
+            processing: isProcessingJob ? 1 : 0
+        }
+    });
 });
 
 // API endpoint to get image metadata
