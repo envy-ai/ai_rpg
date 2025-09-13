@@ -2,18 +2,24 @@ attributes:
   strength:
     label: Strength
     description: A measure of your physical power.
+    default: 10
   dexterity:
     label: Dexterity
     description: A measure of your agility and reflexes.
+    default: 10
   constitution:
     label: Constitution
     description: A measure of your health and stamina.
+    default: 10
   intelligence:
     label: Intelligence
     description: A measure of your mental acuity and problem-solving ability.
+    default: 10
   wisdom:
     label: Wisdom
     description: A measure of your insight, perception, and willpower.
+    default: 10
   charisma:
     label: Charisma
     description: A measure of your charm and influence over others.
+    default: 10

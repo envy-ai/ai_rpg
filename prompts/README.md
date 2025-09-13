@@ -88,4 +88,44 @@ The old .njk format is still supported for backward compatibility. To use the ne
 2. Use the structured YAML format with required `systemPrompt` field
 3. Add Nunjucks variables: `{{ variableName }}`
 4. Use conditionals: `{% if variableName %}...{% endif %}`
-5. Update config.yaml to reference your new template
+5. Use dice rolls: `{{ "3d6"|roll }}` or `{{ "d20+5"|roll_detail }}`
+6. Update config.yaml to reference your new template
+
+## Dice Rolling in Templates
+
+All templates have access to powerful dice rolling filters:
+
+### Basic Dice Filters
+
+- `{{ "d6"|roll }}` - Returns just the total (e.g., 4)
+- `{{ "d6"|roll_detail }}` - Returns detailed breakdown (e.g., "d6 -> [4] = 4")
+
+### Supported Dice Notation
+
+- **Basic**: `d6`, `d20`, `d100`, `3d6`
+- **Modifiers**: `d20+5`, `3d6-2`
+- **Keep/Drop**: `4d6kh3` (keep highest 3), `4d6dl1` (drop lowest 1)
+- **Advantage/Disadvantage**: `d20adv`, `d20dis` (only for d20)
+- **Exploding**: `d6!` (re-roll maximum values)
+- **Rerolls**: `d6r1` (reroll 1s), `d10r>8` (reroll >8), `d6r<3` (reroll <3)
+
+### Examples in Templates
+
+```yaml
+systemPrompt: |
+  Your strength is {{ "3d6"|roll }} and you rolled {{ "4d6kh3"|roll_detail }} for dexterity.
+  
+  For this encounter, roll initiative: {{ "d20+2"|roll_detail }}
+  
+  Random event chance: {{ "d100"|roll }}
+```
+
+### Deterministic Rolling
+
+You can provide a seed for consistent results:
+
+```yaml
+systemPrompt: |
+  Consistent roll: {{ "3d6"|roll("my-seed") }}
+  Another consistent roll: {{ "d20"|roll_detail("session-123") }}
+```

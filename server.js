@@ -24,7 +24,7 @@ let chatHistory = [];
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
-nunjucks.configure('views', {
+const viewsEnv = nunjucks.configure('views', {
     autoescape: true,
     express: app
 });
@@ -34,6 +34,25 @@ const promptEnv = nunjucks.configure('prompts', {
     autoescape: false
 });
 
+// Import and add dice filters to both environments
+const diceModule = require('./nunjucks_dice.js');
+
+// Add dice filters to both environments
+function addDiceFilters(env) {
+    env.addFilter('roll', function (notation, seedOrOpts) {
+        const opts = typeof seedOrOpts === 'string' ? { seed: seedOrOpts } : (seedOrOpts || {});
+        return diceModule.rollDice(notation, opts).total;
+    });
+
+    env.addFilter('roll_detail', function (notation, seedOrOpts) {
+        const opts = typeof seedOrOpts === 'string' ? { seed: seedOrOpts } : (seedOrOpts || {});
+        return diceModule.rollDice(notation, opts).detail;
+    });
+}
+
+addDiceFilters(viewsEnv);
+addDiceFilters(promptEnv);
+
 // Function to render system prompt from template
 function renderSystemPrompt() {
     try {
@@ -42,6 +61,9 @@ function renderSystemPrompt() {
         
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
+
+        // Log rendered template for debugging
+        console.log('Rendered system prompt template:\n', renderedTemplate);
         
         // If the template is a .yaml.njk file, parse the YAML and extract systemPrompt
         if (templateName.endsWith('.yaml.njk')) {
