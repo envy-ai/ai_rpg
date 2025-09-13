@@ -264,5 +264,65 @@ GET  /player-stats           - Player stats configuration page</pre>
             </div>
         </div>
     </div>
+
+    <script>
+        // Console.log all JSON data displayed on the debug page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 Debug Page - JSON Data Console Output');
+            console.log('=====================================');
+
+            {% if player %}
+                // Log Player Status (getStatus() output)
+                console.log('📊 Player Status (getStatus()):');
+                try {
+                    const playerStatus = {{ playerStatus | dump | safe }};
+                    console.log(playerStatus);
+                } catch (error) {
+                    console.error('Error parsing player status:', error);
+                }
+
+                // Log Player JSON Data (toJSON() output)
+                console.log('\n💾 Player JSON Data (toJSON()):');
+                try {
+                    const playerJson = {{ playerJson | dump | safe }};
+                    console.log(playerJson);
+                } catch (error) {
+                    console.error('Error parsing player JSON:', error);
+                }
+            {% else %}
+                console.log('❌ No current player set');
+            {% endif %}
+
+            // Log All Players Data
+            console.log('\n👥 All Players Data:');
+            {% if allPlayers and (allPlayers | length) > 0 %}
+                try {
+                    const allPlayers = {{ allPlayers | dump | safe }};
+                    console.log(allPlayers);
+                    console.log(`Total players in storage: {{ allPlayers | length }}`);
+                } catch (error) {
+                    console.error('Error parsing all players data:', error);
+                }
+            {% else %}
+                console.log('No players in storage');
+            {% endif %}
+
+            // Log All Locations Data
+            console.log('\n🗺️ All Locations Data:');
+            {% if allLocations and (allLocations | length) > 0 %}
+                try {
+                    const allLocations = {{ allLocations | dump | safe }};
+                    console.log(allLocations);
+                } catch (error) {
+                    console.error('Error parsing all locations data:', error);
+                }
+            {% else %}
+                console.log('No locations defined in defs/locations.yaml');
+            {% endif %}
+
+            console.log('\n=====================================');
+            console.log('🎯 All debug JSON data has been logged to console');
+        });
+    </script>
 </body>
 </html>
