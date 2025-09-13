@@ -232,6 +232,60 @@
                 {% endif %}
             </div>
 
+            <!-- Image Generation -->
+            <div class="debug-section">
+                <h2>🎨 Image Generation</h2>
+                <form id="imageGenForm" style="margin-bottom: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 150px 150px 150px; gap: 10px; margin-bottom: 15px; align-items: end;">
+                        <div>
+                            <label for="prompt" style="display: block; color: rgba(255, 255, 255, 0.8); margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Prompt</label>
+                            <input type="text" id="prompt" name="prompt" 
+                                   placeholder="a beautiful landscape with mountains and a lake, digital art"
+                                   style="width: 100%; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.3); color: #ffffff; border-radius: 4px;" 
+                                   required>
+                        </div>
+                        <div>
+                            <label for="width" style="display: block; color: rgba(255, 255, 255, 0.8); margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Width</label>
+                            <input type="number" id="width" name="width" value="512" min="64" max="4096" step="64"
+                                   style="width: 100%; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.3); color: #ffffff; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label for="height" style="display: block; color: rgba(255, 255, 255, 0.8); margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Height</label>
+                            <input type="number" id="height" name="height" value="512" min="64" max="4096" step="64"
+                                   style="width: 100%; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.3); color: #ffffff; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label for="seed" style="display: block; color: rgba(255, 255, 255, 0.8); margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Seed</label>
+                            <input type="number" id="seed" name="seed" value="42" min="0" max="1000000"
+                                   style="width: 100%; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.3); color: #ffffff; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label for="negative_prompt" style="display: block; color: rgba(255, 255, 255, 0.8); margin-bottom: 5px; font-size: 12px; text-transform: uppercase;">Negative Prompt (Optional)</label>
+                        <input type="text" id="negative_prompt" name="negative_prompt" 
+                               placeholder="blurry, low quality, distorted"
+                               style="width: 100%; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.3); color: #ffffff; border-radius: 4px;">
+                    </div>
+                    <button type="submit" 
+                            style="background: #667eea; color: white; border: none; border-radius: 6px; padding: 12px 24px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                        🎨 Generate Image
+                    </button>
+                    <button type="button" id="randomSeedBtn"
+                            style="background: #48bb78; color: white; border: none; border-radius: 6px; padding: 12px 24px; cursor: pointer; font-weight: bold; font-size: 14px; margin-left: 10px;">
+                        🎲 Random Seed
+                    </button>
+                </form>
+                
+                <div id="imageGenStatus" style="margin-bottom: 15px; padding: 10px; border-radius: 4px; display: none;"></div>
+                
+                <div id="imageGenResults" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(256px, 1fr)); gap: 15px;"></div>
+                
+                <div style="margin-top: 20px;">
+                    <h3 style="color: #ffffff; margin-bottom: 10px;">Recent Images</h3>
+                    <div id="recentImages" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;"></div>
+                </div>
+            </div>
+
             <!-- All Locations Data -->
             <div class="debug-section">
                 <h2>🗺️ All Locations</h2>
@@ -251,14 +305,26 @@
 
             <!-- Available API Endpoints -->
             <div class="debug-section">
-                <h2>🔌 Available Player API Endpoints</h2>
-                <pre class="debug-json">GET  /api/player              - Get current player status
+                <h2>🔌 Available API Endpoints</h2>
+                <pre class="debug-json">PLAYER ENDPOINTS:
+GET  /api/player              - Get current player status
 POST /api/player              - Create new player
 POST /api/player/update-stats - Update player stats
 POST /api/player/set-current  - Set current player
 POST /api/player/levelup      - Level up current player
 POST /api/player/generate-attributes - Generate new attributes
 
+IMAGE GENERATION ENDPOINTS:
+POST /api/generate-image      - Generate new image from prompt
+GET  /api/images              - List all generated images
+GET  /api/images/:id          - Get specific image metadata
+
+CHAT ENDPOINTS:
+POST /api/chat                - Send chat message to AI
+GET  /api/chat/history        - Get chat history
+DELETE /api/chat/history      - Clear chat history
+
+OTHER ENDPOINTS:
 GET  /debug                   - This debug page
 GET  /player-stats           - Player stats configuration page</pre>
             </div>
@@ -323,6 +389,152 @@ GET  /player-stats           - Player stats configuration page</pre>
             console.log('\n=====================================');
             console.log('🎯 All debug JSON data has been logged to console');
         });
+
+        // Image Generation functionality
+        document.getElementById('randomSeedBtn').addEventListener('click', function() {
+            document.getElementById('seed').value = Math.floor(Math.random() * 1000000);
+        });
+
+        document.getElementById('imageGenForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const payload = {
+                prompt: formData.get('prompt'),
+                width: parseInt(formData.get('width')),
+                height: parseInt(formData.get('height')),
+                seed: parseInt(formData.get('seed')),
+                negative_prompt: formData.get('negative_prompt') || undefined
+            };
+
+            const statusDiv = document.getElementById('imageGenStatus');
+            const resultsDiv = document.getElementById('imageGenResults');
+            
+            // Show loading status
+            statusDiv.style.display = 'block';
+            statusDiv.style.background = 'rgba(102, 126, 234, 0.3)';
+            statusDiv.style.border = '1px solid #667eea';
+            statusDiv.style.color = '#ffffff';
+            statusDiv.innerHTML = '🎨 Generating image... This may take 30-60 seconds.';
+            
+            // Disable form
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '⏳ Generating...';
+
+            try {
+                const response = await fetch('/api/generate-image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show success
+                    statusDiv.style.background = 'rgba(72, 187, 120, 0.3)';
+                    statusDiv.style.border = '1px solid #48bb78';
+                    statusDiv.innerHTML = `✅ Image generated successfully! ID: ${result.imageId}`;
+                    
+                    // Display generated image
+                    const imageCard = document.createElement('div');
+                    imageCard.style.cssText = `
+                        background: rgba(255, 255, 255, 0.1);
+                        border: 1px solid rgba(255, 255, 255, 0.3);
+                        border-radius: 8px;
+                        padding: 15px;
+                        text-align: center;
+                    `;
+                    
+                    imageCard.innerHTML = `
+                        <img src="${result.images[0].url}" alt="Generated image" 
+                             style="width: 100%; border-radius: 4px; margin-bottom: 10px;">
+                        <div style="color: rgba(255, 255, 255, 0.8); font-size: 12px;">
+                            <div style="margin-bottom: 5px; font-weight: bold;">${payload.prompt}</div>
+                            <div>${payload.width}×${payload.height} | Seed: ${payload.seed}</div>
+                            <div style="margin-top: 5px;">
+                                <a href="${result.images[0].url}" target="_blank" 
+                                   style="color: #667eea; text-decoration: none;">View Full Size</a>
+                            </div>
+                        </div>
+                    `;
+                    
+                    resultsDiv.appendChild(imageCard);
+                    
+                    // Load recent images
+                    loadRecentImages();
+                    
+                } else {
+                    // Show error
+                    statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
+                    statusDiv.style.border = '1px solid #f56565';
+                    statusDiv.innerHTML = `❌ Generation failed: ${result.error}`;
+                }
+                
+            } catch (error) {
+                statusDiv.style.background = 'rgba(245, 101, 101, 0.3)';
+                statusDiv.style.border = '1px solid #f56565';
+                statusDiv.innerHTML = `❌ Request failed: ${error.message}`;
+            }
+            
+            // Re-enable form
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '🎨 Generate Image';
+        });
+
+        // Load recent images
+        async function loadRecentImages() {
+            try {
+                const response = await fetch('/api/images');
+                const result = await response.json();
+                
+                if (result.success && result.images.length > 0) {
+                    const recentDiv = document.getElementById('recentImages');
+                    recentDiv.innerHTML = '';
+                    
+                    result.images.slice(0, 6).forEach(img => {
+                        const imageCard = document.createElement('div');
+                        imageCard.style.cssText = `
+                            background: rgba(255, 255, 255, 0.05);
+                            border: 1px solid rgba(255, 255, 255, 0.2);
+                            border-radius: 6px;
+                            padding: 10px;
+                            text-align: center;
+                            cursor: pointer;
+                        `;
+                        
+                        imageCard.innerHTML = `
+                            <img src="${img.images[0].url}" alt="Recent image" 
+                                 style="width: 100%; border-radius: 4px; margin-bottom: 8px;">
+                            <div style="color: rgba(255, 255, 255, 0.7); font-size: 11px;">
+                                <div style="margin-bottom: 3px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    ${img.prompt.substring(0, 30)}...
+                                </div>
+                                <div>${img.width}×${img.height}</div>
+                            </div>
+                        `;
+                        
+                        imageCard.addEventListener('click', () => {
+                            document.getElementById('prompt').value = img.prompt;
+                            document.getElementById('width').value = img.width;
+                            document.getElementById('height').value = img.height;
+                            document.getElementById('seed').value = img.seed;
+                            document.getElementById('negative_prompt').value = img.negative_prompt || '';
+                        });
+                        
+                        recentDiv.appendChild(imageCard);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load recent images:', error);
+            }
+        }
+
+        // Load recent images on page load
+        document.addEventListener('DOMContentLoaded', loadRecentImages);
     </script>
 </body>
 </html>

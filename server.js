@@ -9,6 +9,9 @@ const path = require('path');
 // Import Player class
 const Player = require('./Player.js');
 
+// Import ComfyUI client
+const ComfyUIClient = require('./ComfyUIClient.js');
+
 // Load configuration
 let config;
 try {
@@ -21,6 +24,130 @@ try {
 
 const app = express();
 const PORT = config.server.port;
+
+// Initialize ComfyUI client if image generation is enabled
+let comfyUIClient = null;
+const generatedImages = new Map(); // Store image metadata by ID
+
+// Configuration validation function
+async function validateConfiguration() {
+    const validationErrors = [];
+
+    // Validate image generation configuration
+    if (config.imagegen && config.imagegen.enabled) {
+        console.log('🔍 Validating image generation configuration...');
+
+        // Check required configuration fields
+        if (!config.imagegen.server) {
+            validationErrors.push('Image generation: server configuration missing');
+        } else {
+            if (!config.imagegen.server.host) {
+                validationErrors.push('Image generation: server host not specified');
+            }
+            if (!config.imagegen.server.port) {
+                validationErrors.push('Image generation: server port not specified');
+            }
+        }
+
+        // Check template file exists
+        if (!config.imagegen.api_template) {
+            validationErrors.push('Image generation: api_template not specified');
+        } else {
+            const templatePath = path.join(__dirname, 'imagegen', config.imagegen.api_template);
+            if (!fs.existsSync(templatePath)) {
+                validationErrors.push(`Image generation: template file not found: ${templatePath}`);
+            } else {
+                console.log(`✅ Template file found: ${config.imagegen.api_template}`);
+            }
+        }
+
+        // Validate default settings
+        if (!config.imagegen.default_settings || !config.imagegen.default_settings.image) {
+            validationErrors.push('Image generation: default_settings.image configuration missing');
+        } else {
+            const imageSettings = config.imagegen.default_settings.image;
+            if (!imageSettings.width || imageSettings.width < 64 || imageSettings.width > 4096) {
+                validationErrors.push('Image generation: invalid default width (must be 64-4096)');
+            }
+            if (!imageSettings.height || imageSettings.height < 64 || imageSettings.height > 4096) {
+                validationErrors.push('Image generation: invalid default height (must be 64-4096)');
+            }
+            if (imageSettings.seed !== undefined && (imageSettings.seed < 0 || imageSettings.seed > 1000000)) {
+                validationErrors.push('Image generation: invalid default seed (must be 0-1000000)');
+            }
+        }
+
+        // Check if generated images directory exists, create if not
+        const imagesDir = path.join(__dirname, 'public', 'generated-images');
+        if (!fs.existsSync(imagesDir)) {
+            try {
+                fs.mkdirSync(imagesDir, { recursive: true });
+                console.log(`✅ Created images directory: ${imagesDir}`);
+            } catch (error) {
+                validationErrors.push(`Image generation: failed to create images directory: ${error.message}`);
+            }
+        } else {
+            console.log(`✅ Images directory exists: ${imagesDir}`);
+        }
+    }
+
+    // Validate AI configuration
+    if (!config.ai) {
+        validationErrors.push('AI configuration missing');
+    } else {
+        if (!config.ai.endpoint) {
+            validationErrors.push('AI endpoint not specified');
+        }
+        if (!config.ai.apiKey) {
+            validationErrors.push('AI API key not specified');
+        }
+        if (!config.ai.model) {
+            validationErrors.push('AI model not specified');
+        }
+    }
+
+    // Report validation results
+    if (validationErrors.length > 0) {
+        console.error('❌ Configuration validation failed:');
+        validationErrors.forEach(error => console.error(`   - ${error}`));
+        return false;
+    } else {
+        console.log('✅ Configuration validation passed');
+        return true;
+    }
+}
+
+// Async function to initialize ComfyUI with connectivity test
+async function initializeComfyUI() {
+    if (!config.imagegen || !config.imagegen.enabled) {
+        console.log('🎨 Image generation disabled in configuration');
+        return true;
+    }
+
+    try {
+        comfyUIClient = new ComfyUIClient(config);
+        console.log(`🎨 ComfyUI client initialized for ${config.imagegen.server.host}:${config.imagegen.server.port}`);
+
+        // Test connectivity to ComfyUI server
+        console.log('🔌 Testing ComfyUI server connectivity...');
+        const testResponse = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
+            timeout: 5000
+        });
+
+        if (testResponse.status === 200) {
+            console.log('✅ ComfyUI server is accessible');
+            return true;
+        } else {
+            console.log('⚠️  ComfyUI server returned unexpected status:', testResponse.status);
+            return false;
+        }
+
+    } catch (error) {
+        console.error('❌ ComfyUI server connectivity test failed:', error.message);
+        console.log('💡 Image generation will be unavailable until ComfyUI server is running');
+        return false;
+    }
+}
 
 // In-memory chat history storage
 let chatHistory = [];
@@ -38,6 +165,11 @@ const viewsEnv = nunjucks.configure('views', {
 
 // Configure Nunjucks for prompts (no autoescape for prompts)
 const promptEnv = nunjucks.configure('prompts', {
+    autoescape: false
+});
+
+// Configure Nunjucks for image generation templates (no autoescape)
+const imagePromptEnv = nunjucks.configure('imagegen', {
     autoescape: false
 });
 
@@ -59,6 +191,7 @@ function addDiceFilters(env) {
 
 addDiceFilters(viewsEnv);
 addDiceFilters(promptEnv);
+addDiceFilters(imagePromptEnv);
 
 // Function to render system prompt from template
 function renderSystemPrompt() {
@@ -780,6 +913,206 @@ app.post('/api/test-config', async (req, res) => {
     }
 });
 
+// Image generation functionality
+function generateImageId() {
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/T/, '_').replace(/\..+/, '');
+    const random = Math.random().toString(36).substr(2, 8);
+    return `img_${timestamp}_${random}`;
+}
+
+// API endpoint for image generation
+app.post('/api/generate-image', async (req, res) => {
+    try {
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            return res.status(503).json({
+                success: false,
+                error: 'Image generation is not enabled'
+            });
+        }
+
+        if (!comfyUIClient) {
+            return res.status(503).json({
+                success: false,
+                error: 'ComfyUI client not initialized'
+            });
+        }
+
+        const { prompt, width, height, seed, negative_prompt } = req.body;
+
+        // Validate required parameters
+        if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Prompt is required and must be a non-empty string'
+            });
+        }
+
+        // Generate unique image ID
+        const imageId = generateImageId();
+
+        // Prepare template variables
+        const templateVars = {
+            image: {
+                prompt: prompt.trim(),
+                width: width || config.imagegen.default_settings.image.width || 1024,
+                height: height || config.imagegen.default_settings.image.height || 1024,
+                seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000)
+            },
+            negative_prompt: negative_prompt || 'blurry, low quality, distorted'
+        };
+
+        console.log(`🎨 Starting image generation ${imageId} with prompt: "${templateVars.image.prompt}"`);
+        console.log(`📁 Template file: ${config.imagegen.api_template}`);
+        console.log(`📋 Template variables:`, templateVars);
+
+        // Render ComfyUI workflow template using pre-configured environment
+        let workflowJson;
+        try {
+            workflowJson = imagePromptEnv.render(config.imagegen.api_template, templateVars);
+            console.log(`✅ Template rendered successfully, length: ${workflowJson.length} characters`);
+        } catch (templateError) {
+            console.error('❌ Template rendering failed:', templateError.message);
+            return res.status(500).json({
+                success: false,
+                error: `Template rendering failed: ${templateError.message}`
+            });
+        }
+
+        let workflow;
+        try {
+            workflow = JSON.parse(workflowJson);
+        } catch (parseError) {
+            console.error('Failed to parse workflow JSON:', parseError.message);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to parse workflow template'
+            });
+        }
+
+        // Queue the prompt
+        const queueResult = await comfyUIClient.queuePrompt(workflow);
+
+        if (!queueResult.success) {
+            return res.status(500).json({
+                success: false,
+                error: `Failed to queue prompt: ${queueResult.error}`
+            });
+        }
+
+        // Wait for completion
+        const completionResult = await comfyUIClient.waitForCompletion(queueResult.promptId);
+
+        if (!completionResult.success) {
+            return res.status(500).json({
+                success: false,
+                error: `Generation failed: ${completionResult.error}`
+            });
+        }
+
+        // Download and save images
+        const savedImages = [];
+        const saveDirectory = path.join(__dirname, 'public', 'generated-images');
+
+        for (const imageInfo of completionResult.images) {
+            try {
+                // Download image from ComfyUI
+                const imageData = await comfyUIClient.getImage(
+                    imageInfo.filename,
+                    imageInfo.subfolder,
+                    imageInfo.type
+                );
+
+                // Save image with unique ID
+                const saveResult = await comfyUIClient.saveImage(
+                    imageData,
+                    imageId,
+                    imageInfo.filename,
+                    saveDirectory
+                );
+
+                if (saveResult.success) {
+                    savedImages.push({
+                        imageId: imageId,
+                        filename: saveResult.filename,
+                        url: `/generated-images/${saveResult.filename}`,
+                        size: saveResult.size
+                    });
+                }
+            } catch (imageError) {
+                console.error(`Failed to process image ${imageInfo.filename}:`, imageError.message);
+            }
+        }
+
+        if (savedImages.length === 0) {
+            return res.status(500).json({
+                success: false,
+                error: 'No images were successfully saved'
+            });
+        }
+
+        // Store image metadata
+        const imageMetadata = {
+            id: imageId,
+            prompt: templateVars.image.prompt,
+            negative_prompt: templateVars.negative_prompt,
+            width: templateVars.image.width,
+            height: templateVars.image.height,
+            seed: templateVars.image.seed,
+            createdAt: new Date().toISOString(),
+            comfyUIPromptId: queueResult.promptId,
+            images: savedImages
+        };
+
+        generatedImages.set(imageId, imageMetadata);
+
+        console.log(`✅ Image generation ${imageId} completed successfully`);
+
+        res.json({
+            success: true,
+            imageId: imageId,
+            images: savedImages,
+            metadata: imageMetadata
+        });
+
+    } catch (error) {
+        console.error('Image generation error:', error);
+        res.status(500).json({
+            success: false,
+            error: `Image generation failed: ${error.message}`
+        });
+    }
+});
+
+// API endpoint to get image metadata
+app.get('/api/images/:imageId', (req, res) => {
+    const imageId = req.params.imageId;
+    const metadata = generatedImages.get(imageId);
+
+    if (!metadata) {
+        return res.status(404).json({
+            success: false,
+            error: 'Image not found'
+        });
+    }
+
+    res.json({
+        success: true,
+        metadata: metadata
+    });
+});
+
+// API endpoint to list all generated images
+app.get('/api/images', (req, res) => {
+    const allImages = Array.from(generatedImages.values());
+    res.json({
+        success: true,
+        images: allImages,
+        count: allImages.length
+    });
+});
+
 // Create default dummy player on startup
 function createDefaultPlayer() {
     try {
@@ -811,10 +1144,48 @@ function createDefaultPlayer() {
 // Initialize default player
 createDefaultPlayer();
 
+// Async server initialization
+async function startServer() {
+    console.log('🔧 Starting server initialization...');
+
+    // Step 1: Validate configuration
+    const configValid = await validateConfiguration();
+    if (!configValid) {
+        console.error('❌ Server startup aborted due to configuration errors');
+        process.exit(1);
+    }
+
+    // Step 2: Initialize ComfyUI client
+    const comfyUIReady = await initializeComfyUI();
+    if (!comfyUIReady && config.imagegen && config.imagegen.enabled) {
+        console.log('⚠️  Continuing without ComfyUI - image generation will be disabled');
+        // Don't exit, just disable the client
+        comfyUIClient = null;
+    }
+
+    // Step 3: Start the server
+    app.listen(PORT, HOST, () => {
+        console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
+        console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
+        console.log(`🎮 Using AI model: ${config.ai.model}`);
+        console.log(`🤖 AI endpoint: ${config.ai.endpoint}`);
+
+        if (config.imagegen && config.imagegen.enabled) {
+            if (comfyUIClient) {
+                console.log(`🎨 Image generation ready (ComfyUI: ${config.imagegen.server.host}:${config.imagegen.server.port})`);
+            } else {
+                console.log(`🎨 Image generation disabled (ComfyUI not available)`);
+            }
+        } else {
+            console.log(`🎨 Image generation disabled in configuration`);
+        }
+
+        console.log(`\n🌟 AI RPG Game Master is ready!`);
+    });
+}
+
 // Start the server
-app.listen(PORT, HOST, () => {
-    console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
-    console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
-    console.log(`🎮 Using AI model: ${config.ai.model}`);
-    console.log(`🤖 AI endpoint: ${config.ai.endpoint}`);
+startServer().catch(error => {
+    console.error('❌ Failed to start server:', error.message);
+    process.exit(1);
 });
