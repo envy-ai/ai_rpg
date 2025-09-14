@@ -352,6 +352,23 @@
                 </div>
             </div>
 
+            <!-- All Settings Data -->
+            <div class="debug-section">
+                <h2>⚙️ All Settings</h2>
+                {% if allSettings and (allSettings | length) > 0 %}
+                    <details>
+                        <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
+                            Click to expand all settings data
+                        </summary>
+                        <pre class="debug-json">{{ allSettings | dump(2) }}</pre>
+                    </details>
+                {% else %}
+                    <div class="no-player">
+                        <p>No settings defined</p>
+                    </div>
+                {% endif %}
+            </div>
+
             <!-- All Locations Data -->
             <div class="debug-section">
                 <h2>🗺️ All Locations</h2>

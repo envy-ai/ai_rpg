@@ -21,11 +21,8 @@ class SettingInfo {
   #tone;
   #difficulty;
   #playerStartingLevel;
-  #enabledFeatures;
-  #customRules;
   #createdAt;
   #lastUpdated;
-  #definitions;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -36,61 +33,6 @@ class SettingInfo {
     const timestamp = Date.now();
     const random = crypto.randomBytes(6).toString('hex');
     return `setting_${timestamp}_${random}`;
-  }
-
-  // Load settings definitions from YAML
-  static #loadDefinitions() {
-    try {
-      const defsPath = path.join(__dirname, 'defs', 'settings.yaml');
-      const defsContent = fs.readFileSync(defsPath, 'utf8');
-      return yaml.load(defsContent);
-    } catch (error) {
-      console.warn('Could not load settings definitions:', error.message);
-      return this.#getDefaultDefinitions();
-    }
-  }
-
-  // Fallback default definitions if YAML file is missing
-  static #getDefaultDefinitions() {
-    return {
-      settings: {
-        theme: {
-          options: ['fantasy', 'sci-fi', 'modern', 'historical', 'post-apocalyptic', 'cyberpunk', 'steampunk', 'horror', 'mystery', 'western'],
-          default: 'fantasy',
-          description: 'The overarching theme or setting of the game world'
-        },
-        genre: {
-          options: ['adventure', 'mystery', 'combat', 'exploration', 'roleplay', 'survival', 'political', 'romantic', 'horror', 'comedy'],
-          default: 'adventure',
-          description: 'The primary genre or style of gameplay'
-        },
-        startingLocationType: {
-          options: ['village', 'city', 'tavern', 'wilderness', 'dungeon', 'ship', 'castle', 'monastery', 'academy', 'prison'],
-          default: 'village',
-          description: 'The type of location where adventures typically begin'
-        },
-        magicLevel: {
-          options: ['none', 'rare', 'uncommon', 'common', 'abundant', 'omnipresent'],
-          default: 'common',
-          description: 'How prevalent magic is in the game world'
-        },
-        techLevel: {
-          options: ['stone-age', 'bronze-age', 'iron-age', 'medieval', 'renaissance', 'industrial', 'modern', 'near-future', 'far-future'],
-          default: 'medieval',
-          description: 'The technological advancement level of the world'
-        },
-        tone: {
-          options: ['heroic', 'gritty', 'comedic', 'dark', 'lighthearted', 'epic', 'realistic', 'cinematic', 'surreal'],
-          default: 'heroic',
-          description: 'The overall emotional tone and atmosphere'
-        },
-        difficulty: {
-          options: ['story-mode', 'easy', 'normal', 'hard', 'extreme', 'custom'],
-          default: 'normal',
-          description: 'The challenge level and lethality of encounters'
-        }
-      }
-    };
   }
 
   /**
@@ -105,15 +47,9 @@ class SettingInfo {
    * @param {string} [options.techLevel] - Technological advancement level
    * @param {string} [options.tone] - Emotional tone and atmosphere
    * @param {string} [options.difficulty] - Challenge level
-   * @param {number} [options.playerStartingLevel] - Starting level for new players
-   * @param {Array} [options.enabledFeatures] - Enabled game features
-   * @param {Object} [options.customRules] - Custom rules and modifications
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    */
   constructor(options = {}) {
-    // Load definitions first
-    this.#definitions = SettingInfo.#loadDefinitions();
-
     // Validate required parameters
     if (!options.name || typeof options.name !== 'string') {
       throw new Error('Setting name is required and must be a string');
@@ -122,21 +58,19 @@ class SettingInfo {
     // Initialize private fields
     this.#id = options.id || SettingInfo.#generateId();
     this.#name = options.name;
-    this.#description = options.description || `Custom game setting: ${options.name}`;
+    this.#description = options.description || '';
 
-    // Initialize setting properties with validation
-    this.#theme = this.#validateAndSet('theme', options.theme);
-    this.#genre = this.#validateAndSet('genre', options.genre);
-    this.#startingLocationType = this.#validateAndSet('startingLocationType', options.startingLocationType);
-    this.#magicLevel = this.#validateAndSet('magicLevel', options.magicLevel);
-    this.#techLevel = this.#validateAndSet('techLevel', options.techLevel);
-    this.#tone = this.#validateAndSet('tone', options.tone);
-    this.#difficulty = this.#validateAndSet('difficulty', options.difficulty);
+    // Initialize setting properties from options
+    this.#theme = options.theme || '';
+    this.#genre = options.genre || '';
+    this.#startingLocationType = options.startingLocationType || '';
+    this.#magicLevel = options.magicLevel || '';
+    this.#techLevel = options.techLevel || '';
+    this.#tone = options.tone || '';
+    this.#difficulty = options.difficulty || '';
 
     // Additional properties
     this.#playerStartingLevel = Math.max(1, Math.min(20, options.playerStartingLevel || 1));
-    this.#enabledFeatures = Array.isArray(options.enabledFeatures) ? [...options.enabledFeatures] : ['combat', 'magic', 'exploration', 'roleplay'];
-    this.#customRules = options.customRules || {};
 
     // Timestamps
     this.#createdAt = new Date().toISOString();
@@ -145,22 +79,6 @@ class SettingInfo {
     // Add to static indexes
     SettingInfo.#indexByID.set(this.#id, this);
     SettingInfo.#indexByName.set(this.#name.toLowerCase(), this);
-  }
-
-  // Validate and set a setting property
-  #validateAndSet(propertyName, value) {
-    const settingDef = this.#definitions?.settings?.[propertyName];
-    if (!settingDef) {
-      console.warn(`No definition found for setting property: ${propertyName}`);
-      return value || 'unknown';
-    }
-
-    if (value && settingDef.options && !settingDef.options.includes(value)) {
-      console.warn(`Invalid value "${value}" for ${propertyName}. Valid options: ${settingDef.options.join(', ')}`);
-      return settingDef.default;
-    }
-
-    return value || settingDef.default;
   }
 
   // Update last modified timestamp
@@ -180,8 +98,6 @@ class SettingInfo {
   get tone() { return this.#tone; }
   get difficulty() { return this.#difficulty; }
   get playerStartingLevel() { return this.#playerStartingLevel; }
-  get enabledFeatures() { return [...this.#enabledFeatures]; }
-  get customRules() { return { ...this.#customRules }; }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
 
@@ -207,52 +123,42 @@ class SettingInfo {
   }
 
   set theme(value) {
-    this.#theme = this.#validateAndSet('theme', value);
+    this.#theme = value;
     this.#updateTimestamp();
   }
 
   set genre(value) {
-    this.#genre = this.#validateAndSet('genre', value);
+    this.#genre = value;
     this.#updateTimestamp();
   }
 
   set startingLocationType(value) {
-    this.#startingLocationType = this.#validateAndSet('startingLocationType', value);
+    this.#startingLocationType = value;
     this.#updateTimestamp();
   }
 
   set magicLevel(value) {
-    this.#magicLevel = this.#validateAndSet('magicLevel', value);
+    this.#magicLevel = value;
     this.#updateTimestamp();
   }
 
   set techLevel(value) {
-    this.#techLevel = this.#validateAndSet('techLevel', value);
+    this.#techLevel = value;
     this.#updateTimestamp();
   }
 
   set tone(value) {
-    this.#tone = this.#validateAndSet('tone', value);
+    this.#tone = value;
     this.#updateTimestamp();
   }
 
   set difficulty(value) {
-    this.#difficulty = this.#validateAndSet('difficulty', value);
+    this.#difficulty = value;
     this.#updateTimestamp();
   }
 
   set playerStartingLevel(value) {
     this.#playerStartingLevel = Math.max(1, Math.min(20, parseInt(value) || 1));
-    this.#updateTimestamp();
-  }
-
-  set enabledFeatures(value) {
-    this.#enabledFeatures = Array.isArray(value) ? [...value] : [];
-    this.#updateTimestamp();
-  }
-
-  set customRules(value) {
-    this.#customRules = value || {};
     this.#updateTimestamp();
   }
 
@@ -296,15 +202,6 @@ class SettingInfo {
     SettingInfo.#indexByName.clear();
   }
 
-  static getValidOptions(propertyName) {
-    const definitions = SettingInfo.#loadDefinitions();
-    return definitions?.settings?.[propertyName]?.options || [];
-  }
-
-  static getDefaultValue(propertyName) {
-    const definitions = SettingInfo.#loadDefinitions();
-    return definitions?.settings?.[propertyName]?.default || null;
-  }
 
   // Instance methods
   update(updates) {
@@ -335,8 +232,6 @@ class SettingInfo {
       tone: this.#tone,
       difficulty: this.#difficulty,
       playerStartingLevel: this.#playerStartingLevel,
-      enabledFeatures: this.#enabledFeatures,
-      customRules: this.#customRules,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
@@ -368,31 +263,6 @@ class SettingInfo {
     return new SettingInfo(data);
   }
 
-  // Check if setting is compatible with another setting
-  isCompatibleWith(otherSetting) {
-    if (!(otherSetting instanceof SettingInfo)) {
-      return false;
-    }
-
-    // Simple compatibility check - same theme and close tech/magic levels
-    return this.#theme === otherSetting.theme &&
-      Math.abs(this.#getNumericLevel('techLevel') - otherSetting.#getNumericLevel('techLevel')) <= 2 &&
-      Math.abs(this.#getNumericLevel('magicLevel') - otherSetting.#getNumericLevel('magicLevel')) <= 2;
-  }
-
-  // Helper to convert level strings to numbers for comparison
-  #getNumericLevel(levelType) {
-    const techLevels = ['stone-age', 'bronze-age', 'iron-age', 'medieval', 'renaissance', 'industrial', 'modern', 'near-future', 'far-future'];
-    const magicLevels = ['none', 'rare', 'uncommon', 'common', 'abundant', 'omnipresent'];
-
-    if (levelType === 'techLevel') {
-      return techLevels.indexOf(this.#techLevel) || 0;
-    } else if (levelType === 'magicLevel') {
-      return magicLevels.indexOf(this.#magicLevel) || 0;
-    }
-    return 0;
-  }
-
   // Generate prompt variables for template system
   getPromptVariables() {
     return {
@@ -404,8 +274,6 @@ class SettingInfo {
       tone: this.#tone,
       difficulty: this.#difficulty,
       playerStartingLevel: this.#playerStartingLevel,
-      enabledFeatures: this.#enabledFeatures,
-      customRules: this.#customRules,
       settingName: this.#name,
       settingDescription: this.#description
     };

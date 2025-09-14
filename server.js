@@ -559,14 +559,8 @@ function parseXMLTemplate(xmlContent) {
 
         // Extract generationPrompt (prioritize generationPrompt, but accept imagePrompt for backward compatibility)
         const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
-        const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
 
-        if (generationPromptNode) {
-            result.generationPrompt = innerXML(generationPromptNode).trim();
-        } else if (imagePromptNode) {
-            // Convert imagePrompt to generationPrompt for consistency
-            result.generationPrompt = innerXML(imagePromptNode).trim();
-        }
+        result.generationPrompt = innerXML(generationPromptNode).trim();
 
         // Extract role (optional)
         const roleNode = doc.getElementsByTagName('role')[0];
@@ -659,14 +653,10 @@ function renderPlayerPortraitPrompt(player) {
 
         // Parse the XML and extract imagePrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
-        const imagePrompt = parsedXML.imagePrompt;
+        const generationPrompt = parsedXML.generationPrompt;
 
-        if (!imagePrompt) {
-            throw new Error('No imagePrompt found in player portrait template');
-        }
-
-        console.log(`Generated player portrait prompt for ${player.name}:`, imagePrompt);
-        return imagePrompt.trim();
+        console.log(`Generated player portrait prompt for ${player.name}:`, generationPrompt);
+        return generationPrompt.trim();
 
     } catch (error) {
         console.error('Error rendering player portrait template:', error);
@@ -697,9 +687,9 @@ function renderLocationImagePrompt(location) {
         // Parse the XML and extract both systemPrompt and imagePrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
         const systemPrompt = parsedXML.systemPrompt;
-        const imagePrompt = parsedXML.imagePrompt;
+        const generationPrompt = parsedXML.generationPrompt;
 
-        if (!systemPrompt || !imagePrompt) {
+        if (!systemPrompt || !generationPrompt) {
             throw new Error('Missing systemPrompt or imagePrompt in location image template');
         }
 
@@ -744,14 +734,14 @@ function renderLocationExitImagePrompt(locationExit) {
 
         // Parse the XML and extract imagePrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
-        const imagePrompt = parsedXML.imagePrompt;
+        const generationPrompt = parsedXML.generationPrompt;
 
-        if (!imagePrompt) {
-            throw new Error('No imagePrompt found in location exit image template');
+        if (!generationPrompt) {
+            throw new Error('No generationPrompt found in location exit image template');
         }
 
-        console.log(`Generated location exit passage prompt for ${locationExit.id}:`, imagePrompt);
-        return imagePrompt.trim();
+        console.log(`Generated location exit passage prompt for ${locationExit.id}:`, generationPrompt);
+        return generationPrompt.trim();
 
     } catch (error) {
         console.error('Error rendering location exit image template:', error);
@@ -1548,6 +1538,14 @@ app.post('/api/chat', async (req, res) => {
                 // Replace any existing system message or add new one
                 finalMessages = [systemMessage, ...messages.filter(msg => msg.role !== 'system')];
 
+                // Append promptData.generationPrompt to finalMessages
+                if (promptData.generationPrompt) {
+                    finalMessages.push({
+                        role: 'user',
+                        content: promptData.generationPrompt
+                    });
+                }
+
                 // Store debug information
                 debugInfo = {
                     usedPlayerTemplate: true,
@@ -1962,6 +1960,7 @@ app.get('/debug', (req, res) => {
         currentPlayerId: currentPlayer ? currentPlayer.toJSON().id : null,
         allPlayers: allPlayersData,
         allLocations: locationsData, // YAML-loaded locations for reference
+        allSettings: SettingInfo.getAll().map(setting => setting.toJSON()),
         gameWorld: gameWorldData, // In-memory game world data
         gameWorldCounts: {
             locations: gameLocations.size,
@@ -2645,42 +2644,6 @@ app.delete('/api/settings/:id', (req, res) => {
                 error: 'Failed to delete setting'
             });
         }
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Get setting definition options (for UI dropdowns)
-app.get('/api/settings/definitions', (req, res) => {
-    try {
-        const definitions = {
-            theme: SettingInfo.getValidOptions('theme'),
-            genre: SettingInfo.getValidOptions('genre'),
-            startingLocationType: SettingInfo.getValidOptions('startingLocationType'),
-            magicLevel: SettingInfo.getValidOptions('magicLevel'),
-            techLevel: SettingInfo.getValidOptions('techLevel'),
-            tone: SettingInfo.getValidOptions('tone'),
-            difficulty: SettingInfo.getValidOptions('difficulty')
-        };
-
-        const defaults = {
-            theme: SettingInfo.getDefaultValue('theme'),
-            genre: SettingInfo.getDefaultValue('genre'),
-            startingLocationType: SettingInfo.getDefaultValue('startingLocationType'),
-            magicLevel: SettingInfo.getDefaultValue('magicLevel'),
-            techLevel: SettingInfo.getDefaultValue('techLevel'),
-            tone: SettingInfo.getDefaultValue('tone'),
-            difficulty: SettingInfo.getDefaultValue('difficulty')
-        };
-
-        res.json({
-            success: true,
-            definitions,
-            defaults
-        });
     } catch (error) {
         res.status(500).json({
             success: false,

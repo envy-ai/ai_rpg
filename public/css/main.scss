@@ -60,7 +60,12 @@ body {
 
 .main-content {
   overflow: auto;
-  // Custom scrollbar for chat container
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+
+  // Custom scrollbar for main content
   &::-webkit-scrollbar {
     width: 8px;
   }
@@ -76,13 +81,40 @@ body {
   }
 }
 
-// Chat container
+// left column of .main-content
+.location-block {
+  width: 30%;
+  min-width: 300px;
+  overflow: auto;
+
+  // Custom scrollbar for location block
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $glass-bg;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $white-30;
+    border-radius: 4px;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+// Chat container - right column of .main-content
 .chat-container {
-  flex: 1;
+  flex: 1; // Take up remaining width
+  min-height: 0; // Important for flex child to scroll
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  overflow: auto;
-  min-height: 0; // Important for flex child to scroll
 
   // Custom scrollbar for chat container
   &::-webkit-scrollbar {

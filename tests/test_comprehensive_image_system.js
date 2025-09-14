@@ -31,15 +31,15 @@ function renderPlayerPortraitPrompt(player) {
     // Render the template
     const renderedTemplate = promptEnv.render(templateName, variables);
 
-    // Parse the YAML and extract imagePrompt
+    // Parse the YAML and extract generationPrompt
     const parsedYaml = yaml.load(renderedTemplate);
-    const imagePrompt = parsedYaml.imagePrompt;
+    const generationPrompt = parsedYaml.generationPrompt;
 
-    if (!imagePrompt) {
-      throw new Error('No imagePrompt found in player portrait template');
+    if (!generationPrompt) {
+      throw new Error('No generationPrompt found in player portrait template');
     }
 
-    return imagePrompt.trim();
+    return generationPrompt.trim();
 
   } catch (error) {
     console.error('Error rendering player portrait template:', error);
@@ -66,15 +66,15 @@ function renderLocationImagePrompt(location) {
     // Render the template
     const renderedTemplate = promptEnv.render(templateName, variables);
 
-    // Parse the YAML and extract imagePrompt
+    // Parse the YAML and extract generationPrompt
     const parsedYaml = yaml.load(renderedTemplate);
-    const imagePrompt = parsedYaml.imagePrompt;
+    const generationPrompt = parsedYaml.generationPrompt;
 
-    if (!imagePrompt) {
-      throw new Error('No imagePrompt found in location image template');
+    if (!generationPrompt) {
+      throw new Error('No generationPrompt found in location image template');
     }
 
-    return imagePrompt.trim();
+    return generationPrompt.trim();
 
   } catch (error) {
     console.error('Error rendering location image template:', error);
@@ -102,15 +102,15 @@ function renderLocationExitImagePrompt(locationExit) {
     // Render the template
     const renderedTemplate = promptEnv.render(templateName, variables);
 
-    // Parse the YAML and extract imagePrompt
+    // Parse the YAML and extract generationPrompt
     const parsedYaml = yaml.load(renderedTemplate);
-    const imagePrompt = parsedYaml.imagePrompt;
+    const generationPrompt = parsedYaml.generationPrompt;
 
-    if (!imagePrompt) {
-      throw new Error('No imagePrompt found in location exit image template');
+    if (!generationPrompt) {
+      throw new Error('No generationPrompt found in location exit image template');
     }
 
-    return imagePrompt.trim();
+    return generationPrompt.trim();
 
   } catch (error) {
     console.error('Error rendering location exit image template:', error);

@@ -1,4 +1,4 @@
-const Location = require('../Location.js');
+const Location = require('./Location.js');
 
 // Test the XML parsing with various inputs
 const testCases = [

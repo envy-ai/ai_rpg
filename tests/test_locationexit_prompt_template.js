@@ -27,16 +27,16 @@ function renderLocationExitImagePrompt(locationExit) {
     // Render the template
     const renderedTemplate = promptEnv.render(templateName, variables);
 
-    // Parse the YAML and extract imagePrompt
+    // Parse the YAML and extract generationPrompt
     const parsedYaml = yaml.load(renderedTemplate);
-    const imagePrompt = parsedYaml.imagePrompt;
+    const generationPrompt = parsedYaml.generationPrompt;
 
-    if (!imagePrompt) {
-      throw new Error('No imagePrompt found in location exit image template');
+    if (!generationPrompt) {
+      throw new Error('No generationPrompt found in location exit image template');
     }
 
-    console.log(`Generated location exit passage prompt for ${locationExit.id}:`, imagePrompt);
-    return imagePrompt.trim();
+    console.log(`Generated location exit passage prompt for ${locationExit.id}:`, generationPrompt);
+    return generationPrompt.trim();
 
   } catch (error) {
     console.error('Error rendering location exit image template:', error);
