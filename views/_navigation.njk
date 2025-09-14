@@ -1,0 +1,32 @@
+{# Main Navigation Template - Include this in all pages #}
+<div class="nav-buttons">
+    <a href="/" class="btn {{ 'btn-primary' if currentPage == 'chat' else 'btn-secondary' }}">
+        <span>🎮</span> Chat Interface
+    </a>
+    <a href="/player-stats" class="btn {{ 'btn-primary' if currentPage == 'player-stats' else 'btn-secondary' }}">
+        <span>🎲</span> Player Stats
+    </a>
+    <a href="/config" class="btn {{ 'btn-primary' if currentPage == 'config' else 'btn-secondary' }}">
+        <span>⚙️</span> Configuration
+    </a>
+    <a href="/debug" class="btn {{ 'btn-primary' if currentPage == 'debug' else 'btn-secondary' }}">
+        <span>🔧</span> Debug
+    </a>
+    
+    {# Save/Load buttons only on chat interface #}
+    {% if currentPage == 'chat' %}
+    <button id="saveGameBtn" class="btn btn-secondary" title="Save Current Game">
+        <span>💾</span> Save Game
+    </button>
+    <button id="loadGameBtn" class="btn btn-secondary" title="Load Saved Game">
+        <span>📂</span> Load Game
+    </button>
+    {% endif %}
+    
+    {# Refresh button only on debug page #}
+    {% if currentPage == 'debug' %}
+    <a href="/debug" class="btn btn-accent" style="margin-left: auto;">
+        <span>🔄</span> Refresh
+    </a>
+    {% endif %}
+</div>

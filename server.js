@@ -137,6 +137,15 @@ async function processJobQueue() {
                 job.result = result;
                 job.message = 'Image generation completed successfully';
                 job.completedAt = new Date().toISOString();
+
+                // Update player's imageId if this was a player portrait job
+                if (job.payload.isPlayerPortrait && job.payload.playerId && result.imageId) {
+                    const player = players.get(job.payload.playerId);
+                    if (player) {
+                        player.imageId = result.imageId;
+                        console.log(`🎨 Updated player ${player.name} imageId to: ${result.imageId}`);
+                    }
+                }
             }
 
         } catch (error) {
@@ -558,7 +567,10 @@ async function generatePlayerImage(player) {
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: 'blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions'
+            negative_prompt: 'blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions',
+            // Track which player this image is for
+            playerId: player.id,
+            isPlayerPortrait: true
         };
 
         console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
@@ -570,8 +582,9 @@ async function generatePlayerImage(player) {
         // Start processing if not already running
         setTimeout(() => processJobQueue(), 0);
 
-        // Update player's imageId to track the generation job
+        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
         player.imageId = jobId;
+        console.log(`🎨 Queued portrait generation for player ${player.name}, tracking with job ID: ${jobId}`);
 
         return {
             jobId: jobId,
@@ -628,7 +641,8 @@ app.get('/', (req, res) => {
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
         systemPrompt: systemPrompt,
-        chatHistory: chatHistory
+        chatHistory: chatHistory,
+        currentPage: 'chat'
     });
 });
 
@@ -636,7 +650,8 @@ app.get('/', (req, res) => {
 app.get('/config', (req, res) => {
     res.render('config.njk', {
         title: 'AI RPG Configuration',
-        config: config
+        config: config,
+        currentPage: 'config'
     });
 });
 
@@ -1108,7 +1123,8 @@ app.post('/api/player/generate-attributes', (req, res) => {
 app.get('/player-stats', (req, res) => {
     res.render('player-stats.njk', {
         title: 'Player Stats Configuration',
-        player: currentPlayer ? currentPlayer.getStatus() : null
+        player: currentPlayer ? currentPlayer.getStatus() : null,
+        currentPage: 'player-stats'
     });
 });
 
@@ -1158,7 +1174,8 @@ app.get('/debug', (req, res) => {
         gameWorldCounts: {
             locations: gameLocations.size,
             locationExits: gameLocationExits.size
-        }
+        },
+        currentPage: 'debug'
     };
 
     res.render('debug.njk', debugData);

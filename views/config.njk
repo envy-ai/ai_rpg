@@ -11,6 +11,7 @@
         <div class="header">
             <h1>⚙️ AI RPG Configuration</h1>
             <p>Configure server settings and AI parameters</p>
+            {% include "_navigation.njk" %}
         </div>
         
         <div class="config-content">
@@ -74,7 +75,6 @@
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
                     <button type="button" class="btn btn-secondary" onclick="testConnection()">🔗 Test Connection</button>
-                    <a href="/" class="btn btn-secondary">🏠 Back to Chat</a>
                 </div>
                 
                 <!-- Status Messages -->

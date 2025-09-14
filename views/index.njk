@@ -11,23 +11,7 @@
         <div class="header">
             <h1>🎮 AI RPG Chat Interface 🤖</h1>
             <p>Welcome! Your AI Game Master is ready for adventure.</p>
-            <div class="nav-buttons">
-                <a href="/player-stats" class="btn btn-secondary">
-                    <span>🎲</span> Player Stats
-                </a>
-                <a href="/config" class="btn btn-secondary">
-                    <span>⚙️</span> Configuration
-                </a>
-                <a href="/debug" class="btn btn-secondary">
-                    <span>🔧</span> Debug
-                </a>
-                <button id="saveGameBtn" class="btn btn-secondary" title="Save Current Game">
-                    <span>💾</span> Save Game
-                </button>
-                <button id="loadGameBtn" class="btn btn-secondary" title="Load Saved Game">
-                    <span>📂</span> Load Game
-                </button>
-            </div>
+            {% include "_navigation.njk" %}
         </div>
         
         <div class="chat-container">
