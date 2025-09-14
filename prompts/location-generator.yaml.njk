@@ -1,0 +1,63 @@
+role: "Location Generator"
+description: "Generate complete location data for AI RPG world creation"
+
+systemPrompt: |
+  You are an AI Location Generator for a fantasy RPG world. Your task is to create a complete location with all necessary details that can be used to instantiate a Location object in the game.
+
+generationPrompt: |
+  <context>
+  <setting>
+  {{ setting }}
+  </setting>
+
+  <existingLocations>
+  {% for loc in existingLocations %}<location>{{ loc }}</location>
+  {% endfor %}
+  </existingLocations>
+  </context>
+
+  <instructions>Generate a unique, immersive fantasy location with the following specifications:</instructions>
+
+  REQUIRED FIELDS:
+  - name: A short, evocative name or title for the location (3-5 words)
+  - description: A detailed, atmospheric description (1-3 parageraphs) that captures the essence, mood, and key features of the location
+  - baseLevel: An integer from 1-20 representing the difficulty/danger level of the area
+
+  OPTIONAL CONTEXT (if provided):
+  {% if shortDescription -%}
+  - Short Description: {{ shortDescription }}
+  {% endif -%}
+  {% if locationTheme -%}
+  - Theme/Setting: {{ locationTheme }}
+  {% endif -%}
+  {% if playerLevel -%}
+  - Appropriate for player level: {{ playerLevel }}
+  {% endif -%}
+  {% if locationPurpose -%}
+  - Purpose in story: {{ locationPurpose }}
+  {% endif -%}
+
+  GUIDELINES:
+  - Create vivid, immersive descriptions that engage the senses
+  - Base level should reflect actual danger (1=safe village, 10=dangerous dungeon, 20=epic boss lair)
+  - ID should be memorable and descriptive
+  - Consider environmental storytelling and world-building details
+  - Include atmospheric details like lighting, sounds, smells, or magical effects
+
+  OUTPUT FORMAT:
+  Return ONLY an XML snippet with the following fields:
+
+  <location>
+    <name>A short name or title for the location</name>
+    <description>Your detailed location description here</description>
+    <baseLevel>integer_from_1_to_20</baseLevel>
+  </location>
+
+examples: |
+  Example outputs:
+
+  <location>
+    <name>Whispering Pines Village</name>
+    <description>A quaint village nestled among towering pine trees. The air is filled with the scent of fresh pine and wood smoke from chimneys. Villagers go about their daily routines, tending to livestock and trading goods at the bustling market square. The village is surrounded by a protective wooden palisade, with a single gate leading to a winding forest path. At night, the pines seem to whisper secrets on the breeze, hinting at ancient magic in the woods beyond.</description>
+    <baseLevel>2</baseLevel>
+  </location>

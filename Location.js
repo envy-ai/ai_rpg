@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { DOMParser } = require('xmldom');
 
 /**
  * Location class for AI RPG
@@ -8,6 +9,7 @@ const crypto = require('crypto');
 class Location {
   // Private fields - encapsulated state
   #id;
+  #name;
   #description;
   #baseLevel;
   #exits;
@@ -30,7 +32,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null } = {}) {
     // Validate required parameters
     if (!description || typeof description !== 'string') {
       throw new Error('Location description is required and must be a string');
@@ -43,6 +45,7 @@ class Location {
     // Initialize private fields
     this.#id = id || Location.#generateId();
     this.#description = description.trim();
+    this.#name = name ? name.trim() : null;
     this.#baseLevel = Math.floor(baseLevel); // Ensure integer
     this.#exits = new Map(); // Map of direction -> LocationExit
     this.#imageId = imageId;
@@ -50,9 +53,67 @@ class Location {
     this.#lastUpdated = this.#createdAt;
   }
 
+  static fromXMLSnippet(xmlSnippet) {
+    console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
+
+    // Strip any text outside the <location> tags and extract just the location XML
+    const locationMatch = xmlSnippet.match(/<location>[\s\S]*?<\/location>/);
+    const strippedXML = locationMatch ? locationMatch[0] : xmlSnippet;
+
+    console.log('Extracted XML:', strippedXML);
+
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(strippedXML, 'text/xml');
+
+    // Check for parsing errors
+    const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+      console.error('XML parsing error:', parserError.textContent);
+      throw new Error(`XML parsing error: ${parserError.textContent}`);
+    }
+
+    // Convert the whole thing to javascript object
+    const locationData = {};
+    const locationElem = xmlDoc.getElementsByTagName('location')[0];
+
+    if (!locationElem) {
+      console.error('No <location> element found in:', strippedXML);
+      throw new Error('Invalid XML snippet: missing <location> root element');
+    }
+
+    // Populate locationData with the text content of each child element
+    const childNodes = Array.from(locationElem.childNodes);
+
+    for (const child of childNodes) {
+      // Only process element nodes (nodeType 1)
+      if (child.nodeType === 1) {
+        const value = child.textContent.trim();
+
+        // Convert baseLevel to number
+        if (child.tagName === 'baseLevel') {
+          locationData[child.tagName] = parseInt(value, 10);
+        } else {
+          locationData[child.tagName] = value;
+        }
+      }
+    }
+
+    console.log('Successfully parsed location data:', locationData);
+
+    return new Location({
+      description: locationData.description,
+      baseLevel: locationData.baseLevel,
+      name: locationData.name
+    });
+  }
+
   // Getters for accessing private fields
   get id() {
     return this.#id;
+  }
+
+  get name() {
+    return this.#name;
   }
 
   get description() {
@@ -81,6 +142,15 @@ class Location {
   }
 
   // Setters for modifying private fields
+
+  set name(newName) {
+    if (newName !== null && typeof newName !== 'string') {
+      throw new Error('Name must be a string or null');
+    }
+    this.#name = newName;
+    this.#lastUpdated = new Date();
+  }
+
   set description(newDescription) {
     if (!newDescription || typeof newDescription !== 'string') {
       throw new Error('Description must be a non-empty string');
@@ -181,6 +251,7 @@ class Location {
   getSummary() {
     return {
       id: this.#id,
+      name: this.#name,
       description: this.#description,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
@@ -207,6 +278,7 @@ class Location {
 
     return {
       id: this.#id,
+      name: this.#name,
       description: this.#description,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,

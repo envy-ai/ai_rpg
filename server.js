@@ -504,6 +504,11 @@ addDiceFilters(viewsEnv);
 addDiceFilters(promptEnv);
 addDiceFilters(imagePromptEnv);
 
+// Add JSON escape filter for ComfyUI templates
+imagePromptEnv.addFilter('json', function (str) {
+    return JSON.stringify(str).slice(1, -1); // Remove surrounding quotes
+});
+
 // Function to render system prompt from template
 function renderSystemPrompt() {
     try {
@@ -643,6 +648,50 @@ function renderLocationExitImagePrompt(locationExit) {
         console.error('Error rendering location exit image template:', error);
         // Fallback to simple prompt
         return `Fantasy RPG passage scene: ${locationExit ? locationExit.description : 'A mysterious passage'}, high quality fantasy pathway art, detailed exit passage`;
+    }
+}
+
+// Function to render location generator prompt from template
+function renderLocationGeneratorPrompt(options = {}) {
+    try {
+        const templateName = 'location-generator.yaml.njk';
+
+        // Set up variables for the template with defaults from config
+        const variables = {
+            setting: options.setting || config.gamemaster.promptVariables?.setting || 'fantasy',
+            existingLocations: [], // Could be populated with existing location names
+            shortDescription: options.shortDescription || null,
+            locationTheme: options.theme || options.locationTheme || null,
+            playerLevel: options.playerLevel || null,
+            locationPurpose: options.locationPurpose || null
+        };
+
+        // Render the template
+        const renderedTemplate = promptEnv.render(templateName, variables);
+
+        // Parse the YAML and extract both systemPrompt and generationPrompt
+        const parsedYaml = yaml.load(renderedTemplate);
+        const systemPrompt = parsedYaml.systemPrompt;
+        const generationPrompt = parsedYaml.generationPrompt;
+
+        if (!systemPrompt) {
+            throw new Error('No systemPrompt found in location generator template');
+        }
+
+        if (!generationPrompt) {
+            throw new Error('No generationPrompt found in location generator template');
+        }
+
+        // Combine the system and generation prompts
+        const fullPrompt = systemPrompt.trim() + '\n\n' + generationPrompt.trim();
+
+        console.log('Generated location generator prompt with variables:', variables);
+        return fullPrompt.trim();
+
+    } catch (error) {
+        console.error('Error rendering location generator template:', error);
+        // Fallback to simple prompt
+        return `Generate a new fantasy RPG location. Return an XML snippet in this format: <location><name>Location Name</name><description>Detailed description of the location</description><baseLevel>5</baseLevel></location>`;
     }
 }
 
@@ -917,6 +966,97 @@ function generateLocationExitImageDebounced(locationExit) {
 
     locationExitImageRegenerationTimeouts.set(locationExit.id, timeoutId);
     console.log(`⏱️  Debounced passage regeneration scheduled for location exit ${locationExit.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
+}
+
+// Function to generate a new location using AI
+async function generateLocationFromPrompt(options = {}) {
+    try {
+        // Generate the system prompt using the template
+        const systemPrompt = renderLocationGeneratorPrompt(options);
+
+        // Prepare the messages for the AI API
+        const messages = [
+            {
+                role: 'system',
+                content: systemPrompt
+            },
+            {
+                role: 'user',
+                content: 'Generate a new location for the game.'
+            }
+        ];
+
+        // Use configuration from config.yaml
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const model = config.ai.model;
+
+        // Prepare the request to the OpenAI-compatible API
+        const chatEndpoint = endpoint.endsWith('/') ?
+            endpoint + 'chat/completions' :
+            endpoint + '/chat/completions';
+
+        const requestData = {
+            model: model,
+            messages: messages,
+            max_tokens: config.ai.maxTokens || 1000,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        console.log('🤖 Requesting location generation from AI...');
+        console.log('📝 System Prompt:', systemPrompt);
+        console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000 // 30 second timeout
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid response from AI API');
+        }
+
+        const aiResponse = response.data.choices[0].message.content;
+        console.log('📥 AI Raw Response:');
+        console.log('='.repeat(50));
+        console.log(aiResponse);
+        console.log('='.repeat(50));
+
+        // Parse the XML response using Location.fromXMLSnippet()
+        const location = Location.fromXMLSnippet(aiResponse);
+
+        if (!location) {
+            throw new Error('Failed to parse location from AI response');
+        }
+
+        console.log(`🏗️  Successfully generated location: ${location.name || location.id}`);
+
+        // Store the location in gameLocations
+        gameLocations.set(location.id, location);
+        console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
+
+        // Automatically generate location scene image if image generation is enabled
+        try {
+            const imageResult = await generateLocationImage(location);
+            console.log(`🎨 Location scene generation initiated for ${location.id}:`, imageResult);
+        } catch (imageError) {
+            console.warn('Failed to generate location scene:', imageError.message);
+            // Don't fail location generation if image generation fails
+        }
+
+        return {
+            location: location,
+            aiResponse: aiResponse,
+            generationOptions: options
+        };
+
+    } catch (error) {
+        console.error('Error generating location from prompt:', error);
+        throw error;
+    }
 }
 
 // Middleware
@@ -1649,6 +1789,69 @@ app.post('/api/players/:id/portrait', async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message
+        });
+    }
+});
+
+// ==================== LOCATION GENERATION FUNCTIONALITY ====================
+
+// Generate a new location using AI
+app.post('/api/locations/generate', async (req, res) => {
+    try {
+        const { setting, theme, difficulty, locationStyle } = req.body;
+
+        // Prepare generation options
+        const options = {};
+        if (setting) options.setting = setting;
+        if (theme) options.theme = theme;
+        if (difficulty) options.difficulty = difficulty;
+        if (locationStyle) options.locationStyle = locationStyle;
+
+        console.log('🏗️  Starting location generation with options:', options);
+
+        // Generate the location
+        const result = await generateLocationFromPrompt(options);
+
+        res.json({
+            success: true,
+            location: result.location.toJSON(),
+            locationId: result.location.id,
+            locationName: result.location.name,
+            gameWorldStats: {
+                totalLocations: gameLocations.size,
+                totalLocationExits: gameLocationExits.size
+            },
+            generationInfo: {
+                aiResponse: result.aiResponse,
+                options: result.generationOptions
+            },
+            message: `Location "${result.location.name || result.location.id}" generated successfully`
+        });
+
+    } catch (error) {
+        console.error('Error in location generation API:', error);
+
+        // Provide more specific error messages
+        let errorMessage = error.message;
+        let statusCode = 500;
+
+        if (error.code === 'ECONNABORTED') {
+            errorMessage = 'Request timeout - AI API took too long to respond';
+            statusCode = 408;
+        } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+            errorMessage = 'Cannot connect to AI API - check your endpoint URL';
+            statusCode = 503;
+        } else if (error.response) {
+            const apiStatusCode = error.response.status;
+            const apiErrorMessage = error.response.data?.error?.message || 'API request failed';
+            errorMessage = `AI API Error (${apiStatusCode}): ${apiErrorMessage}`;
+            statusCode = apiStatusCode;
+        }
+
+        res.status(statusCode).json({
+            success: false,
+            error: errorMessage,
+            details: error.message
         });
     }
 });

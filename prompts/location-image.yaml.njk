@@ -4,7 +4,8 @@ systemPrompt: |
 
   Location Information:
   Name/ID: {{ locationId }}
-  Description: {{ locationDescription }}
+  Description: 
+    {{ locationDescription | replace('\n', '\n    ') }}
   Base Level: {{ locationBaseLevel }}
 
   {% if locationExits %}
@@ -17,7 +18,8 @@ systemPrompt: |
 imagePrompt: |
   Create a fantasy RPG location scene image.
 
-  Scene Description: {{ locationDescription }}
+  Scene Description: 
+    {{ locationDescription | replace('\n', '\n    ') }}
 
   Environmental Details Based on Level:
   {% if locationBaseLevel <= 3 %}

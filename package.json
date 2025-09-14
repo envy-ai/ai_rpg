@@ -8,16 +8,21 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
     "axios": "^1.5.0",
     "body-parser": "^1.20.2",
+    "express": "^4.18.2",
+    "js-yaml": "^4.1.0",
     "nunjucks": "^3.2.4",
-    "js-yaml": "^4.1.0"
+    "xmldom": "^0.6.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
-  "keywords": ["nodejs", "express", "hello-world"],
+  "keywords": [
+    "nodejs",
+    "express",
+    "hello-world"
+  ],
   "author": "",
   "license": "MIT"
 }
