@@ -59,6 +59,7 @@
         function initSaveLoadButtons() {
             const saveGameBtn = document.getElementById('saveGameBtn');
             const loadGameBtn = document.getElementById('loadGameBtn');
+            const newGameBtn = document.getElementById('newGameBtn');
             
             saveGameBtn.addEventListener('click', async function() {
                 try {
@@ -138,6 +139,48 @@
                 } finally {
                     this.disabled = false;
                     this.innerHTML = '<span>📂</span> Load Game';
+                }
+            });
+
+            newGameBtn.addEventListener('click', async function() {
+                try {
+                    const confirmation = confirm('Start a new game? This will clear your current progress.\n\nYou can optionally enter a custom player name and description.');
+                    if (!confirmation) return;
+                    
+                    // Get optional player details
+                    const playerName = prompt('Enter your character name (or leave blank for "Adventurer"):') || 'Adventurer';
+                    const playerDescription = prompt('Enter your character description (optional):') || 'A brave soul embarking on a new adventure.';
+                    
+                    this.disabled = true;
+                    this.innerHTML = '<span>⏳</span> Creating...';
+                    
+                    const response = await fetch('/api/new-game', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            playerName: playerName,
+                            playerDescription: playerDescription
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.innerHTML = '<span>✅</span> New Game Started!';
+                        alert(`New game created successfully!\n\nPlayer: ${result.player.name}\nStarting Location: ${result.startingLocation.name}\n\nYour adventure begins now!`);
+                        window.location.reload();
+                    } else {
+                        this.innerHTML = '<span>❌</span> Failed';
+                        alert(`New game creation failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    this.innerHTML = '<span>❌</span> Failed';
+                    alert(`New game creation failed: ${error.message}`);
+                } finally {
+                    setTimeout(() => {
+                        this.disabled = false;
+                        this.innerHTML = '<span>🆕</span> New Game';
+                    }, 2000);
                 }
             });
         }

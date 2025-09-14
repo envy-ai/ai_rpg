@@ -16,7 +16,7 @@ player:
 currentLocation: "{{ player.currentLocation }}"
 {% endif -%}
 
-action: "{{ actionText }}"
+action: "{{ actionText | replace('\n', '\n    ') }}"
 
 guidelines:
   - "Consider the player's current health and physical state"
@@ -29,7 +29,8 @@ guidelines:
   - "If the player is at full health, they should feel capable"
 
 context: |
-  The player {{ player.name }} ({{ player.description }}) is attempting: "{{ actionText }}"
+  Location: {{ location.name | replace('\n', '\n    ') }} - {{ location.description | replace('\n', '\n    ') }}
+  The player {{ player.name }} ({{ player.description | replace('\n', '\n    ') }}) is attempting: "{{ actionText | replace('\n', '\n    ') }}"
   Current health: {{ player.health }}/{{ player.maxHealth }} (Level {{ player.level }})
   Status: {% if player.alive %}Alive and ready for action{% else %}Defeated{% endif %}
 

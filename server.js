@@ -5,6 +5,7 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const { DOMParser } = require('xmldom');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -513,6 +514,57 @@ imagePromptEnv.addFilter('json', function (str) {
     return JSON.stringify(str).slice(1, -1);
 });
 
+// Function to parse XML template and extract prompts
+function parseXMLTemplate(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        // Check for parsing errors
+        const errorNode = doc.getElementsByTagName('parsererror')[0];
+        if (errorNode) {
+            throw new Error('XML parsing error: ' + errorNode.textContent);
+        }
+
+        const result = {};
+
+        // Extract systemPrompt
+        const systemPromptNode = doc.getElementsByTagName('systemPrompt')[0];
+        if (systemPromptNode) {
+            result.systemPrompt = systemPromptNode.textContent.trim();
+        }
+
+        // Extract generationPrompt
+        const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
+        if (generationPromptNode) {
+            result.generationPrompt = generationPromptNode.textContent.trim();
+        }
+
+        // Extract imagePrompt
+        const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
+        if (imagePromptNode) {
+            result.imagePrompt = imagePromptNode.textContent.trim();
+        }
+
+        // Extract role (optional)
+        const roleNode = doc.getElementsByTagName('role')[0];
+        if (roleNode) {
+            result.role = roleNode.textContent.trim();
+        }
+
+        // Extract description (optional)
+        const descriptionNode = doc.getElementsByTagName('description')[0];
+        if (descriptionNode) {
+            result.description = descriptionNode.textContent.trim();
+        }
+
+        return result;
+    } catch (error) {
+        console.error('Error parsing XML template:', error);
+        throw error;
+    }
+}
+
 // Function to render system prompt from template
 function renderSystemPrompt() {
     try {
@@ -525,7 +577,13 @@ function renderSystemPrompt() {
         // Log rendered template for debugging
         console.log('Rendered system prompt template:\n', renderedTemplate);
 
-        // If the template is a .yaml.njk file, parse the YAML and extract systemPrompt
+        // If the template is a .xml.njk file, parse the XML and extract systemPrompt
+        if (templateName.endsWith('.xml.njk')) {
+            const parsedXML = parseXMLTemplate(renderedTemplate);
+            return parsedXML.systemPrompt || renderedTemplate;
+        }
+
+        // If the template is a .yaml.njk file, parse the YAML and extract systemPrompt (backward compatibility)
         if (templateName.endsWith('.yaml.njk')) {
             const parsedYaml = yaml.load(renderedTemplate);
             return parsedYaml.systemPrompt || renderedTemplate;
@@ -543,7 +601,7 @@ function renderSystemPrompt() {
 // Function to render player portrait prompt from template
 function renderPlayerPortraitPrompt(player) {
     try {
-        const templateName = 'player-portrait.yaml.njk';
+        const templateName = 'player-portrait.xml.njk';
 
         if (!player) {
             throw new Error('Player object is required');
@@ -562,9 +620,9 @@ function renderPlayerPortraitPrompt(player) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the YAML and extract imagePrompt
-        const parsedYaml = yaml.load(renderedTemplate);
-        const imagePrompt = parsedYaml.imagePrompt;
+        // Parse the XML and extract imagePrompt
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const imagePrompt = parsedXML.imagePrompt;
 
         if (!imagePrompt) {
             throw new Error('No imagePrompt found in player portrait template');
@@ -583,7 +641,7 @@ function renderPlayerPortraitPrompt(player) {
 // Function to render location scene prompt from template
 function renderLocationImagePrompt(location) {
     try {
-        const templateName = 'location-image.yaml.njk';
+        const templateName = 'location-image.xml.njk';
 
         if (!location) {
             throw new Error('Location object is required');
@@ -599,10 +657,10 @@ function renderLocationImagePrompt(location) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the YAML and extract both systemPrompt and imagePrompt
-        const parsedYaml = yaml.load(renderedTemplate);
-        const systemPrompt = parsedYaml.systemPrompt;
-        const imagePrompt = parsedYaml.imagePrompt;
+        // Parse the XML and extract both systemPrompt and imagePrompt
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedXML.systemPrompt;
+        const imagePrompt = parsedXML.imagePrompt;
 
         if (!systemPrompt || !imagePrompt) {
             throw new Error('Missing systemPrompt or imagePrompt in location image template');
@@ -613,7 +671,7 @@ function renderLocationImagePrompt(location) {
         // Return the prompts for LLM processing (not the final image prompt yet)
         return {
             systemPrompt: systemPrompt.trim(),
-            userPrompt: imagePrompt.trim()
+            generationPrompt: generationPrompt.trim()
         };
 
     } catch (error) {
@@ -621,7 +679,7 @@ function renderLocationImagePrompt(location) {
         // Fallback to simple prompt structure
         return {
             systemPrompt: "You are a specialized prompt generator for creating fantasy RPG location scene images.",
-            userPrompt: `Create an image prompt for: ${location ? location.description : 'A mysterious place'}, high quality fantasy environment art, detailed location scene`
+            generationPrompt: `Create an image prompt for: ${location ? location.description : 'A mysterious place'}, high quality fantasy environment art, detailed location scene`
         };
     }
 }
@@ -629,7 +687,7 @@ function renderLocationImagePrompt(location) {
 // Function to render location exit image prompt from template
 function renderLocationExitImagePrompt(locationExit) {
     try {
-        const templateName = 'locationexit-image.yaml.njk';
+        const templateName = 'locationexit-image.xml.njk';
 
         if (!locationExit) {
             throw new Error('LocationExit object is required');
@@ -646,9 +704,9 @@ function renderLocationExitImagePrompt(locationExit) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the YAML and extract imagePrompt
-        const parsedYaml = yaml.load(renderedTemplate);
-        const imagePrompt = parsedYaml.imagePrompt;
+        // Parse the XML and extract imagePrompt
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const imagePrompt = parsedXML.imagePrompt;
 
         if (!imagePrompt) {
             throw new Error('No imagePrompt found in location exit image template');
@@ -667,7 +725,7 @@ function renderLocationExitImagePrompt(locationExit) {
 // Function to render location generator prompt from template
 function renderLocationGeneratorPrompt(options = {}) {
     try {
-        const templateName = 'location-generator.yaml.njk';
+        const templateName = 'location-generator.xml.njk';
 
         // Set up variables for the template with defaults from config
         const variables = {
@@ -682,10 +740,10 @@ function renderLocationGeneratorPrompt(options = {}) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the YAML and extract both systemPrompt and generationPrompt
-        const parsedYaml = yaml.load(renderedTemplate);
-        const systemPrompt = parsedYaml.systemPrompt;
-        const generationPrompt = parsedYaml.generationPrompt;
+        // Parse the XML and extract both systemPrompt and generationPrompt
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedXML.systemPrompt;
+        const generationPrompt = parsedXML.generationPrompt;
 
         if (!systemPrompt) {
             throw new Error('No systemPrompt found in location generator template');
@@ -779,7 +837,7 @@ async function generateImagePromptFromTemplate(prompts) {
             },
             {
                 role: 'user',
-                content: prompts.userPrompt
+                content: prompts.generationPrompt
             }
         ];
 
@@ -819,11 +877,9 @@ async function generateImagePromptFromTemplate(prompts) {
 
         // Clean the prompt to remove potential problematic characters
         generatedImagePrompt = generatedImagePrompt
-            .replace(/[\r\n]+/g, ' ')  // Replace newlines with spaces
             .replace(/[""]/g, '"')     // Normalize quotes
             .replace(/['']/g, "'")     // Normalize apostrophes
             .replace(/[—–]/g, '-')     // Normalize dashes
-            .replace(/\s+/g, ' ')      // Collapse multiple spaces
             .trim();
 
         console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
@@ -833,7 +889,7 @@ async function generateImagePromptFromTemplate(prompts) {
     } catch (error) {
         console.error('Error generating image prompt with LLM:', error);
         // Fallback to the user prompt if LLM fails
-        return prompts.userPrompt;
+        return prompts.generationPrompt;
     }
 }
 
@@ -1242,18 +1298,42 @@ app.post('/api/chat', async (req, res) => {
 
         let finalMessages = messages;
         let debugInfo = null;
+        let location = null;
+
+        // Add the location with the id of currentPlayer.curentLocation to the player context if available
+        if (currentPlayer && currentPlayer.currentLocation) {
+            location = Location.get(currentPlayer.currentLocation);
+        }
 
         // If we have a current player, use the player action template for the system message
         if (currentPlayer && userMessage && userMessage.role === 'user') {
             try {
+                // Try XML template first, fall back to YAML for backward compatibility
+                let templateName = 'player-action.xml.njk';
+                let useXML = true;
+
+                // Check if XML template exists, otherwise use YAML
+                try {
+                    fs.accessSync(path.join(__dirname, 'prompts', templateName));
+                } catch {
+                    templateName = 'player-action.yaml.njk';
+                    useXML = false;
+                }
+
                 // Render the player action template
-                const playerActionPrompt = promptEnv.render('player-action.yaml.njk', {
+                const playerActionPrompt = promptEnv.render(templateName, {
                     player: currentPlayer.getStatus(),
-                    actionText: userMessage.content
+                    actionText: userMessage.content,
+                    location: location ? location.getDetails() : null
                 });
 
-                // Parse the rendered YAML
-                const promptData = yaml.load(playerActionPrompt);
+                // Parse the rendered template based on format
+                let promptData;
+                if (useXML) {
+                    promptData = parseXMLTemplate(playerActionPrompt);
+                } else {
+                    promptData = yaml.load(playerActionPrompt);
+                }
 
                 // Create system message from the template
                 const systemMessage = {

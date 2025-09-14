@@ -16,6 +16,8 @@ class Location {
   #imageId;
   #createdAt;
   #lastUpdated;
+  static #indexByID = new Map();
+  static #indexByName = new Map();
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -51,6 +53,12 @@ class Location {
     this.#imageId = imageId;
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
+
+    // Index by ID and name if provided
+    Location.#indexByID.set(this.#id, this);
+    if (this.#name) {
+      Location.#indexByName.set(this.#name.toLowerCase(), this);
+    }
   }
 
   static fromXMLSnippet(xmlSnippet) {
@@ -107,6 +115,20 @@ class Location {
     });
   }
 
+  static get(locationId) {
+    if (!locationId || typeof locationId !== 'string') {
+      throw new Error('Location ID must be a non-empty string');
+    }
+    return Location.#indexByID.get(locationId) || null;
+  }
+
+  static findByName(name) {
+    if (!name || typeof name !== 'string') {
+      throw new Error('Location name must be a non-empty string');
+    }
+    return Location.#indexByName.get(name.toLowerCase()) || null;
+  }
+
   // Getters for accessing private fields
   get id() {
     return this.#id;
@@ -147,7 +169,10 @@ class Location {
     if (newName !== null && typeof newName !== 'string') {
       throw new Error('Name must be a string or null');
     }
+
+    Location.#indexByName.delete(this.#name.toLowerCase());
     this.#name = newName;
+    Location.#indexByName.set(this.#name.toLowerCase(), this);
     this.#lastUpdated = new Date();
   }
 
