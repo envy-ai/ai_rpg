@@ -14,7 +14,7 @@ class Thing {
   #imageId;
   #createdAt;
   #lastUpdated;
-  
+
   // Static indexing maps
   static #indexByID = new Map();
   static #indexByName = new Map();
@@ -107,7 +107,7 @@ class Thing {
 
     // Remove from name index with old name
     Thing.#indexByName.delete(this.#name.toLowerCase());
-    
+
     this.#name = newName.trim();
     this.#lastUpdated = new Date().toISOString();
 

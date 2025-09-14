@@ -556,7 +556,7 @@ function parseXMLTemplate(xmlContent) {
         // Extract generationPrompt (prioritize generationPrompt, but accept imagePrompt for backward compatibility)
         const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
         const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
-        
+
         if (generationPromptNode) {
             result.generationPrompt = innerXML(generationPromptNode).trim();
         } else if (imagePromptNode) {
@@ -744,7 +744,10 @@ function renderLocationExitImagePrompt(locationExit) {
 // Function to render thing image prompt from template
 function renderThingImagePrompt(thing) {
     try {
-        const templateName = 'thing-image.xml.njk';
+        // Select the appropriate template based on thing type
+        const templateName = thing.thingType === 'item'
+            ? 'item-image.xml.njk'
+            : 'scenery-image.xml.njk';
 
         // Set up variables for the template
         const variables = {
@@ -753,23 +756,23 @@ function renderThingImagePrompt(thing) {
             thingDescription: thing.description
         };
 
-        console.log(`Rendering thing image template for ${thing.id} (${thing.thingType}): ${thing.name}`);
+        console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
 
         // Render the template with the variables
         const renderedTemplate = promptEnv.render(templateName, variables);
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
 
         if (!parsedTemplate.generationPrompt) {
-            throw new Error('No generationPrompt found in thing image template');
+            throw new Error(`No generationPrompt found in ${templateName} template`);
         }
 
-        console.log(`Generated thing image prompt for ${thing.id}:`, parsedTemplate.generationPrompt);
+        console.log(`Generated ${thing.thingType} image prompt for ${thing.id}:`, parsedTemplate.generationPrompt);
 
         return parsedTemplate;
     } catch (error) {
         console.error('Error rendering thing image template:', error);
         // Fallback to simple prompt
-        const typeSpecific = thing.thingType === 'item' 
+        const typeSpecific = thing.thingType === 'item'
             ? 'detailed item, close-up object view'
             : 'atmospheric scenery, environmental feature';
         return {
@@ -1097,11 +1100,11 @@ async function generateThingImage(thing) {
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();
-        
+
         // Determine appropriate dimensions based on thing type
         let width = config.imagegen.default_settings.image.width || 1024;
         let height = config.imagegen.default_settings.image.height || 1024;
-        
+
         // Items might work better with square or portrait orientation
         if (thing.thingType === 'item') {
             width = 1024;
@@ -1117,7 +1120,7 @@ async function generateThingImage(thing) {
             width: width,
             height: height,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: thing.thingType === 'item' 
+            negative_prompt: thing.thingType === 'item'
                 ? 'blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements'
                 : 'blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits',
             // Track which thing this image is for
@@ -2445,7 +2448,7 @@ app.post('/api/things/:id/image', async (req, res) => {
         }
 
         const imageResult = await generateThingImage(thing);
-        
+
         if (!imageResult) {
             return res.status(503).json({
                 success: false,
