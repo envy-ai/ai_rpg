@@ -14,6 +14,9 @@ const Player = require('./Player.js');
 const Location = require('./Location.js');
 const LocationExit = require('./LocationExit.js');
 
+// Import Thing class
+const Thing = require('./Thing.js');
+
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 
@@ -52,6 +55,7 @@ const JOB_STATUS = {
 const playerImageRegenerationTimeouts = new Map(); // Player ID -> timeout ID
 const locationImageRegenerationTimeouts = new Map(); // Location ID -> timeout ID
 const locationExitImageRegenerationTimeouts = new Map(); // LocationExit ID -> timeout ID
+const thingImageRegenerationTimeouts = new Map(); // Thing ID -> timeout ID
 const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
 
 function innerXML(node) {
@@ -182,6 +186,15 @@ async function processJobQueue() {
                     if (foundExit) {
                         foundExit.imageId = result.imageId;
                         console.log(`🚪 Updated location exit ${foundExit.id} imageId to: ${result.imageId}`);
+                    }
+                }
+
+                // Update thing's imageId if this was a thing image job
+                if (job.payload.isThingImage && job.payload.thingId && result.imageId) {
+                    const thing = things.get(job.payload.thingId);
+                    if (thing) {
+                        thing.imageId = result.imageId;
+                        console.log(`🎨 Updated thing ${thing.name} (${thing.thingType}) imageId to: ${result.imageId}`);
                     }
                 }
             }
@@ -444,7 +457,7 @@ async function initializeComfyUI() {
         // Test connectivity to ComfyUI server
         console.log('🔌 Testing ComfyUI server connectivity...');
         const testResponse = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
-            timeout: 5000
+            timeout: 15000 // 15 second timeout
         });
 
         if (testResponse.status === 200) {
@@ -468,6 +481,7 @@ let chatHistory = [];
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
 const players = new Map(); // Store multiple players by ID
+const things = new Map(); // Store things (items and scenery) by ID
 
 // In-memory game world storage
 const gameLocations = new Map(); // Store Location instances by ID
@@ -539,16 +553,15 @@ function parseXMLTemplate(xmlContent) {
             result.systemPrompt = innerXML(systemPromptNode).trim();
         }
 
-        // Extract generationPrompt
+        // Extract generationPrompt (prioritize generationPrompt, but accept imagePrompt for backward compatibility)
         const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
+        const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
+        
         if (generationPromptNode) {
             result.generationPrompt = innerXML(generationPromptNode).trim();
-        }
-
-        // Extract imagePrompt
-        const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
-        if (imagePromptNode) {
-            result.imagePrompt = innerXML(imagePromptNode).trim();
+        } else if (imagePromptNode) {
+            // Convert imagePrompt to generationPrompt for consistency
+            result.generationPrompt = innerXML(imagePromptNode).trim();
         }
 
         // Extract role (optional)
@@ -728,6 +741,45 @@ function renderLocationExitImagePrompt(locationExit) {
     }
 }
 
+// Function to render thing image prompt from template
+function renderThingImagePrompt(thing) {
+    try {
+        const templateName = 'thing-image.xml.njk';
+
+        // Set up variables for the template
+        const variables = {
+            thingName: thing.name,
+            thingType: thing.thingType,
+            thingDescription: thing.description
+        };
+
+        console.log(`Rendering thing image template for ${thing.id} (${thing.thingType}): ${thing.name}`);
+
+        // Render the template with the variables
+        const renderedTemplate = promptEnv.render(templateName, variables);
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+        if (!parsedTemplate.generationPrompt) {
+            throw new Error('No generationPrompt found in thing image template');
+        }
+
+        console.log(`Generated thing image prompt for ${thing.id}:`, parsedTemplate.generationPrompt);
+
+        return parsedTemplate;
+    } catch (error) {
+        console.error('Error rendering thing image template:', error);
+        // Fallback to simple prompt
+        const typeSpecific = thing.thingType === 'item' 
+            ? 'detailed item, close-up object view'
+            : 'atmospheric scenery, environmental feature';
+        return {
+            systemPrompt: "You are a specialized prompt generator for creating fantasy RPG object images.",
+            generationPrompt: `Fantasy RPG ${thing.thingType}: ${thing.description}, high quality fantasy art, ${typeSpecific}`,
+            renderedTemplate: `Fallback template for ${thing.name}`
+        };
+    }
+}
+
 // Function to render location generator prompt from template
 function renderLocationGeneratorPrompt(options = {}) {
     try {
@@ -871,7 +923,7 @@ async function generateImagePromptFromTemplate(prompts) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 60000 // 60 second timeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -1021,6 +1073,85 @@ async function generateLocationExitImage(locationExit) {
     }
 }
 
+// Function to generate thing image
+async function generateThingImage(thing) {
+    try {
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            console.log('Image generation is not enabled, skipping thing image generation');
+            return null;
+        }
+
+        if (!comfyUIClient) {
+            console.log('ComfyUI client not initialized, skipping thing image generation');
+            return null;
+        }
+
+        if (!thing) {
+            throw new Error('Thing object is required');
+        }
+
+        // Generate the thing image prompt using LLM
+        const promptTemplate = renderThingImagePrompt(thing);
+        const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
+
+        // Create image generation job with thing-specific settings
+        const jobId = generateImageId();
+        
+        // Determine appropriate dimensions based on thing type
+        let width = config.imagegen.default_settings.image.width || 1024;
+        let height = config.imagegen.default_settings.image.height || 1024;
+        
+        // Items might work better with square or portrait orientation
+        if (thing.thingType === 'item') {
+            width = 1024;
+            height = 1024; // Square for items
+        } else {
+            // Scenery might work better with landscape
+            width = 1024;
+            height = 768;
+        }
+
+        const payload = {
+            prompt: finalImagePrompt,
+            width: width,
+            height: height,
+            seed: Math.floor(Math.random() * 1000000),
+            negative_prompt: thing.thingType === 'item' 
+                ? 'blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements'
+                : 'blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits',
+            // Track which thing this image is for
+            thingId: thing.id,
+            renderedTemplate: promptTemplate.renderedTemplate,
+            isThingImage: true
+        };
+
+        console.log(`🎨 Generating ${thing.thingType} image for ${thing.name} (${thing.id}) with job ID: ${jobId}`);
+
+        // Create and queue the job
+        const job = createImageJob(jobId, payload);
+        jobQueue.push(jobId);
+
+        // Start processing if not already running
+        setTimeout(() => processJobQueue(), 0);
+
+        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
+        thing.imageId = jobId;
+        console.log(`🎨 Queued ${thing.thingType} image generation for ${thing.name}, tracking with job ID: ${jobId}`);
+
+        return {
+            jobId: jobId,
+            status: job.status,
+            message: `Thing ${thing.thingType} image generation job queued`,
+            estimatedTime: '30-90 seconds'
+        };
+
+    } catch (error) {
+        console.error('Error generating thing image:', error);
+        throw error;
+    }
+}
+
 // Debounced function to generate player portrait image
 function generatePlayerImageDebounced(player) {
     if (!player || !player.id) {
@@ -1114,6 +1245,37 @@ function generateLocationExitImageDebounced(locationExit) {
     console.log(`⏱️  Debounced passage regeneration scheduled for location exit ${locationExit.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
 }
 
+// Debounced function to generate thing image
+function generateThingImageDebounced(thing) {
+    if (!thing || !thing.id) {
+        console.warn('Cannot debounce image generation: invalid thing');
+        return;
+    }
+
+    // Clear existing timeout for this thing
+    const existingTimeout = thingImageRegenerationTimeouts.get(thing.id);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+    }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+        try {
+            console.log(`🔄 Debounced ${thing.thingType} image regeneration executing for ${thing.name}...`);
+            const imageResult = await generateThingImage(thing);
+            console.log(`🎨 Debounced ${thing.thingType} image regeneration initiated:`, imageResult);
+        } catch (error) {
+            console.error('Error in debounced thing image generation:', error);
+        } finally {
+            // Clean up timeout tracking
+            thingImageRegenerationTimeouts.delete(thing.id);
+        }
+    }, IMAGE_REGENERATION_DEBOUNCE_MS);
+
+    thingImageRegenerationTimeouts.set(thing.id, timeoutId);
+    console.log(`⏱️  Debounced ${thing.thingType} image regeneration scheduled for ${thing.name} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
+}
+
 // Function to generate a new location using AI
 async function generateLocationFromPrompt(options = {}) {
     try {
@@ -1158,7 +1320,7 @@ async function generateLocationFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 60000 // 60 second timeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -1404,7 +1566,7 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000 // 30 second timeout
+            timeout: 60000 // 60 second timeout
         });
 
         if (response.data && response.data.choices && response.data.choices.length > 0) {
@@ -2055,6 +2217,257 @@ app.post('/api/locations/generate', async (req, res) => {
     }
 });
 
+// ==================== THING MANAGEMENT API ENDPOINTS ====================
+
+// Create a new thing
+app.post('/api/things', async (req, res) => {
+    try {
+        const { name, description, thingType, imageId } = req.body;
+
+        const thing = new Thing({
+            name,
+            description,
+            thingType,
+            imageId
+        });
+
+        things.set(thing.id, thing);
+
+        // Automatically generate thing image if image generation is enabled
+        try {
+            const imageResult = await generateThingImage(thing);
+            console.log(`🎨 Thing ${thing.thingType} image generation initiated for ${thing.name}:`, imageResult);
+        } catch (imageError) {
+            console.warn('Failed to generate thing image:', imageError.message);
+            // Don't fail thing creation if image generation fails
+        }
+
+        res.json({
+            success: true,
+            thing: thing.toJSON(),
+            message: 'Thing created successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all things (with optional type filtering)
+app.get('/api/things', (req, res) => {
+    try {
+        const { type } = req.query;
+        let result = Array.from(things.values()).map(thing => thing.toJSON());
+
+        if (type) {
+            if (!Thing.validTypes.includes(type)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Invalid type. Must be one of: ${Thing.validTypes.join(', ')}`
+                });
+            }
+            result = result.filter(thing => thing.thingType === type);
+        }
+
+        res.json({
+            success: true,
+            things: result,
+            count: result.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get a specific thing by ID
+app.get('/api/things/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const thing = things.get(id);
+
+        if (!thing) {
+            return res.status(404).json({
+                success: false,
+                error: 'Thing not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            thing: thing.toJSON()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Update a thing
+app.put('/api/things/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, thingType, imageId } = req.body;
+        const thing = things.get(id);
+
+        if (!thing) {
+            return res.status(404).json({
+                success: false,
+                error: 'Thing not found'
+            });
+        }
+
+        // Update properties if provided
+        let shouldRegenerateImage = false;
+        if (name !== undefined) {
+            thing.name = name;
+            shouldRegenerateImage = true;
+        }
+        if (description !== undefined) {
+            thing.description = description;
+            shouldRegenerateImage = true;
+        }
+        if (thingType !== undefined) {
+            thing.thingType = thingType;
+            shouldRegenerateImage = true;
+        }
+        if (imageId !== undefined) thing.imageId = imageId;
+
+        // Trigger image regeneration if visual properties changed (debounced)
+        if (shouldRegenerateImage && imageId === undefined) {
+            try {
+                generateThingImageDebounced(thing);
+                console.log(`🔄 Scheduled ${thing.thingType} image regeneration for ${thing.name} due to property changes`);
+            } catch (imageError) {
+                console.warn('Failed to schedule thing image regeneration:', imageError.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            thing: thing.toJSON(),
+            message: 'Thing updated successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Delete a thing
+app.delete('/api/things/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const thing = things.get(id);
+
+        if (!thing) {
+            return res.status(404).json({
+                success: false,
+                error: 'Thing not found'
+            });
+        }
+
+        // Remove from storage and Thing's static indexes
+        things.delete(id);
+        thing.delete();
+
+        res.json({
+            success: true,
+            message: 'Thing deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all scenery things
+app.get('/api/things/scenery', (req, res) => {
+    try {
+        const sceneryThings = Array.from(things.values())
+            .filter(thing => thing.isScenery())
+            .map(thing => thing.toJSON());
+
+        res.json({
+            success: true,
+            things: sceneryThings,
+            count: sceneryThings.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get all item things
+app.get('/api/things/items', (req, res) => {
+    try {
+        const itemThings = Array.from(things.values())
+            .filter(thing => thing.isItem())
+            .map(thing => thing.toJSON());
+
+        res.json({
+            success: true,
+            things: itemThings,
+            count: itemThings.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Generate image for a specific thing
+app.post('/api/things/:id/image', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const thing = things.get(id);
+
+        if (!thing) {
+            return res.status(404).json({
+                success: false,
+                error: 'Thing not found'
+            });
+        }
+
+        const imageResult = await generateThingImage(thing);
+        
+        if (!imageResult) {
+            return res.status(503).json({
+                success: false,
+                error: 'Image generation is not available or disabled',
+                thing: thing.toJSON()
+            });
+        }
+
+        res.json({
+            success: true,
+            thing: thing.toJSON(),
+            imageGeneration: imageResult,
+            message: `${thing.thingType} image generation initiated for ${thing.name}`
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // ==================== NEW GAME FUNCTIONALITY ====================
 
 // Create a new game with fresh player and starting location
@@ -2478,7 +2891,7 @@ app.post('/api/test-config', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 10000 // 10 second timeout for test
+            timeout: 30000 // 30 second timeout for test
         });
 
         if (response.data && response.data.choices && response.data.choices.length > 0) {
