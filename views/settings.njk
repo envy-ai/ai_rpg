@@ -6,6 +6,7 @@
     <title>{{ title | default("Game Settings Manager") }}</title>
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/settings.css">
+    <script type="module" src="/vendor/vaadin.js"></script>
 </head>
 <body>
     <div class="container">
@@ -41,7 +42,7 @@
                 
                 <form id="settingForm">
                     <input type="hidden" id="settingId" name="id">
-                    
+
                     <div class="form-group">
                         <label for="name">Setting Name *</label>
                         <input type="text" id="name" name="name" required>
@@ -55,57 +56,43 @@
 
                     <div class="form-group">
                         <label for="theme">World Theme *</label>
-                        <select id="theme" name="theme" required>
-                            <option value="">Select a theme...</option>
-                        </select>
+                        <vaadin-combo-box id="theme" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">The overarching setting of the game world</div>
                     </div>
 
                     <div class="form-group">
                         <label for="genre">Game Genre *</label>
-                        <select id="genre" name="genre" required>
-                            <option value="">Select a genre...</option>
-                        </select>
+                        <vaadin-combo-box id="genre" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">Primary style of gameplay focus</div>
                     </div>
 
                     <div class="form-group">
                         <label for="startingLocationType">Starting Location Type</label>
-                        <select id="startingLocationType" name="startingLocationType">
-                            <option value="">Select starting location...</option>
-                        </select>
+                        <vaadin-combo-box id="startingLocationType" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">Where adventures typically begin</div>
                     </div>
 
                     <div class="form-group">
                         <label for="magicLevel">Magic Level</label>
-                        <select id="magicLevel" name="magicLevel">
-                            <option value="">Select magic prevalence...</option>
-                        </select>
+                        <vaadin-combo-box id="magicLevel" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">How common magic is in the world</div>
                     </div>
 
                     <div class="form-group">
                         <label for="techLevel">Technology Level</label>
-                        <select id="techLevel" name="techLevel">
-                            <option value="">Select tech level...</option>
-                        </select>
+                        <vaadin-combo-box id="techLevel" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">Technological advancement of the world</div>
                     </div>
 
                     <div class="form-group">
                         <label for="tone">Narrative Tone</label>
-                        <select id="tone" name="tone">
-                            <option value="">Select tone...</option>
-                        </select>
+                        <vaadin-combo-box id="tone" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">Overall emotional atmosphere</div>
                     </div>
 
                     <div class="form-group">
                         <label for="difficulty">Difficulty Level</label>
-                        <select id="difficulty" name="difficulty">
-                            <option value="">Select difficulty...</option>
-                        </select>
+                        <vaadin-combo-box id="difficulty" allow-custom-value></vaadin-combo-box>
                         <div class="help-text">Challenge level and lethality</div>
                     </div>
 
@@ -194,7 +181,103 @@
                     }
                     select.appendChild(optionElement);
                 });
+
+                // Add "Other..." option for fields with select-with-other
+                if (select.closest('.select-with-other')) {
+                    const otherOption = document.createElement('option');
+                    otherOption.value = 'OTHER';
+                    otherOption.textContent = 'Other...';
+                    select.appendChild(otherOption);
+                }
             });
+
+            // Setup select-with-other functionality
+            setupSelectWithOther();
+        }
+
+        function setupSelectWithOther() {
+            document.querySelectorAll('.select-with-other').forEach(container => {
+                const select = container.querySelector('select');
+                const otherInput = container.querySelector('.other-input');
+                const fieldName = container.dataset.field;
+
+                select.addEventListener('change', function() {
+                    if (this.value === 'OTHER') {
+                        otherInput.style.display = 'block';
+                        otherInput.required = select.required;
+                        otherInput.focus();
+                        // Set a temporary value to satisfy form validation
+                        otherInput.value = otherInput.value || '';
+                    } else {
+                        otherInput.style.display = 'none';
+                        otherInput.required = false;
+                        otherInput.value = '';
+                    }
+                });
+
+                // Handle other input changes
+                otherInput.addEventListener('input', function() {
+                    if (select.value === 'OTHER' && this.value.trim()) {
+                        // Create hidden input to hold the actual value
+                        let hiddenInput = container.querySelector('.other-value');
+                        if (!hiddenInput) {
+                            hiddenInput = document.createElement('input');
+                            hiddenInput.type = 'hidden';
+                            hiddenInput.className = 'other-value';
+                            hiddenInput.name = fieldName + '_other';
+                            container.appendChild(hiddenInput);
+                        }
+                        hiddenInput.value = this.value.trim();
+                    }
+                });
+            });
+        }
+
+        function getFormValue(fieldName) {
+            const container = document.querySelector(`[data-field="${fieldName}"]`);
+            if (container) {
+                const select = container.querySelector('select');
+                const otherInput = container.querySelector('.other-input');
+                
+                if (select.value === 'OTHER' && otherInput.value.trim()) {
+                    return otherInput.value.trim();
+                } else if (select.value && select.value !== 'OTHER') {
+                    return select.value;
+                }
+                return '';
+            }
+            
+            // Fallback for regular fields
+            const element = document.getElementById(fieldName);
+            return element ? element.value : '';
+        }
+
+        function setFormValue(fieldName, value) {
+            const container = document.querySelector(`[data-field="${fieldName}"]`);
+            if (container) {
+                const select = container.querySelector('select');
+                const otherInput = container.querySelector('.other-input');
+                
+                // Check if value exists in select options
+                const option = Array.from(select.options).find(opt => opt.value === value);
+                
+                if (option && value !== 'OTHER') {
+                    select.value = value;
+                    otherInput.style.display = 'none';
+                    otherInput.required = false;
+                    otherInput.value = '';
+                } else if (value) {
+                    // Custom value - use "Other" option
+                    select.value = 'OTHER';
+                    otherInput.style.display = 'block';
+                    otherInput.required = select.required;
+                    otherInput.value = value;
+                }
+            } else {
+                // Fallback for regular fields
+                const element = document.getElementById(fieldName);
+                if (element) element.value = value;
+            }
         }
 
         async function refreshSettingsList() {
@@ -285,8 +368,8 @@
             document.getElementById('settingId').value = setting.id;
             document.getElementById('name').value = setting.name;
             document.getElementById('description').value = setting.description || '';
-            document.getElementById('theme').value = setting.theme;
-            document.getElementById('genre').value = setting.genre;
+            setFormValue('theme', setting.theme);
+            setFormValue('genre', setting.genre);
             document.getElementById('startingLocationType').value = setting.startingLocationType;
             document.getElementById('magicLevel').value = setting.magicLevel;
             document.getElementById('techLevel').value = setting.techLevel;
@@ -434,6 +517,10 @@
                 
                 const formData = new FormData(e.target);
                 const settingData = Object.fromEntries(formData.entries());
+                
+                // Handle select-with-other fields
+                settingData.theme = getFormValue('theme');
+                settingData.genre = getFormValue('genre');
                 
                 // Convert playerStartingLevel to number
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;

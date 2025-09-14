@@ -1,0 +1,33 @@
+// Variables
+$primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$glass-bg: rgba(255, 255, 255, 0.1);
+$glass-bg-light: rgba(255, 255, 255, 0.2);
+$glass-bg-dark: rgba(255, 255, 255, 0.05);
+$white: #ffffff;
+$white-70: rgba(255, 255, 255, 0.7);
+$white-80: rgba(255, 255, 255, 0.8);
+$white-30: rgba(255, 255, 255, 0.3);
+$primary-blue: #667eea;
+$primary-blue-hover: #5a6fd8;
+$user-message-bg: rgba(100, 200, 255, 0.3);
+$error-bg: rgba(255, 100, 100, 0.3);
+$error-border: #ff6b6b;
+$border-radius: 8px;
+$border-radius-lg: 15px;
+$font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+
+// Mixins
+@mixin glass-effect($bg: $glass-bg) {
+  background: $bg;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+}
+
+@mixin transition($property: all, $duration: 0.3s) {
+  transition: $property $duration ease;
+}

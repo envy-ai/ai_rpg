@@ -597,7 +597,7 @@ function renderSystemPrompt(settingInfo = null) {
         if (settingInfo && typeof settingInfo.getPromptVariables === 'function') {
             const settingVariables = settingInfo.getPromptVariables();
             variables = { ...variables, ...settingVariables };
-            
+
             console.log('Using SettingInfo variables:', settingVariables);
         }
 
@@ -2504,7 +2504,7 @@ app.post('/api/things/:id/image', async (req, res) => {
 app.get('/api/settings', (req, res) => {
     try {
         const allSettings = SettingInfo.getAll().map(setting => setting.toJSON());
-        
+
         res.json({
             success: true,
             settings: allSettings,
@@ -2522,7 +2522,7 @@ app.get('/api/settings', (req, res) => {
 app.post('/api/settings', (req, res) => {
     try {
         const settingData = req.body;
-        
+
         // Validate required fields
         if (!settingData.name || typeof settingData.name !== 'string') {
             return res.status(400).json({
@@ -2540,7 +2540,7 @@ app.post('/api/settings', (req, res) => {
         }
 
         const newSetting = new SettingInfo(settingData);
-        
+
         res.status(201).json({
             success: true,
             setting: newSetting.toJSON(),
@@ -2730,7 +2730,7 @@ app.post('/api/settings/:id/clone', (req, res) => {
 app.post('/api/settings/save', (req, res) => {
     try {
         const result = SettingInfo.saveAll();
-        
+
         res.json({
             success: true,
             result,
@@ -2748,7 +2748,7 @@ app.post('/api/settings/save', (req, res) => {
 app.post('/api/settings/load', (req, res) => {
     try {
         const result = SettingInfo.loadAll();
-        
+
         res.json({
             success: true,
             result,
@@ -2766,7 +2766,7 @@ app.post('/api/settings/load', (req, res) => {
 app.get('/api/settings/saved', (req, res) => {
     try {
         const savedSettings = SettingInfo.listSavedSettings();
-        
+
         res.json({
             success: true,
             savedSettings,
@@ -2794,7 +2794,7 @@ app.post('/api/settings/:id/save', (req, res) => {
         }
 
         const filepath = setting.save();
-        
+
         res.json({
             success: true,
             filepath,
@@ -2822,7 +2822,7 @@ app.post('/api/settings/:id/apply', (req, res) => {
         }
 
         currentSetting = setting;
-        
+
         res.json({
             success: true,
             setting: setting.toJSON(),
@@ -2866,7 +2866,7 @@ app.delete('/api/settings/current', (req, res) => {
     try {
         const previousSetting = currentSetting;
         currentSetting = null;
-        
+
         res.json({
             success: true,
             message: 'Current setting cleared - reverted to configuration defaults',

@@ -190,13 +190,13 @@ class SettingInfo {
     if (!value || typeof value !== 'string') {
       throw new Error('Setting name must be a non-empty string');
     }
-    
+
     // Remove from old name index
     SettingInfo.#indexByName.delete(this.#name.toLowerCase());
-    
+
     this.#name = value;
     this.#updateTimestamp();
-    
+
     // Add to new name index
     SettingInfo.#indexByName.set(this.#name.toLowerCase(), this);
   }
@@ -358,13 +358,13 @@ class SettingInfo {
     delete data.id;
     delete data.createdAt;
     delete data.lastUpdated;
-    
+
     if (newName) {
       data.name = newName;
     } else {
       data.name = `${data.name} (Copy)`;
     }
-    
+
     return new SettingInfo(data);
   }
 
@@ -376,15 +376,15 @@ class SettingInfo {
 
     // Simple compatibility check - same theme and close tech/magic levels
     return this.#theme === otherSetting.theme &&
-           Math.abs(this.#getNumericLevel('techLevel') - otherSetting.#getNumericLevel('techLevel')) <= 2 &&
-           Math.abs(this.#getNumericLevel('magicLevel') - otherSetting.#getNumericLevel('magicLevel')) <= 2;
+      Math.abs(this.#getNumericLevel('techLevel') - otherSetting.#getNumericLevel('techLevel')) <= 2 &&
+      Math.abs(this.#getNumericLevel('magicLevel') - otherSetting.#getNumericLevel('magicLevel')) <= 2;
   }
 
   // Helper to convert level strings to numbers for comparison
   #getNumericLevel(levelType) {
     const techLevels = ['stone-age', 'bronze-age', 'iron-age', 'medieval', 'renaissance', 'industrial', 'modern', 'near-future', 'far-future'];
     const magicLevels = ['none', 'rare', 'uncommon', 'common', 'abundant', 'omnipresent'];
-    
+
     if (levelType === 'techLevel') {
       return techLevels.indexOf(this.#techLevel) || 0;
     } else if (levelType === 'magicLevel') {
@@ -422,7 +422,7 @@ class SettingInfo {
   save(saveDir = null) {
     try {
       const dir = saveDir || path.join(__dirname, 'saves', 'settings');
-      
+
       // Create directory if it doesn't exist
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -430,7 +430,7 @@ class SettingInfo {
 
       const filename = `${this.#name.replace(/[^a-zA-Z0-9]/g, '_')}_${this.#id}.json`;
       const filepath = path.join(dir, filename);
-      
+
       fs.writeFileSync(filepath, JSON.stringify(this.toJSON(), null, 2));
       return filepath;
     } catch (error) {
@@ -452,7 +452,7 @@ class SettingInfo {
   static saveAll(saveDir = null) {
     try {
       const dir = saveDir || path.join(__dirname, 'saves', 'settings');
-      
+
       // Create directory if it doesn't exist
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -473,7 +473,7 @@ class SettingInfo {
         count: allSettings.length,
         savedAt: new Date().toISOString()
       };
-      
+
       const indexPath = path.join(dir, 'settings_index.json');
       fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
       savedFiles.push(indexPath);
@@ -492,7 +492,7 @@ class SettingInfo {
   static loadAll(saveDir = null) {
     try {
       const dir = saveDir || path.join(__dirname, 'saves', 'settings');
-      
+
       if (!fs.existsSync(dir)) {
         return { count: 0, settings: [] };
       }
@@ -501,10 +501,10 @@ class SettingInfo {
       const indexPath = path.join(dir, 'settings_index.json');
       if (fs.existsSync(indexPath)) {
         const indexData = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-        
+
         // Clear existing settings
         SettingInfo.clear();
-        
+
         // Load each setting
         const loadedSettings = [];
         for (const settingData of indexData.settings) {
@@ -525,10 +525,10 @@ class SettingInfo {
 
       // Fallback: scan directory for individual setting files
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'settings_index.json');
-      
+
       // Clear existing settings
       SettingInfo.clear();
-      
+
       const loadedSettings = [];
       for (const filename of files) {
         try {
@@ -554,7 +554,7 @@ class SettingInfo {
   static listSavedSettings(saveDir = null) {
     try {
       const dir = saveDir || path.join(__dirname, 'saves', 'settings');
-      
+
       if (!fs.existsSync(dir)) {
         return [];
       }
@@ -563,7 +563,7 @@ class SettingInfo {
       return files.map(filename => {
         const filepath = path.join(dir, filename);
         const stats = fs.statSync(filepath);
-        
+
         // Try to read basic info without fully loading
         try {
           const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
@@ -600,7 +600,7 @@ class SettingInfo {
       const dir = saveDir || path.join(__dirname, 'saves', 'settings');
       const filename = `${this.#name.replace(/[^a-zA-Z0-9]/g, '_')}_${this.#id}.json`;
       const filepath = path.join(dir, filename);
-      
+
       if (fs.existsSync(filepath)) {
         fs.unlinkSync(filepath);
         return true;

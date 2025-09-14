@@ -1,7 +1,7 @@
 {
-  "name": "hello-world-app",
+  "name": "ai-rpg",
   "version": "1.0.0",
-  "description": "A simple Hello World Node.js app",
+  "description": "An AI-powered RPG game server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -16,7 +16,10 @@
     "xmldom": "^0.6.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@vaadin/combo-box": "^24.8.7",
+    "esbuild": "^0.25.9",
+    "nodemon": "^3.0.1",
+    "vite": "^6.3.6"
   },
   "keywords": [
     "nodejs",

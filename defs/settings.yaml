@@ -27,7 +27,7 @@ settings:
       speculative: [post-apocalyptic, cyberpunk, steampunk, alternate-history]
       genre: [horror, mystery, western, supernatural]
       hybrid: [urban-fantasy, space-opera]
-  
+
   genre:
     label: "Game Genre"
     description: "The primary genre or style of gameplay focus"
@@ -296,7 +296,7 @@ customRules:
   type: "object"
   default: {}
   examples:
-    criticalHitRules: 
+    criticalHitRules:
       description: "Modified critical hit mechanics"
       default: "double-damage"
     magicSystem:
