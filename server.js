@@ -506,7 +506,11 @@ addDiceFilters(imagePromptEnv);
 
 // Add JSON escape filter for ComfyUI templates
 imagePromptEnv.addFilter('json', function (str) {
-    return JSON.stringify(str).slice(1, -1); // Remove surrounding quotes
+    if (typeof str !== 'string') {
+        str = String(str);
+    }
+    // Properly escape for JSON without surrounding quotes
+    return JSON.stringify(str).slice(1, -1);
 });
 
 // Function to render system prompt from template
@@ -595,21 +599,30 @@ function renderLocationImagePrompt(location) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the YAML and extract imagePrompt
+        // Parse the YAML and extract both systemPrompt and imagePrompt
         const parsedYaml = yaml.load(renderedTemplate);
+        const systemPrompt = parsedYaml.systemPrompt;
         const imagePrompt = parsedYaml.imagePrompt;
 
-        if (!imagePrompt) {
-            throw new Error('No imagePrompt found in location image template');
+        if (!systemPrompt || !imagePrompt) {
+            throw new Error('Missing systemPrompt or imagePrompt in location image template');
         }
 
-        console.log(`Generated location scene prompt for ${location.id}:`, imagePrompt);
-        return imagePrompt.trim();
+        console.log(`Extracted prompts for location ${location.id} - calling LLM for image prompt generation`);
+
+        // Return the prompts for LLM processing (not the final image prompt yet)
+        return {
+            systemPrompt: systemPrompt.trim(),
+            userPrompt: imagePrompt.trim()
+        };
 
     } catch (error) {
         console.error('Error rendering location image template:', error);
-        // Fallback to simple prompt
-        return `Fantasy RPG location scene: ${location ? location.description : 'A mysterious place'}, high quality fantasy environment art, detailed location scene`;
+        // Fallback to simple prompt structure
+        return {
+            systemPrompt: "You are a specialized prompt generator for creating fantasy RPG location scene images.",
+            userPrompt: `Create an image prompt for: ${location ? location.description : 'A mysterious place'}, high quality fantasy environment art, detailed location scene`
+        };
     }
 }
 
@@ -755,6 +768,75 @@ async function generatePlayerImage(player) {
     }
 }
 
+// Function to generate image prompt using LLM
+async function generateImagePromptFromTemplate(prompts) {
+    try {
+        // Prepare the messages for the AI API
+        const messages = [
+            {
+                role: 'system',
+                content: prompts.systemPrompt
+            },
+            {
+                role: 'user',
+                content: prompts.userPrompt
+            }
+        ];
+
+        // Use configuration from config.yaml
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const model = config.ai.model;
+
+        // Prepare the request to the OpenAI-compatible API
+        const chatEndpoint = endpoint.endsWith('/') ?
+            endpoint + 'chat/completions' :
+            endpoint + '/chat/completions';
+
+        const requestData = {
+            model: model,
+            messages: messages,
+            max_tokens: config.ai.maxTokens || 500,
+            temperature: config.ai.temperature || 0.3  // Lower temperature for more consistent output
+        };
+
+        console.log('🤖 Requesting image prompt generation from LLM...');
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000 // 30 second timeout
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid response from AI API');
+        }
+
+        let generatedImagePrompt = response.data.choices[0].message.content;
+        console.log('📥 LLM Generated Image Prompt:', generatedImagePrompt);
+
+        // Clean the prompt to remove potential problematic characters
+        generatedImagePrompt = generatedImagePrompt
+            .replace(/[\r\n]+/g, ' ')  // Replace newlines with spaces
+            .replace(/[""]/g, '"')     // Normalize quotes
+            .replace(/['']/g, "'")     // Normalize apostrophes
+            .replace(/[—–]/g, '-')     // Normalize dashes
+            .replace(/\s+/g, ' ')      // Collapse multiple spaces
+            .trim();
+
+        console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
+
+        return generatedImagePrompt;
+
+    } catch (error) {
+        console.error('Error generating image prompt with LLM:', error);
+        // Fallback to the user prompt if LLM fails
+        return prompts.userPrompt;
+    }
+}
+
 // Function to generate location scene image
 async function generateLocationImage(location) {
     try {
@@ -773,13 +855,14 @@ async function generateLocationImage(location) {
             throw new Error('Location object is required');
         }
 
-        // Generate the location scene prompt
-        const scenePrompt = renderLocationImagePrompt(location);
+        // Generate the location scene prompt using LLM
+        const promptTemplate = renderLocationImagePrompt(location);
+        const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
 
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
         const payload = {
-            prompt: scenePrompt,
+            prompt: finalImagePrompt,
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
@@ -1851,6 +1934,92 @@ app.post('/api/locations/generate', async (req, res) => {
         res.status(statusCode).json({
             success: false,
             error: errorMessage,
+            details: error.message
+        });
+    }
+});
+
+// ==================== NEW GAME FUNCTIONALITY ====================
+
+// Create a new game with fresh player and starting location
+app.post('/api/new-game', async (req, res) => {
+    try {
+        const { playerName, playerDescription } = req.body;
+
+        // Clear existing game state
+        players.clear();
+        gameLocations.clear();
+        chatHistory.length = 0;
+
+        console.log('🎮 Starting new game...');
+
+        // Create new player
+        const newPlayer = new Player({
+            name: playerName || 'Adventurer',
+            description: playerDescription || 'A brave soul embarking on a new adventure.',
+            level: 1,
+            health: 25,
+            maxHealth: 25,
+            attributes: {
+                strength: 10,
+                dexterity: 10,
+                constitution: 10,
+                intelligence: 10,
+                wisdom: 10,
+                charisma: 10
+            }
+        });
+
+        // Generate a safe starting location (level 1-3)
+        console.log('🏗️ Generating starting location...');
+        const startingLocationOptions = {
+            setting: 'fantasy',
+            existingLocations: [],
+            shortDescription: 'A safe starting area perfect for new adventurers',
+            locationTheme: 'village',
+            playerLevel: 1,
+            locationPurpose: 'starting town or safe area'
+        };
+
+        // Generate starting location using existing system
+        const locationResult = await generateLocationFromPrompt(startingLocationOptions);
+        const locationData = locationResult.location;
+
+        // Ensure starting location is safe (level 1-3)
+        if (locationData.baseLevel > 3) {
+            locationData.baseLevel = Math.min(3, Math.max(1, locationData.baseLevel));
+        }
+
+        // Store the starting location (already done in generateLocationFromPrompt, but ensure it's there)
+        gameLocations.set(locationData.id, locationData);
+        console.log(`🏠 Created starting location: ${locationData.name} (Level ${locationData.baseLevel})`);
+
+        // Place player in starting location
+        newPlayer.setLocation(locationData.id);
+
+        // Store new player and set as current
+        players.set(newPlayer.id, newPlayer);
+        currentPlayer = newPlayer;
+
+        console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${locationData.name}`);
+
+        res.json({
+            success: true,
+            message: 'New game started successfully',
+            player: newPlayer.toJSON(),
+            startingLocation: locationData.toJSON(),
+            gameState: {
+                totalPlayers: players.size,
+                totalLocations: gameLocations.size,
+                currentLocation: locationData.name
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating new game:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create new game',
             details: error.message
         });
     }
