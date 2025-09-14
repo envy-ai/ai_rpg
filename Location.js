@@ -86,7 +86,7 @@ class Location {
 
     if (!locationElem) {
       console.error('No <location> element found in:', strippedXML);
-      throw new Error('Invalid XML snippet: missing <location> root element');
+      throw new Error('Invalid XML snippet: missing <location> root element: ' + strippedXML);
     }
 
     // Populate locationData with the text content of each child element

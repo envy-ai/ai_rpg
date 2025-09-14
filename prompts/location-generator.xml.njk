@@ -8,17 +8,17 @@ You are an AI Location Generator for a fantasy RPG world. Your task is to create
     </systemPrompt>
     
     <generationPrompt>
-&lt;context&gt;
-&lt;setting&gt;
+<context>
+<setting>
 {{ setting }}
-&lt;/setting&gt;
+</setting>
 
-&lt;existingLocations&gt;
-{% for loc in existingLocations %}&lt;location&gt;{{ loc }}&lt;/location&gt;
-{% endfor %}&lt;/existingLocations&gt;
-&lt;/context&gt;
+<existingLocations>
+{% for loc in existingLocations %}<location>{{ loc }}</location>
+{% endfor %}</existingLocations>
+</context>
 
-&lt;instructions&gt;Generate a unique, immersive fantasy location with the following specifications:&lt;/instructions&gt;
+<instructions>Generate a unique, immersive fantasy location with the following specifications:</instructions>
 
 REQUIRED FIELDS:
 - name: A short, evocative name or title for the location (3-5 words)
@@ -47,20 +47,20 @@ GUIDELINES:
 - Include atmospheric details like lighting, sounds, smells, or magical effects
 
 OUTPUT FORMAT:
-Return ONLY an XML snippet with the following fields:
+Return ONLY the following fields, in this format:
 
-&lt;location&gt;
-  &lt;name&gt;A short name or title for the location&lt;/name&gt;
-  &lt;description&gt;Your detailed location description here&lt;/description&gt;
-  &lt;baseLevel&gt;integer_from_1_to_20&lt;/baseLevel&gt;
-&lt;/location&gt;
+<location>
+  <name>A short name or title for the location</name>
+  <description>Your detailed location description here</description>
+  <baseLevel>integer_from_1_to_20</baseLevel>
+</location>
 
 Example output:
 
-&lt;location&gt;
-  &lt;name&gt;Whispering Pines Village&lt;/name&gt;
-  &lt;description&gt;A quaint village nestled among towering pine trees. The air is filled with the scent of fresh pine and wood smoke from chimneys. Villagers go about their daily routines, tending to livestock and trading goods at the bustling market square. The village is surrounded by a protective wooden palisade, with a single gate leading to a winding forest path. At night, the pines seem to whisper secrets on the breeze, hinting at ancient magic in the woods beyond.&lt;/description&gt;
-  &lt;baseLevel&gt;2&lt;/baseLevel&gt;
-&lt;/location&gt;
+<location>
+  <name>Whispering Pines Village</name>
+  <description>A quaint village nestled among towering pine trees. The air is filled with the scent of fresh pine and wood smoke from chimneys. Villagers go about their daily routines, tending to livestock and trading goods at the bustling market square. The village is surrounded by a protective wooden palisade, with a single gate leading to a winding forest path. At night, the pines seem to whisper secrets on the breeze, hinting at ancient magic in the woods beyond.</description>
+  <baseLevel>2</baseLevel>
+</location>
     </generationPrompt>
 </template>

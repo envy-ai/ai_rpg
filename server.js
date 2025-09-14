@@ -5,7 +5,7 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
-const { DOMParser } = require('xmldom');
+const { DOMParser, XMLSerializer } = require('xmldom');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -53,6 +53,11 @@ const playerImageRegenerationTimeouts = new Map(); // Player ID -> timeout ID
 const locationImageRegenerationTimeouts = new Map(); // Location ID -> timeout ID
 const locationExitImageRegenerationTimeouts = new Map(); // LocationExit ID -> timeout ID
 const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
+
+function innerXML(node) {
+    const s = new XMLSerializer();
+    return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
+}
 
 // Create a new image generation job
 function createImageJob(jobId, payload) {
@@ -531,19 +536,19 @@ function parseXMLTemplate(xmlContent) {
         // Extract systemPrompt
         const systemPromptNode = doc.getElementsByTagName('systemPrompt')[0];
         if (systemPromptNode) {
-            result.systemPrompt = systemPromptNode.textContent.trim();
+            result.systemPrompt = innerXML(systemPromptNode).trim();
         }
 
         // Extract generationPrompt
         const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
         if (generationPromptNode) {
-            result.generationPrompt = generationPromptNode.textContent.trim();
+            result.generationPrompt = innerXML(generationPromptNode).trim();
         }
 
         // Extract imagePrompt
         const imagePromptNode = doc.getElementsByTagName('imagePrompt')[0];
         if (imagePromptNode) {
-            result.imagePrompt = imagePromptNode.textContent.trim();
+            result.imagePrompt = innerXML(imagePromptNode).trim();
         }
 
         // Extract role (optional)
@@ -670,6 +675,7 @@ function renderLocationImagePrompt(location) {
 
         // Return the prompts for LLM processing (not the final image prompt yet)
         return {
+            renderedTemplate: renderedTemplate,
             systemPrompt: systemPrompt.trim(),
             generationPrompt: generationPrompt.trim()
         };
@@ -754,10 +760,10 @@ function renderLocationGeneratorPrompt(options = {}) {
         }
 
         // Combine the system and generation prompts
-        const fullPrompt = systemPrompt.trim() + '\n\n' + generationPrompt.trim();
+        //const fullPrompt = systemPrompt.trim() + '\n\n' + generationPrompt.trim();
 
         console.log('Generated location generator prompt with variables:', variables);
-        return fullPrompt.trim();
+        return { systemPrompt: systemPrompt.trim(), generationPrompt: generationPrompt.trim() };
 
     } catch (error) {
         console.error('Error rendering location generator template:', error);
@@ -925,6 +931,7 @@ async function generateLocationImage(location) {
             negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only',
             // Track which location this image is for
             locationId: location.id,
+            renderedTemplate: promptTemplate.renderedTemplate,
             isLocationScene: true
         };
 
@@ -1111,7 +1118,7 @@ function generateLocationExitImageDebounced(locationExit) {
 async function generateLocationFromPrompt(options = {}) {
     try {
         // Generate the system prompt using the template
-        const systemPrompt = renderLocationGeneratorPrompt(options);
+        const { systemPrompt, generationPrompt } = renderLocationGeneratorPrompt(options);
 
         // Prepare the messages for the AI API
         const messages = [
@@ -1121,7 +1128,7 @@ async function generateLocationFromPrompt(options = {}) {
             },
             {
                 role: 'user',
-                content: 'Generate a new location for the game.'
+                content: generationPrompt
             }
         ];
 
@@ -1189,6 +1196,7 @@ async function generateLocationFromPrompt(options = {}) {
         return {
             location: location,
             aiResponse: aiResponse,
+            generationPrompt: generationPrompt,
             generationOptions: options
         };
 
