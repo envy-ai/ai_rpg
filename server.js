@@ -49,6 +49,8 @@ const JOB_STATUS = {
 
 // Debouncing for player image regeneration
 const playerImageRegenerationTimeouts = new Map(); // Player ID -> timeout ID
+const locationImageRegenerationTimeouts = new Map(); // Location ID -> timeout ID
+const locationExitImageRegenerationTimeouts = new Map(); // LocationExit ID -> timeout ID
 const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
 
 // Create a new image generation job
@@ -144,6 +146,36 @@ async function processJobQueue() {
                     if (player) {
                         player.imageId = result.imageId;
                         console.log(`🎨 Updated player ${player.name} imageId to: ${result.imageId}`);
+                    }
+                }
+
+                // Update location's imageId if this was a location scene job
+                if (job.payload.isLocationScene && job.payload.locationId && result.imageId) {
+                    const location = gameLocations.get(job.payload.locationId);
+                    if (location) {
+                        location.imageId = result.imageId;
+                        console.log(`🏞️ Updated location ${location.id} imageId to: ${result.imageId}`);
+                    }
+                }
+
+                // Update location exit's imageId if this was a location exit passage job
+                if (job.payload.isLocationExitImage && job.payload.locationExitId && result.imageId) {
+                    // Find the location exit by searching through all locations
+                    let foundExit = null;
+                    for (const location of gameLocations.values()) {
+                        const exits = location.exits; // This returns a Map copy
+                        for (const exit of exits.values()) {
+                            if (exit.id === job.payload.locationExitId) {
+                                foundExit = exit;
+                                break;
+                            }
+                        }
+                        if (foundExit) break;
+                    }
+
+                    if (foundExit) {
+                        foundExit.imageId = result.imageId;
+                        console.log(`🚪 Updated location exit ${foundExit.id} imageId to: ${result.imageId}`);
                     }
                 }
             }
@@ -539,6 +571,81 @@ function renderPlayerPortraitPrompt(player) {
     }
 }
 
+// Function to render location scene prompt from template
+function renderLocationImagePrompt(location) {
+    try {
+        const templateName = 'location-image.yaml.njk';
+
+        if (!location) {
+            throw new Error('Location object is required');
+        }
+
+        const variables = {
+            locationId: location.id,
+            locationDescription: location.description,
+            locationBaseLevel: location.baseLevel,
+            locationExits: location.exits ? Object.fromEntries(location.exits) : {}
+        };
+
+        // Render the template
+        const renderedTemplate = promptEnv.render(templateName, variables);
+
+        // Parse the YAML and extract imagePrompt
+        const parsedYaml = yaml.load(renderedTemplate);
+        const imagePrompt = parsedYaml.imagePrompt;
+
+        if (!imagePrompt) {
+            throw new Error('No imagePrompt found in location image template');
+        }
+
+        console.log(`Generated location scene prompt for ${location.id}:`, imagePrompt);
+        return imagePrompt.trim();
+
+    } catch (error) {
+        console.error('Error rendering location image template:', error);
+        // Fallback to simple prompt
+        return `Fantasy RPG location scene: ${location ? location.description : 'A mysterious place'}, high quality fantasy environment art, detailed location scene`;
+    }
+}
+
+// Function to render location exit image prompt from template
+function renderLocationExitImagePrompt(locationExit) {
+    try {
+        const templateName = 'locationexit-image.yaml.njk';
+
+        if (!locationExit) {
+            throw new Error('LocationExit object is required');
+        }
+
+        const variables = {
+            exitId: locationExit.id,
+            exitDescription: locationExit.description,
+            exitDestination: locationExit.destination,
+            exitBidirectional: locationExit.bidirectional,
+            exitType: locationExit.bidirectional ? 'two-way' : 'one-way'
+        };
+
+        // Render the template
+        const renderedTemplate = promptEnv.render(templateName, variables);
+
+        // Parse the YAML and extract imagePrompt
+        const parsedYaml = yaml.load(renderedTemplate);
+        const imagePrompt = parsedYaml.imagePrompt;
+
+        if (!imagePrompt) {
+            throw new Error('No imagePrompt found in location exit image template');
+        }
+
+        console.log(`Generated location exit passage prompt for ${locationExit.id}:`, imagePrompt);
+        return imagePrompt.trim();
+
+    } catch (error) {
+        console.error('Error rendering location exit image template:', error);
+        // Fallback to simple prompt
+        return `Fantasy RPG passage scene: ${locationExit ? locationExit.description : 'A mysterious passage'}, high quality fantasy pathway art, detailed exit passage`;
+    }
+}
+
 // Function to generate player portrait image
 async function generatePlayerImage(player) {
     try {
@@ -599,6 +706,126 @@ async function generatePlayerImage(player) {
     }
 }
 
+// Function to generate location scene image
+async function generateLocationImage(location) {
+    try {
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            console.log('Image generation is not enabled, skipping location scene generation');
+            return null;
+        }
+
+        if (!comfyUIClient) {
+            console.log('ComfyUI client not initialized, skipping location scene generation');
+            return null;
+        }
+
+        if (!location) {
+            throw new Error('Location object is required');
+        }
+
+        // Generate the location scene prompt
+        const scenePrompt = renderLocationImagePrompt(location);
+
+        // Create image generation job with location-specific settings
+        const jobId = generateImageId();
+        const payload = {
+            prompt: scenePrompt,
+            width: config.imagegen.default_settings.image.width || 1024,
+            height: config.imagegen.default_settings.image.height || 1024,
+            seed: Math.floor(Math.random() * 1000000),
+            negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only',
+            // Track which location this image is for
+            locationId: location.id,
+            isLocationScene: true
+        };
+
+        console.log(`🏞️ Generating scene for location ${location.id} with job ID: ${jobId}`);
+
+        // Create and queue the job
+        const job = createImageJob(jobId, payload);
+        jobQueue.push(jobId);
+
+        // Start processing if not already running
+        setTimeout(() => processJobQueue(), 0);
+
+        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
+        location.imageId = jobId;
+        console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
+
+        return {
+            jobId: jobId,
+            status: job.status,
+            message: 'Location scene generation job queued',
+            estimatedTime: '30-90 seconds'
+        };
+
+    } catch (error) {
+        console.error('Error generating location image:', error);
+        throw error;
+    }
+}
+
+// Function to generate location exit passage image
+async function generateLocationExitImage(locationExit) {
+    try {
+        // Check if image generation is enabled
+        if (!config.imagegen || !config.imagegen.enabled) {
+            console.log('Image generation is not enabled, skipping location exit passage generation');
+            return null;
+        }
+
+        if (!comfyUIClient) {
+            console.log('ComfyUI client not initialized, skipping location exit passage generation');
+            return null;
+        }
+
+        if (!locationExit) {
+            throw new Error('LocationExit object is required');
+        }
+
+        // Generate the location exit passage prompt
+        const passagePrompt = renderLocationExitImagePrompt(locationExit);
+
+        // Create image generation job with location exit-specific settings
+        const jobId = generateImageId();
+        const payload = {
+            prompt: passagePrompt,
+            width: config.imagegen.default_settings.image.width || 1024,
+            height: config.imagegen.default_settings.image.height || 1024,
+            seed: Math.floor(Math.random() * 1000000),
+            negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, blocked passages',
+            // Track which location exit this image is for
+            locationExitId: locationExit.id,
+            isLocationExitImage: true
+        };
+
+        console.log(`🚪 Generating passage for location exit ${locationExit.id} with job ID: ${jobId}`);
+
+        // Create and queue the job
+        const job = createImageJob(jobId, payload);
+        jobQueue.push(jobId);
+
+        // Start processing if not already running
+        setTimeout(() => processJobQueue(), 0);
+
+        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
+        locationExit.imageId = jobId;
+        console.log(`🚪 Queued passage generation for location exit ${locationExit.id}, tracking with job ID: ${jobId}`);
+
+        return {
+            jobId: jobId,
+            status: job.status,
+            message: 'Location exit passage generation job queued',
+            estimatedTime: '30-90 seconds'
+        };
+
+    } catch (error) {
+        console.error('Error generating location exit image:', error);
+        throw error;
+    }
+}
+
 // Debounced function to generate player portrait image
 function generatePlayerImageDebounced(player) {
     if (!player || !player.id) {
@@ -628,6 +855,68 @@ function generatePlayerImageDebounced(player) {
 
     playerImageRegenerationTimeouts.set(player.id, timeoutId);
     console.log(`⏱️  Debounced image regeneration scheduled for player ${player.name} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
+}
+
+// Debounced function to generate location scene image
+function generateLocationImageDebounced(location) {
+    if (!location || !location.id) {
+        console.warn('Cannot debounce image generation: invalid location');
+        return;
+    }
+
+    // Clear existing timeout for this location
+    const existingTimeout = locationImageRegenerationTimeouts.get(location.id);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+    }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+        try {
+            console.log(`🔄 Debounced scene regeneration executing for location ${location.id}...`);
+            const imageResult = await generateLocationImage(location);
+            console.log(`🏞️ Debounced scene regeneration initiated:`, imageResult);
+        } catch (error) {
+            console.error('Error in debounced location image generation:', error);
+        } finally {
+            // Clean up timeout tracking
+            locationImageRegenerationTimeouts.delete(location.id);
+        }
+    }, IMAGE_REGENERATION_DEBOUNCE_MS);
+
+    locationImageRegenerationTimeouts.set(location.id, timeoutId);
+    console.log(`⏱️  Debounced scene regeneration scheduled for location ${location.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
+}
+
+// Debounced function to generate location exit passage image
+function generateLocationExitImageDebounced(locationExit) {
+    if (!locationExit || !locationExit.id) {
+        console.warn('Cannot debounce image generation: invalid location exit');
+        return;
+    }
+
+    // Clear existing timeout for this location exit
+    const existingTimeout = locationExitImageRegenerationTimeouts.get(locationExit.id);
+    if (existingTimeout) {
+        clearTimeout(existingTimeout);
+    }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+        try {
+            console.log(`🔄 Debounced passage regeneration executing for location exit ${locationExit.id}...`);
+            const imageResult = await generateLocationExitImage(locationExit);
+            console.log(`🚪 Debounced passage regeneration initiated:`, imageResult);
+        } catch (error) {
+            console.error('Error in debounced location exit image generation:', error);
+        } finally {
+            // Clean up timeout tracking
+            locationExitImageRegenerationTimeouts.delete(locationExit.id);
+        }
+    }, IMAGE_REGENERATION_DEBOUNCE_MS);
+
+    locationExitImageRegenerationTimeouts.set(locationExit.id, timeoutId);
+    console.log(`⏱️  Debounced passage regeneration scheduled for location exit ${locationExit.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
 }
 
 // Middleware

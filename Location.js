@@ -11,7 +11,9 @@ class Location {
   #description;
   #baseLevel;
   #exits;
+  #imageId;
   #createdAt;
+  #lastUpdated;
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -26,8 +28,9 @@ class Location {
    * @param {string} options.description - Description of the location
    * @param {number} [options.baseLevel=1] - Base level for the location (defaults to 1)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
+   * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null } = {}) {
     // Validate required parameters
     if (!description || typeof description !== 'string') {
       throw new Error('Location description is required and must be a string');
@@ -42,7 +45,9 @@ class Location {
     this.#description = description.trim();
     this.#baseLevel = Math.floor(baseLevel); // Ensure integer
     this.#exits = new Map(); // Map of direction -> LocationExit
+    this.#imageId = imageId;
     this.#createdAt = new Date();
+    this.#lastUpdated = this.#createdAt;
   }
 
   // Getters for accessing private fields
@@ -67,12 +72,29 @@ class Location {
     return new Date(this.#createdAt);
   }
 
+  get imageId() {
+    return this.#imageId;
+  }
+
+  get lastUpdated() {
+    return new Date(this.#lastUpdated);
+  }
+
   // Setters for modifying private fields
   set description(newDescription) {
     if (!newDescription || typeof newDescription !== 'string') {
       throw new Error('Description must be a non-empty string');
     }
     this.#description = newDescription.trim();
+    this.#lastUpdated = new Date();
+  }
+
+  set imageId(newImageId) {
+    if (newImageId !== null && typeof newImageId !== 'string') {
+      throw new Error('Image ID must be a string or null');
+    }
+    this.#imageId = newImageId;
+    this.#lastUpdated = new Date();
   }
 
   set baseLevel(newLevel) {
@@ -80,6 +102,7 @@ class Location {
       throw new Error('Base level must be a positive number');
     }
     this.#baseLevel = Math.floor(newLevel);
+    this.#lastUpdated = new Date();
   }
 
   /**
@@ -160,9 +183,11 @@ class Location {
       id: this.#id,
       description: this.#description,
       baseLevel: this.#baseLevel,
+      imageId: this.#imageId,
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
-      createdAt: this.#createdAt.toISOString()
+      createdAt: this.#createdAt.toISOString(),
+      lastUpdated: this.#lastUpdated.toISOString()
     };
   }
 
@@ -184,8 +209,10 @@ class Location {
       id: this.#id,
       description: this.#description,
       baseLevel: this.#baseLevel,
+      imageId: this.#imageId,
       exits: exits,
-      createdAt: this.#createdAt.toISOString()
+      createdAt: this.#createdAt.toISOString(),
+      lastUpdated: this.#lastUpdated.toISOString()
     };
   }
 

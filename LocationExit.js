@@ -11,7 +11,9 @@ class LocationExit {
   #description;
   #destination;
   #bidirectional;
+  #imageId;
   #createdAt;
+  #lastUpdated;
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -27,8 +29,9 @@ class LocationExit {
    * @param {string} options.destination - ID or reference to the destination location
    * @param {boolean} [options.bidirectional=true] - Whether the exit works both ways (defaults to true)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
+   * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    */
-  constructor({ description, destination, bidirectional = true, id = null } = {}) {
+  constructor({ description, destination, bidirectional = true, id = null, imageId = null } = {}) {
     // Validate required parameters
     if (!description || typeof description !== 'string') {
       throw new Error('Exit description is required and must be a string');
@@ -47,7 +50,9 @@ class LocationExit {
     this.#description = description.trim();
     this.#destination = destination.trim();
     this.#bidirectional = bidirectional;
+    this.#imageId = imageId;
     this.#createdAt = new Date();
+    this.#lastUpdated = this.#createdAt;
   }
 
   // Getters for accessing private fields
@@ -71,12 +76,21 @@ class LocationExit {
     return new Date(this.#createdAt);
   }
 
+  get imageId() {
+    return this.#imageId;
+  }
+
+  get lastUpdated() {
+    return new Date(this.#lastUpdated);
+  }
+
   // Setters for modifying private fields
   set description(newDescription) {
     if (!newDescription || typeof newDescription !== 'string') {
       throw new Error('Description must be a non-empty string');
     }
     this.#description = newDescription.trim();
+    this.#lastUpdated = new Date();
   }
 
   set destination(newDestination) {
@@ -84,6 +98,7 @@ class LocationExit {
       throw new Error('Destination must be a non-empty string');
     }
     this.#destination = newDestination.trim();
+    this.#lastUpdated = new Date();
   }
 
   set bidirectional(isBidirectional) {
@@ -91,6 +106,15 @@ class LocationExit {
       throw new Error('Bidirectional flag must be a boolean');
     }
     this.#bidirectional = isBidirectional;
+    this.#lastUpdated = new Date();
+  }
+
+  set imageId(newImageId) {
+    if (newImageId !== null && typeof newImageId !== 'string') {
+      throw new Error('Image ID must be a string or null');
+    }
+    this.#imageId = newImageId;
+    this.#lastUpdated = new Date();
   }
 
   /**
@@ -154,7 +178,9 @@ class LocationExit {
       description: this.#description,
       destination: this.#destination,
       bidirectional: this.#bidirectional,
-      createdAt: this.#createdAt.toISOString()
+      imageId: this.#imageId,
+      createdAt: this.#createdAt.toISOString(),
+      lastUpdated: this.#lastUpdated.toISOString()
     };
   }
 
@@ -168,8 +194,10 @@ class LocationExit {
       description: this.#description,
       destination: this.#destination,
       bidirectional: this.#bidirectional,
+      imageId: this.#imageId,
       type: this.#bidirectional ? 'two-way' : 'one-way',
-      createdAt: this.#createdAt.toISOString()
+      createdAt: this.#createdAt.toISOString(),
+      lastUpdated: this.#lastUpdated.toISOString()
     };
   }
 
