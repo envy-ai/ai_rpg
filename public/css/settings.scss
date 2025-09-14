@@ -1,0 +1,315 @@
+// Settings Page Styles
+// Game Settings Manager page specific styles
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.settings-list {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1.5rem;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-form {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1.5rem;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.setting-item {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    &.selected {
+        background: rgba(74, 144, 226, 0.3);
+        border-color: rgba(74, 144, 226, 0.8);
+    }
+
+    &.applied {
+        background: rgba(76, 175, 80, 0.2);
+        border-color: rgba(76, 175, 80, 0.6);
+    }
+}
+
+.setting-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.setting-name {
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.setting-meta {
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+.setting-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.btn-small {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-edit {
+    background: rgba(74, 144, 226, 0.6);
+    color: white;
+
+    &:hover {
+        background: rgba(74, 144, 226, 0.8);
+    }
+}
+
+.btn-clone {
+    background: rgba(52, 168, 83, 0.6);
+    color: white;
+
+    &:hover {
+        background: rgba(52, 168, 83, 0.8);
+    }
+}
+
+.btn-delete {
+    background: rgba(234, 67, 53, 0.6);
+    color: white;
+
+    &:hover {
+        background: rgba(234, 67, 53, 0.8);
+    }
+}
+
+.btn-apply {
+    background: rgba(255, 193, 7, 0.6);
+    color: white;
+
+    &:hover {
+        background: rgba(255, 193, 7, 0.8);
+    }
+}
+
+.form-group {
+    margin-bottom: 1rem;
+
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #fff;
+        font-weight: 500;
+    }
+
+    input,
+    select,
+    textarea {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 5px;
+        background: rgba(0, 0, 0, 0.3);
+        color: #fff;
+        font-size: 1rem;
+
+        &:focus {
+            outline: none;
+            border-color: rgba(74, 144, 226, 0.8);
+            background: rgba(0, 0, 0, 0.5);
+        }
+    }
+
+    textarea {
+        resize: vertical;
+        min-height: 80px;
+    }
+}
+
+.help-text {
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-top: 0.25rem;
+}
+
+.button-group {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    flex: 1;
+}
+
+.btn-primary {
+    background: rgba(74, 144, 226, 0.8);
+    color: white;
+
+    &:hover {
+        background: rgba(74, 144, 226, 1);
+    }
+}
+
+.btn-secondary {
+    background: rgba(128, 128, 128, 0.6);
+    color: white;
+
+    &:hover {
+        background: rgba(128, 128, 128, 0.8);
+    }
+}
+
+.form-actions {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 1rem;
+    margin-top: 1rem;
+}
+
+.status-message {
+    padding: 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+    display: none;
+
+    &.status-success {
+        background: rgba(52, 168, 83, 0.2);
+        border: 1px solid rgba(52, 168, 83, 0.5);
+        color: #4CAF50;
+    }
+
+    &.status-error {
+        background: rgba(234, 67, 53, 0.2);
+        border: 1px solid rgba(234, 67, 53, 0.5);
+        color: #f44336;
+    }
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #aaa;
+}
+
+.preview-section {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.preview-title {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    color: #fff;
+}
+
+.feature-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.feature-tag {
+    background: rgba(74, 144, 226, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    color: #fff;
+}
+
+.current-setting-display {
+    background: rgba(76, 175, 80, 0.2);
+    border: 1px solid rgba(76, 175, 80, 0.6);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+
+    .current-setting-title {
+        font-weight: bold;
+        color: #4CAF50;
+        margin-bottom: 0.5rem;
+    }
+
+    .current-setting-details {
+        font-size: 0.9rem;
+        color: #ddd;
+    }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .setting-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .setting-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .button-group {
+        flex-direction: column;
+        gap: 0.5rem;
+        
+        .btn {
+            flex: none;
+        }
+    }
+}
+
+// Small mobile adjustments
+@media (max-width: 480px) {
+    .settings-list,
+    .settings-form {
+        padding: 1rem;
+    }
+
+    .setting-item {
+        padding: 0.75rem;
+    }
+
+    .btn-small {
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+    }
+}

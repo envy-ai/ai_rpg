@@ -17,6 +17,9 @@ const LocationExit = require('./LocationExit.js');
 // Import Thing class
 const Thing = require('./Thing.js');
 
+// Import SettingInfo class
+const SettingInfo = require('./SettingInfo.js');
+
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 
@@ -480,6 +483,7 @@ let chatHistory = [];
 
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
+let currentSetting = null; // Current game setting
 const players = new Map(); // Store multiple players by ID
 const things = new Map(); // Store things (items and scenery) by ID
 
@@ -584,10 +588,25 @@ function parseXMLTemplate(xmlContent) {
 }
 
 // Function to render system prompt from template
-function renderSystemPrompt() {
+function renderSystemPrompt(settingInfo = null) {
     try {
         const templateName = config.gamemaster.promptTemplate;
-        const variables = config.gamemaster.promptVariables || {};
+        let variables = { ...config.gamemaster.promptVariables } || {};
+
+        // If a SettingInfo object is provided, merge its prompt variables
+        if (settingInfo && typeof settingInfo.getPromptVariables === 'function') {
+            const settingVariables = settingInfo.getPromptVariables();
+            variables = { ...variables, ...settingVariables };
+            
+            console.log('Using SettingInfo variables:', settingVariables);
+        }
+
+        // Add current player information if available
+        if (currentPlayer) {
+            variables.playerName = currentPlayer.name;
+            variables.playerLevel = currentPlayer.level;
+            variables.playerDescription = currentPlayer.description;
+        }
 
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -1378,7 +1397,7 @@ app.use(express.static('public'));
 
 // Route for AI RPG Chat Interface
 app.get('/', (req, res) => {
-    const systemPrompt = renderSystemPrompt();
+    const systemPrompt = renderSystemPrompt(currentSetting);
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
         systemPrompt: systemPrompt,
@@ -1448,6 +1467,14 @@ app.post('/config', (req, res) => {
             message: `Error saving configuration: ${error.message}`
         });
     }
+});
+
+// Settings management page
+app.get('/settings', (req, res) => {
+    res.render('settings.njk', {
+        title: 'Game Settings Manager',
+        currentPage: 'settings'
+    });
 });
 
 // Chat API endpoint
@@ -2462,6 +2489,388 @@ app.post('/api/things/:id/image', async (req, res) => {
             thing: thing.toJSON(),
             imageGeneration: imageResult,
             message: `${thing.thingType} image generation initiated for ${thing.name}`
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ==================== SETTINGS API ENDPOINTS ====================
+
+// Get all settings
+app.get('/api/settings', (req, res) => {
+    try {
+        const allSettings = SettingInfo.getAll().map(setting => setting.toJSON());
+        
+        res.json({
+            success: true,
+            settings: allSettings,
+            count: allSettings.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Create a new setting
+app.post('/api/settings', (req, res) => {
+    try {
+        const settingData = req.body;
+        
+        // Validate required fields
+        if (!settingData.name || typeof settingData.name !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'Setting name is required and must be a string'
+            });
+        }
+
+        // Check if setting with same name already exists
+        if (SettingInfo.getByName(settingData.name)) {
+            return res.status(409).json({
+                success: false,
+                error: 'Setting with this name already exists'
+            });
+        }
+
+        const newSetting = new SettingInfo(settingData);
+        
+        res.status(201).json({
+            success: true,
+            setting: newSetting.toJSON(),
+            message: 'Setting created successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get a specific setting by ID
+app.get('/api/settings/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            setting: setting.toJSON()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Update a setting
+app.put('/api/settings/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        // Check if name conflict with another setting
+        if (updates.name && updates.name !== setting.name) {
+            const existingSetting = SettingInfo.getByName(updates.name);
+            if (existingSetting && existingSetting.id !== id) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Setting with this name already exists'
+                });
+            }
+        }
+
+        setting.update(updates);
+
+        res.json({
+            success: true,
+            setting: setting.toJSON(),
+            message: 'Setting updated successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Delete a setting
+app.delete('/api/settings/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        const deleted = SettingInfo.delete(id);
+
+        if (deleted) {
+            res.json({
+                success: true,
+                message: 'Setting deleted successfully'
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Failed to delete setting'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get setting definition options (for UI dropdowns)
+app.get('/api/settings/definitions', (req, res) => {
+    try {
+        const definitions = {
+            theme: SettingInfo.getValidOptions('theme'),
+            genre: SettingInfo.getValidOptions('genre'),
+            startingLocationType: SettingInfo.getValidOptions('startingLocationType'),
+            magicLevel: SettingInfo.getValidOptions('magicLevel'),
+            techLevel: SettingInfo.getValidOptions('techLevel'),
+            tone: SettingInfo.getValidOptions('tone'),
+            difficulty: SettingInfo.getValidOptions('difficulty')
+        };
+
+        const defaults = {
+            theme: SettingInfo.getDefaultValue('theme'),
+            genre: SettingInfo.getDefaultValue('genre'),
+            startingLocationType: SettingInfo.getDefaultValue('startingLocationType'),
+            magicLevel: SettingInfo.getDefaultValue('magicLevel'),
+            techLevel: SettingInfo.getDefaultValue('techLevel'),
+            tone: SettingInfo.getDefaultValue('tone'),
+            difficulty: SettingInfo.getDefaultValue('difficulty')
+        };
+
+        res.json({
+            success: true,
+            definitions,
+            defaults
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Clone a setting
+app.post('/api/settings/:id/clone', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newName } = req.body;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        // Check if new name already exists
+        if (newName && SettingInfo.getByName(newName)) {
+            return res.status(409).json({
+                success: false,
+                error: 'Setting with this name already exists'
+            });
+        }
+
+        const clonedSetting = setting.clone(newName);
+
+        res.status(201).json({
+            success: true,
+            setting: clonedSetting.toJSON(),
+            message: 'Setting cloned successfully'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Save all settings to files
+app.post('/api/settings/save', (req, res) => {
+    try {
+        const result = SettingInfo.saveAll();
+        
+        res.json({
+            success: true,
+            result,
+            message: `Saved ${result.count} settings to ${result.directory}`
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Load all settings from files
+app.post('/api/settings/load', (req, res) => {
+    try {
+        const result = SettingInfo.loadAll();
+        
+        res.json({
+            success: true,
+            result,
+            message: `Loaded ${result.count} settings from ${result.loadedFrom}`
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// List saved setting files
+app.get('/api/settings/saved', (req, res) => {
+    try {
+        const savedSettings = SettingInfo.listSavedSettings();
+        
+        res.json({
+            success: true,
+            savedSettings,
+            count: savedSettings.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Save individual setting to file
+app.post('/api/settings/:id/save', (req, res) => {
+    try {
+        const { id } = req.params;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        const filepath = setting.save();
+        
+        res.json({
+            success: true,
+            filepath,
+            message: 'Setting saved to file successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Apply setting as current game setting
+app.post('/api/settings/:id/apply', (req, res) => {
+    try {
+        const { id } = req.params;
+        const setting = SettingInfo.getById(id);
+
+        if (!setting) {
+            return res.status(404).json({
+                success: false,
+                error: 'Setting not found'
+            });
+        }
+
+        currentSetting = setting;
+        
+        res.json({
+            success: true,
+            setting: setting.toJSON(),
+            message: `Applied setting: ${setting.name}`,
+            promptVariables: setting.getPromptVariables()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Get current applied setting
+app.get('/api/settings/current', (req, res) => {
+    try {
+        if (!currentSetting) {
+            return res.json({
+                success: true,
+                setting: null,
+                message: 'No setting currently applied'
+            });
+        }
+
+        res.json({
+            success: true,
+            setting: currentSetting.toJSON(),
+            promptVariables: currentSetting.getPromptVariables()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Clear current setting (revert to config defaults)
+app.delete('/api/settings/current', (req, res) => {
+    try {
+        const previousSetting = currentSetting;
+        currentSetting = null;
+        
+        res.json({
+            success: true,
+            message: 'Current setting cleared - reverted to configuration defaults',
+            previousSetting: previousSetting ? previousSetting.toJSON() : null
         });
     } catch (error) {
         res.status(500).json({
