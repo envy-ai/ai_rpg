@@ -14,33 +14,58 @@
             {% include "_navigation.njk" %}
         </div>
         
-        <div class="chat-container">
-            <div class="chat-log" id="chatLog">
-                {% if chatHistory and chatHistory.length > 0 %}
-                    {% for message in chatHistory %}
-                        <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
-                            <div class="message-sender">
-                                {% if message.role == 'user' %}
-                                    👤 You
-                                {% else %}
-                                    🤖 AI Game Master
-                                {% endif %}
-                            </div>
-                            <div>{{ message.content }}</div>
-                            <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+        <div class="main-content">
+            <!-- Location Block (Left Side) -->
+            <div class="location-block">
+                <div class="location-header">
+                    <h3>📍 Current Location</h3>
+                </div>
+                <div class="location-content" id="locationContent">
+                    <div class="location-image" id="locationImage">
+                        <div class="location-placeholder">
+                            🏞️
+                            <p>No location image</p>
                         </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="message ai-message">
-                        <div class="message-sender">🤖 AI Game Master</div>
-                        <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
                     </div>
-                {% endif %}
+                    <div class="location-info" id="locationInfo">
+                        <h4 class="location-name" id="locationName">Unknown Location</h4>
+                        <p class="location-description" id="locationDescription">Your current location will appear here when you start exploring.</p>
+                        <div class="location-details" id="locationDetails">
+                            <span class="location-level" id="locationLevel">Level: ?</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
-            <div class="input-area">
-                <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
-                <button class="send-button" id="sendButton">Send</button>
+
+            <!-- Chat Block (Right Side) -->
+            <div class="chat-container">
+                <div class="chat-log" id="chatLog">
+                    {% if chatHistory and chatHistory.length > 0 %}
+                        {% for message in chatHistory %}
+                            <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                                <div class="message-sender">
+                                    {% if message.role == 'user' %}
+                                        👤 You
+                                    {% else %}
+                                        🤖 AI Game Master
+                                    {% endif %}
+                                </div>
+                                <div>{{ message.content }}</div>
+                                <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="message ai-message">
+                            <div class="message-sender">🤖 AI Game Master</div>
+                            <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="input-area">
+                    <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
+                    <button class="send-button" id="sendButton">Send</button>
+                </div>
             </div>
         </div>
     </div>
@@ -54,7 +79,60 @@
             
             // Add save/load functionality
             initSaveLoadButtons();
+            
+            // Initialize location display
+            initLocationDisplay();
         });
+
+        function initLocationDisplay() {
+            // Function to update location display
+            window.updateLocationDisplay = function(location) {
+                const locationName = document.getElementById('locationName');
+                const locationDescription = document.getElementById('locationDescription');
+                const locationLevel = document.getElementById('locationLevel');
+                const locationImage = document.getElementById('locationImage');
+                
+                if (location) {
+                    locationName.textContent = location.name || 'Unknown Location';
+                    locationDescription.textContent = location.description || 'No description available.';
+                    locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
+                    
+                    // Update image if available
+                    if (location.imageId) {
+                        locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
+                    } else {
+                        locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                    }
+                } else {
+                    locationName.textContent = 'Unknown Location';
+                    locationDescription.textContent = 'Your current location will appear here when you start exploring.';
+                    locationLevel.textContent = 'Level: ?';
+                    locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                }
+            };
+            
+            // Load current player location on page load
+            loadCurrentLocation();
+        }
+
+        async function loadCurrentLocation() {
+            try {
+                const response = await fetch('/api/player');
+                const result = await response.json();
+                
+                if (result.success && result.player && result.player.currentLocation) {
+                    // Fetch location details
+                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
+                    const locationResult = await locationResponse.json();
+                    
+                    if (locationResult.success && locationResult.location) {
+                        window.updateLocationDisplay(locationResult.location);
+                    }
+                }
+            } catch (error) {
+                console.log('Could not load current location:', error);
+            }
+        }
 
         function initSaveLoadButtons() {
             const saveGameBtn = document.getElementById('saveGameBtn');

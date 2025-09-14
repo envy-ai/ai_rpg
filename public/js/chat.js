@@ -188,6 +188,9 @@ class AIRPGChat {
             } else {
                 this.addMessage('ai', data.response, false, data.debug);
                 this.chatHistory.push({ role: 'assistant', content: data.response });
+
+                // Check for location updates after AI response
+                this.checkLocationUpdate();
             }
         } catch (error) {
             this.hideLoading();
@@ -196,6 +199,28 @@ class AIRPGChat {
 
         this.sendButton.disabled = false;
         this.messageInput.focus();
+    }
+
+    async checkLocationUpdate() {
+        try {
+            const response = await fetch('/api/player');
+            const result = await response.json();
+
+            if (result.success && result.player && result.player.currentLocation) {
+                // Fetch location details
+                const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
+                const locationResult = await locationResponse.json();
+
+                if (locationResult.success && locationResult.location) {
+                    // Update location display if the updateLocationDisplay function exists
+                    if (window.updateLocationDisplay) {
+                        window.updateLocationDisplay(locationResult.location);
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Could not check location update:', error);
+        }
     }
 }
 

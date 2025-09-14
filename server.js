@@ -1964,6 +1964,34 @@ app.post('/api/players/:id/portrait', async (req, res) => {
     }
 });
 
+// ==================== PLAYER AND LOCATION QUERY ENDPOINTS ====================
+
+// Get location by ID
+app.get('/api/locations/:id', (req, res) => {
+    try {
+        const locationId = req.params.id;
+        const location = Location.get(locationId);
+
+        if (!location) {
+            return res.status(404).json({
+                success: false,
+                error: `Location with ID '${locationId}' not found`
+            });
+        }
+
+        res.json({
+            success: true,
+            location: location.getDetails()
+        });
+    } catch (error) {
+        console.error('Error fetching location:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // ==================== LOCATION GENERATION FUNCTIONALITY ====================
 
 // Generate a new location using AI

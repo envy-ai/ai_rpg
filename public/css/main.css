@@ -55,11 +55,116 @@ body {
   padding: 8px 16px;
 }
 
+/* Main Content Layout - Two Column */
+.main-content {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  overflow: hidden;
+  padding: 20px;
+}
+
+/* Location Block (Left Side) */
+.location-block {
+  flex: 0 0 400px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.location-header {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 15px;
+  color: #ffffff;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.location-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.location-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.location-image {
+  flex: 0 0 200px;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.location-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.location-placeholder {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 48px;
+}
+
+.location-placeholder p {
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.location-info {
+  flex: 1;
+  padding: 20px;
+  color: #ffffff;
+  overflow-y: auto;
+}
+
+.location-name {
+  margin: 0 0 15px 0;
+  font-size: 20px;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.location-description {
+  margin: 0 0 15px 0;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.location-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.location-level {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #ffffff;
+}
+
 .chat-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .chat-log {
@@ -595,5 +700,41 @@ body {
   }
   .status-display .status-item {
     justify-content: space-between;
+  }
+}
+
+/* Responsive Design for Location/Chat Layout */
+@media (max-width: 768px) {
+  .main-content {
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .location-block {
+    flex: 0 0 auto;
+    margin-bottom: 15px;
+  }
+
+  .location-image {
+    flex: 0 0 150px;
+  }
+
+  .chat-container {
+    flex: 1;
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .location-image {
+    flex: 0 0 120px;
+  }
+
+  .location-info {
+    padding: 15px;
+  }
+
+  .location-name {
+    font-size: 18px;
   }
 } /*# sourceMappingURL=main.css.map */
