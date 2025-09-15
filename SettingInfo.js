@@ -204,17 +204,22 @@ class SettingInfo {
 
 
   // Instance methods
-  update(updates) {
-    // Update properties safely
-    Object.keys(updates).forEach(key => {
-      if (key !== 'id' && key !== 'createdAt' && this.hasOwnProperty(key)) {
+  update(updates = {}) {
+    // Update properties safely using defined setters
+    Object.entries(updates).forEach(([key, value]) => {
+      if (key === 'id' || key === 'createdAt' || key === 'lastUpdated') {
+        return;
+      }
+
+      if (key in this) {
         try {
-          this[key] = updates[key];
+          this[key] = value;
         } catch (error) {
           console.warn(`Failed to update ${key}:`, error.message);
         }
       }
     });
+
     return this;
   }
 
@@ -335,17 +340,6 @@ class SettingInfo {
         savedFiles.push(filepath);
       }
 
-      // Save index file with all settings
-      const indexData = {
-        settings: allSettings.map(s => s.toJSON()),
-        count: allSettings.length,
-        savedAt: new Date().toISOString()
-      };
-
-      const indexPath = path.join(dir, 'settings_index.json');
-      fs.writeFileSync(indexPath, JSON.stringify(indexData, null, 2));
-      savedFiles.push(indexPath);
-
       return {
         count: allSettings.length,
         files: savedFiles,
@@ -365,33 +359,7 @@ class SettingInfo {
         return { count: 0, settings: [] };
       }
 
-      // Try to load from index file first
-      const indexPath = path.join(dir, 'settings_index.json');
-      if (fs.existsSync(indexPath)) {
-        const indexData = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-
-        // Clear existing settings
-        SettingInfo.clear();
-
-        // Load each setting
-        const loadedSettings = [];
-        for (const settingData of indexData.settings) {
-          try {
-            const setting = SettingInfo.fromJSON(settingData);
-            loadedSettings.push(setting);
-          } catch (error) {
-            console.warn(`Failed to load setting ${settingData.name}:`, error.message);
-          }
-        }
-
-        return {
-          count: loadedSettings.length,
-          settings: loadedSettings,
-          loadedFrom: 'index'
-        };
-      }
-
-      // Fallback: scan directory for individual setting files
+      // Scan directory for individual setting files
       const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'settings_index.json');
 
       // Clear existing settings
@@ -411,7 +379,8 @@ class SettingInfo {
       return {
         count: loadedSettings.length,
         settings: loadedSettings,
-        loadedFrom: 'individual_files'
+        directory: dir,
+        files: files.map(filename => path.join(dir, filename))
       };
     } catch (error) {
       throw new Error(`Failed to load all settings: ${error.message}`);
@@ -427,7 +396,7 @@ class SettingInfo {
         return [];
       }
 
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'settings_index.json');
       return files.map(filename => {
         const filepath = path.join(dir, filename);
         const stats = fs.statSync(filepath);

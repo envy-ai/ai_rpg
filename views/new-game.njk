@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default('Start New Game') }}</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <style>
+        /* Page-specific overlay + spinner */
+        .overlay-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .overlay-backdrop.show { display: flex; }
+        .spinner { width: 56px; height: 56px; border: 6px solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .overlay-text { color: #fff; margin-top: 12px; font-weight: bold; text-align: center; }
+        .overlay-content { display: flex; flex-direction: column; align-items: center; }
+        .page-section { background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); box-shadow: 0 8px 32px rgba(0,0,0,0.1); padding: 20px; border-radius: 15px; margin: 20px; color: #fff; }
+    </style>
+    <script>
+        // Prevent accidental navigation during submission
+        window.disableNavigationGuard = function(enable) {
+            if (enable) {
+                window.onbeforeunload = () => 'A new game is being created.';
+            } else {
+                window.onbeforeunload = null;
+            }
+        }
+    </script>
+    <script defer src="/js/new-game.js"></script>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" href="data:,">
+    <style> body { overflow: auto; } </style>
+    {% set currentPage = currentPage or 'new-game' %}
+    {% set pageTitle = 'Start New Game' %}
+    {% set pageDescription = 'Create a new adventure with your character details and starting location.' %}
+    {% set headingIcon = '🆕' %}
+    {% set submitIcon = '🎮' %}
+    {% set backIcon = '↩️' %}
+    {% set inputPlaceholderName = 'Adventurer' %}
+    {% set inputPlaceholderDesc = 'A brave soul embarking on a new adventure.' %}
+    {% set inputPlaceholderLoc = 'village, forest edge, harbor, etc.' %}
+    {% set submitLabel = 'Start New Game' %}
+    {% set cancelLabel = 'Back to Chat' %}
+    {% set helpName = 'Optional. Defaults to Adventurer.' %}
+    {% set helpDesc = 'Optional. A sentence or two describing your character.' %}
+    {% set helpLoc = 'Optional. Influences the generated starting area.' %}
+    {% set ariaBusy = 'Starting new game, please wait' %}
+    {% set ariaForm = 'New game form' %}
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ headingIcon }} Start a New Game</h1>
+            <p>{{ pageDescription }}</p>
+            {% include "_navigation.njk" %}
+        </div>
+
+        <div class="main-content">
+            <div class="page-section" style="width:100%; max-width: 760px; margin: 20px auto;">
+                <form id="newGameForm" aria-label="{{ ariaForm }}">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="playerName">Player Name</label>
+                            <input type="text" id="playerName" name="playerName" placeholder="{{ inputPlaceholderName }}" autocomplete="name">
+                            <div class="help-text">{{ helpName }}</div>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="playerDescription">Player Description</label>
+                            <textarea id="playerDescription" name="playerDescription" rows="3" placeholder="{{ inputPlaceholderDesc }}"></textarea>
+                            <div class="help-text">{{ helpDesc }}</div>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="startingLocation">Starting Location</label>
+                            <input type="text" id="startingLocation" name="startingLocation" placeholder="{{ inputPlaceholderLoc }}">
+                            <div class="help-text">{{ helpLoc }}</div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" id="startBtn" class="btn btn-primary">{{ submitIcon }} {{ submitLabel }}</button>
+                        <a class="btn btn-secondary" href="/">{{ backIcon }} {{ cancelLabel }}</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay Spinner -->
+    <div id="overlay" class="overlay-backdrop" aria-live="polite" aria-busy="false" aria-label="{{ ariaBusy }}">
+        <div class="overlay-content">
+            <div class="spinner" role="status" aria-hidden="true"></div>
+            <div class="overlay-text">Creating your adventure...</div>
+        </div>
+    </div>
+</body>
+</html>
+

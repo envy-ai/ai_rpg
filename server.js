@@ -1400,6 +1400,14 @@ app.get('/', (req, res) => {
     });
 });
 
+// New Game page
+app.get('/new-game', (req, res) => {
+    res.render('new-game.njk', {
+        title: 'Start New Game',
+        currentPage: 'new-game'
+    });
+});
+
 // Configuration page routes
 app.get('/config', (req, res) => {
     res.render('config.njk', {
@@ -2742,7 +2750,7 @@ app.post('/api/settings/load', (req, res) => {
         res.json({
             success: true,
             result,
-            message: `Loaded ${result.count} settings from ${result.loadedFrom}`
+            message: `Loaded ${result.count} settings from ${result.directory}`
         });
     } catch (error) {
         res.status(500).json({
@@ -2906,7 +2914,7 @@ app.delete('/api/settings/current', (req, res) => {
 // Create a new game with fresh player and starting location
 app.post('/api/new-game', async (req, res) => {
     try {
-        const { playerName, playerDescription } = req.body;
+        const { playerName, playerDescription, startingLocation } = req.body || {};
 
         // Clear existing game state
         players.clear();
@@ -2937,8 +2945,12 @@ app.post('/api/new-game', async (req, res) => {
         const startingLocationOptions = {
             setting: 'fantasy',
             existingLocations: [],
-            shortDescription: 'A safe starting area perfect for new adventurers',
-            locationTheme: 'village',
+            shortDescription: startingLocation && typeof startingLocation === 'string' && startingLocation.trim().length
+                ? `A safe starting area in or near ${startingLocation}`
+                : 'A safe starting area perfect for new adventurers',
+            locationTheme: startingLocation && typeof startingLocation === 'string' && startingLocation.trim().length
+                ? startingLocation.trim()
+                : 'village',
             playerLevel: 1,
             locationPurpose: 'starting town or safe area'
         };

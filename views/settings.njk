@@ -20,12 +20,9 @@
         <div class="settings-grid">
             <!-- Settings List Panel -->
             <div class="settings-list">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <h2>📋 Saved Settings</h2>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button id="loadBtn" class="btn-small btn-secondary">Load</button>
-                        <button id="saveAllBtn" class="btn-small btn-primary">Save All</button>
-                    </div>
+                    
                 </div>
                 
                 <div id="settingsList">
@@ -126,6 +123,17 @@
 
         // Load settings on page load
         document.addEventListener('DOMContentLoaded', async function() {
+            // Automatically load saved settings from files into memory on page load
+            try {
+                const resp = await fetch('/api/settings/load', { method: 'POST' });
+                const data = await resp.json();
+                if (!data.success) {
+                    console.warn('Auto-load saved settings failed:', data.error);
+                }
+            } catch (e) {
+                console.warn('Auto-load saved settings failed:', e.message);
+            }
+
             await refreshSettingsList();
             await loadCurrentSetting();
             setupEventListeners();
@@ -250,6 +258,19 @@
                 const data = await response.json();
                 
                 if (data.success) {
+                    // Auto-save the new clone to file
+                    if (data.setting && data.setting.id) {
+                        try {
+                            const saveResp = await fetch(`/api/settings/${data.setting.id}/save`, { method: 'POST' });
+                            const saveData = await saveResp.json();
+                            if (!saveData.success) {
+                                console.warn('Auto-save of cloned setting failed:', saveData.error);
+                            }
+                        } catch (e) {
+                            console.warn('Auto-save of cloned setting failed:', e.message);
+                        }
+                    }
+
                     showMessage('Setting cloned successfully!', 'success');
                     await refreshSettingsList();
                 } else {
@@ -378,6 +399,7 @@
                 
                 try {
                     let response;
+                    let savedId = null;
                     if (isEditMode) {
                         const settingId = settingData.id;
                         delete settingData.id;
@@ -386,6 +408,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(settingData)
                         });
+                        savedId = settingId;
                     } else {
                         response = await fetch('/api/settings', {
                             method: 'POST',
@@ -397,9 +420,46 @@
                     const data = await response.json();
                     
                     if (data.success) {
-                        showMessage(`Setting ${isEditMode ? 'updated' : 'created'} successfully!`, 'success');
+                        // Determine the ID to persist
+                        if (!savedId && data.setting && data.setting.id) {
+                            savedId = data.setting.id;
+                        }
+
+                        let appliedSuccessfully = false;
+
+                        // Auto-save the created/updated setting to file
+                        if (savedId) {
+                            try {
+                                const saveResp = await fetch(`/api/settings/${savedId}/save`, { method: 'POST' });
+                                const saveData = await saveResp.json();
+                                if (!saveData.success) {
+                                    console.warn('Auto-save failed:', saveData.error);
+                                }
+                            } catch (saveErr) {
+                                console.warn('Auto-save failed:', saveErr.message);
+                            }
+
+                            // Apply the setting immediately so the game uses the latest version
+                            try {
+                                const applyResp = await fetch(`/api/settings/${savedId}/apply`, { method: 'POST' });
+                                const applyData = await applyResp.json();
+                                if (applyData.success) {
+                                    appliedSuccessfully = true;
+                                    appliedSetting = applyData.setting;
+                                    updateCurrentSettingDisplay();
+                                } else {
+                                    console.warn('Auto-apply failed:', applyData.error);
+                                }
+                            } catch (applyErr) {
+                                console.warn('Auto-apply failed:', applyErr.message);
+                            }
+                        }
+
+                        const successMessage = `Setting ${isEditMode ? 'updated' : 'created'} successfully${appliedSuccessfully ? ' and applied to the game world' : ''}!`;
+                        showMessage(successMessage, 'success');
                         clearForm();
                         await refreshSettingsList();
+                        await loadCurrentSetting();
                     } else {
                         showMessage(`Error ${isEditMode ? 'updating' : 'creating'} setting: ` + data.error, 'error');
                     }
@@ -415,47 +475,7 @@
             document.getElementById('settingForm').addEventListener('input', updatePreview);
             document.getElementById('settingForm').addEventListener('change', updatePreview);
 
-            // Save all button
-            document.getElementById('saveAllBtn').addEventListener('click', async function() {
-                try {
-                    const response = await fetch('/api/settings/save', {
-                        method: 'POST'
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        showMessage(`Saved ${data.result.count} settings to files!`, 'success');
-                    } else {
-                        showMessage('Error saving settings: ' + data.error, 'error');
-                    }
-                } catch (error) {
-                    showMessage('Error saving settings: ' + error.message, 'error');
-                }
-            });
-
-            // Load button
-            document.getElementById('loadBtn').addEventListener('click', async function() {
-                if (!confirm('This will replace current settings with saved files. Continue?')) return;
-                
-                try {
-                    const response = await fetch('/api/settings/load', {
-                        method: 'POST'
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        showMessage(`Loaded ${data.result.count} settings from files!`, 'success');
-                        clearForm();
-                        await refreshSettingsList();
-                    } else {
-                        showMessage('Error loading settings: ' + data.error, 'error');
-                    }
-                } catch (error) {
-                    showMessage('Error loading settings: ' + error.message, 'error');
-                }
-            });
+            // Save/Load buttons removed; auto behaviors implemented
         }
 
         function showMessage(message, type) {

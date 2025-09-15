@@ -15,23 +15,25 @@
         </div>
         
         <div class="main-content">
-            <!-- Location Block (Left Side) -->
+            <!-- Location Block (Left Side) -->            
             <div class="location-block">
-                <div class="location-header">
-                    <h3>📍 Current Location</h3>
-                </div>
-                <div class="location-content" id="locationContent">
-                    <div class="location-image" id="locationImage">
-                        <div class="location-placeholder">
-                            🏞️
-                            <p>No location image</p>
-                        </div>
+                <div class="container">
+                    <div class="location-header">
+                        <h3>📍 Current Location</h3>
                     </div>
-                    <div class="location-info" id="locationInfo">
-                        <h4 class="location-name" id="locationName">Unknown Location</h4>
-                        <p class="location-description" id="locationDescription">Your current location will appear here when you start exploring.</p>
-                        <div class="location-details" id="locationDetails">
-                            <span class="location-level" id="locationLevel">Level: ?</span>
+                    <div class="location-content" id="locationContent">
+                        <div class="location-image" id="locationImage">
+                            <div class="location-placeholder">
+                                🏞️
+                                <p>No location image</p>
+                            </div>
+                        </div>
+                        <div class="location-info" id="locationInfo">
+                            <h4 class="location-name" id="locationName">Unknown Location</h4>
+                            <p class="location-description" id="locationDescription">Your current location will appear here when you start exploring.</p>
+                            <div class="location-details" id="locationDetails">
+                                <span class="location-level" id="locationLevel">Level: ?</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -220,6 +222,7 @@
                 }
             });
 
+            if (newGameBtn) {
             newGameBtn.addEventListener('click', async function() {
                 try {
                     const confirmation = confirm('Start a new game? This will clear your current progress.\n\nYou can optionally enter a custom player name and description.');
@@ -261,6 +264,7 @@
                     }, 2000);
                 }
             });
+            }
         }
     </script>
 </body>

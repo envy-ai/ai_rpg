@@ -94,6 +94,9 @@ body {
   max-width: 100%;
   height: auto;
 }
+.location-block .container {
+  padding: 20px;
+}
 
 .chat-container {
   flex: 1;
