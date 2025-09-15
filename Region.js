@@ -55,13 +55,29 @@ class Region {
       ? blueprint.description.trim()
       : '';
     const exits = Array.isArray(blueprint.exits)
-      ? blueprint.exits.map(exit => (typeof exit === 'string' ? exit.trim() : '')).filter(Boolean)
+      ? blueprint.exits
+          .map(exit => {
+            if (!exit) return null;
+            if (typeof exit === 'string') {
+              return { target: exit.trim(), direction: null };
+            }
+            const target = typeof exit.target === 'string' ? exit.target.trim() : '';
+            const direction = typeof exit.direction === 'string' ? exit.direction.trim().toLowerCase() : null;
+            if (!target) return null;
+            return { target, direction };
+          })
+          .filter(Boolean)
+      : [];
+
+    const aliases = Array.isArray(blueprint.aliases)
+      ? blueprint.aliases.map(alias => typeof alias === 'string' ? alias.trim() : '').filter(Boolean)
       : [];
 
     return {
       name,
       description,
-      exits
+      exits,
+      aliases
     };
   }
 
@@ -141,29 +157,48 @@ class Region {
     }
 
     const blueprintElements = Array.from(regionElement.getElementsByTagName('location'));
-    const locationBlueprints = blueprintElements.map(node => {
+    const locationBlueprints = blueprintElements.map((node, index) => {
+      const attrId = node.getAttribute('id')?.trim();
+      const attrName = node.getAttribute('name')?.trim();
+
       const locNameNode = node.getElementsByTagName('name')[0];
       const locDescriptionNode = node.getElementsByTagName('description')[0];
       const exitsNode = node.getElementsByTagName('exits')[0];
 
-      const locName = locNameNode ? locNameNode.textContent.trim() : null;
+      let locName = locNameNode ? locNameNode.textContent.trim() : null;
+      if (!locName && attrName) {
+        locName = attrName;
+      }
       if (!locName) {
-        throw new Error('Region location missing <name>');
+        locName = `Location ${index + 1}`;
       }
 
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
-      const exitNames = exitsNode
+      const exitEntries = exitsNode
         ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
             const destinationAttr = exitNode.getAttribute('destination');
-            const textDest = exitNode.textContent.trim();
-            return (destinationAttr || textDest || '').trim();
+            const directionAttr = exitNode.getAttribute('direction');
+            const textDest = exitNode.textContent?.trim();
+            const targetCandidate = destinationAttr?.trim() || textDest || exitNode.getAttribute('name')?.trim() || '';
+            if (!targetCandidate) {
+              return null;
+            }
+            return {
+              target: targetCandidate,
+              direction: directionAttr ? directionAttr.trim().toLowerCase() : null
+            };
           }).filter(Boolean)
         : [];
+
+      const aliases = [];
+      if (attrId) aliases.push(attrId);
+      if (attrName) aliases.push(attrName);
 
       return Region.#normalizeBlueprint({
         name: locName,
         description: locDescription,
-        exits: exitNames
+        exits: exitEntries,
+        aliases
       });
     });
 

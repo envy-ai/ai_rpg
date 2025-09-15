@@ -1,0 +1,414 @@
+🎲 Created default player "Adventurer" with default stats
+🔧 Starting server initialization...
+🔍 Validating image generation configuration...
+✅ Template file found: default.json.njk
+✅ Images directory exists: /home/bart/ai_rpg/public/generated-images
+✅ Configuration validation passed
+🎨 ComfyUI client initialized for shodan:8188
+🔌 Testing ComfyUI server connectivity...
+✅ ComfyUI server is accessible
+🚀 Server is running on http://0.0.0.0:7777
+📡 API endpoint available at http://0.0.0.0:7777/api/hello
+🎮 Using AI model: zai-org/GLM-4.5-FP8
+🤖 AI endpoint: https://nano-gpt.com/api/v1
+🎨 Image generation ready (ComfyUI: shodan:8188)
+
+🌟 AI RPG Game Master is ready!
+[xmldom warning]	unclosed xml attribute 
+@#[line:23,col:1]
+[xmldom warning]	unclosed xml attribute 
+@#[line:32,col:1]
+🗺️ Requesting region generation from AI...
+📥 Region AI Response received.
+📝 Region generation logged to /home/bart/ai_rpg/logs/region_1757979749871_52b7cd3de70f.log
+🚪 Requesting region entrance selection...
+🏰 Entrance selection response:
+ 
+<entrance>
+<name>Whispering Woods</name>
+</entrance>
+Rendered system prompt template:
+ <?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Creative and engaging AI Game Master for text-based RPG</description>
+    
+    <systemPrompt>
+You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise.
+
+
+
+Guidelines:
+- Create vivid descriptions of environments and characters
+- Present meaningful choices to the player
+- Maintain consistent world-building
+- Adapt to player preferences and actions
+- Keep the adventure fun and engaging
+
+
+
+
+
+Current Player: Adventurer (Level 1)
+
+Player Background: A mysterious adventurer.
+
+
+
+
+
+
+
+
+
+
+Game Style: narrative-focused
+
+
+
+Legacy Setting: fantasy
+
+
+
+    </systemPrompt>
+</template>
+Using SettingInfo variables: {
+  theme: 'Sci-fi/anime',
+  genre: 'Adventure, action, romance',
+  startingLocationType: 'A starbase',
+  magicLevel: 'medium',
+  techLevel: 'futuristic',
+  tone: 'heroic',
+  difficulty: 'normal',
+  playerStartingLevel: 1,
+  settingName: 'Scifi Catgirl Universe',
+  settingDescription: 'An anime-themed sci-fi universe with space elves and catgirls'
+}
+Rendered system prompt template:
+ <?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Creative and engaging AI Game Master for text-based RPG</description>
+    
+    <systemPrompt>
+You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise.
+
+
+World Setting:
+
+- Theme: Sci-fi/anime setting with Adventure, action, romance focus
+
+
+- Tone: Heroic atmosphere and storytelling style
+
+
+- Magic Level: Medium magical elements in the world
+
+
+- Technology: Futuristic technological development
+
+
+- Challenge Level: Normal difficulty and lethality
+
+
+
+Guidelines:
+- Create vivid descriptions of environments and characters
+- Present meaningful choices to the player
+- Maintain consistent world-building fitting the Sci-fi/anime theme
+- Adapt to player preferences and actions
+- Keep the adventure fun and engaging with heroic tone
+
+
+- Magic should be medium in this world
+
+
+- Technology level is futuristic
+
+
+
+Current Player: Adventurer (Level 1)
+
+Player Background: A mysterious adventurer.
+
+
+
+
+Preferred Starting Location Style: A Starbase
+
+
+
+
+
+
+
+Game Style: narrative-focused
+
+
+
+Legacy Setting: fantasy
+
+
+
+    </systemPrompt>
+</template>
+🎮 Starting new game...
+🗺️ Generating starting region...
+[xmldom warning]	unclosed xml attribute 
+@#[line:23,col:1]
+[xmldom warning]	unclosed xml attribute 
+@#[line:32,col:1]
+🗺️ Requesting region generation from AI...
+📥 Region AI Response received.
+📝 Region generation logged to /home/bart/ai_rpg/logs/region_1757979930455_a3e53fd9eb1c.log
+🚪 Requesting region entrance selection...
+🏰 Entrance selection response:
+ 
+<entrance>
+<name>Docking Bay</name>
+</entrance>
+Stub location_1757979930455_52d6b1b03dc4 has no resolvable origin location. Expansion will proceed without origin context.
+Generated location generator prompt with variables: {
+  setting: 'Scifi Catgirl Universe - Sci-fi/anime / Adventure, action, romance An anime-themed sci-fi universe with space elves and catgirls Key traits: tone heroic, difficulty normal, magic medium, technology futuristic. Common starting location: A starbase.',
+  existingLocations: [],
+  shortDescription: 'The vast Docking Bay echoes with the sounds of ships arriving and departing, from sleek elven vessels to rugged human freighters. Technicians in powered suits scurry about, conducting repairs and refueling operations. A large observation deck allows visitors to watch the ballet of spacecraft in the busy bay.',
+  locationTheme: 'A starbase',
+  playerLevel: null,
+  locationPurpose: 'Part of the Starbase Frontier region',
+  originLocationName: null,
+  originDescription: null,
+  originDirection: null,
+  stubName: 'Docking Bay',
+  stubId: 'location_1757979930455_52d6b1b03dc4'
+}
+🤖 Requesting location generation from AI...
+📝 System Prompt: You are an AI assistant that expands partially discovered locations in a fantasy RPG world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area.
+📤 Full Request Data: {
+  "model": "zai-org/GLM-4.5-FP8",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an AI assistant that expands partially discovered locations in a fantasy RPG world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area."
+    },
+    {
+      "role": "user",
+      "content": "<context>\n<setting>\nScifi Catgirl Universe - Sci-fi/anime / Adventure, action, romance An anime-themed sci-fi universe with space elves and catgirls Key traits: tone heroic, difficulty normal, magic medium, technology futuristic. Common starting location: A starbase.\n</setting>\n\n\n\n\n<stub>\n  <id>location_1757979930455_52d6b1b03dc4</id>\n  <name>Docking Bay</name>\n</stub>\n\n</context>\n\n<instructions>Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</instructions>\n\nREQUIRED FIELDS:\n- name: Preserve the existing stub name if provided unless a slight refinement improves clarity.\n- description: Provide 1-3 rich paragraphs describing the area, referencing how it connects back to the origin location and suggesting onward paths for future exploration.\n- baseLevel: Integer from 1-20 reflecting the challenge of this location.\n\nOPTIONAL CONTEXT (if provided):\n- Short Description: The vast Docking Bay echoes with the sounds of ships arriving and departing, from sleek elven vessels to rugged human freighters. Technicians in powered suits scurry about, conducting repairs and refueling operations. A large observation deck allows visitors to watch the ballet of spacecraft in the busy bay.\n- Theme/Setting: A starbase\n- Purpose in story: Part of the Starbase Frontier region\nGUIDELINES:\n- Reference sensory details and story hooks that bridge to and from the origin location.\n- Mention at least one notable feature that hints at additional unexplored directions.\n- Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.\n\nOUTPUT FORMAT:\nReturn ONLY the following fields, in this format:\n\n<location>\n  <name>The final name for the expanded location</name>\n  <description>Detailed description tying back to the origin location and setting up future exploration</description>\n  <baseLevel>integer_from_1_to_20</baseLevel>\n</location>"
+    }
+  ],
+  "max_tokens": 1200,
+  "temperature": 0.7
+}
+📥 AI Raw Response:
+==================================================
+<location>
+  <name>Docking Bay</name>
+  <description>The vast Docking Bay stretches before you, a cathedral of interstellar commerce and travel. The massive space is abuzz with activity as vessels of all shapes and sizes—from sleek elven starships with their elegant crystalline hulls to rugged human freighters bearing the scars of countless journeys—are guided into their berths by tractor beams. Technicians in powered exosuits move between ships, their tools humming as they conduct repairs and refueling operations. Above, a network of catwalks and service tunnels crisscrosses the high ceiling, where maintenance drones zip about like mechanical fireflies. The air thrums with the combined sounds of engines powering down, cargo loaders whirring, and the chatter of dozens of species in a dozen languages. At the far end of the bay, a large observation deck offers panoramic views of the ballet of spacecraft, while nearby, a security checkpoint staffed by both human and elven guards controls access to the more sensitive areas of the starbase. Several corridors branch off from the main bay, including one leading to the bustling commercial district and another marked with restricted access signs that hints at the starbase's more secretive operations.</description>
+  <baseLevel>5</baseLevel>
+</location>
+==================================================
+🔍 Parsing XML snippet (length: 1314 chars)
+Extracted XML: <location>
+  <name>Docking Bay</name>
+  <description>The vast Docking Bay stretches before you, a cathedral of interstellar commerce and travel. The massive space is abuzz with activity as vessels of all shapes and sizes—from sleek elven starships with their elegant crystalline hulls to rugged human freighters bearing the scars of countless journeys—are guided into their berths by tractor beams. Technicians in powered exosuits move between ships, their tools humming as they conduct repairs and refueling operations. Above, a network of catwalks and service tunnels crisscrosses the high ceiling, where maintenance drones zip about like mechanical fireflies. The air thrums with the combined sounds of engines powering down, cargo loaders whirring, and the chatter of dozens of species in a dozen languages. At the far end of the bay, a large observation deck offers panoramic views of the ballet of spacecraft, while nearby, a security checkpoint staffed by both human and elven guards controls access to the more sensitive areas of the starbase. Several corridors branch off from the main bay, including one leading to the bustling commercial district and another marked with restricted access signs that hints at the starbase's more secretive operations.</description>
+  <baseLevel>5</baseLevel>
+</location>
+Successfully parsed location data: {
+  name: 'Docking Bay',
+  description: "The vast Docking Bay stretches before you, a cathedral of interstellar commerce and travel. The massive space is abuzz with activity as vessels of all shapes and sizes—from sleek elven starships with their elegant crystalline hulls to rugged human freighters bearing the scars of countless journeys—are guided into their berths by tractor beams. Technicians in powered exosuits move between ships, their tools humming as they conduct repairs and refueling operations. Above, a network of catwalks and service tunnels crisscrosses the high ceiling, where maintenance drones zip about like mechanical fireflies. The air thrums with the combined sounds of engines powering down, cargo loaders whirring, and the chatter of dozens of species in a dozen languages. At the far end of the bay, a large observation deck offers panoramic views of the ballet of spacecraft, while nearby, a security checkpoint staffed by both human and elven guards controls access to the more sensitive areas of the starbase. Several corridors branch off from the main bay, including one leading to the bustling commercial district and another marked with restricted access signs that hints at the starbase's more secretive operations.",
+  baseLevel: 5
+}
+🏗️  Successfully generated location: Docking Bay
+💾 Added location location_1757979930455_52d6b1b03dc4 to game world (total: 5)
+🌱 Created stub location Docking Bay Back Trail (location_1757979939659_a51f121eceec) to the back of Docking Bay
+🌱 Created stub location Docking Bay Northeast Approach (location_1757979939659_80cc528fc8b6) to the northeast of Docking Bay
+🧭 Docking Bay now has 2 unexplored stub location(s) awaiting discovery.
+Extracted prompts for location location_1757979930455_52d6b1b03dc4 - calling LLM for image prompt generation
+🤖 Requesting image prompt generation from LLM...
+📥 LLM Generated Image Prompt: A massive cathedral of interstellar commerce unfolds before you—the vast Docking Bay hums with controlled chaos as vessels of all shapes and sizes dock in their berths. Sleek elven starships with elegant crystalline hulls shimmer beside rugged human freighters bearing the scars of countless journeys, all guided by glowing tractor beams. Technicians in powered exosuits move between the ships like ants, their tools humming with energy as they conduct repairs and refueling operations. Above, an intricate network of catwalks and service tunnels crisscrosses the vaulted ceiling, where maintenance drones zip about like mechanical fireflies, casting moving shadows across the bustling floor below.
+
+The air thrums with the combined sounds of engines powering down, cargo loaders whirring, and the melodic chatter of dozens of species in a dozen languages. Natural light streams through massive viewport panels above, creating pools of illumination that highlight safe travel routes while leaving corners and alcoves in mysterious shadow. At the far end of the bay, a large observation deck offers panoramic views of the spacecraft ballet, while nearby, a security checkpoint staffed by both vigilant human and graceful elven guards controls access to more sensitive areas of the starbase.
+
+Several corridors branch off from the main bay—the one to your back leads toward the Docking Bay Back Trail, while the northeast passage opens toward the Docking Bay Northeast Approach. One well-lit corridor leads to what appears to be a bustling commercial district, while another is marked with ominous restricted access signs, hinting at the starbase's more secretive operations. The floor shows signs of heavy use with occasional warning markings and safety barriers, creating moderately challenging terrain that requires attention as you navigate this thriving hub of interstellar travel.
+🧽 Cleaned Image Prompt: A massive cathedral of interstellar commerce unfolds before you-the vast Docking Bay hums with controlled chaos as vessels of all shapes and sizes dock in their berths. Sleek elven starships with elegant crystalline hulls shimmer beside rugged human freighters bearing the scars of countless journeys, all guided by glowing tractor beams. Technicians in powered exosuits move between the ships like ants, their tools humming with energy as they conduct repairs and refueling operations. Above, an intricate network of catwalks and service tunnels crisscrosses the vaulted ceiling, where maintenance drones zip about like mechanical fireflies, casting moving shadows across the bustling floor below.
+
+The air thrums with the combined sounds of engines powering down, cargo loaders whirring, and the melodic chatter of dozens of species in a dozen languages. Natural light streams through massive viewport panels above, creating pools of illumination that highlight safe travel routes while leaving corners and alcoves in mysterious shadow. At the far end of the bay, a large observation deck offers panoramic views of the spacecraft ballet, while nearby, a security checkpoint staffed by both vigilant human and graceful elven guards controls access to more sensitive areas of the starbase.
+
+Several corridors branch off from the main bay-the one to your back leads toward the Docking Bay Back Trail, while the northeast passage opens toward the Docking Bay Northeast Approach. One well-lit corridor leads to what appears to be a bustling commercial district, while another is marked with ominous restricted access signs, hinting at the starbase's more secretive operations. The floor shows signs of heavy use with occasional warning markings and safety barriers, creating moderately challenging terrain that requires attention as you navigate this thriving hub of interstellar travel.
+🏞️ Generating scene for location location_1757979930455_52d6b1b03dc4 with job ID: img_20250915_234548_pjxk52z1
+🏞️ Queued scene generation for location location_1757979930455_52d6b1b03dc4, tracking with job ID: img_20250915_234548_pjxk52z1
+🎨 Location scene generation initiated for location_1757979930455_52d6b1b03dc4: {
+  jobId: 'img_20250915_234548_pjxk52z1',
+  status: 'queued',
+  message: 'Location scene generation job queued',
+  estimatedTime: '30-90 seconds'
+}
+🏠 Starting at region entrance: Docking Bay (Level 3)
+🧙‍♂️ Created new player: Baato at Docking Bay
+🎨 Queuing ComfyUI prompt 701440a0-95c7-4acb-90ec-cf8443eff132...
+✅ ComfyUI prompt 701440a0-95c7-4acb-90ec-cf8443eff132 queued successfully
+⏳ Waiting for ComfyUI prompt 701440a0-95c7-4acb-90ec-cf8443eff132 to complete...
+Using SettingInfo variables: {
+  theme: 'Sci-fi/anime',
+  genre: 'Adventure, action, romance',
+  startingLocationType: 'A starbase',
+  magicLevel: 'medium',
+  techLevel: 'futuristic',
+  tone: 'heroic',
+  difficulty: 'normal',
+  playerStartingLevel: 1,
+  settingName: 'Scifi Catgirl Universe',
+  settingDescription: 'An anime-themed sci-fi universe with space elves and catgirls'
+}
+Rendered system prompt template:
+ <?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Creative and engaging AI Game Master for text-based RPG</description>
+    
+    <systemPrompt>
+You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise.
+
+
+World Setting:
+
+- Theme: Sci-fi/anime setting with Adventure, action, romance focus
+
+
+- Tone: Heroic atmosphere and storytelling style
+
+
+- Magic Level: Medium magical elements in the world
+
+
+- Technology: Futuristic technological development
+
+
+- Challenge Level: Normal difficulty and lethality
+
+
+
+Guidelines:
+- Create vivid descriptions of environments and characters
+- Present meaningful choices to the player
+- Maintain consistent world-building fitting the Sci-fi/anime theme
+- Adapt to player preferences and actions
+- Keep the adventure fun and engaging with heroic tone
+
+
+- Magic should be medium in this world
+
+
+- Technology level is futuristic
+
+
+
+Current Player: Baato (Level 1)
+
+Player Background: A regular guy.
+
+
+
+
+Preferred Starting Location Style: A Starbase
+
+
+
+
+
+
+
+Game Style: narrative-focused
+
+
+
+Legacy Setting: fantasy
+
+
+
+    </systemPrompt>
+</template>
+✅ ComfyUI prompt 701440a0-95c7-4acb-90ec-cf8443eff132 completed!
+📥 Downloading image: ComfyUI_00979.png
+✅ Downloaded image: ComfyUI_00979.png (1364865 bytes)
+💾 Saved image: /home/bart/ai_rpg/public/generated-images/img_20250915_234548_vn7f9ru9.png (1364865 bytes)
+🏞️ Updated location location_1757979930455_52d6b1b03dc4 imageId to: img_20250915_234548_vn7f9ru9
+Using SettingInfo variables: {
+  theme: 'Sci-fi/anime',
+  genre: 'Adventure, action, romance',
+  startingLocationType: 'A starbase',
+  magicLevel: 'medium',
+  techLevel: 'futuristic',
+  tone: 'heroic',
+  difficulty: 'normal',
+  playerStartingLevel: 1,
+  settingName: 'Scifi Catgirl Universe',
+  settingDescription: 'An anime-themed sci-fi universe with space elves and catgirls'
+}
+Rendered system prompt template:
+ <?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Creative and engaging AI Game Master for text-based RPG</description>
+    
+    <systemPrompt>
+You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise.
+
+
+World Setting:
+
+- Theme: Sci-fi/anime setting with Adventure, action, romance focus
+
+
+- Tone: Heroic atmosphere and storytelling style
+
+
+- Magic Level: Medium magical elements in the world
+
+
+- Technology: Futuristic technological development
+
+
+- Challenge Level: Normal difficulty and lethality
+
+
+
+Guidelines:
+- Create vivid descriptions of environments and characters
+- Present meaningful choices to the player
+- Maintain consistent world-building fitting the Sci-fi/anime theme
+- Adapt to player preferences and actions
+- Keep the adventure fun and engaging with heroic tone
+
+
+- Magic should be medium in this world
+
+
+- Technology level is futuristic
+
+
+
+Current Player: Baato (Level 1)
+
+Player Background: A regular guy.
+
+
+
+
+Preferred Starting Location Style: A Starbase
+
+
+
+
+
+
+
+Game Style: narrative-focused
+
+
+
+Legacy Setting: fantasy
+
+
+
+    </systemPrompt>
+</template>

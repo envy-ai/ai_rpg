@@ -4,3 +4,4 @@ package-lock.json
 .DS_Store
 saves/*
 public/generated-images/*
+logs/*

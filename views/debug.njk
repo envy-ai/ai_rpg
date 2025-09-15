@@ -381,23 +381,6 @@
                 {% endif %}
             </div>
 
-            <!-- All Locations Data -->
-            <div class="debug-section">
-                <h2>🗺️ All Locations</h2>
-                {% if allLocations and (allLocations | length) > 0 %}
-                    <details>
-                        <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
-                            Click to expand all locations data
-                        </summary>
-                        <pre class="debug-json">{{ allLocations | dump(2) }}</pre>
-                    </details>
-                {% else %}
-                    <div class="no-player">
-                        <p>No locations defined in defs/locations.yaml</p>
-                    </div>
-                {% endif %}
-            </div>
-
             <!-- Game World Data -->
             <div class="debug-section">
                 <h2>🌍 Game World Data (In-Memory)</h2>

@@ -1984,13 +1984,29 @@ async function generateRegionFromPrompt(options = {}) {
         }
 
         const aiResponse = response.data.choices[0].message.content;
-        console.log('📥 Region AI Response:');
-        console.log('='.repeat(50));
-        console.log(aiResponse);
-        console.log('='.repeat(50));
+        console.log('📥 Region AI Response received.');
 
         const region = Region.fromXMLSnippet(aiResponse);
         regions.set(region.id, region);
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `${region.id}.log`);
+            const logParts = [
+                '=== REGION GENERATION PROMPT ===',
+                generationPrompt,
+                '\n=== REGION GENERATION RESPONSE ===',
+                aiResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+            console.log(`📝 Region generation logged to ${logPath}`);
+        } catch (logError) {
+            console.warn('Failed to write region generation log:', logError.message);
+        }
 
         const stubMap = new Map();
 
@@ -2006,7 +2022,7 @@ async function generateRegionFromPrompt(options = {}) {
                     regionId: region.id,
                     regionName: region.name,
                     blueprintDescription: blueprint.description,
-                    suggestedRegionExits: blueprint.exits,
+                    suggestedRegionExits: (blueprint.exits || []).map(exit => exit.target),
                     themeHint,
                     shortDescription: blueprint.description,
                     locationPurpose: `Part of the ${region.name} region`,
@@ -2016,7 +2032,16 @@ async function generateRegionFromPrompt(options = {}) {
 
             gameLocations.set(stub.id, stub);
             region.addLocationId(stub.id);
-            stubMap.set(normalizeRegionLocationName(blueprint.name), stub);
+            const aliases = new Set();
+            aliases.add(normalizeRegionLocationName(blueprint.name));
+            if (Array.isArray(blueprint.aliases)) {
+                blueprint.aliases.forEach(alias => aliases.add(normalizeRegionLocationName(alias)));
+            }
+            aliases.forEach(alias => {
+                if (alias) {
+                    stubMap.set(alias, stub);
+                }
+            });
         }
 
         // Connect stubs based on blueprint exits with placeholder exit data
@@ -2045,17 +2070,50 @@ async function generateRegionFromPrompt(options = {}) {
         };
 
         for (const blueprint of region.locationBlueprints) {
-            const sourceStub = stubMap.get(normalizeRegionLocationName(blueprint.name));
+            const sourceAliases = [normalizeRegionLocationName(blueprint.name)];
+            if (Array.isArray(blueprint.aliases)) {
+                sourceAliases.push(...blueprint.aliases.map(alias => normalizeRegionLocationName(alias)));
+            }
+            const sourceStub = sourceAliases
+                .map(alias => stubMap.get(alias))
+                .find(Boolean);
             if (!sourceStub) continue;
-            const exits = blueprint.exits || [];
-            exits.forEach(exitName => {
-                const targetStub = stubMap.get(normalizeRegionLocationName(exitName));
+        let exits = blueprint.exits || [];
+        if ((!exits || exits.length === 0) && region.locationBlueprints.length > 1) {
+            const total = region.locationBlueprints.length;
+            const index = region.locationBlueprints.indexOf(blueprint);
+            const fallback = [];
+            if (index !== -1) {
+                const prev = region.locationBlueprints[(index - 1 + total) % total];
+                const next = region.locationBlueprints[(index + 1) % total];
+                if (prev && prev !== blueprint) {
+                    fallback.push({ target: prev.name, direction: null });
+                }
+                if (next && next !== blueprint && next !== prev) {
+                    fallback.push({ target: next.name, direction: null });
+                }
+            }
+            exits = fallback;
+        }
+
+            exits.forEach(exitInfo => {
+                const targetLabel = exitInfo?.target;
+                if (!targetLabel) return;
+                const directionHint = exitInfo.direction;
+
+                const candidateAliases = [normalizeRegionLocationName(targetLabel)];
+                const directStub = candidateAliases
+                    .map(alias => stubMap.get(alias))
+                    .find(Boolean);
+                const targetStub = directStub;
                 if (!targetStub) {
                     return;
                 }
 
-                addStubExit(sourceStub, targetStub, exitName);
-                addStubExit(targetStub, sourceStub, blueprint.name);
+                const forwardDirection = directionHint || targetLabel;
+                addStubExit(sourceStub, targetStub, forwardDirection);
+                const reverseLabel = blueprint.name;
+                addStubExit(targetStub, sourceStub, reverseLabel);
             });
         }
 
