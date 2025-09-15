@@ -10,7 +10,6 @@
     <div class="container">
         <div class="header">
             <h1>🎮 AI RPG Chat Interface 🤖</h1>
-            <p>Welcome! Your AI Game Master is ready for adventure.</p>
             {% include "_navigation.njk" %}
         </div>
         
@@ -19,7 +18,7 @@
             <div class="location-block">
                 <div class="container">
                     <div class="location-header">
-                        <h3>📍 Current Location</h3>
+                        <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
                     </div>
                     <div class="location-content" id="locationContent">
                         <div class="location-image" id="locationImage">
@@ -29,7 +28,7 @@
                             </div>
                         </div>
                         <div class="location-info" id="locationInfo">
-                            <h4 class="location-name" id="locationName">Unknown Location</h4>
+                            
                             <p class="location-description" id="locationDescription">Your current location will appear here when you start exploring.</p>
                             <div class="location-details" id="locationDetails">
                                 <span class="location-level" id="locationLevel">Level: ?</span>

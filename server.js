@@ -20,6 +20,9 @@ const Thing = require('./Thing.js');
 // Import SettingInfo class
 const SettingInfo = require('./SettingInfo.js');
 
+// Import Region class
+const Region = require('./Region.js');
+
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 
@@ -484,12 +487,386 @@ let chatHistory = [];
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
 let currentSetting = null; // Current game setting
+
+function getActiveSettingSnapshot() {
+    if (currentSetting && typeof currentSetting.toJSON === 'function') {
+        return currentSetting.toJSON();
+    }
+    return null;
+}
+
+function describeSettingForPrompt(settingSnapshot = null) {
+    const fallbackSetting = config.gamemaster?.promptVariables?.setting;
+
+    if (!settingSnapshot) {
+        if (typeof fallbackSetting === 'string' && fallbackSetting.trim()) {
+            return fallbackSetting.trim();
+        }
+        return 'A rich fantasy world filled with adventure.';
+    }
+
+    const sections = [];
+    const titleParts = [];
+
+    if (settingSnapshot.name) {
+        titleParts.push(settingSnapshot.name);
+    }
+
+    const themeGenre = [settingSnapshot.theme, settingSnapshot.genre]
+        .filter(part => typeof part === 'string' && part.trim())
+        .map(part => part.trim())
+        .join(' / ');
+
+    if (themeGenre) {
+        titleParts.push(themeGenre);
+    }
+
+    if (titleParts.length) {
+        sections.push(titleParts.join(' - '));
+    }
+
+    if (settingSnapshot.description) {
+        sections.push(settingSnapshot.description);
+    }
+
+    const traitParts = [];
+    if (settingSnapshot.tone) traitParts.push(`tone ${settingSnapshot.tone}`);
+    if (settingSnapshot.difficulty) traitParts.push(`difficulty ${settingSnapshot.difficulty}`);
+    if (settingSnapshot.magicLevel) traitParts.push(`magic ${settingSnapshot.magicLevel}`);
+    if (settingSnapshot.techLevel) traitParts.push(`technology ${settingSnapshot.techLevel}`);
+
+    if (traitParts.length) {
+        sections.push(`Key traits: ${traitParts.join(', ')}.`);
+    }
+
+    if (settingSnapshot.startingLocationType) {
+        sections.push(`Common starting location: ${settingSnapshot.startingLocationType}.`);
+    }
+
+    const description = sections.join(' ').trim();
+    if (description) {
+        return description;
+    }
+
+    if (typeof fallbackSetting === 'string' && fallbackSetting.trim()) {
+        return fallbackSetting.trim();
+    }
+
+    return 'A rich fantasy world filled with adventure.';
+}
+
+function resolveLocationStyle(requestedStyle, settingSnapshot = null) {
+    const trimmedRequested = typeof requestedStyle === 'string' ? requestedStyle.trim() : '';
+    if (trimmedRequested) {
+        return trimmedRequested;
+    }
+
+    const fromSetting = settingSnapshot?.startingLocationType;
+    if (typeof fromSetting === 'string' && fromSetting.trim()) {
+        return fromSetting.trim();
+    }
+
+    return 'village';
+}
+
+function buildLocationShortDescription(style, settingSnapshot = null, override = '') {
+    const trimmedOverride = typeof override === 'string' ? override.trim() : '';
+    if (trimmedOverride) {
+        return trimmedOverride;
+    }
+
+    const settingName = settingSnapshot?.name;
+    if (style && settingName) {
+        return `A ${style} that fits the themes of ${settingName}.`;
+    }
+
+    if (style) {
+        return `A ${style} that reflects the current game setting.`;
+    }
+
+    return settingSnapshot?.description || 'An evocative location within the current setting.';
+}
+
+function buildLocationPurpose(style, settingSnapshot = null, override = '') {
+    const trimmedOverride = typeof override === 'string' ? override.trim() : '';
+    if (trimmedOverride) {
+        return trimmedOverride;
+    }
+
+    if (style) {
+        return `Expand the world with a ${style} aligned with the setting's tone.`;
+    }
+
+    if (settingSnapshot?.name) {
+        return `Expand the world of ${settingSnapshot.name}.`;
+    }
+
+    return 'Expand the world with a new distinctive location.';
+}
+
+function getSuggestedPlayerLevel(settingSnapshot = null) {
+    if (currentPlayer && typeof currentPlayer.level === 'number') {
+        return currentPlayer.level;
+    }
+
+    if (settingSnapshot?.playerStartingLevel) {
+        return settingSnapshot.playerStartingLevel;
+    }
+
+    return 1;
+}
 const players = new Map(); // Store multiple players by ID
 const things = new Map(); // Store things (items and scenery) by ID
 
 // In-memory game world storage
 const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
+const regions = new Map(); // Store Region instances by ID
+
+const PRIMARY_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down', 'northeast', 'northwest', 'southeast', 'southwest', 'in', 'out', 'forward', 'back'];
+const OPPOSITE_DIRECTION_MAP = {
+    north: 'south',
+    south: 'north',
+    east: 'west',
+    west: 'east',
+    up: 'down',
+    down: 'up',
+    northeast: 'southwest',
+    southwest: 'northeast',
+    northwest: 'southeast',
+    southeast: 'northwest',
+    in: 'out',
+    out: 'in',
+    forward: 'back',
+    back: 'forward'
+};
+
+function normalizeDirection(direction) {
+    return typeof direction === 'string' ? direction.toLowerCase().trim() : null;
+}
+
+function getOppositeDirection(direction) {
+    const normalized = normalizeDirection(direction);
+    if (!normalized) {
+        return null;
+    }
+    return OPPOSITE_DIRECTION_MAP[normalized] || null;
+}
+
+function randomIntInclusive(min, max) {
+    const safeMin = Math.ceil(min);
+    const safeMax = Math.floor(max);
+    return Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin;
+}
+
+function directionKeyFromName(name, fallback = null) {
+    if (!name || typeof name !== 'string') {
+        return fallback || `path_${randomIntInclusive(100, 999)}`;
+    }
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return slug || fallback || `path_${randomIntInclusive(100, 999)}`;
+}
+
+function generateStubName(baseLocation, direction) {
+    const baseName = baseLocation?.name || 'Uncharted';
+    const normalizedDirection = normalizeDirection(direction);
+    const directionLabel = normalizedDirection ? normalizedDirection.charAt(0).toUpperCase() + normalizedDirection.slice(1) : 'Adjacent';
+    const suffixes = ['Path', 'Trail', 'Approach', 'Passage', 'Outlook', 'Frontier'];
+    const suffix = suffixes[randomIntInclusive(0, suffixes.length - 1)];
+    let candidate = `${baseName} ${directionLabel} ${suffix}`.trim();
+
+    if (typeof Location.findByName === 'function' && Location.findByName(candidate)) {
+        candidate = `${candidate} ${randomIntInclusive(2, 99)}`;
+    }
+
+    return candidate;
+}
+
+function normalizeRegionLocationName(name) {
+    return typeof name === 'string' ? name.trim().toLowerCase() : '';
+}
+
+function ensureExitConnection(fromLocation, direction, toLocation, { description, bidirectional = false } = {}) {
+    if (!fromLocation || !toLocation) {
+        return null;
+    }
+
+    const normalizedDirection = normalizeDirection(direction) || directionKeyFromName(toLocation.name) || `path_${randomIntInclusive(100, 999)}`;
+    let exit = typeof fromLocation.getExit === 'function' ? fromLocation.getExit(normalizedDirection) : null;
+
+    if (exit) {
+        if (description) {
+            try {
+                exit.description = description;
+            } catch (_) {
+                // Fallback for immutable description errors
+                exit.update({ description });
+            }
+        }
+        try {
+            exit.destination = toLocation.id;
+        } catch (_) {
+            exit.update({ destination: toLocation.id });
+        }
+        try {
+            exit.bidirectional = Boolean(bidirectional);
+        } catch (_) {
+            exit.update({ bidirectional: Boolean(bidirectional) });
+        }
+        if (bidirectional) {
+            const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+            ensureExitConnection(
+                toLocation,
+                reverseKey,
+                fromLocation,
+                { description: `Path back to ${fromLocation.name || fromLocation.id}`, bidirectional: false }
+            );
+        }
+        return exit;
+    }
+
+    const exitDescription = description || `Path to ${toLocation.name || 'an unknown location'}`;
+    const newExit = new LocationExit({
+        description: exitDescription,
+        destination: toLocation.id,
+        bidirectional: Boolean(bidirectional)
+    });
+
+    if (typeof fromLocation.addExit === 'function') {
+        fromLocation.addExit(normalizedDirection, newExit);
+    }
+    gameLocationExits.set(newExit.id, newExit);
+
+    if (bidirectional) {
+        const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+        ensureExitConnection(
+            toLocation,
+            reverseKey,
+            fromLocation,
+            { description: `Path back to ${fromLocation.name || fromLocation.id}`, bidirectional: false }
+        );
+    }
+    return newExit;
+}
+
+function pickAvailableDirections(location, exclude = []) {
+    const exclusions = new Set();
+    (exclude || []).map(normalizeDirection).filter(Boolean).forEach(dir => exclusions.add(dir));
+
+    if (typeof location.getAvailableDirections === 'function') {
+        for (const existingDirection of location.getAvailableDirections()) {
+            const normalized = normalizeDirection(existingDirection);
+            if (normalized) {
+                exclusions.add(normalized);
+            }
+        }
+    }
+
+    return PRIMARY_DIRECTIONS.filter(direction => !exclusions.has(direction));
+}
+
+function createStubNeighbors(location, context = {}) {
+    if (!location || typeof location.id !== 'string') {
+        return [];
+    }
+
+    if (typeof location.hasGeneratedStubs === 'boolean' && location.hasGeneratedStubs) {
+        return [];
+    }
+
+    const excludeDirections = Array.isArray(context.excludeDirections) ? context.excludeDirections : [];
+    const available = pickAvailableDirections(location, excludeDirections);
+
+    if (available.length === 0) {
+        if (typeof location.markStubsGenerated === 'function') {
+            location.markStubsGenerated();
+        }
+        return [];
+    }
+
+    const minStubs = context.minStubs || 1;
+    const maxStubs = Math.max(minStubs, Math.min(context.maxStubs || 3, available.length));
+    const stubCount = randomIntInclusive(minStubs, maxStubs);
+    const created = [];
+
+    for (let i = 0; i < stubCount && available.length > 0; i++) {
+        const randomIndex = randomIntInclusive(0, available.length - 1);
+        const direction = available.splice(randomIndex, 1)[0];
+        const stubName = generateStubName(location, direction);
+        const stubShortDescription = context.shortDescription
+            ? `${context.shortDescription} (${direction} approach)`
+            : `An unexplored area ${direction} of ${location.name || 'this location'}.`;
+        const stubPurpose = context.locationPurpose || 'Extend the surrounding region for future exploration.';
+        const stub = new Location({
+            name: stubName,
+            description: null,
+            baseLevel: null,
+            isStub: true,
+            stubMetadata: {
+                originLocationId: location.id,
+                originDirection: direction,
+                themeHint: context.themeHint || null,
+                shortDescription: stubShortDescription,
+                locationPurpose: stubPurpose,
+                settingDescription: context.settingDescription || null,
+                allowRename: false
+            }
+        });
+
+        gameLocations.set(stub.id, stub);
+        const exitDescription = `Unexplored path leading ${direction} toward ${stub.name}`;
+        ensureExitConnection(location, direction, stub, { description: exitDescription, bidirectional: false });
+
+        console.log(`🌱 Created stub location ${stub.name} (${stub.id}) to the ${direction} of ${location.name || location.id}`);
+        created.push({
+            id: stub.id,
+            name: stub.name,
+            direction
+        });
+    }
+
+    if (typeof location.markStubsGenerated === 'function') {
+        location.markStubsGenerated();
+    }
+
+    return created;
+}
+
+const stubExpansionPromises = new Map();
+
+function scheduleStubExpansion(location) {
+    if (!location || !location.isStub) {
+        return null;
+    }
+
+    if (stubExpansionPromises.has(location.id)) {
+        return stubExpansionPromises.get(location.id);
+    }
+
+    const metadata = location.stubMetadata || {};
+    const originLocation = metadata.originLocationId ? Location.get(metadata.originLocationId) : null;
+
+    const expansionPromise = generateLocationFromPrompt({
+        stubLocation: location,
+        originLocation,
+        locationTheme: metadata.themeHint || null,
+        shortDescription: metadata.shortDescription || null,
+        locationPurpose: metadata.locationPurpose || null,
+        setting: metadata.settingDescription || null
+    }).catch(error => {
+        console.error(`Failed to expand stub location ${location.id}:`, error.message);
+        throw error;
+    });
+
+    stubExpansionPromises.set(location.id, expansionPromise);
+
+    expansionPromise.finally(() => {
+        stubExpansionPromises.delete(location.id);
+    });
+
+    return expansionPromise;
+}
+
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
@@ -799,17 +1176,31 @@ function renderThingImagePrompt(thing) {
 // Function to render location generator prompt from template
 function renderLocationGeneratorPrompt(options = {}) {
     try {
-        const templateName = 'location-generator.xml.njk';
+        const activeSetting = getActiveSettingSnapshot();
+        const isStubExpansion = Boolean(options.isStubExpansion);
+        const templateName = isStubExpansion
+            ? 'location-generator.stub.xml.njk'
+            : 'location-generator.full.xml.njk';
 
-        // Set up variables for the template with defaults from config
-        const variables = {
-            setting: options.setting || config.gamemaster.promptVariables?.setting || 'fantasy',
-            existingLocations: [], // Could be populated with existing location names
+        const baseVariables = {
+            setting: options.setting || describeSettingForPrompt(activeSetting),
+            existingLocations: options.existingLocations || [],
             shortDescription: options.shortDescription || null,
-            locationTheme: options.theme || options.locationTheme || null,
+            locationTheme: options.locationTheme || options.theme || null,
             playerLevel: options.playerLevel || null,
             locationPurpose: options.locationPurpose || null
         };
+
+        const variables = isStubExpansion
+            ? {
+                ...baseVariables,
+                originLocationName: options.originLocationName || null,
+                originDescription: options.originDescription || null,
+                originDirection: options.originDirection || null,
+                stubName: options.stubName || null,
+                stubId: options.stubId || null
+            }
+            : baseVariables;
 
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -827,9 +1218,6 @@ function renderLocationGeneratorPrompt(options = {}) {
             throw new Error('No generationPrompt found in location generator template');
         }
 
-        // Combine the system and generation prompts
-        //const fullPrompt = systemPrompt.trim() + '\n\n' + generationPrompt.trim();
-
         console.log('Generated location generator prompt with variables:', variables);
         return { systemPrompt: systemPrompt.trim(), generationPrompt: generationPrompt.trim() };
 
@@ -837,6 +1225,39 @@ function renderLocationGeneratorPrompt(options = {}) {
         console.error('Error rendering location generator template:', error);
         // Fallback to simple prompt
         return `Generate a new fantasy RPG location. Return an XML snippet in this format: <location><name>Location Name</name><description>Detailed description of the location</description><baseLevel>5</baseLevel></location>`;
+    }
+}
+
+function renderRegionGeneratorPrompt(options = {}) {
+    try {
+        const templateName = 'region-generator.full.xml.njk';
+        const activeSetting = getActiveSettingSnapshot();
+        const variables = {
+            setting: options.setting || describeSettingForPrompt(activeSetting),
+            regionName: options.regionName || null,
+            regionDescription: options.regionDescription || null,
+            regionNotes: options.regionNotes || null
+        };
+
+        const renderedTemplate = promptEnv.render(templateName, variables);
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedXML.systemPrompt;
+        const generationPrompt = parsedXML.generationPrompt;
+
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Region generator template missing systemPrompt or generationPrompt');
+        }
+
+        return {
+            systemPrompt: systemPrompt.trim(),
+            generationPrompt: generationPrompt.trim()
+        };
+    } catch (error) {
+        console.error('Error rendering region generator template:', error);
+        return {
+            systemPrompt: 'You are an AI gamemaster. Design a cohesive region for an RPG world.',
+            generationPrompt: 'Generate a region with 5 locations in XML format describing names, descriptions, and exit connections.'
+        };
     }
 }
 
@@ -1295,8 +1716,60 @@ function generateThingImageDebounced(thing) {
 // Function to generate a new location using AI
 async function generateLocationFromPrompt(options = {}) {
     try {
+        const {
+            stubLocation = null,
+            originLocation = null,
+            createStubs = true,
+            ...promptOverrides
+        } = options;
+
+        const isStubExpansion = Boolean(stubLocation);
+        const stubMetadata = stubLocation ? stubLocation.stubMetadata || {} : {};
+        const resolvedOriginLocation = originLocation || (stubMetadata.originLocationId ? Location.get(stubMetadata.originLocationId) : null);
+
+        if (isStubExpansion && (!stubLocation || !stubLocation.id)) {
+            throw new Error('Stub expansion requested without a valid stub location');
+        }
+
+        if (isStubExpansion && !resolvedOriginLocation) {
+            console.warn(`Stub ${stubLocation.id} has no resolvable origin location. Expansion will proceed without origin context.`);
+        }
+
+        // Prepare template overrides and stub context for prompt rendering
+        const templateOverrides = { ...promptOverrides };
+
+        if (isStubExpansion) {
+            if (!templateOverrides.shortDescription && stubMetadata.shortDescription) {
+                templateOverrides.shortDescription = stubMetadata.shortDescription;
+            }
+            if (!templateOverrides.locationPurpose && stubMetadata.locationPurpose) {
+                templateOverrides.locationPurpose = stubMetadata.locationPurpose;
+            }
+            if (!templateOverrides.locationTheme && stubMetadata.themeHint) {
+                templateOverrides.locationTheme = stubMetadata.themeHint;
+            }
+        }
+
+        const stubTemplateData = isStubExpansion ? {
+            stubId: stubLocation.id,
+            stubName: stubLocation.name,
+            originLocationName: resolvedOriginLocation?.name || null,
+            originDirection: stubMetadata.originDirection || null,
+            originDescription: resolvedOriginLocation?.description || null
+        } : null;
+
+        const templateOptions = {
+            ...templateOverrides,
+            isStubExpansion,
+            stubId: stubTemplateData?.stubId || null,
+            stubName: stubTemplateData?.stubName || null,
+            originLocationName: stubTemplateData?.originLocationName || null,
+            originDescription: stubTemplateData?.originDescription || null,
+            originDirection: stubTemplateData?.originDirection || null
+        };
+
         // Generate the system prompt using the template
-        const { systemPrompt, generationPrompt } = renderLocationGeneratorPrompt(options);
+        const { systemPrompt, generationPrompt } = renderLocationGeneratorPrompt(templateOptions);
 
         // Prepare the messages for the AI API
         const messages = [
@@ -1350,7 +1823,12 @@ async function generateLocationFromPrompt(options = {}) {
         console.log('='.repeat(50));
 
         // Parse the XML response using Location.fromXMLSnippet()
-        const location = Location.fromXMLSnippet(aiResponse);
+        const location = isStubExpansion
+            ? Location.fromXMLSnippet(aiResponse, {
+                existingLocation: stubLocation,
+                allowRename: Boolean(stubMetadata.allowRename)
+            })
+            : Location.fromXMLSnippet(aiResponse);
 
         if (!location) {
             throw new Error('Failed to parse location from AI response');
@@ -1361,6 +1839,45 @@ async function generateLocationFromPrompt(options = {}) {
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
+
+        const newlyCreatedStubs = [];
+
+        if (isStubExpansion && resolvedOriginLocation) {
+            const travelDirection = stubMetadata.originDirection || 'forward';
+            const cleanedDescription = `Path to ${location.name || 'an adjacent area'}`;
+            ensureExitConnection(resolvedOriginLocation, travelDirection, location, { description: cleanedDescription, bidirectional: false });
+
+            const reverseDirection = getOppositeDirection(travelDirection) || 'back';
+            const returnDescription = `Path back to ${resolvedOriginLocation.name || 'the previous area'}`;
+            ensureExitConnection(location, reverseDirection, resolvedOriginLocation, { description: returnDescription, bidirectional: false });
+        }
+
+        if (createStubs) {
+            const themeHint = templateOverrides.locationTheme || templateOverrides.theme || stubMetadata.themeHint || null;
+            const stubCreationContext = {
+                themeHint,
+                shortDescription: templateOverrides.shortDescription || null,
+                locationPurpose: templateOverrides.locationPurpose || null,
+                settingDescription: templateOverrides.setting || describeSettingForPrompt(getActiveSettingSnapshot())
+            };
+
+            const excludeDirections = [];
+            if (isStubExpansion && stubMetadata.originDirection) {
+                const reverseDir = getOppositeDirection(stubMetadata.originDirection);
+                if (reverseDir) {
+                    excludeDirections.push(reverseDir);
+                }
+            }
+
+            newlyCreatedStubs.push(...createStubNeighbors(location, {
+                excludeDirections,
+                ...stubCreationContext
+            }));
+
+            if (newlyCreatedStubs.length > 0) {
+                console.log(`🧭 ${location.name || location.id} now has ${newlyCreatedStubs.length} unexplored stub location(s) awaiting discovery.`);
+            }
+        }
 
         // Automatically generate location scene image if image generation is enabled
         try {
@@ -1375,11 +1892,229 @@ async function generateLocationFromPrompt(options = {}) {
             location: location,
             aiResponse: aiResponse,
             generationPrompt: generationPrompt,
-            generationOptions: options
+            generationOptions: templateOptions,
+            newStubs: newlyCreatedStubs,
+            isStubExpansion
         };
 
     } catch (error) {
         console.error('Error generating location from prompt:', error);
+        throw error;
+    }
+}
+
+function renderRegionEntrancePrompt() {
+    try {
+        const templateName = 'region-generator-entrance.xml.njk';
+        const renderedTemplate = promptEnv.render(templateName, {});
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+        const generationPrompt = parsedXML.generationPrompt;
+
+        if (!generationPrompt) {
+            throw new Error('Region entrance template missing generationPrompt');
+        }
+
+        return generationPrompt.trim();
+    } catch (error) {
+        console.error('Error rendering region entrance template:', error);
+        return 'From the preceding list of region locations, choose the most fitting entrance and respond only with <entrance><name>LOCATION NAME</name></entrance>.';
+    }
+}
+
+function parseRegionEntranceResponse(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return null;
+    }
+
+    try {
+        const match = xmlSnippet.match(/<entrance>[\s\S]*?<\/entrance>/i);
+        const entranceXml = match ? match[0] : xmlSnippet;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(entranceXml, 'text/xml');
+
+        const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const nameNode = xmlDoc.getElementsByTagName('name')[0];
+        const nameText = nameNode ? nameNode.textContent.trim() : null;
+        return nameText || null;
+    } catch (error) {
+        console.warn('Failed to parse region entrance response:', error.message);
+        return null;
+    }
+}
+
+async function generateRegionFromPrompt(options = {}) {
+    try {
+        const { systemPrompt, generationPrompt } = renderRegionGeneratorPrompt(options);
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const model = config.ai.model;
+
+        const chatEndpoint = endpoint.endsWith('/') ?
+            endpoint + 'chat/completions' :
+            endpoint + '/chat/completions';
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: config.ai.maxTokens || 1200,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        console.log('🗺️ Requesting region generation from AI...');
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid response from AI API for region generation');
+        }
+
+        const aiResponse = response.data.choices[0].message.content;
+        console.log('📥 Region AI Response:');
+        console.log('='.repeat(50));
+        console.log(aiResponse);
+        console.log('='.repeat(50));
+
+        const region = Region.fromXMLSnippet(aiResponse);
+        regions.set(region.id, region);
+
+        const stubMap = new Map();
+
+        const themeHint = options.regionNotes || null;
+
+        for (const blueprint of region.locationBlueprints) {
+            const stub = new Location({
+                name: blueprint.name,
+                description: null,
+                baseLevel: 1,
+                isStub: true,
+                stubMetadata: {
+                    regionId: region.id,
+                    regionName: region.name,
+                    blueprintDescription: blueprint.description,
+                    suggestedRegionExits: blueprint.exits,
+                    themeHint,
+                    shortDescription: blueprint.description,
+                    locationPurpose: `Part of the ${region.name} region`,
+                    allowRename: false
+                }
+            });
+
+            gameLocations.set(stub.id, stub);
+            region.addLocationId(stub.id);
+            stubMap.set(normalizeRegionLocationName(blueprint.name), stub);
+        }
+
+        // Connect stubs based on blueprint exits with placeholder exit data
+        const addStubExit = (fromStub, toStub, label) => {
+            if (!fromStub || !toStub || fromStub.id === toStub.id) {
+                return;
+            }
+
+            const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
+            const existing = fromStub.getExit(directionKey);
+            if (existing) {
+                try {
+                    existing.destination = toStub.id;
+                } catch (_) {
+                    existing.update({ destination: toStub.id });
+                }
+                return;
+            }
+
+            const exit = new LocationExit({
+                description: '',
+                destination: toStub.id,
+                bidirectional: false
+            });
+            fromStub.addExit(directionKey, exit);
+        };
+
+        for (const blueprint of region.locationBlueprints) {
+            const sourceStub = stubMap.get(normalizeRegionLocationName(blueprint.name));
+            if (!sourceStub) continue;
+            const exits = blueprint.exits || [];
+            exits.forEach(exitName => {
+                const targetStub = stubMap.get(normalizeRegionLocationName(exitName));
+                if (!targetStub) {
+                    return;
+                }
+
+                addStubExit(sourceStub, targetStub, exitName);
+                addStubExit(targetStub, sourceStub, blueprint.name);
+            });
+        }
+
+        let entranceLocationId = null;
+        try {
+            const entrancePrompt = renderRegionEntrancePrompt();
+            const entranceMessages = [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: generationPrompt },
+                { role: 'assistant', content: aiResponse },
+                { role: 'user', content: entrancePrompt }
+            ];
+
+            const entranceRequest = {
+                model,
+                messages: entranceMessages,
+                max_tokens: 200,
+                temperature: config.ai.temperature || 0.7
+            };
+
+            console.log('🚪 Requesting region entrance selection...');
+            const entranceResponse = await axios.post(chatEndpoint, entranceRequest, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
+            console.log('🏰 Entrance selection response:\n', entranceMessage);
+            const entranceName = parseRegionEntranceResponse(entranceMessage);
+
+            if (entranceName) {
+                const matchedStub = stubMap.get(normalizeRegionLocationName(entranceName));
+                if (matchedStub) {
+                    entranceLocationId = matchedStub.id;
+                    const metadata = matchedStub.stubMetadata || {};
+                    metadata.isRegionEntrance = true;
+                    matchedStub.stubMetadata = metadata;
+                    region.entranceLocationId = matchedStub.id;
+                } else {
+                    console.warn(`Entrance location "${entranceName}" not found among generated stubs.`);
+                }
+            } else {
+                console.warn('Entrance selection response did not include a <name> tag.');
+            }
+        } catch (entranceError) {
+            console.warn('Failed to determine region entrance:', entranceError.message);
+        }
+
+        return {
+            region,
+            aiResponse,
+            entranceLocationId,
+            createdLocations: region.locationIds.map(id => gameLocations.get(id)).filter(Boolean)
+        };
+    } catch (error) {
+        console.error('Error generating region from prompt:', error);
         throw error;
     }
 }
@@ -1982,6 +2717,9 @@ app.get('/debug', (req, res) => {
         ),
         locationExits: Object.fromEntries(
             Array.from(gameLocationExits.entries()).map(([id, exit]) => [id, exit.toJSON()])
+        ),
+        regions: Object.fromEntries(
+            Array.from(regions.entries()).map(([id, region]) => [id, region.toJSON()])
         )
     };
 
@@ -1999,7 +2737,8 @@ app.get('/debug', (req, res) => {
         gameWorld: gameWorldData, // In-memory game world data
         gameWorldCounts: {
             locations: gameLocations.size,
-            locationExits: gameLocationExits.size
+            locationExits: gameLocationExits.size,
+            regions: regions.size
         },
         currentPage: 'debug'
     };
@@ -2193,7 +2932,7 @@ app.post('/api/players/:id/portrait', async (req, res) => {
 // ==================== PLAYER AND LOCATION QUERY ENDPOINTS ====================
 
 // Get location by ID
-app.get('/api/locations/:id', (req, res) => {
+app.get('/api/locations/:id', async (req, res) => {
     try {
         const locationId = req.params.id;
         const location = Location.get(locationId);
@@ -2205,9 +2944,20 @@ app.get('/api/locations/:id', (req, res) => {
             });
         }
 
+        if (location.isStub) {
+            try {
+                await scheduleStubExpansion(location);
+            } catch (expansionError) {
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to expand location: ${expansionError.message}`
+                });
+            }
+        }
+
         res.json({
             success: true,
-            location: location.getDetails()
+            location: location.toJSON()
         });
     } catch (error) {
         console.error('Error fetching location:', error);
@@ -2220,19 +2970,61 @@ app.get('/api/locations/:id', (req, res) => {
 
 // ==================== LOCATION GENERATION FUNCTIONALITY ====================
 
+// Generate a new region using AI
+app.post('/api/regions/generate', async (req, res) => {
+    try {
+        const { regionName, regionDescription, regionNotes } = req.body || {};
+        const activeSetting = getActiveSettingSnapshot();
+
+        const options = {
+            setting: describeSettingForPrompt(activeSetting),
+            regionName: regionName && regionName.trim() ? regionName.trim() : null,
+            regionDescription: regionDescription || null,
+            regionNotes: regionNotes || null
+        };
+
+        const result = await generateRegionFromPrompt(options);
+
+        res.json({
+            success: true,
+            region: result.region.toJSON(),
+            createdLocationIds: result.region.locationIds,
+            createdLocations: result.createdLocations.map(loc => loc.toJSON()),
+            entranceLocationId: result.region.entranceLocationId || result.entranceLocationId,
+            message: `Region "${result.region.name}" generated with ${result.region.locationIds.length} stub locations.`
+        });
+    } catch (error) {
+        console.error('Error generating region:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Generate a new location using AI
 app.post('/api/locations/generate', async (req, res) => {
     try {
-        const { setting, theme, difficulty, locationStyle } = req.body;
+        const body = req.body || {};
+        const activeSetting = getActiveSettingSnapshot();
+        const derivedLocationStyle = resolveLocationStyle(body.locationStyle, activeSetting);
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const shortDescription = buildLocationShortDescription(derivedLocationStyle, activeSetting);
+        const locationPurpose = buildLocationPurpose(derivedLocationStyle, activeSetting);
+        const playerLevel = getSuggestedPlayerLevel(activeSetting);
 
-        // Prepare generation options
-        const options = {};
-        if (setting) options.setting = setting;
-        if (theme) options.theme = theme;
-        if (difficulty) options.difficulty = difficulty;
-        if (locationStyle) options.locationStyle = locationStyle;
+        const options = {
+            setting: settingDescription,
+            theme: derivedLocationStyle,
+            locationTheme: derivedLocationStyle,
+            locationStyle: derivedLocationStyle,
+            shortDescription,
+            locationPurpose,
+            playerLevel,
+            settingInfoId: activeSetting?.id || null
+        };
 
-        console.log('🏗️  Starting location generation with options:', options);
+        console.log('🏗️  Starting location generation with options derived from current setting:', options);
 
         // Generate the location
         const result = await generateLocationFromPrompt(options);
@@ -2248,7 +3040,10 @@ app.post('/api/locations/generate', async (req, res) => {
             },
             generationInfo: {
                 aiResponse: result.aiResponse,
-                options: result.generationOptions
+                options: result.generationOptions,
+                activeSetting,
+                requestedLocationStyle: derivedLocationStyle,
+                newStubs: result.newStubs || []
             },
             message: `Location "${result.location.name || result.location.id}" generated successfully`
         });
@@ -2915,10 +3710,19 @@ app.delete('/api/settings/current', (req, res) => {
 app.post('/api/new-game', async (req, res) => {
     try {
         const { playerName, playerDescription, startingLocation } = req.body || {};
+        const activeSetting = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const playerRequestedLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
+        const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
+        const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || playerRequestedLocation, activeSetting);
 
         // Clear existing game state
         players.clear();
         gameLocations.clear();
+        gameLocationExits.clear();
+        regions.clear();
+        Region.clear();
+        stubExpansionPromises.clear();
         chatHistory.length = 0;
 
         console.log('🎮 Starting new game...');
@@ -2927,7 +3731,7 @@ app.post('/api/new-game', async (req, res) => {
         const newPlayer = new Player({
             name: playerName || 'Adventurer',
             description: playerDescription || 'A brave soul embarking on a new adventure.',
-            level: 1,
+            level: startingPlayerLevel,
             health: 25,
             maxHealth: 25,
             attributes: {
@@ -2940,52 +3744,82 @@ app.post('/api/new-game', async (req, res) => {
             }
         });
 
-        // Generate a safe starting location (level 1-3)
-        console.log('🏗️ Generating starting location...');
-        const startingLocationOptions = {
-            setting: 'fantasy',
-            existingLocations: [],
-            shortDescription: startingLocation && typeof startingLocation === 'string' && startingLocation.trim().length
-                ? `A safe starting area in or near ${startingLocation}`
-                : 'A safe starting area perfect for new adventurers',
-            locationTheme: startingLocation && typeof startingLocation === 'string' && startingLocation.trim().length
-                ? startingLocation.trim()
-                : 'village',
-            playerLevel: 1,
-            locationPurpose: 'starting town or safe area'
+        // Generate an initial region and choose its entrance as the starting location
+        console.log('🗺️ Generating starting region...');
+        const defaultRegionName = activeSetting?.name
+            ? `${activeSetting.name} Frontier`
+            : playerRequestedLocation
+                ? `${playerRequestedLocation} Region`
+                : 'Starting Region';
+
+        const regionOptions = {
+            setting: settingDescription,
+            regionName: playerRequestedLocation ? `${playerRequestedLocation} Frontier` : defaultRegionName,
+            regionNotes: startingLocationStyle || null
         };
 
-        // Generate starting location using existing system
-        const locationResult = await generateLocationFromPrompt(startingLocationOptions);
-        const locationData = locationResult.location;
+        const regionResult = await generateRegionFromPrompt(regionOptions);
+        const region = regionResult.region;
 
-        // Ensure starting location is safe (level 1-3)
-        if (locationData.baseLevel > 3) {
-            locationData.baseLevel = Math.min(3, Math.max(1, locationData.baseLevel));
+        let entranceLocationId = region.entranceLocationId || regionResult.entranceLocationId;
+        if (!entranceLocationId && region.locationIds.length > 0) {
+            entranceLocationId = region.locationIds[0];
         }
 
-        // Store the starting location (already done in generateLocationFromPrompt, but ensure it's there)
-        gameLocations.set(locationData.id, locationData);
-        console.log(`🏠 Created starting location: ${locationData.name} (Level ${locationData.baseLevel})`);
+        if (!entranceLocationId) {
+            throw new Error('No entrance location generated for starting region');
+        }
+
+        let entranceLocation = gameLocations.get(entranceLocationId);
+        if (!entranceLocation) {
+            throw new Error('Entrance location not found in game world');
+        }
+
+        if (entranceLocation.isStub) {
+            try {
+                const expansion = await generateLocationFromPrompt({
+                    stubLocation: entranceLocation,
+                    createStubs: true
+                });
+                if (expansion?.location) {
+                    entranceLocation = expansion.location;
+                    entranceLocationId = entranceLocation.id;
+                    region.entranceLocationId = entranceLocationId;
+                }
+            } catch (expansionError) {
+                console.warn('Failed to expand entrance stub:', expansionError.message);
+            }
+        }
+
+        if (entranceLocation.baseLevel && entranceLocation.baseLevel > 3) {
+            entranceLocation.baseLevel = Math.min(3, Math.max(1, entranceLocation.baseLevel));
+        } else if (!entranceLocation.baseLevel) {
+            entranceLocation.baseLevel = 1;
+        }
+
+        gameLocations.set(entranceLocation.id, entranceLocation);
+        console.log(`🏠 Starting at region entrance: ${entranceLocation.name} (Level ${entranceLocation.baseLevel})`);
 
         // Place player in starting location
-        newPlayer.setLocation(locationData.id);
+        newPlayer.setLocation(entranceLocation.id);
 
         // Store new player and set as current
         players.set(newPlayer.id, newPlayer);
         currentPlayer = newPlayer;
 
-        console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${locationData.name}`);
+        console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);
 
         res.json({
             success: true,
             message: 'New game started successfully',
             player: newPlayer.toJSON(),
-            startingLocation: locationData.toJSON(),
+            startingLocation: entranceLocation.toJSON(),
+            region: region.toJSON(),
             gameState: {
                 totalPlayers: players.size,
                 totalLocations: gameLocations.size,
-                currentLocation: locationData.name
+                currentLocation: entranceLocation.name,
+                regionEntranceId: entranceLocation.id
             }
         });
 
@@ -3029,6 +3863,9 @@ app.post('/api/save', (req, res) => {
             ),
             locationExits: Object.fromEntries(
                 Array.from(gameLocationExits.entries()).map(([id, exit]) => [id, exit.toJSON()])
+            ),
+            regions: Object.fromEntries(
+                Array.from(regions.entries()).map(([id, region]) => [id, region.toJSON()])
             )
         };
         fs.writeFileSync(
@@ -3070,6 +3907,7 @@ app.post('/api/save', (req, res) => {
             totalPlayers: players.size,
             totalLocations: gameLocations.size,
             totalLocationExits: gameLocationExits.size,
+            totalRegions: regions.size,
             totalGeneratedImages: generatedImages.size
         };
         fs.writeFileSync(
@@ -3149,19 +3987,52 @@ app.post('/api/load', (req, res) => {
             // Clear existing game world
             gameLocations.clear();
             gameLocationExits.clear();
+            regions.clear();
+            Region.clear();
 
             // Recreate Location instances
             for (const [id, locationData] of Object.entries(gameWorldData.locations || {})) {
                 const location = new Location({
-                    description: locationData.description,
-                    baseLevel: locationData.baseLevel,
-                    id: locationData.id
+                    description: locationData.description ?? null,
+                    baseLevel: locationData.baseLevel ?? null,
+                    id: locationData.id,
+                    name: locationData.name ?? null,
+                    imageId: locationData.imageId ?? null,
+                    isStub: locationData.isStub ?? false,
+                    stubMetadata: locationData.stubMetadata ?? null,
+                    hasGeneratedStubs: locationData.hasGeneratedStubs ?? false
                 });
+
+                const exitsByDirection = locationData.exits || {};
+                for (const [direction, exitInfo] of Object.entries(exitsByDirection)) {
+                    if (!exitInfo || !exitInfo.destination) {
+                        continue;
+                    }
+
+                    const exitId = exitInfo.id || undefined;
+                    let exit = exitId ? gameLocationExits.get(exitId) : null;
+
+                    if (!exit) {
+                        exit = new LocationExit({
+                            description: exitInfo.description || `Path to ${exitInfo.destination}`,
+                            destination: exitInfo.destination,
+                            bidirectional: exitInfo.bidirectional !== false,
+                            id: exitId
+                        });
+                        gameLocationExits.set(exit.id, exit);
+                    }
+
+                    location.addExit(direction, exit);
+                }
+
                 gameLocations.set(id, location);
             }
 
-            // Recreate LocationExit instances
+            // Recreate LocationExit instances not already attached
             for (const [id, exitData] of Object.entries(gameWorldData.locationExits || {})) {
+                if (gameLocationExits.has(id)) {
+                    continue;
+                }
                 const exit = new LocationExit({
                     description: exitData.description,
                     destination: exitData.destination,
@@ -3169,6 +4040,15 @@ app.post('/api/load', (req, res) => {
                     id: exitData.id
                 });
                 gameLocationExits.set(id, exit);
+            }
+
+            for (const [id, regionData] of Object.entries(gameWorldData.regions || {})) {
+                try {
+                    const region = Region.fromJSON(regionData);
+                    regions.set(id, region);
+                } catch (regionError) {
+                    console.warn(`Failed to load region ${id}:`, regionError.message);
+                }
             }
         }
 

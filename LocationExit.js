@@ -31,10 +31,10 @@ class LocationExit {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    */
-  constructor({ description, destination, bidirectional = true, id = null, imageId = null } = {}) {
+  constructor({ description = '', destination, bidirectional = true, id = null, imageId = null } = {}) {
     // Validate required parameters
-    if (!description || typeof description !== 'string') {
-      throw new Error('Exit description is required and must be a string');
+    if (description !== undefined && typeof description !== 'string') {
+      throw new Error('Exit description must be a string when provided');
     }
 
     if (!destination || typeof destination !== 'string') {
@@ -47,7 +47,7 @@ class LocationExit {
 
     // Initialize private fields
     this.#id = id || LocationExit.#generateId();
-    this.#description = description.trim();
+    this.#description = typeof description === 'string' ? description.trim() : '';
     this.#destination = destination.trim();
     this.#bidirectional = bidirectional;
     this.#imageId = imageId;
@@ -86,10 +86,10 @@ class LocationExit {
 
   // Setters for modifying private fields
   set description(newDescription) {
-    if (!newDescription || typeof newDescription !== 'string') {
-      throw new Error('Description must be a non-empty string');
+    if (newDescription !== undefined && newDescription !== null && typeof newDescription !== 'string') {
+      throw new Error('Description must be a string');
     }
-    this.#description = newDescription.trim();
+    this.#description = typeof newDescription === 'string' ? newDescription.trim() : '';
     this.#lastUpdated = new Date();
   }
 

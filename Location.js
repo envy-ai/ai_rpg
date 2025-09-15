@@ -16,6 +16,9 @@ class Location {
   #imageId;
   #createdAt;
   #lastUpdated;
+  #isStub;
+  #stubMetadata;
+  #hasGeneratedStubs;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -34,25 +37,31 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null } = {}) {
-    // Validate required parameters
-    if (!description || typeof description !== 'string') {
-      throw new Error('Location description is required and must be a string');
-    }
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false } = {}) {
+    const creatingStub = Boolean(isStub);
 
-    if (typeof baseLevel !== 'number' || baseLevel < 1) {
-      throw new Error('Base level must be a positive number');
+    if (!creatingStub) {
+      if (!description || typeof description !== 'string') {
+        throw new Error('Location description is required and must be a string');
+      }
+
+      if (typeof baseLevel !== 'number' || baseLevel < 1) {
+        throw new Error('Base level must be a positive number');
+      }
     }
 
     // Initialize private fields
     this.#id = id || Location.#generateId();
-    this.#description = description.trim();
-    this.#name = name ? name.trim() : null;
-    this.#baseLevel = Math.floor(baseLevel); // Ensure integer
+    this.#description = description && typeof description === 'string' ? description.trim() : null;
+    this.#name = name && typeof name === 'string' ? name.trim() : null;
+    this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
     this.#imageId = imageId;
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
+    this.#isStub = creatingStub;
+    this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
+    this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
 
     // Index by ID and name if provided
     Location.#indexByID.set(this.#id, this);
@@ -61,7 +70,9 @@ class Location {
     }
   }
 
-  static fromXMLSnippet(xmlSnippet) {
+  static fromXMLSnippet(xmlSnippet, options = {}) {
+    const { existingLocation = null, allowRename = true } = options || {};
+
     console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
 
     // Strip any text outside the <location> tags and extract just the location XML
@@ -107,6 +118,37 @@ class Location {
     }
 
     console.log('Successfully parsed location data:', locationData);
+
+    if (existingLocation) {
+      if (!locationData.description || typeof locationData.description !== 'string') {
+        throw new Error('Stub expansion missing description in AI response');
+      }
+
+      if (typeof locationData.baseLevel !== 'number' || Number.isNaN(locationData.baseLevel) || locationData.baseLevel < 1) {
+        throw new Error('Stub expansion missing valid base level in AI response');
+      }
+
+      const promotionData = {
+        description: locationData.description,
+        baseLevel: locationData.baseLevel
+      };
+
+      if (allowRename && locationData.name) {
+        promotionData.name = locationData.name;
+      }
+
+      if (existingLocation.isStub) {
+        existingLocation.promoteFromStub(promotionData);
+      } else {
+        if (promotionData.name) {
+          existingLocation.name = promotionData.name;
+        }
+        existingLocation.description = promotionData.description;
+        existingLocation.baseLevel = promotionData.baseLevel;
+      }
+
+      return existingLocation;
+    }
 
     return new Location({
       description: locationData.description,
@@ -170,9 +212,16 @@ class Location {
       throw new Error('Name must be a string or null');
     }
 
-    Location.#indexByName.delete(this.#name.toLowerCase());
-    this.#name = newName;
-    Location.#indexByName.set(this.#name.toLowerCase(), this);
+    if (this.#name) {
+      Location.#indexByName.delete(this.#name.toLowerCase());
+    }
+
+    this.#name = newName ? newName.trim() : null;
+
+    if (this.#name) {
+      Location.#indexByName.set(this.#name.toLowerCase(), this);
+    }
+
     this.#lastUpdated = new Date();
   }
 
@@ -200,6 +249,60 @@ class Location {
     this.#lastUpdated = new Date();
   }
 
+  get isStub() {
+    return this.#isStub;
+  }
+
+  get stubMetadata() {
+    return this.#stubMetadata ? { ...this.#stubMetadata } : null;
+  }
+
+  set stubMetadata(metadata) {
+    this.#stubMetadata = metadata ? { ...metadata } : null;
+    this.#lastUpdated = new Date();
+  }
+
+  get hasGeneratedStubs() {
+    return this.#hasGeneratedStubs;
+  }
+
+  set hasGeneratedStubs(value) {
+    this.#hasGeneratedStubs = Boolean(value);
+  }
+
+  promoteFromStub({ name, description, baseLevel, imageId } = {}) {
+    if (!description || typeof description !== 'string') {
+      throw new Error('Promoting stub requires a description string');
+    }
+
+    if (typeof baseLevel !== 'number' || baseLevel < 1) {
+      throw new Error('Promoting stub requires a positive base level');
+    }
+
+    if (name && typeof name === 'string' && name.trim() && name.trim() !== this.#name) {
+      this.name = name.trim();
+    }
+
+    this.description = description;
+    this.baseLevel = baseLevel;
+    if (imageId !== undefined) {
+      this.imageId = imageId;
+    }
+    this.#isStub = false;
+    this.#stubMetadata = null;
+    this.#hasGeneratedStubs = false;
+  }
+
+  markStubsGenerated() {
+    this.#hasGeneratedStubs = true;
+    this.#lastUpdated = new Date();
+  }
+
+  resetStubGeneration() {
+    this.#hasGeneratedStubs = false;
+    this.#lastUpdated = new Date();
+  }
+
   /**
    * Add an exit to this location
    * @param {string} direction - Direction of the exit (e.g., 'north', 'south', 'up', 'down')
@@ -216,6 +319,7 @@ class Location {
     }
 
     this.#exits.set(direction.toLowerCase().trim(), exit);
+    this.#lastUpdated = new Date();
   }
 
   /**
@@ -267,6 +371,7 @@ class Location {
    */
   clearExits() {
     this.#exits.clear();
+    this.#lastUpdated = new Date();
   }
 
   /**
@@ -283,7 +388,10 @@ class Location {
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
       createdAt: this.#createdAt.toISOString(),
-      lastUpdated: this.#lastUpdated.toISOString()
+      lastUpdated: this.#lastUpdated.toISOString(),
+      isStub: this.#isStub,
+      hasGeneratedStubs: this.#hasGeneratedStubs,
+      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null
     };
   }
 
@@ -295,6 +403,7 @@ class Location {
     const exits = {};
     for (const [direction, exit] of this.#exits) {
       exits[direction] = {
+        id: exit.id,
         description: exit.description || 'No description',
         destination: exit.destination,
         bidirectional: exit.bidirectional !== false
@@ -309,7 +418,10 @@ class Location {
       imageId: this.#imageId,
       exits: exits,
       createdAt: this.#createdAt.toISOString(),
-      lastUpdated: this.#lastUpdated.toISOString()
+      lastUpdated: this.#lastUpdated.toISOString(),
+      isStub: this.#isStub,
+      hasGeneratedStubs: this.#hasGeneratedStubs,
+      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null
     };
   }
 

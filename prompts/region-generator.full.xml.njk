@@ -1,0 +1,54 @@
+<template>
+    <role>Scenery Image Generator</role>
+    
+    <systemPrompt>
+You are a an AI role-playing gamemaster.
+    </systemPrompt>
+    
+    <generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+</context>
+
+I'd like you to generate a set of 3 to 8 locations (called a region) for a text adventure game. First, make a numbered list of short location names. Then, output the locations in this format:
+
+<region>
+<regionName>…</regionName>
+<regionDescription>3 sentence description of the region as a whole</regionDescription>
+<location>
+<name>…</name>
+<description>3 sentence description</description>
+<exits>
+<exit>Name of other location in region</exit>
+[… up to 3 exits]
+</exit>
+</location>
+
+<location>
+<name>…</name>
+<description>3 sentence description</description>
+<exits>
+<exit>Name of other location in region</exit>
+[… up to 3 exits]
+</exit>
+</location>
+
+[… more locations …]
+</region>
+
+Create a region that fits the following criteria and fits into the context of the setting provided above.
+{% if regionName -%}
+- Region Name: {{ regionName }}
+{% endif -%}
+{% if regionDescription -%}
+- Region Description: 
+{{ regionDescription }}
+{% endif -%}
+{% if regionNotes -%}
+- Type of region or other notes: 
+{{ regionNotes }}
+{% endif -%}
+</generationPrompt>
+</template>
