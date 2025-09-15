@@ -551,16 +551,20 @@ function parseXMLTemplate(xmlContent) {
 
         const result = {};
 
-        // Extract systemPrompt
+        // Extract systemPrompt as raw inner XML/text (do not parse child nodes)
         const systemPromptNode = doc.getElementsByTagName('systemPrompt')[0];
         if (systemPromptNode) {
             result.systemPrompt = innerXML(systemPromptNode).trim();
         }
 
-        // Extract generationPrompt (prioritize generationPrompt, but accept imagePrompt for backward compatibility)
-        const generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
-
-        result.generationPrompt = innerXML(generationPromptNode).trim();
+        // Extract generationPrompt as raw inner XML/text; fallback to <imagePrompt> for compatibility
+        let generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
+        if (!generationPromptNode) {
+            generationPromptNode = doc.getElementsByTagName('imagePrompt')[0];
+        }
+        if (generationPromptNode) {
+            result.generationPrompt = innerXML(generationPromptNode).trim();
+        }
 
         // Extract role (optional)
         const roleNode = doc.getElementsByTagName('role')[0];
@@ -1514,7 +1518,8 @@ app.post('/api/chat', async (req, res) => {
                 const playerActionPrompt = promptEnv.render(templateName, {
                     player: currentPlayer.getStatus(),
                     actionText: userMessage.content,
-                    location: location ? location.getDetails() : null
+                    location: location ? location.getDetails() : null,
+                    setting: currentSetting,
                 });
 
                 // Parse the rendered template based on format
@@ -1525,14 +1530,34 @@ app.post('/api/chat', async (req, res) => {
                     promptData = yaml.load(playerActionPrompt);
                 }
 
-                // Create system message from the template
+                // Create system message from the template (robust to missing fields)
+                const contentParts = [];
+                if (promptData.systemPrompt) {
+                    contentParts.push(String(promptData.systemPrompt).trim());
+                }
+                if (promptData.player) {
+                    try {
+                        contentParts.push('Player Context:\n' + JSON.stringify(promptData.player, null, 2));
+                    } catch {
+                        contentParts.push('Player Context: [unavailable]');
+                    }
+                }
+                if (promptData.action) {
+                    contentParts.push('Action: ' + String(promptData.action).trim());
+                }
+                if (promptData.guidelines) {
+                    if (Array.isArray(promptData.guidelines)) {
+                        contentParts.push('Guidelines:\n' + promptData.guidelines.join('\n'));
+                    } else if (typeof promptData.guidelines === 'string') {
+                        contentParts.push('Guidelines:\n' + promptData.guidelines);
+                    }
+                }
+                if (promptData.context) {
+                    contentParts.push('Context: ' + String(promptData.context).trim());
+                }
                 const systemMessage = {
                     role: 'system',
-                    content: promptData.systemPrompt + '\\n\\nPlayer Context:\\n' +
-                        JSON.stringify(promptData.player, null, 2) +
-                        '\\n\\nAction: ' + promptData.action +
-                        '\\n\\nGuidelines:\\n' + promptData.guidelines.join('\\n') +
-                        (promptData.context ? '\\n\\nContext: ' + promptData.context : '')
+                    content: contentParts.join('\n\n')
                 };
 
                 // Replace any existing system message or add new one
@@ -1552,6 +1577,7 @@ app.post('/api/chat', async (req, res) => {
                     playerName: currentPlayer.name,
                     playerDescription: currentPlayer.description,
                     systemMessage: systemMessage.content,
+                    generationPrompt: promptData.generationPrompt || null,
                     rawTemplate: playerActionPrompt
                 };
 
@@ -1961,6 +1987,7 @@ app.get('/debug', (req, res) => {
         allPlayers: allPlayersData,
         allLocations: locationsData, // YAML-loaded locations for reference
         allSettings: SettingInfo.getAll().map(setting => setting.toJSON()),
+        currentSetting: currentSetting,
         gameWorld: gameWorldData, // In-memory game world data
         gameWorldCounts: {
             locations: gameLocations.size,
@@ -2784,7 +2811,24 @@ app.post('/api/settings/:id/apply', (req, res) => {
             });
         }
 
+        // Apply globally so other routes/templates can access it
         currentSetting = setting;
+        try {
+            const settingJSON = typeof setting.toJSON === 'function' ? setting.toJSON() : setting;
+            if (app && app.locals) {
+                app.locals.currentSetting = settingJSON;
+                // Also expose prompt variables for convenience in views
+                app.locals.promptVariables = typeof setting.getPromptVariables === 'function' ? setting.getPromptVariables() : undefined;
+            }
+            if (typeof viewsEnv?.addGlobal === 'function') {
+                viewsEnv.addGlobal('currentSetting', settingJSON);
+                viewsEnv.addGlobal('promptVariables', app.locals.promptVariables);
+            }
+            // Optional: expose on global for non-module consumers
+            global.currentSetting = setting;
+        } catch (_) {
+            // Best-effort; do not block on template/global propagation
+        }
 
         res.json({
             success: true,
@@ -2829,6 +2873,20 @@ app.delete('/api/settings/current', (req, res) => {
     try {
         const previousSetting = currentSetting;
         currentSetting = null;
+        // Clear globals so templates/consumers reflect reset
+        try {
+            if (app && app.locals) {
+                app.locals.currentSetting = null;
+                app.locals.promptVariables = undefined;
+            }
+            if (typeof viewsEnv?.addGlobal === 'function') {
+                viewsEnv.addGlobal('currentSetting', null);
+                viewsEnv.addGlobal('promptVariables', undefined);
+            }
+            global.currentSetting = null;
+        } catch (_) {
+            // Non-fatal cleanup
+        }
 
         res.json({
             success: true,

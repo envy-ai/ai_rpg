@@ -352,6 +352,18 @@
                 </div>
             </div>
 
+            <!-- Current Setting Info -->
+            <div class="debug-section">
+                <h2>🌍 Current Setting Information</h2>
+                {% if currentSetting %}
+                    <pre class="debug-json">{{ currentSetting | dump(2) }}</pre>
+                {% else %}
+                    <div class="no-player">
+                        <p>No current setting defined</p>
+                    </div>
+                {% endif %}
+            </div>
+
             <!-- All Settings Data -->
             <div class="debug-section">
                 <h2>⚙️ All Settings</h2>

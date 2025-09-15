@@ -101,6 +101,10 @@ class AIRPGChat {
                         <strong>System Prompt Sent to AI:</strong>
                         <pre class="debug-prompt">${this.escapeHtml(debugInfo.systemMessage)}</pre>
                     </div>
+                    <div class="debug-section">
+                        <strong>Full AI Prompt Sent:</strong>
+                        <pre class="debug-prompt">${this.escapeHtml(debugInfo.generationPrompt)}</pre>
+                    </div>
                 `;
             } else {
                 debugContent.innerHTML = `

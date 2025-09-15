@@ -298,11 +298,19 @@
                 if (data.success) {
                     showMessage('Setting applied successfully! Game Master will now use this setting.', 'success');
                     appliedSetting = data.setting;
+                    console.log('Applied Setting:', appliedSetting);
                     updateCurrentSettingDisplay();
                     renderSettingsList();
                 } else {
                     showMessage('Error applying setting: ' + data.error, 'error');
                 }
+
+                // Get /api/settings/current to confirm
+                const response2 = await fetch('/api/settings/current');
+                const data2 = await response2.json();
+
+                // Log current setting to console
+                console.log('Current Setting after apply:', data2);
             } catch (error) {
                 showMessage('Error applying setting: ' + error.message, 'error');
             }
