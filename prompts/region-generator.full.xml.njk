@@ -12,7 +12,9 @@ You are a an AI role-playing gamemaster.
 </setting>
 </context>
 
-I'd like you to generate a set of 3 to 8 locations (called a region) for a text adventure game. First, make a numbered list of short location names. Then, output the locations in this format:
+I'd like you to generate a set of ~20 locations (called a region) for a text adventure game. First, make a numbered list of short location names. Then, output the locations in this format:
+
+
 
 <region>
 <regionName>…</regionName>
@@ -22,9 +24,9 @@ I'd like you to generate a set of 3 to 8 locations (called a region) for a text 
 <name>…</name>
 <description>3 sentence description</description>
 <exits>
+[Note: when outputting exits, think about how many exits a location might have. Something like a small cave or a closet would have one exit, most locations would have 2-3, and major hubs would have 4 to 5]
 <exit>Name of other location in region</exit>
-[… up to 3 exits]
-</exit>
+[0-4 more exits depending on location]
 </exits>
 </location>
 
@@ -33,8 +35,7 @@ I'd like you to generate a set of 3 to 8 locations (called a region) for a text 
 <description>3 sentence description</description>
 <exits>
 <exit>Name of other location in region</exit>
-[… up to 3 exits]
-</exit>
+[0-4 more exits depending on location]
 </exits>
 </location>
 

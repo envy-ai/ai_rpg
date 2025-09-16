@@ -4,6 +4,8 @@ function registerLayouts() {
   }
 }
 
+registerLayouts();
+
 function getCytoscape(container) {
   const cy = window.cytoscape;
   if (!cy) {
@@ -35,19 +37,26 @@ function ensureCytoscape(container) {
           'height': 62
         }
       },
-      {
-        selector: 'edge',
-        style: {
-          'width': 2,
-          'curve-style': 'bezier',
-          'line-color': '#bae6fd',
-          'target-arrow-color': '#bae6fd',
-          'target-arrow-shape': 'triangle'
-        }
-      },
-      {
-        selector: '.current',
-        style: {
+        {
+          selector: 'edge',
+          style: {
+            'width': 2,
+            'curve-style': 'bezier',
+            'line-color': '#bae6fd',
+            'target-arrow-color': '#bae6fd',
+            'target-arrow-shape': 'triangle',
+            'source-arrow-shape': 'none'
+          }
+        },
+        {
+          selector: 'edge.bidirectional',
+          style: {
+            'source-arrow-shape': 'triangle'
+          }
+        },
+        {
+          selector: '.current',
+          style: {
           'background-color': '#facc15',
           'border-color': '#ea580c',
           'border-width': 4
@@ -103,20 +112,37 @@ function renderMap(region) {
     }
   }));
 
-  const edges = [];
+  const edgeMap = new Map();
   for (const loc of region.locations) {
     for (const exit of loc.exits || []) {
       if (!exit.destination) continue;
-      edges.push({
-        data: {
-          id: `${loc.id}_${exit.destination}`,
-          source: loc.id,
-          target: exit.destination,
-          directed: exit.bidirectional !== false
-        }
-      });
+
+      const key = `${loc.id}->${exit.destination}`;
+      const reverseKey = `${exit.destination}->${loc.id}`;
+      const isBidirectional = exit.bidirectional !== false;
+
+      if (edgeMap.has(reverseKey)) {
+        const existing = edgeMap.get(reverseKey);
+        existing.data.bidirectional = true;
+        existing.classes = 'bidirectional';
+        continue;
+      }
+
+      if (!edgeMap.has(key)) {
+        edgeMap.set(key, {
+          data: {
+            id: `${loc.id}_${exit.destination}`,
+            source: loc.id,
+            target: exit.destination,
+            bidirectional: isBidirectional
+          },
+          classes: isBidirectional ? 'bidirectional' : undefined
+        });
+      }
     }
   }
+
+  const edges = Array.from(edgeMap.values());
 
   cy.elements().remove();
   cy.add([...nodes, ...edges]);

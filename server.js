@@ -1995,10 +1995,11 @@ async function generateRegionFromPrompt(options = {}) {
             endpoint + 'chat/completions' :
             endpoint + '/chat/completions';
 
+        // We need lots of tokens for large regions.
         const requestData = {
             model,
             messages,
-            max_tokens: config.ai.maxTokens || 1200,
+            max_tokens: 6000,
             temperature: config.ai.temperature || 0.7
         };
 
@@ -2018,9 +2019,6 @@ async function generateRegionFromPrompt(options = {}) {
         const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
 
-        const region = Region.fromXMLSnippet(aiResponse);
-        regions.set(region.id, region);
-
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
@@ -2039,6 +2037,9 @@ async function generateRegionFromPrompt(options = {}) {
         } catch (logError) {
             console.warn('Failed to write region generation log:', logError.message);
         }
+
+        const region = Region.fromXMLSnippet(aiResponse);
+        regions.set(region.id, region);
 
         const stubMap = new Map();
 
