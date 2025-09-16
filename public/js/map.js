@@ -1,94 +1,90 @@
-const cytoscape = (() => {
+function registerLayouts() {
+  if (typeof window.cytoscape !== 'undefined' && typeof window.cytoscapeFcose === 'function') {
+    window.cytoscapeFcose(window.cytoscape);
+  }
+}
+
+function getCytoscape(container) {
   const cy = window.cytoscape;
   if (!cy) {
-    throw new Error('Cytoscape runtime not found.');
+    throw new Error('Cytoscape not loaded');
   }
   if (!cy.__fcoseRegistered && typeof window.cytoscapeFcose === 'function') {
     window.cytoscapeFcose(cy);
     cy.__fcoseRegistered = true;
   }
-  return cy;
-})();
+  return cy({ container });
+}
 
 let cyInstance = null;
 
-function getCy(container) {
+function ensureCytoscape(container) {
   if (!cyInstance) {
-    cyInstance = cytoscape({
-      container,
-      style: [
-        {
-          selector: 'node',
-          style: {
-            'background-color': '#67e8f9',
-            'label': 'data(label)',
-            'color': '#0f172a',
-            'font-size': '14px',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'width': 60,
-            'height': 60
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'line-color': '#bae6fd',
-            'target-arrow-color': '#bae6fd',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier'
-          }
-        },
-        {
-          selector: '.current',
-          style: {
-            'background-color': '#facc15',
-            'border-color': '#ea580c',
-            'border-width': 4
-          }
-        },
-        {
-          selector: '.stub',
-          style: {
-            'background-color': '#f472b6'
-          }
+    const cytoscape = getCytoscape(container);
+    cytoscape.style([
+      {
+        selector: 'node',
+        style: {
+          'background-color': '#67e8f9',
+          'label': 'data(label)',
+          'color': '#0f172a',
+          'font-size': '14px',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'width': 62,
+          'height': 62
         }
-      ],
-      elements: [],
-      layout: { name: 'fcose' },
-      wheelSensitivity: 0.2
-    });
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'curve-style': 'bezier',
+          'line-color': '#bae6fd',
+          'target-arrow-color': '#bae6fd',
+          'target-arrow-shape': 'triangle'
+        }
+      },
+      {
+        selector: '.current',
+        style: {
+          'background-color': '#facc15',
+          'border-color': '#ea580c',
+          'border-width': 4
+        }
+      },
+      {
+        selector: '.stub',
+        style: {
+          'background-color': '#f472b6'
+        }
+      }
+    ]);
+    cytoscape.zoomingEnabled(true);
+    cytoscape.userZoomingEnabled(true);
+    cytoscape.userPanningEnabled(true);
+    cyInstance = cytoscape;
   }
   return cyInstance;
 }
 
-function showMapError(message) {
-  const container = document.getElementById('mapContainer');
-  if (!container) return;
-  container.classList.add('map-placeholder');
-  container.innerHTML = `<div class="map-error">${message}</div>`;
-}
-
-async function loadRegionMap() {
+function loadRegionMap() {
   const container = document.getElementById('mapContainer');
   if (!container) return;
 
   container.classList.add('map-placeholder');
   container.textContent = 'Loading map...';
 
-  try {
-    const response = await fetch('/api/map/region');
-    const data = await response.json();
-    if (!data.success) {
-      showMapError(data.error || 'Failed to load region map');
-      return;
-    }
-
-    renderMap(data.region);
-  } catch (error) {
-    showMapError(error.message);
-  }
+  fetch('/api/map/region')
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) {
+        showMapError(data.error || 'Failed to load region map');
+        return;
+      }
+      renderMap(data.region);
+    })
+    .catch(err => showMapError(err.message));
 }
 
 function renderMap(region) {
@@ -98,8 +94,7 @@ function renderMap(region) {
   container.classList.remove('map-placeholder');
   container.innerHTML = '';
 
-  const cy = getCy(container);
-
+  const cy = ensureCytoscape(container);
   const nodes = region.locations.map(loc => ({
     data: {
       id: loc.id,
@@ -126,16 +121,21 @@ function renderMap(region) {
   cy.elements().remove();
   cy.add([...nodes, ...edges]);
 
-  cy.nodes().forEach(node => {
-    node.toggleClass('stub', node.data('isStub'));
-  });
-
+  cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
   cy.layout({ name: 'fcose', animate: true, randomize: true }).run();
 
   cy.nodes().removeClass('current');
   if (region.currentLocationId) {
     const current = cy.getElementById(region.currentLocationId);
     if (current) current.addClass('current');
+  }
+}
+
+function showMapError(message) {
+  const container = document.getElementById('mapContainer');
+  if (container) {
+    container.classList.add('map-placeholder');
+    container.textContent = message;
   }
 }
 
