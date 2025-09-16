@@ -28,51 +28,68 @@ function ensureCytoscape(container) {
 
   const cytoscape = getCytoscape(container);
   cytoscape.style([
-      {
-        selector: 'node',
-        style: {
-          'background-color': '#67e8f9',
-          'label': 'data(label)',
-          'color': '#0f172a',
-          'font-size': '14px',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'width': 62,
-          'height': 62
-        }
-      },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'curve-style': 'bezier',
-            'line-color': '#bae6fd',
-            'target-arrow-color': '#bae6fd',
-            'target-arrow-shape': 'triangle',
-            'source-arrow-shape': 'none'
-          }
-        },
-        {
-          selector: 'edge.bidirectional',
-          style: {
-            'source-arrow-shape': 'triangle'
-          }
-        },
-        {
-          selector: '.current',
-          style: {
-          'background-color': '#facc15',
-          'border-color': '#ea580c',
-          'border-width': 4
-        }
-      },
-      {
-        selector: '.stub',
-        style: {
-          'background-color': '#f472b6'
-        }
+    {
+      selector: 'node',
+      style: {
+        'background-color': '#67e8f9',
+        'label': 'data(label)',
+        'color': '#0f172a',
+        'font-size': '14px',
+
+        // put the label *below* the node
+        'text-valign': 'bottom',
+        'text-halign': 'center',
+        'text-margin-y': '8px',     // push it further down (increase if you need more space)
+
+        // label background + rounding
+        'text-background-color': '#ffffff',
+        'text-background-opacity': 1,          // solid
+        'text-background-shape': 'roundrectangle',
+        'text-background-padding': '2px',      // breathing room inside the pill
+        'text-border-width': 0,                // set >0 if you want an outline
+        // 'text-border-color': '#0f172a',
+        // 'text-border-opacity': 1,
+
+        // optional: keep long labels tidy
+        'text-wrap': 'wrap',
+        'text-max-width': '100px',
+
+        'width': 62,
+        'height': 62
       }
-    ]);
+    },
+    {
+      selector: 'edge',
+      style: {
+        'width': 2,
+        'curve-style': 'bezier',
+        'line-color': '#bae6fd',
+        'target-arrow-color': '#bae6fd',
+        'target-arrow-shape': 'triangle',
+        'source-arrow-shape': 'none'
+      }
+    },
+    {
+      selector: 'edge.bidirectional',
+      style: {
+        'source-arrow-shape': 'triangle'
+      }
+    },
+    {
+      selector: '.current',
+      style: {
+        'background-color': '#facc15',
+        'border-color': '#ea580c',
+        'border-width': 4
+      }
+    },
+    {
+      selector: '.stub',
+      style: {
+        'background-color': '#f472b6'
+      }
+    }
+  ]);
   cytoscape.zoomingEnabled(true);
   cytoscape.userZoomingEnabled(true);
   cytoscape.userPanningEnabled(true);
