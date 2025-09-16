@@ -14,61 +14,74 @@
         </div>
         
         <div class="main-content">
-            <!-- Location Block (Left Side) -->            
-            <div class="location-block">
-                <div class="container">
-                    <div class="location-header">
-                        <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
-                    </div>
-                        <div class="location-content" id="locationContent">
-                            <div class="location-image" id="locationImage">
-                                <div class="location-placeholder">
-                                    <!-- Nothing in here on initial load -->
-                                </div>
-                                <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
-                            </div>
-                            <div class="location-info" id="locationInfo">
-                                <div class="location-details" id="locationDetails">
-                                    <span class="location-level" id="locationLevel">Level: ?</span>
-                                </div>
-                                <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
-                                <div class="location-exits" id="locationExits">
-                                    <div class="no-exits">No exits discovered yet.</div>
-                                </div>
-                            </div>
-                        </div>
-                </div>
+            <div class="tab-bar" role="tablist">
+                <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
+                <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
             </div>
 
-            <!-- Chat Block (Right Side) -->
-            <div class="chat-container">
-                <div class="chat-log" id="chatLog">
-                    {% if chatHistory and chatHistory.length > 0 %}
-                        {% for message in chatHistory %}
-                            <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
-                                <div class="message-sender">
-                                    {% if message.role == 'user' %}
-                                        👤 You
-                                    {% else %}
-                                        🤖 AI Game Master
-                                    {% endif %}
+            <div class="tab-panels">
+                <section class="tab-panel active" id="tab-adventure" role="tabpanel" aria-labelledby="tab-adventure-tab">
+                    <div class="adventure-content">
+                        <div class="location-block">
+                            <div class="container">
+                                <div class="location-header">
+                                    <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
                                 </div>
-                                <div>{{ message.content }}</div>
-                                <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                                <div class="location-content" id="locationContent">
+                                    <div class="location-image" id="locationImage">
+                                        <div class="location-placeholder">
+                                            <!-- Nothing in here on initial load -->
+                                        </div>
+                                        <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
+                                    </div>
+                                    <div class="location-info" id="locationInfo">
+                                        <div class="location-details" id="locationDetails">
+                                            <span class="location-level" id="locationLevel">Level: ?</span>
+                                        </div>
+                                        <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
+                                        <div class="location-exits" id="locationExits">
+                                            <div class="no-exits">No exits discovered yet.</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="message ai-message">
-                            <div class="message-sender">🤖 AI Game Master</div>
-                            <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
                         </div>
-                    {% endif %}
-                </div>
-                
-                <div class="input-area">
-                    <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
-                    <button class="send-button" id="sendButton">Send</button>
-                </div>
+
+                        <div class="chat-container">
+                            <div class="chat-log" id="chatLog">
+                                {% if chatHistory and chatHistory.length > 0 %}
+                                    {% for message in chatHistory %}
+                                        <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                                            <div class="message-sender">
+                                                {% if message.role == 'user' %}
+                                                    👤 You
+                                                {% else %}
+                                                    🤖 AI Game Master
+                                                {% endif %}
+                                            </div>
+                                            <div>{{ message.content }}</div>
+                                            <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="message ai-message">
+                                        <div class="message-sender">🤖 AI Game Master</div>
+                                        <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="input-area">
+                                <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
+                                <button class="send-button" id="sendButton">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-map" role="tabpanel" aria-labelledby="tab-map-tab" hidden>
+                    <div class="map-placeholder">Map view coming soon...</div>
+                </section>
             </div>
         </div>
     </div>
@@ -90,9 +103,37 @@
             // Add save/load functionality
             initSaveLoadButtons();
             
+            // Initialize tabs
+            initTabs();
+
             // Initialize location display
             initLocationDisplay();
         });
+
+        function initTabs() {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabPanels = document.querySelectorAll('.tab-panel');
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    if (button.classList.contains('active')) {
+                        return;
+                    }
+
+                    tabButtons.forEach(btn => {
+                        const isActive = btn === button;
+                        btn.classList.toggle('active', isActive);
+                        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                    });
+
+                    tabPanels.forEach(panel => {
+                        const isActive = panel.id === `tab-${button.dataset.tab}`;
+                        panel.toggleAttribute('hidden', !isActive);
+                        panel.classList.toggle('active', isActive);
+                    });
+                });
+            });
+        }
 
         function initLocationDisplay() {
             // Function to update location display
