@@ -1161,6 +1161,27 @@ function renderLocationNpcPrompt(location, options = {}) {
     }
 }
 
+function renderRegionNpcPrompt(region, options = {}) {
+    try {
+        const templateName = 'region-generator-important-npcs.njk';
+        const safeRegion = region ? {
+            id: region.id,
+            name: region.name,
+            description: region.description
+        } : { id: null, name: 'Unknown Region', description: '' };
+
+        return promptEnv.render(templateName, {
+            region: safeRegion,
+            allLocationsInRegion: options.allLocationsInRegion || [],
+            existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
+            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt
+        });
+    } catch (error) {
+        console.error('Error rendering region NPC template:', error);
+        return null;
+    }
+}
+
 function parseLocationNpcs(xmlContent) {
     try {
         const parser = new DOMParser();
@@ -1219,19 +1240,83 @@ function parseLocationNpcs(xmlContent) {
     }
 }
 
+function parseRegionNpcs(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        const npcs = [];
+
+        for (const node of npcNodes) {
+            const nameNode = node.getElementsByTagName('name')[0];
+            const descriptionNode = node.getElementsByTagName('description')[0];
+            const shortDescriptionNode = node.getElementsByTagName('shortDescription')[0];
+            const classNode = node.getElementsByTagName('class')[0];
+            const raceNode = node.getElementsByTagName('race')[0];
+            const locationNode = node.getElementsByTagName('location')[0];
+            const attributesNode = node.getElementsByTagName('attributes')[0];
+
+            const name = nameNode ? nameNode.textContent.trim() : null;
+            if (!name) {
+                continue;
+            }
+
+            const description = descriptionNode ? descriptionNode.textContent.trim() : '';
+            const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
+            const className = classNode ? classNode.textContent.trim() : null;
+            const race = raceNode ? raceNode.textContent.trim() : null;
+            const locationName = locationNode ? locationNode.textContent.trim() : null;
+
+            const attributes = {};
+            if (attributesNode) {
+                const attrNodes = Array.from(attributesNode.getElementsByTagName('attribute'));
+                for (const attrNode of attrNodes) {
+                    const attrName = attrNode.getAttribute('name');
+                    const rating = attrNode.textContent ? attrNode.textContent.trim() : '';
+                    if (attrName) {
+                        attributes[attrName] = rating;
+                    }
+                }
+            }
+
+            npcs.push({
+                name,
+                description,
+                shortDescription,
+                class: className,
+                race,
+                location: locationName,
+                attributes
+            });
+        }
+
+        return npcs;
+    } catch (error) {
+        console.warn('Failed to parse region NPC XML:', error.message);
+        return [];
+    }
+}
+
 // Function to render location NPC prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey }) {
     try {
         let region = Region.get(location.regionId);
-        let allNpcIds = Utils.difference(new Set(players.keys()), new Set([currentPlayer?.id].filter(Boolean)));
-        let regionNpcIds = region ? (region.npcIds || []) : [];
-        let existingNpcsInThisLocation = location.npcIds || [];
-        let existingNpcsInOtherLocations = Utils.difference(regionNpcIds, existingNpcsInThisLocation);
-        let existingNpcsInOtherRegions = Utils.difference(allNpcIds, regionNpcIds);
+        const allNpcIds = Utils.difference(new Set(players.keys()), new Set([currentPlayer?.id].filter(Boolean)));
+        const regionNpcIdSet = region ? new Set(region.npcIds || []) : new Set();
+        const locationNpcIdSet = new Set(location.npcIds || []);
+        const otherLocationNpcIds = Utils.difference(regionNpcIdSet, locationNpcIdSet);
+        const otherRegionNpcIds = Utils.difference(allNpcIds, regionNpcIdSet);
 
-        existingNpcsInThisLocation = getAllPlayers(existingNpcsInThisLocation).filter(npc => npc && npc.isNPC);
-        existingNpcsInOtherLocations = getAllPlayers(existingNpcsInOtherLocations).filter(npc => npc && npc.isNPC);
-        existingNpcsInOtherRegions = getAllPlayers(existingNpcsInOtherRegions).filter(npc => npc && npc.isNPC);
+        const existingNpcIdsArray = Array.from(locationNpcIdSet);
+        let existingNpcsInThisLocation = getAllPlayers(existingNpcIdsArray).filter(npc => npc && npc.isNPC);
+        let existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
+        let existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
 
 
         const npcPrompt = renderLocationNpcPrompt(location, {
@@ -1295,11 +1380,18 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const npcs = parseLocationNpcs(npcResponse);
 
         const created = [];
-        const existingNpcIds = location.npcIds || [];
-        for (const npcId of existingNpcIds) {
+        const survivingNpcIds = [];
+        for (const npcId of existingNpcIdsArray) {
+            const npc = players.get(npcId);
+            if (npc?.isRegionImportant) {
+                survivingNpcIds.push(npcId);
+                continue;
+            }
             players.delete(npcId);
         }
-        location.clearNpcIds();
+        if (typeof location.setNpcIds === 'function') {
+            location.setNpcIds(survivingNpcIds);
+        }
 
         for (const npcData of npcs) {
             const attributes = {};
@@ -1329,6 +1421,178 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         return created;
     } catch (error) {
         console.warn(`NPC generation skipped for location ${location.id}:`, error.message);
+        return [];
+    }
+}
+
+
+async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, chatEndpoint, model, apiKey }) {
+    if (!region) {
+        return [];
+    }
+
+    try {
+        const regionLocationIds = Array.isArray(region.locationIds) ? [...region.locationIds] : [];
+        const regionLocations = regionLocationIds
+            .map(id => gameLocations.get(id))
+            .filter(Boolean);
+
+        const locationLookup = new Map();
+        const allLocationsForPrompt = regionLocations.map(loc => {
+            const normalized = normalizeRegionLocationName(loc.name || loc.id);
+            if (normalized) {
+                locationLookup.set(normalized, loc);
+            }
+            return {
+                id: loc.id,
+                name: loc.name || loc.id,
+                description: loc.description || loc.stubMetadata?.blueprintDescription || 'No description provided.'
+            };
+        });
+
+        const regionLocationSet = new Set(regionLocationIds);
+        const existingNpcsInOtherRegions = Array.from(players.values())
+            .filter(npc => npc && npc.isNPC)
+            .filter(npc => {
+                if (!npc.currentLocation) {
+                    return true;
+                }
+                return !regionLocationSet.has(npc.currentLocation);
+            })
+            .map(npc => ({
+                name: npc.name,
+                shortDescription: npc.shortDescription && npc.shortDescription.trim()
+                    ? npc.shortDescription.trim()
+                    : (npc.description ? npc.description.split(/[.!?]/)[0]?.trim() || '' : '')
+            }))
+            .slice(0, 20);
+
+        const npcPrompt = renderRegionNpcPrompt(region, {
+            allLocationsInRegion: allLocationsForPrompt,
+            existingNpcsInOtherRegions,
+            attributeDefinitions: attributeDefinitionsForPrompt
+        });
+
+        if (!npcPrompt) {
+            return [];
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt },
+            { role: 'assistant', content: aiResponse },
+            { role: 'user', content: npcPrompt }
+        ];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 2500,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        console.log('🏘️ Requesting important NPC generation for region', region.id);
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 40000
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid region NPC response from AI API');
+        }
+
+        const npcResponse = response.data.choices[0].message.content;
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `region_${region.id}_npcs.log`);
+            const parts = [
+                '=== REGION NPC PROMPT ===',
+                npcPrompt,
+                '\n=== REGION NPC RESPONSE ===',
+                npcResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+        } catch (logErr) {
+            console.warn('Failed to write region NPC log:', logErr.message);
+        }
+
+        const parsedNpcs = parseRegionNpcs(npcResponse);
+
+        const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];
+        for (const npcId of previousRegionNpcIds) {
+            const existingNpc = players.get(npcId);
+            if (existingNpc) {
+                const npcLocationId = existingNpc.currentLocation;
+                const npcLocation = npcLocationId ? gameLocations.get(npcLocationId) : null;
+                if (npcLocation && typeof npcLocation.setNpcIds === 'function') {
+                    const remaining = npcLocation.npcIds.filter(id => id !== npcId);
+                    npcLocation.setNpcIds(remaining);
+                }
+                players.delete(npcId);
+            }
+        }
+        region.npcIds = [];
+
+        const created = [];
+        for (const npcData of parsedNpcs) {
+            const attributes = {};
+            const attrSource = npcData.attributes || {};
+            for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
+                const lowerKey = typeof attrName === 'string' ? attrName.toLowerCase() : attrName;
+                const rating = attrSource[attrName] ?? attrSource[lowerKey];
+                attributes[attrName] = mapNpcRatingToValue(rating);
+            }
+
+            let targetLocation = null;
+            if (npcData.location) {
+                const normalized = normalizeRegionLocationName(npcData.location);
+                if (normalized && locationLookup.has(normalized)) {
+                    targetLocation = locationLookup.get(normalized);
+                }
+            }
+            if (!targetLocation && regionLocations.length > 0) {
+                targetLocation = regionLocations[0];
+            }
+
+            const npc = new Player({
+                name: npcData.name || 'Unnamed NPC',
+                description: npcData.description || '',
+                shortDescription: npcData.shortDescription || '',
+                class: npcData.class || 'citizen',
+                race: npcData.race || 'human',
+                level: 1,
+                location: targetLocation ? targetLocation.id : null,
+                attributes,
+                isNPC: true
+            });
+
+            npc.originRegionId = region.id;
+            npc.isRegionImportant = true;
+
+            players.set(npc.id, npc);
+
+            if (targetLocation && typeof targetLocation.addNpcId === 'function') {
+                targetLocation.addNpcId(npc.id);
+            }
+
+            region.npcIds.push(npc.id);
+            created.push(npc);
+            console.log(`🌟 Created region NPC ${npc.name} (${npc.id}) for region ${region.id}`);
+
+            generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
+        }
+
+        return created;
+    } catch (error) {
+        console.warn(`Region NPC generation skipped for region ${region.id}:`, error.message);
         return [];
     }
 }
@@ -2505,6 +2769,16 @@ async function generateRegionFromPrompt(options = {}) {
         } catch (entranceError) {
             console.warn('Failed to determine region entrance:', entranceError.message);
         }
+
+        await generateRegionNPCs({
+            region,
+            systemPrompt,
+            generationPrompt,
+            aiResponse,
+            chatEndpoint,
+            model,
+            apiKey
+        });
 
         return {
             region,
