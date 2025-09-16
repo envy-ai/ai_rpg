@@ -13,6 +13,8 @@ class Player {
     #name;
     #description;
     #shortDescription;
+    #class;
+    #race;
     #id;
     #currentLocation;
     #imageId;
@@ -42,6 +44,8 @@ class Player {
         this.#description = options.description ?? "A mysterious adventurer with an unknown past.";
         this.#shortDescription = options.shortDescription ?? "";
         this.#id = options.id ?? Player.#generateUniqueId();
+        this.#class = options.class ?? "person";
+        this.#race = options.race ?? "human";
 
         // Location (can be Location ID string or Location object)
         this.#currentLocation = options.location ?? null;
@@ -181,6 +185,24 @@ class Player {
         return this.#shortDescription;
     }
 
+    get class() {
+        return this.#class;
+    }
+
+    get race() {
+        return this.race;
+    }
+
+    set class(newClass) {
+        this.#class = newClass.trim();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set race(newRace) {
+        this.#race = newRace.trim();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
     set description(newDescription) {
         if (typeof newDescription !== 'string') {
             throw new Error('Description must be a string');
@@ -228,6 +250,8 @@ class Player {
     get lastUpdated() {
         return this.#lastUpdated;
     }
+
+
 
     /**
      * Get list of all attribute names
@@ -631,6 +655,9 @@ class Player {
             id: this.#id,
             name: this.#name,
             description: this.#description,
+            shortDescription: this.#shortDescription,
+            class: this.#class,
+            race: this.#race,
             level: this.#level,
             health: this.#health,
             maxHealth: this.#maxHealth,

@@ -1179,7 +1179,11 @@ function parseLocationNpcs(xmlContent) {
             const descriptionNode = node.getElementsByTagName('description')[0];
             const roleNode = node.getElementsByTagName('role')[0];
             const attributesNode = node.getElementsByTagName('attributes')[0];
+            const classNode = node.getElementsByTagName('class')[0];
+            const raceNode = node.getElementsByTagName('race')[0];
 
+            const className = classNode ? classNode.textContent.trim() : null;
+            const race = raceNode ? raceNode.textContent.trim() : null;
             const name = nameNode ? nameNode.textContent.trim() : null;
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
@@ -1201,6 +1205,8 @@ function parseLocationNpcs(xmlContent) {
                     name,
                     description,
                     role,
+                    class: className,
+                    race,
                     attributes
                 });
             }
@@ -1267,7 +1273,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         const npcResponse = response.data.choices[0].message.content;
-        const npcs = parseLocationNpcs(npcResponse);
 
         try {
             const logDir = path.join(__dirname, 'logs');
@@ -1286,6 +1291,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         } catch (logErr) {
             console.warn('Failed to write NPC log:', logErr.message);
         }
+
+        const npcs = parseLocationNpcs(npcResponse);
 
         const created = [];
         const existingNpcIds = location.npcIds || [];
@@ -1308,6 +1315,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 level: 1,
                 location: location.id,
                 attributes,
+                class: npcData.class || null,
+                race: npcData.race,
                 isNPC: true
             });
             players.set(npc.id, npc);

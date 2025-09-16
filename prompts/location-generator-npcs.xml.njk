@@ -33,15 +33,16 @@ Generate 0 to 3 NPCs for the location above. Use your judgment about how many, b
 <name>…</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
 <shortDescription>10 words or less description of the NPC</shortDescription>
+<class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
+<race>human, elf, android, etc</race>
 <attributes>
-  {% for attrName, attrDef in attributeDefinitions %}
-  <attribute name="{{ attrName }}">rating (see above)</attribute>
-  {% endfor %}
+{% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
+{% endfor %}
 </attributes>
 </npc>
 
 [… more NPCs …]
 
 </npcs>
-    </generationPrompt>
+</generationPrompt>
 </template>
