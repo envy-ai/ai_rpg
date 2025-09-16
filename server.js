@@ -650,8 +650,56 @@ function buildNpcProfiles(location) {
             description: npc.description,
             imageId: npc.imageId,
             isNPC: Boolean(npc.isNPC),
-            locationId: npc.currentLocation
+            locationId: npc.currentLocation,
+            attributes: npc.attributes
         }));
+}
+
+const attributeDefinitionsForPrompt = (() => {
+    try {
+        const template = new Player({ name: 'Attribute Template', description: 'Template loader' });
+        const defs = template.attributeDefinitions || {};
+        const context = {};
+        for (const [attrName, def] of Object.entries(defs)) {
+            context[attrName] = {
+                description: def.description || def.label || attrName
+            };
+        }
+        return context;
+    } catch (error) {
+        console.warn('Failed to load attribute definitions for NPC prompt:', error.message);
+        return {};
+    }
+})();
+
+const NPC_RATING_MAP = {
+    'terrible': { base: 1, spread: 1 },
+    'poor': { base: 4, spread: 1 },
+    'below average': { base: 7, spread: 1 },
+    'average': { base: 10, spread: 1 },
+    'above average': { base: 13, spread: 1 },
+    'excellent': { base: 16, spread: 1 },
+    'legendary': { base: 19, spread: 1 }
+};
+
+function mapNpcRatingToValue(rating) {
+    let normalized = 'average';
+    if (rating && typeof rating === 'string') {
+        normalized = rating.trim().toLowerCase();
+    }
+
+    for (const [key, config] of Object.entries(NPC_RATING_MAP)) {
+        if (normalized.includes(key)) {
+            return clampAttributeValue(config.base + randomIntInclusive(-config.spread, config.spread));
+        }
+    }
+
+    const fallback = NPC_RATING_MAP['average'];
+    return clampAttributeValue(fallback.base + randomIntInclusive(-fallback.spread, fallback.spread));
+}
+
+function clampAttributeValue(value) {
+    return Math.max(1, Math.min(20, value));
 }
 
 const PRIMARY_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down', 'northeast', 'northwest', 'southeast', 'southwest', 'in', 'out', 'forward', 'back'];
@@ -1043,35 +1091,50 @@ function renderSystemPrompt(settingInfo = null) {
 function renderPlayerPortraitPrompt(player) {
     try {
         const templateName = 'player-portrait.xml.njk';
+        const activeSetting = getActiveSettingSnapshot();
 
         if (!player) {
             throw new Error('Player object is required');
         }
 
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const attributeLines = player.getAttributeNames().map(name => {
+            const value = player.getAttributeTextValue(name);
+            const label = name.charAt(0).toUpperCase() + name.slice(1);
+            return `${label}: ${value}`;
+        }).join('\n');
+
+        const characterDescription = [
+            `${player.name || 'Unknown'} (Level ${player.level || 1})`,
+            player.description || 'No description provided.',
+            attributeLines ? `Attributes:\n${attributeLines}` : ''
+        ].filter(Boolean).join('\n\n');
+
         const variables = {
-            playerName: player.name,
-            playerDescription: player.description,
-            playerLevel: player.level,
-            playerAttributes: player.getAttributeNames().reduce((attrs, name) => {
-                attrs[name] = player.getAttribute(name);
-                return attrs;
-            }, {})
+            setting: settingDescription,
+            characterDescription
         };
 
-        // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
-
-        // Parse the XML and extract generationPrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedXML.systemPrompt;
         const generationPrompt = parsedXML.generationPrompt;
 
-        console.log(`Generated player portrait prompt for ${player.name}:`, generationPrompt);
-        return generationPrompt.trim();
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Missing portrait system or generation prompt');
+        }
+
+        return {
+            systemPrompt: systemPrompt.trim(),
+            generationPrompt: generationPrompt.trim()
+        };
 
     } catch (error) {
         console.error('Error rendering player portrait template:', error);
-        // Fallback to simple prompt
-        return `Fantasy RPG character portrait of ${player ? player.name : 'unnamed character'}: ${player ? player.description : 'A mysterious adventurer'}, high quality fantasy art, detailed character portrait`;
+        return {
+            systemPrompt: 'You are a specialized prompt generator for creating fantasy RPG character portraits.',
+            generationPrompt: `Create an image prompt for ${player ? player.name : 'an unnamed character'}: ${player ? player.description : 'A mysterious adventurer.'}`
+        };
     }
 }
 
@@ -1082,7 +1145,8 @@ function renderLocationNpcPrompt(location, options = {}) {
             locationName: location.name || 'Unknown Location',
             locationDescription: location.description || 'No description provided.',
             regionTheme: options.regionTheme || null,
-            desiredCount: options.desiredCount || 3
+            desiredCount: options.desiredCount || 3,
+            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt
         });
     } catch (error) {
         console.error('Error rendering location NPC template:', error);
@@ -1107,16 +1171,30 @@ function parseLocationNpcs(xmlContent) {
             const nameNode = node.getElementsByTagName('name')[0];
             const descriptionNode = node.getElementsByTagName('description')[0];
             const roleNode = node.getElementsByTagName('role')[0];
+            const attributesNode = node.getElementsByTagName('attributes')[0];
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
+            const attributes = {};
+
+            if (attributesNode) {
+                const attrNodes = Array.from(attributesNode.getElementsByTagName('attribute'));
+                for (const attrNode of attrNodes) {
+                    const attrName = attrNode.getAttribute('name');
+                    const rating = attrNode.textContent ? attrNode.textContent.trim() : '';
+                    if (attrName) {
+                        attributes[attrName] = rating;
+                    }
+                }
+            }
 
             if (name) {
                 npcs.push({
                     name,
                     description,
-                    role
+                    role,
+                    attributes
                 });
             }
         }
@@ -1131,7 +1209,10 @@ function parseLocationNpcs(xmlContent) {
 // Function to render location scene prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey }) {
     try {
-        const npcPrompt = renderLocationNpcPrompt(location, { regionTheme });
+        const npcPrompt = renderLocationNpcPrompt(location, {
+            regionTheme,
+            attributeDefinitions: attributeDefinitionsForPrompt
+        });
         if (!npcPrompt) {
             return [];
         }
@@ -1172,7 +1253,14 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 fs.mkdirSync(logDir, { recursive: true });
             }
             const logPath = path.join(logDir, `location_${location.id}_npcs.log`);
-            fs.writeFileSync(logPath, npcResponse, 'utf8');
+            const parts = [
+                '=== NPC PROMPT ===',
+                npcPrompt,
+                '\n=== NPC RESPONSE ===',
+                npcResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
         } catch (logErr) {
             console.warn('Failed to write NPC log:', logErr.message);
         }
@@ -1185,16 +1273,25 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         location.clearNpcIds();
 
         for (const npcData of npcs) {
+            const attributes = {};
+            const attrSource = npcData.attributes || {};
+            for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
+                const rating = attrSource[attrName] || attrSource[attrName.toLowerCase()];
+                attributes[attrName] = mapNpcRatingToValue(rating);
+            }
+
             const npc = new Player({
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
                 level: 1,
                 location: location.id,
+                attributes,
                 isNPC: true
             });
             players.set(npc.id, npc);
             location.addNpcId(npc.id);
             created.push(npc);
+            console.log(`🤝 Created NPC ${npc.name} (${npc.id}) for location ${location.id}`);
             generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
         }
 
@@ -1439,11 +1536,32 @@ async function generatePlayerImage(player) {
 
         // Generate the portrait prompt
         const portraitPrompt = renderPlayerPortraitPrompt(player);
+        const finalImagePrompt = await generateImagePromptFromTemplate(portraitPrompt);
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `player_${player.id}_portrait.log`);
+            const parts = [
+                '=== PORTRAIT SYSTEM PROMPT ===',
+                portraitPrompt.systemPrompt || '(none)',
+                '\n=== PORTRAIT GENERATION PROMPT ===',
+                portraitPrompt.generationPrompt || '(none)',
+                '\n=== PORTRAIT LLM OUTPUT ===',
+                finalImagePrompt,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log portrait prompt:', logError.message);
+        }
 
         // Create image generation job with player-specific settings
         const jobId = generateImageId();
         const payload = {
-            prompt: portraitPrompt,
+            prompt: finalImagePrompt,
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
@@ -3455,9 +3573,13 @@ app.post('/api/locations/generate', async (req, res) => {
         // Generate the location
         const result = await generateLocationFromPrompt(options);
 
+        const locationData = result.location.toJSON();
+        locationData.pendingImageJobId = pendingLocationImages.get(result.location.id) || null;
+        locationData.npcs = buildNpcProfiles(result.location);
+
         res.json({
             success: true,
-            location: result.location.toJSON(),
+            location: locationData,
             locationId: result.location.id,
             locationName: result.location.name,
             gameWorldStats: {

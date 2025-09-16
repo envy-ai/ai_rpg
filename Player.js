@@ -535,6 +535,30 @@ class Player {
     }
 
     /**
+     * Get an attribute in LLM-readable text.
+     * 
+     *  < 3 -> "terribe",
+     *  3-5 -> "poor",
+     *  6-8 -> "below average",
+     *  9-11 -> "average",
+     *  12-14 -> "above average",
+     *  15-17 -> "excellent",
+     *  18+ -> "legendary"
+     */
+    getAttributeTextValue(attributeName) {
+        const value = this.getAttribute(attributeName);
+        if (value === null) return 'unknown';
+        if (value < 3) return 'terrible';
+        if (value <= 5) return 'poor';
+        if (value <= 8) return 'below average';
+        if (value <= 11) return 'average';
+        if (value <= 14) return 'above average';
+        if (value <= 17) return 'excellent';
+        return 'legendary';
+    }
+
+
+    /**
      * Get all attribute information including definitions
      */
     getAttributeInfo() {

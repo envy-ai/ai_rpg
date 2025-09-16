@@ -164,7 +164,10 @@ p:not(:last-child) {
 .location-block {
   width: 30%;
   min-width: 300px;
-  overflow: auto;
+
+  .container {
+    overflow: auto;
+  }
 
   // Custom scrollbar for location block
   &::-webkit-scrollbar {

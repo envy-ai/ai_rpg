@@ -404,7 +404,8 @@ class Location {
       lastUpdated: this.#lastUpdated.toISOString(),
       isStub: this.#isStub,
       hasGeneratedStubs: this.#hasGeneratedStubs,
-      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null
+      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
+      npcIds: [...this.#npcIds]
     };
   }
 
