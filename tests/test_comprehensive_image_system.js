@@ -28,22 +28,26 @@ function renderPlayerPortraitPrompt(player) {
       playerAttributes: player.getStatus().attributes
     };
 
-    // Render the template
     const renderedTemplate = promptEnv.render(templateName, variables);
-
-    // Parse the YAML and extract generationPrompt
     const parsedYaml = yaml.load(renderedTemplate);
+    const systemPrompt = parsedYaml.systemPrompt;
     const generationPrompt = parsedYaml.generationPrompt;
 
-    if (!generationPrompt) {
-      throw new Error('No generationPrompt found in player portrait template');
+    if (!systemPrompt || !generationPrompt) {
+      throw new Error('No prompts found in player portrait template');
     }
 
-    return generationPrompt.trim();
+    return {
+      systemPrompt: systemPrompt.trim(),
+      generationPrompt: generationPrompt.trim()
+    };
 
   } catch (error) {
     console.error('Error rendering player portrait template:', error);
-    return `Fantasy RPG character portrait of ${player ? player.name : 'unnamed character'}: ${player ? player.description : 'A mysterious adventurer'}, high quality fantasy art, detailed character portrait`;
+    return {
+      systemPrompt: 'You are a specialized prompt generator for creating fantasy RPG character portraits.',
+      generationPrompt: `Create an image prompt for ${player ? player.name : 'an unnamed character'}: ${player ? player.description : 'A mysterious adventurer.'}`
+    };
   }
 }
 
@@ -188,7 +192,7 @@ console.log('\n🎨 TESTING IMAGE PROMPT GENERATION...\n');
 console.log('1️⃣ Testing Player Portrait Prompt...');
 const playerPrompt = renderPlayerPortraitPrompt(testPlayer);
 console.log('✅ Player portrait prompt generated successfully');
-console.log('📝 Player prompt preview:', playerPrompt.substring(0, 150) + '...');
+console.log('📝 Player prompt preview:', playerPrompt.generationPrompt.substring(0, 150) + '...');
 
 console.log('\n2️⃣ Testing Location Scene Prompt...');
 const locationPrompt = renderLocationImagePrompt(testLocation);

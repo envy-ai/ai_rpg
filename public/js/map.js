@@ -21,9 +21,13 @@ function getCytoscape(container) {
 let cyInstance = null;
 
 function ensureCytoscape(container) {
-  if (!cyInstance) {
-    const cytoscape = getCytoscape(container);
-    cytoscape.style([
+  if (cyInstance) {
+    cyInstance.destroy();
+    cyInstance = null;
+  }
+
+  const cytoscape = getCytoscape(container);
+  cytoscape.style([
       {
         selector: 'node',
         style: {
@@ -69,13 +73,13 @@ function ensureCytoscape(container) {
         }
       }
     ]);
-    cytoscape.zoomingEnabled(true);
-    cytoscape.userZoomingEnabled(true);
-    cytoscape.userPanningEnabled(true);
-    cyInstance = cytoscape;
-  }
+  cytoscape.zoomingEnabled(true);
+  cytoscape.userZoomingEnabled(true);
+  cytoscape.userPanningEnabled(true);
+  cyInstance = cytoscape;
   return cyInstance;
 }
+
 
 function loadRegionMap() {
   const container = document.getElementById('mapContainer');
