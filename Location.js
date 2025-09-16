@@ -1,5 +1,10 @@
 const crypto = require('crypto');
-const { DOMParser } = require('xmldom');
+const { DOMParser, XMLSerializer } = require('xmldom');
+
+function innerXML(node) {
+  const s = new XMLSerializer();
+  return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
+}
 
 /**
  * Location class for AI RPG
@@ -105,8 +110,14 @@ class Location {
 
     for (const child of childNodes) {
       // Only process element nodes (nodeType 1)
+      // <description> can contain HTML, so we take the full inner XML
       if (child.nodeType === 1) {
-        const value = child.textContent.trim();
+        let value = null;
+        if (child.tagName === 'description') {
+          value = innerXML(child).trim();
+        } else {
+          value = child.textContent.trim();
+        }
 
         // Convert baseLevel to number
         if (child.tagName === 'baseLevel') {

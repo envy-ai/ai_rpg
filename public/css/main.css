@@ -12,6 +12,11 @@ body {
   padding: 20px;
   overflow: hidden;
 }
+
+p:not(:last-child) {
+  margin-bottom: 1em;
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;
@@ -21,9 +26,11 @@ body {
   justify-content: center;
   z-index: 2000;
 }
+
 .overlay-backdrop.show {
   display: flex;
 }
+
 .spinner {
   width: 56px;
   height: 56px;
@@ -32,6 +39,7 @@ body {
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -43,6 +51,7 @@ body {
   align-items: center;
   gap: 12px;
 }
+
 .overlay-text {
   color: #ffffff;
   font-weight: bold;
@@ -181,12 +190,14 @@ body {
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.65);
 }
+
 .location-exits {
   margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+
 .exit-button {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
@@ -198,10 +209,12 @@ body {
   font-weight: 600;
   transition: background 0.2s ease, border 0.2s ease;
 }
+
 .exit-button:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.35);
 }
+
 .no-exits {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.85rem;

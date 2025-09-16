@@ -948,11 +948,9 @@ function parseXMLTemplate(xmlContent) {
             result.systemPrompt = innerXML(systemPromptNode).trim();
         }
 
-        // Extract generationPrompt as raw inner XML/text; fallback to <imagePrompt> for compatibility
+        // Extract generationPrompt as raw inner XML/text
         let generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
-        if (!generationPromptNode) {
-            generationPromptNode = doc.getElementsByTagName('imagePrompt')[0];
-        }
+
         if (generationPromptNode) {
             result.generationPrompt = innerXML(generationPromptNode).trim();
         }
@@ -1046,7 +1044,7 @@ function renderPlayerPortraitPrompt(player) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the XML and extract imagePrompt
+        // Parse the XML and extract generationPrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
         const generationPrompt = parsedXML.generationPrompt;
 
@@ -1079,13 +1077,13 @@ function renderLocationImagePrompt(location) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the XML and extract both systemPrompt and imagePrompt
+        // Parse the XML and extract both systemPrompt and generationPrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
         const systemPrompt = parsedXML.systemPrompt;
         const generationPrompt = parsedXML.generationPrompt;
 
         if (!systemPrompt || !generationPrompt) {
-            throw new Error('Missing systemPrompt or imagePrompt in location image template');
+            throw new Error('Missing systemPrompt or generationPrompt in location image template');
         }
 
         console.log(`Extracted prompts for location ${location.id} - calling LLM for image prompt generation`);
@@ -1127,7 +1125,7 @@ function renderLocationExitImagePrompt(locationExit) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Parse the XML and extract imagePrompt
+        // Parse the XML and extract generationPrompt
         const parsedXML = parseXMLTemplate(renderedTemplate);
         const generationPrompt = parsedXML.generationPrompt;
 

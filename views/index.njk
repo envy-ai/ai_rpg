@@ -129,7 +129,7 @@
                 if (location) {
                     locationName.textContent = location.name || 'Unknown Location';
                     if (locationTooltip) {
-                        locationTooltip.textContent = location.description || 'No description available.';
+                        locationTooltip.innerHTML = location.description || 'No description available.';
                     }
                     if (locationHint) {
                         if (location.pendingImageJobId) {
@@ -183,7 +183,7 @@
                 } else {
                     locationName.textContent = 'Unknown Location';
                     if (locationTooltip) {
-                        locationTooltip.textContent = 'Your current location will appear here when you start exploring.';
+                        locationTooltip.innerHTML = 'Your current location will appear here when you start exploring.';
                     }
                     if (locationHint) {
                         locationHint.textContent = 'Hover over the location image for a description.';

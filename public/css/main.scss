@@ -16,6 +16,10 @@ body {
   overflow: hidden;
 }
 
+p:not(:last-child) {
+  margin-bottom: 1em;
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;
