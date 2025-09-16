@@ -23,8 +23,7 @@
                         <div class="location-content" id="locationContent">
                             <div class="location-image" id="locationImage">
                                 <div class="location-placeholder">
-                                    🏞️
-                                    <p>No location image</p>
+                                    <!-- Nothing in here on initial load -->
                                 </div>
                                 <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
                             </div>
@@ -73,7 +72,14 @@
             </div>
         </div>
     </div>
-    
+
+    <div id="locationOverlay" class="overlay-backdrop" aria-live="polite" aria-busy="false" aria-label="Loading location">
+        <div class="overlay-content">
+            <div class="spinner" role="status" aria-hidden="true"></div>
+            <div class="overlay-text" id="locationOverlayText">Exploring...</div>
+        </div>
+    </div>
+
     <script src="/js/chat.js"></script>
     <script>
         // Initialize with system prompt from server
@@ -92,6 +98,25 @@
             // Function to update location display
             const locationCache = {};
             const pendingImagePolls = new Map();
+            const locationOverlay = document.getElementById('locationOverlay');
+            const locationOverlayText = document.getElementById('locationOverlayText');
+
+            function showLocationOverlay(message = 'Loading location...') {
+                if (locationOverlay) {
+                    locationOverlay.classList.add('show');
+                    locationOverlay.setAttribute('aria-busy', 'true');
+                    if (locationOverlayText && message) {
+                        locationOverlayText.textContent = message;
+                    }
+                }
+            }
+
+            function hideLocationOverlay() {
+                if (locationOverlay) {
+                    locationOverlay.classList.remove('show');
+                    locationOverlay.setAttribute('aria-busy', 'false');
+                }
+            }
 
             window.updateLocationDisplay = function(location) {
                 const locationName = document.getElementById('locationName');
@@ -121,7 +146,7 @@
                         if (location.imageId && !location.pendingImageJobId) {
                             locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
                         } else {
-                            locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                            locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
                         }
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
@@ -154,6 +179,7 @@
                     } else {
                         stopImagePolling(location.id);
                     }
+                hideLocationOverlay();
                 } else {
                     locationName.textContent = 'Unknown Location';
                     if (locationTooltip) {
@@ -165,7 +191,7 @@
                     locationLevel.textContent = 'Level: ?';
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                        locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }
@@ -173,13 +199,15 @@
                     if (locationExits) {
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                     }
-                    stopImagePolling();
+                stopImagePolling();
+                hideLocationOverlay();
                 }
             };
 
             async function moveToLocation(destinationId) {
                 if (!destinationId) return;
                 try {
+                    showLocationOverlay('Exploring new location...');
                     const response = await fetch('/api/player/move', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -206,10 +234,12 @@
                         }
                         window.updateLocationDisplay(result.location);
                     } else if (result.error) {
+                        hideLocationOverlay();
                         alert(`Move failed: ${result.error}`);
                     }
                 } catch (error) {
                     console.error('Move failed:', error);
+                    hideLocationOverlay();
                     alert(`Move failed: ${error.message}`);
                 }
             }
@@ -274,7 +304,8 @@
             }
 
             // Load current player location on page load
-            loadCurrentLocation();
+            showLocationOverlay('Loading current location...');
+            loadCurrentLocation().finally(() => hideLocationOverlay());
         }
 
         async function loadCurrentLocation() {
@@ -293,6 +324,7 @@
                 }
             } catch (error) {
                 console.log('Could not load current location:', error);
+                hideLocationOverlay();
             }
         }
 

@@ -1734,7 +1734,7 @@ async function generateLocationFromPrompt(options = {}) {
         const {
             stubLocation = null,
             originLocation = null,
-            createStubs = true,
+            createStubs = false,
             ...promptOverrides
         } = options;
 
@@ -1850,6 +1850,25 @@ async function generateLocationFromPrompt(options = {}) {
         }
 
         console.log(`🏗️  Successfully generated location: ${location.name || location.id}`);
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `location_${location.id}.log`);
+            const logParts = [
+                '=== LOCATION GENERATION PROMPT ===',
+                generationPrompt,
+                '\n=== LOCATION GENERATION RESPONSE ===',
+                aiResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+            console.log(`📝 Location generation logged to ${logPath}`);
+        } catch (logError) {
+            console.warn('Failed to write location generation log:', logError.message);
+        }
 
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
@@ -2065,24 +2084,42 @@ async function generateRegionFromPrompt(options = {}) {
                 return;
             }
 
-        const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
-        const existing = fromStub.getExit(directionKey);
-        if (existing) {
-            try {
-                existing.destination = toStub.id;
-            } catch (_) {
-                existing.update({ destination: toStub.id });
-            }
-            return;
-        }
+            const existingDir = fromStub.getAvailableDirections()
+                .find(dir => {
+                    const exit = fromStub.getExit(dir);
+                    return exit && exit.destination === toStub.id;
+                });
 
-        const exit = new LocationExit({
-            description: `Path to ${toStub.name}`,
-            destination: toStub.id,
-            bidirectional: false
-        });
-        fromStub.addExit(directionKey, exit);
-    };
+            if (existingDir) {
+                const existingExit = fromStub.getExit(existingDir);
+                if (existingExit && !existingExit.description) {
+                    try {
+                        existingExit.description = `Path to ${toStub.name}`;
+                    } catch (_) {
+                        existingExit.update({ description: `Path to ${toStub.name}` });
+                    }
+                }
+                return;
+            }
+
+            const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
+            const existing = fromStub.getExit(directionKey);
+            if (existing) {
+                try {
+                    existing.destination = toStub.id;
+                } catch (_) {
+                    existing.update({ destination: toStub.id });
+                }
+                return;
+            }
+
+            const exit = new LocationExit({
+                description: `Path to ${toStub.name}`,
+                destination: toStub.id,
+                bidirectional: false
+            });
+            fromStub.addExit(directionKey, exit);
+        };
 
         for (const blueprint of region.locationBlueprints) {
             const sourceAliases = [normalizeRegionLocationName(blueprint.name)];
@@ -2111,8 +2148,6 @@ async function generateRegionFromPrompt(options = {}) {
 
                 const forwardDirection = directionHint || targetLabel;
                 addStubExit(sourceStub, targetStub, forwardDirection);
-                const reverseLabel = blueprint.name;
-                addStubExit(targetStub, sourceStub, reverseLabel);
             });
         }
 
@@ -3949,7 +3984,7 @@ app.post('/api/new-game', async (req, res) => {
             try {
                 const expansion = await generateLocationFromPrompt({
                     stubLocation: entranceLocation,
-                    createStubs: true
+                    createStubs: false
                 });
                 if (expansion?.location) {
                     entranceLocation = expansion.location;
