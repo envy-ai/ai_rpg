@@ -33,6 +33,9 @@
                                     <span class="location-level" id="locationLevel">Level: ?</span>
                                 </div>
                                 <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
+                                <div class="location-exits" id="locationExits">
+                                    <div class="no-exits">No exits discovered yet.</div>
+                                </div>
                             </div>
                         </div>
                 </div>
@@ -87,12 +90,16 @@
 
         function initLocationDisplay() {
             // Function to update location display
+            const locationCache = {};
+            const pendingImagePolls = new Map();
+
             window.updateLocationDisplay = function(location) {
                 const locationName = document.getElementById('locationName');
-                const locationTooltip = document.getElementById('locationTooltip');
-                const locationHint = document.getElementById('locationHint');
+            const locationTooltip = document.getElementById('locationTooltip');
+            const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
                 const locationImage = document.getElementById('locationImage');
+            const locationExits = document.getElementById('locationExits');
                 
                 if (location) {
                     locationName.textContent = location.name || 'Unknown Location';
@@ -100,13 +107,18 @@
                         locationTooltip.textContent = location.description || 'No description available.';
                     }
                     if (locationHint) {
-                        locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
+                        if (location.pendingImageJobId) {
+                            locationHint.textContent = 'Generating location image...';
+                        } else {
+                            locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
+                        }
                     }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
+                locationCache[location.id] = location.name || location.description || location.id;
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        if (location.imageId) {
+                        if (location.imageId && !location.pendingImageJobId) {
                             locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
                         } else {
                             locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
@@ -114,6 +126,33 @@
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }
+                    }
+
+                    if (locationExits) {
+                        const exitEntries = Object.entries(location.exits || {});
+                        if (exitEntries.length === 0) {
+                            locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                        } else {
+                            locationExits.innerHTML = '';
+                            exitEntries.forEach(([key, exit]) => {
+                                if (!exit || !exit.destination) {
+                                    return;
+                                }
+                                const button = document.createElement('button');
+                                button.className = 'exit-button';
+                                const targetName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                                button.textContent = targetName;
+                                button.dataset.destinationId = exit.destination;
+                                button.addEventListener('click', () => moveToLocation(exit.destination));
+                                locationExits.appendChild(button);
+                            });
+                        }
+                    }
+
+                    if (location.pendingImageJobId) {
+                        startImagePolling(location.id, location.pendingImageJobId);
+                    } else {
+                        stopImagePolling(location.id);
                     }
                 } else {
                     locationName.textContent = 'Unknown Location';
@@ -131,9 +170,109 @@
                             locationImage.appendChild(existingTooltip);
                         }
                     }
+                    if (locationExits) {
+                        locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                    }
+                    stopImagePolling();
                 }
             };
-            
+
+            async function moveToLocation(destinationId) {
+                if (!destinationId) return;
+                try {
+                    const response = await fetch('/api/player/move', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ destinationId })
+                    });
+
+                    const result = await response.json();
+                    if (result.success && result.location) {
+                        if (result.location.name) {
+                            locationCache[result.location.id] = result.location.name;
+                        }
+                        if (Array.isArray(result.location.exits)) {
+                            result.location.exits.forEach(exit => {
+                                if (exit.destination && exit.destinationName) {
+                                    locationCache[exit.destination] = exit.destinationName;
+                                }
+                            });
+                        } else if (result.location.exits) {
+                            Object.values(result.location.exits).forEach(exit => {
+                                if (exit?.destination && exit.destinationName) {
+                                    locationCache[exit.destination] = exit.destinationName;
+                                }
+                            });
+                        }
+                        window.updateLocationDisplay(result.location);
+                    } else if (result.error) {
+                        alert(`Move failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Move failed:', error);
+                    alert(`Move failed: ${error.message}`);
+                }
+            }
+
+            function startImagePolling(locationId, jobId) {
+                if (!locationId || !jobId) return;
+                const existing = pendingImagePolls.get(locationId);
+                if (existing) {
+                    if (existing.jobId === jobId) {
+                        return;
+                    }
+                    clearInterval(existing.interval);
+                }
+
+                const interval = setInterval(async () => {
+                    try {
+                        const jobResponse = await fetch(`/api/jobs/${jobId}`);
+                        if (!jobResponse.ok) {
+                            throw new Error(`Job status ${jobResponse.status}`);
+                        }
+                        const jobData = await jobResponse.json();
+                        if (!jobData.success) {
+                            throw new Error(jobData.error || 'Job status error');
+                        }
+
+                        const status = jobData.job?.status;
+                        if (status === 'completed') {
+                            stopImagePolling(locationId);
+                            const locResponse = await fetch(`/api/locations/${locationId}`);
+                            const locData = await locResponse.json();
+                            if (locData.success && locData.location) {
+                                window.updateLocationDisplay(locData.location);
+                            }
+                        } else if (status === 'failed' || status === 'timeout') {
+                            stopImagePolling(locationId);
+                            const locationHint = document.getElementById('locationHint');
+                            if (locationHint) {
+                                locationHint.textContent = `Image generation ${status}.`;
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Image polling error:', error.message);
+                    }
+                }, 4000);
+
+                pendingImagePolls.set(locationId, { interval, jobId });
+            }
+
+            function stopImagePolling(locationId = null) {
+                if (locationId) {
+                    const entry = pendingImagePolls.get(locationId);
+                    if (entry) {
+                        clearInterval(entry.interval);
+                        pendingImagePolls.delete(locationId);
+                    }
+                } else {
+                    for (const entry of pendingImagePolls.values()) {
+                        clearInterval(entry.interval);
+                    }
+                    pendingImagePolls.clear();
+                }
+            }
+
             // Load current player location on page load
             loadCurrentLocation();
         }

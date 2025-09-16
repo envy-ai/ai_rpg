@@ -161,6 +161,35 @@ body {
   color: rgba(255, 255, 255, 0.65);
 }
 
+.location-exits {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exit-button {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease, border 0.2s ease;
+}
+
+.exit-button:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.no-exits {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+}
+
 // Chat container - right column of .main-content
 .chat-container {
   flex: 1; // Take up remaining width

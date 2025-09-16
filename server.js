@@ -121,9 +121,12 @@ async function processJobQueue() {
 
     isProcessingJob = true;
 
+    let jobId = null;
+    let job = null;
+
     try {
-        const jobId = jobQueue.shift();
-        const job = imageJobs.get(jobId);
+        jobId = jobQueue.shift();
+        job = imageJobs.get(jobId);
 
         if (!job || job.status !== JOB_STATUS.QUEUED) {
             return;
@@ -172,6 +175,7 @@ async function processJobQueue() {
                         location.imageId = result.imageId;
                         console.log(`🏞️ Updated location ${location.id} imageId to: ${result.imageId}`);
                     }
+                    pendingLocationImages.delete(job.payload.locationId);
                 }
 
                 // Update location exit's imageId if this was a location exit passage job
@@ -213,14 +217,23 @@ async function processJobQueue() {
                 job.error = error.message;
                 job.message = `Generation failed: ${error.message}`;
                 job.completedAt = new Date().toISOString();
+                if (job.payload.isLocationScene && job.payload.locationId) {
+                    pendingLocationImages.delete(job.payload.locationId);
+                }
             }
         }
 
     } finally {
         isProcessingJob = false;
 
-        // Process next job if available
-        setTimeout(() => processJobQueue(), 100);
+        const currentJob = job && job.id ? job : (jobId ? imageJobs.get(jobId) : null);
+        if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
+            pendingLocationImages.delete(currentJob.payload.locationId);
+        }
+
+        if (jobQueue.length > 0) {
+            setTimeout(() => processJobQueue(), 100);
+        }
     }
 }
 
@@ -622,6 +635,7 @@ const things = new Map(); // Store things (items and scenery) by ID
 const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
+const pendingLocationImages = new Map(); // Store active image job IDs per location
 
 const PRIMARY_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down', 'northeast', 'northwest', 'southeast', 'southwest', 'in', 'out', 'forward', 'back'];
 const OPPOSITE_DIRECTION_MAP = {
@@ -1435,6 +1449,7 @@ async function generateLocationImage(location) {
 
         // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
         location.imageId = jobId;
+        pendingLocationImages.set(location.id, jobId);
         console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
 
         return {
@@ -2050,24 +2065,24 @@ async function generateRegionFromPrompt(options = {}) {
                 return;
             }
 
-            const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
-            const existing = fromStub.getExit(directionKey);
-            if (existing) {
-                try {
-                    existing.destination = toStub.id;
-                } catch (_) {
-                    existing.update({ destination: toStub.id });
-                }
-                return;
+        const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
+        const existing = fromStub.getExit(directionKey);
+        if (existing) {
+            try {
+                existing.destination = toStub.id;
+            } catch (_) {
+                existing.update({ destination: toStub.id });
             }
+            return;
+        }
 
-            const exit = new LocationExit({
-                description: '',
-                destination: toStub.id,
-                bidirectional: false
-            });
-            fromStub.addExit(directionKey, exit);
-        };
+        const exit = new LocationExit({
+            description: `Path to ${toStub.name}`,
+            destination: toStub.id,
+            bidirectional: false
+        });
+        fromStub.addExit(directionKey, exit);
+    };
 
         for (const blueprint of region.locationBlueprints) {
             const sourceAliases = [normalizeRegionLocationName(blueprint.name)];
@@ -2078,23 +2093,7 @@ async function generateRegionFromPrompt(options = {}) {
                 .map(alias => stubMap.get(alias))
                 .find(Boolean);
             if (!sourceStub) continue;
-        let exits = blueprint.exits || [];
-        if ((!exits || exits.length === 0) && region.locationBlueprints.length > 1) {
-            const total = region.locationBlueprints.length;
-            const index = region.locationBlueprints.indexOf(blueprint);
-            const fallback = [];
-            if (index !== -1) {
-                const prev = region.locationBlueprints[(index - 1 + total) % total];
-                const next = region.locationBlueprints[(index + 1) % total];
-                if (prev && prev !== blueprint) {
-                    fallback.push({ target: prev.name, direction: null });
-                }
-                if (next && next !== blueprint && next !== prev) {
-                    fallback.push({ target: next.name, direction: null });
-                }
-            }
-            exits = fallback;
-        }
+            const exits = blueprint.exits || [];
 
             exits.forEach(exitInfo => {
                 const targetLabel = exitInfo?.target;
@@ -3013,12 +3012,125 @@ app.get('/api/locations/:id', async (req, res) => {
             }
         }
 
+        const locationData = location.toJSON();
+        locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
+        if (locationData.exits) {
+            for (const [dir, exit] of Object.entries(locationData.exits)) {
+                if (!exit) continue;
+                const destLocation = gameLocations.get(exit.destination);
+                if (destLocation) {
+                    exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
+                }
+            }
+        }
+
         res.json({
             success: true,
-            location: location.toJSON()
+            location: locationData
         });
     } catch (error) {
         console.error('Error fetching location:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Move player to a connected location
+app.post('/api/player/move', async (req, res) => {
+    try {
+        if (!currentPlayer) {
+            return res.status(404).json({
+                success: false,
+                error: 'No current player found'
+            });
+        }
+
+        const { destinationId, direction } = req.body || {};
+        if (!destinationId && !direction) {
+            return res.status(400).json({
+                success: false,
+                error: 'Destination ID or direction is required'
+            });
+        }
+
+        const currentLocationId = currentPlayer.currentLocation;
+        const currentLocation = currentLocationId ? gameLocations.get(currentLocationId) : null;
+        if (!currentLocation) {
+            return res.status(400).json({
+                success: false,
+                error: 'Current location not found in game world'
+            });
+        }
+
+        const directions = currentLocation.getAvailableDirections();
+        let matchedExit = null;
+        let matchedDirection = null;
+        for (const dir of directions) {
+            const exit = currentLocation.getExit(dir);
+            if (!exit) continue;
+            if (destinationId && exit.destination === destinationId) {
+                matchedExit = exit;
+                matchedDirection = dir;
+                break;
+            }
+            if (!destinationId && direction && dir === direction) {
+                matchedExit = exit;
+                matchedDirection = dir;
+                break;
+            }
+        }
+
+        if (!matchedExit) {
+            return res.status(404).json({
+                success: false,
+                error: 'Exit not found from current location'
+            });
+        }
+
+        let destinationLocation = gameLocations.get(matchedExit.destination);
+        if (!destinationLocation) {
+            return res.status(404).json({
+                success: false,
+                error: 'Destination location not found'
+            });
+        }
+
+        if (destinationLocation.isStub) {
+            try {
+                await scheduleStubExpansion(destinationLocation);
+                destinationLocation = gameLocations.get(destinationLocation.id);
+            } catch (expansionError) {
+                return res.status(500).json({
+                    success: false,
+                    error: `Failed to expand destination location: ${expansionError.message}`
+                });
+            }
+        }
+
+        currentPlayer.setLocation(destinationLocation.id);
+
+        const locationData = destinationLocation.toJSON();
+        locationData.pendingImageJobId = pendingLocationImages.get(destinationLocation.id) || null;
+        if (locationData.exits) {
+            for (const [dirKey, exit] of Object.entries(locationData.exits)) {
+                if (!exit) continue;
+                const destLocation = gameLocations.get(exit.destination);
+                if (destLocation) {
+                    exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            location: locationData,
+            message: `Moved to ${locationData.name || locationData.id}`,
+            direction: matchedDirection
+        });
+    } catch (error) {
+        console.error('Error moving player:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -3867,11 +3979,14 @@ app.post('/api/new-game', async (req, res) => {
 
         console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);
 
+        const startingLocationData = entranceLocation.toJSON();
+        startingLocationData.pendingImageJobId = pendingLocationImages.get(entranceLocation.id) || null;
+
         res.json({
             success: true,
             message: 'New game started successfully',
             player: newPlayer.toJSON(),
-            startingLocation: entranceLocation.toJSON(),
+            startingLocation: startingLocationData,
             region: region.toJSON(),
             gameState: {
                 totalPlayers: players.size,
