@@ -6,6 +6,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 const { DOMParser, XMLSerializer } = require('xmldom');
+const Utils = require('./Utils.js');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -63,11 +64,6 @@ const locationImageRegenerationTimeouts = new Map(); // Location ID -> timeout I
 const locationExitImageRegenerationTimeouts = new Map(); // LocationExit ID -> timeout ID
 const thingImageRegenerationTimeouts = new Map(); // Thing ID -> timeout ID
 const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
-
-function innerXML(node) {
-    const s = new XMLSerializer();
-    return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
-}
 
 // Create a new image generation job
 function createImageJob(jobId, payload) {
@@ -966,6 +962,7 @@ const imagePromptEnv = nunjucks.configure('imagegen', {
 
 // Import and add dice filters to both environments
 const diceModule = require('./nunjucks_dice.js');
+const e = require('express');
 
 // Add dice filters to both environments
 function addDiceFilters(env) {
@@ -1010,14 +1007,14 @@ function parseXMLTemplate(xmlContent) {
         // Extract systemPrompt as raw inner XML/text (do not parse child nodes)
         const systemPromptNode = doc.getElementsByTagName('systemPrompt')[0];
         if (systemPromptNode) {
-            result.systemPrompt = innerXML(systemPromptNode).trim();
+            result.systemPrompt = Utils.innerXML(systemPromptNode).trim();
         }
 
         // Extract generationPrompt as raw inner XML/text
         let generationPromptNode = doc.getElementsByTagName('generationPrompt')[0];
 
         if (generationPromptNode) {
-            result.generationPrompt = innerXML(generationPromptNode).trim();
+            result.generationPrompt = Utils.innerXML(generationPromptNode).trim();
         }
 
         // Extract role (optional)
@@ -1138,6 +1135,13 @@ function renderPlayerPortraitPrompt(player) {
     }
 }
 
+function getAllPlayers(ids) {
+    if (!Array.isArray(ids)) {
+        return [];
+    }
+    return ids.map(id => players.get(id)).filter(Boolean);
+}
+
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
@@ -1146,6 +1150,9 @@ function renderLocationNpcPrompt(location, options = {}) {
             locationDescription: location.description || 'No description provided.',
             regionTheme: options.regionTheme || null,
             desiredCount: options.desiredCount || 3,
+            existingNpcsInThisLocation: options.existingNpcsInThisLocation || [],
+            existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
+            existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt
         });
     } catch (error) {
@@ -1206,12 +1213,27 @@ function parseLocationNpcs(xmlContent) {
     }
 }
 
-// Function to render location scene prompt from template
+// Function to render location NPC prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey }) {
     try {
+        let region = Region.get(location.regionId);
+        let allNpcIds = Utils.difference(new Set(players.keys()), new Set([currentPlayer?.id].filter(Boolean)));
+        let regionNpcIds = region ? (region.npcIds || []) : [];
+        let existingNpcsInThisLocation = location.npcIds || [];
+        let existingNpcsInOtherLocations = Utils.difference(regionNpcIds, existingNpcsInThisLocation);
+        let existingNpcsInOtherRegions = Utils.difference(allNpcIds, regionNpcIds);
+
+        existingNpcsInThisLocation = getAllPlayers(existingNpcsInThisLocation).filter(npc => npc && npc.isNPC);
+        existingNpcsInOtherLocations = getAllPlayers(existingNpcsInOtherLocations).filter(npc => npc && npc.isNPC);
+        existingNpcsInOtherRegions = getAllPlayers(existingNpcsInOtherRegions).filter(npc => npc && npc.isNPC);
+
+
         const npcPrompt = renderLocationNpcPrompt(location, {
             regionTheme,
-            attributeDefinitions: attributeDefinitionsForPrompt
+            attributeDefinitions: attributeDefinitionsForPrompt,
+            existingNpcsInThisLocation,
+            existingNpcsInOtherLocations,
+            existingNpcsInOtherRegions
         });
         if (!npcPrompt) {
             return [];
@@ -1227,7 +1249,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const requestData = {
             model,
             messages,
-            max_tokens: Math.min(600, config.ai.maxTokens || 600),
+            max_tokens: 2000,
             temperature: config.ai.temperature || 0.7
         };
 
@@ -1252,7 +1274,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
-            const logPath = path.join(logDir, `location_${location.id}_npcs.log`);
+            const logPath = path.join(logDir, `location_npcs_${location.id}.log`);
             const parts = [
                 '=== NPC PROMPT ===',
                 npcPrompt,
@@ -1301,6 +1323,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         return [];
     }
 }
+
+
 
 function renderLocationImagePrompt(location) {
     try {
@@ -3487,19 +3511,32 @@ app.get('/api/map/region', (req, res) => {
 
         const payload = {
             currentLocationId,
-            locations: locations.map(loc => ({
-                id: loc.id,
-                name: loc.name || loc.id,
-                isStub: Boolean(loc.isStub),
-                exits: Array.from(loc.getAvailableDirections()).map(direction => {
-                    const exit = loc.getExit(direction);
-                    return {
-                        id: exit?.id || `${loc.id}_${direction}`,
-                        destination: exit?.destination,
-                        bidirectional: exit?.bidirectional !== false
-                    };
-                })
-            }))
+            locations: locations.map(loc => {
+                const locationPayload = {
+                    id: loc.id,
+                    name: loc.name || loc.id,
+                    isStub: Boolean(loc.isStub),
+                    visited: Boolean(loc.visited),
+                    exits: Array.from(loc.getAvailableDirections()).map(direction => {
+                        const exit = loc.getExit(direction);
+                        return {
+                            id: exit?.id || `${loc.id}_${direction}`,
+                            destination: exit?.destination,
+                            bidirectional: exit?.bidirectional !== false
+                        };
+                    })
+                };
+
+                if (loc.imageId) {
+                    const metadata = generatedImages.get(loc.imageId);
+                    const firstImage = metadata?.images?.[0];
+                    locationPayload.image = firstImage
+                        ? { id: loc.imageId, url: firstImage.url }
+                        : { id: loc.imageId, url: null };
+                }
+
+                return locationPayload;
+            })
         };
 
         res.json({ success: true, region: payload });

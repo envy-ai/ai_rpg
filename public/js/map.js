@@ -59,6 +59,26 @@ function ensureCytoscape(container) {
       }
     },
     {
+      selector: 'node.visited',
+      style: {
+        'border-width': 2,
+        'border-color': '#facc15'
+      }
+    },
+    {
+      selector: 'node.visited[imageUrl]',
+      style: {
+        'background-image': 'data(imageUrl)',
+        'background-fit': 'cover',
+        'background-clip': 'node',
+        'background-position-x': '50%',
+        'background-position-y': '50%',
+        'background-repeat': 'no-repeat',
+        'border-width': 3,
+        'border-color': '#facc15'
+      }
+    },
+    {
       selector: 'edge',
       style: {
         'width': 2,
@@ -78,9 +98,10 @@ function ensureCytoscape(container) {
     {
       selector: '.current',
       style: {
-        'background-color': '#facc15',
         'border-color': '#ea580c',
-        'border-width': 4
+        'border-width': 4,
+        'shadow-blur': 15,
+        'shadow-color': '#ea580c'
       }
     },
     {
@@ -126,11 +147,18 @@ function renderMap(region) {
 
   const cy = ensureCytoscape(container);
   const nodes = region.locations.map(loc => ({
-    data: {
-      id: loc.id,
-      label: loc.name,
-      isStub: Boolean(loc.isStub)
-    }
+    data: (() => {
+      const data = {
+        id: loc.id,
+        label: loc.name,
+        isStub: Boolean(loc.isStub),
+        visited: Boolean(loc.visited)
+      };
+      if (loc.image && typeof loc.image.url === 'string' && loc.image.url.trim()) {
+        data.imageUrl = loc.image.url;
+      }
+      return data;
+    })()
   }));
 
   const edgeMap = new Map();
@@ -169,6 +197,7 @@ function renderMap(region) {
   cy.add([...nodes, ...edges]);
 
   cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
+  cy.nodes().forEach(node => node.toggleClass('visited', node.data('visited')));
   cy.layout({ name: 'fcose', animate: true, randomize: true }).run();
 
   cy.nodes().removeClass('current');

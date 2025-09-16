@@ -1,10 +1,8 @@
 const crypto = require('crypto');
 const { DOMParser, XMLSerializer } = require('xmldom');
+const Player = require('./Player.js');
+const Utils = require('./Utils.js');
 
-function innerXML(node) {
-  const s = new XMLSerializer();
-  return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
-}
 
 /**
  * Location class for AI RPG
@@ -18,6 +16,7 @@ class Location {
   #description;
   #baseLevel;
   #exits;
+  #visited;
   #imageId;
   #createdAt;
   #lastUpdated;
@@ -66,6 +65,7 @@ class Location {
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
     this.#isStub = creatingStub;
+    this.#visited = false;
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
     this.#npcIds = []; // Array.isArray(options.npcIds) ? [...options.npcIds] : [];
@@ -116,7 +116,7 @@ class Location {
       if (child.nodeType === 1) {
         let value = null;
         if (child.tagName === 'description') {
-          value = innerXML(child).trim();
+          value = Utils.innerXML(child).trim();
         } else {
           value = child.textContent.trim();
         }
@@ -206,6 +206,10 @@ class Location {
     return new Map(this.#exits);
   }
 
+  get visited() {
+    return this.#visited;
+  }
+
   get createdAt() {
     return new Date(this.#createdAt);
   }
@@ -259,6 +263,11 @@ class Location {
       throw new Error('Base level must be a positive number');
     }
     this.#baseLevel = Math.floor(newLevel);
+    this.#lastUpdated = new Date();
+  }
+
+  set visited(value) {
+    this.#visited = Boolean(value);
     this.#lastUpdated = new Date();
   }
 
@@ -397,6 +406,7 @@ class Location {
       name: this.#name,
       description: this.#description,
       baseLevel: this.#baseLevel,
+      visited: this.#visited,
       imageId: this.#imageId,
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
@@ -430,6 +440,7 @@ class Location {
       description: this.#description,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
+      visited: this.#visited,
       exits: exits,
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString(),
@@ -438,6 +449,27 @@ class Location {
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
       npcIds: [...this.#npcIds]
     };
+  }
+
+  /**
+   * Get a Set of unique NPC IDs present in this location
+   * @returns {Set<string>} - Set of unique NPC IDs
+   */
+  getNPCIds() {
+    return new Set(this.#npcIds);
+  }
+
+  getNPCs() {
+    const npcs = [];
+    for (const npcId of this.#npcIds) {
+      const npc = Player.get(npcId);
+      if (npc && npc.isNPC) {
+        npcs.push(npc);
+      } else if (!npc) {
+        console.warn(`NPC with ID ${npcId} not found in Player index`);
+      }
+    }
+    return npcs;
   }
 
   /**

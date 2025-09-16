@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { DOMParser } = require('xmldom');
+const Location = require('./Location.js');
+const Utils = require('./Utils.js');
 
 class Region {
   #id;
@@ -56,17 +58,17 @@ class Region {
       : '';
     const exits = Array.isArray(blueprint.exits)
       ? blueprint.exits
-          .map(exit => {
-            if (!exit) return null;
-            if (typeof exit === 'string') {
-              return { target: exit.trim(), direction: null };
-            }
-            const target = typeof exit.target === 'string' ? exit.target.trim() : '';
-            const direction = typeof exit.direction === 'string' ? exit.direction.trim().toLowerCase() : null;
-            if (!target) return null;
-            return { target, direction };
-          })
-          .filter(Boolean)
+        .map(exit => {
+          if (!exit) return null;
+          if (typeof exit === 'string') {
+            return { target: exit.trim(), direction: null };
+          }
+          const target = typeof exit.target === 'string' ? exit.target.trim() : '';
+          const direction = typeof exit.direction === 'string' ? exit.direction.trim().toLowerCase() : null;
+          if (!target) return null;
+          return { target, direction };
+        })
+        .filter(Boolean)
       : [];
 
     const aliases = Array.isArray(blueprint.aliases)
@@ -176,18 +178,18 @@ class Region {
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
       const exitEntries = exitsNode
         ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
-            const destinationAttr = exitNode.getAttribute('destination');
-            const directionAttr = exitNode.getAttribute('direction');
-            const textDest = exitNode.textContent?.trim();
-            const targetCandidate = destinationAttr?.trim() || textDest || exitNode.getAttribute('name')?.trim() || '';
-            if (!targetCandidate) {
-              return null;
-            }
-            return {
-              target: targetCandidate,
-              direction: directionAttr ? directionAttr.trim().toLowerCase() : null
-            };
-          }).filter(Boolean)
+          const destinationAttr = exitNode.getAttribute('destination');
+          const directionAttr = exitNode.getAttribute('direction');
+          const textDest = exitNode.textContent?.trim();
+          const targetCandidate = destinationAttr?.trim() || textDest || exitNode.getAttribute('name')?.trim() || '';
+          if (!targetCandidate) {
+            return null;
+          }
+          return {
+            target: targetCandidate,
+            direction: directionAttr ? directionAttr.trim().toLowerCase() : null
+          };
+        }).filter(Boolean)
         : [];
 
       const aliases = [];
@@ -264,6 +266,39 @@ class Region {
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
+  }
+
+  getNPCs() {
+    const npcs = [];
+    for (const locId of this.#locationIds) {
+      const location = Location.get(locId);
+      if (location && Array.isArray(location.npcIds)) {
+        for (const npcId of location.npcIds) {
+          const npc = Player.get(npcId);
+          if (npc) {
+            npcs.push(npc);
+          }
+        }
+      }
+    }
+    return npcs;
+  }
+
+  /**
+   * Returns a Set of unique NPC IDs present in all locations of this region.
+   * @returns {Set<string>} Set of NPC IDs
+   */
+  getNPCIds() {
+    const npcIds = new Set();
+    for (const locId of this.#locationIds) {
+      const location = Location.get(locId);
+      if (location && Array.isArray(location.npcIds)) {
+        for (const npcId of location.npcIds) {
+          npcIds.add(npcId);
+        }
+      }
+    }
+    return npcIds;
   }
 }
 

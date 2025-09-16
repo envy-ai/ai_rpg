@@ -1,6 +1,7 @@
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const Location = require('./Location.js');
 
 class Player {
     // Private fields using ES13 syntax
@@ -11,6 +12,7 @@ class Player {
     #maxHealth;
     #name;
     #description;
+    #shortDescription;
     #id;
     #currentLocation;
     #imageId;
@@ -38,6 +40,7 @@ class Player {
         // Player identification
         this.#name = options.name ?? "Unnamed Player";
         this.#description = options.description ?? "A mysterious adventurer with an unknown past.";
+        this.#shortDescription = options.shortDescription ?? "";
         this.#id = options.id ?? Player.#generateUniqueId();
 
         // Location (can be Location ID string or Location object)
@@ -174,11 +177,23 @@ class Player {
         return this.#description;
     }
 
+    get shortDescription() {
+        return this.#shortDescription;
+    }
+
     set description(newDescription) {
         if (typeof newDescription !== 'string') {
             throw new Error('Description must be a string');
         }
         this.#description = newDescription.trim();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set shortDescription(newShortDescription) {
+        if (typeof newShortDescription !== 'string') {
+            throw new Error('Short description must be a string');
+        }
+        this.#shortDescription = newShortDescription.trim();
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -405,14 +420,17 @@ class Player {
      * @param {string|Object} location - Location ID (string) or Location object
      */
     setLocation(location) {
+        // Load object if given an id
+        if (typeof location === 'string') {
+            location = Location.get(location);
+        }
+
         if (location === null || location === undefined) {
             this.#currentLocation = null;
-        } else if (typeof location === 'string') {
-            // Store location ID
-            this.#currentLocation = location;
         } else if (typeof location === 'object' && location.id) {
             // Store Location object or just its ID
             this.#currentLocation = location.id || location;
+            location.visited = true;
         } else {
             throw new Error('Location must be a string ID, Location object with ID, or null');
         }
@@ -466,6 +484,17 @@ class Player {
         const oldLocation = this.#currentLocation;
         this.#currentLocation = exit.destination;
         this.#lastUpdated = new Date().toISOString();
+
+        const newLocationObj = locationMap instanceof Map
+            ? locationMap.get(this.#currentLocation)
+            : (typeof locationMap === 'object' ? locationMap[this.#currentLocation] : null);
+        if (newLocationObj && typeof newLocationObj === 'object' && typeof newLocationObj.visited !== 'undefined') {
+            try {
+                newLocationObj.visited = true;
+            } catch (setError) {
+                // Ignore failure to set visited flag; map rendering will fall back to default styling.
+            }
+        }
 
         return {
             success: true,
