@@ -3171,6 +3171,68 @@ app.post('/api/player/move', async (req, res) => {
     }
 });
 
+app.get('/api/map/region', (req, res) => {
+    try {
+        if (!currentPlayer) {
+            return res.status(404).json({
+                success: false,
+                error: 'No current player found'
+            });
+        }
+
+        const currentLocationId = currentPlayer.currentLocation;
+        const currentLocation = currentLocationId ? gameLocations.get(currentLocationId) : null;
+        if (!currentLocation) {
+            return res.status(404).json({
+                success: false,
+                error: 'Current location not found'
+            });
+        }
+
+        let region = null;
+        const regionId = currentLocation.stubMetadata?.regionId;
+        if (regionId && regions.has(regionId)) {
+            region = regions.get(regionId);
+        } else {
+            region = Array.from(regions.values()).find(r => r.locationIds.includes(currentLocationId)) || null;
+        }
+
+        let locations = [];
+        if (region) {
+            locations = region.locationIds
+                .map(id => gameLocations.get(id))
+                .filter(Boolean);
+        } else {
+            locations = Array.from(gameLocations.values());
+        }
+
+        const payload = {
+            currentLocationId,
+            locations: locations.map(loc => ({
+                id: loc.id,
+                name: loc.name || loc.id,
+                isStub: Boolean(loc.isStub),
+                exits: Array.from(loc.getAvailableDirections()).map(direction => {
+                    const exit = loc.getExit(direction);
+                    return {
+                        id: exit?.id || `${loc.id}_${direction}`,
+                        destination: exit?.destination,
+                        bidirectional: exit?.bidirectional !== false
+                    };
+                })
+            }))
+        };
+
+        res.json({ success: true, region: payload });
+    } catch (error) {
+        console.error('Error building map data:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // ==================== LOCATION GENERATION FUNCTIONALITY ====================
 
 // Generate a new region using AI

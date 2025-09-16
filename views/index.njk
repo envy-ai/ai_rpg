@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title | default("AI RPG Chat") }}</title>
     <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/map.css">
 </head>
 <body>
     <div class="container">
@@ -80,7 +81,7 @@
                 </section>
 
                 <section class="tab-panel" id="tab-map" role="tabpanel" aria-labelledby="tab-map-tab" hidden>
-                    <div class="map-placeholder">Map view coming soon...</div>
+                    <div id="mapContainer" class="map-placeholder"></div>
                 </section>
             </div>
         </div>
@@ -93,7 +94,11 @@
         </div>
     </div>
 
+    <script src="/vendor/cytoscape.min.js"></script>
+    <script src="/vendor/cose-base.js"></script>
+    <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/js/chat.js"></script>
+    <script defer src="/js/map.js"></script>
     <script>
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
@@ -108,6 +113,10 @@
 
             // Initialize location display
             initLocationDisplay();
+
+            if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
+                window.loadRegionMap?.();
+            }
         });
 
         function initTabs() {
@@ -274,6 +283,9 @@
                             });
                         }
                         window.updateLocationDisplay(result.location);
+                        if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
+                            window.loadRegionMap?.();
+                        }
                     } else if (result.error) {
                         hideLocationOverlay();
                         alert(`Move failed: ${result.error}`);
@@ -361,6 +373,9 @@
                     
                     if (locationResult.success && locationResult.location) {
                         window.updateLocationDisplay(locationResult.location);
+                        if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
+                            window.loadRegionMap?.();
+                        }
                     }
                 }
             } catch (error) {
