@@ -1,0 +1,17 @@
+<template>
+    <comment>This prompt runs after the location generator prompt, with the context from the location generator still incliuded, hence the lack of a system prompt and other context.</comment>
+    <role>Location NPC generator</role>
+    <generationPrompt>
+Generate 0 to 3 NPCs for the location above. Use your judgment about how many, based on whether it makes sense for the location to be empty, have one or two NPCs, or be a bustling hub of activity. Output the NPCs in this format:
+
+<npcs>
+<npc>
+<name>…</name>
+<description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
+</npc>
+
+[… more NPCs …]
+
+</npcs>
+    </generationPrompt>
+</template>

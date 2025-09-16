@@ -43,6 +43,9 @@
                                         <div class="location-exits" id="locationExits">
                                             <div class="no-exits">No exits discovered yet.</div>
                                         </div>
+                                        <div class="location-npcs" id="locationNPCs">
+                                            <div class="location-npc-empty">No notable NPCs present.</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -151,6 +154,7 @@
             const pendingImagePolls = new Map();
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
+            const locationNPCs = document.getElementById('locationNPCs');
 
             function showLocationOverlay(message = 'Loading location...') {
                 if (locationOverlay) {
@@ -225,6 +229,39 @@
                         }
                     }
 
+                    if (locationNPCs) {
+                        const npcs = Array.isArray(location.npcs) ? location.npcs : [];
+                        if (npcs.length === 0) {
+                            locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
+                        } else {
+                            locationNPCs.innerHTML = '';
+                            npcs.forEach(npc => {
+                                const card = document.createElement('div');
+                                card.className = 'npc-card';
+
+                                const portrait = document.createElement('div');
+                                portrait.className = 'npc-portrait';
+                                if (npc.description) {
+                                    portrait.title = npc.description;
+                                }
+
+                                if (npc.imageId) {
+                                    portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'npc-portrait-placeholder\\'>🎭</div>'">`;
+                                } else {
+                                    portrait.innerHTML = '<div class="npc-portrait-placeholder">🎭</div>';
+                                }
+
+                                const nameEl = document.createElement('div');
+                                nameEl.className = 'npc-name';
+                                nameEl.textContent = npc.name || 'Unknown NPC';
+
+                                card.appendChild(portrait);
+                                card.appendChild(nameEl);
+                                locationNPCs.appendChild(card);
+                            });
+                        }
+                    }
+
                     if (location.pendingImageJobId) {
                         startImagePolling(location.id, location.pendingImageJobId);
                     } else {
@@ -246,6 +283,9 @@
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }
+                    }
+                    if (locationNPCs) {
+                        locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                     }
                     if (locationExits) {
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';

@@ -1,0 +1,20 @@
+<template>
+    <role>Player Portrait Generator</role>
+    <description>Generate a detailed player portrait for AI RPG world creation</description>
+    
+    <systemPrompt>
+You are an AI Player Portrait Generator image prompt for a fantasy RPG world. Your task is to create a detailed image generation prompt for player portrait.
+    </systemPrompt>
+    <generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+</context>
+
+Generate a prompt for a detailed player portrait image based on the following character description:
+
+{{ characterDescription | replace('\n', '\n    ') }}
+
+</generationPrompt>
+</template>

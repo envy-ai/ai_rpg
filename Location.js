@@ -24,6 +24,7 @@ class Location {
   #isStub;
   #stubMetadata;
   #hasGeneratedStubs;
+  #npcIds;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -67,6 +68,7 @@ class Location {
     this.#isStub = creatingStub;
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
+    this.#npcIds = []; // Array.isArray(options.npcIds) ? [...options.npcIds] : [];
 
     // Index by ID and name if provided
     Location.#indexByID.set(this.#id, this);
@@ -432,7 +434,8 @@ class Location {
       lastUpdated: this.#lastUpdated.toISOString(),
       isStub: this.#isStub,
       hasGeneratedStubs: this.#hasGeneratedStubs,
-      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null
+      stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
+      npcIds: [...this.#npcIds]
     };
   }
 
@@ -442,6 +445,34 @@ class Location {
    */
   toJSON() {
     return this.getDetails();
+  }
+
+  get npcIds() {
+    return [...this.#npcIds];
+  }
+
+  addNpcId(id) {
+    if (!id || typeof id !== 'string') {
+      return;
+    }
+    if (!this.#npcIds.includes(id)) {
+      this.#npcIds.push(id);
+      this.#lastUpdated = new Date();
+    }
+  }
+
+  setNpcIds(ids = []) {
+    if (Array.isArray(ids)) {
+      this.#npcIds = [...new Set(ids.filter(id => typeof id === 'string'))];
+    } else {
+      this.#npcIds = [];
+    }
+    this.#lastUpdated = new Date();
+  }
+
+  clearNpcIds() {
+    this.#npcIds = [];
+    this.#lastUpdated = new Date();
   }
 
   /**

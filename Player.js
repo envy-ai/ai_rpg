@@ -16,6 +16,7 @@ class Player {
     #imageId;
     #createdAt;
     #lastUpdated;
+    #isNPC;
 
     // Static private method for ID generation
     static #generateUniqueId() {
@@ -44,6 +45,7 @@ class Player {
 
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
+        this.#isNPC = Boolean(options.isNPC);
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -198,6 +200,10 @@ class Player {
 
     get currentLocation() {
         return this.#currentLocation;
+    }
+
+    get isNPC() {
+        return this.#isNPC;
     }
 
     get createdAt() {
@@ -522,6 +528,13 @@ class Player {
     }
 
     /**
+     * Get a single attribute value
+     */
+    getAttribute(attributeName) {
+        return this.#attributes[attributeName] ?? null;
+    }
+
+    /**
      * Get all attribute information including definitions
      */
     getAttributeInfo() {
@@ -550,6 +563,7 @@ class Player {
             alive: this.isAlive(),
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
+            isNPC: this.#isNPC,
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo()
@@ -570,6 +584,7 @@ class Player {
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
             attributes: this.#attributes,
+            isNPC: this.#isNPC,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -585,7 +600,10 @@ class Player {
             health: data.health,
             attributes: data.attributes,
             imageId: data.imageId,
-            id: data.id
+            id: data.id,
+            description: data.description,
+            location: data.currentLocation,
+            isNPC: data.isNPC
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;

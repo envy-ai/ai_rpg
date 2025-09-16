@@ -637,6 +637,23 @@ const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 
+function buildNpcProfiles(location) {
+    if (!location || typeof location.npcIds !== 'object') {
+        return [];
+    }
+    return location.npcIds
+        .map(id => players.get(id))
+        .filter(Boolean)
+        .map(npc => ({
+            id: npc.id,
+            name: npc.name,
+            description: npc.description,
+            imageId: npc.imageId,
+            isNPC: Boolean(npc.isNPC),
+            locationId: npc.currentLocation
+        }));
+}
+
 const PRIMARY_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down', 'northeast', 'northwest', 'southeast', 'southwest', 'in', 'out', 'forward', 'back'];
 const OPPOSITE_DIRECTION_MAP = {
     north: 'south',
@@ -1058,7 +1075,136 @@ function renderPlayerPortraitPrompt(player) {
     }
 }
 
+function renderLocationNpcPrompt(location, options = {}) {
+    try {
+        const templateName = 'location-generator-npcs.xml.njk';
+        return promptEnv.render(templateName, {
+            locationName: location.name || 'Unknown Location',
+            locationDescription: location.description || 'No description provided.',
+            regionTheme: options.regionTheme || null,
+            desiredCount: options.desiredCount || 3
+        });
+    } catch (error) {
+        console.error('Error rendering location NPC template:', error);
+        return null;
+    }
+}
+
+function parseLocationNpcs(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        const npcs = [];
+
+        for (const node of npcNodes) {
+            const nameNode = node.getElementsByTagName('name')[0];
+            const descriptionNode = node.getElementsByTagName('description')[0];
+            const roleNode = node.getElementsByTagName('role')[0];
+
+            const name = nameNode ? nameNode.textContent.trim() : null;
+            const description = descriptionNode ? descriptionNode.textContent.trim() : '';
+            const role = roleNode ? roleNode.textContent.trim() : null;
+
+            if (name) {
+                npcs.push({
+                    name,
+                    description,
+                    role
+                });
+            }
+        }
+
+        return npcs;
+    } catch (error) {
+        console.warn('Failed to parse NPC XML:', error.message);
+        return [];
+    }
+}
+
 // Function to render location scene prompt from template
+async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey }) {
+    try {
+        const npcPrompt = renderLocationNpcPrompt(location, { regionTheme });
+        if (!npcPrompt) {
+            return [];
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt },
+            { role: 'assistant', content: aiResponse },
+            { role: 'user', content: npcPrompt }
+        ];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: Math.min(600, config.ai.maxTokens || 600),
+            temperature: config.ai.temperature || 0.7
+        };
+
+        console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            throw new Error('Invalid NPC response from AI API');
+        }
+
+        const npcResponse = response.data.choices[0].message.content;
+        const npcs = parseLocationNpcs(npcResponse);
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `location_${location.id}_npcs.log`);
+            fs.writeFileSync(logPath, npcResponse, 'utf8');
+        } catch (logErr) {
+            console.warn('Failed to write NPC log:', logErr.message);
+        }
+
+        const created = [];
+        const existingNpcIds = location.npcIds || [];
+        for (const npcId of existingNpcIds) {
+            players.delete(npcId);
+        }
+        location.clearNpcIds();
+
+        for (const npcData of npcs) {
+            const npc = new Player({
+                name: npcData.name || 'Unnamed NPC',
+                description: npcData.description || '',
+                level: 1,
+                location: location.id,
+                isNPC: true
+            });
+            players.set(npc.id, npc);
+            location.addNpcId(npc.id);
+            created.push(npc);
+            generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+        }
+
+        return created;
+    } catch (error) {
+        console.warn(`NPC generation skipped for location ${location.id}:`, error.message);
+        return [];
+    }
+}
+
 function renderLocationImagePrompt(location) {
     try {
         const templateName = 'location-image.xml.njk';
@@ -1911,6 +2057,17 @@ async function generateLocationFromPrompt(options = {}) {
             }
         }
 
+        await generateLocationNPCs({
+            location,
+            systemPrompt,
+            generationPrompt,
+            aiResponse,
+            regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null),
+            chatEndpoint,
+            model,
+            apiKey
+        });
+
         // Automatically generate location scene image if image generation is enabled
         try {
             const imageResult = await generateLocationImage(location);
@@ -2019,6 +2176,9 @@ async function generateRegionFromPrompt(options = {}) {
         const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
 
+        const region = Region.fromXMLSnippet(aiResponse);
+        regions.set(region.id, region);
+
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
@@ -2037,9 +2197,6 @@ async function generateRegionFromPrompt(options = {}) {
         } catch (logError) {
             console.warn('Failed to write region generation log:', logError.message);
         }
-
-        const region = Region.fromXMLSnippet(aiResponse);
-        regions.set(region.id, region);
 
         const stubMap = new Map();
 
@@ -3058,6 +3215,8 @@ app.get('/api/locations/:id', async (req, res) => {
             }
         }
 
+        locationData.npcs = buildNpcProfiles(location);
+
         res.json({
             success: true,
             location: locationData
@@ -3156,6 +3315,7 @@ app.post('/api/player/move', async (req, res) => {
                 }
             }
         }
+        locationData.npcs = buildNpcProfiles(destinationLocation);
 
         res.json({
             success: true,
@@ -4077,6 +4237,7 @@ app.post('/api/new-game', async (req, res) => {
 
         const startingLocationData = entranceLocation.toJSON();
         startingLocationData.pendingImageJobId = pendingLocationImages.get(entranceLocation.id) || null;
+        startingLocationData.npcs = buildNpcProfiles(entranceLocation);
 
         res.json({
             success: true,
@@ -4269,7 +4430,8 @@ app.post('/api/load', (req, res) => {
                     imageId: locationData.imageId ?? null,
                     isStub: locationData.isStub ?? false,
                     stubMetadata: locationData.stubMetadata ?? null,
-                    hasGeneratedStubs: locationData.hasGeneratedStubs ?? false
+                    hasGeneratedStubs: locationData.hasGeneratedStubs ?? false,
+                    npcIds: locationData.npcIds || []
                 });
 
                 const exitsByDirection = locationData.exits || {};
