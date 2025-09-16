@@ -20,21 +20,21 @@
                     <div class="location-header">
                         <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
                     </div>
-                    <div class="location-content" id="locationContent">
-                        <div class="location-image" id="locationImage">
-                            <div class="location-placeholder">
-                                🏞️
-                                <p>No location image</p>
+                        <div class="location-content" id="locationContent">
+                            <div class="location-image" id="locationImage">
+                                <div class="location-placeholder">
+                                    🏞️
+                                    <p>No location image</p>
+                                </div>
+                                <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
+                            </div>
+                            <div class="location-info" id="locationInfo">
+                                <div class="location-details" id="locationDetails">
+                                    <span class="location-level" id="locationLevel">Level: ?</span>
+                                </div>
+                                <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
                             </div>
                         </div>
-                        <div class="location-info" id="locationInfo">
-                            
-                            <p class="location-description" id="locationDescription">Your current location will appear here when you start exploring.</p>
-                            <div class="location-details" id="locationDetails">
-                                <span class="location-level" id="locationLevel">Level: ?</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -89,26 +89,48 @@
             // Function to update location display
             window.updateLocationDisplay = function(location) {
                 const locationName = document.getElementById('locationName');
-                const locationDescription = document.getElementById('locationDescription');
+                const locationTooltip = document.getElementById('locationTooltip');
+                const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
                 const locationImage = document.getElementById('locationImage');
                 
                 if (location) {
                     locationName.textContent = location.name || 'Unknown Location';
-                    locationDescription.textContent = location.description || 'No description available.';
+                    if (locationTooltip) {
+                        locationTooltip.textContent = location.description || 'No description available.';
+                    }
+                    if (locationHint) {
+                        locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
+                    }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
                     
-                    // Update image if available
-                    if (location.imageId) {
-                        locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
-                    } else {
-                        locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                    if (locationImage) {
+                        const existingTooltip = locationImage.querySelector('.location-tooltip');
+                        if (location.imageId) {
+                            locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
+                        } else {
+                            locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                        }
+                        if (existingTooltip) {
+                            locationImage.appendChild(existingTooltip);
+                        }
                     }
                 } else {
                     locationName.textContent = 'Unknown Location';
-                    locationDescription.textContent = 'Your current location will appear here when you start exploring.';
+                    if (locationTooltip) {
+                        locationTooltip.textContent = 'Your current location will appear here when you start exploring.';
+                    }
+                    if (locationHint) {
+                        locationHint.textContent = 'Hover over the location image for a description.';
+                    }
                     locationLevel.textContent = 'Level: ?';
-                    locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                    if (locationImage) {
+                        const existingTooltip = locationImage.querySelector('.location-tooltip');
+                        locationImage.innerHTML = '<div class="location-placeholder">🏞️<p>No location image</p></div>';
+                        if (existingTooltip) {
+                            locationImage.appendChild(existingTooltip);
+                        }
+                    }
                 }
             };
             
