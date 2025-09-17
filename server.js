@@ -1060,9 +1060,6 @@ function renderSystemPrompt(settingInfo = null) {
         // Render the template
         const renderedTemplate = promptEnv.render(templateName, variables);
 
-        // Log rendered template for debugging
-        console.log('Rendered system prompt template:\n', renderedTemplate);
-
         // If the template is a .xml.njk file, parse the XML and extract systemPrompt
         if (templateName.endsWith('.xml.njk')) {
             const parsedXML = parseXMLTemplate(renderedTemplate);
@@ -1770,7 +1767,7 @@ function renderLocationGeneratorPrompt(options = {}) {
             throw new Error('No generationPrompt found in location generator template');
         }
 
-        console.log('Generated location generator prompt with variables:', variables);
+        //console.log('Generated location generator prompt with variables:', variables);
         return { systemPrompt: systemPrompt.trim(), generationPrompt: generationPrompt.trim() };
 
     } catch (error) {
@@ -2725,6 +2722,50 @@ async function generateRegionFromPrompt(options = {}) {
                 addStubExit(sourceStub, targetStub, forwardDirection);
             });
         }
+
+        const ensureBidirectionalStubConnections = () => {
+            for (const [fromId, fromLocation] of gameLocations.entries()) {
+                if (!region.locationIds.includes(fromId)) {
+                    continue;
+                }
+
+                const directions = fromLocation.getAvailableDirections();
+                for (const direction of directions) {
+                    const exit = fromLocation.getExit(direction);
+                    if (!exit) {
+                        continue;
+                    }
+
+                    const toLocation = gameLocations.get(exit.destination);
+                    if (!toLocation) {
+                        continue;
+                    }
+
+                    const hasReturn = typeof toLocation.getAvailableDirections === 'function' &&
+                        toLocation.getAvailableDirections().some(dir => {
+                            const destExit = toLocation.getExit(dir);
+                            return destExit && destExit.destination === fromId;
+                        });
+
+                    if (hasReturn) {
+                        continue;
+                    }
+
+                    const reverseDirection = getOppositeDirection(direction) || `return_${directionKeyFromName(fromLocation.name || fromId)}`;
+                    const description = `Path back to ${fromLocation.name || fromId}`;
+
+                    const reverseExit = new LocationExit({
+                        description,
+                        destination: fromId,
+                        bidirectional: false
+                    });
+                    toLocation.addExit(reverseDirection, reverseExit);
+                    console.log(`🔁 Added reverse stub exit from ${toLocation.name || toLocation.id} to ${fromLocation.name || fromId}`);
+                }
+            }
+        };
+
+        ensureBidirectionalStubConnections();
 
         let entranceLocationId = null;
         try {
