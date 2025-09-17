@@ -27,6 +27,26 @@ const Region = require('./Region.js');
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 
+// On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+}
+const logsPrevDir = path.join(__dirname, 'logs_prev');
+if (!fs.existsSync(logsPrevDir)) {
+    fs.mkdirSync(logsPrevDir, { recursive: true });
+}
+fs.readdirSync(logsPrevDir)
+    .filter(file => file.endsWith('.log'))
+    .forEach(file => {
+        fs.unlinkSync(path.join(logsPrevDir, file));
+    });
+fs.readdirSync(logsDir)
+    .filter(file => file.endsWith('.log'))
+    .forEach(file => {
+        fs.renameSync(path.join(logsDir, file), path.join(logsPrevDir, file));
+    });
+
 // Load configuration
 let config;
 try {
@@ -1139,6 +1159,138 @@ function getAllPlayers(ids) {
     return ids.map(id => players.get(id)).filter(Boolean);
 }
 
+function findRegionByLocationId(locationId) {
+    if (!locationId) {
+        return null;
+    }
+    for (const region of regions.values()) {
+        if (Array.isArray(region.locationIds) && region.locationIds.includes(locationId)) {
+            return region;
+        }
+    }
+    return null;
+}
+
+async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey }) {
+    try {
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(settingSnapshot);
+
+        const renderedTemplate = renderInventoryPrompt({
+            setting: settingDescription,
+            region: region ? { name: region.name, description: region.description } : null,
+            location: location ? { name: location.name, description: location.description || location.stubMetadata?.blueprintDescription } : null,
+            character: {
+                name: character.name,
+                role: characterDescriptor.role || characterDescriptor.class || 'citizen',
+                description: character.description,
+                class: characterDescriptor.class || characterDescriptor.role || 'citizen',
+                level: character.level || 1,
+                race: characterDescriptor.race || 'human'
+            }
+        });
+
+        if (!renderedTemplate) {
+            return [];
+        }
+
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedTemplate.systemPrompt;
+        const generationPrompt = parsedTemplate.generationPrompt;
+
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Inventory template missing prompts');
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        const resolvedModel = model || config.ai.model;
+        const resolvedApiKey = apiKey || config.ai.apiKey;
+        const resolvedEndpoint = chatEndpoint || (config.ai.endpoint.endsWith('/')
+            ? `${config.ai.endpoint}chat/completions`
+            : `${config.ai.endpoint}/chat/completions`);
+
+        if (!resolvedModel || !resolvedApiKey || !resolvedEndpoint) {
+            throw new Error('Missing AI configuration for inventory generation');
+        }
+
+        const requestData = {
+            model: resolvedModel,
+            messages,
+            max_tokens: 1200,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const response = await axios.post(resolvedEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${resolvedApiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+
+        const inventoryContent = response.data?.choices?.[0]?.message?.content;
+        if (!inventoryContent) {
+            throw new Error('Empty inventory response from AI');
+        }
+
+        const items = parseInventoryItems(inventoryContent);
+
+        const createdThings = [];
+        for (const item of items) {
+            if (!item.name) continue;
+            const detailParts = [];
+            if (item.type) detailParts.push(`Type: ${item.type}`);
+            if (item.rarity) detailParts.push(`Rarity: ${item.rarity}`);
+            if (item.value) detailParts.push(`Value: ${item.value}`);
+            if (item.weight) detailParts.push(`Weight: ${item.weight}`);
+            if (item.properties) detailParts.push(`Properties: ${item.properties}`);
+            const extendedDescription = [item.description, detailParts.join(' | ')].filter(Boolean).join(' ');
+
+            try {
+                const thing = new Thing({
+                    name: item.name,
+                    description: extendedDescription || item.description || 'Inventory item',
+                    thingType: 'item'
+                });
+                things.set(thing.id, thing);
+                character.addInventoryItem(thing);
+                createdThings.push(thing);
+            } catch (error) {
+                console.warn(`Failed to create Thing for inventory item "${item.name}":`, error.message);
+            }
+        }
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `inventory_${character.id}.log`);
+            const logParts = [
+                '=== INVENTORY PROMPT ===',
+                generationPrompt,
+                '\n=== INVENTORY RESPONSE ===',
+                inventoryContent,
+                '\n=== PARSED ITEMS ===',
+                JSON.stringify(items, null, 2),
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+        } catch (logErr) {
+            console.warn('Failed to write inventory log:', logErr.message);
+        }
+
+        return createdThings;
+    } catch (error) {
+        console.warn(`Inventory generation failed for character ${character?.name || 'unknown'}:`, error);
+        return [];
+    }
+}
+
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
@@ -1175,6 +1327,34 @@ function renderRegionNpcPrompt(region, options = {}) {
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
+        return null;
+    }
+}
+
+function renderInventoryPrompt(context = {}) {
+    try {
+        const templateName = 'inventory-generator.njk';
+        return promptEnv.render(templateName, {
+            setting: context.setting || 'A mysterious fantasy realm.',
+            region: {
+                regionName: context.region?.name || 'Unknown Region',
+                regionDescription: context.region?.description || 'No description provided.'
+            },
+            location: {
+                name: context.location?.name || 'Unknown Location',
+                description: context.location?.description || 'No description provided.'
+            },
+            character: {
+                name: context.character?.name || 'Unnamed Character',
+                role: context.character?.role || context.character?.class || 'citizen',
+                description: context.character?.description || 'No description available.',
+                class: context.character?.class || 'citizen',
+                level: context.character?.level || 1,
+                race: context.character?.race || 'human'
+            }
+        });
+    } catch (error) {
+        console.error('Error rendering inventory template:', error);
         return null;
     }
 }
@@ -1254,6 +1434,7 @@ function parseRegionNpcs(xmlContent) {
             const nameNode = node.getElementsByTagName('name')[0];
             const descriptionNode = node.getElementsByTagName('description')[0];
             const shortDescriptionNode = node.getElementsByTagName('shortDescription')[0];
+            const roleNode = node.getElementsByTagName('role')[0];
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
             const locationNode = node.getElementsByTagName('location')[0];
@@ -1266,6 +1447,7 @@ function parseRegionNpcs(xmlContent) {
 
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
+            const role = roleNode ? roleNode.textContent.trim() : null;
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
             const locationName = locationNode ? locationNode.textContent.trim() : null;
@@ -1286,6 +1468,7 @@ function parseRegionNpcs(xmlContent) {
                 name,
                 description,
                 shortDescription,
+                role,
                 class: className,
                 race,
                 location: locationName,
@@ -1296,6 +1479,43 @@ function parseRegionNpcs(xmlContent) {
         return npcs;
     } catch (error) {
         console.warn('Failed to parse region NPC XML:', error.message);
+        return [];
+    }
+}
+
+function parseInventoryItems(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const itemNodes = Array.from(doc.getElementsByTagName('item'));
+        const items = [];
+
+        for (const node of itemNodes) {
+            const nameNode = node.getElementsByTagName('name')[0];
+            if (!nameNode) {
+                continue;
+            }
+            const item = {
+                name: nameNode.textContent.trim(),
+                description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
+                type: node.getElementsByTagName('type')[0]?.textContent?.trim() || 'item',
+                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || 'Common',
+                value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
+                weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
+                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || ''
+            };
+            items.push(item);
+        }
+
+        return items;
+    } catch (error) {
+        console.warn('Failed to parse inventory XML:', error.message);
         return [];
     }
 }
@@ -1412,6 +1632,17 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             location.addNpcId(npc.id);
             created.push(npc);
             console.log(`🤝 Created NPC ${npc.name} (${npc.id}) for location ${location.id}`);
+
+            await generateInventoryForCharacter({
+                character: npc,
+                characterDescriptor: { role: npcData.role, class: npcData.class, race: npcData.race },
+                region: region || findRegionByLocationId(location.id),
+                location,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+
             generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
         }
 
@@ -1583,6 +1814,16 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             region.npcIds.push(npc.id);
             created.push(npc);
             console.log(`🌟 Created region NPC ${npc.name} (${npc.id}) for region ${region.id}`);
+
+            await generateInventoryForCharacter({
+                character: npc,
+                characterDescriptor: { role: npcData.role, class: npcData.class, race: npcData.race },
+                region,
+                location: targetLocation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
 
             generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
         }
@@ -3164,6 +3405,19 @@ app.post('/api/player', async (req, res) => {
         players.set(player.id, player);
         currentPlayer = player;
 
+        try {
+            const location = player.currentLocation ? gameLocations.get(player.currentLocation) : null;
+            const region = location ? findRegionByLocationId(location.id) : null;
+            await generateInventoryForCharacter({
+                character: player,
+                characterDescriptor: { role: 'adventurer', class: player.class, race: player.race },
+                region,
+                location
+            });
+        } catch (inventoryError) {
+            console.warn('Failed to generate player inventory:', inventoryError);
+        }
+
         // Automatically generate player portrait if image generation is enabled
         try {
             const imageResult = await generatePlayerImage(player);
@@ -3571,6 +3825,19 @@ app.post('/api/player/create-from-stats', async (req, res) => {
         const player = new Player(playerData);
         players.set(player.id, player);
         currentPlayer = player;
+
+        try {
+            const location = player.currentLocation ? gameLocations.get(player.currentLocation) : null;
+            const region = location ? findRegionByLocationId(location.id) : null;
+            await generateInventoryForCharacter({
+                character: player,
+                characterDescriptor: { role: 'adventurer', class: player.class, race: player.race },
+                region,
+                location
+            });
+        } catch (inventoryError) {
+            console.warn('Failed to generate player inventory (stats):', inventoryError);
+        }
 
         // Automatically generate player portrait if image generation is enabled
         try {
@@ -4721,6 +4988,17 @@ app.post('/api/new-game', async (req, res) => {
         players.set(newPlayer.id, newPlayer);
         currentPlayer = newPlayer;
 
+        try {
+            await generateInventoryForCharacter({
+                character: newPlayer,
+                characterDescriptor: { role: 'adventurer', class: newPlayer.class, race: newPlayer.race },
+                region,
+                location: entranceLocation
+            });
+        } catch (inventoryError) {
+            console.warn('Failed to generate inventory for new-game player:', inventoryError);
+        }
+
         console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);
 
         const startingLocationData = entranceLocation.toJSON();
@@ -5437,9 +5715,16 @@ function createDefaultPlayer() {
         players.set(defaultPlayer.id, defaultPlayer);
         currentPlayer = defaultPlayer;
 
+        generateInventoryForCharacter({
+            character: defaultPlayer,
+            characterDescriptor: { role: 'adventurer', class: defaultPlayer.class, race: defaultPlayer.race }
+        }).catch(error => {
+            console.warn('Failed to generate default player inventory:', error.message);
+        });
+
         console.log('🎲 Created default player "Adventurer" with default stats');
     } catch (error) {
-        console.error('Error creating default player:', error.message);
+        console.error('Error creating default player:', error);
     }
 }
 

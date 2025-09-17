@@ -421,6 +421,7 @@ p:not(:last-child) {
 
 .inventory-floating-tooltip {
   position: fixed;
+  display: none;
   max-width: 280px;
   padding: 12px 14px;
   border-radius: 10px;
@@ -431,8 +432,13 @@ p:not(:last-child) {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
   z-index: 9999;
   pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease;
   opacity: 0;
+}
+
+.inventory-floating-tooltip.visible {
+  display: block;
+  opacity: 1;
 }
 
 // Chat container - right column of .main-content

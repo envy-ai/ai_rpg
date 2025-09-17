@@ -210,15 +210,21 @@ class AIRPGChat {
             const response = await fetch('/api/player');
             const result = await response.json();
 
-            if (result.success && result.player && result.player.currentLocation) {
-                // Fetch location details
-                const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
-                const locationResult = await locationResponse.json();
+            if (result.success && result.player) {
+                if (window.updateInventoryDisplay) {
+                    window.updateInventoryDisplay(result.player.inventory || []);
+                }
 
-                if (locationResult.success && locationResult.location) {
-                    // Update location display if the updateLocationDisplay function exists
-                    if (window.updateLocationDisplay) {
-                        window.updateLocationDisplay(locationResult.location);
+                if (result.player.currentLocation) {
+                    // Fetch location details
+                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
+                    const locationResult = await locationResponse.json();
+
+                    if (locationResult.success && locationResult.location) {
+                        // Update location display if the updateLocationDisplay function exists
+                        if (window.updateLocationDisplay) {
+                            window.updateLocationDisplay(locationResult.location);
+                        }
                     }
                 }
             }

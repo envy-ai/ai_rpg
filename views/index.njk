@@ -596,6 +596,13 @@
             const emptyState = document.getElementById('inventoryEmpty');
             const countLabel = document.getElementById('inventoryCount');
             const floatingTooltip = document.getElementById('inventoryTooltip');
+            const inventoryScroll = document.querySelector('.inventory-scroll');
+
+            function hideTooltip() {
+                if (!floatingTooltip) return;
+                floatingTooltip.classList.remove('visible');
+                floatingTooltip.setAttribute('hidden', '');
+            }
 
             function renderInventory(items = []) {
                 if (!inventoryGrid || !emptyState || !countLabel) {
@@ -630,20 +637,18 @@
                     card.addEventListener('mouseenter', (event) => {
                         if (!floatingTooltip) return;
                         floatingTooltip.textContent = description;
-                        floatingTooltip.hidden = false;
-                        floatingTooltip.style.opacity = '1';
+                        floatingTooltip.removeAttribute('hidden');
+                        floatingTooltip.classList.add('visible');
                         positionTooltip(event);
                     });
 
                     card.addEventListener('mousemove', (event) => {
-                        if (!floatingTooltip || floatingTooltip.hidden) return;
+                        if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) return;
                         positionTooltip(event);
                     });
 
                     card.addEventListener('mouseleave', () => {
-                        if (!floatingTooltip) return;
-                        floatingTooltip.style.opacity = '0';
-                        floatingTooltip.hidden = true;
+                        hideTooltip();
                     });
                 });
             }
@@ -663,14 +668,18 @@
                 if (!floatingTooltip) return;
                 const padding = 16;
                 const tooltipRect = floatingTooltip.getBoundingClientRect();
-                let x = event.clientX + 12;
-                let y = event.clientY + 12;
+                let x = event.clientX + padding;
+                let y = event.clientY + padding;
 
                 if (x + tooltipRect.width + padding > window.innerWidth) {
-                    x = window.innerWidth - tooltipRect.width - padding;
+                    x = Math.max(padding, window.innerWidth - tooltipRect.width - padding);
                 }
+
                 if (y + tooltipRect.height + padding > window.innerHeight) {
-                    y = window.innerHeight - tooltipRect.height - padding;
+                    y = event.clientY - tooltipRect.height - padding;
+                    if (y < padding) {
+                        y = Math.max(padding, window.innerHeight - tooltipRect.height - padding);
+                    }
                 }
 
                 floatingTooltip.style.left = `${x}px`;
@@ -693,6 +702,11 @@
 
             window.refreshInventory = refreshInventory;
             refreshInventory();
+
+            if (inventoryScroll) {
+                inventoryScroll.addEventListener('scroll', hideTooltip);
+            }
+            window.addEventListener('scroll', hideTooltip, { passive: true });
         }
 
         async function loadCurrentLocation() {

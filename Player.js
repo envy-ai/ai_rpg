@@ -252,7 +252,7 @@ class Player {
     }
 
     get race() {
-        return this.race;
+        return this.#race;
     }
 
     set class(newClass) {

@@ -406,6 +406,28 @@ p:not(:last-child) {
   color: #ffffff;
 }
 
+.inventory-floating-tooltip {
+  position: fixed;
+  display: none;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+  z-index: 9999;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  opacity: 0;
+}
+
+.inventory-floating-tooltip.visible {
+  display: block;
+  opacity: 1;
+}
+
 .inventory-tooltip {
   position: absolute;
   bottom: calc(100% + 8px);
