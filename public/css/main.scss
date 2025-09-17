@@ -153,6 +153,20 @@ p:not(:last-child) {
   display: none;
 }
 
+.tab-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+}
+
+#tab-character {
+  overflow: auto;
+}
+
 .adventure-content {
   flex: 1;
   display: flex;

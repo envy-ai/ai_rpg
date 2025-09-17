@@ -18,6 +18,8 @@
             <div class="tab-bar" role="tablist">
                 <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
+                <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
+                <button class="tab-button" id="tab-inventory-tab" data-tab="inventory" role="tab" aria-selected="false" aria-controls="tab-inventory">Inventory</button>
             </div>
 
             <div class="tab-panels">
@@ -86,6 +88,153 @@
                 <section class="tab-panel" id="tab-map" role="tabpanel" aria-labelledby="tab-map-tab" hidden>
                     <div id="mapContainer" class="map-placeholder"></div>
                 </section>
+                <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
+                    <div class="config-content character-panel">
+                        <div class="config-section">
+                            <h2>Basic Information</h2>
+                            <form id="player-stats-form" class="player-stats-form">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="player-name">Character Name</label>
+                                        <input type="text"
+                                               id="player-name"
+                                               name="name"
+                                               value="{{ player.name if player else '' }}"
+                                               placeholder="Enter character name"
+                                               required>
+                                        <span class="help-text">Your character's name as it appears in the game</span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="player-level">Level</label>
+                                        <input type="number"
+                                               id="player-level"
+                                               name="level"
+                                               value="{{ player.level if player else 1 }}"
+                                               min="1"
+                                               max="20"
+                                               required>
+                                        <span class="help-text">Character level (1-20)</span>
+                                    </div>
+
+                                    <div class="form-group full-width">
+                                        <label for="player-description">Description</label>
+                                        <textarea id="player-description"
+                                                  name="description"
+                                                  rows="3"
+                                                  placeholder="Describe your character's appearance, personality, and background">{{ player.description if player else '' }}</textarea>
+                                        <span class="help-text">A detailed description of your character</span>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="config-section">
+                            <h2>Health &amp; Vitality</h2>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="player-health">Current Health</label>
+                                    <input type="number"
+                                           id="player-health"
+                                           name="health"
+                                           value="{{ player.health if player else 25 }}"
+                                           min="0"
+                                           max="999"
+                                           form="player-stats-form">
+                                    <span class="help-text">Current hit points</span>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="player-max-health">Maximum Health</label>
+                                    <input type="number"
+                                           id="player-max-health"
+                                           name="maxHealth"
+                                           value="{{ player.maxHealth if player else 25 }}"
+                                           min="1"
+                                           max="999"
+                                           form="player-stats-form">
+                                    <span class="help-text">Maximum hit points</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="config-section">
+                            <h2>Primary Attributes</h2>
+                            <div class="attributes-grid">
+                                {% set attributes = player.attributeInfo if player else {} %}
+                                {% set defaultAttributes = [
+                                    { key: 'strength', label: 'Strength', abbr: 'STR', description: 'Physical power and muscle' },
+                                    { key: 'dexterity', label: 'Dexterity', abbr: 'DEX', description: 'Agility and reflexes' },
+                                    { key: 'constitution', label: 'Constitution', abbr: 'CON', description: 'Health and stamina' },
+                                    { key: 'intelligence', label: 'Intelligence', abbr: 'INT', description: 'Mental acuity and reasoning' },
+                                    { key: 'wisdom', label: 'Wisdom', abbr: 'WIS', description: 'Insight and perception' },
+                                    { key: 'charisma', label: 'Charisma', abbr: 'CHA', description: 'Charm and influence' }
+                                ] %}
+
+                                {% for attr in defaultAttributes %}
+                                <div class="attribute-group">
+                                    <div class="attribute-header">
+                                        <label for="attr-{{ attr.key }}">{{ attr.label }}</label>
+                                        <span class="attribute-abbr">{{ attr.abbr }}</span>
+                                    </div>
+                                    <div class="attribute-input-group">
+                                        <input type="number"
+                                               id="attr-{{ attr.key }}"
+                                               name="attributes.{{ attr.key }}"
+                                               value="{{ attributes[attr.key].value if attributes[attr.key] else 10 }}"
+                                               min="3"
+                                               max="18"
+                                               form="player-stats-form"
+                                               class="attribute-input">
+                                        <span class="attribute-modifier" data-attr="{{ attr.key }}">
+                                            +{{ ((attributes[attr.key].value if attributes[attr.key] else 10) - 10) // 2 }}
+                                        </span>
+                                    </div>
+                                    <span class="help-text">{{ attr.description }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        {% if player %}
+                        <div class="config-section">
+                            <h2>Current Status</h2>
+                            <div class="status-display">
+                                <div class="status-item">
+                                    <span class="status-label">Alive:</span>
+                                    <span class="status-value {{ 'alive' if player.alive else 'dead' }}">
+                                        {{ 'Yes' if player.alive else 'No' }}
+                                    </span>
+                                </div>
+                                {% if player.currentLocation %}
+                                <div class="status-item">
+                                    <span class="status-label">Location:</span>
+                                    <span class="status-value">{{ player.currentLocation }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="form-actions">
+                            <button type="submit" form="player-stats-form" class="btn btn-primary">
+                                <span>💾</span> Save Character
+                            </button>
+                            {% if player %}
+                            <button type="button" id="reset-stats" class="btn btn-secondary">
+                                <span>🔄</span> Reset to Defaults
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        <div id="status-message" class="status-message" style="display: none;"></div>
+                    </div>
+                </section>
+                <section class="tab-panel" id="tab-inventory" role="tabpanel" aria-labelledby="tab-inventory-tab" hidden>
+                    <div class="tab-placeholder">
+                        <p>Inventory items will be displayed here.</p>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
@@ -103,6 +252,7 @@
     <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
+    <script defer src="/js/player-stats.js"></script>
     <script>
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
@@ -117,35 +267,61 @@
 
             // Initialize location display
             initLocationDisplay();
-
-            if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
-                window.loadRegionMap?.();
-            }
         });
 
         function initTabs() {
             const tabButtons = document.querySelectorAll('.tab-button');
             const tabPanels = document.querySelectorAll('.tab-panel');
 
+            const activateTab = (tabName) => {
+                if (!tabName) return;
+                const targetButton = Array.from(tabButtons).find(btn => btn.dataset.tab === tabName);
+                const targetPanel = document.getElementById(`tab-${tabName}`);
+                if (!targetButton || !targetPanel) return;
+
+                tabButtons.forEach(btn => {
+                    const isActive = btn === targetButton;
+                    btn.classList.toggle('active', isActive);
+                    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                });
+
+                tabPanels.forEach(panel => {
+                    const isActive = panel === targetPanel;
+                    panel.toggleAttribute('hidden', !isActive);
+                    panel.classList.toggle('active', isActive);
+                });
+
+                if (tabName === 'map') {
+                    window.loadRegionMap?.();
+                }
+            };
+
             tabButtons.forEach(button => {
                 button.addEventListener('click', () => {
                     if (button.classList.contains('active')) {
                         return;
                     }
-
-                    tabButtons.forEach(btn => {
-                        const isActive = btn === button;
-                        btn.classList.toggle('active', isActive);
-                        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-                    });
-
-                    tabPanels.forEach(panel => {
-                        const isActive = panel.id === `tab-${button.dataset.tab}`;
-                        panel.toggleAttribute('hidden', !isActive);
-                        panel.classList.toggle('active', isActive);
-                    });
+                    activateTab(button.dataset.tab);
+                    if (history.replaceState) {
+                        history.replaceState(null, '', `#${button.dataset.tab}`);
+                    }
                 });
             });
+
+            const applyHashTab = () => {
+                const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
+                if (hash) {
+                    activateTab(hash);
+                }
+            };
+
+            applyHashTab();
+            window.addEventListener('hashchange', applyHashTab);
+
+            if (!window.location.hash) {
+                const defaultButton = document.querySelector('.tab-button.active');
+                activateTab(defaultButton ? defaultButton.dataset.tab : 'adventure');
+            }
         }
 
         function initLocationDisplay() {

@@ -2591,15 +2591,16 @@ async function generateRegionFromPrompt(options = {}) {
         const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
 
-        const region = Region.fromXMLSnippet(aiResponse);
-        regions.set(region.id, region);
+        // Get timestamp with milliseconds for log filename
+        const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+        const regionLogId = `region_${timestamp}`;
 
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
-            const logPath = path.join(logDir, `${region.id}.log`);
+            const logPath = path.join(logDir, `${regionLogId}.log`);
             const logParts = [
                 '=== REGION GENERATION PROMPT ===',
                 generationPrompt,
@@ -2612,6 +2613,9 @@ async function generateRegionFromPrompt(options = {}) {
         } catch (logError) {
             console.warn('Failed to write region generation log:', logError.message);
         }
+
+        const region = Region.fromXMLSnippet(aiResponse);
+        regions.set(region.id, region);
 
         const stubMap = new Map();
 
@@ -2804,7 +2808,8 @@ app.get('/', (req, res) => {
         title: 'AI RPG Chat Interface',
         systemPrompt: systemPrompt,
         chatHistory: chatHistory,
-        currentPage: 'chat'
+        currentPage: 'chat',
+        player: currentPlayer ? currentPlayer.getStatus() : null
     });
 });
 

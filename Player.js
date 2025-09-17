@@ -2,6 +2,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 const Location = require('./Location.js');
+const Thing = require('./Thing.js');
 
 class Player {
     // Private fields using ES13 syntax
@@ -21,6 +22,7 @@ class Player {
     #createdAt;
     #lastUpdated;
     #isNPC;
+    #inventory;
 
     // Static private method for ID generation
     static #generateUniqueId() {
@@ -53,6 +55,9 @@ class Player {
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
+
+        this.#inventory = new Set();
+        this.#initializeInventory(options.inventory);
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -96,6 +101,63 @@ class Player {
             // Use provided value, or default from definition, or fallback to 10
             this.#attributes[attrName] = providedAttributes[attrName] ?? attrDef.default ?? 10;
         }
+    }
+
+    #initializeInventory(items = []) {
+        if (!Array.isArray(items)) {
+            return;
+        }
+        for (const entry of items) {
+            this.#addInventoryThing(entry, { updateTimestamp: false });
+        }
+    }
+
+    #resolveThing(thingLike) {
+        if (!thingLike) {
+            return null;
+        }
+        if (thingLike instanceof Thing) {
+            return thingLike;
+        }
+        if (typeof thingLike === 'string') {
+            return Thing.getById(thingLike);
+        }
+        if (typeof thingLike === 'object' && thingLike.id) {
+            const existing = Thing.getById(thingLike.id);
+            if (existing) {
+                return existing;
+            }
+        }
+        return null;
+    }
+
+    #addInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+
+        const previousSize = this.#inventory.size;
+        this.#inventory.add(resolved);
+
+        if (updateTimestamp && this.#inventory.size !== previousSize) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return true;
+    }
+
+    #removeInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+
+        const removed = this.#inventory.delete(resolved);
+        if (removed && updateTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
     }
 
     /**
@@ -241,6 +303,14 @@ class Player {
 
     get isNPC() {
         return this.#isNPC;
+    }
+
+    get inventorySize() {
+        return this.#inventory.size;
+    }
+
+    getInventoryItems() {
+        return Array.from(this.#inventory);
     }
 
     get createdAt() {
@@ -643,7 +713,8 @@ class Player {
             isNPC: this.#isNPC,
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
-            attributeInfo: this.getAttributeInfo()
+            attributeInfo: this.getAttributeInfo(),
+            inventory: this.getInventoryItems().map(thing => thing.toJSON())
         };
     }
 
@@ -665,6 +736,7 @@ class Player {
             imageId: this.#imageId,
             attributes: this.#attributes,
             isNPC: this.#isNPC,
+            inventory: Array.from(this.#inventory).map(thing => thing.id),
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -683,12 +755,51 @@ class Player {
             id: data.id,
             description: data.description,
             location: data.currentLocation,
-            isNPC: data.isNPC
+            isNPC: data.isNPC,
+            shortDescription: data.shortDescription,
+            class: data.class,
+            race: data.race,
+            inventory: Array.isArray(data.inventory) ? data.inventory : []
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;
         player.#lastUpdated = data.lastUpdated;
         return player;
+    }
+
+    addInventoryItem(thingLike) {
+        return this.#addInventoryThing(thingLike);
+    }
+
+    removeInventoryItem(thingLike) {
+        return this.#removeInventoryThing(thingLike);
+    }
+
+    hasInventoryItem(thingLike) {
+        const resolved = this.#resolveThing(thingLike);
+        if (!resolved) {
+            return false;
+        }
+        return this.#inventory.has(resolved);
+    }
+
+    clearInventory() {
+        if (this.#inventory.size === 0) {
+            return;
+        }
+        this.#inventory.clear();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    setInventory(items = []) {
+        this.#inventory.clear();
+        if (Array.isArray(items)) {
+            for (const entry of items) {
+                this.#addInventoryThing(entry, { updateTimestamp: false });
+            }
+        }
+        this.#lastUpdated = new Date().toISOString();
+        return this.getInventoryItems();
     }
 
     /**
