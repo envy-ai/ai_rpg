@@ -351,6 +351,90 @@ p:not(:last-child) {
   font-size: 0.85rem;
 }
 
+.inventory-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px;
+  overflow: visible;
+  color: $white;
+}
+
+.inventory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+}
+
+.inventory-count {
+  font-size: 0.9rem;
+  color: $white-70;
+}
+
+.inventory-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.inventory-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.inventory-empty {
+  margin-top: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.9rem;
+}
+
+.inventory-card {
+  position: relative;
+}
+
+.inventory-icon {
+  width: 90px;
+  height: 90px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.inventory-name {
+  font-size: 0.85rem;
+  text-align: center;
+  color: #ffffff;
+}
+
+.inventory-floating-tooltip {
+  position: fixed;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.95);
+  color: #f8fafc;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+  z-index: 9999;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  opacity: 0;
+}
+
 // Chat container - right column of .main-content
 .chat-container {
   flex: 1; // Take up remaining width

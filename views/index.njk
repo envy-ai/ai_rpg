@@ -231,8 +231,15 @@
                     </div>
                 </section>
                 <section class="tab-panel" id="tab-inventory" role="tabpanel" aria-labelledby="tab-inventory-tab" hidden>
-                    <div class="tab-placeholder">
-                        <p>Inventory items will be displayed here.</p>
+                    <div class="inventory-panel">
+                        <div class="inventory-header">
+                            <h2>Inventory</h2>
+                            <span class="inventory-count" id="inventoryCount">0 items</span>
+                        </div>
+                        <div class="inventory-scroll">
+                            <div class="inventory-grid" id="inventoryItems"></div>
+                        </div>
+                        <div class="inventory-empty" id="inventoryEmpty">Inventory is empty.</div>
                     </div>
                 </section>
             </div>
@@ -245,6 +252,8 @@
             <div class="overlay-text" id="locationOverlayText">Exploring...</div>
         </div>
     </div>
+
+    <div id="inventoryTooltip" class="inventory-floating-tooltip" hidden></div>
 
     <script src="/vendor/cytoscape.min.js"></script>
     <script src="/vendor/layout-base.js"></script>
@@ -267,6 +276,7 @@
 
             // Initialize location display
             initLocationDisplay();
+            initInventoryDisplay();
         });
 
         function initTabs() {
@@ -293,6 +303,9 @@
 
                 if (tabName === 'map') {
                     window.loadRegionMap?.();
+                }
+                if (tabName === 'inventory') {
+                    window.refreshInventory?.();
                 }
             };
 
@@ -576,6 +589,110 @@
             // Load current player location on page load
             showLocationOverlay('Loading current location...');
             loadCurrentLocation().finally(() => hideLocationOverlay());
+        }
+
+        function initInventoryDisplay() {
+            const inventoryGrid = document.getElementById('inventoryItems');
+            const emptyState = document.getElementById('inventoryEmpty');
+            const countLabel = document.getElementById('inventoryCount');
+            const floatingTooltip = document.getElementById('inventoryTooltip');
+
+            function renderInventory(items = []) {
+                if (!inventoryGrid || !emptyState || !countLabel) {
+                    return;
+                }
+
+                const safeItems = Array.isArray(items) ? items : [];
+                inventoryGrid.innerHTML = '';
+
+                countLabel.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
+                emptyState.style.display = safeItems.length ? 'none' : 'block';
+                inventoryGrid.style.display = safeItems.length ? 'flex' : 'none';
+
+                safeItems.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'npc-card inventory-card';
+
+                    const icon = document.createElement('div');
+                    icon.className = 'inventory-icon';
+                    icon.textContent = selectInventoryIcon(item);
+
+                    const name = document.createElement('div');
+                    name.className = 'inventory-name';
+                    name.textContent = item.name || 'Unknown Item';
+
+                    card.appendChild(icon);
+                    card.appendChild(name);
+                    inventoryGrid.appendChild(card);
+
+                    const description = item.description || 'No description provided.';
+
+                    card.addEventListener('mouseenter', (event) => {
+                        if (!floatingTooltip) return;
+                        floatingTooltip.textContent = description;
+                        floatingTooltip.hidden = false;
+                        floatingTooltip.style.opacity = '1';
+                        positionTooltip(event);
+                    });
+
+                    card.addEventListener('mousemove', (event) => {
+                        if (!floatingTooltip || floatingTooltip.hidden) return;
+                        positionTooltip(event);
+                    });
+
+                    card.addEventListener('mouseleave', () => {
+                        if (!floatingTooltip) return;
+                        floatingTooltip.style.opacity = '0';
+                        floatingTooltip.hidden = true;
+                    });
+                });
+            }
+
+            function selectInventoryIcon(item = {}) {
+                const type = (item.thingType || item.type || '').toLowerCase();
+                if (type.includes('weapon')) return '⚔️';
+                if (type.includes('armor')) return '🛡️';
+                if (type.includes('potion')) return '🧪';
+                if (type.includes('tool')) return '🛠️';
+                if (type.includes('trinket')) return '🧿';
+                if (type.includes('container')) return '🎒';
+                return '📦';
+            }
+
+            function positionTooltip(event) {
+                if (!floatingTooltip) return;
+                const padding = 16;
+                const tooltipRect = floatingTooltip.getBoundingClientRect();
+                let x = event.clientX + 12;
+                let y = event.clientY + 12;
+
+                if (x + tooltipRect.width + padding > window.innerWidth) {
+                    x = window.innerWidth - tooltipRect.width - padding;
+                }
+                if (y + tooltipRect.height + padding > window.innerHeight) {
+                    y = window.innerHeight - tooltipRect.height - padding;
+                }
+
+                floatingTooltip.style.left = `${x}px`;
+                floatingTooltip.style.top = `${y}px`;
+            }
+
+            window.updateInventoryDisplay = renderInventory;
+
+            async function refreshInventory() {
+                try {
+                    const response = await fetch('/api/player');
+                    const data = await response.json();
+                    if (data.success && data.player) {
+                        renderInventory(data.player.inventory || []);
+                    }
+                } catch (error) {
+                    console.warn('Failed to refresh inventory:', error);
+                }
+            }
+
+            window.refreshInventory = refreshInventory;
+            refreshInventory();
         }
 
         async function loadCurrentLocation() {
