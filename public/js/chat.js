@@ -126,6 +126,34 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addEventMessage(contentHtml) {
+        if (!contentHtml) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-message';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '📊 Event Checks';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = contentHtml;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -192,6 +220,10 @@ class AIRPGChat {
             } else {
                 this.addMessage('ai', data.response, false, data.debug);
                 this.chatHistory.push({ role: 'assistant', content: data.response });
+
+                if (data.eventChecks) {
+                    this.addEventMessage(data.eventChecks);
+                }
 
                 // Check for location updates after AI response
                 this.checkLocationUpdate();

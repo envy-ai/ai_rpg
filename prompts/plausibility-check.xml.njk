@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Check if player action is trivial, plausible with an attribute check, or implausible</description>
+    
+    <systemPrompt>
+You are an AI Game Master checking if a player's action is trivial, plausible, or implausible. Consider the player's current state, description, and the action they want to take. 
+
+    </systemPrompt>
+    <generationPrompt>
+Setting Information:
+{% include '_includes/setting-info.njk' %}
+
+Player Information:
+- Name: {{ player.name }}
+- Description: {{ player.description }}
+- Health: {{ player.health }}/{{ player.maxHealth }}
+- Status: {% if player.alive %}Alive and ready for action{% else %}Defeated{% endif %}
+
+{% if player.currentLocation %}
+Current Location: {{ player.currentLocation }}
+{% endif %}
+
+Player Action: {{ actionText }}
+
+Location Context:
+{{ location.name }} - {{ location.description }}
+
+Guidelines:
+- Consider the player's current health, physical state, and status effects. The player's attributes are not listed here, because you are not making the skill check yourself, just determining if one is needed and what skills or attributes would be relevant.
+- If interacting with an object or NPC in the scene, consider their description and status
+- If attempting to interact with an object or NPC not specifically listed in the scene, consider whether the action is plausible given the context and setting.  For instance, if a player is in a hospital room and they say "I pick up the scalpel on the tray", this is plausible, even if a scalpel isn't listed among the items in the scene.  If they say "I pick up the MRI machine" or "I pick up the tuba", this is implausible (the MRI machine because it's too big to pick up, the tuba because it doesn't belong in a hospital room).
+- If the player is attempting an action that requires a skill check, determine the appropriate skill.
+- Do not consider the player's level or experience, only their current health, physical state, and status effects.
+- Do not consider whether an action is a good idea or bad idea, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
+- Extremely difficult doesn't mean implausible. For instance, "I throw a dart into the eye of the thug at the far side of the tavern" is plausible, but would require a very hard or legendary skill/attribute check. 
+
+Respond with one of the following:
+
+<plausibility>
+  <type>Trivial</type>
+</plausibility>
+
+<plausibility>
+  <type>Plausible</type>
+  <skillCheck>
+    <skill>Relevant skill (if applicable, N/A if not)</skill>
+    <attribute>Relevant attribute</attribute>
+    <difficulty>Difficulty level (Easy, Medium, Hard, Very Hard, Legendary)</difficulty>
+  </skillCheck>
+</plausibility>
+
+<plausibility>
+  <type>Implausible</type>
+  <reason>Brief explanation of why the action is implausible (e.g., "The object is too large to pick up", "The NPC is not present in the scene", etc.)</reason>
+</plausibility>
+
+Current Situation:
+The player {{ player.name }} ({{ player.description }}) is attempting: "{{ actionText }}"
+Their current health is {{ player.health }}/{{ player.maxHealth }} at Level {{ player.level }}.
+    </generationPrompt>
+</template>

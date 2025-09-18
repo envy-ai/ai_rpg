@@ -664,6 +664,11 @@ p:not(:last-child) {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   margin-right: auto;
 }
+.message.event-message {
+  background: rgba(56, 189, 248, 0.18);
+  border-left: 3px solid #38bdf8;
+  margin-right: auto;
+}
 .message.error {
   background: rgba(255, 100, 100, 0.3) !important;
   border-left: 3px solid #ff6b6b;

@@ -796,6 +796,208 @@ function buildNpcProfiles(location) {
         }));
 }
 
+function getEventPromptTemplates() {
+    try {
+        const eventsDir = path.join(__dirname, 'prompts', 'events');
+        if (!fs.existsSync(eventsDir)) {
+            return [];
+        }
+        return fs.readdirSync(eventsDir)
+            .filter(file => file.toLowerCase().endsWith('.njk'))
+            .sort()
+            .map(file => path.posix.join('events', file));
+    } catch (error) {
+        console.warn('Failed to load event prompt templates:', error.message);
+        return [];
+    }
+}
+
+function buildEventContext(location) {
+    const activeSetting = getActiveSettingSnapshot();
+    const settingDescription = describeSettingForPrompt(activeSetting);
+
+    const locationDetails = location ? location.getDetails() : null;
+    const currentPlayerStatus = currentPlayer ? currentPlayer.getStatus() : null;
+
+    const npcs = [];
+    if (location && Array.isArray(location.npcIds)) {
+        for (const npcId of location.npcIds) {
+            const npc = players.get(npcId);
+            if (!npc) continue;
+            const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : npc;
+            npcs.push({
+                name: npcStatus.name || 'Unknown NPC',
+                description: npcStatus.description || '',
+                statusEffects: npcStatus.statusEffects || []
+            });
+        }
+    }
+
+    const party = [];
+    if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
+        const memberIds = currentPlayer.getPartyMembers();
+        for (const memberId of memberIds) {
+            const member = players.get(memberId);
+            if (!member) continue;
+            const memberStatus = typeof member.getStatus === 'function' ? member.getStatus() : member;
+            party.push({
+                name: memberStatus.name || 'Unknown Ally',
+                description: memberStatus.description || '',
+                statusEffects: memberStatus.statusEffects || []
+            });
+        }
+    }
+
+    const itemsInScene = [];
+    if (location) {
+        for (const thing of things.values()) {
+            const metadata = thing.metadata || {};
+            if (metadata.locationId === location.id && !metadata.ownerId) {
+                itemsInScene.push({
+                    name: thing.name || 'Unnamed Item',
+                    description: thing.description || '',
+                    statusEffects: []
+                });
+            }
+        }
+    }
+
+    return {
+        setting: settingDescription,
+        location: locationDetails ? JSON.stringify(locationDetails, null, 2) : 'No current location context available.',
+        currentPlayer: currentPlayerStatus ? JSON.stringify(currentPlayerStatus, null, 2) : 'No active player.',
+        npcs,
+        party,
+        itemsInScene
+    };
+}
+
+function logEventCheck({ systemPrompt, generationPrompt, responseText }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `event_checks_${timestamp}.log`);
+        const parts = [
+            '=== EVENT CHECK SYSTEM PROMPT ===',
+            systemPrompt || '(none)',
+            '',
+            '=== EVENT CHECK GENERATION PROMPT ===',
+            generationPrompt || '(none)',
+            '',
+            '=== EVENT CHECK RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log event check:', error.message);
+    }
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        return '';
+    }
+    return text.replace(/[&<>'"]/g, char => {
+        switch (char) {
+            case '&':
+                return '&amp;';
+            case '<':
+                return '&lt;';
+            case '>':
+                return '&gt;';
+            case '"':
+                return '&quot;';
+            case '\'':
+                return '&#39;';
+            default:
+                return char;
+        }
+    });
+}
+
+async function runEventChecks({ textToCheck }) {
+    if (!textToCheck || !textToCheck.trim()) {
+        return null;
+    }
+
+    const eventPromptTemplates = getEventPromptTemplates();
+    if (!eventPromptTemplates.length) {
+        return null;
+    }
+
+    try {
+        const location = currentPlayer && currentPlayer.currentLocation
+            ? Location.get(currentPlayer.currentLocation)
+            : null;
+
+        const context = buildEventContext(location);
+        const renderedTemplate = promptEnv.render('event-checks.xml.njk', {
+            ...context,
+            textToCheck,
+            eventPrompts: eventPromptTemplates
+        });
+
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+        if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+            console.warn('Event check template missing prompts, skipping event analysis.');
+            return null;
+        }
+
+        const messages = [
+            { role: 'system', content: parsedTemplate.systemPrompt },
+            { role: 'user', content: parsedTemplate.generationPrompt }
+        ];
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const chatEndpoint = endpoint.endsWith('/') ?
+            endpoint + 'chat/completions' :
+            endpoint + '/chat/completions';
+
+        const requestData = {
+            model: config.ai.model,
+            messages,
+            max_tokens: parsedTemplate.maxTokens || 400,
+            temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
+        };
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
+
+        const eventResponse = response.data?.choices?.[0]?.message?.content || '';
+
+        logEventCheck({
+            systemPrompt: parsedTemplate.systemPrompt,
+            generationPrompt: parsedTemplate.generationPrompt,
+            responseText: eventResponse
+        });
+
+        if (!eventResponse.trim()) {
+            return null;
+        }
+
+        const safeResponse = escapeHtml(eventResponse.trim());
+        return {
+            raw: eventResponse,
+            html: safeResponse.replace(/\n/g, '<br>')
+        };
+    } catch (error) {
+        console.warn('Event check execution failed:', error.message);
+        return null;
+    }
+}
+
 const attributeDefinitionsForPrompt = (() => {
     try {
         const template = new Player({ name: 'Attribute Template', description: 'Template loader' });
@@ -1159,6 +1361,22 @@ function parseXMLTemplate(xmlContent) {
 
         if (generationPromptNode) {
             result.generationPrompt = Utils.innerXML(generationPromptNode).trim();
+        }
+
+        const maxTokensNode = doc.getElementsByTagName('maxTokens')[0];
+        if (maxTokensNode) {
+            const value = parseInt(maxTokensNode.textContent.trim(), 10);
+            if (!Number.isNaN(value)) {
+                result.maxTokens = value;
+            }
+        }
+
+        const temperatureNode = doc.getElementsByTagName('temperature')[0];
+        if (temperatureNode) {
+            const value = parseFloat(temperatureNode.textContent.trim());
+            if (!Number.isNaN(value)) {
+                result.temperature = value;
+            }
         }
 
         // Extract role (optional)
@@ -3504,6 +3722,15 @@ app.post('/api/chat', async (req, res) => {
             // Add debug info if available
             if (debugInfo) {
                 responseData.debug = debugInfo;
+            }
+
+            try {
+                const eventResult = await runEventChecks({ textToCheck: aiResponse });
+                if (eventResult && eventResult.html) {
+                    responseData.eventChecks = eventResult.html;
+                }
+            } catch (eventError) {
+                console.warn('Failed to run event checks:', eventError.message);
             }
 
             res.json(responseData);
