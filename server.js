@@ -78,6 +78,47 @@ const JOB_STATUS = {
     TIMEOUT: 'timeout'
 };
 
+const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+
+function hasActiveImageJob(imageId) {
+    if (!imageId) {
+        return false;
+    }
+    const job = imageJobs.get(imageId);
+    if (!job) {
+        return false;
+    }
+    return job.status === JOB_STATUS.QUEUED || job.status === JOB_STATUS.PROCESSING;
+}
+
+function imageFileExists(imageId) {
+    if (!imageId) {
+        return false;
+    }
+    try {
+        const imagesDir = path.join(__dirname, 'public', 'generated-images');
+        for (const ext of KNOWN_IMAGE_EXTENSIONS) {
+            const candidate = path.join(imagesDir, `${imageId}${ext}`);
+            if (fs.existsSync(candidate)) {
+                return true;
+            }
+        }
+    } catch (error) {
+        console.warn(`Failed to check image files for ${imageId}:`, error.message);
+    }
+    return false;
+}
+
+function hasExistingImage(imageId) {
+    if (!imageId) {
+        return false;
+    }
+    if (generatedImages.has(imageId)) {
+        return true;
+    }
+    return imageFileExists(imageId);
+}
+
 // Create a new image generation job
 function createImageJob(jobId, payload) {
     const job = {
@@ -650,6 +691,16 @@ function shouldGenerateNpcImage(npc) {
     if (!npc) {
         return false;
     }
+
+    if (npc.imageId) {
+        if (hasActiveImageJob(npc.imageId)) {
+            return false;
+        }
+        if (hasExistingImage(npc.imageId)) {
+            return false;
+        }
+    }
+
     if (!npc.isNPC) {
         return true;
     }
@@ -673,6 +724,15 @@ function shouldGenerateNpcImage(npc) {
 function shouldGenerateThingImage(thing) {
     if (!thing) {
         return false;
+    }
+
+    if (thing.imageId) {
+        if (hasActiveImageJob(thing.imageId)) {
+            return false;
+        }
+        if (hasExistingImage(thing.imageId)) {
+            return false;
+        }
     }
 
     if (thing.thingType !== 'item') {
@@ -2224,6 +2284,17 @@ async function generatePlayerImage(player) {
             return null;
         }
 
+        if (player.imageId) {
+            if (hasActiveImageJob(player.imageId)) {
+                console.log(`🎨 Portrait job ${player.imageId} already in progress for ${player.name}, skipping duplicate request`);
+                return null;
+            }
+            if (hasExistingImage(player.imageId)) {
+                console.log(`🎨 ${player.name} (${player.id}) already has a portrait (${player.imageId}), skipping regeneration`);
+                return null;
+            }
+        }
+
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping player portrait generation');
@@ -2388,6 +2459,32 @@ async function generateLocationImage(location) {
             return null;
         }
 
+        if (pendingLocationImages.has(location.id)) {
+            const pendingJobId = pendingLocationImages.get(location.id);
+            const pendingJob = imageJobs.get(pendingJobId);
+            console.log(`🏞️ Location ${location.id} already has a pending image job (${pendingJobId}), skipping new request`);
+            if (pendingJob) {
+                return {
+                    jobId: pendingJobId,
+                    status: pendingJob.status,
+                    message: pendingJob.message,
+                    estimatedTime: '30-90 seconds'
+                };
+            }
+            return null;
+        }
+
+        if (location.imageId) {
+            if (hasActiveImageJob(location.imageId)) {
+                console.log(`🏞️ Location ${location.id} image job ${location.imageId} still in progress, skipping duplicate generation`);
+                return null;
+            }
+            if (hasExistingImage(location.imageId)) {
+                console.log(`🏞️ Location ${location.id} already has an image (${location.imageId}), skipping regeneration`);
+                return null;
+            }
+        }
+
         // Generate the location scene prompt using LLM
         const promptTemplate = renderLocationImagePrompt(location);
         const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
@@ -2509,6 +2606,17 @@ async function generateThingImage(thing) {
 
         if (!thing) {
             throw new Error('Thing object is required');
+        }
+
+        if (thing.imageId) {
+            if (hasActiveImageJob(thing.imageId)) {
+                console.log(`🎒 Image job ${thing.imageId} already running for ${thing.name}, skipping duplicate request`);
+                return null;
+            }
+            if (hasExistingImage(thing.imageId)) {
+                console.log(`🎒 ${thing.name} (${thing.id}) already has an image (${thing.imageId}), skipping regeneration`);
+                return null;
+            }
         }
 
         if (!shouldGenerateThingImage(thing)) {

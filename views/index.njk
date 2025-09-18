@@ -360,8 +360,14 @@
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
+            let lastRenderedLocation = null;
 
             function showLocationOverlay(message = 'Loading location...') {
+                try {
+                    window.floatingTooltipController?.hide?.();
+                } catch (_) {
+                    // Tooltip controller may not be initialized yet.
+                }
                 if (locationOverlay) {
                     locationOverlay.classList.add('show');
                     locationOverlay.setAttribute('aria-busy', 'true');
@@ -380,16 +386,29 @@
 
             window.updateLocationDisplay = function(location) {
                 const locationName = document.getElementById('locationName');
-            const locationTooltip = document.getElementById('locationTooltip');
-            const locationHint = document.getElementById('locationHint');
+                const locationTooltip = document.getElementById('locationTooltip');
+                const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
                 const locationImage = document.getElementById('locationImage');
-            const locationExits = document.getElementById('locationExits');
+                const locationExits = document.getElementById('locationExits');
+                const tooltipController = window.floatingTooltipController;
+
+                if (tooltipController && typeof tooltipController.hide === 'function') {
+                    tooltipController.hide();
+                }
                 
                 if (location) {
+                    const locationDescriptionHtml = location.description || 'No description available.';
+                    const locationDescriptionText = locationDescriptionHtml
+                        .replace(/<[^>]+>/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim() || 'No description available.';
+
                     locationName.textContent = location.name || 'Unknown Location';
                     if (locationTooltip) {
-                        locationTooltip.innerHTML = location.description || 'No description available.';
+                        locationTooltip.innerHTML = locationDescriptionHtml;
+                        locationTooltip.setAttribute('hidden', '');
+                        locationTooltip.setAttribute('aria-hidden', 'true');
                     }
                     if (locationHint) {
                         if (location.pendingImageJobId) {
@@ -399,7 +418,7 @@
                         }
                     }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
-                locationCache[location.id] = location.name || location.description || location.id;
+                    locationCache[location.id] = location.name || location.description || location.id;
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
@@ -410,6 +429,28 @@
                         }
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
+                        }
+
+                        if (locationDescriptionText) {
+                            locationImage.setAttribute('aria-label', locationDescriptionText);
+                        } else {
+                            locationImage.removeAttribute('aria-label');
+                        }
+
+                        if (tooltipController && typeof tooltipController.show === 'function') {
+                            locationImage.onmouseenter = (event) => {
+                                tooltipController.show(locationDescriptionHtml, event, { allowHTML: true });
+                            };
+                            locationImage.onmousemove = (event) => {
+                                tooltipController.move(event);
+                            };
+                            locationImage.onmouseleave = () => {
+                                tooltipController.hide();
+                            };
+                        } else {
+                            locationImage.onmouseenter = null;
+                            locationImage.onmousemove = null;
+                            locationImage.onmouseleave = null;
                         }
                     }
 
@@ -446,9 +487,6 @@
 
                                 const portrait = document.createElement('div');
                                 portrait.className = 'npc-portrait';
-                                if (npc.description) {
-                                    portrait.title = npc.description;
-                                }
 
                                 if (npc.imageId) {
                                     portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'npc-portrait-placeholder\\'>🎭</div>'">`;
@@ -462,6 +500,24 @@
 
                                 card.appendChild(portrait);
                                 card.appendChild(nameEl);
+                                const npcDescriptionText = (npc.description || 'No description provided.')
+                                    .replace(/<[^>]+>/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim() || 'No description provided.';
+                                if (npcDescriptionText) {
+                                    card.setAttribute('aria-label', npcDescriptionText);
+                                }
+                                if (tooltipController && typeof tooltipController.show === 'function') {
+                                    card.addEventListener('mouseenter', (event) => {
+                                        tooltipController.show(npcDescriptionText, event);
+                                    });
+                                    card.addEventListener('mousemove', (event) => {
+                                        tooltipController.move(event);
+                                    });
+                                    card.addEventListener('mouseleave', () => {
+                                        tooltipController.hide();
+                                    });
+                                }
                                 locationNPCs.appendChild(card);
                             });
                         }
@@ -472,11 +528,14 @@
                     } else {
                         stopImagePolling(location.id);
                     }
-                hideLocationOverlay();
+                    hideLocationOverlay();
+                    lastRenderedLocation = location ? JSON.parse(JSON.stringify(location)) : null;
                 } else {
                     locationName.textContent = 'Unknown Location';
                     if (locationTooltip) {
                         locationTooltip.innerHTML = 'Your current location will appear here when you start exploring.';
+                        locationTooltip.setAttribute('hidden', '');
+                        locationTooltip.setAttribute('aria-hidden', 'true');
                     }
                     if (locationHint) {
                         locationHint.textContent = 'Hover over the location image for a description.';
@@ -488,6 +547,10 @@
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }
+                        locationImage.removeAttribute('aria-label');
+                        locationImage.onmouseenter = null;
+                        locationImage.onmousemove = null;
+                        locationImage.onmouseleave = null;
                     }
                     if (locationNPCs) {
                         locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
@@ -495,10 +558,17 @@
                     if (locationExits) {
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                     }
-                stopImagePolling();
-                hideLocationOverlay();
+                    stopImagePolling();
+                    hideLocationOverlay();
+                    lastRenderedLocation = null;
                 }
             };
+
+            document.addEventListener('floatingTooltip:ready', () => {
+                if (lastRenderedLocation) {
+                    window.updateLocationDisplay(lastRenderedLocation);
+                }
+            });
 
             async function moveToLocation(destinationId) {
                 if (!destinationId) return;
@@ -615,6 +685,7 @@
             const inventoryScroll = document.querySelector('.inventory-scroll');
             const imageMetadataCache = new Map();
             let inventoryRefreshTimeout = null;
+            let tooltipController = null;
 
             function hideTooltip() {
                 if (!floatingTooltip) return;
@@ -705,7 +776,11 @@
                     return;
                 }
 
-                hideTooltip();
+                if (tooltipController && typeof tooltipController.hide === 'function') {
+                    tooltipController.hide();
+                } else {
+                    hideTooltip();
+                }
 
                 const safeItems = Array.isArray(items) ? items : [];
                 inventoryGrid.innerHTML = '';
@@ -737,20 +812,21 @@
                     const description = item.description || 'No description provided.';
 
                     card.addEventListener('mouseenter', (event) => {
-                        if (!floatingTooltip) return;
-                        floatingTooltip.textContent = description;
-                        floatingTooltip.removeAttribute('hidden');
-                        floatingTooltip.classList.add('visible');
-                        positionTooltip(event);
+                        if (tooltipController && typeof tooltipController.show === 'function') {
+                            tooltipController.show(description, event);
+                        }
                     });
 
                     card.addEventListener('mousemove', (event) => {
-                        if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) return;
-                        positionTooltip(event);
+                        if (tooltipController && typeof tooltipController.move === 'function') {
+                            tooltipController.move(event);
+                        }
                     });
 
                     card.addEventListener('mouseleave', () => {
-                        hideTooltip();
+                        if (tooltipController && typeof tooltipController.hide === 'function') {
+                            tooltipController.hide();
+                        }
                     });
                 });
             }
@@ -786,6 +862,39 @@
 
                 floatingTooltip.style.left = `${x}px`;
                 floatingTooltip.style.top = `${y}px`;
+            }
+
+            tooltipController = {
+                show(content, event, options = {}) {
+                    if (!floatingTooltip || !content || !event) {
+                        return;
+                    }
+                    const { allowHTML = false } = options;
+                    if (allowHTML) {
+                        floatingTooltip.innerHTML = content;
+                    } else {
+                        floatingTooltip.textContent = content;
+                    }
+                    floatingTooltip.removeAttribute('hidden');
+                    floatingTooltip.classList.add('visible');
+                    positionTooltip(event);
+                },
+                move(event) {
+                    if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) {
+                        return;
+                    }
+                    positionTooltip(event);
+                },
+                hide() {
+                    hideTooltip();
+                }
+            };
+
+            window.floatingTooltipController = tooltipController;
+            try {
+                document.dispatchEvent(new CustomEvent('floatingTooltip:ready'));
+            } catch (_) {
+                // Ignore environments without CustomEvent support.
             }
 
             window.updateInventoryDisplay = renderInventory;

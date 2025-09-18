@@ -223,6 +223,7 @@ p:not(:last-child) {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 }
 
 .location-tooltip {
@@ -290,6 +291,9 @@ p:not(:last-child) {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+.location-npcs .npc-card {
+  cursor: pointer;
 }
 
 .npc-card {
