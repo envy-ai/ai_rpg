@@ -19,6 +19,7 @@
                 <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
+                <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
                 <button class="tab-button" id="tab-inventory-tab" data-tab="inventory" role="tab" aria-selected="false" aria-controls="tab-inventory">Inventory</button>
             </div>
 
@@ -230,6 +231,16 @@
                         <div id="status-message" class="status-message" style="display: none;"></div>
                     </div>
                 </section>
+                <section class="tab-panel" id="tab-party" role="tabpanel" aria-labelledby="tab-party-tab" hidden>
+                    <div class="party-panel">
+                        <div class="party-header">
+                            <h2>Party Members</h2>
+                            <span class="party-count" id="partyCount">0 members</span>
+                        </div>
+                        <div class="party-grid" id="partyMembers"></div>
+                        <div class="party-empty" id="partyEmpty">No companions are currently travelling with you.</div>
+                    </div>
+                </section>
                 <section class="tab-panel" id="tab-inventory" role="tabpanel" aria-labelledby="tab-inventory-tab" hidden>
                     <div class="inventory-panel">
                         <div class="inventory-header">
@@ -254,6 +265,7 @@
     </div>
 
     <div id="inventoryTooltip" class="inventory-floating-tooltip" hidden></div>
+    <div id="partyTooltip" class="inventory-floating-tooltip party-floating-tooltip" hidden></div>
 
     <script src="/vendor/cytoscape.min.js"></script>
     <script src="/vendor/layout-base.js"></script>
@@ -277,6 +289,7 @@
             // Initialize location display
             initLocationDisplay();
             initInventoryDisplay();
+            initPartyDisplay();
         });
 
         function initTabs() {
@@ -303,6 +316,9 @@
 
                 if (tabName === 'map') {
                     window.loadRegionMap?.();
+                }
+                if (tabName === 'party') {
+                    window.refreshParty?.();
                 }
                 if (tabName === 'inventory') {
                     window.refreshInventory?.();
@@ -705,6 +721,157 @@
 
             if (inventoryScroll) {
                 inventoryScroll.addEventListener('scroll', hideTooltip);
+            }
+            window.addEventListener('scroll', hideTooltip, { passive: true });
+        }
+
+        function initPartyDisplay() {
+            const partyGrid = document.getElementById('partyMembers');
+            const emptyState = document.getElementById('partyEmpty');
+            const countLabel = document.getElementById('partyCount');
+            const floatingTooltip = document.getElementById('partyTooltip');
+            const partyPanel = document.querySelector('.party-panel');
+
+            const statOrder = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+            const statLabels = {
+                strength: 'STR',
+                dexterity: 'DEX',
+                constitution: 'CON',
+                intelligence: 'INT',
+                wisdom: 'WIS',
+                charisma: 'CHA'
+            };
+
+            function hideTooltip() {
+                if (!floatingTooltip) return;
+                floatingTooltip.classList.remove('visible');
+                floatingTooltip.setAttribute('hidden', '');
+            }
+
+            function positionTooltip(event) {
+                if (!floatingTooltip) return;
+                const padding = 16;
+                const tooltipRect = floatingTooltip.getBoundingClientRect();
+                let x = event.clientX + padding;
+                let y = event.clientY + padding;
+
+                if (x + tooltipRect.width + padding > window.innerWidth) {
+                    x = Math.max(padding, window.innerWidth - tooltipRect.width - padding);
+                }
+
+                if (y + tooltipRect.height + padding > window.innerHeight) {
+                    y = event.clientY - tooltipRect.height - padding;
+                    if (y < padding) {
+                        y = Math.max(padding, window.innerHeight - tooltipRect.height - padding);
+                    }
+                }
+
+                floatingTooltip.style.left = `${x}px`;
+                floatingTooltip.style.top = `${y}px`;
+            }
+
+            function renderParty(members = []) {
+                if (!partyGrid || !emptyState || !countLabel) {
+                    return;
+                }
+
+                const safeMembers = Array.isArray(members) ? members : [];
+                partyGrid.innerHTML = '';
+                hideTooltip();
+
+                countLabel.textContent = `${safeMembers.length} ${safeMembers.length === 1 ? 'member' : 'members'}`;
+                emptyState.style.display = safeMembers.length ? 'none' : 'block';
+                partyGrid.style.display = safeMembers.length ? 'flex' : 'none';
+
+                safeMembers.forEach(member => {
+                    const card = document.createElement('div');
+                    card.className = 'party-card';
+
+                    const portrait = document.createElement('div');
+                    portrait.className = 'party-portrait';
+                    if (member.imageId) {
+                        portrait.innerHTML = `<img src="/generated-images/${member.imageId}.png" alt="${member.name}" onerror="this.parentElement.innerHTML='<div class=\\'party-portrait-placeholder\\'>🎭</div>'">`;
+                    } else {
+                        portrait.innerHTML = '<div class="party-portrait-placeholder">🎭</div>';
+                    }
+
+                    const name = document.createElement('div');
+                    name.className = 'party-name';
+                    name.textContent = member.name || 'Unknown';
+
+                    const role = document.createElement('div');
+                    role.className = 'party-role';
+                    const parts = [];
+                    if (member.class) parts.push(member.class);
+                    if (member.race) parts.push(member.race);
+                    role.textContent = parts.join(' · ') || 'Companion';
+
+                    const meta = document.createElement('div');
+                    meta.className = 'party-meta';
+                    const levelText = typeof member.level === 'number' ? `Level ${member.level}` : 'Level ?';
+                    meta.textContent = `${levelText}${member.isNPC ? ' · NPC' : ''}`;
+
+                    const stats = document.createElement('div');
+                    stats.className = 'party-stats';
+                    const attrs = member.attributes || {};
+                    statOrder.forEach(key => {
+                        const value = attrs[key] !== undefined ? attrs[key] : '—';
+                        const stat = document.createElement('div');
+                        stat.className = 'party-stat';
+                        stat.innerHTML = `<span>${statLabels[key]}</span><strong>${value}</strong>`;
+                        stats.appendChild(stat);
+                    });
+
+                    const description = member.description || member.shortDescription || 'No description provided.';
+
+                    card.addEventListener('mouseenter', (event) => {
+                        if (!floatingTooltip || !description) return;
+                        floatingTooltip.textContent = description;
+                        floatingTooltip.removeAttribute('hidden');
+                        floatingTooltip.classList.add('visible');
+                        positionTooltip(event);
+                    });
+
+                    card.addEventListener('mousemove', (event) => {
+                        if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) return;
+                        positionTooltip(event);
+                    });
+
+                    card.addEventListener('mouseleave', () => {
+                        hideTooltip();
+                    });
+
+                    card.appendChild(portrait);
+                    card.appendChild(name);
+                    card.appendChild(role);
+                    card.appendChild(meta);
+                    card.appendChild(stats);
+                    partyGrid.appendChild(card);
+                });
+            }
+
+            window.updatePartyDisplay = renderParty;
+
+            async function refreshParty() {
+                try {
+                    const response = await fetch('/api/player/party');
+                    const data = await response.json();
+                    if (data.success && Array.isArray(data.members)) {
+                        renderParty(data.members);
+                    } else {
+                        renderParty([]);
+                    }
+                } catch (error) {
+                    console.warn('Failed to refresh party members:', error);
+                    renderParty([]);
+                }
+            }
+
+            window.refreshParty = refreshParty;
+            refreshParty();
+
+            if (partyPanel) {
+                partyPanel.addEventListener('scroll', hideTooltip);
             }
             window.addEventListener('scroll', hideTooltip, { passive: true });
         }

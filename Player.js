@@ -23,6 +23,8 @@ class Player {
     #lastUpdated;
     #isNPC;
     #inventory;
+    #partyMembers;
+    #dispositions;
 
     // Static private method for ID generation
     static #generateUniqueId() {
@@ -58,6 +60,9 @@ class Player {
 
         this.#inventory = new Set();
         this.#initializeInventory(options.inventory);
+
+        this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
+        this.#dispositions = this.#initializeDispositions(options.dispositions);
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -110,6 +115,28 @@ class Player {
         for (const entry of items) {
             this.#addInventoryThing(entry, { updateTimestamp: false });
         }
+    }
+
+    #initializeDispositions(source = {}) {
+        if (!source || typeof source !== 'object') {
+            return new Map();
+        }
+        const dispositionMap = new Map();
+        for (const [npcId, types] of Object.entries(source)) {
+            if (typeof npcId !== 'string' || !types || typeof types !== 'object') {
+                continue;
+            }
+            const typeMap = new Map();
+            for (const [type, value] of Object.entries(types)) {
+                if (typeof type === 'string' && Number.isFinite(value)) {
+                    typeMap.set(type, Number(value));
+                }
+            }
+            if (typeMap.size > 0) {
+                dispositionMap.set(npcId, typeMap);
+            }
+        }
+        return dispositionMap;
     }
 
     #resolveThing(thingLike) {
@@ -311,6 +338,99 @@ class Player {
 
     getInventoryItems() {
         return Array.from(this.#inventory);
+    }
+
+    get partyMembers() {
+        return new Set(this.#partyMembers);
+    }
+
+    addPartyMember(memberId) {
+        if (typeof memberId !== 'string' || !memberId.trim()) {
+            return false;
+        }
+        const trimmed = memberId.trim();
+        const before = this.#partyMembers.size;
+        this.#partyMembers.add(trimmed);
+        if (this.#partyMembers.size !== before) {
+            this.#lastUpdated = new Date().toISOString();
+            return true;
+        }
+        return false;
+    }
+
+    removePartyMember(memberId) {
+        if (typeof memberId !== 'string' || !memberId.trim()) {
+            return false;
+        }
+        const removed = this.#partyMembers.delete(memberId.trim());
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
+    }
+
+    clearPartyMembers() {
+        if (this.#partyMembers.size === 0) {
+            return;
+        }
+        this.#partyMembers.clear();
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    getPartyMembers() {
+        return Array.from(this.#partyMembers);
+    }
+
+    getDisposition(targetId, type = 'default') {
+        if (typeof targetId !== 'string' || !targetId.trim()) {
+            return 0;
+        }
+        const npcKey = targetId.trim();
+        const dispositionType = typeof type === 'string' && type.trim() ? type.trim() : 'default';
+        const typeMap = this.#dispositions.get(npcKey);
+        if (!typeMap) {
+            return 0;
+        }
+        return typeMap.get(dispositionType) ?? 0;
+    }
+
+    setDisposition(targetId, type = 'default', value = 0) {
+        if (typeof targetId !== 'string' || !targetId.trim()) {
+            return this.getDisposition(targetId, type);
+        }
+        const npcKey = targetId.trim();
+        const dispositionType = typeof type === 'string' && type.trim() ? type.trim() : 'default';
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return this.getDisposition(targetId, type);
+        }
+
+        let typeMap = this.#dispositions.get(npcKey);
+        if (!typeMap) {
+            typeMap = new Map();
+            this.#dispositions.set(npcKey, typeMap);
+        }
+        typeMap.set(dispositionType, numericValue);
+        this.#lastUpdated = new Date().toISOString();
+        return numericValue;
+    }
+
+    increaseDisposition(targetId, type = 'default', amount = 1) {
+        const current = this.getDisposition(targetId, type);
+        const increment = Number(amount);
+        if (!Number.isFinite(increment)) {
+            return current;
+        }
+        return this.setDisposition(targetId, type, current + increment);
+    }
+
+    decreaseDisposition(targetId, type = 'default', amount = 1) {
+        const current = this.getDisposition(targetId, type);
+        const decrement = Number(amount);
+        if (!Number.isFinite(decrement)) {
+            return current;
+        }
+        return this.setDisposition(targetId, type, current - decrement);
     }
 
     get createdAt() {
@@ -714,7 +834,9 @@ class Player {
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo(),
-            inventory: this.getInventoryItems().map(thing => thing.toJSON())
+            inventory: this.getInventoryItems().map(thing => thing.toJSON()),
+            partyMembers: this.getPartyMembers(),
+            dispositions: this.#serializeDispositions()
         };
     }
 
@@ -737,6 +859,8 @@ class Player {
             attributes: this.#attributes,
             isNPC: this.#isNPC,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
+            partyMembers: Array.from(this.#partyMembers),
+            dispositions: this.#serializeDispositions(),
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -759,7 +883,9 @@ class Player {
             shortDescription: data.shortDescription,
             class: data.class,
             race: data.race,
-            inventory: Array.isArray(data.inventory) ? data.inventory : []
+            inventory: Array.isArray(data.inventory) ? data.inventory : [],
+            partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
+            dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {}
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;
@@ -800,6 +926,20 @@ class Player {
         }
         this.#lastUpdated = new Date().toISOString();
         return this.getInventoryItems();
+    }
+
+    #serializeDispositions() {
+        const serialized = {};
+        for (const [npcId, typeMap] of this.#dispositions.entries()) {
+            if (!typeMap || !(typeMap instanceof Map) || typeMap.size === 0) {
+                continue;
+            }
+            serialized[npcId] = {};
+            for (const [type, value] of typeMap.entries()) {
+                serialized[npcId][type] = value;
+            }
+        }
+        return serialized;
     }
 
     /**

@@ -3,30 +3,35 @@
     <role>Item Image Generator</role>
     
     <systemPrompt>
-You are a specialized prompt generator for creating fantasy RPG item images.
+You are a specialized prompt generator for creating RPG inventory item images.
 
-Item Information:
-Name: {{ thingName }}
-Type: ITEM
-Description: 
-    {{ thingDescription | replace('\n', '\n    ') }}
-
-This is an ITEM - a portable object that could be carried, used, or interacted with by characters.
-Focus on creating a detailed, standalone object image showing the item's craftsmanship, materials, and condition.
     </systemPrompt>
     
     <generationPrompt>
+
+<context>
+<setting>
+{{ setting }}
+</setting>
+</context>
+
 Create an image prompt in 1 to 3 paragraphs of prose for the following item.
 
-Item Description: 
-    {{ thingDescription | replace('\n', '\n    ') }}
+<item>
+    <name>{{ thingName }}</name>
+    <description>{{ thingDescription }}</description>
+    <type>{{ thingType }}</type>
+    <rarity>{{ thingRarity }}</rarity>
+</item>
+
+This is an ITEM - a portable object that could be carried, used, or interacted with by characters.
+Focus on creating a detailed, standalone object image showing the item's craftsmanship, materials, and condition.
 
 Visual Style for Items:
 - Close-up detailed view of the object
 - Clean, clear background that doesn't distract from the item
 - Professional lighting that shows craftsmanship and materials
 - Show wear, age, or magical properties if mentioned in description
-- Fantasy RPG art style, detailed and atmospheric
 - No people or characters in the image, just the item itself
 
 Focus on the item's:
@@ -37,6 +42,6 @@ Focus on the item's:
 - Decorative elements or engravings
 - Functional aspects
 
-Generate a detailed image prompt that captures the essence of this item, maintaining consistency with fantasy RPG aesthetics while highlighting the unique characteristics described.
+Generate a detailed image prompt that captures the essence of this item, maintaining consistency with the setting aesthetics while highlighting the unique characteristics described. The item should be shown on a simple grey background.
     </generationPrompt>
 </template>

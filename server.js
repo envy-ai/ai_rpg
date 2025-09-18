@@ -78,13 +78,6 @@ const JOB_STATUS = {
     TIMEOUT: 'timeout'
 };
 
-// Debouncing for player image regeneration
-const playerImageRegenerationTimeouts = new Map(); // Player ID -> timeout ID
-const locationImageRegenerationTimeouts = new Map(); // Location ID -> timeout ID
-const locationExitImageRegenerationTimeouts = new Map(); // LocationExit ID -> timeout ID
-const thingImageRegenerationTimeouts = new Map(); // Thing ID -> timeout ID
-const IMAGE_REGENERATION_DEBOUNCE_MS = 2000; // 2 seconds debounce
-
 // Create a new image generation job
 function createImageJob(jobId, payload) {
     const job = {
@@ -652,121 +645,45 @@ const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingLocationImages = new Map(); // Store active image job IDs per location
-const pendingPlayerLocationIds = new Set(); // Location IDs the player is about to enter
 
-function getCurrentPlayerPartyIds() {
-    if (!currentPlayer || typeof currentPlayer.getPartyMembers !== 'function') {
-        return new Set();
-    }
-    try {
-        const members = currentPlayer.getPartyMembers();
-        if (!Array.isArray(members)) {
-            return new Set();
-        }
-        return new Set(members.filter(id => typeof id === 'string' && id.trim()));
-    } catch (error) {
-        console.warn('Failed to read current player party members for image gating:', error.message);
-        return new Set();
-    }
-}
-
-function isLocationRelevantToPlayer(locationId) {
-    if (!locationId) {
-        return false;
-    }
-    //if (pendingPlayerLocationIds.has(locationId)) {
-    //    return true;
-    //}
-    if (!currentPlayer || !currentPlayer.currentLocation) {
-        return false;
-    }
-    return currentPlayer.currentLocation === locationId;
-}
-
-function shouldGenerateNpcImage(npc, { locationId = null } = {}) {
+function shouldGenerateNpcImage(npc) {
     if (!npc) {
         return false;
     }
     if (!npc.isNPC) {
         return true;
     }
-    const candidateLocationId = locationId || npc.currentLocation || null;
-    if (candidateLocationId && isLocationRelevantToPlayer(candidateLocationId)) {
-        return true;
-    }
-
     if (!currentPlayer) {
         return false;
     }
 
-    const partyIds = getCurrentPlayerPartyIds();
-    if (partyIds.has(npc.id)) {
-        return true;
+    const sameLocation = npc.currentLocation && currentPlayer.currentLocation
+        ? npc.currentLocation === currentPlayer.currentLocation
+        : false;
+
+    let inParty = false;
+    if (typeof currentPlayer.getPartyMembers === 'function') {
+        const members = currentPlayer.getPartyMembers();
+        inParty = Array.isArray(members) && members.includes(npc.id);
     }
 
-    return false;
+    return Boolean(sameLocation || inParty);
 }
 
-function shouldGenerateThingImage(thing, { owner = null, locationId = null } = {}) {
+function shouldGenerateThingImage(thing) {
     if (!thing) {
         return false;
     }
 
-    // Only restrict item imagery; scenery can still render freely
     if (thing.thingType !== 'item') {
         return true;
     }
 
-    if (!currentPlayer) {
+    if (!currentPlayer || typeof currentPlayer.hasInventoryItem !== 'function') {
         return false;
     }
 
-    if (typeof currentPlayer.hasInventoryItem === 'function' && currentPlayer.hasInventoryItem(thing)) {
-        return true;
-    }
-
-    const partyIds = getCurrentPlayerPartyIds();
-
-    if (owner) {
-        if (owner.id === currentPlayer.id) {
-            return true;
-        }
-        if (partyIds.has(owner.id)) {
-            return true;
-        }
-        if (!locationId && owner.currentLocation) {
-            locationId = owner.currentLocation;
-        }
-    }
-
-    const metadata = thing.metadata || {};
-
-    const metadataOwnerId = typeof metadata.ownerId === 'string' ? metadata.ownerId.trim() : metadata.ownerId;
-    if (metadataOwnerId) {
-        if (metadataOwnerId === currentPlayer.id) {
-            return true;
-        }
-        if (partyIds.has(metadataOwnerId)) {
-            return true;
-        }
-    }
-
-    const candidateLocationIds = new Set();
-    if (locationId) candidateLocationIds.add(locationId);
-    const metadataLocationId = typeof metadata.locationId === 'string' ? metadata.locationId.trim() : metadata.locationId;
-    if (metadataLocationId) candidateLocationIds.add(metadataLocationId);
-    const metadataLocation = typeof metadata.location === 'string' ? metadata.location.trim() : metadata.location;
-    if (metadataLocation) candidateLocationIds.add(metadataLocation);
-    const ownerLocationId = typeof metadata.ownerLocationId === 'string' ? metadata.ownerLocationId.trim() : metadata.ownerLocationId;
-    if (ownerLocationId) candidateLocationIds.add(ownerLocationId);
-
-    for (const candidateId of candidateLocationIds) {
-        if (candidateId && isLocationRelevantToPlayer(candidateId)) {
-            return true;
-        }
-    }
-
-    return false;
+    return currentPlayer.hasInventoryItem(thing);
 }
 
 function buildNpcProfiles(location) {
@@ -1056,11 +973,6 @@ function scheduleStubExpansion(location) {
 
     const metadata = location.stubMetadata || {};
     const originLocation = metadata.originLocationId ? Location.get(metadata.originLocationId) : null;
-    const locationId = location.id;
-    if (locationId) {
-        pendingPlayerLocationIds.add(locationId);
-    }
-
     const expansionPromise = generateLocationFromPrompt({
         stubLocation: location,
         originLocation,
@@ -1076,9 +988,6 @@ function scheduleStubExpansion(location) {
     stubExpansionPromises.set(location.id, expansionPromise);
 
     expansionPromise.finally(() => {
-        if (locationId) {
-            pendingPlayerLocationIds.delete(locationId);
-        }
         stubExpansionPromises.delete(location.id);
     });
 
@@ -1406,10 +1315,12 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                         thing.metadata = metadata;
                     }
 
-                    if (shouldGenerateThingImage(thing, { owner: character, locationId })) {
-                        generateThingImageDebounced(thing);
+                    if (shouldGenerateThingImage(thing)) {
+                        generateThingImage(thing).catch(err => {
+                            console.warn('Failed to generate thing image:', err.message);
+                        });
                     } else {
-                        console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player context`);
+                        console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player inventory`);
                     }
                 } catch (imageError) {
                     console.warn('Failed to schedule thing image generation:', imageError.message);
@@ -1810,7 +1721,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 apiKey
             });
 
-            if (shouldGenerateNpcImage(npc, { locationId: location?.id })) {
+            if (shouldGenerateNpcImage(npc)) {
                 generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
             } else {
                 console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
@@ -1996,7 +1907,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 apiKey
             });
 
-            if (shouldGenerateNpcImage(npc, { locationId: targetLocation?.id })) {
+            if (shouldGenerateNpcImage(npc)) {
                 generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
             } else {
                 console.log(`🎭 Skipping region NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
@@ -2121,7 +2032,44 @@ function renderThingImagePrompt(thing) {
 
         // Render the template with the variables
         const renderedTemplate = promptEnv.render(templateName, variables);
+
+        const logTimestamp = Date.now();
+        let logPath = null;
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const safeThingId = typeof thing.id === 'string' ? thing.id.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
+            logPath = path.join(logDir, `item_image_${logTimestamp}_${safeThingId}.log`);
+            const logParts = [
+                `Timestamp: ${new Date(logTimestamp).toISOString()}`,
+                `Thing ID: ${thing.id}`,
+                `Thing Name: ${thing.name}`,
+                '=== TEMPLATE CONTEXT ===',
+                JSON.stringify(variables, null, 2),
+                '=== RENDERED TEMPLATE ===',
+                renderedTemplate,
+                ''
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log item image template:', logError.message);
+        }
+
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
+        try {
+            if (logPath) {
+                const appendParts = [
+                    '=== PARSED GENERATION PROMPT ===',
+                    parsedTemplate.generationPrompt || '(none)',
+                    ''
+                ];
+                fs.appendFileSync(logPath, appendParts.join('\n'), 'utf8');
+            }
+        } catch (logError) {
+            console.warn('Failed to append item image prompt log:', logError.message);
+        }
 
         if (!parsedTemplate.generationPrompt) {
             throw new Error(`No generationPrompt found in ${templateName} template`);
@@ -2233,15 +2181,13 @@ function renderRegionGeneratorPrompt(options = {}) {
 }
 
 // Function to generate player portrait image
-async function generatePlayerImage(player, options = {}) {
+async function generatePlayerImage(player) {
     try {
         if (!player) {
             throw new Error('Player object is required');
         }
 
-        const { force = false, locationId = null } = options || {};
-
-        if (!force && player.isNPC && !shouldGenerateNpcImage(player, { locationId })) {
+        if (player.isNPC && !shouldGenerateNpcImage(player)) {
             console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
             return null;
         }
@@ -2405,6 +2351,11 @@ async function generateLocationImage(location) {
             throw new Error('Location object is required');
         }
 
+        if (!currentPlayer || currentPlayer.currentLocation !== location.id) {
+            console.log(`🏞️ Skipping scene generation for ${location.id} - not the current player location`);
+            return null;
+        }
+
         // Generate the location scene prompt using LLM
         const promptTemplate = renderLocationImagePrompt(location);
         const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
@@ -2528,6 +2479,11 @@ async function generateThingImage(thing) {
             throw new Error('Thing object is required');
         }
 
+        if (!shouldGenerateThingImage(thing)) {
+            console.log(`🎒 Skipping ${thing.thingType} image generation for ${thing.name} (${thing.id}) - item not in player inventory`);
+            return null;
+        }
+
         // Generate the thing image prompt using LLM
         const promptTemplate = renderThingImagePrompt(thing);
         const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
@@ -2587,130 +2543,6 @@ async function generateThingImage(thing) {
         console.error('Error generating thing image:', error);
         throw error;
     }
-}
-
-// Debounced function to generate player portrait image
-function generatePlayerImageDebounced(player) {
-    if (!player || !player.id) {
-        console.warn('Cannot debounce image generation: invalid player');
-        return;
-    }
-
-    // Clear existing timeout for this player
-    const existingTimeout = playerImageRegenerationTimeouts.get(player.id);
-    if (existingTimeout) {
-        clearTimeout(existingTimeout);
-    }
-
-    // Set new timeout
-    const timeoutId = setTimeout(async () => {
-        try {
-            console.log(`🔄 Debounced image regeneration executing for player ${player.name}...`);
-            const imageResult = await generatePlayerImage(player);
-            console.log(`🎨 Debounced portrait regeneration initiated:`, imageResult);
-        } catch (error) {
-            console.error('Error in debounced player image generation:', error);
-        } finally {
-            // Clean up timeout tracking
-            playerImageRegenerationTimeouts.delete(player.id);
-        }
-    }, IMAGE_REGENERATION_DEBOUNCE_MS);
-
-    playerImageRegenerationTimeouts.set(player.id, timeoutId);
-    console.log(`⏱️  Debounced image regeneration scheduled for player ${player.name} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
-}
-
-// Debounced function to generate location scene image
-function generateLocationImageDebounced(location) {
-    if (!location || !location.id) {
-        console.warn('Cannot debounce image generation: invalid location');
-        return;
-    }
-
-    // Clear existing timeout for this location
-    const existingTimeout = locationImageRegenerationTimeouts.get(location.id);
-    if (existingTimeout) {
-        clearTimeout(existingTimeout);
-    }
-
-    // Set new timeout
-    const timeoutId = setTimeout(async () => {
-        try {
-            console.log(`🔄 Debounced scene regeneration executing for location ${location.id}...`);
-            const imageResult = await generateLocationImage(location);
-            console.log(`🏞️ Debounced scene regeneration initiated:`, imageResult);
-        } catch (error) {
-            console.error('Error in debounced location image generation:', error);
-        } finally {
-            // Clean up timeout tracking
-            locationImageRegenerationTimeouts.delete(location.id);
-        }
-    }, IMAGE_REGENERATION_DEBOUNCE_MS);
-
-    locationImageRegenerationTimeouts.set(location.id, timeoutId);
-    console.log(`⏱️  Debounced scene regeneration scheduled for location ${location.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
-}
-
-// Debounced function to generate location exit passage image
-function generateLocationExitImageDebounced(locationExit) {
-    if (!locationExit || !locationExit.id) {
-        console.warn('Cannot debounce image generation: invalid location exit');
-        return;
-    }
-
-    // Clear existing timeout for this location exit
-    const existingTimeout = locationExitImageRegenerationTimeouts.get(locationExit.id);
-    if (existingTimeout) {
-        clearTimeout(existingTimeout);
-    }
-
-    // Set new timeout
-    const timeoutId = setTimeout(async () => {
-        try {
-            console.log(`🔄 Debounced passage regeneration executing for location exit ${locationExit.id}...`);
-            const imageResult = await generateLocationExitImage(locationExit);
-            console.log(`🚪 Debounced passage regeneration initiated:`, imageResult);
-        } catch (error) {
-            console.error('Error in debounced location exit image generation:', error);
-        } finally {
-            // Clean up timeout tracking
-            locationExitImageRegenerationTimeouts.delete(locationExit.id);
-        }
-    }, IMAGE_REGENERATION_DEBOUNCE_MS);
-
-    locationExitImageRegenerationTimeouts.set(locationExit.id, timeoutId);
-    console.log(`⏱️  Debounced passage regeneration scheduled for location exit ${locationExit.id} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
-}
-
-// Debounced function to generate thing image
-function generateThingImageDebounced(thing) {
-    if (!thing || !thing.id) {
-        console.warn('Cannot debounce image generation: invalid thing');
-        return;
-    }
-
-    // Clear existing timeout for this thing
-    const existingTimeout = thingImageRegenerationTimeouts.get(thing.id);
-    if (existingTimeout) {
-        clearTimeout(existingTimeout);
-    }
-
-    // Set new timeout
-    const timeoutId = setTimeout(async () => {
-        try {
-            console.log(`🔄 Debounced ${thing.thingType} image regeneration executing for ${thing.name}...`);
-            const imageResult = await generateThingImage(thing);
-            console.log(`🎨 Debounced ${thing.thingType} image regeneration initiated:`, imageResult);
-        } catch (error) {
-            console.error('Error in debounced thing image generation:', error);
-        } finally {
-            // Clean up timeout tracking
-            thingImageRegenerationTimeouts.delete(thing.id);
-        }
-    }, IMAGE_REGENERATION_DEBOUNCE_MS);
-
-    thingImageRegenerationTimeouts.set(thing.id, timeoutId);
-    console.log(`⏱️  Debounced ${thing.thingType} image regeneration scheduled for ${thing.name} in ${IMAGE_REGENERATION_DEBOUNCE_MS}ms`);
 }
 
 // Function to generate a new location using AI
@@ -3703,18 +3535,17 @@ app.post('/api/player/party', (req, res) => {
         }
 
         try {
-            if (member && member.isNPC) {
-                generatePlayerImageDebounced(member);
+            if (member && member.isNPC && shouldGenerateNpcImage(member)) {
+                generatePlayerImage(member).catch(err => console.warn('Failed to queue party member portrait:', err.message));
             }
             const inventoryItems = typeof member?.getInventoryItems === 'function' ? member.getInventoryItems() : [];
             for (const item of inventoryItems) {
-                try {
-                    if (shouldGenerateThingImage(item, { owner: member })) {
-                        generateThingImageDebounced(item);
-                    }
-                } catch (itemError) {
-                    console.warn('Failed to schedule image generation for party item:', itemError.message);
+                if (!shouldGenerateThingImage(item)) {
+                    continue;
                 }
+                generateThingImage(item).catch(itemError => {
+                    console.warn('Failed to generate image for party item:', itemError.message);
+                });
             }
         } catch (partyImageError) {
             console.warn('Failed to schedule party imagery updates:', partyImageError.message);
@@ -4080,7 +3911,7 @@ app.post('/api/player/update-stats', (req, res) => {
 
         // Trigger image regeneration if description changed
         if (descriptionChanged) {
-            generatePlayerImageDebounced(currentPlayer);
+            generatePlayerImage(currentPlayer).catch(err => console.warn('Failed to regenerate player portrait:', err.message));
         }
 
         res.json({
@@ -4364,20 +4195,28 @@ app.post('/api/player/move', async (req, res) => {
         currentPlayer.setLocation(destinationLocation.id);
 
         try {
+            await generateLocationImage(destinationLocation);
+        } catch (locationImageError) {
+            console.warn('Failed to generate location scene:', locationImageError.message);
+        }
+
+        try {
             const npcIds = Array.isArray(destinationLocation.npcIds) ? destinationLocation.npcIds : [];
             for (const npcId of npcIds) {
                 const npc = players.get(npcId);
                 if (!npc || !npc.isNPC) {
                     continue;
                 }
-                if (shouldGenerateNpcImage(npc, { locationId: destinationLocation.id })) {
-                    generatePlayerImageDebounced(npc);
+                if (shouldGenerateNpcImage(npc)) {
+                    generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
                 }
                 const npcItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
                 for (const item of npcItems) {
                     try {
-                        if (shouldGenerateThingImage(item, { owner: npc, locationId: destinationLocation.id })) {
-                            generateThingImageDebounced(item);
+                        if (shouldGenerateThingImage(item)) {
+                            generateThingImage(item).catch(itemError => {
+                                console.warn('Failed to generate NPC item image:', itemError.message);
+                            });
                         }
                     } catch (npcItemError) {
                         console.warn('Failed to schedule NPC item image generation:', npcItemError.message);
@@ -4632,7 +4471,7 @@ app.post('/api/things', async (req, res) => {
                 // Don't fail thing creation if image generation fails
             }
         } else {
-            console.log(`🎒 Skipping automatic image generation for ${thing.name} (${thing.id}) - outside player context`);
+            console.log(`🎒 Skipping automatic image generation for ${thing.name} (${thing.id}) - not in player inventory`);
         }
 
         res.json({
@@ -4703,7 +4542,7 @@ app.get('/api/things/:id', (req, res) => {
 });
 
 // Update a thing
-app.put('/api/things/:id', (req, res) => {
+app.put('/api/things/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { name, description, thingType, imageId, rarity, itemTypeDetail, metadata } = req.body;
@@ -4744,14 +4583,14 @@ app.put('/api/things/:id', (req, res) => {
         }
         if (imageId !== undefined) thing.imageId = imageId;
 
-        // Trigger image regeneration if visual properties changed (debounced)
+        // Trigger image regeneration if visual properties changed (only when relevant)
         if (shouldRegenerateImage && imageId === undefined) {
             try {
                 if (shouldGenerateThingImage(thing)) {
-                    generateThingImageDebounced(thing);
-                    console.log(`🔄 Scheduled ${thing.thingType} image regeneration for ${thing.name} due to property changes`);
+                    await generateThingImage(thing);
+                    console.log(`🔄 Regenerated ${thing.thingType} image for ${thing.name} due to property changes`);
                 } else {
-                    console.log(`🎒 Skipping ${thing.thingType} image regeneration for ${thing.name} - outside player context`);
+                    console.log(`🎒 Skipping ${thing.thingType} image regeneration for ${thing.name} - not in player inventory`);
                 }
             } catch (imageError) {
                 console.warn('Failed to schedule thing image regeneration:', imageError.message);
@@ -4856,7 +4695,7 @@ app.post('/api/things/:id/image', async (req, res) => {
         if (!shouldGenerateThingImage(thing)) {
             return res.status(409).json({
                 success: false,
-                error: 'Item images can only be generated for gear in your inventory or at your current location.',
+                error: 'Item images can only be generated for gear in your inventory.',
                 thing: thing.toJSON()
             });
         }
@@ -5334,10 +5173,6 @@ app.post('/api/new-game', async (req, res) => {
         }
 
         if (entranceLocation.isStub) {
-            const pendingId = entranceLocation.id;
-            if (pendingId) {
-                pendingPlayerLocationIds.add(pendingId);
-            }
             try {
                 const expansion = await generateLocationFromPrompt({
                     stubLocation: entranceLocation,
@@ -5350,10 +5185,6 @@ app.post('/api/new-game', async (req, res) => {
                 }
             } catch (expansionError) {
                 console.warn('Failed to expand entrance stub:', expansionError.message);
-            } finally {
-                if (pendingId) {
-                    pendingPlayerLocationIds.delete(pendingId);
-                }
             }
         }
 
@@ -5372,6 +5203,12 @@ app.post('/api/new-game', async (req, res) => {
         // Store new player and set as current
         players.set(newPlayer.id, newPlayer);
         currentPlayer = newPlayer;
+
+        try {
+            await generateLocationImage(entranceLocation);
+        } catch (locationImageError) {
+            console.warn('Failed to generate starting location image:', locationImageError.message);
+        }
 
         try {
             await generateInventoryForCharacter({

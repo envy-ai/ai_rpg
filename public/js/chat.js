@@ -214,6 +214,9 @@ class AIRPGChat {
                 if (window.updateInventoryDisplay) {
                     window.updateInventoryDisplay(result.player.inventory || []);
                 }
+                if (window.refreshParty) {
+                    window.refreshParty();
+                }
 
                 if (result.player.currentLocation) {
                     // Fetch location details

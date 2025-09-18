@@ -14,6 +14,9 @@ class Thing {
   #imageId;
   #createdAt;
   #lastUpdated;
+  #rarity;
+  #itemTypeDetail;
+  #metadata;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -38,7 +41,7 @@ class Thing {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated thing visual (defaults to null)
    */
-  constructor({ name, description, thingType, id = null, imageId = null } = {}) {
+  constructor({ name, description, thingType, id = null, imageId = null, rarity = null, itemTypeDetail = null, metadata = null } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
       throw new Error('Thing name is required and must be a string');
@@ -62,6 +65,9 @@ class Thing {
     this.#description = description.trim();
     this.#thingType = thingType.toLowerCase();
     this.#imageId = imageId;
+    this.#rarity = typeof rarity === 'string' ? rarity.trim() : null;
+    this.#itemTypeDetail = typeof itemTypeDetail === 'string' ? itemTypeDetail.trim() : null;
+    this.#metadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
 
@@ -97,6 +103,33 @@ class Thing {
 
   get lastUpdated() {
     return this.#lastUpdated;
+  }
+
+  get rarity() {
+    return this.#rarity;
+  }
+
+  set rarity(newRarity) {
+    this.#rarity = typeof newRarity === 'string' ? newRarity.trim() : null;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get itemTypeDetail() {
+    return this.#itemTypeDetail;
+  }
+
+  set itemTypeDetail(newTypeDetail) {
+    this.#itemTypeDetail = typeof newTypeDetail === 'string' ? newTypeDetail.trim() : null;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get metadata() {
+    return { ...this.#metadata };
+  }
+
+  set metadata(newMetadata) {
+    this.#metadata = newMetadata && typeof newMetadata === 'object' ? { ...newMetadata } : {};
+    this.#lastUpdated = new Date().toISOString();
   }
 
   // Setter methods with validation
@@ -191,7 +224,10 @@ class Thing {
       thingType: this.#thingType,
       imageId: this.#imageId,
       createdAt: this.#createdAt,
-      lastUpdated: this.#lastUpdated
+      lastUpdated: this.#lastUpdated,
+      rarity: this.#rarity,
+      itemTypeDetail: this.#itemTypeDetail,
+      metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined
     };
   }
 
@@ -205,7 +241,10 @@ class Thing {
       name: data.name,
       description: data.description,
       thingType: data.thingType,
-      imageId: data.imageId
+      imageId: data.imageId,
+      rarity: data.rarity,
+      itemTypeDetail: data.itemTypeDetail,
+      metadata: data.metadata
     });
   }
 

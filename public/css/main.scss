@@ -441,6 +441,119 @@ p:not(:last-child) {
   opacity: 1;
 }
 
+.party-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px;
+  color: $white;
+  overflow-y: auto;
+}
+
+.party-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+
+  h2 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+}
+
+.party-count {
+  font-size: 0.9rem;
+  color: $white-70;
+}
+
+.party-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.party-empty {
+  margin-top: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.9rem;
+}
+
+.party-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 220px;
+  padding: 16px;
+  border-radius: $border-radius-lg;
+  @include glass-effect($glass-bg-light);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.party-portrait {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.party-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.party-portrait-placeholder {
+  font-size: 2.4rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.party-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.party-role {
+  font-size: 0.85rem;
+  color: $white-70;
+}
+
+.party-meta {
+  font-size: 0.8rem;
+  color: $white-60;
+}
+
+.party-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 8px;
+}
+
+.party-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  background: rgba(15, 23, 42, 0.35);
+  border-radius: 6px;
+  padding: 4px 6px;
+
+  span {
+    color: $white-70;
+  }
+
+  strong {
+    color: #f8fafc;
+    font-weight: 600;
+  }
+}
+
 // Chat container - right column of .main-content
 .chat-container {
   flex: 1; // Take up remaining width
