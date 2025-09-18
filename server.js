@@ -686,6 +686,38 @@ function shouldGenerateThingImage(thing) {
     return currentPlayer.hasInventoryItem(thing);
 }
 
+function queueNpcAssetsForLocation(location) {
+    if (!location) {
+        return;
+    }
+
+    try {
+        const npcIds = Array.isArray(location.npcIds) ? location.npcIds : [];
+        for (const npcId of npcIds) {
+            const npc = players.get(npcId);
+            if (!npc || !npc.isNPC) {
+                continue;
+            }
+
+            if (shouldGenerateNpcImage(npc)) {
+                generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+            }
+
+            const npcItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
+            for (const item of npcItems) {
+                if (!shouldGenerateThingImage(item)) {
+                    continue;
+                }
+                generateThingImage(item).catch(itemError => {
+                    console.warn('Failed to generate NPC item image:', itemError.message);
+                });
+            }
+        }
+    } catch (error) {
+        console.warn(`Failed to queue NPC assets for ${location.name || location.id}:`, error.message);
+    }
+}
+
 function buildNpcProfiles(location) {
     if (!location || typeof location.npcIds !== 'object') {
         return [];
@@ -4200,32 +4232,7 @@ app.post('/api/player/move', async (req, res) => {
             console.warn('Failed to generate location scene:', locationImageError.message);
         }
 
-        try {
-            const npcIds = Array.isArray(destinationLocation.npcIds) ? destinationLocation.npcIds : [];
-            for (const npcId of npcIds) {
-                const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
-                    continue;
-                }
-                if (shouldGenerateNpcImage(npc)) {
-                    generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
-                }
-                const npcItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
-                for (const item of npcItems) {
-                    try {
-                        if (shouldGenerateThingImage(item)) {
-                            generateThingImage(item).catch(itemError => {
-                                console.warn('Failed to generate NPC item image:', itemError.message);
-                            });
-                        }
-                    } catch (npcItemError) {
-                        console.warn('Failed to schedule NPC item image generation:', npcItemError.message);
-                    }
-                }
-            }
-        } catch (npcImageError) {
-            console.warn('Failed to schedule destination NPC imagery:', npcImageError.message);
-        }
+        queueNpcAssetsForLocation(destinationLocation);
 
         const locationData = destinationLocation.toJSON();
         locationData.pendingImageJobId = pendingLocationImages.get(destinationLocation.id) || null;
@@ -5203,6 +5210,8 @@ app.post('/api/new-game', async (req, res) => {
         // Store new player and set as current
         players.set(newPlayer.id, newPlayer);
         currentPlayer = newPlayer;
+
+        queueNpcAssetsForLocation(entranceLocation);
 
         try {
             await generateLocationImage(entranceLocation);

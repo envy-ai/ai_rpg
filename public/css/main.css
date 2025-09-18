@@ -400,6 +400,31 @@ p:not(:last-child) {
   font-size: 2rem;
 }
 
+.inventory-icon.has-image {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.inventory-icon.loading {
+  animation: inventory-pulse 1.2s ease-in-out infinite;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.5rem;
+}
+
+@keyframes inventory-pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
 .inventory-name {
   font-size: 0.85rem;
   text-align: center;

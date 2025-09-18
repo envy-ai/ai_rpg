@@ -613,6 +613,8 @@
             const countLabel = document.getElementById('inventoryCount');
             const floatingTooltip = document.getElementById('inventoryTooltip');
             const inventoryScroll = document.querySelector('.inventory-scroll');
+            const imageMetadataCache = new Map();
+            let inventoryRefreshTimeout = null;
 
             function hideTooltip() {
                 if (!floatingTooltip) return;
@@ -620,10 +622,90 @@
                 floatingTooltip.setAttribute('hidden', '');
             }
 
+            const scheduleInventoryRefresh = (delay = 5000) => {
+                if (inventoryRefreshTimeout) {
+                    return;
+                }
+
+                inventoryRefreshTimeout = setTimeout(async () => {
+                    inventoryRefreshTimeout = null;
+                    try {
+                        const response = await fetch('/api/player');
+                        const data = await response.json();
+                        if (data.success && data.player && window.updateInventoryDisplay) {
+                            window.updateInventoryDisplay(data.player.inventory || []);
+                        }
+                    } catch (error) {
+                        console.warn('Failed to refresh inventory while waiting for item images:', error);
+                    }
+                }, delay);
+            };
+
+            const resetIconToPlaceholder = (iconElement, item, fallbackSymbol = null) => {
+                if (!iconElement) return;
+                iconElement.classList.remove('has-image');
+                iconElement.classList.remove('loading');
+                iconElement.style.removeProperty('background-image');
+                iconElement.textContent = fallbackSymbol || selectInventoryIcon(item);
+            };
+
+            const applyImageToIcon = (iconElement, imageUrl) => {
+                if (!iconElement || !imageUrl) return;
+                iconElement.classList.remove('loading');
+                iconElement.classList.add('has-image');
+                iconElement.style.backgroundImage = `url('${imageUrl}')`;
+                iconElement.textContent = '';
+            };
+
+            const loadInventoryImage = async (item, iconElement) => {
+                const imageId = item?.imageId;
+                if (!imageId) {
+                    resetIconToPlaceholder(iconElement, item);
+                    return;
+                }
+
+                if (imageMetadataCache.has(imageId)) {
+                    applyImageToIcon(iconElement, imageMetadataCache.get(imageId));
+                    return;
+                }
+
+                iconElement.classList.add('loading');
+                iconElement.textContent = '🖼️';
+
+                try {
+                    const response = await fetch(`/api/images/${encodeURIComponent(imageId)}`);
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            // Image metadata is not ready yet; refresh inventory soon.
+                            resetIconToPlaceholder(iconElement, item, '⏳');
+                            scheduleInventoryRefresh();
+                            return;
+                        }
+                        throw new Error(`Failed to load image metadata (status ${response.status})`);
+                    }
+
+                    const data = await response.json();
+                    const imageUrl = data?.metadata?.images?.[0]?.url;
+                    if (imageUrl) {
+                        imageMetadataCache.set(imageId, imageUrl);
+                        applyImageToIcon(iconElement, imageUrl);
+                    } else {
+                        resetIconToPlaceholder(iconElement, item);
+                    }
+                } catch (error) {
+                    console.warn(`Unable to load inventory image for ${item?.name || imageId}:`, error);
+                    resetIconToPlaceholder(iconElement, item);
+                } finally {
+                    iconElement.classList.remove('loading');
+                }
+            };
+
             function renderInventory(items = []) {
                 if (!inventoryGrid || !emptyState || !countLabel) {
                     return;
                 }
+
+                hideTooltip();
 
                 const safeItems = Array.isArray(items) ? items : [];
                 inventoryGrid.innerHTML = '';
@@ -635,10 +717,14 @@
                 safeItems.forEach(item => {
                     const card = document.createElement('div');
                     card.className = 'npc-card inventory-card';
+                    card.dataset.itemId = item.id || '';
 
                     const icon = document.createElement('div');
                     icon.className = 'inventory-icon';
-                    icon.textContent = selectInventoryIcon(item);
+                    resetIconToPlaceholder(icon, item);
+                    if (item.imageId) {
+                        loadInventoryImage(item, icon);
+                    }
 
                     const name = document.createElement('div');
                     name.className = 'inventory-name';
