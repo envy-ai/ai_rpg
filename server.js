@@ -652,6 +652,122 @@ const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingLocationImages = new Map(); // Store active image job IDs per location
+const pendingPlayerLocationIds = new Set(); // Location IDs the player is about to enter
+
+function getCurrentPlayerPartyIds() {
+    if (!currentPlayer || typeof currentPlayer.getPartyMembers !== 'function') {
+        return new Set();
+    }
+    try {
+        const members = currentPlayer.getPartyMembers();
+        if (!Array.isArray(members)) {
+            return new Set();
+        }
+        return new Set(members.filter(id => typeof id === 'string' && id.trim()));
+    } catch (error) {
+        console.warn('Failed to read current player party members for image gating:', error.message);
+        return new Set();
+    }
+}
+
+function isLocationRelevantToPlayer(locationId) {
+    if (!locationId) {
+        return false;
+    }
+    //if (pendingPlayerLocationIds.has(locationId)) {
+    //    return true;
+    //}
+    if (!currentPlayer || !currentPlayer.currentLocation) {
+        return false;
+    }
+    return currentPlayer.currentLocation === locationId;
+}
+
+function shouldGenerateNpcImage(npc, { locationId = null } = {}) {
+    if (!npc) {
+        return false;
+    }
+    if (!npc.isNPC) {
+        return true;
+    }
+    const candidateLocationId = locationId || npc.currentLocation || null;
+    if (candidateLocationId && isLocationRelevantToPlayer(candidateLocationId)) {
+        return true;
+    }
+
+    if (!currentPlayer) {
+        return false;
+    }
+
+    const partyIds = getCurrentPlayerPartyIds();
+    if (partyIds.has(npc.id)) {
+        return true;
+    }
+
+    return false;
+}
+
+function shouldGenerateThingImage(thing, { owner = null, locationId = null } = {}) {
+    if (!thing) {
+        return false;
+    }
+
+    // Only restrict item imagery; scenery can still render freely
+    if (thing.thingType !== 'item') {
+        return true;
+    }
+
+    if (!currentPlayer) {
+        return false;
+    }
+
+    if (typeof currentPlayer.hasInventoryItem === 'function' && currentPlayer.hasInventoryItem(thing)) {
+        return true;
+    }
+
+    const partyIds = getCurrentPlayerPartyIds();
+
+    if (owner) {
+        if (owner.id === currentPlayer.id) {
+            return true;
+        }
+        if (partyIds.has(owner.id)) {
+            return true;
+        }
+        if (!locationId && owner.currentLocation) {
+            locationId = owner.currentLocation;
+        }
+    }
+
+    const metadata = thing.metadata || {};
+
+    const metadataOwnerId = typeof metadata.ownerId === 'string' ? metadata.ownerId.trim() : metadata.ownerId;
+    if (metadataOwnerId) {
+        if (metadataOwnerId === currentPlayer.id) {
+            return true;
+        }
+        if (partyIds.has(metadataOwnerId)) {
+            return true;
+        }
+    }
+
+    const candidateLocationIds = new Set();
+    if (locationId) candidateLocationIds.add(locationId);
+    const metadataLocationId = typeof metadata.locationId === 'string' ? metadata.locationId.trim() : metadata.locationId;
+    if (metadataLocationId) candidateLocationIds.add(metadataLocationId);
+    const metadataLocation = typeof metadata.location === 'string' ? metadata.location.trim() : metadata.location;
+    if (metadataLocation) candidateLocationIds.add(metadataLocation);
+    const ownerLocationId = typeof metadata.ownerLocationId === 'string' ? metadata.ownerLocationId.trim() : metadata.ownerLocationId;
+    if (ownerLocationId) candidateLocationIds.add(ownerLocationId);
+
+    for (const candidateId of candidateLocationIds) {
+        if (candidateId && isLocationRelevantToPlayer(candidateId)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 function buildNpcProfiles(location) {
     if (!location || typeof location.npcIds !== 'object') {
@@ -940,6 +1056,10 @@ function scheduleStubExpansion(location) {
 
     const metadata = location.stubMetadata || {};
     const originLocation = metadata.originLocationId ? Location.get(metadata.originLocationId) : null;
+    const locationId = location.id;
+    if (locationId) {
+        pendingPlayerLocationIds.add(locationId);
+    }
 
     const expansionPromise = generateLocationFromPrompt({
         stubLocation: location,
@@ -956,6 +1076,9 @@ function scheduleStubExpansion(location) {
     stubExpansionPromises.set(location.id, expansionPromise);
 
     expansionPromise.finally(() => {
+        if (locationId) {
+            pendingPlayerLocationIds.delete(locationId);
+        }
         stubExpansionPromises.delete(location.id);
     });
 
@@ -1254,10 +1377,43 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 const thing = new Thing({
                     name: item.name,
                     description: extendedDescription || item.description || 'Inventory item',
-                    thingType: 'item'
+                    thingType: 'item',
+                    rarity: item.rarity || null,
+                    itemTypeDetail: item.type || null,
+                    metadata: {
+                        rarity: item.rarity || null,
+                        itemType: item.type || null,
+                        value: item.value || null,
+                        weight: item.weight || null,
+                        properties: item.properties || null
+                    }
                 });
                 things.set(thing.id, thing);
                 character.addInventoryItem(thing);
+                try {
+                    const metadata = thing.metadata || {};
+                    let metadataChanged = false;
+                    if (character?.id && metadata.ownerId !== character.id) {
+                        metadata.ownerId = character.id;
+                        metadataChanged = true;
+                    }
+                    const locationId = location?.id || null;
+                    if (locationId && metadata.locationId !== locationId) {
+                        metadata.locationId = locationId;
+                        metadataChanged = true;
+                    }
+                    if (metadataChanged) {
+                        thing.metadata = metadata;
+                    }
+
+                    if (shouldGenerateThingImage(thing, { owner: character, locationId })) {
+                        generateThingImageDebounced(thing);
+                    } else {
+                        console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player context`);
+                    }
+                } catch (imageError) {
+                    console.warn('Failed to schedule thing image generation:', imageError.message);
+                }
                 createdThings.push(thing);
             } catch (error) {
                 console.warn(`Failed to create Thing for inventory item "${item.name}":`, error.message);
@@ -1521,7 +1677,7 @@ function parseInventoryItems(xmlContent) {
 }
 
 // Function to render location NPC prompt from template
-async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey }) {
+async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey, existingLocationsInRegion = [] }) {
     try {
         let region = Region.get(location.regionId);
         const allNpcIds = Utils.difference(new Set(players.keys()), new Set([currentPlayer?.id].filter(Boolean)));
@@ -1547,11 +1703,21 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             return [];
         }
 
+        const locationContextText = existingLocationsInRegion
+            .filter(loc => loc && loc.id !== location.id)
+            .slice(0, 5)
+            .map(loc => `- ${loc.name || loc.id}: ${loc.description?.replace(/\s+/g, ' ').slice(0, 160) || 'No description provided.'}`)
+            .join('\n');
+
+        const npcPromptWithContext = locationContextText
+            ? `${npcPrompt}\n\nHere are other known locations in this region for context:\n${locationContextText}`
+            : npcPrompt;
+
         const messages = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: generationPrompt },
             { role: 'assistant', content: aiResponse },
-            { role: 'user', content: npcPrompt }
+            { role: 'user', content: npcPromptWithContext }
         ];
 
         const requestData = {
@@ -1560,6 +1726,12 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             max_tokens: 2000,
             temperature: config.ai.temperature || 0.7
         };
+
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logPath = path.join(logDir, `location_npcs_${location.id}.log`);
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
         const response = await axios.post(chatEndpoint, requestData, {
@@ -1577,14 +1749,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const npcResponse = response.data.choices[0].message.content;
 
         try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `location_npcs_${location.id}.log`);
             const parts = [
                 '=== NPC PROMPT ===',
-                npcPrompt,
+                npcPromptWithContext,
                 '\n=== NPC RESPONSE ===',
                 npcResponse,
                 '\n'
@@ -1643,7 +1810,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 apiKey
             });
 
-            generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+            if (shouldGenerateNpcImage(npc, { locationId: location?.id })) {
+                generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+            } else {
+                console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
+            }
         }
 
         return created;
@@ -1825,7 +1996,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 apiKey
             });
 
-            generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
+            if (shouldGenerateNpcImage(npc, { locationId: targetLocation?.id })) {
+                generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
+            } else {
+                console.log(`🎭 Skipping region NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
+            }
         }
 
         return created;
@@ -1930,10 +2105,16 @@ function renderThingImagePrompt(thing) {
             : 'scenery-image.xml.njk';
 
         // Set up variables for the template
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(settingSnapshot);
+        const metadata = thing.metadata || {};
+
         const variables = {
+            setting: settingDescription,
             thingName: thing.name,
-            thingType: thing.thingType,
-            thingDescription: thing.description
+            thingType: metadata.itemType || thing.itemTypeDetail || thing.thingType,
+            thingDescription: thing.description,
+            thingRarity: metadata.rarity || thing.rarity || 'Common'
         };
 
         console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
@@ -2052,8 +2233,19 @@ function renderRegionGeneratorPrompt(options = {}) {
 }
 
 // Function to generate player portrait image
-async function generatePlayerImage(player) {
+async function generatePlayerImage(player, options = {}) {
     try {
+        if (!player) {
+            throw new Error('Player object is required');
+        }
+
+        const { force = false, locationId = null } = options || {};
+
+        if (!force && player.isNPC && !shouldGenerateNpcImage(player, { locationId })) {
+            console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
+            return null;
+        }
+
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping player portrait generation');
@@ -2063,10 +2255,6 @@ async function generatePlayerImage(player) {
         if (!comfyUIClient) {
             console.log('ComfyUI client not initialized, skipping player portrait generation');
             return null;
-        }
-
-        if (!player) {
-            throw new Error('Player object is required');
         }
 
         // Generate the portrait prompt
@@ -3455,6 +3643,127 @@ app.get('/api/player', (req, res) => {
     });
 });
 
+app.get('/api/player/party', (req, res) => {
+    try {
+        if (!currentPlayer) {
+            return res.status(404).json({
+                success: false,
+                error: 'No current player found'
+            });
+        }
+
+        const memberIds = currentPlayer.getPartyMembers();
+        const members = memberIds
+            .map(id => players.get(id))
+            .filter(Boolean)
+            .map(member => member.getStatus());
+
+        res.json({
+            success: true,
+            members,
+            count: members.length
+        });
+    } catch (error) {
+        console.error('Error retrieving party members:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/player/party', (req, res) => {
+    try {
+        const { ownerId, memberId } = req.body || {};
+
+        if (!ownerId || typeof ownerId !== 'string') {
+            return res.status(400).json({ success: false, error: 'ownerId is required' });
+        }
+        if (!memberId || typeof memberId !== 'string') {
+            return res.status(400).json({ success: false, error: 'memberId is required' });
+        }
+
+        const owner = players.get(ownerId);
+        const member = players.get(memberId);
+
+        if (!owner) {
+            return res.status(404).json({ success: false, error: `Owner player '${ownerId}' not found` });
+        }
+        if (!member) {
+            return res.status(404).json({ success: false, error: `Member player '${memberId}' not found` });
+        }
+
+        const added = owner.addPartyMember(memberId);
+        if (!added) {
+            return res.json({
+                success: true,
+                message: 'Player already in party',
+                members: owner.getPartyMembers()
+            });
+        }
+
+        try {
+            if (member && member.isNPC) {
+                generatePlayerImageDebounced(member);
+            }
+            const inventoryItems = typeof member?.getInventoryItems === 'function' ? member.getInventoryItems() : [];
+            for (const item of inventoryItems) {
+                try {
+                    if (shouldGenerateThingImage(item, { owner: member })) {
+                        generateThingImageDebounced(item);
+                    }
+                } catch (itemError) {
+                    console.warn('Failed to schedule image generation for party item:', itemError.message);
+                }
+            }
+        } catch (partyImageError) {
+            console.warn('Failed to schedule party imagery updates:', partyImageError.message);
+        }
+
+        res.json({
+            success: true,
+            message: `Added ${member.name} to ${owner.name}'s party`,
+            members: owner.getPartyMembers()
+        });
+    } catch (error) {
+        console.error('Error adding party member:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/player/party', (req, res) => {
+    try {
+        const { ownerId, memberId } = req.body || {};
+
+        if (!ownerId || typeof ownerId !== 'string') {
+            return res.status(400).json({ success: false, error: 'ownerId is required' });
+        }
+        if (!memberId || typeof memberId !== 'string') {
+            return res.status(400).json({ success: false, error: 'memberId is required' });
+        }
+
+        const owner = players.get(ownerId);
+
+        if (!owner) {
+            return res.status(404).json({ success: false, error: `Owner player '${ownerId}' not found` });
+        }
+
+        const removed = owner.removePartyMember(memberId);
+        if (!removed) {
+            return res.status(404).json({ success: false, error: `Player '${memberId}' was not in the party` });
+        }
+
+        res.json({
+            success: true,
+            message: `Removed player '${memberId}' from ${owner.name}'s party`,
+            members: owner.getPartyMembers()
+        });
+    } catch (error) {
+        console.error('Error removing party member:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Update player attributes
 app.put('/api/player/attributes', (req, res) => {
     if (!currentPlayer) {
@@ -3895,6 +4204,18 @@ app.post('/api/players/:id/portrait', async (req, res) => {
         // Generate the portrait
         const imageResult = await generatePlayerImage(player);
 
+        if (!imageResult) {
+            return res.status(409).json({
+                success: false,
+                error: 'Portrait generation is only available for companions in your party or at your current location.',
+                player: {
+                    id: player.id,
+                    name: player.name,
+                    imageId: player.imageId
+                }
+            });
+        }
+
         res.json({
             success: true,
             player: {
@@ -4041,6 +4362,31 @@ app.post('/api/player/move', async (req, res) => {
         }
 
         currentPlayer.setLocation(destinationLocation.id);
+
+        try {
+            const npcIds = Array.isArray(destinationLocation.npcIds) ? destinationLocation.npcIds : [];
+            for (const npcId of npcIds) {
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    continue;
+                }
+                if (shouldGenerateNpcImage(npc, { locationId: destinationLocation.id })) {
+                    generatePlayerImageDebounced(npc);
+                }
+                const npcItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
+                for (const item of npcItems) {
+                    try {
+                        if (shouldGenerateThingImage(item, { owner: npc, locationId: destinationLocation.id })) {
+                            generateThingImageDebounced(item);
+                        }
+                    } catch (npcItemError) {
+                        console.warn('Failed to schedule NPC item image generation:', npcItemError.message);
+                    }
+                }
+            }
+        } catch (npcImageError) {
+            console.warn('Failed to schedule destination NPC imagery:', npcImageError.message);
+        }
 
         const locationData = destinationLocation.toJSON();
         locationData.pendingImageJobId = pendingLocationImages.get(destinationLocation.id) || null;
@@ -4262,24 +4608,31 @@ app.post('/api/locations/generate', async (req, res) => {
 // Create a new thing
 app.post('/api/things', async (req, res) => {
     try {
-        const { name, description, thingType, imageId } = req.body;
+        const { name, description, thingType, imageId, rarity, itemTypeDetail, metadata } = req.body;
 
         const thing = new Thing({
             name,
             description,
             thingType,
-            imageId
+            imageId,
+            rarity,
+            itemTypeDetail,
+            metadata
         });
 
         things.set(thing.id, thing);
 
-        // Automatically generate thing image if image generation is enabled
-        try {
-            const imageResult = await generateThingImage(thing);
-            console.log(`🎨 Thing ${thing.thingType} image generation initiated for ${thing.name}:`, imageResult);
-        } catch (imageError) {
-            console.warn('Failed to generate thing image:', imageError.message);
-            // Don't fail thing creation if image generation fails
+        // Automatically generate thing image if context allows
+        if (shouldGenerateThingImage(thing)) {
+            try {
+                const imageResult = await generateThingImage(thing);
+                console.log(`🎨 Thing ${thing.thingType} image generation initiated for ${thing.name}:`, imageResult);
+            } catch (imageError) {
+                console.warn('Failed to generate thing image:', imageError.message);
+                // Don't fail thing creation if image generation fails
+            }
+        } else {
+            console.log(`🎒 Skipping automatic image generation for ${thing.name} (${thing.id}) - outside player context`);
         }
 
         res.json({
@@ -4353,7 +4706,7 @@ app.get('/api/things/:id', (req, res) => {
 app.put('/api/things/:id', (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, thingType, imageId } = req.body;
+        const { name, description, thingType, imageId, rarity, itemTypeDetail, metadata } = req.body;
         const thing = things.get(id);
 
         if (!thing) {
@@ -4377,13 +4730,29 @@ app.put('/api/things/:id', (req, res) => {
             thing.thingType = thingType;
             shouldRegenerateImage = true;
         }
+        if (rarity !== undefined) {
+            thing.rarity = rarity;
+            shouldRegenerateImage = true;
+        }
+        if (itemTypeDetail !== undefined) {
+            thing.itemTypeDetail = itemTypeDetail;
+            shouldRegenerateImage = true;
+        }
+        if (metadata !== undefined) {
+            thing.metadata = metadata;
+            shouldRegenerateImage = true;
+        }
         if (imageId !== undefined) thing.imageId = imageId;
 
         // Trigger image regeneration if visual properties changed (debounced)
         if (shouldRegenerateImage && imageId === undefined) {
             try {
-                generateThingImageDebounced(thing);
-                console.log(`🔄 Scheduled ${thing.thingType} image regeneration for ${thing.name} due to property changes`);
+                if (shouldGenerateThingImage(thing)) {
+                    generateThingImageDebounced(thing);
+                    console.log(`🔄 Scheduled ${thing.thingType} image regeneration for ${thing.name} due to property changes`);
+                } else {
+                    console.log(`🎒 Skipping ${thing.thingType} image regeneration for ${thing.name} - outside player context`);
+                }
             } catch (imageError) {
                 console.warn('Failed to schedule thing image regeneration:', imageError.message);
             }
@@ -4481,6 +4850,14 @@ app.post('/api/things/:id/image', async (req, res) => {
             return res.status(404).json({
                 success: false,
                 error: 'Thing not found'
+            });
+        }
+
+        if (!shouldGenerateThingImage(thing)) {
+            return res.status(409).json({
+                success: false,
+                error: 'Item images can only be generated for gear in your inventory or at your current location.',
+                thing: thing.toJSON()
             });
         }
 
@@ -4957,6 +5334,10 @@ app.post('/api/new-game', async (req, res) => {
         }
 
         if (entranceLocation.isStub) {
+            const pendingId = entranceLocation.id;
+            if (pendingId) {
+                pendingPlayerLocationIds.add(pendingId);
+            }
             try {
                 const expansion = await generateLocationFromPrompt({
                     stubLocation: entranceLocation,
@@ -4969,6 +5350,10 @@ app.post('/api/new-game', async (req, res) => {
                 }
             } catch (expansionError) {
                 console.warn('Failed to expand entrance stub:', expansionError.message);
+            } finally {
+                if (pendingId) {
+                    pendingPlayerLocationIds.delete(pendingId);
+                }
             }
         }
 
