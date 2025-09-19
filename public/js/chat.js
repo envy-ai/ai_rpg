@@ -157,6 +157,186 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addEventSummary(icon, summaryText) {
+        if (!summaryText) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = `${icon || '📣'} Event`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.textContent = summaryText;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addEventSummaries(eventData) {
+        if (!eventData) {
+            return;
+        }
+
+        const parsed = eventData.parsed || eventData;
+        if (!parsed || typeof parsed !== 'object') {
+            return;
+        }
+
+        const safeName = (value) => {
+            if (!value && value !== 0) return 'Someone';
+            const text = String(value).trim();
+            return text || 'Someone';
+        };
+
+        const safeItem = (value, fallback = 'an item') => {
+            if (!value && value !== 0) return fallback;
+            const text = String(value).trim();
+            return text || fallback;
+        };
+
+        const handlers = {
+            attack_damage: (entries) => {
+                entries.forEach((entry) => {
+                    const attacker = safeName(entry?.attacker);
+                    const target = safeName(entry?.target || 'their target');
+                    this.addEventSummary('⚔️', `${attacker} attacked ${target}.`);
+                });
+            },
+            consume_item: (entries) => {
+                entries.forEach((entry) => {
+                    const user = safeName(entry?.user);
+                    const item = safeItem(entry?.item);
+                    this.addEventSummary('🧪', `${user} consumed ${item}.`);
+                });
+            },
+            death_incapacitation: (entries) => {
+                entries.forEach((name) => {
+                    const target = safeName(name);
+                    this.addEventSummary('☠️', `${target} was incapacitated.`);
+                });
+            },
+            drop_item: (entries) => {
+                entries.forEach((entry) => {
+                    const character = safeName(entry?.character);
+                    const item = safeItem(entry?.item);
+                    this.addEventSummary('📦', `${character} dropped ${item}.`);
+                });
+            },
+            heal_recover: (entries) => {
+                entries.forEach((entry) => {
+                    const healer = entry?.healer ? safeName(entry.healer) : null;
+                    const recipient = safeName(entry?.recipient);
+                    const effect = entry?.effect && String(entry.effect).trim();
+                    const detail = effect ? ` (${effect})` : '';
+                    if (healer) {
+                        this.addEventSummary('💖', `${healer} healed ${recipient}${detail}.`);
+                    } else {
+                        this.addEventSummary('💖', `${recipient} recovered${detail}.`);
+                    }
+                });
+            },
+            item_appear: (entries) => {
+                entries.forEach((item) => {
+                    const itemName = safeItem(item);
+                    this.addEventSummary('✨', `${itemName} appeared in the scene.`);
+                });
+            },
+            move_location: (entries) => {
+                entries.forEach((location) => {
+                    const destination = safeItem(location, 'a new location');
+                    this.addEventSummary('🚶', `Travelled to ${destination}.`);
+                });
+            },
+            new_exit_discovered: (entries) => {
+                entries.forEach((description) => {
+                    const detail = safeItem(description, 'a new path');
+                    this.addEventSummary('🚪', `New exit discovered: ${detail}.`);
+                });
+            },
+            npc_arrival_departure: (entries) => {
+                entries.forEach((entry) => {
+                    const name = safeName(entry?.name);
+                    const action = (entry?.action || '').trim().toLowerCase();
+                    if (action === 'arrived') {
+                        this.addEventSummary('🙋', `${name} arrived at the location.`);
+                    } else if (action === 'left') {
+                        this.addEventSummary('🏃', `${name} left the area.`);
+                    } else {
+                        this.addEventSummary('📍', `${name} ${entry?.action || 'moved'}.`);
+                    }
+                });
+            },
+            party_change: (entries) => {
+                entries.forEach((entry) => {
+                    const name = safeName(entry?.name);
+                    const action = (entry?.action || '').trim().toLowerCase();
+                    if (action === 'joined') {
+                        this.addEventSummary('🤝', `${name} joined the party.`);
+                    } else if (action === 'left') {
+                        this.addEventSummary('👋', `${name} left the party.`);
+                    } else {
+                        this.addEventSummary('📣', `${name} ${entry?.action || 'changed party status'}.`);
+                    }
+                });
+            },
+            pick_up_item: (entries) => {
+                entries.forEach((item) => {
+                    const itemName = safeItem(item);
+                    this.addEventSummary('🎒', `Picked up ${itemName}.`);
+                });
+            },
+            status_effect_change: (entries) => {
+                entries.forEach((entry) => {
+                    const entity = safeName(entry?.entity);
+                    const description = entry?.description ? String(entry.description).trim() : 'a status effect';
+                    const action = (entry?.action || '').trim().toLowerCase();
+                    if (action === 'gained') {
+                        this.addEventSummary('🌀', `${entity} gained ${description}.`);
+                    } else if (action === 'lost') {
+                        this.addEventSummary('🌀', `${entity} lost ${description}.`);
+                    } else {
+                        this.addEventSummary('🌀', `${entity} changed status: ${description}.`);
+                    }
+                });
+            },
+            transfer_item: (entries) => {
+                entries.forEach((entry) => {
+                    const giver = safeName(entry?.giver);
+                    const item = safeItem(entry?.item);
+                    const receiver = safeName(entry?.receiver);
+                    this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`);
+                });
+            }
+        };
+
+        Object.entries(parsed).forEach(([eventType, entries]) => {
+            if (!entries || (Array.isArray(entries) && entries.length === 0)) {
+                return;
+            }
+
+            const handler = handlers[eventType];
+            if (!handler) {
+                return;
+            }
+
+            const normalized = Array.isArray(entries) ? entries : [entries];
+            handler(normalized);
+        });
+    }
+
     addPlausibilityMessage(contentHtml) {
         if (!contentHtml) {
             return;
@@ -328,6 +508,10 @@ class AIRPGChat {
 
                 if (data.eventChecks) {
                     this.addEventMessage(data.eventChecks);
+                }
+
+                if (data.events) {
+                    this.addEventSummaries(data.events);
                 }
 
                 if (data.plausibility) {
