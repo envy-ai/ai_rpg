@@ -2604,8 +2604,6 @@ function renderLocationImagePrompt(location) {
             throw new Error('Missing systemPrompt or generationPrompt in location image template');
         }
 
-        console.log(`Extracted prompts for location ${location.id} - calling LLM for image prompt generation`);
-
         // Return the prompts for LLM processing (not the final image prompt yet)
         return {
             renderedTemplate: renderedTemplate,
@@ -2651,7 +2649,6 @@ function renderLocationExitImagePrompt(locationExit) {
             throw new Error('No generationPrompt found in location exit image template');
         }
 
-        console.log(`Generated location exit passage prompt for ${locationExit.id}:`, generationPrompt);
         return generationPrompt.trim();
 
     } catch (error) {
@@ -2728,8 +2725,6 @@ function renderThingImagePrompt(thing) {
         if (!parsedTemplate.generationPrompt) {
             throw new Error(`No generationPrompt found in ${templateName} template`);
         }
-
-        console.log(`Generated ${thing.thingType} image prompt for ${thing.id}:`, parsedTemplate.generationPrompt);
 
         return parsedTemplate;
     } catch (error) {
