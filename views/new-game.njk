@@ -75,6 +75,12 @@
                             <input type="text" id="startingLocation" name="startingLocation" placeholder="{{ inputPlaceholderLoc }}">
                             <div class="help-text">{{ helpLoc }}</div>
                         </div>
+
+                        <div class="form-group">
+                            <label for="numSkills">Number of Skills</label>
+                            <input type="number" id="numSkills" name="numSkills" value="20" min="1" max="100">
+                            <div class="help-text">How many unique skills to generate (default 20).</div>
+                        </div>
                     </div>
 
                     <div class="form-actions">
@@ -95,4 +101,3 @@
     </div>
 </body>
 </html>
-

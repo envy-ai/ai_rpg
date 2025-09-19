@@ -18,6 +18,9 @@ const LocationExit = require('./LocationExit.js');
 // Import Thing class
 const Thing = require('./Thing.js');
 
+// Import Skill class
+const Skill = require('./Skill.js');
+
 // Import SettingInfo class
 const SettingInfo = require('./SettingInfo.js');
 
@@ -680,6 +683,7 @@ function getSuggestedPlayerLevel(settingSnapshot = null) {
 }
 const players = new Map(); // Store multiple players by ID
 const things = new Map(); // Store things (items and scenery) by ID
+const skills = new Map(); // Store skill definitions by name
 
 // In-memory game world storage
 const gameLocations = new Map(); // Store Location instances by ID
@@ -898,6 +902,32 @@ function logEventCheck({ systemPrompt, generationPrompt, responseText }) {
     }
 }
 
+function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `plausibility_check_${timestamp}.log`);
+        const parts = [
+            '=== PLAUSIBILITY SYSTEM PROMPT ===',
+            systemPrompt || '(none)',
+            '',
+            '=== PLAUSIBILITY GENERATION PROMPT ===',
+            generationPrompt || '(none)',
+            '',
+            '=== PLAUSIBILITY RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log plausibility check:', error.message);
+    }
+}
+
 function escapeHtml(text) {
     if (typeof text !== 'string') {
         return '';
@@ -994,6 +1024,95 @@ async function runEventChecks({ textToCheck }) {
         };
     } catch (error) {
         console.warn('Event check execution failed:', error.message);
+        return null;
+    }
+}
+
+async function runPlausibilityCheck({ actionText, locationId }) {
+    if (!actionText || !actionText.trim()) {
+        return null;
+    }
+
+    if (!currentPlayer) {
+        return null;
+    }
+
+    try {
+        const location = locationId ? Location.get(locationId) : (currentPlayer.currentLocation ? Location.get(currentPlayer.currentLocation) : null);
+
+        const playerStatus = currentPlayer.getStatus ? currentPlayer.getStatus() : null;
+        const locationDetails = location ? location.getDetails() : null;
+        const activeSetting = getActiveSettingSnapshot();
+        const fallbackSetting = {
+            name: null,
+            description: describeSettingForPrompt(activeSetting),
+            theme: null,
+            genre: null,
+            magicLevel: null,
+            techLevel: null,
+            tone: null,
+            difficulty: null
+        };
+        const settingContext = activeSetting || fallbackSetting;
+
+        const renderedTemplate = promptEnv.render('plausibility-check.xml.njk', {
+            player: playerStatus || {},
+            actionText,
+            location: locationDetails || { name: 'Unknown Location', description: 'No description available.' },
+            setting: settingContext
+        });
+
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+        if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+            console.warn('Plausibility template missing prompts, skipping plausibility analysis.');
+            return null;
+        }
+
+        const messages = [
+            { role: 'system', content: parsedTemplate.systemPrompt },
+            { role: 'user', content: parsedTemplate.generationPrompt }
+        ];
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const chatEndpoint = endpoint.endsWith('/') ?
+            endpoint + 'chat/completions' :
+            endpoint + '/chat/completions';
+
+        const requestData = {
+            model: config.ai.model,
+            messages,
+            max_tokens: parsedTemplate.maxTokens || 200,
+            temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
+        };
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 45000
+        });
+
+        const plausibilityResponse = response.data?.choices?.[0]?.message?.content || '';
+
+        logPlausibilityCheck({
+            systemPrompt: parsedTemplate.systemPrompt,
+            generationPrompt: parsedTemplate.generationPrompt,
+            responseText: plausibilityResponse
+        });
+
+        if (!plausibilityResponse.trim()) {
+            return null;
+        }
+
+        const safeResponse = escapeHtml(plausibilityResponse.trim());
+        return {
+            raw: plausibilityResponse,
+            html: safeResponse.replace(/\n/g, '<br>')
+        };
+    } catch (error) {
+        console.warn('Plausibility check failed:', error.message);
         return null;
     }
 }
@@ -1894,6 +2013,225 @@ function parseInventoryItems(xmlContent) {
     } catch (error) {
         console.warn('Failed to parse inventory XML:', error.message);
         return [];
+    }
+}
+
+function renderSkillsPrompt(context = {}) {
+    try {
+        const templateName = 'skills-generator.xml.njk';
+        return promptEnv.render(templateName, {
+            settingDescription: context.settingDescription || 'A fantastical realm of adventure.',
+            numSkills: context.numSkills || 20,
+            attributes: context.attributes || []
+        });
+    } catch (error) {
+        console.error('Error rendering skills template:', error);
+        return null;
+    }
+}
+
+function parseSkillsXml(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const skillNodes = Array.from(doc.getElementsByTagName('skill'));
+        const parsedSkills = [];
+
+        for (const node of skillNodes) {
+            const nameNode = node.getElementsByTagName('name')[0];
+            const descriptionNode = node.getElementsByTagName('description')[0];
+            const attributeNode = node.getElementsByTagName('attribute')[0];
+
+            const name = nameNode ? nameNode.textContent.trim() : '';
+            if (!name) {
+                continue;
+            }
+
+            parsedSkills.push({
+                name,
+                description: descriptionNode ? descriptionNode.textContent.trim() : '',
+                attribute: attributeNode ? attributeNode.textContent.trim() : ''
+            });
+        }
+
+        return parsedSkills;
+    } catch (error) {
+        console.warn('Failed to parse skills XML:', error.message);
+        return [];
+    }
+}
+
+function logSkillGeneration({ systemPrompt, generationPrompt, responseText }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `skills_generation_${timestamp}.log`);
+        const parts = [
+            '=== SKILL GENERATION SYSTEM PROMPT ===',
+            systemPrompt || '(none)',
+            '',
+            '=== SKILL GENERATION PROMPT ===',
+            generationPrompt || '(none)',
+            '',
+            '=== SKILL GENERATION RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log skills generation:', error.message);
+    }
+}
+
+function buildFallbackSkills({ count, attributes }) {
+    const fallbackSkills = [];
+    const attributeNames = Array.isArray(attributes) && attributes.length
+        ? attributes.map(attr => attr.name || attr)
+        : ['general'];
+
+    for (let i = 0; i < count; i++) {
+        const attributeName = attributeNames[i % attributeNames.length] || 'general';
+        const attributeLabel = typeof attributeName === 'string' && attributeName.trim()
+            ? attributeName.trim()
+            : 'general';
+        const prettyAttribute = attributeLabel.charAt(0).toUpperCase() + attributeLabel.slice(1);
+        const skillName = `${prettyAttribute} Training ${Math.floor(i / attributeNames.length) + 1}`.trim();
+        const description = `Fallback skill focused on enhancing ${prettyAttribute.toLowerCase()} capabilities.`;
+        fallbackSkills.push(new Skill({
+            name: skillName,
+            description,
+            attribute: attributeLabel
+        }));
+    }
+
+    return fallbackSkills;
+}
+
+async function generateSkillsList({ count, settingDescription }) {
+    const safeCount = Math.max(1, Math.min(100, Number(count) || 20));
+
+    const attributeEntries = Object.entries(attributeDefinitionsForPrompt || {})
+        .map(([name, info]) => ({
+            name,
+            description: info?.description || info?.label || name
+        }));
+
+    const renderedTemplate = renderSkillsPrompt({
+        settingDescription: settingDescription || 'A vibrant world of adventure.',
+        numSkills: safeCount,
+        attributes: attributeEntries
+    });
+
+    if (!renderedTemplate) {
+        console.warn('Skills template render failed, using fallback skills.');
+        const fallback = buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+        return fallback;
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt;
+    const generationPrompt = parsedTemplate.generationPrompt;
+
+    if (!systemPrompt || !generationPrompt) {
+        console.warn('Skills template missing prompts, using fallback skills.');
+        return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+    }
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+
+    const endpoint = config.ai?.endpoint;
+    const apiKey = config.ai?.apiKey;
+    const model = config.ai?.model;
+
+    if (!endpoint || !apiKey || !model) {
+        console.warn('AI configuration missing for skill generation, using fallback skills.');
+        return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+    }
+
+    const chatEndpoint = endpoint.endsWith('/') ?
+        endpoint + 'chat/completions' :
+        endpoint + '/chat/completions';
+
+    const requestData = {
+        model,
+        messages,
+        max_tokens: parsedTemplate.maxTokens || 600,
+        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
+    };
+
+    try {
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
+
+        const skillResponse = response.data?.choices?.[0]?.message?.content || '';
+
+        logSkillGeneration({
+            systemPrompt,
+            generationPrompt,
+            responseText: skillResponse
+        });
+
+        const parsedSkills = parseSkillsXml(skillResponse);
+        if (!parsedSkills.length) {
+            console.warn('Skill generation returned no skills, using fallback.');
+            return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+        }
+
+        const uniqueSkills = [];
+        const seenNames = new Set();
+        for (const skillData of parsedSkills) {
+            const normalizedName = typeof skillData.name === 'string' ? skillData.name.trim() : '';
+            if (!normalizedName) {
+                continue;
+            }
+            const key = normalizedName.toLowerCase();
+            if (seenNames.has(key)) {
+                continue;
+            }
+            seenNames.add(key);
+            uniqueSkills.push(new Skill({
+                name: normalizedName,
+                description: skillData.description,
+                attribute: skillData.attribute
+            }));
+            if (uniqueSkills.length >= safeCount) {
+                break;
+            }
+        }
+
+        if (uniqueSkills.length === 0) {
+            console.warn('Skill generation produced no unique skills, using fallback.');
+            return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+        }
+
+        if (uniqueSkills.length < safeCount) {
+            const needed = safeCount - uniqueSkills.length;
+            const supplemental = buildFallbackSkills({ count: needed, attributes: attributeEntries });
+            return uniqueSkills.concat(supplemental);
+        }
+
+        return uniqueSkills.slice(0, safeCount);
+    } catch (error) {
+        console.warn('Skill generation failed:', error.message);
+        return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
     }
 }
 
@@ -3574,10 +3912,22 @@ app.post('/api/chat', async (req, res) => {
         let finalMessages = messages;
         let debugInfo = null;
         let location = null;
+        let plausibilityInfo = null;
 
         // Add the location with the id of currentPlayer.curentLocation to the player context if available
         if (currentPlayer && currentPlayer.currentLocation) {
             location = Location.get(currentPlayer.currentLocation);
+        }
+
+        if (currentPlayer && userMessage && userMessage.role === 'user') {
+            try {
+                plausibilityInfo = await runPlausibilityCheck({
+                    actionText: userMessage.content,
+                    locationId: currentPlayer.currentLocation || null
+                });
+            } catch (plausibilityError) {
+                console.warn('Failed to execute plausibility check:', plausibilityError.message);
+            }
         }
 
         // If we have a current player, use the player action template for the system message
@@ -3731,6 +4081,10 @@ app.post('/api/chat', async (req, res) => {
                 }
             } catch (eventError) {
                 console.warn('Failed to run event checks:', eventError.message);
+            }
+
+            if (plausibilityInfo && plausibilityInfo.html) {
+                responseData.plausibility = plausibilityInfo.html;
             }
 
             res.json(responseData);
@@ -5448,12 +5802,14 @@ app.delete('/api/settings/current', (req, res) => {
 // Create a new game with fresh player and starting location
 app.post('/api/new-game', async (req, res) => {
     try {
-        const { playerName, playerDescription, startingLocation } = req.body || {};
+        const { playerName, playerDescription, startingLocation, numSkills: numSkillsInput } = req.body || {};
         const activeSetting = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(activeSetting);
         const playerRequestedLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
         const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
         const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || playerRequestedLocation, activeSetting);
+        const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
+        const numSkills = Number.isFinite(parsedSkillCount) ? Math.max(1, Math.min(100, parsedSkillCount)) : 20;
 
         // Clear existing game state
         players.clear();
@@ -5463,8 +5819,36 @@ app.post('/api/new-game', async (req, res) => {
         Region.clear();
         stubExpansionPromises.clear();
         chatHistory.length = 0;
+        skills.clear();
+        Player.setAvailableSkills(new Map());
 
         console.log('🎮 Starting new game...');
+
+        let generatedSkills = [];
+        try {
+            generatedSkills = await generateSkillsList({
+                count: numSkills,
+                settingDescription
+            });
+        } catch (skillError) {
+            console.warn('Failed to generate skills from prompt:', skillError.message);
+            generatedSkills = [];
+        }
+
+        if (generatedSkills.length) {
+            skills.clear();
+            for (const skill of generatedSkills) {
+                skills.set(skill.name, skill);
+            }
+            Player.setAvailableSkills(skills);
+            for (const player of players.values()) {
+                if (typeof player.syncSkillsWithAvailable === 'function') {
+                    player.syncSkillsWithAvailable();
+                }
+            }
+        } else if (skills.size === 0) {
+            Player.setAvailableSkills(new Map());
+        }
 
         // Create new player
         const newPlayer = new Player({
@@ -5577,6 +5961,7 @@ app.post('/api/new-game', async (req, res) => {
             player: newPlayer.toJSON(),
             startingLocation: startingLocationData,
             region: region.toJSON(),
+            skills: generatedSkills.map(skill => skill.toJSON()),
             gameState: {
                 totalPlayers: players.size,
                 totalLocations: gameLocations.size,
@@ -5657,6 +6042,13 @@ app.post('/api/save', (req, res) => {
             JSON.stringify(allPlayersData, null, 2)
         );
 
+        // Save generated skill definitions
+        const skillsData = Array.from(skills.values()).map(skill => skill.toJSON());
+        fs.writeFileSync(
+            path.join(saveDir, 'skills.json'),
+            JSON.stringify(skillsData, null, 2)
+        );
+
         // Save metadata about the save
         const metadata = {
             saveName: saveName,
@@ -5670,7 +6062,8 @@ app.post('/api/save', (req, res) => {
             totalLocations: gameLocations.size,
             totalLocationExits: gameLocationExits.size,
             totalRegions: regions.size,
-            totalGeneratedImages: generatedImages.size
+            totalGeneratedImages: generatedImages.size,
+            totalSkills: skills.size
         };
         fs.writeFileSync(
             path.join(saveDir, 'metadata.json'),
@@ -5723,6 +6116,25 @@ app.post('/api/load', (req, res) => {
             metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
         }
 
+        const skillsPath = path.join(saveDir, 'skills.json');
+        skills.clear();
+        if (fs.existsSync(skillsPath)) {
+            try {
+                const skillsData = JSON.parse(fs.readFileSync(skillsPath, 'utf8')) || [];
+                for (const skillEntry of skillsData) {
+                    try {
+                        const skill = Skill.fromJSON(skillEntry);
+                        skills.set(skill.name, skill);
+                    } catch (skillError) {
+                        console.warn('Skipping invalid skill entry:', skillError.message);
+                    }
+                }
+            } catch (skillLoadError) {
+                console.warn('Failed to load skills from save:', skillLoadError.message);
+            }
+        }
+        Player.setAvailableSkills(skills);
+
         // Load all players first
         const allPlayersPath = path.join(saveDir, 'allPlayers.json');
         if (fs.existsSync(allPlayersPath)) {
@@ -5730,6 +6142,9 @@ app.post('/api/load', (req, res) => {
             const allPlayersData = JSON.parse(fs.readFileSync(allPlayersPath, 'utf8')) || {};
             for (const [id, playerData] of Object.entries(allPlayersData)) {
                 const player = Player.fromJSON(playerData);
+                if (typeof player.syncSkillsWithAvailable === 'function') {
+                    player.syncSkillsWithAvailable();
+                }
                 players.set(id, player);
             }
         }

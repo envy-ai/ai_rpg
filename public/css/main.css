@@ -669,6 +669,11 @@ p:not(:last-child) {
   border-left: 3px solid #38bdf8;
   margin-right: auto;
 }
+.message.plausibility-message {
+  background: rgba(163, 230, 53, 0.18);
+  border-left: 3px solid #a3e635;
+  margin-right: auto;
+}
 .message.error {
   background: rgba(255, 100, 100, 0.3) !important;
   border-left: 3px solid #ff6b6b;

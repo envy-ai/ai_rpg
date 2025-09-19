@@ -154,6 +154,34 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addPlausibilityMessage(contentHtml) {
+        if (!contentHtml) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message plausibility-message';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🧭 Plausibility Check';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = contentHtml;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -223,6 +251,10 @@ class AIRPGChat {
 
                 if (data.eventChecks) {
                     this.addEventMessage(data.eventChecks);
+                }
+
+                if (data.plausibility) {
+                    this.addPlausibilityMessage(data.plausibility);
                 }
 
                 // Check for location updates after AI response

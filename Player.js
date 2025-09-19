@@ -25,6 +25,9 @@ class Player {
     #inventory;
     #partyMembers;
     #dispositions;
+    #skills;
+
+    static availableSkills = new Map();
 
     // Static private method for ID generation
     static #generateUniqueId() {
@@ -63,6 +66,8 @@ class Player {
 
         this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
         this.#dispositions = this.#initializeDispositions(options.dispositions);
+        this.#skills = new Map();
+        this.#initializeSkills(options.skills);
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -137,6 +142,34 @@ class Player {
             }
         }
         return dispositionMap;
+    }
+
+    #initializeSkills(skillValues = {}) {
+        const available = Player.availableSkills instanceof Map ? Player.availableSkills : new Map();
+
+        let providedMap;
+        if (skillValues instanceof Map) {
+            providedMap = new Map(skillValues);
+        } else if (Array.isArray(skillValues)) {
+            providedMap = new Map(skillValues);
+        } else if (skillValues && typeof skillValues === 'object') {
+            providedMap = new Map(Object.entries(skillValues));
+        } else {
+            providedMap = new Map();
+        }
+
+        if (available.size > 0) {
+            for (const [skillName] of available) {
+                const raw = providedMap.has(skillName) ? Number(providedMap.get(skillName)) : 1;
+                const value = Number.isFinite(raw) ? raw : 1;
+                this.#skills.set(skillName, value);
+            }
+        } else if (providedMap.size > 0) {
+            for (const [skillName, raw] of providedMap.entries()) {
+                const value = Number.isFinite(Number(raw)) ? Number(raw) : 1;
+                this.#skills.set(skillName, value);
+            }
+        }
     }
 
     #resolveThing(thingLike) {
@@ -836,7 +869,8 @@ class Player {
             attributeInfo: this.getAttributeInfo(),
             inventory: this.getInventoryItems().map(thing => thing.toJSON()),
             partyMembers: this.getPartyMembers(),
-            dispositions: this.#serializeDispositions()
+            dispositions: this.#serializeDispositions(),
+            skills: Object.fromEntries(this.#skills)
         };
     }
 
@@ -861,6 +895,7 @@ class Player {
             inventory: Array.from(this.#inventory).map(thing => thing.id),
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
+            skills: Object.fromEntries(this.#skills),
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -885,7 +920,8 @@ class Player {
             race: data.race,
             inventory: Array.isArray(data.inventory) ? data.inventory : [],
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
-            dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {}
+            dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
+            skills: data.skills && typeof data.skills === 'object' ? data.skills : {}
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;
@@ -940,6 +976,76 @@ class Player {
             }
         }
         return serialized;
+    }
+
+    getSkills() {
+        return new Map(this.#skills);
+    }
+
+    getSkillValue(skillName) {
+        if (typeof skillName !== 'string') {
+            return null;
+        }
+        return this.#skills.get(skillName.trim()) ?? null;
+    }
+
+    setSkillValue(skillName, value) {
+        if (typeof skillName !== 'string') {
+            return false;
+        }
+        const trimmed = skillName.trim();
+        if (!trimmed) {
+            return false;
+        }
+        if (Player.availableSkills.size > 0 && !Player.availableSkills.has(trimmed)) {
+            return false;
+        }
+        const numeric = Number(value);
+        const resolved = Number.isFinite(numeric) ? numeric : 1;
+        this.#skills.set(trimmed, resolved);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
+    syncSkillsWithAvailable() {
+        const available = Player.availableSkills instanceof Map ? Player.availableSkills : new Map();
+        let updated = false;
+
+        for (const [skillName] of available) {
+            if (!this.#skills.has(skillName)) {
+                this.#skills.set(skillName, 1);
+                updated = true;
+            }
+        }
+
+        if (available.size > 0) {
+            for (const skillName of Array.from(this.#skills.keys())) {
+                if (!available.has(skillName)) {
+                    this.#skills.delete(skillName);
+                    updated = true;
+                }
+            }
+        }
+
+        if (updated) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+    }
+
+    static setAvailableSkills(skillsInput) {
+        let nextMap = new Map();
+        if (skillsInput instanceof Map) {
+            nextMap = new Map(skillsInput);
+        } else if (Array.isArray(skillsInput)) {
+            nextMap = new Map(skillsInput.map(skill => [skill.name, skill]));
+        } else if (skillsInput && typeof skillsInput === 'object') {
+            nextMap = new Map(Object.entries(skillsInput));
+        }
+        Player.availableSkills = nextMap;
+    }
+
+    static getAvailableSkills() {
+        return new Map(Player.availableSkills);
     }
 
     /**
