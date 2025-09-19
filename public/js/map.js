@@ -34,16 +34,16 @@ function ensureCytoscape(container) {
         'background-color': '#67e8f9',
         'label': 'data(label)',
         'color': '#0f172a',
-        'font-size': '14px',
+        'font-size': '6px',
 
         // put the label *below* the node
         'text-valign': 'bottom',
         'text-halign': 'center',
-        'text-margin-y': '8px',     // push it further down (increase if you need more space)
+        'text-margin-y': '6px',     // push it further down (increase if you need more space)
 
         // label background + rounding
         'text-background-color': '#ffffff',
-        'text-background-opacity': 1,          // solid
+        'text-background-opacity': .8,          // solid
         'text-background-shape': 'roundrectangle',
         'text-background-padding': '2px',      // breathing room inside the pill
         'text-border-width': 0,                // set >0 if you want an outline
@@ -92,7 +92,8 @@ function ensureCytoscape(container) {
     {
       selector: 'edge.bidirectional',
       style: {
-        'source-arrow-shape': 'triangle'
+        'source-arrow-shape': 'triangle',
+        'source-arrow-color': '#bae6fd'
       }
     },
     {
