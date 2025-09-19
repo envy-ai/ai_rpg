@@ -32,6 +32,30 @@ You are an AI designed to perform various tasks related to managing a text-based
       </effect>
       {% endfor %}
     </statusEffects>
+    <skills>
+      {% for skill in currentPlayer.skills %}
+      <skill>
+        <name>{{ skill.name }}</name>
+        <description>{{ skill.description }}</description>
+      </skill>
+      {% endfor %}
+    </skills>
+    <inventory>
+      {% for item in currentPlayer.inventory %}
+      <item>
+        <name>{{ item.name }}</name>
+        <description>{{ item.description }}</description>
+        <statusEffects>
+          {% for effect in item.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+      </item>
+      {% endfor %}
+    </inventory>
   </player>
   <npcs>
     {% for npc in npcs %}
