@@ -816,23 +816,66 @@ function getEventPromptTemplates() {
     }
 }
 
-function buildEventContext(location) {
+function buildBasePromptContext({ locationOverride = null } = {}) {
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
 
-    const locationDetails = location ? location.getDetails() : null;
-    const currentPlayerStatus = currentPlayer ? currentPlayer.getStatus() : null;
+    let location = locationOverride;
+    if (!location && currentPlayer && currentPlayer.currentLocation) {
+        try {
+            location = Location.get(currentPlayer.currentLocation);
+        } catch (error) {
+            console.warn('Failed to resolve current player location for prompt context:', error.message);
+        }
+    }
+
+    const locationDetails = location ? location.getDetails?.() : null;
+    const playerStatus = currentPlayer && typeof currentPlayer.getStatus === 'function'
+        ? currentPlayer.getStatus()
+        : null;
+
+    const normalizeStatusEffects = value => {
+        if (!value) {
+            return [];
+        }
+        if (Array.isArray(value)) {
+            return value.filter(effect => typeof effect === 'string' && effect.trim());
+        }
+        if (Array.isArray(value.statusEffects)) {
+            return value.statusEffects.filter(effect => typeof effect === 'string' && effect.trim());
+        }
+        return [];
+    };
+
+    const currentLocationContext = {
+        name: locationDetails?.name || location?.name || 'Unknown Location',
+        description: locationDetails?.description || location?.description || 'No description available.',
+        statusEffects: normalizeStatusEffects(locationDetails)
+    };
+
+    const currentPlayerContext = {
+        name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
+        description: playerStatus?.description || currentPlayer?.description || '',
+        health: playerStatus?.health ?? 'Unknown',
+        maxHealth: playerStatus?.maxHealth ?? 'Unknown',
+        statusEffects: normalizeStatusEffects(playerStatus)
+    };
 
     const npcs = [];
-    if (location && Array.isArray(location.npcIds)) {
-        for (const npcId of location.npcIds) {
+    if (location) {
+        const npcIds = Array.isArray(location.npcIds)
+            ? location.npcIds
+            : (Array.isArray(locationDetails?.npcIds) ? locationDetails.npcIds : []);
+        for (const npcId of npcIds) {
             const npc = players.get(npcId);
-            if (!npc) continue;
-            const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : npc;
+            if (!npc) {
+                continue;
+            }
+            const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : null;
             npcs.push({
-                name: npcStatus.name || 'Unknown NPC',
-                description: npcStatus.description || '',
-                statusEffects: npcStatus.statusEffects || []
+                name: npcStatus?.name || npc.name || 'Unknown NPC',
+                description: npcStatus?.description || npc.description || '',
+                statusEffects: normalizeStatusEffects(npcStatus)
             });
         }
     }
@@ -842,12 +885,14 @@ function buildEventContext(location) {
         const memberIds = currentPlayer.getPartyMembers();
         for (const memberId of memberIds) {
             const member = players.get(memberId);
-            if (!member) continue;
-            const memberStatus = typeof member.getStatus === 'function' ? member.getStatus() : member;
+            if (!member) {
+                continue;
+            }
+            const memberStatus = typeof member.getStatus === 'function' ? member.getStatus() : null;
             party.push({
-                name: memberStatus.name || 'Unknown Ally',
-                description: memberStatus.description || '',
-                statusEffects: memberStatus.statusEffects || []
+                name: memberStatus?.name || member.name || 'Unknown Ally',
+                description: memberStatus?.description || member.description || '',
+                statusEffects: normalizeStatusEffects(memberStatus)
             });
         }
     }
@@ -860,19 +905,281 @@ function buildEventContext(location) {
                 itemsInScene.push({
                     name: thing.name || 'Unnamed Item',
                     description: thing.description || '',
-                    statusEffects: []
+                    statusEffects: normalizeStatusEffects(metadata)
                 });
             }
         }
     }
 
+    const historyEntries = chatHistory.slice(-10);
+    const gameHistory = historyEntries.length
+        ? historyEntries.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
+        : 'No significant prior events.';
+
     return {
         setting: settingDescription,
-        location: locationDetails ? JSON.stringify(locationDetails, null, 2) : 'No current location context available.',
-        currentPlayer: currentPlayerStatus ? JSON.stringify(currentPlayerStatus, null, 2) : 'No active player.',
+        gameHistory,
+        currentLocation: currentLocationContext,
+        currentPlayer: currentPlayerContext,
         npcs,
         party,
         itemsInScene
+    };
+}
+
+function parsePlausibilityOutcome(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return null;
+    }
+
+    try {
+        const trimmed = xmlSnippet.trim();
+        const match = trimmed.match(/<plausibility[\s\S]*?<\/plausibility>/i);
+        const targetXml = match ? match[0] : `<wrapper>${trimmed}</wrapper>`;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(targetXml, 'text/xml');
+
+        const errorNode = doc.getElementsByTagName('parsererror')[0];
+        if (errorNode) {
+            throw new Error(errorNode.textContent || 'Unknown XML parsing error');
+        }
+
+        const root = doc.getElementsByTagName('plausibility')[0] || doc.documentElement;
+        if (!root) {
+            return null;
+        }
+
+        const getText = (parent, tag) => {
+            const node = parent?.getElementsByTagName(tag)?.[0];
+            return node && typeof node.textContent === 'string' ? node.textContent.trim() : null;
+        };
+
+        const type = getText(root, 'type');
+        const reason = getText(root, 'reason');
+
+        const skillCheckNode = root.getElementsByTagName('skillCheck')[0] || null;
+        let skillCheck = null;
+        if (skillCheckNode) {
+            const skill = getText(skillCheckNode, 'skill');
+            const attribute = getText(skillCheckNode, 'attribute');
+            const difficulty = getText(skillCheckNode, 'difficulty');
+            const skillReason = getText(skillCheckNode, 'reason');
+
+            if (skill || attribute || difficulty || skillReason) {
+                skillCheck = {
+                    skill: skill && skill.toLowerCase() !== 'n/a' ? skill : null,
+                    attribute: attribute && attribute.toLowerCase() !== 'n/a' ? attribute : null,
+                    difficulty: difficulty && difficulty.toLowerCase() !== 'n/a' ? difficulty : null,
+                    reason: skillReason
+                };
+            }
+        }
+
+        return {
+            type: type,
+            reason,
+            skillCheck
+        };
+    } catch (error) {
+        console.warn('Failed to parse plausibility outcome:', error.message);
+        return null;
+    }
+}
+
+function difficultyToDC(label) {
+    if (!label || typeof label !== 'string') {
+        return null;
+    }
+
+    const normalized = label.trim().toLowerCase();
+    switch (normalized) {
+        case 'trivial':
+            return 5;
+        case 'easy':
+            return 10;
+        case 'medium':
+            return 15;
+        case 'hard':
+            return 20;
+        case 'very hard':
+            return 25;
+        case 'legendary':
+            return 30;
+        default:
+            return null;
+    }
+}
+
+function classifyOutcomeMargin(margin) {
+    if (margin >= 10) {
+        return { label: 'critical success', degree: 'critical_success' };
+    }
+    if (margin >= 6) {
+        return { label: 'major success', degree: 'major_success' };
+    }
+    if (margin >= 3) {
+        return { label: 'success', degree: 'success' };
+    }
+    if (margin >= 0) {
+        return { label: 'barely succeeded', degree: 'barely_succeeded' };
+    }
+    if (margin <= -10) {
+        return { label: 'critical failure', degree: 'critical_failure' };
+    }
+    if (margin <= -6) {
+        return { label: 'major failure', degree: 'major_failure' };
+    }
+    if (margin <= -3) {
+        return { label: 'minor failure', degree: 'minor_failure' };
+    }
+    return { label: 'barely failed', degree: 'barely_failed' };
+}
+
+function findAttributeKey(player, attributeName) {
+    if (!player || typeof player.getAttributeNames !== 'function' || !attributeName) {
+        return null;
+    }
+
+    const normalized = attributeName.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    for (const name of player.getAttributeNames()) {
+        if (typeof name === 'string' && name.toLowerCase() === normalized) {
+            return name;
+        }
+    }
+    return null;
+}
+
+function resolvePlayerSkillValue(player, skillName) {
+    if (!player || !skillName || typeof player.getSkillValue !== 'function') {
+        return { key: null, value: 0 };
+    }
+
+    const directValue = player.getSkillValue(skillName);
+    if (Number.isFinite(directValue)) {
+        return { key: skillName.trim(), value: directValue };
+    }
+
+    if (typeof player.getSkills === 'function') {
+        const normalized = skillName.trim().toLowerCase();
+        const skillsMap = player.getSkills();
+        if (skillsMap && typeof skillsMap.entries === 'function') {
+            for (const [name, value] of skillsMap.entries()) {
+                if (typeof name === 'string' && name.toLowerCase() === normalized && Number.isFinite(value)) {
+                    return { key: name, value };
+                }
+            }
+        }
+    }
+
+    return { key: skillName.trim(), value: 0 };
+}
+
+function resolveActionOutcome({ plausibility, player }) {
+    if (!plausibility || !player) {
+        return null;
+    }
+
+    const type = typeof plausibility.type === 'string' ? plausibility.type.trim() : '';
+    if (!type) {
+        return null;
+    }
+
+    const normalizedType = type.toLowerCase();
+
+    if (normalizedType === 'trivial') {
+        return {
+            label: 'automatic success',
+            degree: 'automatic_success',
+            type: type,
+            reason: plausibility.reason || null,
+            roll: null,
+            difficulty: null,
+            skill: null,
+            attribute: null,
+            margin: null
+        };
+    }
+
+    if (normalizedType === 'implausible') {
+        return {
+            label: 'critical failure',
+            degree: 'implausible_failure',
+            type: type,
+            reason: plausibility.reason || null,
+            roll: null,
+            difficulty: null,
+            skill: null,
+            attribute: null,
+            margin: null
+        };
+    }
+
+    if (normalizedType !== 'plausible') {
+        return null;
+    }
+
+    const skillCheck = plausibility.skillCheck || {};
+    const resolvedSkill = skillCheck.skill || null;
+    const resolvedAttributeName = skillCheck.attribute || null;
+    const resolvedDifficulty = skillCheck.difficulty || null;
+
+    const dc = difficultyToDC(resolvedDifficulty);
+    if (!dc) {
+        return {
+            label: 'success',
+            degree: 'success',
+            type: type,
+            reason: plausibility.reason || skillCheck.reason || null,
+            roll: null,
+            difficulty: {
+                label: resolvedDifficulty,
+                dc: null
+            },
+            skill: resolvedSkill,
+            attribute: resolvedAttributeName,
+            margin: null
+        };
+    }
+
+    const skillValueInfo = resolvePlayerSkillValue(player, resolvedSkill || '');
+    const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
+
+    const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
+    const attributeValue = attributeKey ? player.getAttribute(attributeKey) : null;
+    const attributeBonus = Number.isFinite(attributeValue) ? Math.floor(attributeValue / 2) : 0;
+
+    const rollResult = diceModule.rollDice('1d20');
+    const dieRoll = rollResult.total;
+    const total = dieRoll + skillValue + attributeBonus;
+    const margin = total - dc;
+    const outcome = classifyOutcomeMargin(margin);
+
+    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
+
+    return {
+        label: outcome.label,
+        degree: outcome.degree,
+        type: type,
+        reason: plausibility.reason || skillCheck.reason || null,
+        roll: {
+            die: dieRoll,
+            detail: rollResult.detail,
+            skillValue,
+            attributeBonus,
+            total
+        },
+        difficulty: {
+            label: resolvedDifficulty,
+            dc
+        },
+        skill: skillValueInfo.key,
+        attribute: attributeKey,
+        margin
     };
 }
 
@@ -965,9 +1272,10 @@ async function runEventChecks({ textToCheck }) {
             ? Location.get(currentPlayer.currentLocation)
             : null;
 
-        const context = buildEventContext(location);
-        const renderedTemplate = promptEnv.render('event-checks.xml.njk', {
-            ...context,
+        const baseContext = buildBasePromptContext({ locationOverride: location });
+        const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'event-checks',
             textToCheck,
             eventPrompts: eventPromptTemplates
         });
@@ -1040,26 +1348,12 @@ async function runPlausibilityCheck({ actionText, locationId }) {
     try {
         const location = locationId ? Location.get(locationId) : (currentPlayer.currentLocation ? Location.get(currentPlayer.currentLocation) : null);
 
-        const playerStatus = currentPlayer.getStatus ? currentPlayer.getStatus() : null;
-        const locationDetails = location ? location.getDetails() : null;
-        const activeSetting = getActiveSettingSnapshot();
-        const fallbackSetting = {
-            name: null,
-            description: describeSettingForPrompt(activeSetting),
-            theme: null,
-            genre: null,
-            magicLevel: null,
-            techLevel: null,
-            tone: null,
-            difficulty: null
-        };
-        const settingContext = activeSetting || fallbackSetting;
+        const baseContext = buildBasePromptContext({ locationOverride: location });
 
-        const renderedTemplate = promptEnv.render('plausibility-check.xml.njk', {
-            player: playerStatus || {},
-            actionText,
-            location: locationDetails || { name: 'Unknown Location', description: 'No description available.' },
-            setting: settingContext
+        const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'plausibility-check',
+            actionText
         });
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -1102,6 +1396,7 @@ async function runPlausibilityCheck({ actionText, locationId }) {
             responseText: plausibilityResponse
         });
 
+        const structured = parsePlausibilityOutcome(plausibilityResponse);
         if (!plausibilityResponse.trim()) {
             return null;
         }
@@ -1109,7 +1404,8 @@ async function runPlausibilityCheck({ actionText, locationId }) {
         const safeResponse = escapeHtml(plausibilityResponse.trim());
         return {
             raw: plausibilityResponse,
-            html: safeResponse.replace(/\n/g, '<br>')
+            html: safeResponse.replace(/\n/g, '<br>'),
+            structured
         };
     } catch (error) {
         console.warn('Plausibility check failed:', error.message);
@@ -3915,6 +4211,7 @@ app.post('/api/chat', async (req, res) => {
         let debugInfo = null;
         let location = null;
         let plausibilityInfo = null;
+        let actionResolution = null;
 
         // Add the location with the id of currentPlayer.curentLocation to the player context if available
         if (currentPlayer && currentPlayer.currentLocation) {
@@ -3927,6 +4224,12 @@ app.post('/api/chat', async (req, res) => {
                     actionText: userMessage.content,
                     locationId: currentPlayer.currentLocation || null
                 });
+                if (plausibilityInfo?.structured) {
+                    actionResolution = resolveActionOutcome({
+                        plausibility: plausibilityInfo.structured,
+                        player: currentPlayer
+                    });
+                }
             } catch (plausibilityError) {
                 console.warn('Failed to execute plausibility check:', plausibilityError.message);
             }
@@ -3935,62 +4238,25 @@ app.post('/api/chat', async (req, res) => {
         // If we have a current player, use the player action template for the system message
         if (currentPlayer && userMessage && userMessage.role === 'user') {
             try {
-                // Try XML template first, fall back to YAML for backward compatibility
-                let templateName = 'player-action.xml.njk';
-                let useXML = true;
+                const baseContext = buildBasePromptContext({ locationOverride: location });
+                const templateName = 'base-context.xml.njk';
 
-                // Check if XML template exists, otherwise use YAML
-                try {
-                    fs.accessSync(path.join(__dirname, 'prompts', templateName));
-                } catch {
-                    templateName = 'player-action.yaml.njk';
-                    useXML = false;
-                }
-
-                // Render the player action template
                 const playerActionPrompt = promptEnv.render(templateName, {
-                    player: currentPlayer.getStatus(),
+                    ...baseContext,
+                    promptType: 'player-action',
                     actionText: userMessage.content,
-                    location: location ? location.getDetails() : null,
-                    setting: currentSetting,
+                    success_or_failure: actionResolution?.label || 'success'
                 });
 
-                // Parse the rendered template based on format
-                let promptData;
-                if (useXML) {
-                    promptData = parseXMLTemplate(playerActionPrompt);
-                } else {
-                    promptData = yaml.load(playerActionPrompt);
+                const promptData = parseXMLTemplate(playerActionPrompt);
+
+                if (!promptData.systemPrompt) {
+                    throw new Error('Player action template missing system prompt.');
                 }
 
-                // Create system message from the template (robust to missing fields)
-                const contentParts = [];
-                if (promptData.systemPrompt) {
-                    contentParts.push(String(promptData.systemPrompt).trim());
-                }
-                if (promptData.player) {
-                    try {
-                        contentParts.push('Player Context:\n' + JSON.stringify(promptData.player, null, 2));
-                    } catch {
-                        contentParts.push('Player Context: [unavailable]');
-                    }
-                }
-                if (promptData.action) {
-                    contentParts.push('Action: ' + String(promptData.action).trim());
-                }
-                if (promptData.guidelines) {
-                    if (Array.isArray(promptData.guidelines)) {
-                        contentParts.push('Guidelines:\n' + promptData.guidelines.join('\n'));
-                    } else if (typeof promptData.guidelines === 'string') {
-                        contentParts.push('Guidelines:\n' + promptData.guidelines);
-                    }
-                }
-                if (promptData.context) {
-                    contentParts.push('Context: ' + String(promptData.context).trim());
-                }
                 const systemMessage = {
                     role: 'system',
-                    content: contentParts.join('\n\n')
+                    content: String(promptData.systemPrompt).trim()
                 };
 
                 // Replace any existing system message or add new one
@@ -4073,7 +4339,13 @@ app.post('/api/chat', async (req, res) => {
 
             // Add debug info if available
             if (debugInfo) {
+                debugInfo.actionResolution = actionResolution;
+                debugInfo.plausibilityStructured = plausibilityInfo?.structured || null;
                 responseData.debug = debugInfo;
+            }
+
+            if (actionResolution) {
+                responseData.actionResolution = actionResolution;
             }
 
             try {
