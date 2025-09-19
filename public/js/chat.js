@@ -365,6 +365,138 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addSkillCheckMessage(resolution) {
+        if (!resolution || typeof resolution !== 'object') {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message skill-check-message';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🎯 Skill Check';
+
+        const contentDiv = document.createElement('div');
+
+        const lines = [];
+        const { roll = {}, difficulty = {}, skill, attribute, label, reason, margin, type } = resolution;
+
+        const formatSigned = (value) => {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                return null;
+            }
+            return value >= 0 ? `+${value}` : `${value}`;
+        };
+
+        if (skill || typeof roll.skillValue === 'number') {
+            const parts = [];
+            if (skill) {
+                parts.push(this.escapeHtml(String(skill)));
+            }
+            if (typeof roll.skillValue === 'number') {
+                const modifier = formatSigned(roll.skillValue);
+                parts.push(modifier !== null ? `(${modifier})` : `(${roll.skillValue})`);
+            }
+            if (parts.length) {
+                lines.push(`<li><strong>Skill:</strong> ${parts.join(' ')}</li>`);
+            }
+        }
+
+        if (attribute || typeof roll.attributeBonus === 'number') {
+            const parts = [];
+            if (attribute) {
+                parts.push(this.escapeHtml(String(attribute)));
+            }
+            if (typeof roll.attributeBonus === 'number') {
+                const modifier = formatSigned(roll.attributeBonus);
+                parts.push(modifier !== null ? `(${modifier})` : `(${roll.attributeBonus})`);
+            }
+            if (parts.length) {
+                lines.push(`<li><strong>Attribute:</strong> ${parts.join(' ')}</li>`);
+            }
+        }
+
+        if (difficulty && (difficulty.label || typeof difficulty.dc === 'number')) {
+            const diffParts = [];
+            if (difficulty.label) {
+                diffParts.push(this.escapeHtml(String(difficulty.label)));
+            }
+            if (typeof difficulty.dc === 'number') {
+                diffParts.push(`(DC ${difficulty.dc})`);
+            }
+            if (diffParts.length) {
+                lines.push(`<li><strong>Difficulty:</strong> ${diffParts.join(' ')}</li>`);
+            }
+        }
+
+        if (roll && (typeof roll.die === 'number' || typeof roll.total === 'number')) {
+            const segments = [];
+            if (typeof roll.die === 'number') {
+                segments.push(`d20 ${roll.die}`);
+            }
+            if (typeof roll.skillValue === 'number') {
+                const modifier = formatSigned(roll.skillValue);
+                segments.push(`Skill ${modifier !== null ? modifier : roll.skillValue}`);
+            }
+            if (typeof roll.attributeBonus === 'number') {
+                const modifier = formatSigned(roll.attributeBonus);
+                segments.push(`Attribute ${modifier !== null ? modifier : roll.attributeBonus}`);
+            }
+            if (typeof roll.total === 'number') {
+                segments.push(`Total ${roll.total}`);
+            }
+
+            let rollText = segments.join(' → ');
+            if (roll.detail) {
+                rollText += `<br><small>${this.escapeHtml(String(roll.detail))}</small>`;
+            }
+
+            lines.push(`<li><strong>Roll:</strong> ${rollText}</li>`);
+        }
+
+        const resultParts = [];
+        if (label) {
+            resultParts.push(this.escapeHtml(String(label)));
+        }
+        if (typeof margin === 'number') {
+            resultParts.push(`(margin ${margin >= 0 ? '+' : ''}${margin})`);
+        }
+        if (type) {
+            resultParts.push(`[${this.escapeHtml(String(type))}]`);
+        }
+        if (reason) {
+            resultParts.push(`– ${this.escapeHtml(String(reason))}`);
+        }
+        if (resultParts.length) {
+            lines.push(`<li><strong>Outcome:</strong> ${resultParts.join(' ')}</li>`);
+        }
+
+        if (!lines.length) {
+            return;
+        }
+
+        contentDiv.innerHTML = `
+            <div class="skill-check-details">
+                <ul>
+                    ${lines.join('\n')}
+                </ul>
+            </div>
+        `;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     collectSkillRankElements() {
         const elements = new Map();
         const rankNodes = document.querySelectorAll('.skill-rank[data-skill-name]');
@@ -508,6 +640,10 @@ class AIRPGChat {
 
                 if (data.eventChecks) {
                     this.addEventMessage(data.eventChecks);
+                }
+
+                if (data.actionResolution) {
+                    this.addSkillCheckMessage(data.actionResolution);
                 }
 
                 if (data.events) {

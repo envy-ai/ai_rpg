@@ -1523,7 +1523,7 @@ async function runPlausibilityCheck({ actionText, locationId }) {
         const requestData = {
             model: config.ai.model,
             messages,
-            max_tokens: parsedTemplate.maxTokens || 200,
+            max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
             temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
         };
 
@@ -3160,7 +3160,7 @@ async function generateSkillsList({ count, settingDescription }) {
     const requestData = {
         model,
         messages,
-        max_tokens: parsedTemplate.maxTokens || 600,
+        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
         temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
     };
 
@@ -4910,8 +4910,8 @@ Events.initialize({
     ensureNpcByName,
     generateThingImage,
     shouldGenerateThingImage,
-    defaultStatusDuration: DEFAULT_STATUS_DURATION,
-    majorStatusDuration: MAJOR_STATUS_DURATION,
+    defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
+    majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseDir: __dirname
 });
 
