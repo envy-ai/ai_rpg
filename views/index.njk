@@ -201,17 +201,8 @@
                         <div class="config-section">
                             <h2>Skills</h2>
                             <div class="skill-pool-display">
-                                <div>
-                                    <span class="status-label">Unspent Skill Points:</span>
-                                    <span class="status-value" id="unspentSkillPointsDisplay">{{ player.unspentSkillPoints if player else 0 }}</span>
-                                </div>
-                                {% if player %}
-                                <form id="add-skill-points-form" class="skill-pool-form" autocomplete="off">
-                                    <label class="visually-hidden" for="add-skill-points-input">Add Skill Points</label>
-                                    <input type="number" id="add-skill-points-input" name="amount" value="1" min="1">
-                                    <button type="submit" class="btn btn-secondary small">➕ Add</button>
-                                </form>
-                                {% endif %}
+                                <span class="status-label">Unspent Skill Points:</span>
+                                <span class="status-value" id="unspentSkillPointsDisplay">{{ player.unspentSkillPoints if player else 0 }}</span>
                             </div>
                             <div class="skills-grid readonly">
                                 {% for skill in availableSkills %}
@@ -221,7 +212,17 @@
                                         <span class="skill-name">{{ skill.name }}</span>
                                         {% if skill.attribute %}<span class="skill-attribute">{{ skill.attribute }}</span>{% endif %}
                                     </div>
-                                    <div class="skill-value">Rank: {{ skillValue }}</div>
+                                    <div class="skill-value">
+                                        Rank: <span class="skill-rank" data-skill-name="{{ skill.name }}">{{ skillValue }}</span>
+                                        {% if player %}
+                                        <button type="button"
+                                                class="btn btn-secondary small skill-increase-btn"
+                                                data-skill-name="{{ skill.name }}"
+                                                aria-label="Increase {{ skill.name }}">
+                                            ➕
+                                        </button>
+                                        {% endif %}
+                                    </div>
                                     {% if skill.description %}
                                     <div class="skill-description">{{ skill.description }}</div>
                                     {% endif %}

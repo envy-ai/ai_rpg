@@ -4,6 +4,7 @@ class AIRPGChat {
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
+        this.skillRankElements = this.collectSkillRankElements();
 
         // Start with system prompt for AI context
         this.chatHistory = [
@@ -17,7 +18,7 @@ class AIRPGChat {
         this.loadExistingHistory();
 
         this.init();
-        this.initSkillPointControls();
+        this.initSkillIncreaseControls();
     }
 
     async loadExistingHistory() {
@@ -184,50 +185,77 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    initSkillPointControls() {
-        const form = document.getElementById('add-skill-points-form');
-        if (!form) {
+    collectSkillRankElements() {
+        const elements = new Map();
+        const rankNodes = document.querySelectorAll('.skill-rank[data-skill-name]');
+        rankNodes.forEach(node => {
+            const name = node.dataset.skillName;
+            if (name) {
+                elements.set(name, node);
+            }
+        });
+        return elements;
+    }
+
+    initSkillIncreaseControls() {
+        const buttons = document.querySelectorAll('.skill-increase-btn[data-skill-name]');
+        if (!buttons.length) {
             return;
         }
 
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const input = form.querySelector('input[name="amount"]');
-            if (!input) return;
-            const amount = parseInt(input.value, 10);
-            if (Number.isNaN(amount) || amount <= 0) {
-                alert('Enter a positive number of skill points to add.');
-                return;
-            }
+        buttons.forEach(button => {
+            button.addEventListener('click', async () => {
+                const skillName = button.dataset.skillName;
+                if (!skillName) return;
 
-            try {
-                const response = await fetch('/api/player/skillpoints/add', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ amount })
-                });
+                try {
+                    const response = await fetch(`/api/player/skills/${encodeURIComponent(skillName)}/increase`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ amount: 1 })
+                    });
 
-                const data = await response.json();
+                    const data = await response.json();
 
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || `Server error (${response.status})`);
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.error || `Server error (${response.status})`);
+                    }
+
+                    if (data.player) {
+                        this.refreshSkillState(data.player);
+                    }
+                } catch (error) {
+                    alert(`Failed to increase skill: ${error.message}`);
                 }
-
-                if (data.player) {
-                    this.updateSkillPointsDisplay(data.player.unspentSkillPoints);
-                }
-                input.value = '1';
-            } catch (error) {
-                alert(`Failed to add skill points: ${error.message}`);
-            }
+            });
         });
     }
 
     updateSkillPointsDisplay(value) {
         if (this.skillPointsDisplay && value !== undefined && value !== null) {
             this.skillPointsDisplay.textContent = value;
+        }
+    }
+
+    updateSkillRankDisplay(skillName, rank) {
+        if (!skillName) return;
+        const element = this.skillRankElements.get(skillName);
+        if (element && rank !== undefined && rank !== null) {
+            element.textContent = rank;
+        }
+    }
+
+    refreshSkillState(player) {
+        if (!player) return;
+        if (player.unspentSkillPoints !== undefined) {
+            this.updateSkillPointsDisplay(player.unspentSkillPoints);
+        }
+        if (player.skills) {
+            for (const [skillName, rank] of Object.entries(player.skills)) {
+                this.updateSkillRankDisplay(skillName, rank);
+            }
         }
     }
 
@@ -331,9 +359,7 @@ class AIRPGChat {
                     window.refreshParty();
                 }
 
-                if (result.player.unspentSkillPoints !== undefined) {
-                    this.updateSkillPointsDisplay(result.player.unspentSkillPoints);
-                }
+                this.refreshSkillState(result.player);
 
                 if (result.player.currentLocation) {
                     // Fetch location details

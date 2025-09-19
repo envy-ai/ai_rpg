@@ -4765,7 +4765,7 @@ app.post('/api/player/create-from-stats', async (req, res) => {
     }
 });
 
-app.post('/api/player/skillpoints/add', (req, res) => {
+app.post('/api/player/skills/:skillName/increase', (req, res) => {
     try {
         if (!currentPlayer) {
             return res.status(404).json({
@@ -4774,32 +4774,24 @@ app.post('/api/player/skillpoints/add', (req, res) => {
             });
         }
 
+        const { skillName } = req.params;
         const amountRaw = req.body?.amount;
-        const amount = Number(amountRaw);
-        if (!Number.isFinite(amount) || amount === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Amount must be a non-zero number'
-            });
-        }
+        const amount = Number.isFinite(Number(amountRaw)) ? Number(amountRaw) : 1;
 
-        if (amount < 0 && currentPlayer.getUnspentSkillPoints() + amount < 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Cannot spend more skill points than available'
-            });
-        }
-
-        currentPlayer.adjustUnspentSkillPoints(amount);
+        const newRank = currentPlayer.increaseSkill(skillName, amount);
 
         res.json({
             success: true,
             player: currentPlayer.getStatus(),
+            skill: {
+                name: skillName,
+                rank: newRank
+            },
             amount
         });
     } catch (error) {
-        console.error('Error adjusting skill points:', error);
-        res.status(500).json({
+        console.error('Error increasing skill:', error);
+        res.status(400).json({
             success: false,
             error: error.message
         });

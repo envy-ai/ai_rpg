@@ -1061,6 +1061,34 @@ class Player {
         return this.#unspentSkillPoints;
     }
 
+    increaseSkill(skillName, amount = 1) {
+        if (typeof skillName !== 'string') {
+            throw new Error('Skill name must be a string');
+        }
+        const trimmed = skillName.trim();
+        if (!trimmed) {
+            throw new Error('Skill name cannot be empty');
+        }
+        if (Player.availableSkills.size > 0 && !Player.availableSkills.has(trimmed)) {
+            throw new Error(`Unknown skill: ${trimmed}`);
+        }
+
+        const numeric = Number(amount);
+        if (!Number.isInteger(numeric) || numeric <= 0) {
+            throw new Error('Amount must be a positive integer');
+        }
+
+        if (this.#unspentSkillPoints < numeric) {
+            throw new Error('Not enough unspent skill points');
+        }
+
+        const current = this.#skills.get(trimmed) ?? 0;
+        this.#skills.set(trimmed, current + numeric);
+        this.#unspentSkillPoints -= numeric;
+        this.#lastUpdated = new Date().toISOString();
+        return this.#skills.get(trimmed);
+    }
+
     syncSkillsWithAvailable() {
         const available = Player.availableSkills instanceof Map ? Player.availableSkills : new Map();
         let updated = false;

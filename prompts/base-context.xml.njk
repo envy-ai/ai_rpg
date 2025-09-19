@@ -7,8 +7,26 @@ You are an AI designed to perform various tasks related to managing a text-based
 <context>
   <setting>{{ setting }}</setting>
   <gameHistory>{{ gameHistory }}</gameHistory>
-  <currentLocation>{{ location }}</currentLocation>
-  <player>{{ currentPlayer }}</player>
+  <currentLocation>
+    <name>{{ currentLocation.name }}</name>
+    <description>{{ currentLocation.description }}</description>
+    <statusEffects>
+      {% for effect in currentLocation.statusEffects %}
+      <effect>{{ effect }}</effect>
+      {% endfor %}
+    </statusEffects>
+  </currentLocation>
+  <player>
+    <name>{{ currentPlayer.name }}</name>
+    <description>{{ currentPlayer.description }}</description>
+    <health>{{ currentPlayer.health }}</health>
+    <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>
+    <statusEffects>
+      {% for effect in currentPlayer.statusEffects %}
+      <effect>{{ effect }}</effect>
+      {% endfor %}
+    </statusEffects>
+  </player>
   <npcs>
     {% for npc in npcs %}
     <npc>
