@@ -20,6 +20,10 @@ Available Attributes:
 {% for attribute in attributes %}- {{ attribute.name }}: {{ attribute.description }}
 {% endfor %}
 
+Existing skills (if any):
+{% for skill in existingSkills %}- {{ skill.name }}
+{% endfor %}
+
 Generate exactly {{ numSkills }} skills in XML format using the following structure:
 <skills>
   <skill>

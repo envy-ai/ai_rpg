@@ -3043,10 +3043,17 @@ function parseInventoryItems(xmlContent) {
 function renderSkillsPrompt(context = {}) {
     try {
         const templateName = 'skills-generator.xml.njk';
+        const existingSkills = Array.isArray(context.existingSkills)
+            ? context.existingSkills
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+                .map(name => ({ name }))
+            : [];
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A fantastical realm of adventure.',
             numSkills: context.numSkills || 20,
-            attributes: context.attributes || []
+            attributes: context.attributes || [],
+            existingSkills
         });
     } catch (error) {
         console.error('Error rendering skills template:', error);
@@ -3141,8 +3148,14 @@ function buildFallbackSkills({ count, attributes }) {
     return fallbackSkills;
 }
 
-async function generateSkillsList({ count, settingDescription }) {
+async function generateSkillsList({ count, settingDescription, existingSkills = [] }) {
     const safeCount = Math.max(1, Math.min(100, Number(count) || 20));
+
+    const normalizedExisting = Array.isArray(existingSkills)
+        ? existingSkills
+            .map(name => (typeof name === 'string' ? name.trim() : ''))
+            .filter(Boolean)
+        : [];
 
     const attributeEntries = Object.entries(attributeDefinitionsForPrompt || {})
         .map(([name, info]) => ({
@@ -3153,13 +3166,13 @@ async function generateSkillsList({ count, settingDescription }) {
     const renderedTemplate = renderSkillsPrompt({
         settingDescription: settingDescription || 'A vibrant world of adventure.',
         numSkills: safeCount,
-        attributes: attributeEntries
+        attributes: attributeEntries,
+        existingSkills: normalizedExisting
     });
 
     if (!renderedTemplate) {
         console.warn('Skills template render failed, using fallback skills.');
-        const fallback = buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
-        return fallback;
+        return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
     }
 
     const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -3219,40 +3232,21 @@ async function generateSkillsList({ count, settingDescription }) {
             return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
         }
 
-        const uniqueSkills = [];
-        const seenNames = new Set();
-        for (const skillData of parsedSkills) {
-            const normalizedName = typeof skillData.name === 'string' ? skillData.name.trim() : '';
-            if (!normalizedName) {
-                continue;
-            }
-            const key = normalizedName.toLowerCase();
-            if (seenNames.has(key)) {
-                continue;
-            }
-            seenNames.add(key);
-            uniqueSkills.push(new Skill({
-                name: normalizedName,
-                description: skillData.description,
-                attribute: skillData.attribute
-            }));
-            if (uniqueSkills.length >= safeCount) {
-                break;
-            }
+        let skillsList = parsedSkills.map(skillData => new Skill({
+            name: skillData.name,
+            description: skillData.description,
+            attribute: skillData.attribute
+        }));
+
+        if (skillsList.length < safeCount) {
+            const supplemental = buildFallbackSkills({
+                count: safeCount - skillsList.length,
+                attributes: attributeEntries
+            });
+            skillsList = skillsList.concat(supplemental);
         }
 
-        if (uniqueSkills.length === 0) {
-            console.warn('Skill generation produced no unique skills, using fallback.');
-            return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
-        }
-
-        if (uniqueSkills.length < safeCount) {
-            const needed = safeCount - uniqueSkills.length;
-            const supplemental = buildFallbackSkills({ count: needed, attributes: attributeEntries });
-            return uniqueSkills.concat(supplemental);
-        }
-
-        return uniqueSkills.slice(0, safeCount);
+        return skillsList.slice(0, safeCount);
     } catch (error) {
         console.warn('Skill generation failed:', error.message);
         return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });

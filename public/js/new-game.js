@@ -31,6 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const numSkillsRaw = (document.getElementById('numSkills')?.value || '').trim();
       const parsedNumSkills = Number.parseInt(numSkillsRaw, 10);
       const numSkills = Number.isFinite(parsedNumSkills) ? parsedNumSkills : 20;
+      const existingSkillsRaw = document.getElementById('existingSkills')?.value || '';
+      const existingSkills = existingSkillsRaw
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
 
       try {
         setFormEnabled(false);
@@ -40,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/new-game', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerName, playerDescription, startingLocation, numSkills })
+          body: JSON.stringify({ playerName, playerDescription, startingLocation, numSkills, existingSkills })
         });
 
         const result = await response.json();

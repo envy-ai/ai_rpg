@@ -1990,7 +1990,7 @@ module.exports = function registerApiRoutes(scope) {
     // Create a new game with fresh player and starting location
     app.post('/api/new-game', async (req, res) => {
         try {
-            const { playerName, playerDescription, startingLocation, numSkills: numSkillsInput } = req.body || {};
+            const { playerName, playerDescription, startingLocation, numSkills: numSkillsInput, existingSkills: existingSkillsInput } = req.body || {};
             const activeSetting = getActiveSettingSnapshot();
             const settingDescription = describeSettingForPrompt(activeSetting);
             const playerRequestedLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
@@ -2012,20 +2012,50 @@ module.exports = function registerApiRoutes(scope) {
 
             console.log('🎮 Starting new game...');
 
+            const existingSkillNames = Array.isArray(existingSkillsInput)
+                ? existingSkillsInput
+                : (typeof existingSkillsInput === 'string'
+                    ? existingSkillsInput.split(/\r?\n/)
+                    : []);
+
+            const normalizedExistingSkills = existingSkillNames
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean);
+
             let generatedSkills = [];
             try {
                 generatedSkills = await generateSkillsList({
                     count: numSkills,
-                    settingDescription
+                    settingDescription,
+                    existingSkills: normalizedExistingSkills
                 });
             } catch (skillError) {
                 console.warn('Failed to generate skills from prompt:', skillError.message);
                 generatedSkills = [];
             }
 
-            if (generatedSkills.length) {
-                skills.clear();
-                for (const skill of generatedSkills) {
+            const combinedSkills = new Map();
+
+            for (const name of normalizedExistingSkills) {
+                if (!name) continue;
+                combinedSkills.set(name.toLowerCase(), new Skill({
+                    name,
+                    description: '',
+                    attribute: ''
+                }));
+            }
+
+            for (const skill of generatedSkills) {
+                if (!skill || !skill.name) continue;
+                const key = skill.name.trim().toLowerCase();
+                if (!combinedSkills.has(key)) {
+                    combinedSkills.set(key, skill);
+                }
+            }
+
+            skills.clear();
+            if (combinedSkills.size > 0) {
+                for (const skill of combinedSkills.values()) {
                     skills.set(skill.name, skill);
                 }
                 Player.setAvailableSkills(skills);
@@ -2034,7 +2064,7 @@ module.exports = function registerApiRoutes(scope) {
                         player.syncSkillsWithAvailable();
                     }
                 }
-            } else if (skills.size === 0) {
+            } else {
                 Player.setAvailableSkills(new Map());
             }
 
