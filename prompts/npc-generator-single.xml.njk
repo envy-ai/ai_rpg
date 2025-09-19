@@ -1,0 +1,47 @@
+<template>
+    <role>Ad-Hoc NPC Generator</role>
+
+    <systemPrompt>
+You are an experienced AI game master who writes concise XML data about non-player characters for a narrative-driven RPG. Maintain internal consistency with the setting details provided and avoid reusing banned NPC names.
+    </systemPrompt>
+
+    <generationPrompt>
+<context>
+<setting>{{ settingDescription }}</setting>
+<region>
+<name>{{ region.name }}</name>
+<description>{{ region.description }}</description>
+</region>
+<location>
+<name>{{ location.name }}</name>
+<description>{{ location.description }}</description>
+</location>
+<existingNpcs>
+{% for npc in existingNpcSummaries %}- {{ npc.name }}: {{ npc.shortDescription }}
+{% endfor %}
+</existingNpcs>
+<deceasedNpcs>
+{% include "_includes/npc-banlist.njk" %}
+</deceasedNpcs>
+</context>
+
+Generate exactly one NPC entry for the character named "{{ npcName }}". Use the XML structure below and keep the <name> element exactly "{{ npcName }}". The NPC must feel grounded in the location and setting, with clear motivations or hooks for interaction.
+
+<npcs>
+  <npc>
+    <name>{{ npcName }}</name>
+    <description>Three sentences describing appearance, personality, current goals, and how they relate to the location.</description>
+    <shortDescription>Ten words or fewer summarizing the NPC.</shortDescription>
+    <role>Clear role, job, or niche within the location.</role>
+    <class>RPG class, vocation, or archetype.</class>
+    <race>Species or origin.</race>
+    <attributes>
+{% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
+{% endfor %}
+    </attributes>
+  </npc>
+</npcs>
+
+Do not include any additional <npc> entries or stray from the XML format.
+    </generationPrompt>
+</template>

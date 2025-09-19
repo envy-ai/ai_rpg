@@ -690,6 +690,7 @@ const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingLocationImages = new Map(); // Store active image job IDs per location
+const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized name
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -1564,19 +1565,45 @@ function findActorByName(name) {
     return null;
 }
 
-function ensureNpcByName(name) {
-    let npc = findActorByName(name);
-    if (npc) {
-        return npc;
+async function ensureNpcByName(name, context = {}) {
+    const existing = findActorByName(name);
+    if (existing) {
+        return existing;
     }
 
-    npc = new Player({
+    let resolvedLocation = context.location || null;
+    if (!resolvedLocation && context.player?.currentLocation) {
+        try {
+            resolvedLocation = Location.get(context.player.currentLocation);
+        } catch (_) {
+            resolvedLocation = null;
+        }
+    }
+
+    const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+
+    const generated = await generateNpcFromEvent({
+        name,
+        location: resolvedLocation,
+        region: resolvedRegion
+    });
+
+    if (generated) {
+        return generated;
+    }
+
+    const fallbackNpc = new Player({
         name,
         description: `${name} emerges in the scene.`,
+        level: 1,
+        location: resolvedLocation?.id || null,
         isNPC: true
     });
-    players.set(npc.id, npc);
-    return npc;
+    players.set(fallbackNpc.id, fallbackNpc);
+    if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
+        resolvedLocation.addNpcId(fallbackNpc.id);
+    }
+    return fallbackNpc;
 }
 
 function findThingByName(name) {
@@ -1762,30 +1789,44 @@ function handleHealEvents(entries = [], context) {
     }
 }
 
-function handleItemAppearEvents(entries = [], context) {
+async function handleItemAppearEvents(entries = [], context) {
     if (!Array.isArray(entries) || !entries.length) {
         return;
     }
-    const location = context.location;
-    if (!location) {
+
+    let location = context.location || null;
+    if (!location && context.player?.currentLocation) {
+        try {
+            location = Location.get(context.player.currentLocation);
+        } catch (_) {
+            location = null;
+        }
+    }
+
+    const itemNames = entries
+        .map(entry => (typeof entry === 'string' ? entry : entry?.item || entry))
+        .filter(name => typeof name === 'string' && name.trim());
+
+    if (!itemNames.length) {
         return;
     }
-    for (const itemName of entries) {
-        if (!itemName) continue;
-        let thing = findThingByName(itemName);
+
+    const missing = itemNames.filter(name => !findThingByName(name));
+    if (missing.length) {
+        await generateItemsByNames({ itemNames: missing, location });
+    }
+
+    for (const itemName of itemNames) {
+        const thing = findThingByName(itemName);
         if (!thing) {
-            thing = new Thing({
-                name: itemName,
-                description: `A newly discovered item named ${itemName}.`,
-                thingType: 'item',
-                metadata: {}
-            });
-            things.set(thing.id, thing);
+            continue;
         }
-        const metadata = thing.metadata || {};
-        metadata.locationId = location.id;
-        delete metadata.ownerId;
-        thing.metadata = metadata;
+        if (location) {
+            const metadata = thing.metadata || {};
+            metadata.locationId = location.id;
+            delete metadata.ownerId;
+            thing.metadata = metadata;
+        }
     }
 }
 
@@ -1801,8 +1842,26 @@ async function handleMoveLocationEvents(entries = [], context) {
 
     let destination = findLocationByNameLoose(destinationName);
     if (!destination) {
-        console.warn(`Unable to resolve destination location "${destinationName}" from event.`);
-        return;
+        let originLocation = context.location || null;
+        if (!originLocation && context.player?.currentLocation) {
+            try {
+                originLocation = Location.get(context.player.currentLocation);
+            } catch (_) {
+                originLocation = null;
+            }
+        }
+
+        destination = await createLocationFromEvent({
+            name: destinationName,
+            originLocation,
+            descriptionHint: originLocation ? `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.` : null,
+            directionHint: null
+        });
+
+        if (!destination) {
+            console.warn(`Unable to resolve or generate destination location "${destinationName}" from event.`);
+            return;
+        }
     }
 
     if (destination.isStub) {
@@ -1831,20 +1890,60 @@ async function handleMoveLocationEvents(entries = [], context) {
     }
 }
 
-function handleNewExitEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length || !context.location) {
+async function handleNewExitEvents(entries = [], context) {
+    if (!Array.isArray(entries) || !entries.length) {
         return;
     }
-    const location = context.location;
+
+    let location = context.location || null;
+    if (!location && context.player?.currentLocation) {
+        try {
+            location = Location.get(context.player.currentLocation);
+        } catch (_) {
+            location = null;
+        }
+    }
+
+    if (!location) {
+        return;
+    }
+
     const metadata = location.stubMetadata ? { ...location.stubMetadata } : {};
     const discovered = Array.isArray(metadata.discoveredExits) ? metadata.discoveredExits : [];
 
-    for (const description of entries) {
-        if (!description) continue;
-        if (typeof location.addStatusEffect === 'function') {
+    for (const rawDescription of entries) {
+        if (!rawDescription) continue;
+        const description = typeof rawDescription === 'string' ? rawDescription.trim() : '';
+
+        if (typeof location.addStatusEffect === 'function' && description) {
             location.addStatusEffect({ description: `Exit discovered: ${description}`, duration: MAJOR_STATUS_DURATION });
         }
-        discovered.push(description);
+        if (description) {
+            discovered.push(description);
+        }
+
+        const directionKey = directionKeyFromName(description || `${location.name || location.id} path ${Date.now()}`);
+        const cleanedName = description
+            ? description.replace(/[.,!?]+$/g, '').replace(/^the\s+/i, '').trim() || generateStubName(location, directionKey)
+            : generateStubName(location, directionKey);
+
+        const targetLocation = await createLocationFromEvent({
+            name: cleanedName,
+            originLocation: location,
+            descriptionHint: description || `Unmarked path leaving ${location.name || location.id}.`,
+            directionHint: directionKey
+        });
+
+        if (targetLocation) {
+            const exit = ensureExitConnection(location, directionKey, targetLocation, {
+                description: description || `Path to ${targetLocation.name || targetLocation.id}`,
+                bidirectional: false
+            });
+
+            if (exit) {
+                generateLocationExitImage(exit).catch(err => console.warn('Failed to queue exit image generation:', err.message));
+            }
+        }
     }
 
     if (Object.keys(metadata).length) {
@@ -1853,7 +1952,7 @@ function handleNewExitEvents(entries = [], context) {
     }
 }
 
-function handleNpcArrivalDepartureEvents(entries = [], context) {
+async function handleNpcArrivalDepartureEvents(entries = [], context) {
     if (!Array.isArray(entries) || !entries.length || !context.location) {
         return;
     }
@@ -1861,7 +1960,7 @@ function handleNpcArrivalDepartureEvents(entries = [], context) {
 
     for (const entry of entries) {
         if (!entry || !entry.name) continue;
-        const npc = ensureNpcByName(entry.name);
+        const npc = await ensureNpcByName(entry.name, context);
         if (!npc) continue;
 
         if (entry.action === 'arrived') {
@@ -1882,14 +1981,14 @@ function handleNpcArrivalDepartureEvents(entries = [], context) {
     }
 }
 
-function handlePartyChangeEvents(entries = [], context) {
+async function handlePartyChangeEvents(entries = [], context) {
     if (!Array.isArray(entries) || !entries.length || !context.player) {
         return;
     }
 
     for (const entry of entries) {
         if (!entry || !entry.name) continue;
-        const npc = ensureNpcByName(entry.name);
+        const npc = await ensureNpcByName(entry.name, context);
         if (!npc) continue;
 
         if (entry.action === 'joined' && typeof context.player.addPartyMember === 'function') {
@@ -1908,29 +2007,46 @@ function handlePartyChangeEvents(entries = [], context) {
     }
 }
 
-function handlePickUpItemEvents(entries = [], context) {
+async function handlePickUpItemEvents(entries = [], context) {
     if (!Array.isArray(entries) || !entries.length || !context.player) {
         return;
     }
-    for (const itemName of entries) {
-        if (!itemName) continue;
-        let thing = findThingByName(itemName);
+
+    const player = context.player;
+
+    const itemNames = entries
+        .map(name => typeof name === 'string' ? name : null)
+        .filter(name => typeof name === 'string' && name.trim());
+
+    if (!itemNames.length) {
+        return;
+    }
+
+    const missing = itemNames.filter(name => !findThingByName(name));
+    if (missing.length) {
+        let locationForContext = context.location || null;
+        if (!locationForContext && player.currentLocation) {
+            try {
+                locationForContext = Location.get(player.currentLocation);
+            } catch (_) {
+                locationForContext = null;
+            }
+        }
+        await generateItemsByNames({ itemNames: missing, owner: player, location: locationForContext });
+    }
+
+    for (const itemName of itemNames) {
+        const thing = findThingByName(itemName);
         if (!thing) {
-            thing = new Thing({
-                name: itemName,
-                description: `An item called ${itemName}.`,
-                thingType: 'item',
-                metadata: {}
-            });
-            things.set(thing.id, thing);
+            continue;
         }
 
-        if (typeof context.player.addInventoryItem === 'function') {
-            context.player.addInventoryItem(thing);
+        if (typeof player.addInventoryItem === 'function') {
+            player.addInventoryItem(thing);
         }
 
         const metadata = thing.metadata || {};
-        metadata.ownerId = context.player.id;
+        metadata.ownerId = player.id;
         delete metadata.locationId;
         thing.metadata = metadata;
 
@@ -2009,15 +2125,34 @@ function handleStatusEffectChangeEvents(entries = [], context) {
     }
 }
 
-function handleTransferItemEvents(entries = [], context) {
+async function handleTransferItemEvents(entries = [], context) {
     if (!Array.isArray(entries) || !entries.length) {
         return;
     }
     for (const { giver, item, receiver } of entries) {
         if (!item) continue;
-        const thing = findThingByName(item);
+        let thing = findThingByName(item);
         if (!thing) {
-            continue;
+            let owner = null;
+            const receiverActorCandidate = findActorByName(receiver);
+            if (receiverActorCandidate && typeof receiverActorCandidate.addInventoryItem === 'function') {
+                owner = receiverActorCandidate;
+            }
+
+            let locationContext = context.location || null;
+            if (!locationContext && owner?.currentLocation) {
+                try {
+                    locationContext = Location.get(owner.currentLocation);
+                } catch (_) {
+                    locationContext = null;
+                }
+            }
+
+            await generateItemsByNames({ itemNames: [item], owner, location: locationContext });
+            thing = findThingByName(item);
+            if (!thing) {
+                continue;
+            }
         }
 
         const giverActor = findActorByName(giver);
@@ -2496,6 +2631,65 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
         );
     }
     return newExit;
+}
+
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null } = {}) {
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (!trimmedName) {
+        return null;
+    }
+
+    let existing = findLocationByNameLoose(trimmedName);
+    if (existing) {
+        if (originLocation && directionHint) {
+            ensureExitConnection(originLocation, directionHint, existing, {
+                description: descriptionHint || `Path to ${existing.name || trimmedName}`,
+                bidirectional: false
+            });
+        }
+        return existing;
+    }
+
+    const settingSnapshot = getActiveSettingSnapshot();
+    const stub = new Location({
+        name: trimmedName,
+        description: null,
+        isStub: true,
+        stubMetadata: {
+            originLocationId: originLocation?.id || null,
+            originDirection: directionHint || null,
+            shortDescription: descriptionHint || `An unexplored area referred to as ${trimmedName}.`,
+            locationPurpose: 'Area referenced during event-driven travel.',
+            settingDescription: describeSettingForPrompt(settingSnapshot),
+            allowRename: false
+        }
+    });
+
+    gameLocations.set(stub.id, stub);
+
+    if (originLocation) {
+        const inferredDirection = normalizeDirection(directionHint) || directionKeyFromName(trimmedName);
+        ensureExitConnection(originLocation, inferredDirection, stub, {
+            description: descriptionHint || `Path to ${trimmedName}`,
+            bidirectional: false
+        });
+    }
+
+    const region = originLocation ? findRegionByLocationId(originLocation.id) : null;
+    if (region && Array.isArray(region.locationIds) && !region.locationIds.includes(stub.id)) {
+        region.locationIds.push(stub.id);
+    }
+
+    try {
+        const expansion = await scheduleStubExpansion(stub);
+        if (expansion?.location) {
+            return expansion.location;
+        }
+    } catch (error) {
+        console.warn(`Failed to expand event-created stub "${stub.name}":`, error.message);
+    }
+
+    return stub;
 }
 
 function pickAvailableDirections(location, exclude = []) {
@@ -3001,6 +3195,227 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
     }
 }
 
+async function generateItemsByNames({ itemNames = [], location = null, owner = null, region = null } = {}) {
+    try {
+        const normalized = Array.from(new Set(
+            (itemNames || [])
+                .map(name => typeof name === 'string' ? name.trim() : '')
+                .filter(Boolean)
+        ));
+
+        if (!normalized.length) {
+            return [];
+        }
+
+        const missing = normalized.filter(name => !findThingByName(name));
+        if (!missing.length) {
+            return [];
+        }
+
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(settingSnapshot);
+        let resolvedLocation = location || null;
+        if (!resolvedLocation && owner?.currentLocation) {
+            try {
+                resolvedLocation = Location.get(owner.currentLocation);
+            } catch (_) {
+                resolvedLocation = null;
+            }
+        }
+        const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+
+        const characterDescriptor = owner ? {
+            name: owner.name,
+            role: owner.class || owner.race || 'adventurer',
+            description: owner.description,
+            class: owner.class || owner.race || 'adventurer',
+            level: owner.level || 1,
+            race: owner.race || 'human'
+        } : {
+            name: resolvedLocation ? `${resolvedLocation.name} cache` : 'Scene cache',
+            role: 'environmental stash',
+            description: resolvedLocation?.description || 'Items discovered during the current scene.',
+            class: 'location',
+            level: currentPlayer?.level || 1,
+            race: resolvedRegion?.name || 'n/a'
+        };
+
+        const renderedTemplate = renderInventoryPrompt({
+            setting: settingDescription,
+            region: resolvedRegion ? { name: resolvedRegion.name, description: resolvedRegion.description } : null,
+            location: resolvedLocation ? { name: resolvedLocation.name, description: resolvedLocation.description || resolvedLocation.stubMetadata?.blueprintDescription } : null,
+            character: characterDescriptor
+        });
+
+        if (!renderedTemplate) {
+            throw new Error('Inventory prompt template could not be rendered');
+        }
+
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedTemplate.systemPrompt;
+        let generationPrompt = parsedTemplate.generationPrompt;
+
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Inventory template missing prompts');
+        }
+
+        const quotedNames = missing.map(name => `"${name}"`).join(', ');
+        generationPrompt += `\nOnly generate detailed entries for the following item names and keep the spelling exactly as provided: ${quotedNames}.`;
+        generationPrompt += `\nOutput exactly ${missing.length} <item> entries using the same XML structure and do not invent additional items.`;
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const model = config.ai.model;
+
+        const chatEndpoint = endpoint.endsWith('/') ?
+            `${endpoint}chat/completions` :
+            `${endpoint}/chat/completions`;
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 900,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+
+        const inventoryContent = response.data?.choices?.[0]?.message?.content;
+        if (!inventoryContent || !inventoryContent.trim()) {
+            throw new Error('Empty item generation response from AI');
+        }
+
+        const parsedItems = parseInventoryItems(inventoryContent) || [];
+        const itemsByName = new Map();
+        for (const item of parsedItems) {
+            if (!item?.name) continue;
+            itemsByName.set(item.name.trim().toLowerCase(), item);
+        }
+
+        const created = [];
+        for (const name of missing) {
+            const lookupKey = name.trim().toLowerCase();
+            const itemData = itemsByName.get(lookupKey) || parsedItems.find(it => it?.name) || null;
+            const descriptionParts = [];
+            if (itemData?.description) {
+                descriptionParts.push(itemData.description.trim());
+            }
+            const detailParts = [];
+            if (itemData?.type) detailParts.push(`Type: ${itemData.type}`);
+            if (itemData?.rarity) detailParts.push(`Rarity: ${itemData.rarity}`);
+            if (itemData?.value) detailParts.push(`Value: ${itemData.value}`);
+            if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
+            if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
+            if (detailParts.length) {
+                descriptionParts.push(detailParts.join(' | '));
+            }
+            const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
+
+            const thing = new Thing({
+                name,
+                description: composedDescription,
+                thingType: 'item',
+                rarity: itemData?.rarity || null,
+                itemTypeDetail: itemData?.type || null,
+                metadata: {
+                    rarity: itemData?.rarity || null,
+                    itemType: itemData?.type || null,
+                    value: itemData?.value || null,
+                    weight: itemData?.weight || null,
+                    properties: itemData?.properties || null
+                }
+            });
+            things.set(thing.id, thing);
+            created.push(thing);
+        }
+
+        for (const thing of created) {
+            const metadata = thing.metadata || {};
+            if (owner && typeof owner.addInventoryItem === 'function') {
+                owner.addInventoryItem(thing);
+                metadata.ownerId = owner.id;
+                delete metadata.locationId;
+                thing.metadata = metadata;
+            } else if (resolvedLocation) {
+                metadata.locationId = resolvedLocation.id;
+                delete metadata.ownerId;
+                thing.metadata = metadata;
+            }
+
+            if (shouldGenerateThingImage(thing)) {
+                generateThingImage(thing).catch(err => {
+                    console.warn('Failed to queue image generation for generated item:', err.message);
+                });
+            }
+        }
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `event_items_${Date.now()}.log`);
+            const logParts = [
+                '=== ITEM GENERATION PROMPT ===',
+                generationPrompt,
+                '\n=== ITEM GENERATION RESPONSE ===',
+                inventoryContent,
+                '\n=== GENERATED ITEMS ===',
+                JSON.stringify(created.map(item => item.toJSON ? item.toJSON() : { id: item.id, name: item.name }), null, 2),
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log item generation:', logError.message);
+        }
+
+        return created;
+    } catch (error) {
+        console.warn('Failed to generate detailed items from event:', error.message);
+
+        const fallbacks = [];
+        for (const name of itemNames || []) {
+            if (!name || findThingByName(name)) {
+                continue;
+            }
+            try {
+                const thing = new Thing({
+                    name,
+                    description: `An item called ${name}.`,
+                    thingType: 'item',
+                    metadata: {}
+                });
+                things.set(thing.id, thing);
+                const fallbackMetadata = thing.metadata || {};
+                if (owner && typeof owner.addInventoryItem === 'function') {
+                    owner.addInventoryItem(thing);
+                    fallbackMetadata.ownerId = owner.id;
+                    delete fallbackMetadata.locationId;
+                } else if (location) {
+                    fallbackMetadata.locationId = location.id;
+                    delete fallbackMetadata.ownerId;
+                }
+                thing.metadata = fallbackMetadata;
+                fallbacks.push(thing);
+            } catch (creationError) {
+                console.warn(`Failed to create fallback item for "${name}":`, creationError.message);
+            }
+        }
+        return fallbacks;
+    }
+}
+
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
@@ -3039,6 +3454,269 @@ function renderRegionNpcPrompt(region, options = {}) {
         console.error('Error rendering region NPC template:', error);
         return null;
     }
+}
+
+function renderSingleNpcPrompt({ npcName, settingDescription, location = null, region = null, existingNpcSummaries = [] } = {}) {
+    try {
+        const safeRegion = region ? {
+            name: region.name || 'Unknown Region',
+            description: region.description || 'No description provided.'
+        } : { name: 'Unknown Region', description: 'No description provided.' };
+
+        const safeLocation = location ? {
+            name: location.name || 'Unknown Location',
+            description: location.description || location.stubMetadata?.blueprintDescription || 'No description provided.'
+        } : { name: 'Unknown Location', description: 'No description provided.' };
+
+        return promptEnv.render('npc-generator-single.xml.njk', {
+            npcName,
+            settingDescription: settingDescription || describeSettingForPrompt(getActiveSettingSnapshot()),
+            region: safeRegion,
+            location: safeLocation,
+            existingNpcSummaries: existingNpcSummaries || [],
+            attributeDefinitions: attributeDefinitionsForPrompt
+        });
+    } catch (error) {
+        console.error('Error rendering single NPC template:', error);
+        return null;
+    }
+}
+
+function summarizeNpcForPrompt(npc) {
+    if (!npc) {
+        return null;
+    }
+    const short = npc.shortDescription && npc.shortDescription.trim()
+        ? npc.shortDescription.trim()
+        : (npc.description ? npc.description.split(/[.!?]/)[0]?.trim() || '' : '');
+    return {
+        name: npc.name,
+        shortDescription: short
+    };
+}
+
+async function generateNpcFromEvent({ name, location = null, region = null } = {}) {
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (!trimmedName) {
+        return null;
+    }
+
+    const normalizedKey = trimmedName.toLowerCase();
+    if (npcGenerationPromises.has(normalizedKey)) {
+        return npcGenerationPromises.get(normalizedKey);
+    }
+
+    const generationPromise = (async () => {
+        const existing = findActorByName(trimmedName);
+        if (existing) {
+            return existing;
+        }
+
+        let resolvedLocation = location || null;
+        if (!resolvedLocation && currentPlayer?.currentLocation) {
+            try {
+                resolvedLocation = Location.get(currentPlayer.currentLocation);
+            } catch (_) {
+                resolvedLocation = null;
+            }
+        }
+
+        const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(settingSnapshot);
+
+        const locationNpcIds = Array.isArray(resolvedLocation?.npcIds) ? resolvedLocation.npcIds : [];
+        const existingNpcSummaries = [];
+        for (const npcId of locationNpcIds) {
+            const npc = players.get(npcId);
+            const summary = summarizeNpcForPrompt(npc);
+            if (summary) {
+                existingNpcSummaries.push(summary);
+            }
+        }
+
+        if (resolvedRegion && Array.isArray(resolvedRegion.locationIds)) {
+            for (const locId of resolvedRegion.locationIds) {
+                if (resolvedLocation && locId === resolvedLocation.id) {
+                    continue;
+                }
+                const loc = gameLocations.get(locId);
+                if (!loc || !Array.isArray(loc.npcIds)) {
+                    continue;
+                }
+                for (const npcId of loc.npcIds) {
+                    const npc = players.get(npcId);
+                    const summary = summarizeNpcForPrompt(npc);
+                    if (summary) {
+                        existingNpcSummaries.push(summary);
+                    }
+                }
+            }
+        }
+
+        const renderedTemplate = renderSingleNpcPrompt({
+            npcName: trimmedName,
+            settingDescription,
+            location: resolvedLocation,
+            region: resolvedRegion,
+            existingNpcSummaries: existingNpcSummaries.slice(0, 25)
+        });
+
+        if (!renderedTemplate) {
+            throw new Error('Failed to render single NPC prompt');
+        }
+
+        const parsedTemplate = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsedTemplate.systemPrompt;
+        const generationPrompt = parsedTemplate.generationPrompt;
+
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Single NPC template missing prompts');
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const model = config.ai.model;
+        const chatEndpoint = endpoint.endsWith('/') ?
+            `${endpoint}chat/completions` :
+            `${endpoint}/chat/completions`;
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 1600,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 35000
+        });
+
+        const npcResponse = response.data?.choices?.[0]?.message?.content;
+        if (!npcResponse || !npcResponse.trim()) {
+            throw new Error('Empty NPC generation response');
+        }
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logPath = path.join(logDir, `npc_single_${Date.now()}.log`);
+            const logParts = [
+                '=== SINGLE NPC PROMPT ===',
+                generationPrompt,
+                '\n=== SINGLE NPC RESPONSE ===',
+                npcResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log single NPC generation:', logError.message);
+        }
+
+        const parsedNpcs = parseLocationNpcs(npcResponse);
+        const npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : {
+            description: `${trimmedName} steps into the scene with purpose.`,
+            shortDescription: '',
+            role: 'mysterious figure'
+        };
+
+        const attributes = {};
+        const attrSource = npcData?.attributes || {};
+        for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
+            const lowerKey = attrName.toLowerCase();
+            const rating = attrSource[attrName] ?? attrSource[lowerKey];
+            attributes[attrName] = mapNpcRatingToValue(rating);
+        }
+
+        const npc = new Player({
+            name: trimmedName,
+            description: npcData?.description || `${trimmedName} is drawn into the story.`,
+            shortDescription: npcData?.shortDescription || '',
+            class: npcData?.class || npcData?.role || 'citizen',
+            race: npcData?.race || 'human',
+            level: 1,
+            location: resolvedLocation?.id || null,
+            attributes,
+            isNPC: true
+        });
+
+        players.set(npc.id, npc);
+
+        if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
+            resolvedLocation.addNpcId(npc.id);
+        }
+
+        const inventoryDescriptor = {
+            role: npcData?.role || npcData?.class || 'citizen',
+            class: npcData?.class || npcData?.role || 'citizen',
+            race: npcData?.race || 'human'
+        };
+
+        try {
+            await generateInventoryForCharacter({
+                character: npc,
+                characterDescriptor: inventoryDescriptor,
+                region: resolvedRegion,
+                location: resolvedLocation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        } catch (inventoryError) {
+            console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
+        }
+
+        if (shouldGenerateNpcImage(npc)) {
+            generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+        }
+
+        if (resolvedLocation) {
+            queueNpcAssetsForLocation(resolvedLocation);
+        }
+
+        return npc;
+    })().catch(error => {
+        console.warn(`NPC generation failed for ${name}:`, error.message);
+
+        const fallbackExisting = findActorByName(name);
+        if (fallbackExisting) {
+            return fallbackExisting;
+        }
+
+        try {
+            const fallbackNpc = new Player({
+                name,
+                description: `${name} arrives on the scene.`,
+                level: 1,
+                location: location?.id || null,
+                isNPC: true
+            });
+            players.set(fallbackNpc.id, fallbackNpc);
+            if (location && typeof location.addNpcId === 'function') {
+                location.addNpcId(fallbackNpc.id);
+            }
+            return fallbackNpc;
+        } catch (creationError) {
+            console.warn('Failed to create fallback NPC:', creationError.message);
+            return null;
+        }
+    }).finally(() => {
+        npcGenerationPromises.delete(normalizedKey);
+    });
+
+    npcGenerationPromises.set(normalizedKey, generationPromise);
+    return generationPromise;
 }
 
 function renderInventoryPrompt(context = {}) {
