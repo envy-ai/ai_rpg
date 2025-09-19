@@ -3,6 +3,7 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
 
         // Start with system prompt for AI context
         this.chatHistory = [
@@ -16,6 +17,7 @@ class AIRPGChat {
         this.loadExistingHistory();
 
         this.init();
+        this.initSkillPointControls();
     }
 
     async loadExistingHistory() {
@@ -182,6 +184,53 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    initSkillPointControls() {
+        const form = document.getElementById('add-skill-points-form');
+        if (!form) {
+            return;
+        }
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const input = form.querySelector('input[name="amount"]');
+            if (!input) return;
+            const amount = parseInt(input.value, 10);
+            if (Number.isNaN(amount) || amount <= 0) {
+                alert('Enter a positive number of skill points to add.');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/player/skillpoints/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ amount })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || `Server error (${response.status})`);
+                }
+
+                if (data.player) {
+                    this.updateSkillPointsDisplay(data.player.unspentSkillPoints);
+                }
+                input.value = '1';
+            } catch (error) {
+                alert(`Failed to add skill points: ${error.message}`);
+            }
+        });
+    }
+
+    updateSkillPointsDisplay(value) {
+        if (this.skillPointsDisplay && value !== undefined && value !== null) {
+            this.skillPointsDisplay.textContent = value;
+        }
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -280,6 +329,10 @@ class AIRPGChat {
                 }
                 if (window.refreshParty) {
                     window.refreshParty();
+                }
+
+                if (result.player.unspentSkillPoints !== undefined) {
+                    this.updateSkillPointsDisplay(result.player.unspentSkillPoints);
                 }
 
                 if (result.player.currentLocation) {

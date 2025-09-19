@@ -1635,6 +1635,12 @@ function findRegionByLocationId(locationId) {
 async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey }) {
     try {
         const settingSnapshot = getActiveSettingSnapshot();
+        if (!settingSnapshot) {
+            if (!character || !character.isNPC) {
+                console.log('🧺 Skipping player inventory generation - no active setting configured.');
+                return [];
+            }
+        }
         const settingDescription = describeSettingForPrompt(settingSnapshot);
 
         const renderedTemplate = renderInventoryPrompt({
@@ -3807,7 +3813,8 @@ app.get('/', (req, res) => {
         systemPrompt: systemPrompt,
         chatHistory: chatHistory,
         currentPage: 'chat',
-        player: currentPlayer ? currentPlayer.getStatus() : null
+        player: currentPlayer ? currentPlayer.getStatus() : null,
+        availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
     });
 });
 
@@ -4517,7 +4524,8 @@ app.get('/player-stats', (req, res) => {
     res.render('player-stats.njk', {
         title: 'Player Stats Configuration',
         player: currentPlayer ? currentPlayer.getStatus() : null,
-        currentPage: 'player-stats'
+        currentPage: 'player-stats',
+        availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
     });
 });
 
@@ -4583,7 +4591,7 @@ app.get('/debug', (req, res) => {
 // Update player stats
 app.post('/api/player/update-stats', (req, res) => {
     try {
-        const { name, description, level, health, maxHealth, attributes } = req.body;
+        const { name, description, level, health, maxHealth, attributes, skills: skillValues, unspentSkillPoints } = req.body;
 
         if (!currentPlayer) {
             return res.status(404).json({
@@ -4630,6 +4638,22 @@ app.post('/api/player/update-stats', (req, res) => {
             }
         }
 
+        if (skillValues && typeof skillValues === 'object') {
+            for (const [skillName, value] of Object.entries(skillValues)) {
+                if (!isNaN(value)) {
+                    currentPlayer.setSkillValue(skillName, parseInt(value));
+                }
+            }
+        }
+
+        if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
+            currentPlayer.setUnspentSkillPoints(parseInt(unspentSkillPoints));
+        }
+
+        if (typeof currentPlayer.syncSkillsWithAvailable === 'function') {
+            currentPlayer.syncSkillsWithAvailable();
+        }
+
         // Trigger image regeneration if description changed
         if (descriptionChanged) {
             generatePlayerImage(currentPlayer).catch(err => console.warn('Failed to regenerate player portrait:', err.message));
@@ -4653,7 +4677,7 @@ app.post('/api/player/update-stats', (req, res) => {
 // Create new player from stats form
 app.post('/api/player/create-from-stats', async (req, res) => {
     try {
-        const { name, description, level, health, maxHealth, attributes } = req.body;
+        const { name, description, level, health, maxHealth, attributes, skills: skillValues, unspentSkillPoints } = req.body;
 
         // Validate required fields
         if (!name || !name.trim()) {
@@ -4682,10 +4706,27 @@ app.post('/api/player/create-from-stats', async (req, res) => {
             }
         }
 
+        if (skillValues && typeof skillValues === 'object') {
+            playerData.skills = {};
+            for (const [skillName, value] of Object.entries(skillValues)) {
+                if (!isNaN(value)) {
+                    playerData.skills[skillName] = Math.max(0, parseInt(value));
+                }
+            }
+        }
+
+        if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
+            playerData.unspentSkillPoints = Math.max(0, parseInt(unspentSkillPoints));
+        }
+
         // Create the player
         const player = new Player(playerData);
         players.set(player.id, player);
         currentPlayer = player;
+
+        if (typeof player.syncSkillsWithAvailable === 'function') {
+            player.syncSkillsWithAvailable();
+        }
 
         try {
             const location = player.currentLocation ? gameLocations.get(player.currentLocation) : null;
@@ -4717,6 +4758,47 @@ app.post('/api/player/create-from-stats', async (req, res) => {
 
     } catch (error) {
         console.error('Error creating player from stats:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.post('/api/player/skillpoints/add', (req, res) => {
+    try {
+        if (!currentPlayer) {
+            return res.status(404).json({
+                success: false,
+                error: 'No current player found'
+            });
+        }
+
+        const amountRaw = req.body?.amount;
+        const amount = Number(amountRaw);
+        if (!Number.isFinite(amount) || amount === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Amount must be a non-zero number'
+            });
+        }
+
+        if (amount < 0 && currentPlayer.getUnspentSkillPoints() + amount < 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot spend more skill points than available'
+            });
+        }
+
+        currentPlayer.adjustUnspentSkillPoints(amount);
+
+        res.json({
+            success: true,
+            player: currentPlayer.getStatus(),
+            amount
+        });
+    } catch (error) {
+        console.error('Error adjusting skill points:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -5866,6 +5948,9 @@ app.post('/api/new-game', async (req, res) => {
                 charisma: 10
             }
         });
+        if (typeof newPlayer.syncSkillsWithAvailable === 'function') {
+            newPlayer.syncSkillsWithAvailable();
+        }
 
         // Generate an initial region and choose its entrance as the starting location
         console.log('🗺️ Generating starting region...');

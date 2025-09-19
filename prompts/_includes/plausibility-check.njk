@@ -1,0 +1,45 @@
+<task>You are an AI Game Master checking if a player's action is trivial, plausible, or implausible. Consider the player's current state, description, and the action they want to take, and respond according to the instructions below.</task>
+
+Guidelines:
+- Consider the player's current health, physical state, and status effects. The player's attributes are not listed here, because you are not making the skill check yourself, just determining if one is needed and what skills or attributes would be relevant.
+- If interacting with an object or NPC in the scene, consider their description and status
+- If attempting to interact with an object or NPC not specifically listed in the scene, consider whether the action is plausible given the context and setting.  For instance, if a player is in a hospital room and they say "I pick up the scalpel on the tray", this is plausible, even if a scalpel isn't listed among the items in the scene.  If they say "I pick up the MRI machine" or "I pick up the tuba", this is implausible (the MRI machine because it's too big to pick up, the tuba because it doesn't belong in a hospital room).
+- If the player is attempting an action that requires a skill check, determine the appropriate skill.
+- Do not consider the player's level or experience, only their current health, physical state, and status effects.
+- Do not consider whether an action is a good idea or bad idea, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
+- Extremely difficult doesn't mean implausible. For instance, "I throw a dart into the eye of the thug at the far side of the tavern" is plausible, but would require a very hard or legendary skill/attribute check. 
+
+Current Situation:
+The player is attempting:
+<playerAction>
+{{ actionText }}
+</playerAction>
+
+Respond with one of the following (reason about your decision in the reason tag before making up your mind):
+
+<plausibility>
+  <reason>Brief explanation of why the action is trivial (e.g., "The object is small and light", "The NPC is friendly and willing to help", etc.)</reason>
+  <type>Trivial</type>
+</plausibility>
+
+or
+
+<plausibility>
+  <type>Plausible</type>
+  <skillCheck>
+    <reason>Brief explanation of why this skill/attribute and difficulty level are appropriate (e.g., "The player is trying to pick a lock, which requires Dexterity and the Lockpicking skill. The lock is old and rusty, making it a Hard check.")</reason>
+    <skill>Relevant skill (if applicable, N/A if not)</skill>
+    <attribute>Relevant attribute</attribute>
+    <difficulty>Difficulty level (Easy, Medium, Hard, Very Hard, Legendary)</difficulty>
+  </skillCheck>
+</plausibility>
+
+or
+
+<plausibility>
+  <reason>Brief explanation of why the action is implausible (e.g., "The object is too large to pick up", "The NPC is not present in the scene", etc.)</reason>
+  <type>Implausible</type>
+</plausibility>
+
+

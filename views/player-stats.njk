@@ -124,6 +124,45 @@
                 </div>
             </div>
 
+            {% if availableSkills and availableSkills|length %}
+            <div class="config-section">
+                <h2>Skills</h2>
+                <div class="skill-pool">
+                    <label for="unspent-skill-points-input">Unspent Skill Points</label>
+                    <input type="number"
+                           id="unspent-skill-points-input"
+                           name="unspentSkillPoints"
+                           value="{{ player.unspentSkillPoints if player else (availableSkills|length + 4) // 5 }}"
+                           data-default="{{ player.unspentSkillPoints if player else (availableSkills|length + 4) // 5 }}"
+                           min="0"
+                           form="player-stats-form">
+                    <span class="help-text">Allocate these as your character advances.</span>
+                </div>
+                <div class="skills-grid">
+                    {% for skill in availableSkills %}
+                    {% set skillValue = player.skills[skill.name] if player and player.skills and skill.name in player.skills else 1 %}
+                    <div class="skill-card">
+                        <div class="skill-header">
+                            <label for="skill-{{ loop.index }}">{{ skill.name }}</label>
+                            {% if skill.attribute %}<span class="skill-attribute">{{ skill.attribute }}</span>{% endif %}
+                        </div>
+                        <input type="number"
+                               id="skill-{{ loop.index }}"
+                               class="skill-input"
+                               data-skill-name="{{ skill.name }}"
+                               name="skills.{{ skill.name }}"
+                               value="{{ skillValue }}"
+                               min="0"
+                               form="player-stats-form">
+                        {% if skill.description %}
+                        <span class="help-text">{{ skill.description }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Current Player Status -->
             {% if player %}
             <div class="config-section">

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Location = require('./Location.js');
 const Thing = require('./Thing.js');
+const Skill = require('./Skill.js');
 
 class Player {
     // Private fields using ES13 syntax
@@ -26,6 +27,7 @@ class Player {
     #partyMembers;
     #dispositions;
     #skills;
+    #unspentSkillPoints;
 
     static availableSkills = new Map();
 
@@ -68,6 +70,13 @@ class Player {
         this.#dispositions = this.#initializeDispositions(options.dispositions);
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
+
+        const providedPoints = Number(options.unspentSkillPoints);
+        if (Number.isFinite(providedPoints)) {
+            this.#unspentSkillPoints = Math.max(0, Math.floor(providedPoints));
+        } else {
+            this.#unspentSkillPoints = this.#skillPointsPerLevel() * this.#level;
+        }
 
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
@@ -170,6 +179,14 @@ class Player {
                 this.#skills.set(skillName, value);
             }
         }
+    }
+
+    #skillPointsPerLevel() {
+        const availableCount = Player.availableSkills instanceof Map ? Player.availableSkills.size : 0;
+        if (!availableCount || availableCount <= 0) {
+            return 0;
+        }
+        return Math.ceil(availableCount / 5);
     }
 
     #resolveThing(thingLike) {
@@ -558,6 +575,10 @@ class Player {
 
         // Add the health increase to current health
         this.#health += (this.#maxHealth - oldMaxHealth);
+        const pointsPerLevel = this.#skillPointsPerLevel();
+        if (pointsPerLevel > 0) {
+            this.#unspentSkillPoints += pointsPerLevel;
+        }
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -623,6 +644,12 @@ class Player {
         if (oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
             this.#health = Math.round(this.#maxHealth * healthRatio);
+        }
+
+        const pointsPerLevel = this.#skillPointsPerLevel();
+        if (pointsPerLevel > 0 && oldLevel !== this.#level) {
+            const delta = this.#level - oldLevel;
+            this.#unspentSkillPoints = Math.max(0, this.#unspentSkillPoints + (pointsPerLevel * delta));
         }
 
         this.#lastUpdated = new Date().toISOString();
@@ -870,7 +897,8 @@ class Player {
             inventory: this.getInventoryItems().map(thing => thing.toJSON()),
             partyMembers: this.getPartyMembers(),
             dispositions: this.#serializeDispositions(),
-            skills: Object.fromEntries(this.#skills)
+            skills: Object.fromEntries(this.#skills),
+            unspentSkillPoints: this.#unspentSkillPoints
         };
     }
 
@@ -896,6 +924,7 @@ class Player {
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
+            unspentSkillPoints: this.#unspentSkillPoints,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -921,7 +950,8 @@ class Player {
             inventory: Array.isArray(data.inventory) ? data.inventory : [],
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
-            skills: data.skills && typeof data.skills === 'object' ? data.skills : {}
+            skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
+            unspentSkillPoints: data.unspentSkillPoints
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;
@@ -1007,6 +1037,30 @@ class Player {
         return true;
     }
 
+    getUnspentSkillPoints() {
+        return this.#unspentSkillPoints;
+    }
+
+    setUnspentSkillPoints(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) {
+            throw new Error('Unspent skill points must be a non-negative number');
+        }
+        this.#unspentSkillPoints = Math.floor(numeric);
+        this.#lastUpdated = new Date().toISOString();
+        return this.#unspentSkillPoints;
+    }
+
+    adjustUnspentSkillPoints(delta) {
+        const numeric = Number(delta);
+        if (!Number.isFinite(numeric)) {
+            return this.#unspentSkillPoints;
+        }
+        this.#unspentSkillPoints = Math.max(0, Math.floor(this.#unspentSkillPoints + numeric));
+        this.#lastUpdated = new Date().toISOString();
+        return this.#unspentSkillPoints;
+    }
+
     syncSkillsWithAvailable() {
         const available = Player.availableSkills instanceof Map ? Player.availableSkills : new Map();
         let updated = false;
@@ -1033,14 +1087,49 @@ class Player {
     }
 
     static setAvailableSkills(skillsInput) {
-        let nextMap = new Map();
+        const nextMap = new Map();
+
+        const coerceSkill = (name, value) => {
+            if (value instanceof Skill) {
+                return value;
+            }
+            if (value && typeof value === 'object') {
+                try {
+                    return Skill.fromJSON({
+                        name: value.name || name,
+                        description: value.description || '',
+                        attribute: value.attribute || ''
+                    });
+                } catch (_) {
+                    return new Skill({ name: name, description: '', attribute: '' });
+                }
+            }
+            return new Skill({ name: name, description: '', attribute: '' });
+        };
+
         if (skillsInput instanceof Map) {
-            nextMap = new Map(skillsInput);
+            for (const [name, value] of skillsInput.entries()) {
+                if (typeof name !== 'string') continue;
+                const trimmed = name.trim();
+                if (!trimmed) continue;
+                nextMap.set(trimmed, coerceSkill(trimmed, value));
+            }
         } else if (Array.isArray(skillsInput)) {
-            nextMap = new Map(skillsInput.map(skill => [skill.name, skill]));
+            for (const value of skillsInput) {
+                if (!value) continue;
+                const name = typeof value.name === 'string' ? value.name.trim() : '';
+                if (!name) continue;
+                nextMap.set(name, coerceSkill(name, value));
+            }
         } else if (skillsInput && typeof skillsInput === 'object') {
-            nextMap = new Map(Object.entries(skillsInput));
+            for (const [name, value] of Object.entries(skillsInput)) {
+                if (typeof name !== 'string') continue;
+                const trimmed = name.trim();
+                if (!trimmed) continue;
+                nextMap.set(trimmed, coerceSkill(trimmed, value));
+            }
         }
+
         Player.availableSkills = nextMap;
     }
 

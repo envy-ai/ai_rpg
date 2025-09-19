@@ -69,6 +69,27 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
+    // Extract skills
+    playerData.skills = {};
+    const skillInputs = document.querySelectorAll('.skill-input');
+    skillInputs.forEach(input => {
+      const skillName = input.dataset.skillName || input.name.replace('skills.', '');
+      if (!skillName) return;
+      const value = parseInt(input.value);
+      if (!isNaN(value)) {
+        playerData.skills[skillName] = value;
+      }
+    });
+
+    // Extract unspent skill points
+    const unspentField = document.getElementById('unspent-skill-points-input');
+    if (unspentField) {
+      const points = parseInt(unspentField.value);
+      if (!isNaN(points)) {
+        playerData.unspentSkillPoints = points;
+      }
+    }
+
     // Validate form data
     const validation = validatePlayerData(playerData);
     if (!validation.valid) {
@@ -185,6 +206,20 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
+    if (data.skills) {
+      for (const [skillName, value] of Object.entries(data.skills)) {
+        if (isNaN(value) || value < 0) {
+          return { valid: false, message: `${skillName} rank must be a non-negative number` };
+        }
+      }
+    }
+
+    if (data.unspentSkillPoints !== undefined) {
+      if (isNaN(data.unspentSkillPoints) || data.unspentSkillPoints < 0) {
+        return { valid: false, message: 'Unspent skill points must be zero or greater' };
+      }
+    }
+
     return { valid: true };
   }
 
@@ -234,6 +269,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       }
     }
+
+    if (playerData.skills) {
+      for (const [skillName, value] of Object.entries(playerData.skills)) {
+        const input = document.querySelector(`.skill-input[data-skill-name="${skillName}"]`);
+        if (input) {
+          input.value = value;
+        }
+      }
+    }
+
+    const unspentField = document.getElementById('unspent-skill-points-input');
+    if (unspentField) {
+      const nextValue = playerData.unspentSkillPoints ?? parseInt(unspentField.value) || 0;
+      unspentField.value = nextValue;
+      unspentField.dataset.default = nextValue;
+    }
   }
 
   /**
@@ -253,6 +304,17 @@ document.addEventListener('DOMContentLoaded', function () {
       input.value = '10';
       updateAttributeModifier({ target: input });
     });
+
+    const skillInputs = document.querySelectorAll('.skill-input');
+    skillInputs.forEach(input => {
+      input.value = '1';
+    });
+
+    const unspentField = document.getElementById('unspent-skill-points-input');
+    if (unspentField) {
+      const defaultPoints = parseInt(unspentField.dataset.default) || 0;
+      unspentField.value = defaultPoints;
+    }
 
     showStatusMessage('Stats reset to default values', 'info');
   }
