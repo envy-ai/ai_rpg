@@ -4744,7 +4744,7 @@ async function generateRegionFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000
+            timeout: 120000
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
