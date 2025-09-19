@@ -29,6 +29,7 @@ const Region = require('./Region.js');
 
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
+const Events = require('./Events.js');
 
 // On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
 const logsDir = path.join(__dirname, 'logs');
@@ -801,6 +802,236 @@ function buildNpcProfiles(location) {
         }));
 }
 
+function findActorByName(name) {
+    if (!name || typeof name !== 'string') {
+        return null;
+    }
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    if (currentPlayer) {
+        const playerAliases = [
+            currentPlayer.name?.trim().toLowerCase(),
+            'player',
+            'the player',
+            'you',
+            'self'
+        ].filter(Boolean);
+
+        if (playerAliases.includes(normalized)) {
+            return currentPlayer;
+        }
+    }
+
+    for (const actor of players.values()) {
+        if (actor && typeof actor.name === 'string' && actor.name.trim().toLowerCase() === normalized) {
+            return actor;
+        }
+    }
+
+    return null;
+}
+
+async function ensureNpcByName(name, context = {}) {
+    const existing = findActorByName(name);
+    if (existing) {
+        return existing;
+    }
+
+    let resolvedLocation = context.location || null;
+    if (!resolvedLocation && context.player?.currentLocation) {
+        try {
+            resolvedLocation = Location.get(context.player.currentLocation);
+        } catch (_) {
+            resolvedLocation = null;
+        }
+    }
+
+    const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+
+    const generated = await generateNpcFromEvent({
+        name,
+        location: resolvedLocation,
+        region: resolvedRegion
+    });
+
+    if (generated) {
+        return generated;
+    }
+
+    const fallbackNpc = new Player({
+        name,
+        description: `${name} emerges in the scene.`,
+        level: 1,
+        location: resolvedLocation?.id || null,
+        isNPC: true
+    });
+    players.set(fallbackNpc.id, fallbackNpc);
+    if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
+        resolvedLocation.addNpcId(fallbackNpc.id);
+    }
+    return fallbackNpc;
+}
+
+function findThingByName(name) {
+    if (!name || typeof name !== 'string') {
+        return null;
+    }
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+    for (const thing of things.values()) {
+        if (thing && typeof thing.name === 'string' && thing.name.trim().toLowerCase() === normalized) {
+            return thing;
+        }
+    }
+    return null;
+}
+
+function findLocationByNameLoose(name) {
+    if (!name || typeof name !== 'string') {
+        return null;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+        return null;
+    }
+    let location = null;
+    try {
+        location = Location.findByName(trimmed);
+    } catch (_) {
+        location = null;
+    }
+    if (location) {
+        return location;
+    }
+
+    const normalized = trimmed.toLowerCase();
+    for (const loc of gameLocations.values()) {
+        if (!loc) continue;
+        if (loc.id === trimmed) {
+            return loc;
+        }
+        if (typeof loc.name === 'string' && loc.name.trim().toLowerCase() === normalized) {
+            return loc;
+        }
+    }
+    return null;
+}
+
+function findRegionByNameLoose(name) {
+    if (!name || typeof name !== 'string') {
+        return null;
+    }
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+    for (const region of regions.values()) {
+        if (!region) continue;
+        if (region.name && region.name.trim().toLowerCase() === normalized) {
+            return region;
+        }
+    }
+    return null;
+}
+
+function pruneAndDecrementStatusEffects(entity) {
+    if (!entity) {
+        return;
+    }
+
+    try {
+        if (typeof entity.clearExpiredStatusEffects === 'function') {
+            entity.clearExpiredStatusEffects();
+        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
+            const filtered = entity.getStatusEffects().filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+            entity.setStatusEffects(filtered);
+        }
+
+        if (typeof entity.tickStatusEffects === 'function') {
+            entity.tickStatusEffects();
+        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
+            const ticked = entity.getStatusEffects().map(effect => {
+                if (!Number.isFinite(effect.duration)) {
+                    return effect;
+                }
+                return { ...effect, duration: effect.duration - 1 };
+            });
+            entity.setStatusEffects(ticked);
+        }
+    } catch (error) {
+        console.warn('Failed to update status effects:', error.message);
+    }
+}
+
+function tickStatusEffectsForAction({ player = currentPlayer, location = null } = {}) {
+    if (!player) {
+        return { location: null, region: null };
+    }
+
+    let resolvedLocation = location;
+    if (!resolvedLocation && player.currentLocation) {
+        try {
+            resolvedLocation = Location.get(player.currentLocation);
+        } catch (error) {
+            console.warn('Failed to resolve player location for status tick:', error.message);
+        }
+    }
+
+    const region = resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null;
+
+    const processed = new Set();
+    const processEntity = entity => {
+        if (!entity || processed.has(entity)) {
+            return;
+        }
+        processed.add(entity);
+        pruneAndDecrementStatusEffects(entity);
+    };
+
+    processEntity(player);
+    processEntity(resolvedLocation);
+    processEntity(region);
+
+    if (player && typeof player.getInventoryItems === 'function') {
+        for (const thing of player.getInventoryItems()) {
+            processEntity(thing);
+        }
+    }
+
+    if (player && typeof player.getPartyMembers === 'function') {
+        for (const memberId of player.getPartyMembers()) {
+            const member = players.get(memberId);
+            if (member) {
+                processEntity(member);
+            }
+        }
+    }
+
+    if (resolvedLocation) {
+        if (Array.isArray(resolvedLocation.npcIds)) {
+            for (const npcId of resolvedLocation.npcIds) {
+                const npc = players.get(npcId);
+                if (npc) {
+                    processEntity(npc);
+                }
+            }
+        }
+        for (const thing of things.values()) {
+            const metadata = thing.metadata || {};
+            if (metadata.locationId === resolvedLocation.id && !metadata.ownerId) {
+                processEntity(thing);
+            }
+        }
+    }
+
+    return { location: resolvedLocation, region };
+}
+
 function getEventPromptTemplates() {
     try {
         const eventsDir = path.join(__dirname, 'prompts', 'events');
@@ -1226,1022 +1457,6 @@ function resolveActionOutcome({ plausibility, player }) {
     };
 }
 
-const DEFAULT_STATUS_DURATION = 3;
-const MAJOR_STATUS_DURATION = 5;
-
-function pruneAndDecrementStatusEffects(entity) {
-    if (!entity) {
-        return;
-    }
-
-    try {
-        if (typeof entity.clearExpiredStatusEffects === 'function') {
-            entity.clearExpiredStatusEffects();
-        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
-            const filtered = entity.getStatusEffects().filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
-            entity.setStatusEffects(filtered);
-        }
-
-        if (typeof entity.tickStatusEffects === 'function') {
-            entity.tickStatusEffects();
-        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
-            const ticked = entity.getStatusEffects().map(effect => {
-                if (!Number.isFinite(effect.duration)) {
-                    return effect;
-                }
-                return { ...effect, duration: effect.duration - 1 };
-            });
-            entity.setStatusEffects(ticked);
-        }
-    } catch (error) {
-        console.warn('Failed to update status effects:', error.message);
-    }
-}
-
-function tickStatusEffectsForAction({ player = currentPlayer, location = null } = {}) {
-    if (!player) {
-        return { location: null, region: null };
-    }
-
-    let resolvedLocation = location;
-    if (!resolvedLocation && player.currentLocation) {
-        try {
-            resolvedLocation = Location.get(player.currentLocation);
-        } catch (error) {
-            console.warn('Failed to resolve player location for status tick:', error.message);
-        }
-    }
-
-    const region = resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null;
-
-    const processed = new Set();
-    const processEntity = entity => {
-        if (!entity || processed.has(entity)) {
-            return;
-        }
-        processed.add(entity);
-        pruneAndDecrementStatusEffects(entity);
-    };
-
-    processEntity(player);
-    processEntity(resolvedLocation);
-    processEntity(region);
-
-    if (player && typeof player.getInventoryItems === 'function') {
-        for (const thing of player.getInventoryItems()) {
-            processEntity(thing);
-        }
-    }
-
-    if (player && typeof player.getPartyMembers === 'function') {
-        for (const memberId of player.getPartyMembers()) {
-            const member = players.get(memberId);
-            if (member) {
-                processEntity(member);
-            }
-        }
-    }
-
-    if (resolvedLocation) {
-        if (Array.isArray(resolvedLocation.npcIds)) {
-            for (const npcId of resolvedLocation.npcIds) {
-                const npc = players.get(npcId);
-                if (npc) {
-                    processEntity(npc);
-                }
-            }
-        }
-        for (const thing of things.values()) {
-            const metadata = thing.metadata || {};
-            if (metadata.locationId === resolvedLocation.id && !metadata.ownerId) {
-                processEntity(thing);
-            }
-        }
-    }
-
-    return { location: resolvedLocation, region };
-}
-
-function cleanEventResponseText(text) {
-    if (!text || typeof text !== 'string') {
-        return '';
-    }
-    return text.replace(/\*/g, '').trim();
-}
-
-function isNoEventAnswer(raw) {
-    if (!raw || typeof raw !== 'string') {
-        return true;
-    }
-    const normalized = raw.trim().toLowerCase();
-    if (!normalized) {
-        return true;
-    }
-    return normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'nothing';
-}
-
-function splitSemicolonEntries(raw) {
-    if (!raw || isNoEventAnswer(raw)) {
-        return [];
-    }
-    return raw
-        .split(/;/)
-        .map(entry => entry.trim())
-        .filter(entry => entry.length > 0 && !isNoEventAnswer(entry));
-}
-
-function extractArrowParts(entry, expectedParts) {
-    if (!entry || typeof entry !== 'string') {
-        return [];
-    }
-    const parts = entry
-        .split(/->/)
-        .map(part => part.trim())
-        .filter(part => part.length > 0);
-
-    if (parts.length < expectedParts) {
-        return [];
-    }
-
-    if (expectedParts === 2) {
-        return [parts[0], parts.slice(1).join(' -> ')];
-    }
-
-    if (expectedParts === 3) {
-        return [parts[0], parts[1], parts.slice(2).join(' -> ')];
-    }
-
-    return parts;
-}
-
-function extractNumericValue(text) {
-    if (!text || typeof text !== 'string') {
-        return null;
-    }
-    const match = text.match(/(-?\d+)/);
-    return match ? parseInt(match[1], 10) : null;
-}
-
-function parseEventCheckResponse(eventTemplates, responseText) {
-    if (!eventTemplates || !eventTemplates.length) {
-        return null;
-    }
-
-    const cleaned = cleanEventResponseText(responseText);
-    const lines = cleaned.split(/\n/).map(line => line.trim()).filter(line => line.length > 0);
-
-    const numberedEntries = new Map();
-    let currentIndex = null;
-    let buffer = [];
-
-    const flush = () => {
-        if (currentIndex === null) {
-            return;
-        }
-        const combined = buffer.join(' ').trim();
-        numberedEntries.set(currentIndex, combined);
-        currentIndex = null;
-        buffer = [];
-    };
-
-    for (const line of lines) {
-        const match = line.match(/^(\d+)\.\s*(.*)$/);
-        if (match) {
-            flush();
-            currentIndex = parseInt(match[1], 10);
-            buffer.push(match[2]);
-        } else if (currentIndex !== null) {
-            buffer.push(line);
-        }
-    }
-    flush();
-
-    const rawEntries = {};
-    const parsedEntries = {};
-
-    eventTemplates.forEach((templatePath, idx) => {
-        const index = idx + 1;
-        const key = path.posix.basename(templatePath, '.njk');
-        const raw = numberedEntries.has(index) ? numberedEntries.get(index) : '';
-        rawEntries[key] = raw;
-        const parser = EVENT_ENTRY_PARSERS[key];
-        parsedEntries[key] = parser ? parser(raw) : raw;
-    });
-
-    return { rawEntries, parsed: parsedEntries };
-}
-
-const EVENT_ENTRY_PARSERS = {
-    attack_damage: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const [attacker, target] = extractArrowParts(entry, 2);
-            if (!attacker || !target) {
-                return null;
-            }
-            return { attacker, target };
-        }).filter(Boolean);
-    },
-    consume_item: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const [user, item] = extractArrowParts(entry, 2);
-            if (!user || !item) {
-                return null;
-            }
-            return { user, item };
-        }).filter(Boolean);
-    },
-    death_incapacitation: raw => splitSemicolonEntries(raw),
-    drop_item: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const [character, item] = extractArrowParts(entry, 2);
-            if (!character || !item) {
-                return null;
-            }
-            return { character, item };
-        }).filter(Boolean);
-    },
-    heal_recover: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const parts = extractArrowParts(entry, 3);
-            if (parts.length < 3) {
-                return null;
-            }
-            const [healer, recipient, effect] = parts;
-            if (!healer || !recipient || !effect) {
-                return null;
-            }
-            return { healer, recipient, effect };
-        }).filter(Boolean);
-    },
-    item_appear: raw => splitSemicolonEntries(raw),
-    move_location: raw => splitSemicolonEntries(raw),
-    new_exit_discovered: raw => splitSemicolonEntries(raw),
-    npc_arrival_departure: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const match = entry.match(/(.+?)\s+(arrived|left)\b/i);
-            if (!match) {
-                return null;
-            }
-            return {
-                name: match[1].trim(),
-                action: match[2].trim().toLowerCase()
-            };
-        }).filter(Boolean);
-    },
-    party_change: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const match = entry.match(/(.+?)\s+(joined|left)\b/i);
-            if (!match) {
-                return null;
-            }
-            return {
-                name: match[1].trim(),
-                action: match[2].trim().toLowerCase()
-            };
-        }).filter(Boolean);
-    },
-    pick_up_item: raw => splitSemicolonEntries(raw),
-    status_effect_change: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const parts = extractArrowParts(entry, 3);
-            if (parts.length < 3) {
-                return null;
-            }
-            const [entity, description, changeType] = parts;
-            if (!entity || !description || !changeType) {
-                return null;
-            }
-            return {
-                entity,
-                description,
-                action: changeType.trim().toLowerCase()
-            };
-        }).filter(Boolean);
-    },
-    transfer_item: raw => {
-        return splitSemicolonEntries(raw).map(entry => {
-            const parts = extractArrowParts(entry, 3);
-            if (parts.length < 3) {
-                return null;
-            }
-            const [giver, item, receiver] = parts;
-            if (!giver || !item || !receiver) {
-                return null;
-            }
-            return { giver, item, receiver };
-        }).filter(Boolean);
-    }
-};
-
-function findActorByName(name) {
-    if (!name || typeof name !== 'string') {
-        return null;
-    }
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) {
-        return null;
-    }
-
-    if (currentPlayer) {
-        const playerAliases = [
-            currentPlayer.name?.trim().toLowerCase(),
-            'player',
-            'the player',
-            'you',
-            'self'
-        ].filter(Boolean);
-
-        if (playerAliases.includes(normalized)) {
-            return currentPlayer;
-        }
-    }
-
-    for (const actor of players.values()) {
-        if (actor && typeof actor.name === 'string' && actor.name.trim().toLowerCase() === normalized) {
-            return actor;
-        }
-    }
-
-    return null;
-}
-
-async function ensureNpcByName(name, context = {}) {
-    const existing = findActorByName(name);
-    if (existing) {
-        return existing;
-    }
-
-    let resolvedLocation = context.location || null;
-    if (!resolvedLocation && context.player?.currentLocation) {
-        try {
-            resolvedLocation = Location.get(context.player.currentLocation);
-        } catch (_) {
-            resolvedLocation = null;
-        }
-    }
-
-    const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
-
-    const generated = await generateNpcFromEvent({
-        name,
-        location: resolvedLocation,
-        region: resolvedRegion
-    });
-
-    if (generated) {
-        return generated;
-    }
-
-    const fallbackNpc = new Player({
-        name,
-        description: `${name} emerges in the scene.`,
-        level: 1,
-        location: resolvedLocation?.id || null,
-        isNPC: true
-    });
-    players.set(fallbackNpc.id, fallbackNpc);
-    if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
-        resolvedLocation.addNpcId(fallbackNpc.id);
-    }
-    return fallbackNpc;
-}
-
-function findThingByName(name) {
-    if (!name || typeof name !== 'string') {
-        return null;
-    }
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) {
-        return null;
-    }
-    for (const thing of things.values()) {
-        if (thing && typeof thing.name === 'string' && thing.name.trim().toLowerCase() === normalized) {
-            return thing;
-        }
-    }
-    return null;
-}
-
-function findLocationByNameLoose(name) {
-    if (!name || typeof name !== 'string') {
-        return null;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-        return null;
-    }
-    let location = null;
-    try {
-        location = Location.findByName(trimmed);
-    } catch (_) {
-        location = null;
-    }
-    if (location) {
-        return location;
-    }
-
-    const normalized = trimmed.toLowerCase();
-    for (const loc of gameLocations.values()) {
-        if (!loc) continue;
-        if (loc.id === trimmed) {
-            return loc;
-        }
-        if (typeof loc.name === 'string' && loc.name.trim().toLowerCase() === normalized) {
-            return loc;
-        }
-    }
-    return null;
-}
-
-function findRegionByNameLoose(name) {
-    if (!name || typeof name !== 'string') {
-        return null;
-    }
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) {
-        return null;
-    }
-    for (const region of regions.values()) {
-        if (!region) continue;
-        if (region.name && region.name.trim().toLowerCase() === normalized) {
-            return region;
-        }
-    }
-    return null;
-}
-
-async function handleAttackDamageEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    for (const { attacker, target } of entries) {
-        if (!target) continue;
-        const victim = findActorByName(target);
-        if (!victim) {
-            continue;
-        }
-        const description = attacker ? `Wounded by ${attacker}` : 'Wounded';
-        if (typeof victim.addStatusEffect === 'function') {
-            victim.addStatusEffect({ description, duration: MAJOR_STATUS_DURATION });
-        }
-        if (typeof victim.modifyHealth === 'function') {
-            victim.modifyHealth(-5, attacker ? `Attacked by ${attacker}` : 'Attacked');
-        }
-    }
-}
-
-function handleConsumeItemEvents(entries = []) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    for (const { user, item } of entries) {
-        if (!item) continue;
-        const thing = findThingByName(item);
-        if (!thing) {
-            continue;
-        }
-
-        const actor = findActorByName(user);
-        if (actor && typeof actor.removeInventoryItem === 'function') {
-            actor.removeInventoryItem(thing);
-        }
-
-        const metadata = thing.metadata || {};
-        delete metadata.ownerId;
-        delete metadata.locationId;
-        metadata.consumedAt = new Date().toISOString();
-        thing.metadata = metadata;
-
-        if (typeof thing.delete === 'function') {
-            thing.delete();
-        }
-        things.delete(thing.id);
-    }
-}
-
-function handleDeathEvents(entries = []) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    for (const entityName of entries) {
-        const actor = findActorByName(entityName);
-        if (!actor) {
-            continue;
-        }
-        if (typeof actor.modifyHealth === 'function') {
-            const status = actor.getStatus ? actor.getStatus() : null;
-            const currentHealth = status?.health ?? null;
-            if (Number.isFinite(currentHealth)) {
-                actor.modifyHealth(-currentHealth, 'Incapacitated');
-            } else {
-                actor.modifyHealth(-actor.health || 0, 'Incapacitated');
-            }
-        }
-        if (typeof actor.addStatusEffect === 'function') {
-            actor.addStatusEffect({ description: 'Incapacitated', duration: null });
-        }
-    }
-}
-
-function handleDropItemEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    const location = context.location;
-    if (!location) {
-        return;
-    }
-    for (const { character, item } of entries) {
-        if (!item) continue;
-        const thing = findThingByName(item);
-        if (!thing) {
-            continue;
-        }
-        const actor = findActorByName(character);
-        if (actor && typeof actor.removeInventoryItem === 'function') {
-            actor.removeInventoryItem(thing);
-        }
-        const metadata = thing.metadata || {};
-        metadata.locationId = location.id;
-        delete metadata.ownerId;
-        thing.metadata = metadata;
-    }
-}
-
-function handleHealEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    for (const { healer, recipient, effect } of entries) {
-        if (!recipient) continue;
-        const target = findActorByName(recipient);
-        if (!target) {
-            continue;
-        }
-        const amount = extractNumericValue(effect);
-        if (typeof target.modifyHealth === 'function') {
-            const healAmount = amount ? Math.abs(amount) : 5;
-            target.modifyHealth(healAmount, healer ? `Healed by ${healer}` : 'Healed');
-        }
-        if (typeof target.addStatusEffect === 'function' && effect) {
-            target.addStatusEffect({ description: `Bolstered: ${effect}`, duration: DEFAULT_STATUS_DURATION });
-        }
-    }
-}
-
-async function handleItemAppearEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-
-    let location = context.location || null;
-    if (!location && context.player?.currentLocation) {
-        try {
-            location = Location.get(context.player.currentLocation);
-        } catch (_) {
-            location = null;
-        }
-    }
-
-    const itemNames = entries
-        .map(entry => (typeof entry === 'string' ? entry : entry?.item || entry))
-        .filter(name => typeof name === 'string' && name.trim());
-
-    if (!itemNames.length) {
-        return;
-    }
-
-    const missing = itemNames.filter(name => !findThingByName(name));
-    if (missing.length) {
-        await generateItemsByNames({ itemNames: missing, location });
-    }
-
-    for (const itemName of itemNames) {
-        const thing = findThingByName(itemName);
-        if (!thing) {
-            continue;
-        }
-        if (location) {
-            const metadata = thing.metadata || {};
-            metadata.locationId = location.id;
-            delete metadata.ownerId;
-            thing.metadata = metadata;
-        }
-    }
-}
-
-async function handleMoveLocationEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length || !context.player) {
-        return;
-    }
-
-    const destinationName = entries.find(entry => entry && entry.trim());
-    if (!destinationName) {
-        return;
-    }
-
-    let destination = findLocationByNameLoose(destinationName);
-    if (!destination) {
-        let originLocation = context.location || null;
-        if (!originLocation && context.player?.currentLocation) {
-            try {
-                originLocation = Location.get(context.player.currentLocation);
-            } catch (_) {
-                originLocation = null;
-            }
-        }
-
-        destination = await createLocationFromEvent({
-            name: destinationName,
-            originLocation,
-            descriptionHint: originLocation ? `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.` : null,
-            directionHint: null
-        });
-
-        if (!destination) {
-            console.warn(`Unable to resolve or generate destination location "${destinationName}" from event.`);
-            return;
-        }
-    }
-
-    if (destination.isStub) {
-        try {
-            await scheduleStubExpansion(destination);
-            destination = gameLocations.get(destination.id) || destination;
-        } catch (error) {
-            console.warn('Failed to expand stub during move event:', error.message);
-        }
-    }
-
-    try {
-        context.player.setLocation(destination.id);
-        context.location = destination;
-        context.region = findRegionByLocationId(destination.id) || context.region;
-
-        await generateLocationImage(destination);
-    } catch (error) {
-        console.warn('Failed to finalize move location event:', error.message);
-    }
-
-    try {
-        queueNpcAssetsForLocation(destination);
-    } catch (error) {
-        console.warn('Failed to queue NPC assets after event move:', error.message);
-    }
-}
-
-async function handleNewExitEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-
-    let location = context.location || null;
-    if (!location && context.player?.currentLocation) {
-        try {
-            location = Location.get(context.player.currentLocation);
-        } catch (_) {
-            location = null;
-        }
-    }
-
-    if (!location) {
-        return;
-    }
-
-    const metadata = location.stubMetadata ? { ...location.stubMetadata } : {};
-    const discovered = Array.isArray(metadata.discoveredExits) ? metadata.discoveredExits : [];
-
-    for (const rawDescription of entries) {
-        if (!rawDescription) continue;
-        const description = typeof rawDescription === 'string' ? rawDescription.trim() : '';
-
-        if (typeof location.addStatusEffect === 'function' && description) {
-            location.addStatusEffect({ description: `Exit discovered: ${description}`, duration: MAJOR_STATUS_DURATION });
-        }
-        if (description) {
-            discovered.push(description);
-        }
-
-        const directionKey = directionKeyFromName(description || `${location.name || location.id} path ${Date.now()}`);
-        const cleanedName = description
-            ? description.replace(/[.,!?]+$/g, '').replace(/^the\s+/i, '').trim() || generateStubName(location, directionKey)
-            : generateStubName(location, directionKey);
-
-        const targetLocation = await createLocationFromEvent({
-            name: cleanedName,
-            originLocation: location,
-            descriptionHint: description || `Unmarked path leaving ${location.name || location.id}.`,
-            directionHint: directionKey
-        });
-
-        if (targetLocation) {
-            const exit = ensureExitConnection(location, directionKey, targetLocation, {
-                description: description || `Path to ${targetLocation.name || targetLocation.id}`,
-                bidirectional: false
-            });
-
-            if (exit) {
-                generateLocationExitImage(exit).catch(err => console.warn('Failed to queue exit image generation:', err.message));
-            }
-        }
-    }
-
-    if (Object.keys(metadata).length) {
-        metadata.discoveredExits = Array.from(new Set(discovered));
-        location.stubMetadata = metadata;
-    }
-}
-
-async function handleNpcArrivalDepartureEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length || !context.location) {
-        return;
-    }
-    const location = context.location;
-
-    for (const entry of entries) {
-        if (!entry || !entry.name) continue;
-        const npc = await ensureNpcByName(entry.name, context);
-        if (!npc) continue;
-
-        if (entry.action === 'arrived') {
-            try {
-                npc.setLocation(location.id);
-            } catch (_) {
-                // Ignore
-            }
-            location.addNpcId(npc.id);
-        } else if (entry.action === 'left') {
-            location.removeNpcId(npc.id);
-            try {
-                npc.setLocation(null);
-            } catch (_) {
-                // ignore
-            }
-        }
-    }
-}
-
-async function handlePartyChangeEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length || !context.player) {
-        return;
-    }
-
-    for (const entry of entries) {
-        if (!entry || !entry.name) continue;
-        const npc = await ensureNpcByName(entry.name, context);
-        if (!npc) continue;
-
-        if (entry.action === 'joined' && typeof context.player.addPartyMember === 'function') {
-            context.player.addPartyMember(npc.id);
-            const currentLocationId = context.player.currentLocation;
-            if (currentLocationId) {
-                try {
-                    npc.setLocation(currentLocationId);
-                } catch (_) {
-                    // ignore failures to set NPC location
-                }
-            }
-        } else if (entry.action === 'left' && typeof context.player.removePartyMember === 'function') {
-            context.player.removePartyMember(npc.id);
-        }
-    }
-}
-
-async function handlePickUpItemEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length || !context.player) {
-        return;
-    }
-
-    const player = context.player;
-
-    const itemNames = entries
-        .map(name => typeof name === 'string' ? name : null)
-        .filter(name => typeof name === 'string' && name.trim());
-
-    if (!itemNames.length) {
-        return;
-    }
-
-    const missing = itemNames.filter(name => !findThingByName(name));
-    if (missing.length) {
-        let locationForContext = context.location || null;
-        if (!locationForContext && player.currentLocation) {
-            try {
-                locationForContext = Location.get(player.currentLocation);
-            } catch (_) {
-                locationForContext = null;
-            }
-        }
-        await generateItemsByNames({ itemNames: missing, owner: player, location: locationForContext });
-    }
-
-    for (const itemName of itemNames) {
-        const thing = findThingByName(itemName);
-        if (!thing) {
-            continue;
-        }
-
-        if (typeof player.addInventoryItem === 'function') {
-            player.addInventoryItem(thing);
-        }
-
-        const metadata = thing.metadata || {};
-        metadata.ownerId = player.id;
-        delete metadata.locationId;
-        thing.metadata = metadata;
-
-        if (shouldGenerateThingImage(thing)) {
-            generateThingImage(thing).catch(err => console.warn('Failed to generate item image after pickup:', err.message));
-        }
-    }
-}
-
-function guessStatusDuration(description) {
-    const value = extractNumericValue(description);
-    if (Number.isFinite(value)) {
-        return Math.max(1, Math.abs(value));
-    }
-    return DEFAULT_STATUS_DURATION;
-}
-
-function handleStatusEffectChangeEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-
-    const region = context.region;
-    const location = context.location;
-
-    for (const { entity, description, action } of entries) {
-        if (!entity || !description) continue;
-        const normalized = entity.trim().toLowerCase();
-        let target = null;
-
-        if (currentPlayer && ([currentPlayer.name?.trim().toLowerCase(), 'player', 'the player', 'you'].includes(normalized))) {
-            target = currentPlayer;
-        }
-
-        if (!target) {
-            target = findActorByName(entity);
-        }
-
-        if (!target && location) {
-            const locationAliases = [
-                typeof location.name === 'string' ? location.name.trim().toLowerCase() : null,
-                'location',
-                'current location'
-            ].filter(Boolean);
-            if (locationAliases.includes(normalized)) {
-                target = location;
-            }
-        }
-
-        if (!target && region) {
-            const regionAliases = [
-                typeof region.name === 'string' ? region.name.trim().toLowerCase() : null,
-                'region',
-                'current region'
-            ].filter(Boolean);
-            if (regionAliases.includes(normalized)) {
-                target = region;
-            }
-        }
-
-        if (!target) {
-            target = findLocationByNameLoose(entity) || findRegionByNameLoose(entity) || findThingByName(entity);
-        }
-
-        if (!target) {
-            console.warn(`Status effect target "${entity}" not found.`);
-            continue;
-        }
-
-        if (action === 'gained' && typeof target.addStatusEffect === 'function') {
-            const duration = guessStatusDuration(description);
-            target.addStatusEffect({ description, duration });
-        } else if (action === 'lost' && typeof target.removeStatusEffect === 'function') {
-            target.removeStatusEffect(description);
-        }
-    }
-}
-
-async function handleTransferItemEvents(entries = [], context) {
-    if (!Array.isArray(entries) || !entries.length) {
-        return;
-    }
-    for (const { giver, item, receiver } of entries) {
-        if (!item) continue;
-        let thing = findThingByName(item);
-        if (!thing) {
-            let owner = null;
-            const receiverActorCandidate = findActorByName(receiver);
-            if (receiverActorCandidate && typeof receiverActorCandidate.addInventoryItem === 'function') {
-                owner = receiverActorCandidate;
-            }
-
-            let locationContext = context.location || null;
-            if (!locationContext && owner?.currentLocation) {
-                try {
-                    locationContext = Location.get(owner.currentLocation);
-                } catch (_) {
-                    locationContext = null;
-                }
-            }
-
-            await generateItemsByNames({ itemNames: [item], owner, location: locationContext });
-            thing = findThingByName(item);
-            if (!thing) {
-                continue;
-            }
-        }
-
-        const giverActor = findActorByName(giver);
-        if (giverActor && typeof giverActor.removeInventoryItem === 'function') {
-            giverActor.removeInventoryItem(thing);
-        }
-
-        const receiverActor = findActorByName(receiver);
-        if (receiverActor && typeof receiverActor.addInventoryItem === 'function') {
-            receiverActor.addInventoryItem(thing);
-            const metadata = thing.metadata || {};
-            metadata.ownerId = receiverActor.id;
-            delete metadata.locationId;
-            thing.metadata = metadata;
-
-            if (receiverActor === currentPlayer && shouldGenerateThingImage(thing)) {
-                generateThingImage(thing).catch(err => console.warn('Failed to generate image after transfer:', err.message));
-            }
-        } else {
-            const metadata = thing.metadata || {};
-            delete metadata.ownerId;
-            metadata.locationId = context.location ? context.location.id : metadata.locationId;
-            thing.metadata = metadata;
-        }
-    }
-}
-
-const EVENT_HANDLERS = {
-    attack_damage: handleAttackDamageEvents,
-    consume_item: handleConsumeItemEvents,
-    death_incapacitation: handleDeathEvents,
-    drop_item: handleDropItemEvents,
-    heal_recover: handleHealEvents,
-    item_appear: handleItemAppearEvents,
-    move_location: handleMoveLocationEvents,
-    new_exit_discovered: handleNewExitEvents,
-    npc_arrival_departure: handleNpcArrivalDepartureEvents,
-    party_change: handlePartyChangeEvents,
-    pick_up_item: handlePickUpItemEvents,
-    status_effect_change: handleStatusEffectChangeEvents,
-    transfer_item: handleTransferItemEvents
-};
-
-async function applyEventOutcomes(parsedEvents, context) {
-    if (!parsedEvents || !parsedEvents.parsed) {
-        return context;
-    }
-
-    for (const [eventKey, entries] of Object.entries(parsedEvents.parsed)) {
-        const handler = EVENT_HANDLERS[eventKey];
-        if (!handler) {
-            continue;
-        }
-        try {
-            await handler(entries, context, parsedEvents.rawEntries?.[eventKey] || '');
-        } catch (error) {
-            console.warn(`Failed to apply event handler for ${eventKey}:`, error.message);
-        }
-    }
-
-    return context;
-}
-
-function logEventCheck({ systemPrompt, generationPrompt, responseText }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `event_checks_${timestamp}.log`);
-        const parts = [
-            '=== EVENT CHECK SYSTEM PROMPT ===',
-            systemPrompt || '(none)',
-            '',
-            '=== EVENT CHECK GENERATION PROMPT ===',
-            generationPrompt || '(none)',
-            '',
-            '=== EVENT CHECK RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log event check:', error.message);
-    }
-}
-
 function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText }) {
     try {
         const logDir = path.join(__dirname, 'logs');
@@ -2265,121 +1480,6 @@ function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText }) 
         fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
     } catch (error) {
         console.warn('Failed to log plausibility check:', error.message);
-    }
-}
-
-function escapeHtml(text) {
-    if (typeof text !== 'string') {
-        return '';
-    }
-    return text.replace(/[&<>'"]/g, char => {
-        switch (char) {
-            case '&':
-                return '&amp;';
-            case '<':
-                return '&lt;';
-            case '>':
-                return '&gt;';
-            case '"':
-                return '&quot;';
-            case '\'':
-                return '&#39;';
-            default:
-                return char;
-        }
-    });
-}
-
-async function runEventChecks({ textToCheck }) {
-    if (!textToCheck || !textToCheck.trim()) {
-        return null;
-    }
-
-    const eventPromptTemplates = getEventPromptTemplates();
-    if (!eventPromptTemplates.length) {
-        return null;
-    }
-
-    try {
-        const location = currentPlayer && currentPlayer.currentLocation
-            ? Location.get(currentPlayer.currentLocation)
-            : null;
-
-        const baseContext = buildBasePromptContext({ locationOverride: location });
-        const renderedTemplate = promptEnv.render('base-context.xml.njk', {
-            ...baseContext,
-            promptType: 'event-checks',
-            textToCheck,
-            eventPrompts: eventPromptTemplates
-        });
-
-        const parsedTemplate = parseXMLTemplate(renderedTemplate);
-
-        if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
-            console.warn('Event check template missing prompts, skipping event analysis.');
-            return null;
-        }
-
-        const messages = [
-            { role: 'system', content: parsedTemplate.systemPrompt },
-            { role: 'user', content: parsedTemplate.generationPrompt }
-        ];
-
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const chatEndpoint = endpoint.endsWith('/') ?
-            endpoint + 'chat/completions' :
-            endpoint + '/chat/completions';
-
-        const requestData = {
-            model: config.ai.model,
-            messages,
-            max_tokens: parsedTemplate.maxTokens || 400,
-            temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
-        };
-
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 60000
-        });
-
-        const eventResponse = response.data?.choices?.[0]?.message?.content || '';
-
-        logEventCheck({
-            systemPrompt: parsedTemplate.systemPrompt,
-            generationPrompt: parsedTemplate.generationPrompt,
-            responseText: eventResponse
-        });
-
-        if (!eventResponse.trim()) {
-            return null;
-        }
-
-        const structured = parseEventCheckResponse(eventPromptTemplates, eventResponse);
-        if (structured) {
-            try {
-                await applyEventOutcomes(structured, {
-                    player: currentPlayer,
-                    location,
-                    region: location ? findRegionByLocationId(location.id) : null
-                });
-            } catch (applyError) {
-                console.warn('Failed to apply event outcomes:', applyError.message);
-            }
-        }
-
-        const safeResponse = escapeHtml(cleanEventResponseText(eventResponse));
-        return {
-            raw: eventResponse,
-            html: safeResponse.replace(/\n/g, '<br>'),
-            structured
-        };
-    } catch (error) {
-        console.warn('Event check execution failed:', error.message);
-        return null;
     }
 }
 
@@ -2448,7 +1548,7 @@ async function runPlausibilityCheck({ actionText, locationId }) {
             return null;
         }
 
-        const safeResponse = escapeHtml(plausibilityResponse.trim());
+        const safeResponse = Events.escapeHtml(plausibilityResponse.trim());
         return {
             raw: plausibilityResponse,
             html: safeResponse.replace(/\n/g, '<br>'),
@@ -5778,6 +4878,43 @@ app.get('/settings', (req, res) => {
     });
 });
 
+Events.initialize({
+    axios,
+    path,
+    fs,
+    Location,
+    getConfig: () => config,
+    getCurrentPlayer: () => currentPlayer,
+    players,
+    things,
+    regions,
+    gameLocations,
+    getEventPromptTemplates,
+    buildBasePromptContext,
+    promptEnv,
+    parseXMLTemplate,
+    findActorByName,
+    findThingByName,
+    findLocationByNameLoose,
+    findRegionByNameLoose,
+    findRegionByLocationId,
+    generateItemsByNames,
+    createLocationFromEvent,
+    scheduleStubExpansion,
+    generateLocationImage,
+    queueNpcAssetsForLocation,
+    generateLocationExitImage,
+    ensureExitConnection,
+    directionKeyFromName,
+    generateStubName,
+    ensureNpcByName,
+    generateThingImage,
+    shouldGenerateThingImage,
+    defaultStatusDuration: DEFAULT_STATUS_DURATION,
+    majorStatusDuration: MAJOR_STATUS_DURATION,
+    baseDir: __dirname
+});
+
 // API routes are registered via api.js
 const apiScope = {
     app,
@@ -5795,6 +4932,7 @@ const apiScope = {
     SettingInfo,
     Skill,
     Thing,
+    Events,
     diceModule,
     promptEnv,
     viewsEnv,
@@ -5824,7 +4962,6 @@ const apiScope = {
     findRegionByLocationId,
     generateImageId,
     processJobQueue,
-    runEventChecks,
     runPlausibilityCheck,
     players,
     skills,

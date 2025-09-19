@@ -181,7 +181,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 try {
-                    const eventResult = await runEventChecks({ textToCheck: aiResponse });
+                    const eventResult = await Events.runEventChecks({ textToCheck: aiResponse });
                     if (eventResult) {
                         if (eventResult.html) {
                             responseData.eventChecks = eventResult.html;
