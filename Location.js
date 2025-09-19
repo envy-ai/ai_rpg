@@ -24,6 +24,7 @@ class Location {
   #stubMetadata;
   #hasGeneratedStubs;
   #npcIds;
+  #statusEffects;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -42,7 +43,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -69,6 +70,7 @@ class Location {
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
     this.#npcIds = []; // Array.isArray(options.npcIds) ? [...options.npcIds] : [];
+    this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
 
     // Index by ID and name if provided
     Location.#indexByID.set(this.#id, this);
@@ -415,7 +417,8 @@ class Location {
       isStub: this.#isStub,
       hasGeneratedStubs: this.#hasGeneratedStubs,
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
-      npcIds: [...this.#npcIds]
+      npcIds: [...this.#npcIds],
+      statusEffects: this.getStatusEffects()
     };
   }
 
@@ -494,6 +497,19 @@ class Location {
     }
   }
 
+  removeNpcId(id) {
+    if (!id || typeof id !== 'string') {
+      return false;
+    }
+    const before = this.#npcIds.length;
+    this.#npcIds = this.#npcIds.filter(existing => existing !== id);
+    if (this.#npcIds.length !== before) {
+      this.#lastUpdated = new Date();
+      return true;
+    }
+    return false;
+  }
+
   setNpcIds(ids = []) {
     if (Array.isArray(ids)) {
       this.#npcIds = [...new Set(ids.filter(id => typeof id === 'string'))];
@@ -506,6 +522,133 @@ class Location {
   clearNpcIds() {
     this.#npcIds = [];
     this.#lastUpdated = new Date();
+  }
+
+  #normalizeStatusEffects(effects = []) {
+    if (!Array.isArray(effects)) {
+      return [];
+    }
+
+    const normalized = [];
+    for (const entry of effects) {
+      if (!entry) continue;
+
+      if (typeof entry === 'string') {
+        const description = entry.trim();
+        if (!description) continue;
+        normalized.push({ description, duration: 1 });
+        continue;
+      }
+
+      if (typeof entry === 'object') {
+        const descriptionValue = typeof entry.description === 'string'
+          ? entry.description.trim()
+          : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
+        if (!descriptionValue) continue;
+        const rawDuration = entry.duration;
+        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
+        normalized.push({
+          description: descriptionValue,
+          duration: duration === null ? null : Math.max(0, duration)
+        });
+      }
+    }
+
+    return normalized;
+  }
+
+  getStatusEffects() {
+    return this.#statusEffects.map(effect => ({ ...effect }));
+  }
+
+  setStatusEffects(effects = []) {
+    this.#statusEffects = this.#normalizeStatusEffects(effects);
+    this.#lastUpdated = new Date();
+    return this.getStatusEffects();
+  }
+
+  addStatusEffect(effectInput, defaultDuration = 1) {
+    const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
+    const normalized = this.#normalizeStatusEffects(effects.map(entry => {
+      if (typeof entry === 'string') {
+        return { description: entry, duration: defaultDuration };
+      }
+      if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
+        return { ...entry, duration: defaultDuration };
+      }
+      return entry;
+    }));
+
+    if (!normalized.length) {
+      return null;
+    }
+
+    let updated = false;
+    for (const effect of normalized) {
+      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
+      if (existingIndex >= 0) {
+        this.#statusEffects[existingIndex] = effect;
+      } else {
+        this.#statusEffects.push(effect);
+      }
+      updated = true;
+    }
+
+    if (updated) {
+      this.#lastUpdated = new Date();
+    }
+
+    return normalized[normalized.length - 1];
+  }
+
+  removeStatusEffect(description) {
+    if (!description || typeof description !== 'string') {
+      return false;
+    }
+    const before = this.#statusEffects.length;
+    const target = description.trim().toLowerCase();
+    this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date();
+      return true;
+    }
+    return false;
+  }
+
+  tickStatusEffects() {
+    if (!this.#statusEffects.length) {
+      return;
+    }
+    const retained = [];
+    let changed = false;
+    for (const effect of this.#statusEffects) {
+      if (!effect) {
+        changed = true;
+        continue;
+      }
+      if (!Number.isFinite(effect.duration)) {
+        retained.push({ ...effect });
+        continue;
+      }
+      if (effect.duration <= 0) {
+        changed = true;
+        continue;
+      }
+      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      changed = true;
+    }
+    if (changed) {
+      this.#statusEffects = retained;
+      this.#lastUpdated = new Date();
+    }
+  }
+
+  clearExpiredStatusEffects() {
+    const before = this.#statusEffects.length;
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date();
+    }
   }
 
   /**

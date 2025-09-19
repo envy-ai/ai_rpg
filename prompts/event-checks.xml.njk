@@ -15,7 +15,10 @@ You are an AI designed to analyze a text-based RPG scene and determine if specif
       <description>{{ npc.description }}</description>
       <statusEffects>
         {% for effect in npc.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </npc>
@@ -28,7 +31,10 @@ You are an AI designed to analyze a text-based RPG scene and determine if specif
       <description>{{ member.description }}</description>
       <statusEffects>
         {% for effect in member.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </member>
@@ -41,7 +47,10 @@ You are an AI designed to analyze a text-based RPG scene and determine if specif
       <description>{{ item.description }}</description>
       <statusEffects>
         {% for effect in item.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </item>

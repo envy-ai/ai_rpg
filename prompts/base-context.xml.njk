@@ -12,7 +12,10 @@ You are an AI designed to perform various tasks related to managing a text-based
     <description>{{ currentLocation.description }}</description>
     <statusEffects>
       {% for effect in currentLocation.statusEffects %}
-      <effect>{{ effect }}</effect>
+      <effect>
+        <description>{{ effect.description }}</description>
+        <duration>{{ effect.duration | default('unknown') }}</duration>
+      </effect>
       {% endfor %}
     </statusEffects>
   </currentLocation>
@@ -23,7 +26,10 @@ You are an AI designed to perform various tasks related to managing a text-based
     <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>
     <statusEffects>
       {% for effect in currentPlayer.statusEffects %}
-      <effect>{{ effect }}</effect>
+      <effect>
+        <description>{{ effect.description }}</description>
+        <duration>{{ effect.duration | default('unknown') }}</duration>
+      </effect>
       {% endfor %}
     </statusEffects>
   </player>
@@ -34,7 +40,10 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ npc.description }}</description>
       <statusEffects>
         {% for effect in npc.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </npc>
@@ -47,7 +56,10 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ member.description }}</description>
       <statusEffects>
         {% for effect in member.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </member>
@@ -60,7 +72,10 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ item.description }}</description>
       <statusEffects>
         {% for effect in item.statusEffects %}
-        <effect>{{ effect }}</effect>
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
         {% endfor %}
       </statusEffects>
     </item>

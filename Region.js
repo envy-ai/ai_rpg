@@ -12,6 +12,7 @@ class Region {
   #entranceLocationId;
   #createdAt;
   #lastUpdated;
+  #statusEffects;
 
   static #indexById = new Map();
   static #indexByName = new Map();
@@ -22,7 +23,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, id = null } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, id = null, statusEffects = [] } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -43,6 +44,7 @@ class Region {
       : null;
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
+    this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
 
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
@@ -110,7 +112,8 @@ class Region {
       description: data.description,
       locations: data.locationBlueprints || [],
       locationIds: data.locationIds || [],
-      entranceLocationId: data.entranceLocationId || null
+      entranceLocationId: data.entranceLocationId || null,
+      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
     });
   }
 
@@ -264,8 +267,136 @@ class Region {
       locationIds: this.locationIds,
       entranceLocationId: this.#entranceLocationId,
       createdAt: this.#createdAt,
-      lastUpdated: this.#lastUpdated
+      lastUpdated: this.#lastUpdated,
+      statusEffects: this.getStatusEffects()
     };
+  }
+
+  #normalizeStatusEffects(effects = []) {
+    if (!Array.isArray(effects)) {
+      return [];
+    }
+
+    const normalized = [];
+    for (const entry of effects) {
+      if (!entry) continue;
+
+      if (typeof entry === 'string') {
+        const description = entry.trim();
+        if (!description) continue;
+        normalized.push({ description, duration: 1 });
+        continue;
+      }
+
+      if (typeof entry === 'object') {
+        const descriptionValue = typeof entry.description === 'string'
+          ? entry.description.trim()
+          : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
+        if (!descriptionValue) continue;
+        const rawDuration = entry.duration;
+        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
+        normalized.push({
+          description: descriptionValue,
+          duration: duration === null ? null : Math.max(0, duration)
+        });
+      }
+    }
+
+    return normalized;
+  }
+
+  getStatusEffects() {
+    return this.#statusEffects.map(effect => ({ ...effect }));
+  }
+
+  setStatusEffects(effects = []) {
+    this.#statusEffects = this.#normalizeStatusEffects(effects);
+    this.#lastUpdated = new Date().toISOString();
+    return this.getStatusEffects();
+  }
+
+  addStatusEffect(effectInput, defaultDuration = 1) {
+    const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
+    const normalized = this.#normalizeStatusEffects(effects.map(entry => {
+      if (typeof entry === 'string') {
+        return { description: entry, duration: defaultDuration };
+      }
+      if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
+        return { ...entry, duration: defaultDuration };
+      }
+      return entry;
+    }));
+
+    if (!normalized.length) {
+      return null;
+    }
+
+    let updated = false;
+    for (const effect of normalized) {
+      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
+      if (existingIndex >= 0) {
+        this.#statusEffects[existingIndex] = effect;
+      } else {
+        this.#statusEffects.push(effect);
+      }
+      updated = true;
+    }
+
+    if (updated) {
+      this.#lastUpdated = new Date().toISOString();
+    }
+
+    return normalized[normalized.length - 1];
+  }
+
+  removeStatusEffect(description) {
+    if (!description || typeof description !== 'string') {
+      return false;
+    }
+    const before = this.#statusEffects.length;
+    const target = description.trim().toLowerCase();
+    this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date().toISOString();
+      return true;
+    }
+    return false;
+  }
+
+  tickStatusEffects() {
+    if (!this.#statusEffects.length) {
+      return;
+    }
+    const retained = [];
+    let changed = false;
+    for (const effect of this.#statusEffects) {
+      if (!effect) {
+        changed = true;
+        continue;
+      }
+      if (!Number.isFinite(effect.duration)) {
+        retained.push({ ...effect });
+        continue;
+      }
+      if (effect.duration <= 0) {
+        changed = true;
+        continue;
+      }
+      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      changed = true;
+    }
+    if (changed) {
+      this.#statusEffects = retained;
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
+  clearExpiredStatusEffects() {
+    const before = this.#statusEffects.length;
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date().toISOString();
+    }
   }
 
   getNPCs() {

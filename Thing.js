@@ -17,6 +17,7 @@ class Thing {
   #rarity;
   #itemTypeDetail;
   #metadata;
+  #statusEffects;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -41,7 +42,7 @@ class Thing {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated thing visual (defaults to null)
    */
-  constructor({ name, description, thingType, id = null, imageId = null, rarity = null, itemTypeDetail = null, metadata = null } = {}) {
+  constructor({ name, description, thingType, id = null, imageId = null, rarity = null, itemTypeDetail = null, metadata = null, statusEffects = [] } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
       throw new Error('Thing name is required and must be a string');
@@ -70,6 +71,7 @@ class Thing {
     this.#metadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
+    this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
 
     // Add to static indexes
     Thing.#indexByID.set(this.#id, this);
@@ -227,7 +229,8 @@ class Thing {
       lastUpdated: this.#lastUpdated,
       rarity: this.#rarity,
       itemTypeDetail: this.#itemTypeDetail,
-      metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined
+      metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
+      statusEffects: this.getStatusEffects()
     };
   }
 
@@ -244,8 +247,136 @@ class Thing {
       imageId: data.imageId,
       rarity: data.rarity,
       itemTypeDetail: data.itemTypeDetail,
-      metadata: data.metadata
+      metadata: data.metadata,
+      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
     });
+  }
+
+  #normalizeStatusEffects(effects = []) {
+    if (!Array.isArray(effects)) {
+      return [];
+    }
+
+    const normalized = [];
+    for (const entry of effects) {
+      if (!entry) continue;
+
+      if (typeof entry === 'string') {
+        const description = entry.trim();
+        if (!description) continue;
+        normalized.push({ description, duration: 1 });
+        continue;
+      }
+
+      if (typeof entry === 'object') {
+        const descriptionValue = typeof entry.description === 'string'
+          ? entry.description.trim()
+          : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
+        if (!descriptionValue) continue;
+        const rawDuration = entry.duration;
+        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
+        normalized.push({
+          description: descriptionValue,
+          duration: duration === null ? null : Math.max(0, duration)
+        });
+      }
+    }
+
+    return normalized;
+  }
+
+  getStatusEffects() {
+    return this.#statusEffects.map(effect => ({ ...effect }));
+  }
+
+  setStatusEffects(effects = []) {
+    this.#statusEffects = this.#normalizeStatusEffects(effects);
+    this.#lastUpdated = new Date().toISOString();
+    return this.getStatusEffects();
+  }
+
+  addStatusEffect(effectInput, defaultDuration = 1) {
+    const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
+    const normalized = this.#normalizeStatusEffects(effects.map(entry => {
+      if (typeof entry === 'string') {
+        return { description: entry, duration: defaultDuration };
+      }
+      if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
+        return { ...entry, duration: defaultDuration };
+      }
+      return entry;
+    }));
+
+    if (!normalized.length) {
+      return null;
+    }
+
+    let updated = false;
+    for (const effect of normalized) {
+      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
+      if (existingIndex >= 0) {
+        this.#statusEffects[existingIndex] = effect;
+      } else {
+        this.#statusEffects.push(effect);
+      }
+      updated = true;
+    }
+
+    if (updated) {
+      this.#lastUpdated = new Date().toISOString();
+    }
+
+    return normalized[normalized.length - 1];
+  }
+
+  removeStatusEffect(description) {
+    if (!description || typeof description !== 'string') {
+      return false;
+    }
+    const before = this.#statusEffects.length;
+    const target = description.trim().toLowerCase();
+    this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date().toISOString();
+      return true;
+    }
+    return false;
+  }
+
+  tickStatusEffects() {
+    if (!this.#statusEffects.length) {
+      return;
+    }
+    const retained = [];
+    let changed = false;
+    for (const effect of this.#statusEffects) {
+      if (!effect) {
+        changed = true;
+        continue;
+      }
+      if (!Number.isFinite(effect.duration)) {
+        retained.push({ ...effect });
+        continue;
+      }
+      if (effect.duration <= 0) {
+        changed = true;
+        continue;
+      }
+      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      changed = true;
+    }
+    if (changed) {
+      this.#statusEffects = retained;
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
+  clearExpiredStatusEffects() {
+    const before = this.#statusEffects.length;
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    if (this.#statusEffects.length !== before) {
+      this.#lastUpdated = new Date().toISOString();
+    }
   }
 
   // Helper method to check if thing is a specific type
