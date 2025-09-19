@@ -1329,17 +1329,22 @@ function findAttributeKey(player, attributeName) {
 }
 
 function resolvePlayerSkillValue(player, skillName) {
-    if (!player || !skillName || typeof player.getSkillValue !== 'function') {
+    if (!player || typeof skillName !== 'string' || typeof player.getSkillValue !== 'function') {
         return { key: null, value: 0 };
     }
 
-    const directValue = player.getSkillValue(skillName);
+    const trimmed = skillName.trim();
+    if (!trimmed) {
+        return { key: null, value: 0 };
+    }
+
+    const directValue = player.getSkillValue(trimmed);
     if (Number.isFinite(directValue)) {
-        return { key: skillName.trim(), value: directValue };
+        return { key: trimmed, value: directValue };
     }
 
     if (typeof player.getSkills === 'function') {
-        const normalized = skillName.trim().toLowerCase();
+        const normalized = trimmed.toLowerCase();
         const skillsMap = player.getSkills();
         if (skillsMap && typeof skillsMap.entries === 'function') {
             for (const [name, value] of skillsMap.entries()) {
@@ -1350,7 +1355,34 @@ function resolvePlayerSkillValue(player, skillName) {
         }
     }
 
-    return { key: skillName.trim(), value: 0 };
+    let canonicalName = trimmed;
+    let registered = false;
+
+    if (Player && Player.availableSkills instanceof Map && Player.availableSkills.size > 0) {
+        for (const existingName of Player.availableSkills.keys()) {
+            if (typeof existingName === 'string' && existingName.toLowerCase() === trimmed.toLowerCase()) {
+                canonicalName = existingName;
+                registered = true;
+                break;
+            }
+        }
+    } else {
+        registered = true;
+    }
+
+    if (!registered && Player && Player.availableSkills instanceof Map) {
+        Player.availableSkills.set(canonicalName, { label: canonicalName, description: '' });
+        registered = true;
+    }
+
+    if (typeof player.setSkillValue === 'function' && registered) {
+        const success = player.setSkillValue(canonicalName, 0);
+        if (success) {
+            return { key: canonicalName, value: 0 };
+        }
+    }
+
+    return { key: canonicalName, value: 0 };
 }
 
 function resolveActionOutcome({ plausibility, player }) {
