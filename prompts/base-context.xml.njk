@@ -7,6 +7,13 @@ You are an AI designed to perform various tasks related to managing a text-based
 <context>
   <setting>{{ setting }}</setting>
   <gameHistory>{{ gameHistory }}</gameHistory>
+  <currentRegion>
+    <name>{{ currentRegion.name }}</name>
+    <description>{{ currentRegion.description }}</description>
+    <locations>
+      {% for loc in currentRegion.locations %}<locationName>{{ loc.name }}</locationName>
+      {% endfor %}</locations>
+  </currentRegion>
   <currentLocation>
     <name>{{ currentLocation.name }}</name>
     <description>{{ currentLocation.description }}</description>
