@@ -1617,6 +1617,11 @@ async function runPlausibilityCheck({ actionText, locationId }) {
         return null;
     }
 
+    const trimmedAction = typeof actionText === 'string' ? actionText.trimStart() : '';
+    if (trimmedAction.startsWith('!!')) {
+        return null;
+    }
+
     if (!currentPlayer) {
         return null;
     }

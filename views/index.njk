@@ -302,10 +302,18 @@
     <div id="inventoryTooltip" class="inventory-floating-tooltip" hidden></div>
     <div id="partyTooltip" class="inventory-floating-tooltip party-floating-tooltip" hidden></div>
 
+    <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true" tabindex="-1">
+        <div class="image-lightbox__inner" role="dialog" aria-modal="true" aria-labelledby="imageLightboxCaption">
+            <img id="imageLightboxImage" class="image-lightbox__image" alt="" src="" loading="lazy">
+            <div id="imageLightboxCaption" class="image-lightbox__caption" hidden></div>
+        </div>
+    </div>
+
     <script src="/vendor/cytoscape.min.js"></script>
     <script src="/vendor/layout-base.js"></script>
     <script src="/vendor/cose-base.js"></script>
     <script src="/vendor/cytoscape-fcose.js"></script>
+    <script src="/js/lightbox.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/player-stats.js"></script>
@@ -326,6 +334,18 @@
             initInventoryDisplay();
             initPartyDisplay();
         });
+
+        function bindLightboxElement(element, dataProvider) {
+            if (!element || !window.lightboxController) {
+                return;
+            }
+
+            try {
+                window.lightboxController.bind(element, dataProvider);
+            } catch (error) {
+                console.warn('Failed to bind lightbox:', error);
+            }
+        }
 
         function initTabs() {
             const tabButtons = document.querySelectorAll('.tab-button');
@@ -459,6 +479,13 @@
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
                         if (location.imageId && !location.pendingImageJobId) {
                             locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
+                            const previewImage = locationImage.querySelector('img');
+                            if (previewImage) {
+                                previewImage.dataset.lightboxImage = previewImage.src;
+                                previewImage.dataset.lightboxAlt = location.name || 'Location image';
+                                previewImage.dataset.lightboxCaption = location.name || '';
+                                bindLightboxElement(previewImage);
+                            }
                         } else {
                             locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
                         }
@@ -525,6 +552,13 @@
 
                                 if (npc.imageId) {
                                     portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'npc-portrait-placeholder\\'>🎭</div>'">`;
+                                    const portraitImg = portrait.querySelector('img');
+                                    if (portraitImg) {
+                                        portraitImg.dataset.lightboxImage = portraitImg.src;
+                                        portraitImg.dataset.lightboxAlt = npc.name || 'NPC portrait';
+                                        portraitImg.dataset.lightboxCaption = npc.name || '';
+                                        bindLightboxElement(portraitImg);
+                                    }
                                 } else {
                                     portrait.innerHTML = '<div class="npc-portrait-placeholder">🎭</div>';
                                 }
@@ -753,14 +787,26 @@
                 iconElement.classList.remove('loading');
                 iconElement.style.removeProperty('background-image');
                 iconElement.textContent = fallbackSymbol || selectInventoryIcon(item);
+                delete iconElement.dataset.lightboxImage;
+                delete iconElement.dataset.lightboxAlt;
+                delete iconElement.dataset.lightboxCaption;
             };
 
-            const applyImageToIcon = (iconElement, imageUrl) => {
+            const applyImageToIcon = (iconElement, imageUrl, item) => {
                 if (!iconElement || !imageUrl) return;
                 iconElement.classList.remove('loading');
                 iconElement.classList.add('has-image');
                 iconElement.style.backgroundImage = `url('${imageUrl}')`;
                 iconElement.textContent = '';
+
+                iconElement.dataset.lightboxImage = imageUrl;
+                iconElement.dataset.lightboxAlt = item?.name || 'Inventory item';
+                iconElement.dataset.lightboxCaption = item?.name || '';
+                bindLightboxElement(iconElement, () => ({
+                    src: iconElement.dataset.lightboxImage,
+                    alt: iconElement.dataset.lightboxAlt,
+                    caption: iconElement.dataset.lightboxCaption
+                }));
             };
 
             const loadInventoryImage = async (item, iconElement) => {
@@ -771,7 +817,7 @@
                 }
 
                 if (imageMetadataCache.has(imageId)) {
-                    applyImageToIcon(iconElement, imageMetadataCache.get(imageId));
+                    applyImageToIcon(iconElement, imageMetadataCache.get(imageId), item);
                     return;
                 }
 
@@ -794,7 +840,7 @@
                     const imageUrl = data?.metadata?.images?.[0]?.url;
                     if (imageUrl) {
                         imageMetadataCache.set(imageId, imageUrl);
-                        applyImageToIcon(iconElement, imageUrl);
+                        applyImageToIcon(iconElement, imageUrl, item);
                     } else {
                         resetIconToPlaceholder(iconElement, item);
                     }

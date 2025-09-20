@@ -30,18 +30,44 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
-            let finalMessages = messages;
-            let debugInfo = null;
             let location = null;
             let plausibilityInfo = null;
             let actionResolution = null;
 
             const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
             const firstVisibleIndex = typeof originalUserContent === 'string' ? originalUserContent.search(/\S/) : -1;
-            const isCreativeModeAction = firstVisibleIndex > -1 && originalUserContent[firstVisibleIndex] === '!';
-            const creativeActionText = isCreativeModeAction
-                ? originalUserContent.slice(firstVisibleIndex + 1).replace(/^\s+/, '')
+            const trimmedVisibleContent = firstVisibleIndex > -1
+                ? originalUserContent.slice(firstVisibleIndex)
+                : '';
+            const isForcedEventAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('!!');
+            const forcedEventText = isForcedEventAction
+                ? trimmedVisibleContent.slice(2).replace(/^\s+/, '')
                 : null;
+            const isCreativeModeAction = !isForcedEventAction
+                && firstVisibleIndex > -1
+                && trimmedVisibleContent.startsWith('!');
+            const creativeActionText = isCreativeModeAction
+                ? trimmedVisibleContent.slice(1).replace(/^\s+/, '')
+                : null;
+
+            const sanitizedUserContent = isForcedEventAction
+                ? (forcedEventText || '')
+                : (isCreativeModeAction ? (creativeActionText || '') : originalUserContent);
+
+            let finalMessages = messages;
+            if (userMessage && sanitizedUserContent !== undefined && sanitizedUserContent !== userMessage.content) {
+                finalMessages = messages.map(msg => {
+                    if (msg === userMessage) {
+                        return { ...msg, content: sanitizedUserContent };
+                    }
+                    return msg;
+                });
+            }
+
+            const baseDebugInfo = {
+                usedForcedEventAction: Boolean(isForcedEventAction)
+            };
+            let debugInfo = null;
 
             // Add the location with the id of currentPlayer.curentLocation to the player context if available
             if (currentPlayer && currentPlayer.currentLocation) {
@@ -58,7 +84,7 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to update status effects before action:', tickError.message);
                 }
 
-                if (!isCreativeModeAction) {
+                if (!isCreativeModeAction && !isForcedEventAction) {
                     try {
                         plausibilityInfo = await runPlausibilityCheck({
                             actionText: userMessage.content,
@@ -77,7 +103,17 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             // If we have a current player, use the player action template for the system message
-            if (currentPlayer && userMessage && userMessage.role === 'user') {
+            if (isForcedEventAction && !debugInfo) {
+                debugInfo = {
+                    ...baseDebugInfo,
+                    usedPlayerTemplate: false,
+                    usedCreativeTemplate: false,
+                    forcedEventText,
+                    reason: 'Forced event action bypassed plausibility and templating.'
+                };
+            }
+
+            if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                 try {
                     const baseContext = buildBasePromptContext({ locationOverride: location });
                     const templateName = 'base-context.xml.njk';
@@ -85,7 +121,7 @@ module.exports = function registerApiRoutes(scope) {
                     const promptVariables = {
                         ...baseContext,
                         promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
-                        actionText: isCreativeModeAction ? (creativeActionText || '') : userMessage.content
+                        actionText: isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent
                     };
 
                     if (!isCreativeModeAction) {
@@ -127,6 +163,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     // Store debug information
                     debugInfo = {
+                        ...baseDebugInfo,
                         usedPlayerTemplate: !isCreativeModeAction,
                         usedCreativeTemplate: isCreativeModeAction,
                         playerName: currentPlayer.name,
@@ -151,19 +188,42 @@ module.exports = function registerApiRoutes(scope) {
                 } catch (templateError) {
                     console.error('Error rendering player action template:', templateError);
                     // Fall back to original messages if template fails
-                    finalMessages = messages;
                     debugInfo = {
+                        ...baseDebugInfo,
                         usedPlayerTemplate: false,
                         usedCreativeTemplate: isCreativeModeAction,
                         error: templateError.message
                     };
                 }
             } else {
-                debugInfo = {
-                    usedPlayerTemplate: false,
-                    usedCreativeTemplate: false,
-                    reason: currentPlayer ? 'No user message detected' : 'No current player set'
-                };
+                if (debugInfo) {
+                    const existingDebugInfo = debugInfo;
+                    debugInfo = {
+                        ...existingDebugInfo,
+                        usedPlayerTemplate: false,
+                        usedCreativeTemplate: false,
+                        reason: existingDebugInfo.reason || (currentPlayer ? 'No user message detected' : 'No current player set')
+                    };
+                } else {
+                    debugInfo = {
+                        ...baseDebugInfo,
+                        usedPlayerTemplate: false,
+                        usedCreativeTemplate: false,
+                        reason: currentPlayer ? 'No user message detected' : 'No current player set'
+                    };
+                }
+            }
+
+            let forcedEventResult = null;
+            if (isForcedEventAction && forcedEventText && forcedEventText.trim()) {
+                try {
+                    forcedEventResult = await Events.runEventChecks({ textToCheck: forcedEventText });
+                    if (forcedEventResult && debugInfo) {
+                        debugInfo.forcedEventStructured = forcedEventResult.structured || null;
+                    }
+                } catch (forcedEventError) {
+                    console.warn('Failed to run forced event checks:', forcedEventError.message);
+                }
             }
 
             // Use configuration from config.yaml
@@ -217,28 +277,34 @@ module.exports = function registerApiRoutes(scope) {
                     responseData.actionResolution = actionResolution;
                 }
 
-                try {
-                    const eventResult = await Events.runEventChecks({ textToCheck: aiResponse });
-                    if (eventResult) {
-                        if (eventResult.html) {
-                            responseData.eventChecks = eventResult.html;
+                let eventResult = null;
+                if (isForcedEventAction) {
+                    eventResult = forcedEventResult;
+                } else {
+                    try {
+                        eventResult = await Events.runEventChecks({ textToCheck: aiResponse });
+                    } catch (eventError) {
+                        console.warn('Failed to run event checks:', eventError.message);
+                    }
+                }
+
+                if (eventResult) {
+                    if (eventResult.html) {
+                        responseData.eventChecks = eventResult.html;
+                    }
+                    if (eventResult.structured) {
+                        responseData.events = eventResult.structured;
+                        if (debugInfo) {
+                            debugInfo.eventStructured = eventResult.structured;
                         }
-                        if (eventResult.structured) {
-                            responseData.events = eventResult.structured;
-                            if (debugInfo) {
-                                debugInfo.eventStructured = eventResult.structured;
-                            }
-                            if (currentPlayer && currentPlayer.currentLocation) {
-                                try {
-                                    location = Location.get(currentPlayer.currentLocation) || location;
-                                } catch (_) {
-                                    // ignore lookup failures here
-                                }
+                        if (currentPlayer && currentPlayer.currentLocation) {
+                            try {
+                                location = Location.get(currentPlayer.currentLocation) || location;
+                            } catch (_) {
+                                // ignore lookup failures here
                             }
                         }
                     }
-                } catch (eventError) {
-                    console.warn('Failed to run event checks:', eventError.message);
                 }
 
                 if (plausibilityInfo && plausibilityInfo.html) {

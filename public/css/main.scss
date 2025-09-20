@@ -62,6 +62,58 @@ p:not(:last-child) {
   text-align: center;
 }
 
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 9, 20, 0.88);
+  backdrop-filter: blur(4px);
+  z-index: 4000;
+  cursor: zoom-out;
+
+  &[hidden] {
+    display: none !important;
+  }
+
+  &__inner {
+    position: relative;
+    max-width: min(90vw, 1200px);
+    max-height: 90vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__image {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    object-fit: contain;
+    background: rgba(12, 16, 28, 0.85);
+  }
+
+  &__caption {
+    position: absolute;
+    left: 0;
+    bottom: -40px;
+    width: 100%;
+    color: rgba(255, 255, 255, 0.75);
+    text-align: center;
+    font-size: 0.9rem;
+    pointer-events: none;
+  }
+}
+
+.image-lightbox-trigger {
+  cursor: zoom-in;
+  position: relative;
+}
+
 // Main container
 .container {
   display: flex;
@@ -422,7 +474,7 @@ p:not(:last-child) {
 .inventory-floating-tooltip {
   position: fixed;
   display: none;
-  max-width: 280px;
+  max-width: 40vw;
   padding: 12px 14px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.95);
