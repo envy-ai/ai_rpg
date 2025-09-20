@@ -1104,6 +1104,19 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
+    let region = null;
+    if (location) {
+        try {
+            region = findRegionByLocationId(location.id);
+        } catch (error) {
+            console.warn('Failed to resolve region by location id:', error.message);
+        }
+
+        if (!region && location.stubMetadata?.regionId && regions.has(location.stubMetadata.regionId)) {
+            region = regions.get(location.stubMetadata.regionId);
+        }
+    }
+
     const locationDetails = location ? location.getDetails?.() : null;
     const playerStatus = currentPlayer && typeof currentPlayer.getStatus === 'function'
         ? currentPlayer.getStatus()
@@ -1168,6 +1181,46 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         name: locationDetails?.name || location?.name || 'Unknown Location',
         description: locationDetails?.description || location?.description || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails)
+    };
+
+    const regionStatus = region && typeof region.toJSON === 'function' ? region.toJSON() : null;
+    const regionLocations = [];
+
+    if (regionStatus && Array.isArray(regionStatus.locationIds)) {
+        for (const locId of regionStatus.locationIds) {
+            if (!locId) continue;
+            const regionLocation = gameLocations.get(locId);
+            const regionLocationDetails = regionLocation?.getDetails?.();
+            const regionLocationName = regionLocationDetails?.name || regionLocation?.name || locId;
+            const regionLocationDescription = regionLocationDetails?.description
+                || regionLocation?.description
+                || regionLocation?.stubMetadata?.blueprintDescription
+                || '';
+
+            regionLocations.push({
+                id: locId,
+                name: regionLocationName,
+                description: regionLocationDescription
+            });
+        }
+    }
+
+    if (!regionLocations.length && regionStatus && Array.isArray(regionStatus.locationBlueprints)) {
+        for (const blueprint of regionStatus.locationBlueprints) {
+            if (!blueprint || !blueprint.name) continue;
+            regionLocations.push({
+                id: blueprint.name,
+                name: blueprint.name,
+                description: blueprint.description || ''
+            });
+        }
+    }
+
+    const currentRegionContext = {
+        name: regionStatus?.name || location?.stubMetadata?.regionName || 'Unknown Region',
+        description: regionStatus?.description || location?.stubMetadata?.regionDescription || 'No region description available.',
+        statusEffects: normalizeStatusEffects(region || regionStatus),
+        locations: regionLocations
     };
 
     const currentPlayerContext = {
@@ -1236,6 +1289,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     return {
         setting: settingDescription,
         gameHistory,
+        currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
         npcs,
