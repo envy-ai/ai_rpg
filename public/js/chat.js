@@ -270,10 +270,13 @@ class AIRPGChat {
                 entries.forEach((entry) => {
                     const name = safeName(entry?.name);
                     const action = (entry?.action || '').trim().toLowerCase();
+                    const destination = entry?.destination || entry?.location;
+                    const destinationText = destination ? safeItem(destination, 'another location') : null;
                     if (action === 'arrived') {
                         this.addEventSummary('🙋', `${name} arrived at the location.`);
                     } else if (action === 'left') {
-                        this.addEventSummary('🏃', `${name} left the area.`);
+                        const detail = destinationText ? ` for ${destinationText}` : '';
+                        this.addEventSummary('🏃', `${name} left the area${detail}.`);
                     } else {
                         this.addEventSummary('📍', `${name} ${entry?.action || 'moved'}.`);
                     }

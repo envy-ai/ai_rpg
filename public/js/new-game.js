@@ -2,6 +2,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('newGameForm');
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
+  const numSkillsField = document.getElementById('numSkills');
+
+  const defaultNumSkills = (() => {
+    if (!numSkillsField) {
+      return 20;
+    }
+    const datasetValue = Number.parseInt(numSkillsField.dataset?.defaultValue ?? '', 10);
+    if (Number.isFinite(datasetValue)) {
+      return Math.max(1, Math.min(100, datasetValue));
+    }
+    const fieldValue = Number.parseInt(numSkillsField.value ?? '', 10);
+    return Number.isFinite(fieldValue) ? Math.max(1, Math.min(100, fieldValue)) : 20;
+  })();
 
   function showOverlay() {
     overlay.classList.add('show');
@@ -28,9 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const playerName = (document.getElementById('playerName')?.value || '').trim();
       const playerDescription = (document.getElementById('playerDescription')?.value || '').trim();
       const startingLocation = (document.getElementById('startingLocation')?.value || '').trim();
-      const numSkillsRaw = (document.getElementById('numSkills')?.value || '').trim();
+      const numSkillsRaw = (numSkillsField?.value || '').trim();
       const parsedNumSkills = Number.parseInt(numSkillsRaw, 10);
-      const numSkills = Number.isFinite(parsedNumSkills) ? parsedNumSkills : 20;
+      const resolvedNumSkills = Number.isFinite(parsedNumSkills) ? parsedNumSkills : defaultNumSkills;
+      const numSkills = Math.max(1, Math.min(100, resolvedNumSkills));
       const existingSkillsRaw = document.getElementById('existingSkills')?.value || '';
       const existingSkills = existingSkillsRaw
         .split(/\r?\n/)

@@ -41,11 +41,69 @@ class Events {
             move_location: raw => this.splitSemicolonEntries(raw),
             new_exit_discovered: raw => this.splitSemicolonEntries(raw),
             npc_arrival_departure: raw => this.splitSemicolonEntries(raw).map(entry => {
-                const [name, action] = this.extractArrowParts(entry, 2);
+                if (!entry) {
+                    return null;
+                }
+
+                const segments = entry
+                    .split(/->/)
+                    .map(part => part.trim())
+                    .filter(part => part.length > 0);
+
+                let name = null;
+                let action = null;
+                let destination = null;
+
+                if (segments.length === 1) {
+                    const match = segments[0].match(/^(?<name>.+?)\s+(?<action>arrived|left)$/i);
+                    if (!match) {
+                        return null;
+                    }
+                    name = match.groups.name.trim();
+                    action = match.groups.action.trim().toLowerCase();
+                } else {
+                    const firstSegment = segments[0];
+                    const match = firstSegment.match(/^(?<name>.+?)\s+(?<action>arrived|left)$/i);
+
+                    if (match) {
+                        name = match.groups.name.trim();
+                        action = match.groups.action.trim().toLowerCase();
+                        destination = segments.slice(1).join(' -> ').trim() || null;
+                    } else {
+                        name = firstSegment.trim();
+                        if (!name || segments.length < 2) {
+                            return null;
+                        }
+
+                        const actionCandidate = segments[1]?.trim().toLowerCase();
+                        if (actionCandidate === 'arrived' || actionCandidate === 'left') {
+                            action = actionCandidate;
+                            const destinationSegments = segments.slice(2).join(' -> ').trim();
+                            destination = destinationSegments || null;
+                        } else {
+                            const remainder = segments.slice(1).join(' -> ').trim();
+                            if (!remainder) {
+                                return null;
+                            }
+                            const remainderMatch = remainder.match(/^(arrived|left)(?:\s+(.*))?$/i);
+                            if (!remainderMatch) {
+                                return null;
+                            }
+                            action = remainderMatch[1].trim().toLowerCase();
+                            destination = remainderMatch[2] ? remainderMatch[2].trim() : null;
+                        }
+                    }
+                }
+
                 if (!name || !action) {
                     return null;
                 }
-                return { name, action: action.trim().toLowerCase() };
+
+                return {
+                    name,
+                    action,
+                    destination: destination || null
+                };
             }).filter(Boolean),
             party_change: raw => this.splitSemicolonEntries(raw).map(entry => {
                 const [name, action] = this.extractArrowParts(entry, 2);
@@ -549,7 +607,13 @@ class Events {
         if (!Array.isArray(entries) || !entries.length || !context.location) {
             return;
         }
-        const { ensureNpcByName } = this.deps;
+        const {
+            ensureNpcByName,
+            findLocationByNameLoose,
+            createLocationFromEvent,
+            queueNpcAssetsForLocation,
+            generateLocationImage
+        } = this.deps;
         const location = context.location;
 
         for (const entry of entries) {
@@ -566,10 +630,56 @@ class Events {
                 location.addNpcId(npc.id);
             } else if (entry.action === 'left') {
                 location.removeNpcId(npc.id);
-                try {
-                    npc.setLocation(null);
-                } catch (_) {
-                    // ignore
+                const destinationName = typeof entry.destination === 'string' ? entry.destination.trim() : '';
+                let destinationLocation = null;
+
+                if (destinationName && typeof findLocationByNameLoose === 'function') {
+                    destinationLocation = findLocationByNameLoose(destinationName);
+                }
+
+                if (!destinationLocation && destinationName && typeof createLocationFromEvent === 'function') {
+                    try {
+                        destinationLocation = await createLocationFromEvent({
+                            name: destinationName,
+                            originLocation: location,
+                            descriptionHint: `Path leading from ${location.name || location.id} toward ${destinationName}.`,
+                            directionHint: null
+                        });
+                    } catch (error) {
+                        console.warn('Failed to create destination from NPC departure event:', error.message);
+                    }
+                }
+
+                if (destinationLocation && typeof destinationLocation.addNpcId === 'function') {
+                    destinationLocation.addNpcId(npc.id);
+                }
+
+                if (destinationLocation && destinationLocation.id) {
+                    try {
+                        npc.setLocation(destinationLocation.id);
+                    } catch (_) {
+                        // ignore
+                    }
+
+                    if (typeof queueNpcAssetsForLocation === 'function') {
+                        try {
+                            queueNpcAssetsForLocation(destinationLocation);
+                        } catch (error) {
+                            console.warn('Failed to queue NPC assets for destination:', error.message);
+                        }
+                    }
+
+                    if (typeof generateLocationImage === 'function') {
+                        generateLocationImage(destinationLocation).catch(error => {
+                            console.warn('Failed to queue destination location image:', error.message);
+                        });
+                    }
+                } else {
+                    try {
+                        npc.setLocation(null);
+                    } catch (_) {
+                        // ignore
+                    }
                 }
             }
         }

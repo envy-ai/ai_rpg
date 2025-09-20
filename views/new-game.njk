@@ -28,7 +28,11 @@
     <script defer src="/js/new-game.js"></script>
     <meta name="robots" content="noindex, nofollow">
     <link rel="icon" href="data:,">
-    <style> body { overflow: auto; } </style>
+    <style>
+        body.new-game-page { overflow: auto; }
+        body.new-game-page .container { overflow-y: auto; }
+        body.new-game-page .main-content { overflow-y: auto; }
+    </style>
     {% set currentPage = currentPage or 'new-game' %}
     {% set pageTitle = 'Start New Game' %}
     {% set pageDescription = 'Create a new adventure with your character details and starting location.' %}
@@ -45,8 +49,14 @@
     {% set helpLoc = 'Optional. Influences the generated starting area.' %}
     {% set ariaBusy = 'Starting new game, please wait' %}
     {% set ariaForm = 'New game form' %}
+    {% set defaults = newGameDefaults or {} %}
+    {% set defaultPlayerName = defaults.playerName | default('') %}
+    {% set defaultPlayerDescription = defaults.playerDescription | default('') %}
+    {% set defaultStartingLocation = defaults.startingLocation | default('') %}
+    {% set defaultNumSkills = defaults.numSkills | default(20) %}
+    {% set defaultExistingSkills = (defaults.existingSkills or []) | join('\n') %}
 </head>
-<body>
+<body class="new-game-page">
     <div class="container">
         <div class="header">
             <h1>{{ headingIcon }} Start a New Game</h1>
@@ -60,31 +70,31 @@
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="playerName">Player Name</label>
-                            <input type="text" id="playerName" name="playerName" placeholder="{{ inputPlaceholderName }}" autocomplete="name">
+                            <input type="text" id="playerName" name="playerName" placeholder="{{ inputPlaceholderName }}" autocomplete="name" value="{{ defaultPlayerName }}">
                             <div class="help-text">{{ helpName }}</div>
                         </div>
 
                         <div class="form-group full-width">
                             <label for="playerDescription">Player Description</label>
-                            <textarea id="playerDescription" name="playerDescription" rows="3" placeholder="{{ inputPlaceholderDesc }}"></textarea>
+                            <textarea id="playerDescription" name="playerDescription" rows="3" placeholder="{{ inputPlaceholderDesc }}">{{ defaultPlayerDescription }}</textarea>
                             <div class="help-text">{{ helpDesc }}</div>
                         </div>
 
                         <div class="form-group full-width">
                             <label for="startingLocation">Starting Location</label>
-                            <input type="text" id="startingLocation" name="startingLocation" placeholder="{{ inputPlaceholderLoc }}">
+                            <input type="text" id="startingLocation" name="startingLocation" placeholder="{{ inputPlaceholderLoc }}" value="{{ defaultStartingLocation }}">
                             <div class="help-text">{{ helpLoc }}</div>
                         </div>
 
                         <div class="form-group">
                             <label for="numSkills">Number of Skills</label>
-                            <input type="number" id="numSkills" name="numSkills" value="20" min="1" max="100">
+                            <input type="number" id="numSkills" name="numSkills" value="{{ defaultNumSkills }}" min="1" max="100" data-default-value="{{ defaultNumSkills }}">
                             <div class="help-text">How many unique skills to generate (default 20).</div>
                         </div>
 
                         <div class="form-group full-width">
                             <label for="existingSkills">Existing Skills (one per line)</label>
-                            <textarea id="existingSkills" name="existingSkills" rows="4" placeholder="Examples:\nSwordplay\nHerbal Lore\nArcane Theory"></textarea>
+                            <textarea id="existingSkills" name="existingSkills" rows="4" placeholder="Examples:\nSwordplay\nHerbal Lore\nArcane Theory">{{ defaultExistingSkills }}</textarea>
                             <div class="help-text">Optional. These skills will be added to your character before any new skills are generated.</div>
                         </div>
                     </div>

@@ -562,6 +562,49 @@ function getActiveSettingSnapshot() {
     return null;
 }
 
+function buildNewGameDefaults(settingSnapshot = null) {
+    const defaults = {
+        playerName: '',
+        playerDescription: '',
+        startingLocation: '',
+        numSkills: 20,
+        existingSkills: []
+    };
+
+    if (!settingSnapshot) {
+        return defaults;
+    }
+
+    defaults.playerName = typeof settingSnapshot.defaultPlayerName === 'string'
+        ? settingSnapshot.defaultPlayerName.trim()
+        : '';
+
+    defaults.playerDescription = typeof settingSnapshot.defaultPlayerDescription === 'string'
+        ? settingSnapshot.defaultPlayerDescription.trim()
+        : '';
+
+    defaults.startingLocation = typeof settingSnapshot.defaultStartingLocation === 'string'
+        ? settingSnapshot.defaultStartingLocation.trim()
+        : '';
+
+    const parsedSkillCount = Number.parseInt(settingSnapshot.defaultNumSkills, 10);
+    defaults.numSkills = Number.isFinite(parsedSkillCount)
+        ? Math.max(1, Math.min(100, parsedSkillCount))
+        : defaults.numSkills;
+
+    const existingSkills = Array.isArray(settingSnapshot.defaultExistingSkills)
+        ? settingSnapshot.defaultExistingSkills
+        : (typeof settingSnapshot.defaultExistingSkills === 'string'
+            ? settingSnapshot.defaultExistingSkills.split(/\r?\n/)
+            : []);
+
+    defaults.existingSkills = existingSkills
+        .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
+        .filter(skill => skill.length > 0);
+
+    return defaults;
+}
+
 function describeSettingForPrompt(settingSnapshot = null) {
     const fallbackSetting = config.gamemaster?.promptVariables?.setting;
 
@@ -4827,9 +4870,14 @@ app.get('/', (req, res) => {
 
 // New Game page
 app.get('/new-game', (req, res) => {
+    const activeSetting = getActiveSettingSnapshot();
+    const newGameDefaults = buildNewGameDefaults(activeSetting);
+
     res.render('new-game.njk', {
         title: 'Start New Game',
-        currentPage: 'new-game'
+        currentPage: 'new-game',
+        newGameDefaults,
+        currentSetting: activeSetting
     });
 });
 
@@ -4971,6 +5019,7 @@ const apiScope = {
     generateSkillsList,
     generateThingImage,
     getActiveSettingSnapshot,
+    buildNewGameDefaults,
     getSuggestedPlayerLevel,
     parseXMLTemplate,
     queueNpcAssetsForLocation,

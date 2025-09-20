@@ -21,12 +21,27 @@ class SettingInfo {
   #tone;
   #difficulty;
   #playerStartingLevel;
+  #defaultPlayerName;
+  #defaultPlayerDescription;
+  #defaultStartingLocation;
+  #defaultNumSkills;
+  #defaultExistingSkills;
   #createdAt;
   #lastUpdated;
 
   // Static indexing maps
   static #indexByID = new Map();
   static #indexByName = new Map();
+
+  static #normalizeExistingSkills(value) {
+    const entries = Array.isArray(value)
+      ? value
+      : (typeof value === 'string' ? value.split(/\r?\n/) : []);
+
+    return entries
+      .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(entry => entry.length > 0);
+  }
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -71,6 +86,14 @@ class SettingInfo {
 
     // Additional properties
     this.#playerStartingLevel = Math.max(1, Math.min(20, options.playerStartingLevel || 1));
+    this.#defaultPlayerName = typeof options.defaultPlayerName === 'string' ? options.defaultPlayerName : '';
+    this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
+    this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
+    const parsedDefaultSkillCount = Number.parseInt(options.defaultNumSkills, 10);
+    this.#defaultNumSkills = Number.isFinite(parsedDefaultSkillCount)
+      ? Math.max(1, Math.min(100, parsedDefaultSkillCount))
+      : 20;
+    this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
 
     // Timestamps
     this.#createdAt = new Date().toISOString();
@@ -98,6 +121,11 @@ class SettingInfo {
   get tone() { return this.#tone; }
   get difficulty() { return this.#difficulty; }
   get playerStartingLevel() { return this.#playerStartingLevel; }
+  get defaultPlayerName() { return this.#defaultPlayerName; }
+  get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
+  get defaultStartingLocation() { return this.#defaultStartingLocation; }
+  get defaultNumSkills() { return this.#defaultNumSkills; }
+  get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
 
@@ -162,6 +190,34 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set defaultPlayerName(value) {
+    this.#defaultPlayerName = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set defaultPlayerDescription(value) {
+    this.#defaultPlayerDescription = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set defaultStartingLocation(value) {
+    this.#defaultStartingLocation = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set defaultNumSkills(value) {
+    const parsed = Number.parseInt(value, 10);
+    this.#defaultNumSkills = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(100, parsed))
+      : 20;
+    this.#updateTimestamp();
+  }
+
+  set defaultExistingSkills(value) {
+    this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(value);
+    this.#updateTimestamp();
+  }
+
   // Static methods for CRUD operations
   static create(options) {
     return new SettingInfo(options);
@@ -211,6 +267,10 @@ class SettingInfo {
         return;
       }
 
+      if (typeof value === 'undefined') {
+        return;
+      }
+
       if (key in this) {
         try {
           this[key] = value;
@@ -237,6 +297,11 @@ class SettingInfo {
       tone: this.#tone,
       difficulty: this.#difficulty,
       playerStartingLevel: this.#playerStartingLevel,
+      defaultPlayerName: this.#defaultPlayerName,
+      defaultPlayerDescription: this.#defaultPlayerDescription,
+      defaultStartingLocation: this.#defaultStartingLocation,
+      defaultNumSkills: this.#defaultNumSkills,
+      defaultExistingSkills: [...this.#defaultExistingSkills],
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };

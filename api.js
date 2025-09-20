@@ -36,6 +36,13 @@ module.exports = function registerApiRoutes(scope) {
             let plausibilityInfo = null;
             let actionResolution = null;
 
+            const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
+            const firstVisibleIndex = typeof originalUserContent === 'string' ? originalUserContent.search(/\S/) : -1;
+            const isCreativeModeAction = firstVisibleIndex > -1 && originalUserContent[firstVisibleIndex] === '!';
+            const creativeActionText = isCreativeModeAction
+                ? originalUserContent.slice(firstVisibleIndex + 1).replace(/^\s+/, '')
+                : null;
+
             // Add the location with the id of currentPlayer.curentLocation to the player context if available
             if (currentPlayer && currentPlayer.currentLocation) {
                 location = Location.get(currentPlayer.currentLocation);
@@ -51,19 +58,21 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to update status effects before action:', tickError.message);
                 }
 
-                try {
-                    plausibilityInfo = await runPlausibilityCheck({
-                        actionText: userMessage.content,
-                        locationId: currentPlayer.currentLocation || null
-                    });
-                    if (plausibilityInfo?.structured) {
-                        actionResolution = resolveActionOutcome({
-                            plausibility: plausibilityInfo.structured,
-                            player: currentPlayer
+                if (!isCreativeModeAction) {
+                    try {
+                        plausibilityInfo = await runPlausibilityCheck({
+                            actionText: userMessage.content,
+                            locationId: currentPlayer.currentLocation || null
                         });
+                        if (plausibilityInfo?.structured) {
+                            actionResolution = resolveActionOutcome({
+                                plausibility: plausibilityInfo.structured,
+                                player: currentPlayer
+                            });
+                        }
+                    } catch (plausibilityError) {
+                        console.warn('Failed to execute plausibility check:', plausibilityError.message);
                     }
-                } catch (plausibilityError) {
-                    console.warn('Failed to execute plausibility check:', plausibilityError.message);
                 }
             }
 
@@ -73,17 +82,22 @@ module.exports = function registerApiRoutes(scope) {
                     const baseContext = buildBasePromptContext({ locationOverride: location });
                     const templateName = 'base-context.xml.njk';
 
-                    const playerActionPrompt = promptEnv.render(templateName, {
+                    const promptVariables = {
                         ...baseContext,
-                        promptType: 'player-action',
-                        actionText: userMessage.content,
-                        success_or_failure: actionResolution?.label || 'success'
-                    });
+                        promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
+                        actionText: isCreativeModeAction ? (creativeActionText || '') : userMessage.content
+                    };
 
-                    const promptData = parseXMLTemplate(playerActionPrompt);
+                    if (!isCreativeModeAction) {
+                        promptVariables.success_or_failure = actionResolution?.label || 'success';
+                    }
+
+                    const renderedPrompt = promptEnv.render(templateName, promptVariables);
+
+                    const promptData = parseXMLTemplate(renderedPrompt);
 
                     if (!promptData.systemPrompt) {
-                        throw new Error('Player action template missing system prompt.');
+                        throw new Error('Action template missing system prompt.');
                     }
 
                     const systemMessage = {
@@ -92,7 +106,16 @@ module.exports = function registerApiRoutes(scope) {
                     };
 
                     // Replace any existing system message or add new one
-                    finalMessages = [systemMessage, ...messages.filter(msg => msg.role !== 'system')];
+                    const nonSystemMessages = messages
+                        .filter(msg => msg.role !== 'system')
+                        .map(msg => {
+                            if (isCreativeModeAction && msg === userMessage) {
+                                return { ...msg, content: creativeActionText || '' };
+                            }
+                            return msg;
+                        });
+
+                    finalMessages = [systemMessage, ...nonSystemMessages];
 
                     // Append promptData.generationPrompt to finalMessages
                     if (promptData.generationPrompt) {
@@ -104,27 +127,41 @@ module.exports = function registerApiRoutes(scope) {
 
                     // Store debug information
                     debugInfo = {
-                        usedPlayerTemplate: true,
+                        usedPlayerTemplate: !isCreativeModeAction,
+                        usedCreativeTemplate: isCreativeModeAction,
                         playerName: currentPlayer.name,
                         playerDescription: currentPlayer.description,
                         systemMessage: systemMessage.content,
                         generationPrompt: promptData.generationPrompt || null,
-                        rawTemplate: playerActionPrompt
+                        rawTemplate: renderedPrompt
                     };
 
-                    console.log('Using player action template for:', currentPlayer.name);
+                    if (isCreativeModeAction) {
+                        debugInfo.creativeActionText = creativeActionText || '';
+                    }
+                    if (!isCreativeModeAction) {
+                        debugInfo.actionOutcomeLabel = actionResolution?.label || 'success';
+                    }
+
+                    if (isCreativeModeAction) {
+                        console.log('Using creative mode action template for:', currentPlayer.name);
+                    } else {
+                        console.log('Using player action template for:', currentPlayer.name);
+                    }
                 } catch (templateError) {
                     console.error('Error rendering player action template:', templateError);
                     // Fall back to original messages if template fails
                     finalMessages = messages;
                     debugInfo = {
                         usedPlayerTemplate: false,
+                        usedCreativeTemplate: isCreativeModeAction,
                         error: templateError.message
                     };
                 }
             } else {
                 debugInfo = {
                     usedPlayerTemplate: false,
+                    usedCreativeTemplate: false,
                     reason: currentPlayer ? 'No user message detected' : 'No current player set'
                 };
             }
@@ -1992,12 +2029,21 @@ module.exports = function registerApiRoutes(scope) {
         try {
             const { playerName, playerDescription, startingLocation, numSkills: numSkillsInput, existingSkills: existingSkillsInput } = req.body || {};
             const activeSetting = getActiveSettingSnapshot();
+            const newGameDefaults = buildNewGameDefaults(activeSetting);
             const settingDescription = describeSettingForPrompt(activeSetting);
-            const playerRequestedLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
+            const rawPlayerName = typeof playerName === 'string' ? playerName.trim() : '';
+            const rawPlayerDescription = typeof playerDescription === 'string' ? playerDescription.trim() : '';
+            const requestedStartingLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
+            const resolvedPlayerName = rawPlayerName || newGameDefaults.playerName || 'Adventurer';
+            const resolvedPlayerDescription = rawPlayerDescription || newGameDefaults.playerDescription || 'A brave soul embarking on a new adventure.';
+            const resolvedStartingLocation = requestedStartingLocation || newGameDefaults.startingLocation;
             const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
-            const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || playerRequestedLocation, activeSetting);
+            const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
             const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
-            const numSkills = Number.isFinite(parsedSkillCount) ? Math.max(1, Math.min(100, parsedSkillCount)) : 20;
+            const fallbackSkillCount = Math.max(1, Math.min(100, newGameDefaults.numSkills || 20));
+            const numSkills = Number.isFinite(parsedSkillCount)
+                ? Math.max(1, Math.min(100, parsedSkillCount))
+                : fallbackSkillCount;
 
             // Clear existing game state
             players.clear();
@@ -2012,10 +2058,14 @@ module.exports = function registerApiRoutes(scope) {
 
             console.log('🎮 Starting new game...');
 
-            const existingSkillNames = Array.isArray(existingSkillsInput)
-                ? existingSkillsInput
-                : (typeof existingSkillsInput === 'string'
-                    ? existingSkillsInput.split(/\r?\n/)
+            const rawExistingSkills = typeof existingSkillsInput === 'undefined'
+                ? newGameDefaults.existingSkills
+                : existingSkillsInput;
+
+            const existingSkillNames = Array.isArray(rawExistingSkills)
+                ? rawExistingSkills
+                : (typeof rawExistingSkills === 'string'
+                    ? rawExistingSkills.split(/\r?\n/)
                     : []);
 
             const normalizedExistingSkills = existingSkillNames
@@ -2070,8 +2120,8 @@ module.exports = function registerApiRoutes(scope) {
 
             // Create new player
             const newPlayer = new Player({
-                name: playerName || 'Adventurer',
-                description: playerDescription || 'A brave soul embarking on a new adventure.',
+                name: resolvedPlayerName,
+                description: resolvedPlayerDescription,
                 level: startingPlayerLevel,
                 health: 25,
                 maxHealth: 25,
@@ -2092,13 +2142,13 @@ module.exports = function registerApiRoutes(scope) {
             console.log('🗺️ Generating starting region...');
             const defaultRegionName = activeSetting?.name
                 ? `${activeSetting.name} Frontier`
-                : playerRequestedLocation
-                    ? `${playerRequestedLocation} Region`
+                : resolvedStartingLocation
+                    ? `${resolvedStartingLocation} Region`
                     : 'Starting Region';
 
             const regionOptions = {
                 setting: settingDescription,
-                regionName: playerRequestedLocation ? `${playerRequestedLocation} Frontier` : defaultRegionName,
+                regionName: resolvedStartingLocation ? `${resolvedStartingLocation} Frontier` : defaultRegionName,
                 regionNotes: startingLocationStyle || null
             };
 
