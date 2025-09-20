@@ -612,8 +612,28 @@ class Events {
             findLocationByNameLoose,
             createLocationFromEvent,
             queueNpcAssetsForLocation,
-            generateLocationImage
+            generateLocationImage,
+            gameLocations
         } = this.deps;
+        const removeNpcFromOtherLocations = (npcId, excludeId = null) => {
+            if (!npcId || !gameLocations) {
+                return;
+            }
+
+            const iterate = gameLocations instanceof Map
+                ? gameLocations.values()
+                : (Array.isArray(gameLocations) ? gameLocations : Object.values(gameLocations));
+
+            for (const loc of iterate) {
+                if (!loc || typeof loc.removeNpcId !== 'function') {
+                    continue;
+                }
+                if (excludeId && loc.id === excludeId) {
+                    continue;
+                }
+                loc.removeNpcId(npcId);
+            }
+        };
         const location = context.location;
 
         for (const entry of entries) {
@@ -622,14 +642,21 @@ class Events {
             if (!npc) continue;
 
             if (entry.action === 'arrived') {
+                removeNpcFromOtherLocations(npc.id, location.id);
                 try {
                     npc.setLocation(location.id);
                 } catch (_) {
                     // Ignore
                 }
                 location.addNpcId(npc.id);
+                if (gameLocations instanceof Map) {
+                    gameLocations.set(location.id, location);
+                }
             } else if (entry.action === 'left') {
                 location.removeNpcId(npc.id);
+                if (gameLocations instanceof Map) {
+                    gameLocations.set(location.id, location);
+                }
                 const destinationName = typeof entry.destination === 'string' ? entry.destination.trim() : '';
                 let destinationLocation = null;
 
@@ -650,8 +677,14 @@ class Events {
                     }
                 }
 
+                const destinationId = destinationLocation?.id || null;
+                removeNpcFromOtherLocations(npc.id, destinationId);
+
                 if (destinationLocation && typeof destinationLocation.addNpcId === 'function') {
                     destinationLocation.addNpcId(npc.id);
+                    if (gameLocations instanceof Map) {
+                        gameLocations.set(destinationLocation.id, destinationLocation);
+                    }
                 }
 
                 if (destinationLocation && destinationLocation.id) {
