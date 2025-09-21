@@ -19,6 +19,9 @@ class AIRPGChat {
 
         this.init();
         this.initSkillIncreaseControls();
+
+        this.locationRefreshTimers = [];
+        this.locationRefreshPending = false;
     }
 
     async loadExistingHistory() {
@@ -207,6 +210,17 @@ class AIRPGChat {
             return text || fallback;
         };
 
+        const locationRefreshEventTypes = new Set([
+            'item_appear',
+            'drop_item',
+            'pick_up_item',
+            'transfer_item',
+            'consume_item',
+            'move_location',
+            'npc_arrival_departure'
+        ]);
+        let shouldRefreshLocation = false;
+
         const handlers = {
             attack_damage: (entries) => {
                 entries.forEach((entry) => {
@@ -337,6 +351,49 @@ class AIRPGChat {
 
             const normalized = Array.isArray(entries) ? entries : [entries];
             handler(normalized);
+
+            if (!shouldRefreshLocation && locationRefreshEventTypes.has(eventType)) {
+                shouldRefreshLocation = true;
+            }
+        });
+
+        if (shouldRefreshLocation) {
+            this.scheduleLocationRefresh();
+        }
+    }
+
+    scheduleLocationRefresh(delays = [0, 400, 1200]) {
+        if (!Array.isArray(this.locationRefreshTimers)) {
+            this.locationRefreshTimers = [];
+        }
+
+        if (this.locationRefreshPending) {
+            this.locationRefreshTimers.forEach(timerId => clearTimeout(timerId));
+            this.locationRefreshTimers = [];
+            this.locationRefreshPending = false;
+        }
+
+        const uniqueDelays = Array.from(new Set((Array.isArray(delays) ? delays : [delays])
+            .map(value => Number(value))
+            .filter(value => Number.isFinite(value) && value >= 0)));
+
+        if (!uniqueDelays.length) {
+            uniqueDelays.push(0);
+        }
+
+        this.locationRefreshPending = true;
+        this.locationRefreshTimers = uniqueDelays.map(delay => {
+            const timerId = setTimeout(() => {
+                Promise.resolve(this.checkLocationUpdate())
+                    .catch(() => {})
+                    .finally(() => {
+                        this.locationRefreshTimers = this.locationRefreshTimers.filter(id => id !== timerId);
+                        if (this.locationRefreshTimers.length === 0) {
+                            this.locationRefreshPending = false;
+                        }
+                    });
+            }, delay);
+            return timerId;
         });
     }
 
@@ -672,7 +729,7 @@ class AIRPGChat {
 
     async checkLocationUpdate() {
         try {
-            const response = await fetch('/api/player');
+            const response = await fetch('/api/player', { cache: 'no-store' });
             const result = await response.json();
 
             if (result.success && result.player) {
@@ -687,7 +744,10 @@ class AIRPGChat {
 
                 if (result.player.currentLocation) {
                     // Fetch location details
-                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
+                    const cacheBuster = Date.now();
+                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}?_=${cacheBuster}`, {
+                        cache: 'no-store'
+                    });
                     const locationResult = await locationResponse.json();
 
                     if (locationResult.success && locationResult.location) {

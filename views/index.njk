@@ -1370,16 +1370,24 @@
         }
 
         async function loadCurrentLocation() {
+            console.log('Loading current player location...');
             try {
-                const response = await fetch('/api/player');
+                const response = await fetch('/api/player', { cache: 'no-store' });
                 const result = await response.json();
                 
                 if (result.success && result.player && result.player.currentLocation) {
                     // Fetch location details
-                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}`);
+                    console.log("Fetching location details for ID:", result.player.currentLocation);
+                    const cacheBuster = Date.now();
+                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}?_=${cacheBuster}`, {
+                        cache: 'no-store'
+                    });
                     const locationResult = await locationResponse.json();
                     
+                    console.log("Current location data:", locationResult.location);
+
                     if (locationResult.success && locationResult.location) {
+                        console.log("Updating location display");
                         window.updateLocationDisplay(locationResult.location);
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
