@@ -4437,10 +4437,12 @@ async function generateLocationImage(location) {
 
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
+        const locationImageSettings = config.imagegen.location_settings?.image || {};
+        const defaultImageSettings = config.imagegen.default_settings?.image || {};
         const payload = {
             prompt: finalImagePrompt,
-            width: config.imagegen.default_settings.image.width || 1024,
-            height: config.imagegen.default_settings.image.height || 1024,
+            width: locationImageSettings.width || defaultImageSettings.width || 1024,
+            height: locationImageSettings.height || defaultImageSettings.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
             negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only',
             // Track which location this image is for
