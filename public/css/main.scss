@@ -321,8 +321,52 @@ p:not(:last-child) {
   color: rgba(255, 255, 255, 0.65);
 }
 
-.location-exits {
+.location-section {
+  margin-top: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #e2e8f0;
+  position: relative;
+}
+
+.location-section:first-of-type {
   margin-top: 12px;
+}
+
+.location-section summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.location-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.location-section summary::before {
+  content: '\25BC';
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
+  transform: rotate(0deg);
+}
+
+.location-section[open] summary::before {
+  transform: rotate(180deg);
+}
+
+.location-section > summary + * {
+  margin-top: 12px;
+}
+
+.location-exits-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -350,8 +394,7 @@ p:not(:last-child) {
   font-size: 0.85rem;
 }
 
-.location-npcs {
-  margin-top: 16px;
+.location-npcs-content {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -403,8 +446,7 @@ p:not(:last-child) {
   font-size: 0.85rem;
 }
 
-.location-things {
-  margin-top: 16px;
+.location-things-content {
   display: flex;
   flex-direction: column;
   gap: 10px;

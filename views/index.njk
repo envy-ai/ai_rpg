@@ -43,15 +43,24 @@
                                             <span class="location-level" id="locationLevel">Level: ?</span>
                                         </div>
                                         <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
-                                        <div class="location-exits" id="locationExits">
-                                            <div class="no-exits">No exits discovered yet.</div>
-                                        </div>
-                                        <div class="location-npcs" id="locationNPCs">
-                                            <div class="location-npc-empty">No notable NPCs present.</div>
-                                        </div>
-                                        <div class="location-things" id="locationThings">
-                                            <div class="location-thing-empty">No notable items or scenery present.</div>
-                                        </div>
+                                        <details class="location-section location-exits" open>
+                                            <summary>Exits</summary>
+                                            <div class="location-exits-content" id="locationExits">
+                                                <div class="no-exits">No exits discovered yet.</div>
+                                            </div>
+                                        </details>
+                                        <details class="location-section location-npcs" open>
+                                            <summary>NPCs</summary>
+                                            <div class="location-npcs-content" id="locationNPCs">
+                                                <div class="location-npc-empty">No notable NPCs present.</div>
+                                            </div>
+                                        </details>
+                                        <details class="location-section location-things" open>
+                                            <summary>Items &amp; Scenery</summary>
+                                            <div class="location-things-content" id="locationThings">
+                                                <div class="location-thing-empty">No notable items or scenery present.</div>
+                                            </div>
+                                        </details>
                                     </div>
                                 </div>
                             </div>
