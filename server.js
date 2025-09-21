@@ -62,6 +62,17 @@ try {
 }
 
 const app = express();
+
+// If --port is provided, override config.server.port
+const args = process.argv.slice(2);
+const portArgIndex = args.indexOf('--port');
+if (portArgIndex !== -1 && args.length > portArgIndex + 1) {
+    const portArgValue = parseInt(args[portArgIndex + 1], 10);
+    if (!isNaN(portArgValue)) {
+        config.server.port = portArgValue;
+    }
+}
+
 const PORT = config.server.port;
 
 // Initialize ComfyUI client if image generation is enabled
