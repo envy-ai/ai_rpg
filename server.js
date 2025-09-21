@@ -31,6 +31,9 @@ const Region = require('./Region.js');
 const ComfyUIClient = require('./ComfyUIClient.js');
 const Events = require('./Events.js');
 
+const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
+let cachedBannedNpcWords = null;
+
 // On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
@@ -1633,7 +1636,7 @@ function resolveActionOutcome({ plausibility, player }) {
     };
 }
 
-function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText }) {
+function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText, durationSeconds }) {
     try {
         const logDir = path.join(__dirname, 'logs');
         if (!fs.existsSync(logDir)) {
@@ -1643,6 +1646,7 @@ function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText }) 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const logPath = path.join(logDir, `plausibility_check_${timestamp}.log`);
         const parts = [
+            formatDurationLine(durationSeconds),
             '=== PLAUSIBILITY SYSTEM PROMPT ===',
             systemPrompt || '(none)',
             '',
@@ -1708,6 +1712,7 @@ async function runPlausibilityCheck({ actionText, locationId }) {
             temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
         };
 
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -1721,7 +1726,8 @@ async function runPlausibilityCheck({ actionText, locationId }) {
         logPlausibilityCheck({
             systemPrompt: parsedTemplate.systemPrompt,
             generationPrompt: parsedTemplate.generationPrompt,
-            responseText: plausibilityResponse
+            responseText: plausibilityResponse,
+            durationSeconds: (Date.now() - requestStart) / 1000
         });
 
         const structured = parsePlausibilityOutcome(plausibilityResponse);
@@ -2374,6 +2380,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             temperature: config.ai.temperature || 0.7
         };
 
+        const requestStart = Date.now();
         const response = await axios.post(resolvedEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${resolvedApiKey}`,
@@ -2386,6 +2393,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         if (!inventoryContent) {
             throw new Error('Empty inventory response from AI');
         }
+
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         const items = parseInventoryItems(inventoryContent);
 
@@ -2456,6 +2465,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             }
             const logPath = path.join(logDir, `inventory_${character.id}.log`);
             const logParts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== INVENTORY PROMPT ===',
                 generationPrompt,
                 '\n=== INVENTORY RESPONSE ===',
@@ -2564,6 +2574,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             temperature: config.ai.temperature || 0.7
         };
 
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -2576,6 +2587,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
         if (!inventoryContent || !inventoryContent.trim()) {
             throw new Error('Empty item generation response from AI');
         }
+
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         const parsedItems = parseInventoryItems(inventoryContent) || [];
         const itemsByName = new Map();
@@ -2651,6 +2664,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             }
             const logPath = path.join(logDir, `event_items_${Date.now()}.log`);
             const logParts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== ITEM GENERATION PROMPT ===',
                 generationPrompt,
                 '\n=== ITEM GENERATION RESPONSE ===',
@@ -2880,6 +2894,7 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             temperature: config.ai.temperature || 0.7
         };
 
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -2893,6 +2908,8 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             throw new Error('Empty NPC generation response');
         }
 
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
@@ -2900,6 +2917,7 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             }
             const logPath = path.join(logDir, `npc_single_${Date.now()}.log`);
             const logParts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== SINGLE NPC PROMPT ===',
                 generationPrompt,
                 '\n=== SINGLE NPC RESPONSE ===',
@@ -3195,6 +3213,255 @@ function parseInventoryItems(xmlContent) {
     }
 }
 
+function getBannedNpcWords() {
+    if (Array.isArray(cachedBannedNpcWords)) {
+        return cachedBannedNpcWords;
+    }
+
+    try {
+        const raw = fs.readFileSync(BANNED_NPC_NAMES_PATH, 'utf8');
+        const parsed = yaml.load(raw) || {};
+        const words = Array.isArray(parsed.banned_npc_names) ? parsed.banned_npc_names : [];
+        cachedBannedNpcWords = words
+            .map(word => (typeof word === 'string' ? word.trim().toLowerCase() : ''))
+            .filter(Boolean);
+    } catch (error) {
+        console.warn('Failed to load banned NPC names:', error.message);
+        cachedBannedNpcWords = [];
+    }
+
+    return cachedBannedNpcWords;
+}
+
+function npcNameContainsBannedWord(name, bannedWords = getBannedNpcWords()) {
+    if (!name || typeof name !== 'string' || !bannedWords.length) {
+        return false;
+    }
+
+    const tokens = name
+        .toLowerCase()
+        .split(/[^a-z0-9']+/)
+        .filter(Boolean);
+
+    if (!tokens.length) {
+        return false;
+    }
+
+    const tokenSet = new Set(tokens);
+    for (const word of bannedWords) {
+        if (tokenSet.has(word)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function formatDurationLine(durationSeconds) {
+    if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds)) {
+        return `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`;
+    }
+    return '=== API CALL DURATION: N/A ===';
+}
+
+function summarizeNpcForNameRegen(npc) {
+    if (!npc) {
+        return null;
+    }
+
+    const name = typeof npc.name === 'string' ? npc.name.trim() : '';
+    if (!name) {
+        return null;
+    }
+
+    const short = npc.shortDescription && npc.shortDescription.trim()
+        ? npc.shortDescription.trim()
+        : (npc.description ? npc.description.split(/[.!?]/)[0]?.trim() || '' : '');
+
+    return {
+        name,
+        shortDescription: short,
+        detailedDescription: typeof npc.description === 'string' ? npc.description.trim() : ''
+    };
+}
+
+function renderNpcNameRegenPrompt({ existingNpcSummaries = [], regenerationCandidates = [] } = {}) {
+    if (!regenerationCandidates.length) {
+        return null;
+    }
+
+    try {
+        const rendered = promptEnv.render('npc-name-regen.xml.njk', {
+            existingNpcs: existingNpcSummaries,
+            npcToRegenerateName: regenerationCandidates,
+            bannedWords: getBannedNpcWords()
+        });
+
+        const parsed = parseXMLTemplate(rendered);
+        return parsed.generationPrompt || null;
+    } catch (error) {
+        console.warn('Failed to render NPC name regeneration prompt:', error.message);
+        return null;
+    }
+}
+
+function parseNpcNameRegenResponse(xmlContent) {
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return new Map();
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const mapping = new Map();
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        for (const node of npcNodes) {
+            const oldName = node.getElementsByTagName('oldName')[0]?.textContent?.trim();
+            const newName = node.getElementsByTagName('name')[0]?.textContent?.trim();
+            if (oldName && newName) {
+                mapping.set(oldName, newName);
+            }
+        }
+        return mapping;
+    } catch (error) {
+        console.warn('Failed to parse NPC name regeneration response:', error.message);
+        return new Map();
+    }
+}
+
+async function enforceBannedNpcNames({
+    npcDataList,
+    existingNpcSummaries,
+    conversationMessages,
+    chatEndpoint,
+    model,
+    apiKey
+} = {}) {
+    if (!Array.isArray(npcDataList) || !npcDataList.length) {
+        return npcDataList;
+    }
+
+    const bannedWords = getBannedNpcWords();
+    if (!bannedWords.length) {
+        return npcDataList;
+    }
+
+    const workingList = npcDataList.map(npc => ({ ...npc }));
+    const messages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
+
+    let attempts = 0;
+    while (attempts < 3) {
+        const offenders = workingList
+            .filter(npc => npc && npc.name && npcNameContainsBannedWord(npc.name, bannedWords))
+            .map(npc => ({
+                name: npc.name,
+                shortDescription: npc.shortDescription || '',
+                detailedDescription: npc.description || ''
+            }));
+
+        if (!offenders.length) {
+            break;
+        }
+
+        const contextMap = new Map();
+        const addToContext = summary => {
+            if (!summary || !summary.name) {
+                return;
+            }
+            const key = summary.name.toLowerCase();
+            if (!contextMap.has(key)) {
+                contextMap.set(key, summary);
+            }
+        };
+
+        for (const summary of existingNpcSummaries || []) {
+            addToContext(summary);
+        }
+
+        for (const npc of workingList) {
+            const derived = {
+                name: npc.name,
+                shortDescription: npc.shortDescription || '',
+                detailedDescription: npc.description || ''
+            };
+            addToContext(derived);
+        }
+
+        const prompt = renderNpcNameRegenPrompt({
+            existingNpcSummaries: Array.from(contextMap.values()),
+            regenerationCandidates: offenders
+        });
+
+        if (!prompt) {
+            break;
+        }
+
+        const regenMessages = messages.concat({ role: 'user', content: prompt });
+
+        const requestData = {
+            model,
+            messages: regenMessages,
+            max_tokens: 600,
+            temperature: 0.5
+        };
+
+        let regenText = '';
+        let apiDurationSeconds = null;
+        try {
+            const requestStart = Date.now();
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 20000
+            });
+            regenText = response.data?.choices?.[0]?.message?.content || '';
+            apiDurationSeconds = (Date.now() - requestStart) / 1000;
+        } catch (error) {
+            console.warn('NPC name regeneration failed:', error.message);
+            break;
+        }
+
+        if (!regenText.trim()) {
+            break;
+        }
+
+        try {
+            logNpcNameRegeneration({ prompt, responseText: regenText, durationSeconds: apiDurationSeconds });
+        } catch (logError) {
+            console.warn('Failed to log NPC name regeneration interaction:', logError.message);
+        }
+
+        messages.push({ role: 'user', content: prompt });
+        messages.push({ role: 'assistant', content: regenText });
+
+        const mapping = parseNpcNameRegenResponse(regenText);
+        if (!mapping.size) {
+            attempts += 1;
+            continue;
+        }
+
+        for (const npc of workingList) {
+            if (!npc || !npc.name) {
+                continue;
+            }
+            const replacement = mapping.get(npc.name) || mapping.get(npc.name.trim());
+            if (replacement) {
+                npc.name = replacement;
+            }
+        }
+
+        attempts += 1;
+    }
+
+    return workingList;
+}
+
 function renderLocationThingsPrompt(context = {}) {
     try {
         const templateName = 'location-generator-things.njk';
@@ -3324,6 +3591,7 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
             : (config.ai.temperature || 0.6)
     };
 
+    const requestStart = Date.now();
     const response = await axios.post(resolvedChatEndpoint, requestData, {
         headers: {
             'Authorization': `Bearer ${resolvedApiKey}`,
@@ -3337,6 +3605,8 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         return [];
     }
 
+    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
     try {
         const logDir = path.join(__dirname, 'logs');
         if (!fs.existsSync(logDir)) {
@@ -3344,6 +3614,7 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         }
         const logPath = path.join(logDir, `location_${location.id}_things.log`);
         const parts = [
+            formatDurationLine(apiDurationSeconds),
             '=== LOCATION THINGS SYSTEM PROMPT ===',
             parsedTemplate.systemPrompt,
             '',
@@ -3486,7 +3757,7 @@ function parseSkillsXml(xmlContent) {
     }
 }
 
-function logSkillGeneration({ systemPrompt, generationPrompt, responseText }) {
+function logSkillGeneration({ systemPrompt, generationPrompt, responseText, durationSeconds }) {
     try {
         const logDir = path.join(__dirname, 'logs');
         if (!fs.existsSync(logDir)) {
@@ -3496,6 +3767,7 @@ function logSkillGeneration({ systemPrompt, generationPrompt, responseText }) {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const logPath = path.join(logDir, `skills_generation_${timestamp}.log`);
         const parts = [
+            formatDurationLine(durationSeconds),
             '=== SKILL GENERATION SYSTEM PROMPT ===',
             systemPrompt || '(none)',
             '',
@@ -3509,6 +3781,30 @@ function logSkillGeneration({ systemPrompt, generationPrompt, responseText }) {
         fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
     } catch (error) {
         console.warn('Failed to log skills generation:', error.message);
+    }
+}
+
+function logNpcNameRegeneration({ prompt, responseText, durationSeconds }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `npc_name_regen_${timestamp}.log`);
+        const parts = [
+            formatDurationLine(durationSeconds),
+            '=== NPC NAME REGEN PROMPT ===',
+            prompt || '(none)',
+            '',
+            '=== NPC NAME REGEN RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log NPC name regeneration:', error.message);
     }
 }
 
@@ -3598,6 +3894,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     };
 
     try {
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -3611,7 +3908,8 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
         logSkillGeneration({
             systemPrompt,
             generationPrompt,
-            responseText: skillResponse
+            responseText: skillResponse,
+            durationSeconds: (Date.now() - requestStart) / 1000
         });
 
         const parsedSkills = parseSkillsXml(skillResponse);
@@ -3656,6 +3954,12 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
         let existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
 
+        const existingNpcSummariesForRegen = [
+            ...existingNpcsInThisLocation.map(summarizeNpcForNameRegen).filter(Boolean),
+            ...existingNpcsInOtherLocations.map(summarizeNpcForNameRegen).filter(Boolean),
+            ...existingNpcsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
+        ];
+
 
         const npcPrompt = renderLocationNpcPrompt(location, {
             regionTheme,
@@ -3699,6 +4003,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const logPath = path.join(logDir, `location_npcs_${location.id}.log`);
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -3712,9 +4017,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         const npcResponse = response.data.choices[0].message.content;
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
             const parts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== NPC PROMPT ===',
                 npcPromptWithContext,
                 '\n=== NPC RESPONSE ===',
@@ -3726,7 +4033,19 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             console.warn('Failed to write NPC log:', logErr.message);
         }
 
-        const npcs = parseLocationNpcs(npcResponse);
+        let npcs = parseLocationNpcs(npcResponse);
+
+        if (npcs.length) {
+            const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
+            npcs = await enforceBannedNpcNames({
+                npcDataList: npcs,
+                existingNpcSummaries: existingNpcSummariesForRegen,
+                conversationMessages: baseConversation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        }
 
         const created = [];
         const survivingNpcIds = [];
@@ -3815,7 +4134,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         });
 
         const regionLocationSet = new Set(regionLocationIds);
-        const existingNpcsInOtherRegions = Array.from(players.values())
+        const existingNpcObjectsInOtherRegions = Array.from(players.values())
             .filter(npc => npc && npc.isNPC)
             .filter(npc => {
                 if (!npc.currentLocation) {
@@ -3823,13 +4142,33 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 }
                 return !regionLocationSet.has(npc.currentLocation);
             })
-            .map(npc => ({
-                name: npc.name,
-                shortDescription: npc.shortDescription && npc.shortDescription.trim()
-                    ? npc.shortDescription.trim()
-                    : (npc.description ? npc.description.split(/[.!?]/)[0]?.trim() || '' : '')
-            }))
             .slice(0, 20);
+
+        const existingNpcsInOtherRegions = existingNpcObjectsInOtherRegions.map(npc => ({
+            name: npc.name,
+            shortDescription: npc.shortDescription && npc.shortDescription.trim()
+                ? npc.shortDescription.trim()
+                : (npc.description ? npc.description.split(/[.!?]/)[0]?.trim() || '' : '')
+        }));
+
+        const regionNpcSummaries = [];
+        for (const loc of regionLocations) {
+            if (!loc || !Array.isArray(loc.npcIds)) {
+                continue;
+            }
+            for (const npcId of loc.npcIds) {
+                const npc = players.get(npcId);
+                const summary = summarizeNpcForNameRegen(npc);
+                if (summary) {
+                    regionNpcSummaries.push(summary);
+                }
+            }
+        }
+
+        const existingNpcSummariesForRegen = [
+            ...regionNpcSummaries,
+            ...existingNpcObjectsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
+        ];
 
         const npcPrompt = renderRegionNpcPrompt(region, {
             allLocationsInRegion: allLocationsForPrompt,
@@ -3856,12 +4195,13 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         };
 
         console.log('🏘️ Requesting important NPC generation for region', region.id);
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 40000
+            timeout: 80000
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -3869,6 +4209,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         }
 
         const npcResponse = response.data.choices[0].message.content;
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
             const logDir = path.join(__dirname, 'logs');
@@ -3877,6 +4218,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
             const logPath = path.join(logDir, `region_${region.id}_npcs.log`);
             const parts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== REGION NPC PROMPT ===',
                 npcPrompt,
                 '\n=== REGION NPC RESPONSE ===',
@@ -3888,7 +4230,19 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             console.warn('Failed to write region NPC log:', logErr.message);
         }
 
-        const parsedNpcs = parseRegionNpcs(npcResponse);
+        let parsedNpcs = parseRegionNpcs(npcResponse);
+
+        if (parsedNpcs.length) {
+            const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
+            parsedNpcs = await enforceBannedNpcNames({
+                npcDataList: parsedNpcs,
+                existingNpcSummaries: existingNpcSummariesForRegen,
+                conversationMessages: baseConversation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        }
 
         const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];
         for (const npcId of previousRegionNpcIds) {
@@ -4265,7 +4619,7 @@ async function generatePlayerImage(player) {
 
         // Generate the portrait prompt
         const portraitPrompt = renderPlayerPortraitPrompt(player);
-        const finalImagePrompt = await generateImagePromptFromTemplate(portraitPrompt);
+        const { prompt: finalImagePrompt, durationSeconds: promptDurationSeconds } = await generateImagePromptFromTemplate(portraitPrompt);
 
         try {
             const logDir = path.join(__dirname, 'logs');
@@ -4274,6 +4628,7 @@ async function generatePlayerImage(player) {
             }
             const logPath = path.join(logDir, `player_${player.id}_portrait.log`);
             const parts = [
+                formatDurationLine(promptDurationSeconds),
                 '=== PORTRAIT SYSTEM PROMPT ===',
                 portraitPrompt.systemPrompt || '(none)',
                 '\n=== PORTRAIT GENERATION PROMPT ===',
@@ -4360,6 +4715,7 @@ async function generateImagePromptFromTemplate(prompts) {
 
         console.log('🤖 Requesting image prompt generation from LLM...');
 
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -4384,12 +4740,18 @@ async function generateImagePromptFromTemplate(prompts) {
 
         //console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
 
-        return generatedImagePrompt;
+        return {
+            prompt: generatedImagePrompt,
+            durationSeconds: (Date.now() - requestStart) / 1000
+        };
 
     } catch (error) {
         console.error('Error generating image prompt with LLM:', error);
         // Fallback to the user prompt if LLM fails
-        return prompts.generationPrompt;
+        return {
+            prompt: prompts.generationPrompt,
+            durationSeconds: null
+        };
     }
 }
 
@@ -4444,7 +4806,7 @@ async function generateLocationImage(location) {
 
         // Generate the location scene prompt using LLM
         const promptTemplate = renderLocationImagePrompt(location);
-        const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
+        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate);
 
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
@@ -4585,7 +4947,7 @@ async function generateThingImage(thing) {
 
         // Generate the thing image prompt using LLM
         const promptTemplate = renderThingImagePrompt(thing);
-        const finalImagePrompt = await generateImagePromptFromTemplate(promptTemplate);
+        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate);
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();
@@ -4767,6 +5129,8 @@ async function generateLocationFromPrompt(options = {}) {
 
         console.log(`🏗️  Successfully generated location: ${location.name || location.id}`);
 
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
@@ -4774,6 +5138,7 @@ async function generateLocationFromPrompt(options = {}) {
             }
             const logPath = path.join(logDir, `location_${location.id}.log`);
             const logParts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== LOCATION GENERATION PROMPT ===',
                 generationPrompt,
                 '\n=== LOCATION GENERATION RESPONSE ===',
@@ -4944,6 +5309,7 @@ async function generateRegionFromPrompt(options = {}) {
         };
 
         console.log('🗺️ Requesting region generation from AI...');
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -4959,6 +5325,8 @@ async function generateRegionFromPrompt(options = {}) {
         const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
 
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
         // Get timestamp with milliseconds for log filename
         const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
         const regionLogId = `region_${timestamp}`;
@@ -4970,6 +5338,7 @@ async function generateRegionFromPrompt(options = {}) {
             }
             const logPath = path.join(logDir, `${regionLogId}.log`);
             const logParts = [
+                formatDurationLine(apiDurationSeconds),
                 '=== REGION GENERATION PROMPT ===',
                 generationPrompt,
                 '\n=== REGION GENERATION RESPONSE ===',
