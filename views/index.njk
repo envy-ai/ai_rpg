@@ -350,6 +350,116 @@
             }
         }
 
+        const escapeHtml = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
+
+        const capitalize = (value) => {
+            if (!value) return '';
+            const str = String(value).trim();
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        };
+
+        const normalizeThingType = (thing = {}) => {
+            const rawType = (thing.thingType || thing.type || thing.category || '').toLowerCase();
+            if (!rawType) {
+                return 'item';
+            }
+            if (rawType.includes('scenery')) {
+                return 'scenery';
+            }
+            if (rawType.includes('item')) {
+                return 'item';
+            }
+            return rawType;
+        };
+
+        const formatDetailValue = (value) => {
+            if (Array.isArray(value)) {
+                return value.map(item => escapeHtml(item)).join(', ');
+            }
+            if (value && typeof value === 'object') {
+                try {
+                    return escapeHtml(JSON.stringify(value));
+                } catch (_) {
+                    return escapeHtml(String(value));
+                }
+            }
+            return escapeHtml(value);
+        };
+
+        const formatThingTooltip = (thing = {}) => {
+            const normalizedType = normalizeThingType(thing);
+
+            const metaParts = [];
+            if (thing.thingType) {
+                const label = thing.thingType === 'scenery' ? 'Scenery' : capitalize(thing.thingType);
+                metaParts.push(escapeHtml(label));
+            } else if (thing.type) {
+                metaParts.push(escapeHtml(capitalize(thing.type)));
+            } else if (thing.category) {
+                metaParts.push(escapeHtml(capitalize(thing.category)));
+            } else if (normalizedType) {
+                metaParts.push(escapeHtml(capitalize(normalizedType)));
+            }
+            if (thing.rarity) {
+                metaParts.push(escapeHtml(thing.rarity));
+            }
+            if (thing.itemTypeDetail) {
+                metaParts.push(escapeHtml(thing.itemTypeDetail));
+            }
+
+            const detailItems = [];
+            if (thing.metadata) {
+                const { value, weight, properties } = thing.metadata;
+                if (value) {
+                    detailItems.push({ label: 'Value', value });
+                }
+                if (weight) {
+                    detailItems.push({ label: 'Weight', value: weight });
+                }
+                if (properties) {
+                    detailItems.push({ label: 'Properties', value: properties });
+                }
+            }
+            if (thing.quantity !== undefined && thing.quantity !== null) {
+                detailItems.push({ label: 'Quantity', value: thing.quantity });
+            }
+
+            const nameHtml = `<div class="tooltip-thing-name">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
+            const metaHtml = metaParts.length
+                ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
+                : '';
+            const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
+            const detailsHtml = detailItems.length
+                ? `<div class="tooltip-thing-details">${detailItems.map(item => `
+                        <div class="tooltip-thing-detail">
+                            <span class="tooltip-thing-detail-label">${escapeHtml(item.label)}</span>
+                            <span class="tooltip-thing-detail-value">${formatDetailValue(item.value)}</span>
+                        </div>`).join('')}</div>`
+                : '';
+
+            const cardClass = normalizedType === 'scenery' ? 'is-scenery' : 'is-item';
+
+            return `
+                <div class="tooltip-thing ${cardClass}">
+                    ${nameHtml}
+                    ${metaHtml}
+                    ${descriptionHtml}
+                    ${detailsHtml}
+                </div>
+            `.trim();
+        };
+
         function initTabs() {
             const tabButtons = document.querySelectorAll('.tab-button');
             const tabPanels = document.querySelectorAll('.tab-panel');
@@ -420,76 +530,6 @@
             const locationNPCs = document.getElementById('locationNPCs');
             const locationThings = document.getElementById('locationThings');
             let lastRenderedLocation = null;
-
-            const escapeHtml = (value) => {
-                if (value === null || value === undefined) {
-                    return '';
-                }
-                return String(value)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            };
-
-            const formatDetailValue = (value) => {
-                if (Array.isArray(value)) {
-                    return value.map(item => escapeHtml(item)).join(', ');
-                }
-                return escapeHtml(value);
-            };
-
-            const formatThingTooltip = (thing = {}) => {
-                const metaParts = [];
-                if (thing.thingType) {
-                    metaParts.push(thing.thingType === 'scenery' ? 'Scenery' : 'Item');
-                }
-                if (thing.rarity) {
-                    metaParts.push(thing.rarity);
-                }
-                if (thing.itemTypeDetail) {
-                    metaParts.push(thing.itemTypeDetail);
-                }
-
-                const detailItems = [];
-                if (thing.metadata) {
-                    const { value, weight, properties } = thing.metadata;
-                    if (value) {
-                        detailItems.push({ label: 'Value', value });
-                    }
-                    if (weight) {
-                        detailItems.push({ label: 'Weight', value: weight });
-                    }
-                    if (properties) {
-                        detailItems.push({ label: 'Properties', value: properties });
-                    }
-                }
-
-                const nameHtml = `<div class="tooltip-thing-name">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
-                const metaHtml = metaParts.length
-                    ? `<div class="tooltip-thing-meta">${metaParts.map(part => escapeHtml(part)).join(' • ')}</div>`
-                    : '';
-                const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
-                const detailsHtml = detailItems.length
-                    ? `<div class="tooltip-thing-details">${detailItems.map(item => `
-                            <div class="tooltip-thing-detail">
-                                <span class="tooltip-thing-detail-label">${escapeHtml(item.label)}</span>
-                                <span class="tooltip-thing-detail-value">${formatDetailValue(item.value)}</span>
-                            </div>`).join('')}</div>`
-                    : '';
-
-                const cardClass = thing.thingType === 'scenery' ? 'is-scenery' : 'is-item';
-
-                return `
-                    <div class="tooltip-thing ${cardClass}">
-                        ${nameHtml}
-                        ${metaHtml}
-                        ${descriptionHtml}
-                        ${detailsHtml}
-                    </div>
-                `.trim();
-            };
 
             function showLocationOverlay(message = 'Loading location...') {
                 try {
@@ -1044,11 +1084,12 @@
                     card.appendChild(name);
                     inventoryGrid.appendChild(card);
 
-                    const description = item.description || 'No description provided.';
-
                     card.addEventListener('mouseenter', (event) => {
                         if (tooltipController && typeof tooltipController.show === 'function') {
-                            tooltipController.show(description, event);
+                            const description = item.description || 'No description provided.';
+                            const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
+                            const tooltipContent = formatThingTooltip(item) || fallbackTooltip;
+                            tooltipController.show(tooltipContent, event, { allowHTML: true });
                         }
                     });
 
