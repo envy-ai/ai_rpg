@@ -25,6 +25,7 @@ class Location {
   #hasGeneratedStubs;
   #npcIds;
   #statusEffects;
+  #thingIds;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -43,7 +44,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [] } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -69,7 +70,12 @@ class Location {
     this.#visited = false;
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
-    this.#npcIds = []; // Array.isArray(options.npcIds) ? [...options.npcIds] : [];
+    this.#npcIds = Array.isArray(npcIds)
+      ? [...new Set(npcIds.filter(id => typeof id === 'string'))]
+      : [];
+    this.#thingIds = Array.isArray(thingIds)
+      ? [...new Set(thingIds.filter(id => typeof id === 'string'))]
+      : [];
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
 
     // Index by ID and name if provided
@@ -418,6 +424,7 @@ class Location {
       hasGeneratedStubs: this.#hasGeneratedStubs,
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
       npcIds: [...this.#npcIds],
+      thingIds: [...this.#thingIds],
       statusEffects: this.getStatusEffects()
     };
   }
@@ -450,7 +457,8 @@ class Location {
       isStub: this.#isStub,
       hasGeneratedStubs: this.#hasGeneratedStubs,
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
-      npcIds: [...this.#npcIds]
+      npcIds: [...this.#npcIds],
+      thingIds: [...this.#thingIds]
     };
   }
 
@@ -485,6 +493,10 @@ class Location {
 
   get npcIds() {
     return [...this.#npcIds];
+  }
+
+  get thingIds() {
+    return [...this.#thingIds];
   }
 
   addNpcId(id) {
@@ -522,6 +534,45 @@ class Location {
   clearNpcIds() {
     this.#npcIds = [];
     this.#lastUpdated = new Date();
+  }
+
+  addThingId(id) {
+    if (!id || typeof id !== 'string') {
+      return;
+    }
+    if (!this.#thingIds.includes(id)) {
+      this.#thingIds.push(id);
+      this.#lastUpdated = new Date();
+    }
+  }
+
+  removeThingId(id) {
+    if (!id || typeof id !== 'string') {
+      return false;
+    }
+    const before = this.#thingIds.length;
+    this.#thingIds = this.#thingIds.filter(existing => existing !== id);
+    if (this.#thingIds.length !== before) {
+      this.#lastUpdated = new Date();
+      return true;
+    }
+    return false;
+  }
+
+  setThingIds(ids = []) {
+    if (Array.isArray(ids)) {
+      this.#thingIds = [...new Set(ids.filter(id => typeof id === 'string'))];
+    } else {
+      this.#thingIds = [];
+    }
+    this.#lastUpdated = new Date();
+  }
+
+  clearThingIds() {
+    if (this.#thingIds.length > 0) {
+      this.#thingIds = [];
+      this.#lastUpdated = new Date();
+    }
   }
 
   #normalizeStatusEffects(effects = []) {

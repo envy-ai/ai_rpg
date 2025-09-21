@@ -49,6 +49,9 @@
                                         <div class="location-npcs" id="locationNPCs">
                                             <div class="location-npc-empty">No notable NPCs present.</div>
                                         </div>
+                                        <div class="location-things" id="locationThings">
+                                            <div class="location-thing-empty">No notable items or scenery present.</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -415,6 +418,7 @@
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
+            const locationThings = document.getElementById('locationThings');
             let lastRenderedLocation = null;
 
             function showLocationOverlay(message = 'Loading location...') {
@@ -592,6 +596,90 @@
                         }
                     }
 
+                    if (locationThings) {
+                        const things = Array.isArray(location.things) ? location.things : [];
+                        if (things.length === 0) {
+                            locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
+                        } else {
+                            locationThings.innerHTML = '';
+                            things.forEach(thing => {
+                                const card = document.createElement('div');
+                                card.className = `location-thing-card ${thing.thingType === 'scenery' ? 'is-scenery' : 'is-item'}`;
+
+                                const icon = document.createElement('div');
+                                icon.className = 'location-thing-icon';
+                                if (thing.imageId) {
+                                    icon.innerHTML = `<img src="/generated-images/${thing.imageId}.png" alt="${thing.name || 'Location item'}" onerror="this.parentElement.innerHTML='<div class=\\'location-thing-placeholder\\'>${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>'">`;
+                                    const img = icon.querySelector('img');
+                                    if (img) {
+                                        img.dataset.lightboxImage = img.src;
+                                        img.dataset.lightboxAlt = thing.name || 'Location item';
+                                        img.dataset.lightboxCaption = thing.name || '';
+                                        bindLightboxElement(img);
+                                    }
+                                } else {
+                                    icon.innerHTML = `<div class="location-thing-placeholder">${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>`;
+                                }
+
+                                const info = document.createElement('div');
+                                info.className = 'location-thing-info';
+
+                                const nameEl = document.createElement('div');
+                                nameEl.className = 'location-thing-name';
+                                nameEl.textContent = thing.name || 'Unknown Object';
+
+                                const metaEl = document.createElement('div');
+                                metaEl.className = 'location-thing-meta';
+                                const metaParts = [];
+                                if (thing.thingType) {
+                                    metaParts.push(thing.thingType === 'scenery' ? 'Scenery' : 'Item');
+                                }
+                                if (thing.rarity) {
+                                    metaParts.push(thing.rarity);
+                                }
+                                if (thing.itemTypeDetail) {
+                                    metaParts.push(thing.itemTypeDetail);
+                                }
+                                metaEl.textContent = metaParts.join(' • ');
+
+                                const descriptionEl = document.createElement('div');
+                                descriptionEl.className = 'location-thing-description';
+                                descriptionEl.textContent = thing.description || 'No description provided.';
+
+                                info.appendChild(nameEl);
+                                if (metaParts.length) {
+                                    info.appendChild(metaEl);
+                                }
+                                info.appendChild(descriptionEl);
+
+                                card.appendChild(icon);
+                                card.appendChild(info);
+
+                                if (tooltipController && typeof tooltipController.show === 'function') {
+                                    card.addEventListener('mouseenter', (event) => {
+                                        const metadataLines = [];
+                                        if (thing.metadata) {
+                                            const { value, weight, properties } = thing.metadata;
+                                            if (value) metadataLines.push(`Value: ${value}`);
+                                            if (weight) metadataLines.push(`Weight: ${weight}`);
+                                            if (properties) metadataLines.push(properties);
+                                        }
+                                        const tooltipContent = [thing.description || '', metadataLines.join(' • ')].filter(Boolean).join('\n');
+                                        tooltipController.show(tooltipContent || 'No additional details.', event, { allowHTML: false });
+                                    });
+                                    card.addEventListener('mousemove', (event) => {
+                                        tooltipController.move(event);
+                                    });
+                                    card.addEventListener('mouseleave', () => {
+                                        tooltipController.hide();
+                                    });
+                                }
+
+                                locationThings.appendChild(card);
+                            });
+                        }
+                    }
+
                     if (location.pendingImageJobId) {
                         startImagePolling(location.id, location.pendingImageJobId);
                     } else {
@@ -623,6 +711,9 @@
                     }
                     if (locationNPCs) {
                         locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
+                    }
+                    if (locationThings) {
+                        locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
                     }
                     if (locationExits) {
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';

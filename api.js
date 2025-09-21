@@ -1145,6 +1145,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             locationData.npcs = buildNpcProfiles(location);
+            locationData.things = buildThingProfiles(location);
 
             res.json({
                 success: true,
@@ -1408,6 +1409,7 @@ module.exports = function registerApiRoutes(scope) {
             const locationData = result.location.toJSON();
             locationData.pendingImageJobId = pendingLocationImages.get(result.location.id) || null;
             locationData.npcs = buildNpcProfiles(result.location);
+            locationData.things = buildThingProfiles(result.location);
 
             res.json({
                 success: true,
@@ -1416,7 +1418,8 @@ module.exports = function registerApiRoutes(scope) {
                 locationName: result.location.name,
                 gameWorldStats: {
                     totalLocations: gameLocations.size,
-                    totalLocationExits: gameLocationExits.size
+                    totalLocationExits: gameLocationExits.size,
+                    totalThings: things.size
                 },
                 generationInfo: {
                     aiResponse: result.aiResponse,
@@ -2574,7 +2577,9 @@ module.exports = function registerApiRoutes(scope) {
                         isStub: locationData.isStub ?? false,
                         stubMetadata: locationData.stubMetadata ?? null,
                         hasGeneratedStubs: locationData.hasGeneratedStubs ?? false,
-                        npcIds: locationData.npcIds || []
+                        statusEffects: locationData.statusEffects || [],
+                        npcIds: locationData.npcIds || [],
+                        thingIds: locationData.thingIds || []
                     });
 
                     const exitsByDirection = locationData.exits || {};

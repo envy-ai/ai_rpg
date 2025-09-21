@@ -1,0 +1,39 @@
+<template>
+    <role>Character Inventory Generator</role>
+    
+    <systemPrompt>
+You are a an AI role-playing gamemaster.
+    </systemPrompt>
+    
+    <generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+<region>
+<name>{{ region.regionName }}</name>
+<description>{{ region.regionDescription }}</description>
+</region>
+<location>
+<name>{{ location.name }}</name>
+<description>{{ location.description }}</description>
+</location>
+</context>
+
+I'd like you to generate a set of 1 to 5 items that would be found in the above location in the above setting. The items should be appropriate for the setting and the character's role within it. Output them in the format below:
+
+<items>
+<item>
+<name>Item Name</name>
+<description>1-2 sentence description of the item</description>
+<itemOrScenery>"item" or "scenery" depending on whether it can be picked up or not</itemOrScenery>
+<type>Type of item (e.g., weapon, armor, potion, tool, etc.)</type>
+<rarity>Common, Uncommon, Rare, Epic, Legendary</rarity>
+<value>Monetary value of the item in currency units</value>
+<weight>Weight of the item in pounds</weight>
+<properties>Any special properties or effects of the item</properties>
+</item>
+[0-4 more items depending on how many you generate]
+</items>
+</generationPrompt>
+</template>

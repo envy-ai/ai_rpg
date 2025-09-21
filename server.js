@@ -845,6 +845,42 @@ function buildNpcProfiles(location) {
         }));
 }
 
+function buildThingProfiles(location) {
+    if (!location) {
+        return [];
+    }
+
+    const thingIds = Array.isArray(location.thingIds)
+        ? location.thingIds
+        : (typeof location.getThingIds === 'function' ? Array.from(location.getThingIds()) : []);
+
+    const profiles = [];
+    for (const thingId of thingIds) {
+        if (!thingId) continue;
+        const thing = things.get(thingId) || Thing.getById(thingId);
+        if (!thing) {
+            continue;
+        }
+
+        const metadata = thing.metadata || {};
+        const statusEffects = typeof thing.getStatusEffects === 'function' ? thing.getStatusEffects() : [];
+
+        profiles.push({
+            id: thing.id,
+            name: thing.name,
+            description: thing.description,
+            thingType: thing.thingType,
+            imageId: thing.imageId,
+            rarity: thing.rarity || null,
+            itemTypeDetail: thing.itemTypeDetail || null,
+            metadata: metadata || {},
+            statusEffects
+        });
+    }
+
+    return profiles;
+}
+
 function findActorByName(name) {
     if (!name || typeof name !== 'string') {
         return null;
@@ -3142,6 +3178,239 @@ function parseInventoryItems(xmlContent) {
     }
 }
 
+function renderLocationThingsPrompt(context = {}) {
+    try {
+        const templateName = 'location-generator-things.njk';
+        const safeSetting = context.settingDescription || context.setting || 'An evocative roleplaying setting.';
+        const safeRegion = context.region || {};
+        const safeLocation = context.location || {};
+
+        const templatePayload = {
+            setting: safeSetting,
+            region: {
+                regionName: safeRegion.name || safeRegion.regionName || 'Unknown Region',
+                regionDescription: safeRegion.description || safeRegion.regionDescription || 'No description provided.'
+            },
+            location: {
+                name: safeLocation.name || 'Unknown Location',
+                description: safeLocation.description || 'No description provided.'
+            }
+        };
+
+        const rendered = promptEnv.render(templateName, templatePayload);
+        return parseXMLTemplate(rendered);
+    } catch (error) {
+        console.error('Error rendering location things template:', error);
+        return null;
+    }
+}
+
+function parseLocationThingsXml(xmlContent) {
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const itemNodes = Array.from(doc.getElementsByTagName('item'));
+        const items = [];
+
+        for (const node of itemNodes) {
+            const nameNode = node.getElementsByTagName('name')[0];
+            if (!nameNode) {
+                continue;
+            }
+
+            const entry = {
+                name: nameNode.textContent.trim(),
+                description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
+                itemOrScenery: node.getElementsByTagName('itemOrScenery')[0]?.textContent?.trim() || '',
+                type: node.getElementsByTagName('type')[0]?.textContent?.trim() || '',
+                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || '',
+                value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '',
+                weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
+                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || ''
+            };
+
+            items.push(entry);
+        }
+
+        return items;
+    } catch (error) {
+        console.warn('Failed to parse location things XML:', error.message);
+        return [];
+    }
+}
+
+async function generateLocationThingsForLocation({ location, chatEndpoint = null, model = null, apiKey = null } = {}) {
+    if (!location || typeof location.id !== 'string') {
+        return [];
+    }
+
+    const locationDescription = typeof location.description === 'string'
+        ? location.description
+        : (typeof location.getDetails === 'function' ? (location.getDetails().description || '') : '');
+
+    if (!locationDescription || !locationDescription.trim()) {
+        return [];
+    }
+
+    if (Array.isArray(location.thingIds) && location.thingIds.length > 0) {
+        return [];
+    }
+
+    if (!config.ai || !config.ai.endpoint || !config.ai.apiKey || !config.ai.model) {
+        return [];
+    }
+
+    const stripHtml = (value) => typeof value === 'string'
+        ? value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        : '';
+
+    const settingSnapshot = getActiveSettingSnapshot();
+    const region = findRegionByLocationId(location.id);
+
+    const parsedTemplate = renderLocationThingsPrompt({
+        settingDescription: describeSettingForPrompt(settingSnapshot),
+        region: region ? { name: region.name, description: region.description } : null,
+        location: {
+            name: location.name || 'Unknown Location',
+            description: stripHtml(locationDescription) || locationDescription || 'No description provided.'
+        }
+    });
+
+    if (!parsedTemplate || !parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+        return [];
+    }
+
+    const endpoint = config.ai.endpoint;
+    const resolvedModel = model || config.ai.model;
+    const resolvedApiKey = apiKey || config.ai.apiKey;
+    const resolvedChatEndpoint = chatEndpoint || (endpoint.endsWith('/')
+        ? `${endpoint}chat/completions`
+        : `${endpoint}/chat/completions`);
+
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
+
+    const requestData = {
+        model: resolvedModel,
+        messages,
+        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
+        temperature: typeof parsedTemplate.temperature === 'number'
+            ? parsedTemplate.temperature
+            : (config.ai.temperature || 0.6)
+    };
+
+    const response = await axios.post(resolvedChatEndpoint, requestData, {
+        headers: {
+            'Authorization': `Bearer ${resolvedApiKey}`,
+            'Content-Type': 'application/json'
+        },
+        timeout: 45000
+    });
+
+    const aiResponse = response.data?.choices?.[0]?.message?.content;
+    if (!aiResponse || !aiResponse.trim()) {
+        return [];
+    }
+
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logPath = path.join(logDir, `location_${location.id}_things.log`);
+        const parts = [
+            '=== LOCATION THINGS SYSTEM PROMPT ===',
+            parsedTemplate.systemPrompt,
+            '',
+            '=== LOCATION THINGS PROMPT ===',
+            parsedTemplate.generationPrompt,
+            '',
+            '=== LOCATION THINGS RESPONSE ===',
+            aiResponse,
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (logError) {
+        console.warn('Failed to log location things generation:', logError.message);
+    }
+
+    const parsedItems = parseLocationThingsXml(aiResponse);
+    if (!parsedItems.length) {
+        return [];
+    }
+
+    // Remove any existing location-bound things before adding new ones
+    const existingIds = Array.isArray(location.thingIds)
+        ? location.thingIds
+        : (typeof location.getThingIds === 'function' ? Array.from(location.getThingIds()) : []);
+
+    for (const existingId of existingIds) {
+        if (!existingId) continue;
+        const existingThing = things.get(existingId) || Thing.getById(existingId);
+        if (existingThing && typeof existingThing.delete === 'function') {
+            existingThing.delete();
+        }
+        things.delete(existingId);
+    }
+
+    location.clearThingIds();
+
+    const createdThings = [];
+    for (const itemData of parsedItems) {
+        if (!itemData?.name) {
+            continue;
+        }
+
+        const normalizedType = (itemData.itemOrScenery || '').trim().toLowerCase();
+        const thingType = normalizedType === 'scenery' ? 'scenery' : 'item';
+
+        const metadata = {
+            locationId: location.id,
+            locationName: location.name || location.id
+        };
+
+        if (itemData.value) {
+            metadata.value = itemData.value;
+        }
+        if (itemData.weight) {
+            metadata.weight = itemData.weight;
+        }
+        if (itemData.properties) {
+            metadata.properties = itemData.properties;
+        }
+
+        const thing = new Thing({
+            name: itemData.name,
+            description: itemData.description || 'An unspecified object.',
+            thingType,
+            rarity: itemData.rarity || null,
+            itemTypeDetail: itemData.type || null,
+            metadata
+        });
+
+        things.set(thing.id, thing);
+        location.addThingId(thing.id);
+
+        if (shouldGenerateThingImage(thing)) {
+            generateThingImage(thing).catch(err => {
+                console.warn('Failed to queue thing image generation:', err.message);
+            });
+        }
+
+        createdThings.push(thing);
+    }
+
+    return createdThings;
+}
+
 function renderSkillsPrompt(context = {}) {
     try {
         const templateName = 'skills-generator.xml.njk';
@@ -4502,6 +4771,17 @@ async function generateLocationFromPrompt(options = {}) {
         gameLocations.set(location.id, location);
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
+        try {
+            await generateLocationThingsForLocation({
+                location,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        } catch (thingError) {
+            console.warn('Failed to generate location things:', thingError.message);
+        }
+
         const newlyCreatedStubs = [];
 
         if (isStubExpansion && resolvedOriginLocation) {
@@ -5092,6 +5372,7 @@ const apiScope = {
     buildLocationShortDescription,
     buildLocationPurpose,
     buildNpcProfiles,
+    buildThingProfiles,
     describeSettingForPrompt,
     findRegionByLocationId,
     generateImageId,
