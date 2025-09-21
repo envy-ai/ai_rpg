@@ -5097,6 +5097,7 @@ async function generateLocationFromPrompt(options = {}) {
         console.log('📝 System Prompt:', systemPrompt);
         console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
 
+        const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
