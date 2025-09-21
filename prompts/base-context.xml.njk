@@ -31,6 +31,8 @@ You are an AI designed to perform various tasks related to managing a text-based
     <description>{{ currentPlayer.description }}</description>
     <health>{{ currentPlayer.health }}</health>
     <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>
+    <class>{{ currentPlayer.class }}</class>
+    <race>{{ currentPlayer.race }}</race>
     <statusEffects>
       {% for effect in currentPlayer.statusEffects %}
       <effect>
@@ -69,6 +71,8 @@ You are an AI designed to perform various tasks related to managing a text-based
     <npc>
       <name>{{ npc.name }}</name>
       <description>{{ npc.description }}</description>
+      <class>{{ currentPlayer.class }}</class>
+      <race>{{ currentPlayer.race }}</race>
       <statusEffects>
         {% for effect in npc.statusEffects %}
         <effect>
