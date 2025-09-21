@@ -4362,7 +4362,7 @@ async function generateImagePromptFromTemplate(prompts) {
         }
 
         let generatedImagePrompt = response.data.choices[0].message.content;
-        console.log('📥 LLM Generated Image Prompt:', generatedImagePrompt);
+        //console.log('📥 LLM Generated Image Prompt:', generatedImagePrompt);
 
         // Clean the prompt to remove potential problematic characters
         generatedImagePrompt = generatedImagePrompt
@@ -4371,7 +4371,7 @@ async function generateImagePromptFromTemplate(prompts) {
             .replace(/[—–]/g, '-')     // Normalize dashes
             .trim();
 
-        console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
+        //console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
 
         return generatedImagePrompt;
 
