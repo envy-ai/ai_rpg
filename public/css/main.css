@@ -306,8 +306,52 @@ p:not(:last-child) {
   color: rgba(255, 255, 255, 0.65);
 }
 
-.location-exits {
+.location-section {
+  margin-top: 16px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #e2e8f0;
+  position: relative;
+}
+
+.location-section:first-of-type {
   margin-top: 12px;
+}
+
+.location-section summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.location-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.location-section summary::before {
+  content: "▼";
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
+  transform: rotate(0deg);
+}
+
+.location-section[open] summary::before {
+  transform: rotate(180deg);
+}
+
+.location-section > summary + * {
+  margin-top: 12px;
+}
+
+.location-exits-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -335,103 +379,73 @@ p:not(:last-child) {
   font-size: 0.85rem;
 }
 
-.location-npcs {
-  margin-top: 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.npc-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 10px;
-  padding: 10px;
-  width: 110px;
-}
-
-.npc-portrait {
-  width: 90px;
-  height: 90px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: rgba(15, 23, 42, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.npc-portrait img {
-  width: 100%;
-  height: 100%;
-  -o-object-fit: cover;
-     object-fit: cover;
-  display: block;
-}
-
-.npc-portrait-placeholder {
-  font-size: 2rem;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.npc-name {
-  font-size: 0.85rem;
-  text-align: center;
-  color: #ffffff;
-}
-
-.location-npc-empty {
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 0.85rem;
-}
-
-.location-things {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
+.location-npc-empty,
 .location-thing-empty {
   color: rgba(255, 255, 255, 0.65);
   font-size: 0.85rem;
 }
 
-.location-thing-card {
+.location-entity-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.location-entity-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: center;
-  justify-content: center;
+  justify-content: top;
   text-align: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 14px 12px;
-  transition: background 0.2s ease, border 0.2s ease;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.12) 0%, rgba(15, 23, 42, 0.78) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 14px;
+  padding: 16px 14px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease;
+  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.35);
+  width: 120px;
 }
 
-.location-thing-card.is-scenery {
-  background: rgba(125, 211, 252, 0.08);
-  border-color: rgba(125, 211, 252, 0.18);
+.location-entity-card:is(:hover, :focus-within) {
+  transform: translateY(-4px);
+  border-color: rgba(148, 163, 184, 0.55);
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.45);
 }
 
-.location-thing-icon {
-  width: 90px;
-  height: 90px;
-  border-radius: 8px;
+.location-entity-card.is-scenery {
+  background: radial-gradient(circle at top, rgba(125, 211, 252, 0.2) 0%, rgba(30, 64, 175, 0.6) 100%);
+  border-color: rgba(125, 211, 252, 0.5);
+}
+
+.location-entity-card.is-item {
+  background: radial-gradient(circle at top, rgba(59, 130, 246, 0.18) 0%, rgba(15, 23, 42, 0.75) 100%);
+}
+
+.location-entity-card.is-npc {
+  background: radial-gradient(circle at top, rgba(236, 72, 153, 0.18) 0%, rgba(88, 28, 135, 0.68) 100%);
+  border-color: rgba(236, 72, 153, 0.45);
+}
+
+.location-entity-icon {
+  width: 94px;
+  height: 94px;
+  border-radius: 14px;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.45);
 }
 
-.location-thing-icon img {
+.location-entity-card.is-npc .location-entity-icon {
+  border-color: rgba(236, 72, 153, 0.4);
+}
+
+.location-entity-icon img {
   width: 100%;
   height: 100%;
   -o-object-fit: cover;
@@ -439,18 +453,12 @@ p:not(:last-child) {
   display: block;
 }
 
-.location-thing-placeholder {
-  font-size: 1.6rem;
-  color: rgba(255, 255, 255, 0.65);
+.location-entity-placeholder {
+  font-size: 1.7rem;
+  color: rgba(255, 255, 255, 0.7);
 }
 
-.location-thing-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.location-thing-name {
+.location-entity-name {
   font-weight: 600;
   color: #ffffff;
   font-size: 0.95rem;

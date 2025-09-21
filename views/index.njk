@@ -51,13 +51,13 @@
                                         </details>
                                         <details class="location-section location-npcs" open>
                                             <summary>NPCs</summary>
-                                            <div class="location-npcs-content" id="locationNPCs">
+                                            <div class="location-entity-grid" id="locationNPCs">
                                                 <div class="location-npc-empty">No notable NPCs present.</div>
                                             </div>
                                         </details>
                                         <details class="location-section location-things" open>
                                             <summary>Items &amp; Scenery</summary>
-                                            <div class="location-things-content" id="locationThings">
+                                            <div class="location-entity-grid" id="locationThings">
                                                 <div class="location-thing-empty">No notable items or scenery present.</div>
                                             </div>
                                         </details>
@@ -715,13 +715,13 @@
                             locationNPCs.innerHTML = '';
                             npcs.forEach(npc => {
                                 const card = document.createElement('div');
-                                card.className = 'npc-card';
+                                card.className = 'location-entity-card is-npc';
 
                                 const portrait = document.createElement('div');
-                                portrait.className = 'npc-portrait';
+                                portrait.className = 'location-entity-icon';
 
                                 if (npc.imageId) {
-                                    portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'npc-portrait-placeholder\\'>🎭</div>'">`;
+                                    portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-entity-placeholder\\'>🎭</div>'">`;
                                     const portraitImg = portrait.querySelector('img');
                                     if (portraitImg) {
                                         portraitImg.dataset.lightboxImage = portraitImg.src;
@@ -730,11 +730,11 @@
                                         bindLightboxElement(portraitImg);
                                     }
                                 } else {
-                                    portrait.innerHTML = '<div class="npc-portrait-placeholder">🎭</div>';
+                                    portrait.innerHTML = '<div class="location-entity-placeholder">🎭</div>';
                                 }
 
                                 const nameEl = document.createElement('div');
-                                nameEl.className = 'npc-name';
+                                nameEl.className = 'location-entity-name';
                                 nameEl.textContent = npc.name || 'Unknown NPC';
 
                                 card.appendChild(portrait);
@@ -770,12 +770,12 @@
                             locationThings.innerHTML = '';
                             things.forEach(thing => {
                                 const card = document.createElement('div');
-                                card.className = `location-thing-card ${thing.thingType === 'scenery' ? 'is-scenery' : 'is-item'}`;
+                                card.className = `location-entity-card ${thing.thingType === 'scenery' ? 'is-scenery' : 'is-item'}`;
 
                                 const icon = document.createElement('div');
-                                icon.className = 'location-thing-icon';
+                                icon.className = 'location-entity-icon';
                                 if (thing.imageId) {
-                                    icon.innerHTML = `<img src="/generated-images/${thing.imageId}.png" alt="${thing.name || 'Location item'}" onerror="this.parentElement.innerHTML='<div class=\\'location-thing-placeholder\\'>${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>'">`;
+                                    icon.innerHTML = `<img src="/generated-images/${thing.imageId}.png" alt="${thing.name || 'Location item'}" onerror="this.parentElement.innerHTML='<div class=\\'location-entity-placeholder\\'>${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>'">`;
                                     const img = icon.querySelector('img');
                                     if (img) {
                                         img.dataset.lightboxImage = img.src;
@@ -784,11 +784,11 @@
                                         bindLightboxElement(img);
                                     }
                                 } else {
-                                    icon.innerHTML = `<div class="location-thing-placeholder">${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>`;
+                                    icon.innerHTML = `<div class="location-entity-placeholder">${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>`;
                                 }
 
                                 const nameEl = document.createElement('div');
-                                nameEl.className = 'location-thing-name';
+                                nameEl.className = 'location-entity-name';
                                 nameEl.textContent = thing.name || 'Unknown Object';
                                 applyRarityClass(nameEl, thing.rarity);
 
