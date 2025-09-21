@@ -1,0 +1,39 @@
+<template>
+    <comment>This prompt runs after the region or location generator prompt, with the context from the generator still included, hence the lack of a system prompt and other context.</comment>
+    <role>NPC name regenerator</role>
+<generationPrompt>
+<context>
+Here's a list of existing NPCs:
+{% for npc in existingNpcs %}- {{ npc.name }}: {{ npc.shortDescription }} 
+{% endfor %}
+
+</context>
+
+Here is a list of NPC names that use banned words:
+<npcsToRegenerateName>
+{% for npc in npcToRegenerateName %}- {{ npc.name }}
+<npc>
+  <name>{{ npc.name }}</name>
+  <shortDescription>{{ npc.shortDescription }}</shortDescription>
+  <description>{{ npc.detailedDescription }}</description>
+</npc>
+{% endfor %}
+</npcsToRegenerateName>
+
+Banned words:
+{% for word in bannedWords %}- {{ word }}
+{% endfor %}
+
+Give each NPC a different name that fits the setting and culture of the location, and does not use any of the banned words. The name should be unique among all NPCs in this region. Return them in this format:
+
+<npcs>
+  <npc>
+    <oldName>original npc name</oldName>
+    <name>new npc name</name>
+  </npc>
+  <npc>
+    ... the rest of the npcs ...
+  </npc>
+</npcs>
+</generationPrompt>
+</template>

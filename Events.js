@@ -106,11 +106,32 @@ class Events {
                 };
             }).filter(Boolean),
             party_change: raw => this.splitSemicolonEntries(raw).map(entry => {
-                const [name, action] = this.extractArrowParts(entry, 2);
+                if (!entry) {
+                    return null;
+                }
+
+                let name = null;
+                let action = null;
+
+                const arrowParts = this.extractArrowParts(entry, 2);
+                if (arrowParts.length === 2) {
+                    [name, action] = arrowParts;
+                } else {
+                    const match = entry.match(/^(.*?)(?:\s+(joined|left))$/i);
+                    if (match) {
+                        name = match[1];
+                        action = match[2];
+                    }
+                }
+
                 if (!name || !action) {
                     return null;
                 }
-                return { name, action: action.trim().toLowerCase() };
+
+                return {
+                    name: name.trim(),
+                    action: action.trim().toLowerCase()
+                };
             }).filter(Boolean),
             pick_up_item: raw => this.splitSemicolonEntries(raw),
             status_effect_change: raw => this.splitSemicolonEntries(raw).map(entry => {
