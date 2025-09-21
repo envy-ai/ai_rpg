@@ -606,6 +606,12 @@ p:not(:last-child) {
   font-size: 2rem;
 }
 
+.inventory-icon.has-image {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
 .inventory-name {
   font-size: 0.85rem;
   text-align: center;
