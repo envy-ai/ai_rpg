@@ -19,7 +19,7 @@ module.exports = function registerApiRoutes(scope) {
 
             const routeLabel = req.path;
             millisecond_timestamp = Date.now();
-            console.log(`❔ ${routeLabel} request received at ${new Date().toISOString()}`);
+            console.log(`⬅️ ${routeLabel} request received at ${new Date().toISOString()}`);
 
             res.on('finish', () => {
                 const duration = (Date.now() - millisecond_timestamp) / 1000;
