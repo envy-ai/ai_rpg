@@ -2621,6 +2621,9 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 metadata.locationId = resolvedLocation.id;
                 delete metadata.ownerId;
                 thing.metadata = metadata;
+                if (typeof resolvedLocation.addThingId === 'function') {
+                    resolvedLocation.addThingId(thing.id);
+                }
             }
 
             if (shouldGenerateThingImage(thing)) {
@@ -2672,11 +2675,14 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     owner.addInventoryItem(thing);
                     fallbackMetadata.ownerId = owner.id;
                     delete fallbackMetadata.locationId;
-                } else if (location) {
-                    fallbackMetadata.locationId = location.id;
+                } else if (resolvedLocation) {
+                    fallbackMetadata.locationId = resolvedLocation.id;
                     delete fallbackMetadata.ownerId;
                 }
                 thing.metadata = fallbackMetadata;
+                if (!fallbackMetadata.ownerId && fallbackMetadata.locationId && typeof resolvedLocation?.addThingId === 'function') {
+                    resolvedLocation.addThingId(thing.id);
+                }
                 fallbacks.push(thing);
             } catch (creationError) {
                 console.warn(`Failed to create fallback item for "${name}":`, creationError.message);

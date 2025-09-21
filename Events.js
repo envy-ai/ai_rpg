@@ -200,6 +200,67 @@ class Events {
             .filter(entry => entry.length > 0 && !this.isNoEventAnswer(entry));
     }
 
+    static resolveLocationCandidate(candidate) {
+        if (!candidate) {
+            return null;
+        }
+
+        if (typeof candidate === 'string') {
+            const { Location } = this.deps;
+            if (Location && typeof Location.get === 'function') {
+                try {
+                    return Location.get(candidate) || null;
+                } catch (_) {
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        if (typeof candidate === 'object' && typeof candidate.id === 'string') {
+            return candidate;
+        }
+
+        return null;
+    }
+
+    static addThingToLocation(thing, candidate) {
+        if (!thing) {
+            return;
+        }
+
+        const location = this.resolveLocationCandidate(candidate);
+        if (!location || typeof location.addThingId !== 'function') {
+            return;
+        }
+
+        location.addThingId(thing.id);
+    }
+
+    static removeThingFromLocation(thing, candidate) {
+        if (!thing) {
+            return;
+        }
+
+        const location = this.resolveLocationCandidate(candidate);
+        if (!location || typeof location.removeThingId !== 'function') {
+            return;
+        }
+
+        location.removeThingId(thing.id);
+    }
+
+    static detachThingFromKnownLocation(thing) {
+        if (!thing) {
+            return;
+        }
+
+        const metadata = thing.metadata || {};
+        if (metadata.locationId) {
+            this.removeThingFromLocation(thing, metadata.locationId);
+        }
+    }
+
     static extractArrowParts(entry, expectedParts) {
         if (!entry || typeof entry !== 'string') {
             return [];
@@ -329,6 +390,9 @@ class Events {
             }
 
             const metadata = thing.metadata || {};
+            if (metadata.locationId) {
+                this.removeThingFromLocation(thing, metadata.locationId);
+            }
             delete metadata.ownerId;
             delete metadata.locationId;
             metadata.consumedAt = new Date().toISOString();
@@ -386,9 +450,11 @@ class Events {
                 actor.removeInventoryItem(thing);
             }
             const metadata = thing.metadata || {};
+            this.detachThingFromKnownLocation(thing);
             metadata.locationId = location.id;
             delete metadata.ownerId;
             thing.metadata = metadata;
+            this.addThingToLocation(thing, location);
         }
     }
 
@@ -449,10 +515,12 @@ class Events {
                 continue;
             }
             if (location) {
+                this.detachThingFromKnownLocation(thing);
                 const metadata = thing.metadata || {};
                 metadata.locationId = location.id;
                 delete metadata.ownerId;
                 thing.metadata = metadata;
+                this.addThingToLocation(thing, location);
             }
         }
     }
@@ -781,6 +849,13 @@ class Events {
                 continue;
             }
 
+            const existingMetadata = thing.metadata || {};
+            if (existingMetadata.locationId) {
+                this.removeThingFromLocation(thing, existingMetadata.locationId);
+            } else if (context.location) {
+                this.removeThingFromLocation(thing, context.location);
+            }
+
             if (typeof player.addInventoryItem === 'function') {
                 player.addInventoryItem(thing);
             }
@@ -900,6 +975,11 @@ class Events {
                 }
             }
 
+            const currentMetadata = thing.metadata || {};
+            if (currentMetadata.locationId) {
+                this.removeThingFromLocation(thing, currentMetadata.locationId);
+            }
+
             const giverActor = findActorByName(giver);
             if (giverActor && typeof giverActor.removeInventoryItem === 'function') {
                 giverActor.removeInventoryItem(thing);
@@ -921,6 +1001,9 @@ class Events {
                 delete metadata.ownerId;
                 metadata.locationId = context.location ? context.location.id : metadata.locationId;
                 thing.metadata = metadata;
+                if (metadata.locationId) {
+                    this.addThingToLocation(thing, metadata.locationId);
+                }
             }
         }
     }
