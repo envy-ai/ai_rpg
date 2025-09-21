@@ -778,40 +778,13 @@
                                     icon.innerHTML = `<div class="location-thing-placeholder">${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>`;
                                 }
 
-                                const info = document.createElement('div');
-                                info.className = 'location-thing-info';
-
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-thing-name';
                                 nameEl.textContent = thing.name || 'Unknown Object';
                                 applyRarityClass(nameEl, thing.rarity);
 
-                                const metaEl = document.createElement('div');
-                                metaEl.className = 'location-thing-meta';
-                                const metaParts = [];
-                                if (thing.thingType) {
-                                    metaParts.push(thing.thingType === 'scenery' ? 'Scenery' : 'Item');
-                                }
-                                if (thing.rarity) {
-                                    metaParts.push(thing.rarity);
-                                }
-                                if (thing.itemTypeDetail) {
-                                    metaParts.push(thing.itemTypeDetail);
-                                }
-                                metaEl.textContent = metaParts.join(' • ');
-
-                                const descriptionEl = document.createElement('div');
-                                descriptionEl.className = 'location-thing-description';
-                                descriptionEl.textContent = thing.description || 'No description provided.';
-
-                                info.appendChild(nameEl);
-                                if (metaParts.length) {
-                                    info.appendChild(metaEl);
-                                }
-                                info.appendChild(descriptionEl);
-
                                 card.appendChild(icon);
-                                card.appendChild(info);
+                                card.appendChild(nameEl);
 
                                 if (tooltipController && typeof tooltipController.show === 'function') {
                                     card.addEventListener('mouseenter', (event) => {

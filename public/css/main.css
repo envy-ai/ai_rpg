@@ -403,12 +403,15 @@ p:not(:last-child) {
 
 .location-thing-card {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  padding: 10px;
+  padding: 14px 12px;
   transition: background 0.2s ease, border 0.2s ease;
 }
 
@@ -418,8 +421,8 @@ p:not(:last-child) {
 }
 
 .location-thing-icon {
-  min-width: 90px;
-  min-height: 90px;
+  width: 90px;
+  height: 90px;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
@@ -595,6 +598,10 @@ p:not(:last-child) {
   color: #ffffff;
 }
 
+.rarity-junk {
+  color: #9ca3af;
+}
+
 .rarity-common {
   color: #d1d5db;
 }
@@ -607,7 +614,7 @@ p:not(:last-child) {
   color: #60a5fa;
 }
 
-.rarity-epic {
+p .rarity-epic {
   color: #c084fc;
 }
 
