@@ -397,6 +397,47 @@
             return escapeHtml(value);
         };
 
+        const rarityClassLookup = [
+            { key: 'mythic', className: 'rarity-mythic' },
+            { key: 'legendary', className: 'rarity-legendary' },
+            { key: 'epic', className: 'rarity-epic' },
+            { key: 'very rare', className: 'rarity-rare' },
+            { key: 'rare', className: 'rarity-rare' },
+            { key: 'uncommon', className: 'rarity-uncommon' },
+            { key: 'common', className: 'rarity-common' },
+            { key: 'artifact', className: 'rarity-artifact' },
+            { key: 'unique', className: 'rarity-unique' },
+            { key: 'exotic', className: 'rarity-exotic' },
+            { key: 'ancient', className: 'rarity-ancient' },
+            { key: 'masterwork', className: 'rarity-masterwork' }
+        ];
+
+        const getRarityClass = (rarity) => {
+            if (!rarity && rarity !== 0) {
+                return '';
+            }
+            const normalized = String(rarity).trim().toLowerCase();
+            if (!normalized) {
+                return '';
+            }
+            for (const entry of rarityClassLookup) {
+                if (normalized === entry.key || normalized.includes(entry.key)) {
+                    return entry.className;
+                }
+            }
+            return '';
+        };
+
+        const applyRarityClass = (element, rarity) => {
+            if (!element) {
+                return;
+            }
+            const rarityClass = getRarityClass(rarity);
+            if (rarityClass) {
+                element.classList.add(rarityClass);
+            }
+        };
+
         const formatThingTooltip = (thing = {}) => {
             const normalizedType = normalizeThingType(thing);
 
@@ -435,7 +476,13 @@
                 detailItems.push({ label: 'Quantity', value: thing.quantity });
             }
 
-            const nameHtml = `<div class="tooltip-thing-name">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
+            const rarityClass = getRarityClass(thing.rarity);
+            const nameClasses = ['tooltip-thing-name'];
+            if (rarityClass) {
+                nameClasses.push(rarityClass);
+            }
+
+            const nameHtml = `<div class="${nameClasses.join(' ')}">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
             const metaHtml = metaParts.length
                 ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
                 : '';
@@ -737,6 +784,7 @@
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-thing-name';
                                 nameEl.textContent = thing.name || 'Unknown Object';
+                                applyRarityClass(nameEl, thing.rarity);
 
                                 const metaEl = document.createElement('div');
                                 metaEl.className = 'location-thing-meta';
@@ -1079,6 +1127,7 @@
                     const name = document.createElement('div');
                     name.className = 'inventory-name';
                     name.textContent = item.name || 'Unknown Item';
+                    applyRarityClass(name, item.rarity);
 
                     card.appendChild(icon);
                     card.appendChild(name);

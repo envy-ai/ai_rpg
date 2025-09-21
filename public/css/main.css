@@ -465,6 +465,69 @@ p:not(:last-child) {
   color: rgba(255, 255, 255, 0.8);
 }
 
+.tooltip-thing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tooltip-thing.is-item {
+  border-left: 3px solid rgba(251, 191, 36, 0.45);
+  padding-left: 10px;
+}
+
+.tooltip-thing.is-scenery {
+  border-left: 3px solid rgba(125, 211, 252, 0.45);
+  padding-left: 10px;
+}
+
+.tooltip-thing-name {
+  font-weight: 600;
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.tooltip-thing-meta {
+  font-size: 0.7rem;
+  color: rgba(148, 163, 184, 0.95);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tooltip-thing-description {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.92);
+  line-height: 1.4;
+}
+
+.tooltip-thing-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.tooltip-thing-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.72rem;
+  color: rgba(203, 213, 225, 0.95);
+}
+
+.tooltip-thing-detail-label {
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tooltip-thing-detail-value {
+  flex: 1;
+  text-align: right;
+  color: rgba(248, 250, 252, 0.95);
+}
+
 .inventory-panel {
   display: flex;
   flex-direction: column;
@@ -530,6 +593,50 @@ p:not(:last-child) {
   font-size: 0.85rem;
   text-align: center;
   color: #ffffff;
+}
+
+.rarity-common {
+  color: #d1d5db;
+}
+
+.rarity-uncommon {
+  color: #34d399;
+}
+
+.rarity-rare {
+  color: #60a5fa;
+}
+
+.rarity-epic {
+  color: #c084fc;
+}
+
+.rarity-legendary {
+  color: #fbbf24;
+}
+
+.rarity-mythic {
+  color: #f87171;
+}
+
+.rarity-artifact {
+  color: #f472b6;
+}
+
+.rarity-unique {
+  color: #fb923c;
+}
+
+.rarity-exotic {
+  color: #2dd4bf;
+}
+
+.rarity-ancient {
+  color: #fde68a;
+}
+
+.rarity-masterwork {
+  color: #a855f7;
 }
 
 .inventory-floating-tooltip {

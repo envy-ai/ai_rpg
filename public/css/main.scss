@@ -609,6 +609,50 @@ p:not(:last-child) {
   color: #ffffff;
 }
 
+.rarity-common {
+  color: #d1d5db;
+}
+
+.rarity-uncommon {
+  color: #34d399;
+}
+
+.rarity-rare {
+  color: #60a5fa;
+}
+
+.rarity-epic {
+  color: #c084fc;
+}
+
+.rarity-legendary {
+  color: #fbbf24;
+}
+
+.rarity-mythic {
+  color: #f87171;
+}
+
+.rarity-artifact {
+  color: #f472b6;
+}
+
+.rarity-unique {
+  color: #fb923c;
+}
+
+.rarity-exotic {
+  color: #2dd4bf;
+}
+
+.rarity-ancient {
+  color: #fde68a;
+}
+
+.rarity-masterwork {
+  color: #a855f7;
+}
+
 .inventory-floating-tooltip {
   position: fixed;
   display: none;
