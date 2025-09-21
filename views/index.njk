@@ -321,6 +321,8 @@
         </div>
     </div>
 
+    <script src="/vendor/fitty.min.js"></script>
+    <script src="/js/fitty-init.js"></script>
     <script src="/vendor/cytoscape.min.js"></script>
     <script src="/vendor/layout-base.js"></script>
     <script src="/vendor/cose-base.js"></script>
@@ -813,6 +815,8 @@
                         }
                     }
 
+                    try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
+
                     if (location.pendingImageJobId) {
                         startImagePolling(location.id, location.pendingImageJobId);
                     } else {
@@ -851,6 +855,7 @@
                     if (locationExits) {
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                     }
+                    try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
                     stopImagePolling();
                     hideLocationOverlay();
                     lastRenderedLocation = null;
@@ -1010,6 +1015,7 @@
                 iconElement.classList.remove('has-image');
                 iconElement.classList.remove('loading');
                 iconElement.style.removeProperty('background-image');
+                iconElement.classList.add('inventory-icon-placeholder');
                 iconElement.textContent = fallbackSymbol || selectInventoryIcon(item);
                 delete iconElement.dataset.lightboxImage;
                 delete iconElement.dataset.lightboxAlt;
@@ -1019,6 +1025,7 @@
             const applyImageToIcon = (iconElement, imageUrl, item) => {
                 if (!iconElement || !imageUrl) return;
                 iconElement.classList.remove('loading');
+                iconElement.classList.remove('inventory-icon-placeholder');
                 iconElement.classList.add('has-image');
                 iconElement.style.backgroundImage = `url('${imageUrl}')`;
                 iconElement.textContent = '';
@@ -1136,6 +1143,8 @@
                         }
                     });
                 });
+
+                try { document.dispatchEvent(new Event('inventory:updated')); } catch (_) {}
             }
 
             function selectInventoryIcon(item = {}) {

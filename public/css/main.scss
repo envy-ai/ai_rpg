@@ -530,7 +530,6 @@ p:not(:last-child) {
   font-size: 0.9rem;
 }
 
-
 .location-entity-card,
 .inventory-card {
   position: relative;
@@ -540,12 +539,16 @@ p:not(:last-child) {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.12) 0%, rgba(15, 23, 42, 0.78) 100%);
+  background: radial-gradient(
+    circle at top,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(15, 23, 42, 0.78) 100%
+  );
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 14px;
-  padding: 16px 14px;
-  min-width: 130px;
-  max-width: 150px;
+  padding: 10px;
+  min-width: 120px;
+  max-width: 120px;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease;
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.35);
 }
@@ -558,17 +561,29 @@ p:not(:last-child) {
 }
 
 .location-entity-card.is-scenery {
-  background: radial-gradient(circle at top, rgba(125, 211, 252, 0.2) 0%, rgba(30, 64, 175, 0.6) 100%);
+  background: radial-gradient(
+    circle at top,
+    rgba(125, 211, 252, 0.2) 0%,
+    rgba(30, 64, 175, 0.6) 100%
+  );
   border-color: rgba(125, 211, 252, 0.5);
 }
 
 .location-entity-card.is-item,
 .inventory-card {
-  background: radial-gradient(circle at top, rgba(59, 130, 246, 0.18) 0%, rgba(15, 23, 42, 0.75) 100%);
+  background: radial-gradient(
+    circle at top,
+    rgba(59, 130, 246, 0.18) 0%,
+    rgba(15, 23, 42, 0.75) 100%
+  );
 }
 
 .location-entity-card.is-npc {
-  background: radial-gradient(circle at top, rgba(236, 72, 153, 0.18) 0%, rgba(88, 28, 135, 0.68) 100%);
+  background: radial-gradient(
+    circle at top,
+    rgba(236, 72, 153, 0.18) 0%,
+    rgba(88, 28, 135, 0.68) 100%
+  );
   border-color: rgba(236, 72, 153, 0.45);
 }
 
@@ -576,6 +591,7 @@ p:not(:last-child) {
 .inventory-icon {
   width: 94px;
   height: 94px;
+  min-height: 94px;
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
@@ -588,7 +604,6 @@ p:not(:last-child) {
 }
 
 .location-entity-card.is-npc .location-entity-icon {
-  border-radius: 50%;
   border-color: rgba(236, 72, 153, 0.4);
 }
 
@@ -617,6 +632,11 @@ p:not(:last-child) {
   font-weight: 600;
   color: #ffffff;
   font-size: 0.95rem;
+  width: 100%;
+  text-align: center;
+  margin: 0;
+  min-height: 80px;
+  max-height: 80px;
 }
 
 .rarity-junk {
