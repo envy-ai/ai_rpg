@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const unspentField = document.getElementById('unspent-skill-points-input');
     if (unspentField) {
-      const nextValue = playerData.unspentSkillPoints ?? parseInt(unspentField.value) || 0;
+      const nextValue = playerData.unspentSkillPoints ? parseInt(unspentField.value) : 0;
       unspentField.value = nextValue;
       unspentField.dataset.default = nextValue;
     }

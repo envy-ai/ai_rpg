@@ -385,7 +385,7 @@ class AIRPGChat {
         this.locationRefreshTimers = uniqueDelays.map(delay => {
             const timerId = setTimeout(() => {
                 Promise.resolve(this.checkLocationUpdate())
-                    .catch(() => {})
+                    .catch(() => { })
                     .finally(() => {
                         this.locationRefreshTimers = this.locationRefreshTimers.filter(id => id !== timerId);
                         if (this.locationRefreshTimers.length === 0) {
@@ -679,6 +679,8 @@ class AIRPGChat {
         this.sendButton.disabled = true;
         this.showLoading();
 
+        let shouldRefreshLocation = false;
+
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -698,6 +700,7 @@ class AIRPGChat {
             } else {
                 this.addMessage('ai', data.response, false, data.debug);
                 this.chatHistory.push({ role: 'assistant', content: data.response });
+                shouldRefreshLocation = true;
 
                 if (data.eventChecks) {
                     this.addEventMessage(data.eventChecks);
@@ -709,18 +712,24 @@ class AIRPGChat {
 
                 if (data.events) {
                     this.addEventSummaries(data.events);
+                    shouldRefreshLocation = true;
                 }
 
                 if (data.plausibility) {
                     this.addPlausibilityMessage(data.plausibility);
                 }
-
-                // Check for location updates after AI response
-                this.checkLocationUpdate();
             }
         } catch (error) {
             this.hideLoading();
             this.addMessage('system', `Connection error: ${error.message}`, true);
+        }
+
+        if (shouldRefreshLocation) {
+            try {
+                await this.checkLocationUpdate();
+            } catch (refreshError) {
+                console.warn('Failed to refresh location after chat response:', refreshError);
+            }
         }
 
         this.sendButton.disabled = false;
@@ -728,6 +737,7 @@ class AIRPGChat {
     }
 
     async checkLocationUpdate() {
+        console.log('Checking for location update...');
         try {
             const response = await fetch('/api/player', { cache: 'no-store' });
             const result = await response.json();
@@ -749,6 +759,7 @@ class AIRPGChat {
                         cache: 'no-store'
                     });
                     const locationResult = await locationResponse.json();
+                    console.log('Location details fetched:', locationResult);
 
                     if (locationResult.success && locationResult.location) {
                         // Update location display if the updateLocationDisplay function exists
@@ -761,8 +772,11 @@ class AIRPGChat {
         } catch (error) {
             console.log('Could not check location update:', error);
         }
+        console.log("Location update check complete.");
     }
 }
+
+console.log("chat.js loaded");
 
 // Initialize the app when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
