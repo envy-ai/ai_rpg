@@ -239,7 +239,7 @@ class Thing {
       throw new Error('Invalid data provided to Thing.fromJSON');
     }
 
-    return new Thing({
+    const thing = new Thing({
       id: data.id,
       name: data.name,
       description: data.description,
@@ -250,6 +250,15 @@ class Thing {
       metadata: data.metadata,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
     });
+
+    if (data.createdAt && typeof data.createdAt === 'string') {
+      thing.#createdAt = data.createdAt;
+    }
+    if (data.lastUpdated && typeof data.lastUpdated === 'string') {
+      thing.#lastUpdated = data.lastUpdated;
+    }
+
+    return thing;
   }
 
   #normalizeStatusEffects(effects = []) {

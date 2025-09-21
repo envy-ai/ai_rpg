@@ -226,6 +226,33 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            if (isForcedEventAction) {
+                const responseData = {
+                    response: `[Forced] ${forcedEventText || 'Event processed.'}`
+                };
+
+                if (forcedEventResult) {
+                    if (forcedEventResult.html) {
+                        responseData.eventChecks = forcedEventResult.html;
+                    }
+                    if (forcedEventResult.structured) {
+                        responseData.events = forcedEventResult.structured;
+                    }
+                }
+
+                if (debugInfo) {
+                    responseData.debug = {
+                        ...debugInfo,
+                        actionResolution: null,
+                        plausibilityStructured: null,
+                        eventStructured: forcedEventResult?.structured || null
+                    };
+                }
+
+                res.json(responseData);
+                return;
+            }
+
             // Use configuration from config.yaml
             const endpoint = config.ai.endpoint;
             const apiKey = config.ai.apiKey;
@@ -2370,6 +2397,15 @@ module.exports = function registerApiRoutes(scope) {
                 JSON.stringify(imagesData, null, 2)
             );
 
+            // Save world things (items and scenery)
+            const thingsData = Object.fromEntries(
+                Array.from(things.entries()).map(([id, thing]) => [id, thing.toJSON()])
+            );
+            fs.writeFileSync(
+                path.join(saveDir, 'things.json'),
+                JSON.stringify(thingsData, null, 2)
+            );
+
             // Save all players data
             const allPlayersData = Object.fromEntries(
                 Array.from(players.entries()).map(([id, player]) => [id, player.toJSON()])
@@ -2396,6 +2432,7 @@ module.exports = function registerApiRoutes(scope) {
                 gameVersion: '1.0.0',
                 chatHistoryLength: chatHistory.length,
                 totalPlayers: players.size,
+                totalThings: things.size,
                 totalLocations: gameLocations.size,
                 totalLocationExits: gameLocationExits.size,
                 totalRegions: regions.size,
@@ -2471,6 +2508,28 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             Player.setAvailableSkills(skills);
+
+            // Load world things before players so inventories can resolve
+            const thingsPath = path.join(saveDir, 'things.json');
+            things.clear();
+            if (typeof Thing.clear === 'function') {
+                Thing.clear();
+            }
+            if (fs.existsSync(thingsPath)) {
+                try {
+                    const thingsData = JSON.parse(fs.readFileSync(thingsPath, 'utf8')) || {};
+                    for (const [id, payload] of Object.entries(thingsData)) {
+                        try {
+                            const thing = Thing.fromJSON(payload);
+                            things.set(id, thing);
+                        } catch (thingError) {
+                            console.warn('Skipping invalid thing entry:', thingError.message);
+                        }
+                    }
+                } catch (thingLoadError) {
+                    console.warn('Failed to load things from save:', thingLoadError.message);
+                }
+            }
 
             // Load all players first
             const allPlayersPath = path.join(saveDir, 'allPlayers.json');
@@ -2590,6 +2649,7 @@ module.exports = function registerApiRoutes(scope) {
                 loadedData: {
                     currentPlayer: currentPlayer ? currentPlayer.getStatus() : null,
                     totalPlayers: players.size,
+                    totalThings: things.size,
                     totalLocations: gameLocations.size,
                     totalLocationExits: gameLocationExits.size,
                     chatHistoryLength: chatHistory.length,

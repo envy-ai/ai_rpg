@@ -611,11 +611,12 @@ class AIRPGChat {
     }
 
     async sendMessage() {
-        const message = this.messageInput.value.trim();
+        const rawInput = this.messageInput.value;
+        const message = rawInput.trim();
         if (!message) return;
 
         this.addMessage('user', message);
-        this.chatHistory.push({ role: 'user', content: message });
+        this.chatHistory.push({ role: 'user', content: rawInput });
 
         this.messageInput.value = '';
         this.sendButton.disabled = true;
