@@ -421,6 +421,76 @@
             const locationThings = document.getElementById('locationThings');
             let lastRenderedLocation = null;
 
+            const escapeHtml = (value) => {
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
+
+            const formatDetailValue = (value) => {
+                if (Array.isArray(value)) {
+                    return value.map(item => escapeHtml(item)).join(', ');
+                }
+                return escapeHtml(value);
+            };
+
+            const formatThingTooltip = (thing = {}) => {
+                const metaParts = [];
+                if (thing.thingType) {
+                    metaParts.push(thing.thingType === 'scenery' ? 'Scenery' : 'Item');
+                }
+                if (thing.rarity) {
+                    metaParts.push(thing.rarity);
+                }
+                if (thing.itemTypeDetail) {
+                    metaParts.push(thing.itemTypeDetail);
+                }
+
+                const detailItems = [];
+                if (thing.metadata) {
+                    const { value, weight, properties } = thing.metadata;
+                    if (value) {
+                        detailItems.push({ label: 'Value', value });
+                    }
+                    if (weight) {
+                        detailItems.push({ label: 'Weight', value: weight });
+                    }
+                    if (properties) {
+                        detailItems.push({ label: 'Properties', value: properties });
+                    }
+                }
+
+                const nameHtml = `<div class="tooltip-thing-name">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
+                const metaHtml = metaParts.length
+                    ? `<div class="tooltip-thing-meta">${metaParts.map(part => escapeHtml(part)).join(' • ')}</div>`
+                    : '';
+                const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
+                const detailsHtml = detailItems.length
+                    ? `<div class="tooltip-thing-details">${detailItems.map(item => `
+                            <div class="tooltip-thing-detail">
+                                <span class="tooltip-thing-detail-label">${escapeHtml(item.label)}</span>
+                                <span class="tooltip-thing-detail-value">${formatDetailValue(item.value)}</span>
+                            </div>`).join('')}</div>`
+                    : '';
+
+                const cardClass = thing.thingType === 'scenery' ? 'is-scenery' : 'is-item';
+
+                return `
+                    <div class="tooltip-thing ${cardClass}">
+                        ${nameHtml}
+                        ${metaHtml}
+                        ${descriptionHtml}
+                        ${detailsHtml}
+                    </div>
+                `.trim();
+            };
+
             function showLocationOverlay(message = 'Loading location...') {
                 try {
                     window.floatingTooltipController?.hide?.();
@@ -657,15 +727,8 @@
 
                                 if (tooltipController && typeof tooltipController.show === 'function') {
                                     card.addEventListener('mouseenter', (event) => {
-                                        const metadataLines = [];
-                                        if (thing.metadata) {
-                                            const { value, weight, properties } = thing.metadata;
-                                            if (value) metadataLines.push(`Value: ${value}`);
-                                            if (weight) metadataLines.push(`Weight: ${weight}`);
-                                            if (properties) metadataLines.push(properties);
-                                        }
-                                        const tooltipContent = [thing.description || '', metadataLines.join(' • ')].filter(Boolean).join('\n');
-                                        tooltipController.show(tooltipContent || 'No additional details.', event, { allowHTML: false });
+                                        const tooltipContent = formatThingTooltip(thing);
+                                        tooltipController.show(tooltipContent, event, { allowHTML: true });
                                     });
                                     card.addEventListener('mousemove', (event) => {
                                         tooltipController.move(event);
