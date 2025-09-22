@@ -2564,7 +2564,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     metadata
                 });
                 things.set(thing.id, thing);
-                character.addInventoryItem(thing);
+                character.addInventoryItem(thing, { suppressNpcEquip: true });
                 try {
                     const metadata = thing.metadata || {};
                     let metadataChanged = false;
@@ -2616,6 +2616,21 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
         } catch (logErr) {
             console.warn('Failed to write inventory log:', logErr.message);
+        }
+
+        try {
+            await equipBestGearForCharacter({
+                character,
+                characterDescriptor,
+                region,
+                location,
+                settingDescription,
+                endpoint: resolvedEndpoint,
+                model: resolvedModel,
+                apiKey: resolvedApiKey
+            });
+        } catch (equipError) {
+            console.warn('Failed to run equip-best flow:', equipError.message);
         }
 
         return createdThings;
@@ -3245,6 +3260,316 @@ function renderInventoryPrompt(context = {}) {
         return null;
     }
 }
+
+function renderEquipBestPrompt(context = {}) {
+    try {
+        const templateName = 'player-equipbest.xml.njk';
+        return promptEnv.render(templateName, {
+            setting: context.setting || 'A mysterious fantasy realm.',
+            region: {
+                regionName: context.region?.name || 'Unknown Region',
+                regionDescription: context.region?.description || 'No description provided.'
+            },
+            location: {
+                name: context.location?.name || 'Unknown Location',
+                description: context.location?.description || 'No description provided.'
+            },
+            character: {
+                name: context.character?.name || 'Unnamed Character',
+                role: context.character?.role || context.character?.class || 'adventurer',
+                description: context.character?.description || 'No description available.',
+                class: context.character?.class || context.character?.role || 'adventurer',
+                level: context.character?.level || 1,
+                race: context.character?.race || 'human',
+                equippableItems: Array.isArray(context.character?.equippableItems)
+                    ? context.character.equippableItems
+                    : [],
+                gearSlots: Array.isArray(context.character?.gearSlots)
+                    ? context.character.gearSlots
+                    : []
+            }
+        });
+    } catch (error) {
+        console.error('Error rendering equip-best template:', error);
+        return null;
+    }
+}
+
+function parseEquipBestAssignments(xmlContent) {
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return [];
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+        const errorNode = doc.getElementsByTagName('parsererror')[0];
+        if (errorNode) {
+            throw new Error(errorNode.textContent || 'XML parsing error');
+        }
+
+        const itemNodes = Array.from(doc.getElementsByTagName('item'));
+        const assignments = [];
+
+        const extract = (node, tag) => {
+            const child = node.getElementsByTagName(tag)[0];
+            if (!child || typeof child.textContent !== 'string') {
+                return null;
+            }
+            const value = child.textContent.trim();
+            return value || null;
+        };
+
+        for (const itemNode of itemNodes) {
+            const itemName = extract(itemNode, 'itemName');
+            const slotName = extract(itemNode, 'slotName');
+            if (itemName && slotName) {
+                assignments.push({ itemName, slotName });
+            }
+        }
+
+        return assignments;
+    } catch (error) {
+        console.warn('Failed to parse equip-best response:', error.message);
+        return [];
+    }
+}
+
+async function equipBestGearForCharacter({
+    character,
+    characterDescriptor = {},
+    region = null,
+    location = null,
+    settingDescription = '',
+    endpoint,
+    model,
+    apiKey
+}) {
+    if (!character || typeof character.getInventoryItems !== 'function' || typeof character.getGear !== 'function') {
+        return;
+    }
+
+    const gearMap = character.getGear();
+    const gearSlots = Object.entries(gearMap || {}).map(([slotName, slotData]) => ({
+        name: slotName,
+        type: slotData?.slotType || 'unknown'
+    }));
+
+    if (!gearSlots.length) {
+        return;
+    }
+
+    const inventoryItems = character.getInventoryItems();
+    if (!Array.isArray(inventoryItems) || !inventoryItems.length) {
+        return;
+    }
+
+    const equippableThings = inventoryItems.filter(item => {
+        if (!item) {
+            return false;
+        }
+        const slot = (typeof item.slot === 'string' ? item.slot : (item.metadata?.slot ?? null));
+        if (!slot || typeof slot !== 'string') {
+            return false;
+        }
+        return slot.trim().length > 0 && slot.trim().toLowerCase() !== 'n/a';
+    });
+
+    if (!equippableThings.length) {
+        return;
+    }
+
+    const equippableItems = equippableThings.map(item => {
+        const metadata = item.metadata || {};
+        const slotValue = typeof item.slot === 'string' ? item.slot : metadata.slot;
+        const normalizedSlot = slotValue && typeof slotValue === 'string'
+            ? slotValue.trim()
+            : null;
+
+        return {
+            name: item.name,
+            description: item.description,
+            itemOrScenery: 'item',
+            type: item.itemTypeDetail || metadata.itemTypeDetail || metadata.itemType || 'item',
+            slot: normalizedSlot ? [normalizedSlot] : [],
+            rarity: item.rarity || metadata.rarity || 'Common',
+            value: metadata.value ?? '',
+            weight: metadata.weight ?? '',
+            relativeLevel: metadata.relativeLevel ?? item.relativeLevel ?? 0,
+            attributeBonuses: Array.isArray(item.attributeBonuses) && item.attributeBonuses.length
+                ? item.attributeBonuses
+                : (Array.isArray(metadata.attributeBonuses) ? metadata.attributeBonuses : []),
+            causeStatusEffect: item.causeStatusEffect || metadata.causeStatusEffect || null,
+            properties: metadata.properties || ''
+        };
+    });
+
+    if (!equippableItems.length) {
+        return;
+    }
+
+    const promptVariables = {
+        setting: settingDescription,
+        region,
+        location,
+        character: {
+            name: character.name,
+            role: characterDescriptor.role || characterDescriptor.class || character.class || 'adventurer',
+            description: character.description,
+            class: characterDescriptor.class || character.class || 'adventurer',
+            level: character.level || 1,
+            race: characterDescriptor.race || character.race || 'human',
+            equippableItems,
+            gearSlots
+        }
+    };
+
+    const renderedTemplate = renderEquipBestPrompt(promptVariables);
+    if (!renderedTemplate) {
+        return;
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt;
+    const generationPrompt = parsedTemplate.generationPrompt;
+
+    if (!systemPrompt || !generationPrompt) {
+        console.warn('Equip-best template missing prompts, skipping equip phase.');
+        return;
+    }
+
+    const resolvedModel = model || config.ai.model;
+    const resolvedApiKey = apiKey || config.ai.apiKey;
+    const resolvedEndpoint = endpoint || (config.ai.endpoint.endsWith('/')
+        ? `${config.ai.endpoint}chat/completions`
+        : `${config.ai.endpoint}/chat/completions`);
+
+    if (!resolvedModel || !resolvedApiKey || !resolvedEndpoint) {
+        console.warn('Missing AI configuration for equip-best prompt.');
+        return;
+    }
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+
+    const requestData = {
+        model: resolvedModel,
+        messages,
+        max_tokens: 600,
+        temperature: config.ai.temperature || 0.7
+    };
+
+    let equipResponse = '';
+    const requestStart = Date.now();
+    try {
+        const response = await axios.post(resolvedEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${resolvedApiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+        equipResponse = response.data?.choices?.[0]?.message?.content || '';
+    } catch (error) {
+        console.warn('Equip-best API call failed:', error.message || error);
+        return;
+    }
+
+    const durationSeconds = (Date.now() - requestStart) / 1000;
+    const assignments = parseEquipBestAssignments(equipResponse);
+
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logPath = path.join(logDir, `equip_best_${character.id}.log`);
+        const logParts = [
+            formatDurationLine(durationSeconds),
+            '=== EQUIP-BEST PROMPT ===',
+            generationPrompt,
+            '\n=== EQUIP-BEST RESPONSE ===',
+            equipResponse,
+            '\n=== PARSED ASSIGNMENTS ===',
+            JSON.stringify(assignments, null, 2),
+            '\n'
+        ];
+        fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+    } catch (logError) {
+        console.warn('Failed to log equip-best response:', logError.message);
+    }
+
+    if (!assignments.length) {
+        return;
+    }
+
+    const inventoryByName = new Map();
+    for (const item of inventoryItems) {
+        if (item && typeof item.name === 'string') {
+            inventoryByName.set(item.name.toLowerCase(), item);
+        }
+    }
+
+    assignments.forEach(({ itemName, slotName }) => {
+        if (!itemName || !slotName) {
+            return;
+        }
+        const normalizedName = itemName.trim().toLowerCase();
+        const item = inventoryByName.get(normalizedName) || findThingByName(itemName);
+        if (!item) {
+            console.warn(`Equip-best assignment skipped - item "${itemName}" not found in inventory.`);
+            return;
+        }
+        const success = character.equipItemInSlot(item, slotName);
+        if (!success === true) {
+            console.warn(`Failed to equip ${item.name} to slot ${slotName} for ${character.name}: "${success}"`);
+        } else {
+            console.log(`Equipped ${item.name} to slot ${slotName} for ${character.name}`);
+        }
+    });
+}
+
+Player.setNpcInventoryChangeHandler(async ({ character }) => {
+    if (!character) {
+        return;
+    }
+
+    try {
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(settingSnapshot);
+
+        let locationObj = null;
+        if (character.currentLocation) {
+            try {
+                locationObj = Location.get(character.currentLocation);
+            } catch (_) {
+                locationObj = null;
+            }
+        }
+
+        const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
+
+        const descriptor = {
+            role: character.class || 'npc',
+            class: character.class || 'npc',
+            description: character.description,
+            race: character.race || 'unknown'
+        };
+
+        await equipBestGearForCharacter({
+            character,
+            characterDescriptor: descriptor,
+            region: regionObj,
+            location: locationObj,
+            settingDescription
+        });
+    } catch (error) {
+        console.warn('Automatic NPC equip failed:', error?.message || error);
+    }
+});
 
 function parseLocationNpcs(xmlContent) {
     try {

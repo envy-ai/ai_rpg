@@ -32,6 +32,7 @@ class Player {
     #gearSlots;
     #gearSlotsByType;
     #gearSlotNameIndex;
+    static #npcInventoryChangeHandler = null;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -41,6 +42,33 @@ class Player {
             this.#gearSlotDefinitions = this.#loadGearSlotDefinitions();
         }
         return this.#gearSlotDefinitions;
+    }
+
+    static setNpcInventoryChangeHandler(handler) {
+        if (handler && typeof handler !== 'function') {
+            throw new Error('NPC inventory change handler must be a function');
+        }
+        this.#npcInventoryChangeHandler = handler || null;
+    }
+
+    static #notifyNpcInventoryChange(player, payload) {
+        if (!player || !player.isNPC || !this.#npcInventoryChangeHandler) {
+            return;
+        }
+
+        try {
+            const result = this.#npcInventoryChangeHandler({
+                character: player,
+                ...payload
+            });
+            if (result && typeof result.then === 'function') {
+                result.catch(error => {
+                    console.warn('NPC inventory change handler failed:', error?.message || error);
+                });
+            }
+        } catch (error) {
+            console.warn('NPC inventory change handler errored:', error?.message || error);
+        }
     }
 
     static #loadGearSlotDefinitions() {
@@ -204,7 +232,7 @@ class Player {
             return;
         }
         for (const entry of items) {
-            this.#addInventoryThing(entry, { updateTimestamp: false });
+            this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true });
         }
     }
 
@@ -398,7 +426,7 @@ class Player {
         return null;
     }
 
-    #addInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+    #addInventoryThing(thingLike, { updateTimestamp = true, suppressNpcEquip = false } = {}) {
         const resolved = this.#resolveThing(thingLike);
         if (!resolved) {
             return false;
@@ -407,14 +435,20 @@ class Player {
         const previousSize = this.#inventory.size;
         this.#inventory.add(resolved);
 
-        if (updateTimestamp && this.#inventory.size !== previousSize) {
+        const added = this.#inventory.size !== previousSize;
+
+        if (updateTimestamp && added) {
             this.#lastUpdated = new Date().toISOString();
+        }
+
+        if (added && !suppressNpcEquip) {
+            Player.#notifyNpcInventoryChange(this, { changeType: 'add', item: resolved });
         }
 
         return true;
     }
 
-    #removeInventoryThing(thingLike, { updateTimestamp = true } = {}) {
+    #removeInventoryThing(thingLike, { updateTimestamp = true, suppressNpcEquip = false } = {}) {
         const resolved = this.#resolveThing(thingLike);
         if (!resolved) {
             return false;
@@ -425,6 +459,9 @@ class Player {
             this.unequipItemId(resolved.id, { suppressTimestamp: true });
             if (updateTimestamp) {
                 this.#lastUpdated = new Date().toISOString();
+            }
+            if (!suppressNpcEquip) {
+                Player.#notifyNpcInventoryChange(this, { changeType: 'remove', item: resolved });
             }
         }
         return removed;
@@ -1309,12 +1346,12 @@ class Player {
         return player;
     }
 
-    addInventoryItem(thingLike) {
-        return this.#addInventoryThing(thingLike);
+    addInventoryItem(thingLike, options = {}) {
+        return this.#addInventoryThing(thingLike, options);
     }
 
-    removeInventoryItem(thingLike) {
-        return this.#removeInventoryThing(thingLike);
+    removeInventoryItem(thingLike, options = {}) {
+        return this.#removeInventoryThing(thingLike, options);
     }
 
     hasInventoryItem(thingLike) {
@@ -1338,7 +1375,7 @@ class Player {
         this.#inventory.clear();
         if (Array.isArray(items)) {
             for (const entry of items) {
-                this.#addInventoryThing(entry, { updateTimestamp: false });
+                this.#addInventoryThing(entry, { updateTimestamp: false, suppressNpcEquip: true });
             }
         }
         this.#syncGearWithInventory();
@@ -1424,25 +1461,25 @@ class Player {
     equipItemInSlot(thingLike, slotName, { suppressTimestamp = false } = {}) {
         const item = this.#resolveThing(thingLike);
         if (!item || !slotName) {
-            return false;
+            return `Missing item or slot name: ` + `${!item ? 'item' : ''}${!item && !slotName ? ' and ' : ''}${!slotName ? 'slot name' : ''}`;
         }
         const resolvedSlotName = this.#resolveSlotName(slotName);
         if (!resolvedSlotName) {
-            return false;
+            return `Invalid slot name: ${slotName}`;
         }
 
         const slotData = this.#gearSlots.get(resolvedSlotName);
         if (!slotData) {
-            return false;
+            return `Slot not found: ${resolvedSlotName}`;
         }
 
         const itemSlotType = this.#normalizeSlotType(item.slot);
         if (!itemSlotType || itemSlotType === 'n/a' || itemSlotType !== slotData.slotType) {
-            return false;
+            return `Incompatible item slot type: ${itemSlotType} (expected: ${slotData.slotType})`;
         }
 
         if (!this.#inventory.has(item)) {
-            return false;
+            return `Item not found in inventory: ${item.id}`;
         }
 
         slotData.itemId = item.id;

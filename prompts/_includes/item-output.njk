@@ -1,0 +1,23 @@
+<item>
+  <name>{{ item.name }}</name>
+  <description>{{ item.description }}</description>
+  <itemOrScenery>{{ item.itemOrScenery }}</itemOrScenery>
+  <type>{{ item.type }}</type>
+  <slot>{% if item.slot %}{{ item.slot | join(", ") }}{% else %}N/A{% endif %}</slot>
+  <rarity>{{ item.rarity }}</rarity>
+  <value>{{ item.value }}</value>
+  <weight>{{ item.weight }}</weight>
+  <relativeLevel>{{ item.relativeLevel }}</relativeLevel>
+  <attributeBonuses>
+    {% if item.attributeBonuses %}{% for bonus in item.attributeBonuses %}<attributeBonus>
+      <attribute>{{ bonus.attribute }}</attribute>
+      <bonus>{{ bonus.bonus }}</bonus>
+    </attributeBonus>{% endfor %}{% endif %}
+  </attributeBonuses>
+  {% if item.causeStatusEffect %}<causeStatusEffect>
+    <name>{{ item.causeStatusEffect.name }}</name>
+    <description>{{ item.causeStatusEffect.description }}</description>
+    <duration>{{ item.causeStatusEffect.duration }}</duration>
+  </causeStatusEffect>{% endif %}
+  <properties>{{ item.properties }}</properties>
+</item>

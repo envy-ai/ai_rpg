@@ -1,0 +1,54 @@
+<template>
+<role>Character Inventory Equipper</role>
+    
+<systemPrompt>
+You are a an AI role-playing gamemaster.
+</systemPrompt>
+    
+<generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+<region>
+<name>{{ region.regionName }}</name>
+<description>{{ region.regionDescription }}</description>
+</region>
+<location>
+<name>{{ location.name }}</name>
+<description>{{ location.description }}</description>
+</location>
+<character>
+<name>{{ character.name }}</name>
+<role>{{ character.role }}</role>
+<description>{{ character.description }}</description>
+<class>{{ character.class }}</class>
+<level>{{ character.level }}</level>
+<race>{{ character.race }}</race>
+<equippableItems>
+{% for item in character.equippableItems %}
+{% include "_includes/item-output.njk" %}
+{% endfor %}
+</equippableItems>
+</character>
+<gearSlots>{% for slot in character.gearSlots %}
+<slot>
+  <name>{{ slot.name }}</name>
+  <type>{{ slot.type }}</type>
+</slot>
+{% endfor %}</gearSlots>
+</context>
+
+The above specified character is equipping their best available gear for their level and role from the list of items below (use your judgment based on stats, bonuses, character description, and so on).  Slot types must match.  The character can only equip one item per gear slot. Return the following format:
+
+<items>
+  <item>
+    <itemName>The exact name of the item</itemName>
+    <slotName>The exact name of the gear slot it is being equipped to</slotName>
+  </item>
+  <item>
+    ... and so on ...
+  </item>
+</items>
+</generationPrompt>
+</template>
