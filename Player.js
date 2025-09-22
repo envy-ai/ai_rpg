@@ -29,8 +29,81 @@ class Player {
     #skills;
     #unspentSkillPoints;
     #statusEffects;
+    #gearSlots;
+    #gearSlotsByType;
+    #gearSlotNameIndex;
 
     static availableSkills = new Map();
+    static #gearSlotDefinitions = null;
+
+    static get gearSlotDefinitions() {
+        if (!this.#gearSlotDefinitions) {
+            this.#gearSlotDefinitions = this.#loadGearSlotDefinitions();
+        }
+        return this.#gearSlotDefinitions;
+    }
+
+    static #loadGearSlotDefinitions() {
+        try {
+            const gearPath = path.join(__dirname, 'defs', 'gear_slots.yaml');
+            const raw = fs.readFileSync(gearPath, 'utf8');
+            const data = yaml.load(raw) || {};
+            const gearSlots = data.gear_slots && typeof data.gear_slots === 'object' ? data.gear_slots : {};
+
+            const byType = new Map();
+            const byName = new Map();
+            const nameLookup = new Map();
+
+            for (const [typeKey, slotNames] of Object.entries(gearSlots)) {
+                if (!typeKey || typeof typeKey !== 'string') {
+                    continue;
+                }
+                const slotType = typeKey.trim().toLowerCase();
+                if (!slotType) {
+                    continue;
+                }
+
+                const normalizedNames = Array.isArray(slotNames)
+                    ? slotNames
+                    : [slotNames];
+
+                const cleanedNames = normalizedNames
+                    .map(name => {
+                        if (typeof name !== 'string') {
+                            return null;
+                        }
+                        const trimmed = name.trim();
+                        return trimmed || null;
+                    })
+                    .filter(Boolean);
+
+                if (!cleanedNames.length) {
+                    continue;
+                }
+
+                byType.set(slotType, cleanedNames);
+
+                for (const slotName of cleanedNames) {
+                    const lowerName = slotName.toLowerCase();
+                    nameLookup.set(lowerName, slotName);
+                    byName.set(slotName, slotType);
+                }
+            }
+
+            return {
+                byType,
+                byName,
+                nameLookup
+            };
+        } catch (error) {
+            console.error('Error loading gear slot definitions:', error.message);
+            return {
+                byType: new Map(),
+                byName: new Map(),
+                nameLookup: new Map()
+            };
+        }
+    }
 
     // Static private method for ID generation
     static #generateUniqueId() {
@@ -71,6 +144,7 @@ class Player {
         this.#dispositions = this.#initializeDispositions(options.dispositions);
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
+        this.#initializeGear(options.gear);
 
         const providedPoints = Number(options.unspentSkillPoints);
         if (Number.isFinite(providedPoints)) {
@@ -131,6 +205,119 @@ class Player {
         }
         for (const entry of items) {
             this.#addInventoryThing(entry, { updateTimestamp: false });
+        }
+    }
+
+    #initializeGear(gearState = null) {
+        const definitions = Player.gearSlotDefinitions;
+        this.#gearSlots = new Map();
+        this.#gearSlotsByType = new Map();
+        this.#gearSlotNameIndex = new Map();
+
+        const normalizedState = gearState instanceof Map
+            ? Object.fromEntries(gearState.entries())
+            : (gearState && typeof gearState === 'object' ? { ...gearState } : {});
+
+        for (const [slotType, slotNames] of definitions.byType.entries()) {
+            const slotsForType = [];
+            for (const slotName of slotNames) {
+                if (typeof slotName !== 'string') {
+                    continue;
+                }
+                const trimmedName = slotName.trim();
+                if (!trimmedName) {
+                    continue;
+                }
+
+                const lowerKey = trimmedName.toLowerCase();
+                this.#gearSlotNameIndex.set(lowerKey, trimmedName);
+                slotsForType.push(trimmedName);
+
+                const rawEntry = normalizedState && Object.prototype.hasOwnProperty.call(normalizedState, trimmedName)
+                    ? normalizedState[trimmedName]
+                    : null;
+
+                const itemId = this.#resolveItemIdFromGearValue(rawEntry);
+
+                this.#gearSlots.set(trimmedName, {
+                    slotType,
+                    itemId
+                });
+            }
+
+            if (slotsForType.length > 0) {
+                this.#gearSlotsByType.set(slotType, slotsForType);
+            }
+        }
+
+        this.#syncGearWithInventory();
+    }
+
+    #resolveItemIdFromGearValue(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+        if (typeof value === 'object') {
+            if (typeof value.itemId === 'string') {
+                const trimmed = value.itemId.trim();
+                return trimmed || null;
+            }
+            if (typeof value.id === 'string') {
+                const trimmed = value.id.trim();
+                return trimmed || null;
+            }
+        }
+        return null;
+    }
+
+    #normalizeSlotType(slotType) {
+        if (!slotType || (typeof slotType !== 'string' && typeof slotType !== 'number')) {
+            return null;
+        }
+        const trimmed = String(slotType).trim().toLowerCase();
+        return trimmed || null;
+    }
+
+    #resolveSlotName(slotName) {
+        if (!slotName || typeof slotName !== 'string') {
+            return null;
+        }
+        const trimmed = slotName.trim();
+        if (!trimmed) {
+            return null;
+        }
+        if (this.#gearSlots && this.#gearSlots.has(trimmed)) {
+            return trimmed;
+        }
+        const lookup = this.#gearSlotNameIndex?.get(trimmed.toLowerCase());
+        return lookup || null;
+    }
+
+    #syncGearWithInventory() {
+        if (!this.#gearSlots || this.#gearSlots.size === 0) {
+            return;
+        }
+
+        const inventoryIds = new Set();
+        if (this.#inventory && this.#inventory.size > 0) {
+            for (const item of this.#inventory.values()) {
+                if (item && typeof item.id === 'string') {
+                    inventoryIds.add(item.id);
+                }
+            }
+        }
+
+        for (const slotData of this.#gearSlots.values()) {
+            if (!slotData) {
+                continue;
+            }
+            if (slotData.itemId && !inventoryIds.has(slotData.itemId)) {
+                slotData.itemId = null;
+            }
         }
     }
 
@@ -234,8 +421,11 @@ class Player {
         }
 
         const removed = this.#inventory.delete(resolved);
-        if (removed && updateTimestamp) {
-            this.#lastUpdated = new Date().toISOString();
+        if (removed) {
+            this.unequipItemId(resolved.id, { suppressTimestamp: true });
+            if (updateTimestamp) {
+                this.#lastUpdated = new Date().toISOString();
+            }
         }
         return removed;
     }
@@ -1051,7 +1241,9 @@ class Player {
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
             unspentSkillPoints: this.#unspentSkillPoints,
-            statusEffects: this.getStatusEffects()
+            statusEffects: this.getStatusEffects(),
+            gear: this.getGear(),
+            gearSlotsByType: this.getGearSlotsByType()
         };
     }
 
@@ -1079,6 +1271,8 @@ class Player {
             skills: Object.fromEntries(this.#skills),
             unspentSkillPoints: this.#unspentSkillPoints,
             statusEffects: this.getStatusEffects(),
+            gear: this.getGear(),
+            gearSlotsByType: this.getGearSlotsByType(),
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -1106,7 +1300,8 @@ class Player {
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
             unspentSkillPoints: data.unspentSkillPoints,
-            statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
+            statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
+            gear: data.gear && typeof data.gear === 'object' ? data.gear : null
         });
         player.#maxHealth = data.maxHealth;
         player.#createdAt = data.createdAt;
@@ -1135,6 +1330,7 @@ class Player {
             return;
         }
         this.#inventory.clear();
+        this.#syncGearWithInventory();
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -1145,8 +1341,162 @@ class Player {
                 this.#addInventoryThing(entry, { updateTimestamp: false });
             }
         }
+        this.#syncGearWithInventory();
         this.#lastUpdated = new Date().toISOString();
         return this.getInventoryItems();
+    }
+
+    getGear() {
+        const snapshot = {};
+        if (!this.#gearSlots) {
+            return snapshot;
+        }
+        for (const [slotName, slotData] of this.#gearSlots.entries()) {
+            if (!slotData) {
+                continue;
+            }
+            snapshot[slotName] = {
+                slotType: slotData.slotType,
+                itemId: slotData.itemId || null
+            };
+        }
+        return snapshot;
+    }
+
+    getGearSlotsByType() {
+        const snapshot = {};
+        if (!this.#gearSlotsByType) {
+            return snapshot;
+        }
+        for (const [slotType, slotNames] of this.#gearSlotsByType.entries()) {
+            snapshot[slotType] = Array.isArray(slotNames) ? [...slotNames] : [];
+        }
+        return snapshot;
+    }
+
+    getEquippedItemIdForType(slotType) {
+        const normalizedType = this.#normalizeSlotType(slotType);
+        if (!normalizedType || !this.#gearSlotsByType) {
+            return null;
+        }
+        const slotNames = this.#gearSlotsByType.get(normalizedType);
+        if (!slotNames || !slotNames.length) {
+            return null;
+        }
+        for (const slotName of slotNames) {
+            const slotData = this.#gearSlots.get(slotName);
+            if (slotData?.itemId) {
+                return slotData.itemId;
+            }
+        }
+        return null;
+    }
+
+    equipItem(thingLike, { suppressTimestamp = false } = {}) {
+        const item = this.#resolveThing(thingLike);
+        if (!item) {
+            return false;
+        }
+        const slotType = this.#normalizeSlotType(item.slot);
+        if (!slotType || slotType === 'n/a') {
+            return false;
+        }
+        const slotNames = this.#gearSlotsByType?.get(slotType);
+        if (!slotNames || slotNames.length === 0) {
+            return false;
+        }
+
+        let targetSlot = null;
+        for (const candidate of slotNames) {
+            const slotData = this.#gearSlots.get(candidate);
+            if (slotData && !slotData.itemId) {
+                targetSlot = candidate;
+                break;
+            }
+        }
+        if (!targetSlot) {
+            targetSlot = slotNames[0];
+        }
+
+        return this.equipItemInSlot(item, targetSlot, { suppressTimestamp });
+    }
+
+    equipItemInSlot(thingLike, slotName, { suppressTimestamp = false } = {}) {
+        const item = this.#resolveThing(thingLike);
+        if (!item || !slotName) {
+            return false;
+        }
+        const resolvedSlotName = this.#resolveSlotName(slotName);
+        if (!resolvedSlotName) {
+            return false;
+        }
+
+        const slotData = this.#gearSlots.get(resolvedSlotName);
+        if (!slotData) {
+            return false;
+        }
+
+        const itemSlotType = this.#normalizeSlotType(item.slot);
+        if (!itemSlotType || itemSlotType === 'n/a' || itemSlotType !== slotData.slotType) {
+            return false;
+        }
+
+        if (!this.#inventory.has(item)) {
+            return false;
+        }
+
+        slotData.itemId = item.id;
+        this.#gearSlots.set(resolvedSlotName, slotData);
+
+        if (!suppressTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return true;
+    }
+
+    unequipItemId(itemId, { suppressTimestamp = false } = {}) {
+        if (!itemId || typeof itemId !== 'string') {
+            return false;
+        }
+        const trimmed = itemId.trim();
+        if (!trimmed || !this.#gearSlots) {
+            return false;
+        }
+
+        let changed = false;
+        for (const slotData of this.#gearSlots.values()) {
+            if (slotData?.itemId === trimmed) {
+                slotData.itemId = null;
+                changed = true;
+            }
+        }
+
+        if (changed && !suppressTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return changed;
+    }
+
+    unequipSlot(slotName, { suppressTimestamp = false } = {}) {
+        const resolvedSlotName = this.#resolveSlotName(slotName);
+        if (!resolvedSlotName) {
+            return false;
+        }
+        const slotData = this.#gearSlots.get(resolvedSlotName);
+        if (!slotData || !slotData.itemId) {
+            return false;
+        }
+
+        slotData.itemId = null;
+        this.#gearSlots.set(resolvedSlotName, slotData);
+
+        if (!suppressTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return true;
     }
 
     #serializeDispositions() {

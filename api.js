@@ -188,6 +188,139 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
+            if (!attackCheckInfo || !attackCheckInfo.structured) {
+                return null;
+            }
+
+            const structured = attackCheckInfo.structured;
+            const attacks = Array.isArray(structured.attacks) ? structured.attacks : [];
+            if (!attacks.length) {
+                return null;
+            }
+
+            const normalize = (value) => typeof value === 'string' ? value.trim().toLowerCase() : null;
+            const playerName = normalize(player?.name);
+
+            const playerAttack = attacks.find(entry => {
+                if (!entry || typeof entry.attacker !== 'string') {
+                    return false;
+                }
+                const attackerName = normalize(entry.attacker);
+                if (!attackerName) {
+                    return false;
+                }
+                if (attackerName === 'player' || attackerName === 'the player' || attackerName === 'you') {
+                    return true;
+                }
+                return playerName && attackerName === playerName;
+            });
+
+            if (!playerAttack) {
+                return null;
+            }
+
+            const targetName = typeof playerAttack.defender === 'string' ? playerAttack.defender.trim() : '';
+            const targetActor = targetName ? findActorByName(targetName) : null;
+
+            const collectStatusEffects = (actor) => {
+                if (!actor || typeof actor.getStatusEffects !== 'function') {
+                    return [];
+                }
+                return actor.getStatusEffects()
+                    .map(effect => {
+                        if (!effect) {
+                            return null;
+                        }
+                        if (typeof effect === 'string') {
+                            return effect.trim() || null;
+                        }
+                        if (typeof effect.description === 'string' && effect.description.trim()) {
+                            return effect.description.trim();
+                        }
+                        if (typeof effect.name === 'string' && effect.name.trim()) {
+                            return effect.name.trim();
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+            };
+
+            const collectGearNames = (actor) => {
+                if (!actor || typeof actor.getGear !== 'function') {
+                    return [];
+                }
+                const gear = actor.getGear();
+                if (!gear || typeof gear !== 'object') {
+                    return [];
+                }
+                const names = [];
+                for (const slotInfo of Object.values(gear)) {
+                    if (!slotInfo || !slotInfo.itemId || typeof slotInfo.itemId !== 'string') {
+                        continue;
+                    }
+                    const thing = Thing.getById(slotInfo.itemId);
+                    if (thing && thing.name) {
+                        names.push(thing.name);
+                    } else {
+                        names.push(slotInfo.itemId);
+                    }
+                }
+                return names;
+            };
+
+            const attackerWeapon = (() => {
+                if (typeof playerAttack.weapon === 'string') {
+                    const trimmed = playerAttack.weapon.trim();
+                    if (trimmed && trimmed.toLowerCase() !== 'n/a') {
+                        return trimmed;
+                    }
+                }
+                if (player && typeof player.getEquippedItemIdForType === 'function') {
+                    const weaponId = player.getEquippedItemIdForType('weapon');
+                    if (weaponId) {
+                        const item = Thing.getById(weaponId);
+                        if (item && item.name) {
+                            return item.name;
+                        }
+                        return weaponId;
+                    }
+                }
+                return 'Barehanded';
+            })();
+
+            const attackerAbility = (() => {
+                if (typeof playerAttack.ability === 'string') {
+                    const trimmed = playerAttack.ability.trim();
+                    if (trimmed && trimmed.toLowerCase() !== 'n/a') {
+                        return trimmed;
+                    }
+                }
+                return 'N/A';
+            })();
+
+            const attackerStatus = collectStatusEffects(player);
+            const targetStatus = collectStatusEffects(targetActor);
+            const targetGear = collectGearNames(targetActor);
+
+            return {
+                isAttack: true,
+                attacker: {
+                    level: typeof player?.level === 'number' ? player.level : 'unknown',
+                    weapon: attackerWeapon,
+                    ability: attackerAbility,
+                    statusEffects: attackerStatus
+                },
+                target: {
+                    name: targetName || null,
+                    level: typeof targetActor?.level === 'number' ? targetActor.level : 'unknown',
+                    gear: targetGear,
+                    statusEffects: targetStatus
+                },
+                attackEntry: playerAttack
+            };
+        }
+
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
             try {
@@ -210,6 +343,7 @@ module.exports = function registerApiRoutes(scope) {
                 let location = null;
                 let plausibilityInfo = null;
                 let attackCheckInfo = null;
+                let attackContextForPlausibility = null;
                 let actionResolution = null;
 
                 const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
@@ -264,9 +398,27 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (!isCreativeModeAction && !isForcedEventAction) {
                         try {
+                            const attackActionText = typeof sanitizedUserContent === 'string'
+                                ? sanitizedUserContent
+                                : (userMessage?.content || '');
+                            attackCheckInfo = await runAttackCheckPrompt({
+                                actionText: attackActionText,
+                                locationOverride: location || null
+                            });
+                            attackContextForPlausibility = buildAttackContextForPlausibility({
+                                attackCheckInfo,
+                                player: currentPlayer,
+                                location
+                            });
+                        } catch (attackError) {
+                            console.warn('Failed to execute attack check:', attackError.message);
+                        }
+
+                        try {
                             plausibilityInfo = await runPlausibilityCheck({
                                 actionText: userMessage.content,
-                                locationId: currentPlayer.currentLocation || null
+                                locationId: currentPlayer.currentLocation || null,
+                                attackContext: attackContextForPlausibility
                             });
                             if (plausibilityInfo?.structured) {
                                 actionResolution = resolveActionOutcome({
@@ -277,23 +429,12 @@ module.exports = function registerApiRoutes(scope) {
                         } catch (plausibilityError) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                         }
-
-                        try {
-                            const attackActionText = typeof sanitizedUserContent === 'string'
-                                ? sanitizedUserContent
-                                : (userMessage?.content || '');
-                            attackCheckInfo = await runAttackCheckPrompt({
-                                actionText: attackActionText,
-                                locationOverride: location || null
-                            });
-                        } catch (attackError) {
-                            console.warn('Failed to execute attack check:', attackError.message);
-                        }
                     }
                 }
 
                 const attackDebugData = {
-                    attackCheck: attackCheckInfo
+                    attackCheck: attackCheckInfo,
+                    attackContext: attackContextForPlausibility
                 };
 
                 const plausibilityType = (plausibilityInfo?.structured?.type || '').trim().toLowerCase();

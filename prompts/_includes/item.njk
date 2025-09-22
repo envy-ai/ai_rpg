@@ -3,7 +3,7 @@
 <description>1-2 sentence description of the item</description>
 <itemOrScenery>"item" or "scenery" depending on whether it can be picked up or not</itemOrScenery>
 <type>Type of item (e.g., weapon, armor, conmsumable, tool, etc.)</type>
-<slot>Equipment slot if applicable (e.g., head, chest, legs, etc.) or N/A</slot>
+<slot>Available gear slots: [{% for slot in gearSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}] or N/A</slot>
 <rarity>Junk, Common, Uncommon, Rare, Epic, Legendary, Artifact</rarity>
 <value>Monetary value of the item in currency units</value>
 <weight>Weight of the item in pounds</weight>

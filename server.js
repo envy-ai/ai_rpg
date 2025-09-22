@@ -1742,7 +1742,7 @@ function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText, du
     }
 }
 
-async function runPlausibilityCheck({ actionText, locationId }) {
+async function runPlausibilityCheck({ actionText, locationId, attackContext = null }) {
     if (!actionText || !actionText.trim()) {
         return null;
     }
@@ -1761,10 +1761,33 @@ async function runPlausibilityCheck({ actionText, locationId }) {
 
         const baseContext = buildBasePromptContext({ locationOverride: location });
 
+        const isAttack = Boolean(attackContext && attackContext.isAttack);
+        const attackerTemplate = {
+            level: attackContext?.attacker?.level ?? 'unknown',
+            weapon: attackContext?.attacker?.weapon ?? 'N/A',
+            ability: attackContext?.attacker?.ability ?? 'N/A',
+            statusEffects: Array.isArray(attackContext?.attacker?.statusEffects)
+                ? attackContext.attacker.statusEffects
+                : []
+        };
+
+        const targetTemplate = {
+            level: attackContext?.target?.level ?? 'unknown',
+            gear: Array.isArray(attackContext?.target?.gear)
+                ? attackContext.target.gear
+                : [],
+            statusEffects: Array.isArray(attackContext?.target?.statusEffects)
+                ? attackContext.target.statusEffects
+                : []
+        };
+
         const renderedTemplate = promptEnv.render('base-context.xml.njk', {
             ...baseContext,
             promptType: 'plausibility-check',
-            actionText
+            actionText,
+            isAttack,
+            attacker: attackerTemplate,
+            target: targetTemplate
         });
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -4791,7 +4814,7 @@ function renderThingImagePrompt(thing) {
         console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
 
         // Log call stack to console
-        console.trace('Thing image prompt render call stack:');
+        //console.trace('Thing image prompt render call stack:');
 
         // Render the template with the variables
         const renderedTemplate = promptEnv.render(templateName, variables);
