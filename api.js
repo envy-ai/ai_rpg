@@ -29,6 +29,165 @@ module.exports = function registerApiRoutes(scope) {
             next();
         });
 
+        function parseAttackCheckResponse(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return null;
+            }
+
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const matchAllAttacks = [...trimmed.matchAll(/<attack>([\s\S]*?)<\/attack>/gi)];
+            if (!matchAllAttacks.length) {
+                const normalized = trimmed.toLowerCase();
+                if (normalized === 'n/a') {
+                    return { attacks: [], hasAttack: false };
+                }
+                return null;
+            }
+
+            const extractTag = (block, tag) => {
+                const tagRegex = new RegExp(`<${tag}>([\s\S]*?)<\/${tag}>`, 'i');
+                const tagMatch = block.match(tagRegex);
+                return tagMatch ? tagMatch[1].trim() : null;
+            };
+
+            const normalizeValue = (value) => {
+                if (value === null || value === undefined) {
+                    return null;
+                }
+                const text = String(value).trim();
+                if (!text || text.toLowerCase() === 'n/a') {
+                    return null;
+                }
+                return text;
+            };
+
+            const attacks = [];
+            for (const [, rawBlock] of matchAllAttacks) {
+                const attacker = normalizeValue(extractTag(rawBlock, 'attacker'));
+                const defender = normalizeValue(extractTag(rawBlock, 'defender'));
+                const ability = normalizeValue(extractTag(rawBlock, 'ability'));
+                const weapon = normalizeValue(extractTag(rawBlock, 'weapon'));
+
+                if (!attacker && !defender && !ability && !weapon) {
+                    continue;
+                }
+
+                attacks.push({ attacker, defender, ability, weapon });
+            }
+
+            if (!attacks.length) {
+                return { attacks: [], hasAttack: false };
+            }
+
+            return {
+                attacks,
+                hasAttack: true
+            };
+        }
+
+        function logAttackCheck({ systemPrompt, generationPrompt, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `attack_check_${timestamp}.log`);
+                const parts = [
+                    '=== ATTACK CHECK SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== ATTACK CHECK GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== ATTACK CHECK RESPONSE ===',
+                    responseText || '(no response)',
+                    ''
+                ];
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log attack check:', error.message);
+            }
+        }
+
+        async function runAttackCheckPrompt({ actionText, locationOverride }) {
+            if (!actionText || !actionText.trim()) {
+                return null;
+            }
+
+            if (!currentPlayer) {
+                return null;
+            }
+
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride: locationOverride || null });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'attack-check',
+                    actionText
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    console.warn('Attack template missing prompts, skipping attack analysis.');
+                    return null;
+                }
+
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/') ?
+                    endpoint + 'chat/completions' :
+                    endpoint + '/chat/completions';
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
+                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 45000
+                });
+
+                const attackResponse = response.data?.choices?.[0]?.message?.content || '';
+
+                logAttackCheck({
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: attackResponse
+                });
+
+                if (!attackResponse.trim()) {
+                    return null;
+                }
+
+                const safeResponse = Events.escapeHtml(attackResponse.trim());
+                return {
+                    raw: attackResponse,
+                    html: safeResponse.replace(/\n/g, '<br>'),
+                    structured: parseAttackCheckResponse(attackResponse)
+                };
+            } catch (error) {
+                console.warn('Attack check failed:', error.message);
+                return null;
+            }
+        }
+
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
             try {
@@ -50,6 +209,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let location = null;
                 let plausibilityInfo = null;
+                let attackCheckInfo = null;
                 let actionResolution = null;
 
                 const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
@@ -117,8 +277,24 @@ module.exports = function registerApiRoutes(scope) {
                         } catch (plausibilityError) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                         }
+
+                        try {
+                            const attackActionText = typeof sanitizedUserContent === 'string'
+                                ? sanitizedUserContent
+                                : (userMessage?.content || '');
+                            attackCheckInfo = await runAttackCheckPrompt({
+                                actionText: attackActionText,
+                                locationOverride: location || null
+                            });
+                        } catch (attackError) {
+                            console.warn('Failed to execute attack check:', attackError.message);
+                        }
                     }
                 }
+
+                const attackDebugData = {
+                    attackCheck: attackCheckInfo
+                };
 
                 const plausibilityType = (plausibilityInfo?.structured?.type || '').trim().toLowerCase();
                 if (!isForcedEventAction && !isCreativeModeAction && plausibilityType === 'rejected') {
@@ -131,12 +307,17 @@ module.exports = function registerApiRoutes(scope) {
                         response: rejectionReason
                     };
 
+                    if (attackCheckInfo) {
+                        responseData.attackCheck = attackCheckInfo;
+                    }
+
                     if (plausibilityInfo?.html) {
                         responseData.plausibility = plausibilityInfo.html;
                     }
 
                     const rejectionDebug = {
                         ...(debugInfo || baseDebugInfo),
+                        ...attackDebugData,
                         usedPlayerTemplate: false,
                         usedCreativeTemplate: false,
                         plausibilityType: 'Rejected',
@@ -267,6 +448,10 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (debugInfo) {
+                    debugInfo = { ...debugInfo, ...attackDebugData };
+                }
+
                 let forcedEventResult = null;
                 if (isForcedEventAction && forcedEventText && forcedEventText.trim()) {
                     try {
@@ -355,6 +540,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (actionResolution) {
                         responseData.actionResolution = actionResolution;
+                    }
+
+                    if (attackCheckInfo) {
+                        responseData.attackCheck = attackCheckInfo;
                     }
 
                     let eventResult = null;

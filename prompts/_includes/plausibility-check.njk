@@ -16,6 +16,26 @@ The player is attempting:
 <playerAction>
 {{ actionText }}
 </playerAction>
+{% if isAttack %}
+This is an attack action. To determine difficulty and plausibility, consider the relevant gear, level, and status effects of the attacker and the target.
+<attackerInfo>
+  <level>{{ attacker.level }}</level>
+  <weapon>{{ attacker.weapon }}</weapon>
+  <ability>{{ attacker.ability }}</ability>
+  <statusEffects>
+    {% for effect in attacker.statusEffects %}<effect>{{ effect }}</effect>
+    {% endfor %}
+  </statusEffects>
+</attackerInfo>
+<targetInfo>
+  <level>{{ target.level }}</level>
+  <gear>{{ target.gear | join(", ") }}</gear>
+  <statusEffects>
+    {% for effect in target.statusEffects %}<effect>{{ effect }}</effect>
+    {% endfor %}
+  </statusEffects>
+</targetInfo>
+{% endif %}
 
 Respond with one of the following (reason about your decision in the reason tag before making up your mind):
 

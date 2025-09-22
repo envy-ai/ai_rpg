@@ -122,6 +122,8 @@ You are an AI designed to perform various tasks related to managing a text-based
 {% include '_includes/event-checks.njk' %}
 {% elif promptType == "plausibility-check" %}
 {% include '_includes/plausibility-check.njk' %}
+{% elif promptType == "attack-check" %}
+{% include '_includes/attack-check.njk' %}
 {% elif promptType == "player-action" %}
 {% include '_includes/player-action.njk' %}
 {% elif promptType == "creative-mode-action" %}
