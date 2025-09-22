@@ -802,11 +802,24 @@ function shouldGenerateThingImage(thing) {
         return true;
     }
 
-    if (!currentPlayer || typeof currentPlayer.hasInventoryItem !== 'function') {
+    if (!currentPlayer) {
         return false;
     }
 
-    return currentPlayer.hasInventoryItem(thing);
+    const playerHasItem = typeof currentPlayer.hasInventoryItem === 'function'
+        ? currentPlayer.hasInventoryItem(thing)
+        : false;
+    if (playerHasItem) {
+        return true;
+    }
+
+    const thingMetadata = thing.metadata || {};
+    const itemLocationId = thingMetadata.locationId || null;
+    if (itemLocationId && currentPlayer.currentLocation && itemLocationId === currentPlayer.currentLocation) {
+        return true;
+    }
+
+    return false;
 }
 
 function queueNpcAssetsForLocation(location) {
@@ -831,9 +844,7 @@ function queueNpcAssetsForLocation(location) {
                 if (!shouldGenerateThingImage(item)) {
                     continue;
                 }
-                generateThingImage(item).catch(itemError => {
-                    console.warn('Failed to generate NPC item image:', itemError.message);
-                });
+                // Items owned by NPCs do not need pre-rendered images; skip the generation.
             }
         }
     } catch (error) {
@@ -4686,9 +4697,24 @@ function renderThingImagePrompt(thing) {
         const settingSnapshot = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(settingSnapshot);
         const metadata = thing.metadata || {};
+        const locationId = metadata.locationId || thing.currentLocation || null;
+        const location = locationId ? gameLocations.get(locationId) || null : null;
+        const region = location ? findRegionByLocationId(location.id) || null : null;
 
         const variables = {
-            setting: settingDescription,
+            setting: {
+                name: settingSnapshot?.name || '',
+                description: settingDescription || '',
+                genre: settingSnapshot?.genre || '',
+                theme: settingSnapshot?.theme || '',
+                magicLevel: settingSnapshot?.magicLevel || '',
+                techLevel: settingSnapshot?.techLevel || '',
+                tone: settingSnapshot?.tone || ''
+            },
+            regionName: region?.name || '',
+            regionDescription: region?.description || '',
+            locationName: location?.name || '',
+            locationDescription: location?.description || location?.stubMetadata?.blueprintDescription || '',
             thingName: thing.name,
             thingType: metadata.itemType || thing.itemTypeDetail || thing.thingType,
             thingDescription: thing.description,
