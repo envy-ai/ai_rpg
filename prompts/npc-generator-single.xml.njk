@@ -35,6 +35,7 @@ Generate exactly one NPC entry for the character named "{{ npcName }}". Use the 
     <role>Clear role, job, or niche within the location.</role>
     <class>RPG class, vocation, or archetype.</class>
     <race>Species or origin.</race>
+    <relativeLevel>Integer from -3 to +3</relativeLevel>
     <attributes>
 {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
 {% endfor %}

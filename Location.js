@@ -86,15 +86,20 @@ class Location {
   }
 
   static fromXMLSnippet(xmlSnippet, options = {}) {
-    const { existingLocation = null, allowRename = true } = options || {};
+    const {
+      existingLocation = null,
+      allowRename = true,
+      baseLevelFallback = null,
+      relativeLevelBase = null
+    } = options || {};
 
-    console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
+    //console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
 
     // Strip any text outside the <location> tags and extract just the location XML
     const locationMatch = xmlSnippet.match(/<location>[\s\S]*?<\/location>/);
     const strippedXML = locationMatch ? locationMatch[0] : xmlSnippet;
 
-    console.log('Extracted XML:', strippedXML);
+    //console.log('Extracted XML:', strippedXML);
 
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(strippedXML, 'text/xml');
@@ -132,6 +137,8 @@ class Location {
         // Convert baseLevel to number
         if (child.tagName === 'baseLevel') {
           locationData[child.tagName] = parseInt(value, 10);
+        } else if (child.tagName === 'relativeLevel') {
+          locationData[child.tagName] = parseInt(value, 10);
         } else {
           locationData[child.tagName] = value;
         }
@@ -145,13 +152,38 @@ class Location {
         throw new Error('Stub expansion missing description in AI response');
       }
 
-      if (typeof locationData.baseLevel !== 'number' || Number.isNaN(locationData.baseLevel) || locationData.baseLevel < 1) {
+      let parsedBaseLevel = typeof locationData.baseLevel === 'number' && !Number.isNaN(locationData.baseLevel)
+        ? locationData.baseLevel
+        : null;
+
+      const parsedRelativeLevel = Number.isFinite(locationData.relativeLevel)
+        ? locationData.relativeLevel
+        : Number.isFinite(parseInt(locationData.relativeLevel, 10))
+          ? parseInt(locationData.relativeLevel, 10)
+          : null;
+
+      if (!parsedBaseLevel) {
+        if (Number.isFinite(parsedRelativeLevel)) {
+          const baseReference = Number.isFinite(relativeLevelBase)
+            ? relativeLevelBase
+            : (Number.isFinite(existingLocation?.baseLevel) ? existingLocation.baseLevel : Number.isFinite(baseLevelFallback) ? baseLevelFallback : 1);
+          parsedBaseLevel = Math.round(baseReference + parsedRelativeLevel);
+        } else if (Number.isFinite(existingLocation?.baseLevel)) {
+          parsedBaseLevel = existingLocation.baseLevel;
+        } else if (Number.isFinite(baseLevelFallback)) {
+          parsedBaseLevel = baseLevelFallback;
+        }
+      }
+
+      parsedBaseLevel = Math.max(1, Math.min(20, Math.round(parsedBaseLevel || 1)));
+
+      if (!parsedBaseLevel) {
         throw new Error('Stub expansion missing valid base level in AI response');
       }
 
       const promotionData = {
         description: locationData.description,
-        baseLevel: locationData.baseLevel
+        baseLevel: parsedBaseLevel
       };
 
       if (allowRename && locationData.name) {
@@ -171,9 +203,36 @@ class Location {
       return existingLocation;
     }
 
+    let baseLevel = typeof locationData.baseLevel === 'number' && !Number.isNaN(locationData.baseLevel)
+      ? locationData.baseLevel
+      : null;
+
+    const parsedRelativeLevel = Number.isFinite(locationData.relativeLevel)
+      ? locationData.relativeLevel
+      : Number.isFinite(parseInt(locationData.relativeLevel, 10))
+        ? parseInt(locationData.relativeLevel, 10)
+        : null;
+
+    if (!baseLevel) {
+      if (Number.isFinite(parsedRelativeLevel)) {
+        const baseReference = Number.isFinite(relativeLevelBase)
+          ? relativeLevelBase
+          : Number.isFinite(baseLevelFallback)
+            ? baseLevelFallback
+            : 1;
+        baseLevel = baseReference + parsedRelativeLevel;
+      } else if (Number.isFinite(baseLevelFallback)) {
+        baseLevel = baseLevelFallback;
+      } else {
+        baseLevel = 1;
+      }
+    }
+
+    baseLevel = Math.max(1, Math.min(20, Math.round(baseLevel)));
+
     return new Location({
       description: locationData.description,
-      baseLevel: locationData.baseLevel,
+      baseLevel,
       name: locationData.name
     });
   }

@@ -13,6 +13,7 @@ class Region {
   #createdAt;
   #lastUpdated;
   #statusEffects;
+  #averageLevel;
 
   static #indexById = new Map();
   static #indexByName = new Map();
@@ -23,7 +24,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, id = null, statusEffects = [] } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, id = null, statusEffects = [], averageLevel = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -45,6 +46,9 @@ class Region {
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
+    this.#averageLevel = Number.isFinite(averageLevel)
+      ? Math.max(1, Math.min(20, Math.round(averageLevel)))
+      : null;
 
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
@@ -77,11 +81,21 @@ class Region {
       ? blueprint.aliases.map(alias => typeof alias === 'string' ? alias.trim() : '').filter(Boolean)
       : [];
 
+    const relativeLevelRaw = blueprint.relativeLevel;
+    let relativeLevel = null;
+    if (relativeLevelRaw !== undefined && relativeLevelRaw !== null && relativeLevelRaw !== '') {
+      const parsedRelative = Number(relativeLevelRaw);
+      if (Number.isFinite(parsedRelative)) {
+        relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelative)));
+      }
+    }
+
     return {
       name,
       description,
       exits,
-      aliases
+      aliases,
+      relativeLevel
     };
   }
 
@@ -113,7 +127,8 @@ class Region {
       locations: data.locationBlueprints || [],
       locationIds: data.locationIds || [],
       entranceLocationId: data.entranceLocationId || null,
-      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
+      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
+      averageLevel: data.averageLevel || null
     });
   }
 
@@ -140,6 +155,7 @@ class Region {
 
     let regionName = null;
     let regionDescription = null;
+    let regionLevel = null;
 
     const childElements = Array.from(regionElement.childNodes).filter(node => node.nodeType === 1);
     for (const child of childElements) {
@@ -150,6 +166,11 @@ class Region {
         regionName = child.textContent.trim();
       } else if (!regionDescription && (tag === 'regiondescription' || tag === 'description')) {
         regionDescription = child.textContent.trim();
+      } else if (!regionLevel && tag === 'level') {
+        const parsedLevel = Number(child.textContent.trim());
+        if (Number.isFinite(parsedLevel)) {
+          regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
+        }
       }
     }
 
@@ -169,6 +190,7 @@ class Region {
       const locNameNode = node.getElementsByTagName('name')[0];
       const locDescriptionNode = node.getElementsByTagName('description')[0];
       const exitsNode = node.getElementsByTagName('exits')[0];
+      let relativeLevel = null;
 
       let locName = locNameNode ? locNameNode.textContent.trim() : null;
       if (!locName && attrName) {
@@ -179,6 +201,16 @@ class Region {
       }
 
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
+      if (exitsNode) {
+        const relativeNode = exitsNode.getElementsByTagName('relativeLevel')[0];
+        if (relativeNode) {
+          const parsedRelative = Number(relativeNode.textContent.trim());
+          if (Number.isFinite(parsedRelative)) {
+            relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelative)));
+          }
+        }
+      }
+
       const exitEntries = exitsNode
         ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
           const destinationAttr = exitNode.getAttribute('destination');
@@ -203,14 +235,16 @@ class Region {
         name: locName,
         description: locDescription,
         exits: exitEntries,
-        aliases
+        aliases,
+        relativeLevel
       });
     });
 
     return new Region({
       name: regionName,
       description: regionDescription,
-      locations: locationBlueprints
+      locations: locationBlueprints,
+      averageLevel: regionLevel
     });
   }
 
@@ -268,8 +302,13 @@ class Region {
       entranceLocationId: this.#entranceLocationId,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
-      statusEffects: this.getStatusEffects()
+      statusEffects: this.getStatusEffects(),
+      averageLevel: this.#averageLevel
     };
+  }
+
+  get averageLevel() {
+    return this.#averageLevel;
   }
 
   #normalizeStatusEffects(effects = []) {

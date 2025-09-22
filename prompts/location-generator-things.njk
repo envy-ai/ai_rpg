@@ -5,8 +5,16 @@
 You are a an AI role-playing gamemaster.
     </systemPrompt>
     
-    <generationPrompt>
+<generationPrompt>
 <context>
+Here is a list of all character attributes:
+{% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }} 
+{% endfor %}
+
+<equipmentSlots>
+{% for slot in equipmentSlots %}  <slot>{{ slot }}</slot>
+{% endfor %}
+</equipmentSlots>
 <setting>
 {{ setting }}
 </setting>
@@ -23,16 +31,7 @@ You are a an AI role-playing gamemaster.
 I'd like you to generate a set of 1 to 5 items that would be found in the above location in the above setting. The items should be appropriate for the setting and the character's role within it. Output them in the format below:
 
 <items>
-<item>
-<name>Item Name</name>
-<description>1-2 sentence description of the item</description>
-<itemOrScenery>"item" or "scenery" depending on whether it can be picked up or not</itemOrScenery>
-<type>Type of item (e.g., weapon, armor, potion, tool, etc.)</type>
-<rarity>Common, Uncommon, Rare, Epic, Legendary</rarity>
-<value>Monetary value of the item in currency units</value>
-<weight>Weight of the item in pounds</weight>
-<properties>Any special properties or effects of the item</properties>
-</item>
+{% include "_includes/item.njk" %}
 [0-4 more items depending on how many you generate]
 </items>
 </generationPrompt>

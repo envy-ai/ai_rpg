@@ -1,0 +1,11 @@
+gear_slots:
+  head: Head
+  body: Body
+  legs: Legs
+  feet: Feet
+  hands: Hands
+  weapon: Weapon
+  shield: Shield
+  accessory:
+    - Accessory 1
+    - Accessory 2

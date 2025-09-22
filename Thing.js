@@ -18,6 +18,9 @@ class Thing {
   #itemTypeDetail;
   #metadata;
   #statusEffects;
+  #slot;
+  #attributeBonuses;
+  #causeStatusEffect;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -42,7 +45,20 @@ class Thing {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated thing visual (defaults to null)
    */
-  constructor({ name, description, thingType, id = null, imageId = null, rarity = null, itemTypeDetail = null, metadata = null, statusEffects = [] } = {}) {
+  constructor({
+    name,
+    description,
+    thingType,
+    id = null,
+    imageId = null,
+    rarity = null,
+    itemTypeDetail = null,
+    metadata = null,
+    statusEffects = [],
+    slot = null,
+    attributeBonuses = null,
+    causeStatusEffect = null
+  } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
       throw new Error('Thing name is required and must be a string');
@@ -72,6 +88,23 @@ class Thing {
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
+    this.#slot = null;
+    this.#attributeBonuses = [];
+    this.#causeStatusEffect = null;
+
+    this.#applyMetadataFieldsFromMetadata();
+
+    if (slot !== null && slot !== undefined) {
+      this.slot = slot;
+    }
+    if (attributeBonuses !== null && attributeBonuses !== undefined) {
+      this.attributeBonuses = attributeBonuses;
+    }
+    if (causeStatusEffect !== null && causeStatusEffect !== undefined) {
+      this.causeStatusEffect = causeStatusEffect;
+    } else {
+      this.#syncFieldsToMetadata();
+    }
 
     // Add to static indexes
     Thing.#indexByID.set(this.#id, this);
@@ -131,6 +164,41 @@ class Thing {
 
   set metadata(newMetadata) {
     this.#metadata = newMetadata && typeof newMetadata === 'object' ? { ...newMetadata } : {};
+    this.#applyMetadataFieldsFromMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get slot() {
+    return this.#slot;
+  }
+
+  set slot(value) {
+    const sanitized = this.#sanitizeSlot(value);
+    if (sanitized !== this.#slot) {
+      this.#slot = sanitized;
+      this.#syncFieldsToMetadata();
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
+  get attributeBonuses() {
+    return this.#attributeBonuses.map(bonus => ({ ...bonus }));
+  }
+
+  set attributeBonuses(bonuses) {
+    const normalized = this.#normalizeAttributeBonuses(bonuses);
+    this.#attributeBonuses = normalized;
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get causeStatusEffect() {
+    return this.#causeStatusEffect ? { ...this.#causeStatusEffect } : null;
+  }
+
+  set causeStatusEffect(effect) {
+    this.#causeStatusEffect = this.#normalizeCauseStatusEffect(effect);
+    this.#syncFieldsToMetadata();
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -229,6 +297,9 @@ class Thing {
       lastUpdated: this.#lastUpdated,
       rarity: this.#rarity,
       itemTypeDetail: this.#itemTypeDetail,
+       slot: this.#slot || undefined,
+       attributeBonuses: this.#attributeBonuses.length ? this.attributeBonuses : undefined,
+       causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
     };
@@ -248,7 +319,10 @@ class Thing {
       rarity: data.rarity,
       itemTypeDetail: data.itemTypeDetail,
       metadata: data.metadata,
-      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : []
+      statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
+      slot: data.slot ?? (data.metadata?.slot ?? null),
+      attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
+      causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {
@@ -259,6 +333,116 @@ class Thing {
     }
 
     return thing;
+  }
+
+  #sanitizeSlot(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const text = String(value).trim();
+    if (!text || text.toLowerCase() === 'n/a') {
+      return null;
+    }
+    return text;
+  }
+
+  #normalizeAttributeBonuses(rawBonuses) {
+    if (!rawBonuses) {
+      return [];
+    }
+    const entries = Array.isArray(rawBonuses) ? rawBonuses : [rawBonuses];
+    const bonuses = [];
+    for (const entry of entries) {
+      if (!entry) continue;
+      let attribute = null;
+      let bonusValue = null;
+      if (typeof entry === 'string') {
+        attribute = entry.trim();
+      } else if (typeof entry === 'object') {
+        attribute = typeof entry.attribute === 'string' ? entry.attribute.trim() : null;
+        const bonusRaw = 'bonus' in entry ? entry.bonus : entry.value;
+        const parsedBonus = Number(bonusRaw);
+        if (Number.isFinite(parsedBonus)) {
+          bonusValue = Math.max(-20, Math.min(20, parsedBonus));
+        }
+      }
+
+      if (!attribute) {
+        continue;
+      }
+
+      if (!Number.isFinite(bonusValue)) {
+        const parsed = Number(entry?.bonus ?? entry?.value);
+        if (Number.isFinite(parsed)) {
+          bonusValue = Math.max(-20, Math.min(20, parsed));
+        }
+      }
+
+      bonuses.push({
+        attribute,
+        bonus: Number.isFinite(bonusValue) ? bonusValue : 0
+      });
+    }
+    return bonuses;
+  }
+
+  #normalizeCauseStatusEffect(effect) {
+    if (!effect || typeof effect !== 'object') {
+      return null;
+    }
+
+    const name = typeof effect.name === 'string' ? effect.name.trim() : null;
+    const description = typeof effect.description === 'string' ? effect.description.trim() : null;
+    const duration = effect.duration !== undefined && effect.duration !== null
+      ? String(effect.duration).trim()
+      : null;
+
+    if (!name && !description) {
+      return null;
+    }
+
+    const normalized = {};
+    if (name) normalized.name = name;
+    if (description) normalized.description = description;
+    if (duration && duration.toLowerCase() !== 'n/a') {
+      normalized.duration = duration;
+    }
+
+    return Object.keys(normalized).length ? normalized : null;
+  }
+
+  #applyMetadataFieldsFromMetadata() {
+    const meta = this.#metadata;
+
+    this.#slot = this.#sanitizeSlot(meta.slot);
+
+    const bonuses = this.#normalizeAttributeBonuses(meta.attributeBonuses);
+    this.#attributeBonuses = bonuses;
+
+    const effect = this.#normalizeCauseStatusEffect(meta.causeStatusEffect);
+    this.#causeStatusEffect = effect;
+
+    this.#syncFieldsToMetadata();
+  }
+
+  #syncFieldsToMetadata() {
+    if (this.#slot) {
+      this.#metadata.slot = this.#slot;
+    } else {
+      delete this.#metadata.slot;
+    }
+
+    if (this.#attributeBonuses && this.#attributeBonuses.length) {
+      this.#metadata.attributeBonuses = this.#attributeBonuses.map(bonus => ({ ...bonus }));
+    } else {
+      delete this.#metadata.attributeBonuses;
+    }
+
+    if (this.#causeStatusEffect) {
+      this.#metadata.causeStatusEffect = { ...this.#causeStatusEffect };
+    } else {
+      delete this.#metadata.causeStatusEffect;
+    }
   }
 
   #normalizeStatusEffects(effects = []) {

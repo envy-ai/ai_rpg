@@ -1,0 +1,25 @@
+<item>
+<name>Item Name</name>
+<description>1-2 sentence description of the item</description>
+<itemOrScenery>"item" or "scenery" depending on whether it can be picked up or not</itemOrScenery>
+<type>Type of item (e.g., weapon, armor, conmsumable, tool, etc.)</type>
+<slot>Equipment slot if applicable (e.g., head, chest, legs, etc.) or N/A</slot>
+<rarity>Junk, Common, Uncommon, Rare, Epic, Legendary, Artifact</rarity>
+<value>Monetary value of the item in currency units</value>
+<weight>Weight of the item in pounds</weight>
+<level>Should be 
+<attributeBonuses>
+    (optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses)
+    <attributeBonus>
+        <attribute>Attribute name (e.g., Strength, Dexterity, Intelligence, etc.) or N/A</attribute>
+        <bonus>Bonus value (between -4 and +4)</bonus>
+    </attributeBonus>
+</attributeBonuses>
+<causeStatusEffect>
+    (optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed)
+    <name>Name of the status effect (e.g., "Poisoned", "Blessed", etc.)</name>
+    <description>1-2 sentence description of the status effect</description>
+    <duration>Duration if item is consumable; N/A if equippable</duration>
+</causeStatusEffect>
+<properties>Any special properties or effects of the item</properties>
+</item>

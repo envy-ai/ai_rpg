@@ -120,6 +120,41 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const plausibilityType = (plausibilityInfo?.structured?.type || '').trim().toLowerCase();
+                if (!isForcedEventAction && !isCreativeModeAction && plausibilityType === 'rejected') {
+                    const rejectionReasonRaw = plausibilityInfo?.structured?.reason || 'Action rejected.';
+                    const rejectionReason = typeof rejectionReasonRaw === 'string' && rejectionReasonRaw.trim().length
+                        ? rejectionReasonRaw.trim()
+                        : 'Action rejected.';
+
+                    const responseData = {
+                        response: rejectionReason
+                    };
+
+                    if (plausibilityInfo?.html) {
+                        responseData.plausibility = plausibilityInfo.html;
+                    }
+
+                    const rejectionDebug = {
+                        ...(debugInfo || baseDebugInfo),
+                        usedPlayerTemplate: false,
+                        usedCreativeTemplate: false,
+                        plausibilityType: 'Rejected',
+                        rejectionReason
+                    };
+
+                    responseData.debug = rejectionDebug;
+
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: rejectionReason,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    res.json(responseData);
+                    return;
+                }
+
                 // If we have a current player, use the player action template for the system message
                 if (isForcedEventAction && !debugInfo) {
                     debugInfo = {

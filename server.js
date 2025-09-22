@@ -887,6 +887,9 @@ function buildThingProfiles(location) {
             imageId: thing.imageId,
             rarity: thing.rarity || null,
             itemTypeDetail: thing.itemTypeDetail || null,
+            slot: thing.slot || null,
+            attributeBonuses: thing.attributeBonuses || [],
+            causeStatusEffect: thing.causeStatusEffect || null,
             metadata: metadata || {},
             statusEffects
         });
@@ -2403,26 +2406,54 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             if (!item.name) continue;
             const detailParts = [];
             if (item.type) detailParts.push(`Type: ${item.type}`);
+            if (item.slot && item.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${item.slot}`);
             if (item.rarity) detailParts.push(`Rarity: ${item.rarity}`);
             if (item.value) detailParts.push(`Value: ${item.value}`);
             if (item.weight) detailParts.push(`Weight: ${item.weight}`);
+            if (item.attributeBonuses?.length) {
+                const bonusSummary = item.attributeBonuses
+                    .map(bonus => {
+                        const attr = bonus.attribute || 'Attribute';
+                        const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
+                        const sign = value >= 0 ? `+${value}` : `${value}`;
+                        return `${attr} ${sign}`;
+                    })
+                    .join(', ');
+                if (bonusSummary) {
+                    detailParts.push(`Bonuses: ${bonusSummary}`);
+                }
+            }
+            if (item.causeStatusEffect) {
+                const effectName = item.causeStatusEffect.name || 'Status Effect';
+                const effectDetail = item.causeStatusEffect.description || '';
+                const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
+                detailParts.push(`Status Effect: ${combined}`);
+            }
             if (item.properties) detailParts.push(`Properties: ${item.properties}`);
             const extendedDescription = [item.description, detailParts.join(' | ')].filter(Boolean).join(' ');
 
             try {
+                const metadata = sanitizeMetadataObject({
+                    rarity: item.rarity || null,
+                    itemType: item.type || null,
+                    value: item.value || null,
+                    weight: item.weight || null,
+                    properties: item.properties || null,
+                    slot: item.slot || null,
+                    attributeBonuses: item.attributeBonuses && item.attributeBonuses.length ? item.attributeBonuses : null,
+                    causeStatusEffect: item.causeStatusEffect || null
+                });
+
                 const thing = new Thing({
                     name: item.name,
                     description: extendedDescription || item.description || 'Inventory item',
                     thingType: 'item',
                     rarity: item.rarity || null,
                     itemTypeDetail: item.type || null,
-                    metadata: {
-                        rarity: item.rarity || null,
-                        itemType: item.type || null,
-                        value: item.value || null,
-                        weight: item.weight || null,
-                        properties: item.properties || null
-                    }
+                    slot: item.slot || null,
+                    attributeBonuses: item.attributeBonuses,
+                    causeStatusEffect: item.causeStatusEffect,
+                    metadata
                 });
                 things.set(thing.id, thing);
                 character.addInventoryItem(thing);
@@ -2610,11 +2641,42 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             if (itemData?.rarity) detailParts.push(`Rarity: ${itemData.rarity}`);
             if (itemData?.value) detailParts.push(`Value: ${itemData.value}`);
             if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
+            if (itemData?.slot && itemData.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${itemData.slot}`);
             if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
+            if (itemData?.attributeBonuses?.length) {
+                const bonusSummary = itemData.attributeBonuses
+                    .map(bonus => {
+                        const attr = bonus.attribute || 'Attribute';
+                        const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
+                        const sign = value >= 0 ? `+${value}` : `${value}`;
+                        return `${attr} ${sign}`;
+                    })
+                    .join(', ');
+                if (bonusSummary) {
+                    detailParts.push(`Bonuses: ${bonusSummary}`);
+                }
+            }
+            if (itemData?.causeStatusEffect) {
+                const effectName = itemData.causeStatusEffect.name || 'Status Effect';
+                const effectDescription = itemData.causeStatusEffect.description || '';
+                const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
+                detailParts.push(`Status Effect: ${effectCombined}`);
+            }
             if (detailParts.length) {
                 descriptionParts.push(detailParts.join(' | '));
             }
             const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
+
+            const metadata = sanitizeMetadataObject({
+                rarity: itemData?.rarity || null,
+                itemType: itemData?.type || null,
+                value: itemData?.value || null,
+                weight: itemData?.weight || null,
+                properties: itemData?.properties || null,
+                slot: itemData?.slot || null,
+                attributeBonuses: itemData?.attributeBonuses && itemData.attributeBonuses.length ? itemData.attributeBonuses : null,
+                causeStatusEffect: itemData?.causeStatusEffect || null
+            });
 
             const thing = new Thing({
                 name,
@@ -2622,13 +2684,10 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 thingType: 'item',
                 rarity: itemData?.rarity || null,
                 itemTypeDetail: itemData?.type || null,
-                metadata: {
-                    rarity: itemData?.rarity || null,
-                    itemType: itemData?.type || null,
-                    value: itemData?.value || null,
-                    weight: itemData?.weight || null,
-                    properties: itemData?.properties || null
-                }
+                slot: itemData?.slot || null,
+                attributeBonuses: itemData?.attributeBonuses,
+                causeStatusEffect: itemData?.causeStatusEffect,
+                metadata
             });
             things.set(thing.id, thing);
             created.push(thing);
@@ -2956,6 +3015,17 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             isNPC: true
         });
 
+        const locationBaseLevel = Number.isFinite(resolvedLocation?.baseLevel)
+            ? resolvedLocation.baseLevel
+            : (Number.isFinite(resolvedRegion?.averageLevel) ? resolvedRegion.averageLevel : (currentPlayer?.level || 1));
+        const relativeLevel = Number.isFinite(npcData?.relativeLevel) ? npcData.relativeLevel : 0;
+        const npcLevel = clampLevel(locationBaseLevel + relativeLevel, locationBaseLevel);
+        try {
+            npc.setLevel(npcLevel);
+        } catch (_) {
+            // ignore failures to adjust level
+        }
+
         players.set(npc.id, npc);
 
         if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
@@ -3072,6 +3142,7 @@ function parseLocationNpcs(xmlContent) {
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
+            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
@@ -3079,6 +3150,7 @@ function parseLocationNpcs(xmlContent) {
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
             const attributes = {};
+            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
             if (attributesNode) {
                 const attrNodes = Array.from(attributesNode.getElementsByTagName('attribute'));
@@ -3098,7 +3170,8 @@ function parseLocationNpcs(xmlContent) {
                     role,
                     class: className,
                     race,
-                    attributes
+                    attributes,
+                    relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null
                 });
             }
         }
@@ -3132,6 +3205,7 @@ function parseRegionNpcs(xmlContent) {
             const raceNode = node.getElementsByTagName('race')[0];
             const locationNode = node.getElementsByTagName('location')[0];
             const attributesNode = node.getElementsByTagName('attributes')[0];
+            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             if (!name) {
@@ -3157,6 +3231,8 @@ function parseRegionNpcs(xmlContent) {
                 }
             }
 
+            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+
             npcs.push({
                 name,
                 description,
@@ -3165,7 +3241,8 @@ function parseRegionNpcs(xmlContent) {
                 class: className,
                 race,
                 location: locationName,
-                attributes
+                attributes,
+                relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null
             });
         }
 
@@ -3194,14 +3271,52 @@ function parseInventoryItems(xmlContent) {
             if (!nameNode) {
                 continue;
             }
+            const attributeBonusesNode = node.getElementsByTagName('attributeBonuses')[0];
+            const attributeBonuses = attributeBonusesNode
+                ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
+                    .map(bonusNode => {
+                        const attr = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
+                        const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
+                        if (!attr) {
+                            return null;
+                        }
+                        const bonus = Number(bonusRaw);
+                        return {
+                            attribute: attr,
+                            bonus: Number.isFinite(bonus) ? bonus : 0
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const statusEffectNode = node.getElementsByTagName('statusEffect')[0];
+            let causeStatusEffect = null;
+            if (statusEffectNode) {
+                const effectName = statusEffectNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                const effectDescription = statusEffectNode.getElementsByTagName('description')[0]?.textContent?.trim();
+                const effectDuration = statusEffectNode.getElementsByTagName('duration')[0]?.textContent?.trim();
+                const effectPayload = {};
+                if (effectName) effectPayload.name = effectName;
+                if (effectDescription) effectPayload.description = effectDescription;
+                if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
+                    effectPayload.duration = effectDuration;
+                }
+                if (Object.keys(effectPayload).length) {
+                    causeStatusEffect = effectPayload;
+                }
+            }
+
             const item = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
                 type: node.getElementsByTagName('type')[0]?.textContent?.trim() || 'item',
+                slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
                 rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || 'Common',
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
-                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || ''
+                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                attributeBonuses,
+                causeStatusEffect
             };
             items.push(item);
         }
@@ -3261,6 +3376,25 @@ function formatDurationLine(durationSeconds) {
         return `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`;
     }
     return '=== API CALL DURATION: N/A ===';
+}
+
+function clampLevel(value, fallback = 1) {
+    const base = Number.isFinite(value) ? value : (Number.isFinite(fallback) ? fallback : 1);
+    return Math.max(1, Math.min(20, Math.round(base)));
+}
+
+function sanitizeMetadataObject(meta) {
+    if (!meta || typeof meta !== 'object') {
+        return {};
+    }
+    const cleaned = { ...meta };
+    for (const key of Object.keys(cleaned)) {
+        const value = cleaned[key];
+        if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+            delete cleaned[key];
+        }
+    }
+    return cleaned;
 }
 
 function summarizeNpcForNameRegen(npc) {
@@ -3508,15 +3642,53 @@ function parseLocationThingsXml(xmlContent) {
                 continue;
             }
 
+            const attributeBonusesNode = node.getElementsByTagName('attributeBonuses')[0];
+            const attributeBonuses = attributeBonusesNode
+                ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
+                    .map(bonusNode => {
+                        const attr = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
+                        const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
+                        if (!attr) {
+                            return null;
+                        }
+                        const bonus = Number(bonusRaw);
+                        return {
+                            attribute: attr,
+                            bonus: Number.isFinite(bonus) ? bonus : 0
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const statusEffectNode = node.getElementsByTagName('statusEffect')[0];
+            let causeStatusEffect = null;
+            if (statusEffectNode) {
+                const effectName = statusEffectNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                const effectDescription = statusEffectNode.getElementsByTagName('description')[0]?.textContent?.trim();
+                const effectDuration = statusEffectNode.getElementsByTagName('duration')[0]?.textContent?.trim();
+                const effectPayload = {};
+                if (effectName) effectPayload.name = effectName;
+                if (effectDescription) effectPayload.description = effectDescription;
+                if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
+                    effectPayload.duration = effectDuration;
+                }
+                if (Object.keys(effectPayload).length) {
+                    causeStatusEffect = effectPayload;
+                }
+            }
+
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
                 itemOrScenery: node.getElementsByTagName('itemOrScenery')[0]?.textContent?.trim() || '',
                 type: node.getElementsByTagName('type')[0]?.textContent?.trim() || '',
+                slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
                 rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || '',
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
-                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || ''
+                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                attributeBonuses,
+                causeStatusEffect
             };
 
             items.push(entry);
@@ -3674,6 +3846,17 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         if (itemData.properties) {
             metadata.properties = itemData.properties;
         }
+        if (itemData.slot && itemData.slot.toLowerCase() !== 'n/a') {
+            metadata.slot = itemData.slot;
+        }
+        if (itemData.attributeBonuses?.length) {
+            metadata.attributeBonuses = itemData.attributeBonuses;
+        }
+        if (itemData.causeStatusEffect) {
+            metadata.causeStatusEffect = itemData.causeStatusEffect;
+        }
+
+        const cleanedMetadata = sanitizeMetadataObject(metadata);
 
         const thing = new Thing({
             name: itemData.name,
@@ -3681,7 +3864,10 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
             thingType,
             rarity: itemData.rarity || null,
             itemTypeDetail: itemData.type || null,
-            metadata
+            slot: itemData.slot || null,
+            attributeBonuses: itemData.attributeBonuses,
+            causeStatusEffect: itemData.causeStatusEffect,
+            metadata: cleanedMetadata
         });
 
         things.set(thing.id, thing);
@@ -4079,6 +4265,17 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 race: npcData.race,
                 isNPC: true
             });
+
+            const locationBaseLevel = Number.isFinite(location.baseLevel)
+                ? location.baseLevel
+                : (Number.isFinite(region?.averageLevel) ? region.averageLevel : (currentPlayer?.level || 1));
+            const npcRelativeLevel = Number.isFinite(npcData.relativeLevel) ? npcData.relativeLevel : 0;
+            const targetLevel = clampLevel(locationBaseLevel + npcRelativeLevel, locationBaseLevel);
+            try {
+                npc.setLevel(targetLevel);
+            } catch (_) {
+                // ignore level adjustment failures
+            }
             players.set(npc.id, npc);
             location.addNpcId(npc.id);
             created.push(npc);
@@ -4291,6 +4488,17 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 attributes,
                 isNPC: true
             });
+
+            const baseLevelReference = Number.isFinite(region.averageLevel)
+                ? region.averageLevel
+                : (currentPlayer?.level || 1);
+            const npcRelativeLevel = Number.isFinite(npcData.relativeLevel) ? npcData.relativeLevel : 0;
+            const npcLevel = clampLevel(baseLevelReference + npcRelativeLevel, baseLevelReference);
+            try {
+                npc.setLevel(npcLevel);
+            } catch (_) {
+                // ignore level adjustment failures
+            }
 
             npc.originRegionId = region.id;
             npc.isRegionImportant = true;
@@ -4510,7 +4718,9 @@ function renderLocationGeneratorPrompt(options = {}) {
             shortDescription: options.shortDescription || null,
             locationTheme: options.locationTheme || options.theme || null,
             playerLevel: options.playerLevel || null,
-            locationPurpose: options.locationPurpose || null
+            locationPurpose: options.locationPurpose || null,
+            relativeLevel: options.relativeLevel ?? null,
+            regionAverageLevel: options.regionAverageLevel ?? null
         };
 
         const variables = isStubExpansion
@@ -5041,6 +5251,21 @@ async function generateLocationFromPrompt(options = {}) {
             if (!templateOverrides.locationTheme && stubMetadata.themeHint) {
                 templateOverrides.locationTheme = stubMetadata.themeHint;
             }
+            if (!templateOverrides.playerLevel) {
+                if (Number.isFinite(stubMetadata.regionAverageLevel)) {
+                    templateOverrides.playerLevel = stubMetadata.regionAverageLevel;
+                } else if (currentPlayer?.level) {
+                    templateOverrides.playerLevel = currentPlayer.level;
+                }
+            }
+            if (stubMetadata.relativeLevel !== undefined && templateOverrides.relativeLevel === undefined) {
+                templateOverrides.relativeLevel = stubMetadata.relativeLevel;
+            }
+            if (stubMetadata.regionAverageLevel !== undefined && templateOverrides.regionAverageLevel === undefined) {
+                templateOverrides.regionAverageLevel = stubMetadata.regionAverageLevel;
+            }
+        } else if (!templateOverrides.playerLevel && currentPlayer?.level) {
+            templateOverrides.playerLevel = currentPlayer.level;
         }
 
         const stubTemplateData = isStubExpansion ? {
@@ -5095,7 +5320,7 @@ async function generateLocationFromPrompt(options = {}) {
 
         console.log('🤖 Requesting location generation from AI...');
         console.log('📝 System Prompt:', systemPrompt);
-        console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
+        //console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
 
         const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
@@ -5111,18 +5336,37 @@ async function generateLocationFromPrompt(options = {}) {
         }
 
         const aiResponse = response.data.choices[0].message.content;
-        console.log('📥 AI Raw Response:');
-        console.log('='.repeat(50));
-        console.log(aiResponse);
-        console.log('='.repeat(50));
+        //console.log('📥 AI Raw Response:');
+        //console.log('='.repeat(50));
+        //console.log(aiResponse);
+        //console.log('='.repeat(50));
 
         // Parse the XML response using Location.fromXMLSnippet()
+        const regionAverageLevel = templateOverrides.regionAverageLevel ?? stubMetadata.regionAverageLevel ?? null;
+        const fallbackPlayerLevel = currentPlayer?.level || null;
+        const relativeLevelBase = Number.isFinite(regionAverageLevel)
+            ? regionAverageLevel
+            : (Number.isFinite(templateOverrides.playerLevel) ? templateOverrides.playerLevel : fallbackPlayerLevel);
+
+        const stubBaseLevel = Number.isFinite(stubLocation?.baseLevel)
+            ? stubLocation.baseLevel
+            : (Number.isFinite(stubMetadata.computedBaseLevel) ? stubMetadata.computedBaseLevel : null);
+
+        const baseLevelFallback = isStubExpansion
+            ? (Number.isFinite(relativeLevelBase) ? relativeLevelBase : stubBaseLevel)
+            : (Number.isFinite(relativeLevelBase) ? relativeLevelBase : fallbackPlayerLevel);
+
         const location = isStubExpansion
             ? Location.fromXMLSnippet(aiResponse, {
                 existingLocation: stubLocation,
-                allowRename: Boolean(stubMetadata.allowRename)
+                allowRename: Boolean(stubMetadata.allowRename),
+                baseLevelFallback: Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
+                relativeLevelBase
             })
-            : Location.fromXMLSnippet(aiResponse);
+            : Location.fromXMLSnippet(aiResponse, {
+                baseLevelFallback,
+                relativeLevelBase
+            });
 
         if (!location) {
             throw new Error('Failed to parse location from AI response');
@@ -5360,10 +5604,18 @@ async function generateRegionFromPrompt(options = {}) {
         const themeHint = options.regionNotes || null;
 
         for (const blueprint of region.locationBlueprints) {
+            const regionAverageLevel = Number.isFinite(region.averageLevel)
+                ? region.averageLevel
+                : (currentPlayer?.level || 1);
+            const relativeLevel = Number.isFinite(blueprint.relativeLevel)
+                ? blueprint.relativeLevel
+                : 0;
+            const computedBaseLevel = clampLevel(regionAverageLevel + relativeLevel, regionAverageLevel);
+
             const stub = new Location({
                 name: blueprint.name,
                 description: null,
-                baseLevel: 1,
+                baseLevel: computedBaseLevel,
                 isStub: true,
                 stubMetadata: {
                     regionId: region.id,
@@ -5373,7 +5625,10 @@ async function generateRegionFromPrompt(options = {}) {
                     themeHint,
                     shortDescription: blueprint.description,
                     locationPurpose: `Part of the ${region.name} region`,
-                    allowRename: false
+                    allowRename: false,
+                    relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                    regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                    computedBaseLevel
                 }
             });
 
