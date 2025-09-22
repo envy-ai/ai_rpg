@@ -201,7 +201,13 @@ class AIRPGChat {
         const safeName = (value) => {
             if (!value && value !== 0) return 'Someone';
             const text = String(value).trim();
-            return text || 'Someone';
+            if (!text) {
+                return 'Someone';
+            }
+            if (text.toLowerCase() === 'player') {
+                return 'You';
+            }
+            return text;
         };
 
         const safeItem = (value, fallback = 'an item') => {
@@ -310,9 +316,10 @@ class AIRPGChat {
                 });
             },
             pick_up_item: (entries) => {
-                entries.forEach((item) => {
-                    const itemName = safeItem(item);
-                    this.addEventSummary('🎒', `Picked up ${itemName}.`);
+                entries.forEach((entry) => {
+                    const actor = safeName(entry?.name);
+                    const itemName = safeItem(entry?.item);
+                    this.addEventSummary('🎒', `${actor} picked up ${itemName}.`);
                 });
             },
             status_effect_change: (entries) => {

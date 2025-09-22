@@ -133,7 +133,16 @@ class Events {
                     action: action.trim().toLowerCase()
                 };
             }).filter(Boolean),
-            pick_up_item: raw => this.splitSemicolonEntries(raw),
+            pick_up_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+                const [name, item] = this.extractArrowParts(entry, 2);
+                if (!name || !item) {
+                    return null;
+                }
+                return {
+                    name: name.trim(),
+                    item: item.trim()
+                };
+            }).filter(Boolean),
             status_effect_change: raw => this.splitSemicolonEntries(raw).map(entry => {
                 const [entity, description, action] = this.extractArrowParts(entry, 3);
                 if (!entity || !description || !action) {
@@ -836,37 +845,97 @@ class Events {
     }
 
     static async handlePickUpItemEvents(entries = [], context = {}) {
-        if (!Array.isArray(entries) || !entries.length || !context.player) {
+        if (!Array.isArray(entries) || !entries.length) {
             return;
         }
 
-        const { player } = context;
-        const { findThingByName, generateItemsByNames, Location, shouldGenerateThingImage, generateThingImage } = this.deps;
+        const contextPlayer = context.player || null;
+        const {
+            findThingByName,
+            generateItemsByNames,
+            Location,
+            shouldGenerateThingImage,
+            generateThingImage,
+            findActorByName
+        } = this.deps;
 
-        const itemNames = entries
-            .map(name => typeof name === 'string' ? name : null)
-            .filter(name => typeof name === 'string' && name.trim());
+        const normalizedEntries = entries
+            .map(entry => {
+                if (!entry) return null;
+                let name = null;
+                let item = null;
 
+                if (typeof entry === 'string') {
+                    const [parsedName, parsedItem] = this.extractArrowParts(entry, 2);
+                    name = parsedName;
+                    item = parsedItem;
+                } else if (entry && typeof entry === 'object') {
+                    name = typeof entry.name === 'string' ? entry.name : null;
+                    item = typeof entry.item === 'string' ? entry.item : null;
+                }
+
+                if (!name || !item) {
+                    return null;
+                }
+
+                return {
+                    name: String(name).trim(),
+                    item: String(item).trim()
+                };
+            })
+            .filter(entry => entry && entry.name && entry.item);
+
+        if (!normalizedEntries.length) {
+            return;
+        }
+
+        const itemNames = Array.from(new Set(normalizedEntries.map(entry => entry.item)));
         if (!itemNames.length) {
             return;
         }
 
         const missing = itemNames.filter(name => !findThingByName(name));
+        const fallbackPlayer = contextPlayer || this.currentPlayer || null;
+
         if (missing.length) {
             let locationForContext = context.location || null;
-            if (!locationForContext && player.currentLocation) {
+            if (!locationForContext && fallbackPlayer?.currentLocation) {
                 try {
-                    locationForContext = Location.get(player.currentLocation);
+                    locationForContext = Location.get(fallbackPlayer.currentLocation);
                 } catch (_) {
                     locationForContext = null;
                 }
             }
-            await generateItemsByNames({ itemNames: missing, owner: player, location: locationForContext });
+            await generateItemsByNames({ itemNames: missing, location: locationForContext });
         }
 
-        for (const itemName of itemNames) {
-            const thing = findThingByName(itemName);
+        const resolveRecipient = (name) => {
+            if (!name) {
+                return null;
+            }
+            const lowerName = name.toLowerCase();
+            if (fallbackPlayer && (
+                lowerName === 'player' ||
+                (typeof fallbackPlayer.name === 'string' && fallbackPlayer.name.trim().toLowerCase() === lowerName)
+            )) {
+                return fallbackPlayer;
+            }
+
+            try {
+                return findActorByName(name);
+            } catch (_) {
+                return null;
+            }
+        };
+
+        for (const entry of normalizedEntries) {
+            const thing = findThingByName(entry.item);
             if (!thing) {
+                continue;
+            }
+
+            const recipient = resolveRecipient(entry.name);
+            if (!recipient) {
                 continue;
             }
 
@@ -877,12 +946,18 @@ class Events {
                 this.removeThingFromLocation(thing, context.location);
             }
 
-            if (typeof player.addInventoryItem === 'function') {
-                player.addInventoryItem(thing);
+            if (typeof recipient.addInventoryItem === 'function') {
+                try {
+                    recipient.addInventoryItem(thing);
+                } catch (inventoryError) {
+                    console.warn(`Failed to add ${thing.name} to ${recipient.name || recipient.id}:`, inventoryError.message);
+                }
             }
 
             const metadata = thing.metadata || {};
-            metadata.ownerId = player.id;
+            if (recipient.id) {
+                metadata.ownerId = recipient.id;
+            }
             delete metadata.locationId;
             thing.metadata = metadata;
 

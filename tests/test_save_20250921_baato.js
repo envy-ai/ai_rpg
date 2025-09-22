@@ -243,7 +243,18 @@ async function runEventTests() {
             command: 'Baato scoops up the Smuggler\'s Data Chip from the workstation.',
             validate(structured) {
                 const entries = structured.parsed.pick_up_item || [];
-                assert(Array.isArray(entries) && entries.some(name => `${name}`.toLowerCase().includes('data chip')), 'Pick up item event not detected');
+                assert(Array.isArray(entries) && entries.length > 0, 'No pick_up_item entries parsed');
+                const match = entries.find(entry => {
+                    if (!entry) {
+                        return false;
+                    }
+                    if (typeof entry === 'string') {
+                        return entry.toLowerCase().includes('data chip');
+                    }
+                    const itemName = entry.item || entry.name || '';
+                    return typeof itemName === 'string' && itemName.toLowerCase().includes('data chip');
+                });
+                assert(match, 'Pick up item event not detected');
             }
         },
         {

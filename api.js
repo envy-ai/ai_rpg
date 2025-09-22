@@ -1252,6 +1252,41 @@ module.exports = function registerApiRoutes(scope) {
 
                 currentPlayer.setLocation(destinationLocation.id);
 
+                if (typeof currentPlayer.getPartyMembers === 'function') {
+                    const partyMemberIds = currentPlayer.getPartyMembers();
+                    if (Array.isArray(partyMemberIds) || partyMemberIds instanceof Set) {
+                        const memberIds = Array.isArray(partyMemberIds)
+                            ? partyMemberIds
+                            : Array.from(partyMemberIds);
+
+                        for (const memberId of memberIds) {
+                            const member = players.get(memberId);
+                            if (!member) {
+                                continue;
+                            }
+
+                            const previousLocationId = member.currentLocation;
+                            if (previousLocationId && gameLocations.has(previousLocationId)) {
+                                const previousLocation = gameLocations.get(previousLocationId);
+                                if (previousLocation && typeof previousLocation.removeNpcId === 'function') {
+                                    previousLocation.removeNpcId(member.id);
+                                }
+                            }
+
+                            try {
+                                member.setLocation(destinationLocation.id);
+                            } catch (memberError) {
+                                console.warn(`Failed to update location for party member ${member.name || member.id}:`, memberError.message);
+                                continue;
+                            }
+
+                            if (member.isNPC && typeof destinationLocation.addNpcId === 'function') {
+                                destinationLocation.addNpcId(member.id);
+                            }
+                        }
+                    }
+                }
+
                 try {
                     await generateLocationImage(destinationLocation);
                 } catch (locationImageError) {
