@@ -24,12 +24,14 @@ Banned words:
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
 
-Give each NPC a different name that fits the setting and culture of the location, and does not use any of the banned words. The name should be unique among all NPCs in this region. Return them in this format:
+Give each NPC a different name that fits the setting and culture of the location, and does not use any of the banned words. The name should be unique among all NPCs in this region. Replace their name in the description (and short description, if applicable) as well. Return them in this format:
 
 <npcs>
   <npc>
     <oldName>original npc name</oldName>
     <name>new npc name</name>
+    <shortDescription>short description</shortDescription>
+    <description>description</description>
   </npc>
   <npc>
     ... the rest of the npcs ...

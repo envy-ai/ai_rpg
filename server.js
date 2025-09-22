@@ -2220,7 +2220,7 @@ function renderSystemPrompt(settingInfo = null) {
             const settingVariables = settingInfo.getPromptVariables();
             variables = { ...variables, ...settingVariables };
 
-            console.log('Using SettingInfo variables:', settingVariables);
+            //console.log('Using SettingInfo variables:', settingVariables);
         }
 
         // Add current player information if available
@@ -2429,6 +2429,11 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
                 detailParts.push(`Status Effect: ${combined}`);
             }
+            const relativeLevel = Number.isFinite(item.relativeLevel)
+                ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
+                : 0;
+            const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
+            const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
             if (item.properties) detailParts.push(`Properties: ${item.properties}`);
             const extendedDescription = [item.description, detailParts.join(' | ')].filter(Boolean).join(' ');
 
@@ -2441,7 +2446,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     properties: item.properties || null,
                     slot: item.slot || null,
                     attributeBonuses: item.attributeBonuses && item.attributeBonuses.length ? item.attributeBonuses : null,
-                    causeStatusEffect: item.causeStatusEffect || null
+                    causeStatusEffect: item.causeStatusEffect || null,
+                    relativeLevel,
+                    level: computedLevel
                 });
 
                 const thing = new Thing({
@@ -2453,6 +2460,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     slot: item.slot || null,
                     attributeBonuses: item.attributeBonuses,
                     causeStatusEffect: item.causeStatusEffect,
+                    level: computedLevel,
+                    relativeLevel,
                     metadata
                 });
                 things.set(thing.id, thing);
@@ -2667,6 +2676,16 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             }
             const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
 
+            const relativeLevel = Number.isFinite(itemData?.relativeLevel)
+                ? Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)))
+                : 0;
+            const baseReference = owner?.level
+                ? owner.level
+                : (location?.baseLevel
+                    ? location.baseLevel
+                    : (region?.averageLevel || currentPlayer?.level || 1));
+            const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+
             const metadata = sanitizeMetadataObject({
                 rarity: itemData?.rarity || null,
                 itemType: itemData?.type || null,
@@ -2675,7 +2694,9 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 properties: itemData?.properties || null,
                 slot: itemData?.slot || null,
                 attributeBonuses: itemData?.attributeBonuses && itemData.attributeBonuses.length ? itemData.attributeBonuses : null,
-                causeStatusEffect: itemData?.causeStatusEffect || null
+                causeStatusEffect: itemData?.causeStatusEffect || null,
+                relativeLevel,
+                level: computedLevel
             });
 
             const thing = new Thing({
@@ -2687,6 +2708,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 slot: itemData?.slot || null,
                 attributeBonuses: itemData?.attributeBonuses,
                 causeStatusEffect: itemData?.causeStatusEffect,
+                level: computedLevel,
+                relativeLevel,
                 metadata
             });
             things.set(thing.id, thing);
@@ -3306,6 +3329,9 @@ function parseInventoryItems(xmlContent) {
                 }
             }
 
+            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
+            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+
             const item = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
@@ -3315,6 +3341,7 @@ function parseInventoryItems(xmlContent) {
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                relativeLevel,
                 attributeBonuses,
                 causeStatusEffect
             };
@@ -3456,8 +3483,10 @@ function parseNpcNameRegenResponse(xmlContent) {
         for (const node of npcNodes) {
             const oldName = node.getElementsByTagName('oldName')[0]?.textContent?.trim();
             const newName = node.getElementsByTagName('name')[0]?.textContent?.trim();
+            const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+            const description = node.getElementsByTagName('description')[0]?.textContent?.trim() || '';
             if (oldName && newName) {
-                mapping.set(oldName, newName);
+                mapping.set(oldName, { newName, shortDescription, description });
             }
         }
         return mapping;
@@ -3586,7 +3615,13 @@ async function enforceBannedNpcNames({
             }
             const replacement = mapping.get(npc.name) || mapping.get(npc.name.trim());
             if (replacement) {
-                npc.name = replacement;
+                npc.name = replacement.newName;
+                if (replacement.shortDescription) {
+                    npc.shortDescription = replacement.shortDescription;
+                }
+                if (replacement.description) {
+                    npc.description = replacement.description;
+                }
             }
         }
 
@@ -3677,6 +3712,9 @@ function parseLocationThingsXml(xmlContent) {
                 }
             }
 
+            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
+            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
@@ -3687,6 +3725,7 @@ function parseLocationThingsXml(xmlContent) {
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                relativeLevel,
                 attributeBonuses,
                 causeStatusEffect
             };
@@ -3855,6 +3894,19 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         if (itemData.causeStatusEffect) {
             metadata.causeStatusEffect = itemData.causeStatusEffect;
         }
+        if (Number.isFinite(itemData.relativeLevel)) {
+            metadata.relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
+        }
+
+        const baseReference = Number.isFinite(location.baseLevel)
+            ? location.baseLevel
+            : (location.stubMetadata?.computedBaseLevel
+                ?? location.stubMetadata?.regionAverageLevel
+                ?? currentPlayer?.level
+                ?? 1);
+        const relativeLevel = Number.isFinite(metadata.relativeLevel) ? metadata.relativeLevel : 0;
+        const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+        metadata.level = computedLevel;
 
         const cleanedMetadata = sanitizeMetadataObject(metadata);
 
@@ -3867,6 +3919,8 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
             slot: itemData.slot || null,
             attributeBonuses: itemData.attributeBonuses,
             causeStatusEffect: itemData.causeStatusEffect,
+            level: computedLevel,
+            relativeLevel,
             metadata: cleanedMetadata
         });
 
@@ -5603,10 +5657,9 @@ async function generateRegionFromPrompt(options = {}) {
 
         const themeHint = options.regionNotes || null;
 
+        const regionAverageLevel = options.newGame ? 1 : options.averageLevel + region.relativeLevel;
+
         for (const blueprint of region.locationBlueprints) {
-            const regionAverageLevel = Number.isFinite(region.averageLevel)
-                ? region.averageLevel
-                : (currentPlayer?.level || 1);
             const relativeLevel = Number.isFinite(blueprint.relativeLevel)
                 ? blueprint.relativeLevel
                 : 0;
@@ -5790,7 +5843,7 @@ async function generateRegionFromPrompt(options = {}) {
             });
 
             const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
-            console.log('🏰 Entrance selection response:\n', entranceMessage);
+            //console.log('🏰 Entrance selection response:\n', entranceMessage);
             const entranceName = parseRegionEntranceResponse(entranceMessage);
 
             if (entranceName) {

@@ -24,7 +24,7 @@
         }
         .debug-section {
             margin-bottom: 30px;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, .8);
             backdrop-filter: blur(10px);
             border-radius: 8px;
             padding: 20px;
@@ -144,6 +144,7 @@
     </style>
 </head>
 <body>
+    <script defer src="https://unpkg.com/pretty-json-custom-element/index.js"></script>
     <div class="container">
         <div class="header">
             <h1>🔧 Debug: Player Information</h1>
@@ -219,13 +220,13 @@
                 <!-- Full Player Status (getStatus() output) -->
                 <div class="debug-section">
                     <h2>🎯 Player Status (getStatus())</h2>
-                    <pre class="debug-json">{{ playerStatus | dump(2) }}</pre>
+                    <pretty-json>{{ playerStatus | dump(2) }}</pretty-json>
                 </div>
 
                 <!-- Full Player JSON (toJSON() output) -->
                 <div class="debug-section">
                     <h2>💾 Player JSON Data (toJSON())</h2>
-                    <pre class="debug-json">{{ playerJson | dump(2) }}</pre>
+                    <pretty-json>{{ playerJson | dump(2) }}</pretty-json>
                 </div>
 
                 <!-- Player Storage Info -->
@@ -289,7 +290,7 @@
                         <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
                             Click to expand all players data ({{ allPlayers | length }} players)
                         </summary>
-                        <pre class="debug-json">{{ allPlayers | dump(2) }}</pre>
+                        <pretty-json>{{ allPlayers | dump(2) }}</pretty-json>
                     </details>
                 {% else %}
                     <div class="no-player">
@@ -356,7 +357,7 @@
             <div class="debug-section">
                 <h2>🌍 Current Setting Information</h2>
                 {% if currentSetting %}
-                    <pre class="debug-json">{{ currentSetting | dump(2) }}</pre>
+                    <pretty-json>{{ currentSetting | dump(2) }}</pretty-json>
                 {% else %}
                     <div class="no-player">
                         <p>No current setting defined</p>
@@ -372,7 +373,7 @@
                         <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
                             Click to expand all settings data
                         </summary>
-                        <pre class="debug-json">{{ allSettings | dump(2) }}</pre>
+                        <pretty-json>{{ allSettings | dump(2) }}</pretty-json>
                     </details>
                 {% else %}
                     <div class="no-player">
@@ -393,7 +394,7 @@
                         <summary style="cursor: pointer; color: #ffffff; font-weight: bold; margin-bottom: 15px;">
                             Click to expand game world data
                         </summary>
-                        <pre class="debug-json">{{ gameWorld | dump(2) }}</pre>
+                        <pretty-json>{{ gameWorld | dump(2) }}</pretty-json>
                     </details>
                 {% else %}
                     <div class="no-player">

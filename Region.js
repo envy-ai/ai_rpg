@@ -14,6 +14,7 @@ class Region {
   #lastUpdated;
   #statusEffects;
   #averageLevel;
+  #relativeLevel;
 
   static #indexById = new Map();
   static #indexByName = new Map();
@@ -49,6 +50,7 @@ class Region {
     this.#averageLevel = Number.isFinite(averageLevel)
       ? Math.max(1, Math.min(20, Math.round(averageLevel)))
       : null;
+    this.#relativeLevel = null; // to be set externally if needed
 
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
@@ -166,7 +168,7 @@ class Region {
         regionName = child.textContent.trim();
       } else if (!regionDescription && (tag === 'regiondescription' || tag === 'description')) {
         regionDescription = child.textContent.trim();
-      } else if (!regionLevel && tag === 'level') {
+      } else if (!regionLevel && tag === 'relativeLevel') {
         const parsedLevel = Number(child.textContent.trim());
         if (Number.isFinite(parsedLevel)) {
           regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
@@ -266,6 +268,17 @@ class Region {
 
   get locationIds() {
     return [...this.#locationIds];
+  }
+
+  get relativeLevel() {
+    return this.#relativeLevel;
+  }
+
+  set relativeLevel(level) {
+    if (Number.isFinite(level)) {
+      this.#relativeLevel = Math.round(level);
+      this.#lastUpdated = new Date().toISOString();
+    }
   }
 
   set locationIds(ids) {

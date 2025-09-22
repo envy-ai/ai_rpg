@@ -821,25 +821,71 @@ class Events {
             return;
         }
 
-        const { ensureNpcByName } = this.deps;
+        const { ensureNpcByName, gameLocations } = this.deps;
 
         for (const entry of entries) {
             if (!entry || !entry.name) continue;
             const npc = await ensureNpcByName(entry.name, context);
             if (!npc) continue;
 
-            if (entry.action === 'joined' && typeof context.player.addPartyMember === 'function') {
-                context.player.addPartyMember(npc.id);
-                const currentLocationId = context.player.currentLocation;
-                if (currentLocationId) {
-                    try {
-                        npc.setLocation(currentLocationId);
-                    } catch (_) {
-                        // ignore failures to set NPC location
+            const currentPartyOwner = context.player;
+
+            if (entry.action === 'joined' && typeof currentPartyOwner?.addPartyMember === 'function') {
+                const previousLocationId = npc.currentLocation;
+                const previousLocation = previousLocationId && gameLocations instanceof Map
+                    ? gameLocations.get(previousLocationId)
+                    : null;
+
+                const added = currentPartyOwner.addPartyMember(npc.id);
+                if (added) {
+                    const ownerLocationId = currentPartyOwner.currentLocation || null;
+                    if (ownerLocationId) {
+                        try {
+                            npc.setLocation(ownerLocationId);
+                        } catch (_) {
+                            // ignore failures to set NPC location
+                        }
+                    }
+
+                    if (previousLocation && typeof previousLocation.removeNpcId === 'function') {
+                        previousLocation.removeNpcId(npc.id);
+                    }
+
+                    if (ownerLocationId && gameLocations instanceof Map) {
+                        const ownerLocation = gameLocations.get(ownerLocationId);
+                        if (ownerLocation && typeof ownerLocation.removeNpcId === 'function') {
+                            ownerLocation.removeNpcId(npc.id);
+                        }
                     }
                 }
-            } else if (entry.action === 'left' && typeof context.player.removePartyMember === 'function') {
-                context.player.removePartyMember(npc.id);
+            } else if (entry.action === 'left' && typeof currentPartyOwner?.removePartyMember === 'function') {
+                const removed = currentPartyOwner.removePartyMember(npc.id);
+                if (removed) {
+                    const targetLocationId = context.location?.id
+                        || currentPartyOwner.currentLocation
+                        || npc.currentLocation
+                        || null;
+
+                    if (targetLocationId) {
+                        try {
+                            npc.setLocation(targetLocationId);
+                        } catch (_) {
+                            // ignore failures to set NPC location
+                        }
+
+                        if (gameLocations instanceof Map) {
+                            const targetLocation = gameLocations.get(targetLocationId);
+                            if (targetLocation) {
+                                if (typeof targetLocation.removeNpcId === 'function') {
+                                    targetLocation.removeNpcId(npc.id);
+                                }
+                                if (typeof targetLocation.addNpcId === 'function') {
+                                    targetLocation.addNpcId(npc.id);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -21,6 +21,8 @@ class Thing {
   #slot;
   #attributeBonuses;
   #causeStatusEffect;
+  #level;
+  #relativeLevel;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -57,7 +59,9 @@ class Thing {
     statusEffects = [],
     slot = null,
     attributeBonuses = null,
-    causeStatusEffect = null
+    causeStatusEffect = null,
+    level = null,
+    relativeLevel = null
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -91,6 +95,8 @@ class Thing {
     this.#slot = null;
     this.#attributeBonuses = [];
     this.#causeStatusEffect = null;
+    this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
+    this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
 
     this.#applyMetadataFieldsFromMetadata();
 
@@ -102,9 +108,14 @@ class Thing {
     }
     if (causeStatusEffect !== null && causeStatusEffect !== undefined) {
       this.causeStatusEffect = causeStatusEffect;
-    } else {
-      this.#syncFieldsToMetadata();
     }
+    if (Number.isFinite(level)) {
+      this.level = level;
+    }
+    if (Number.isFinite(relativeLevel)) {
+      this.relativeLevel = relativeLevel;
+    }
+    this.#syncFieldsToMetadata();
 
     // Add to static indexes
     Thing.#indexByID.set(this.#id, this);
@@ -202,6 +213,44 @@ class Thing {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  get level() {
+    return this.#level;
+  }
+
+  set level(value) {
+    if (Number.isFinite(value)) {
+      const clamped = Math.max(1, Math.min(20, Math.round(value)));
+      if (clamped !== this.#level) {
+        this.#level = clamped;
+        this.#syncFieldsToMetadata();
+        this.#lastUpdated = new Date().toISOString();
+      }
+    } else if (this.#level !== null) {
+      this.#level = null;
+      this.#syncFieldsToMetadata();
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
+  get relativeLevel() {
+    return this.#relativeLevel;
+  }
+
+  set relativeLevel(value) {
+    if (Number.isFinite(value)) {
+      const clamped = Math.max(-20, Math.min(20, Math.round(value)));
+      if (clamped !== this.#relativeLevel) {
+        this.#relativeLevel = clamped;
+        this.#syncFieldsToMetadata();
+        this.#lastUpdated = new Date().toISOString();
+      }
+    } else if (this.#relativeLevel !== null) {
+      this.#relativeLevel = null;
+      this.#syncFieldsToMetadata();
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
   // Setter methods with validation
   set name(newName) {
     if (!newName || typeof newName !== 'string') {
@@ -297,9 +346,11 @@ class Thing {
       lastUpdated: this.#lastUpdated,
       rarity: this.#rarity,
       itemTypeDetail: this.#itemTypeDetail,
-       slot: this.#slot || undefined,
-       attributeBonuses: this.#attributeBonuses.length ? this.attributeBonuses : undefined,
-       causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
+      slot: this.#slot || undefined,
+      attributeBonuses: this.#attributeBonuses.length ? this.attributeBonuses : undefined,
+      causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
+      level: this.#level || undefined,
+      relativeLevel: this.#relativeLevel || undefined,
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
     };
@@ -322,7 +373,9 @@ class Thing {
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       slot: data.slot ?? (data.metadata?.slot ?? null),
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
-      causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null
+      causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null,
+      level: data.level ?? data.metadata?.level ?? null,
+      relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {
@@ -422,6 +475,18 @@ class Thing {
     const effect = this.#normalizeCauseStatusEffect(meta.causeStatusEffect);
     this.#causeStatusEffect = effect;
 
+    if (Number.isFinite(meta.level)) {
+      this.#level = Math.max(1, Math.min(20, Math.round(meta.level)));
+    } else if (this.#level === undefined) {
+      this.#level = null;
+    }
+
+    if (Number.isFinite(meta.relativeLevel)) {
+      this.#relativeLevel = Math.max(-20, Math.min(20, Math.round(meta.relativeLevel)));
+    } else if (this.#relativeLevel === undefined) {
+      this.#relativeLevel = null;
+    }
+
     this.#syncFieldsToMetadata();
   }
 
@@ -442,6 +507,18 @@ class Thing {
       this.#metadata.causeStatusEffect = { ...this.#causeStatusEffect };
     } else {
       delete this.#metadata.causeStatusEffect;
+    }
+
+    if (Number.isFinite(this.#level)) {
+      this.#metadata.level = this.#level;
+    } else {
+      delete this.#metadata.level;
+    }
+
+    if (Number.isFinite(this.#relativeLevel)) {
+      this.#metadata.relativeLevel = this.#relativeLevel;
+    } else {
+      delete this.#metadata.relativeLevel;
     }
   }
 

@@ -145,7 +145,7 @@ class Location {
       }
     }
 
-    console.log('Successfully parsed location data:', locationData);
+    //console.log('Successfully parsed location data:', locationData);
 
     if (existingLocation) {
       if (!locationData.description || typeof locationData.description !== 'string') {
