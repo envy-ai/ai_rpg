@@ -1315,8 +1315,8 @@ module.exports = function registerApiRoutes(scope) {
                                 continue;
                             }
 
-                            if (member.isNPC && typeof destinationLocation.addNpcId === 'function') {
-                                destinationLocation.addNpcId(member.id);
+                            if (member.isNPC && typeof destinationLocation.removeNpcId === 'function') {
+                                destinationLocation.removeNpcId(member.id);
                             }
                         }
                     }
@@ -2528,8 +2528,17 @@ module.exports = function registerApiRoutes(scope) {
                     totalLocationExits: gameLocationExits.size,
                     totalRegions: regions.size,
                     totalGeneratedImages: generatedImages.size,
-                    totalSkills: skills.size
+                    totalSkills: skills.size,
+                    currentSettingId: currentSetting?.id || null,
+                    currentSettingName: currentSetting?.name || null
                 };
+
+                if (currentSetting && typeof currentSetting.toJSON === 'function') {
+                    const settingPath = path.join(saveDir, 'setting.json');
+                    const settingData = currentSetting.toJSON();
+                    fs.writeFileSync(settingPath, JSON.stringify(settingData, null, 2));
+                }
+
                 fs.writeFileSync(
                     path.join(saveDir, 'metadata.json'),
                     JSON.stringify(metadata, null, 2)
@@ -2643,6 +2652,26 @@ module.exports = function registerApiRoutes(scope) {
                     currentPlayer = null;
                 }
 
+                // Restore setting
+                const settingFilePath = path.join(saveDir, 'setting.json');
+                if (fs.existsSync(settingFilePath)) {
+                    try {
+                        const settingData = JSON.parse(fs.readFileSync(settingFilePath, 'utf8'));
+                        if (settingData && typeof settingData === 'object') {
+                            if (settingData.id) {
+                                SettingInfo.delete(settingData.id);
+                            }
+                            const loadedSetting = SettingInfo.fromJSON ? SettingInfo.fromJSON(settingData) : new SettingInfo(settingData);
+                            currentSetting = loadedSetting;
+                        }
+                    } catch (settingError) {
+                        console.warn('Failed to restore setting from save:', settingError.message);
+                        currentSetting = null;
+                    }
+                } else {
+                    currentSetting = null;
+                }
+
                 // Load game world data
                 const gameWorldPath = path.join(saveDir, 'gameWorld.json');
                 if (fs.existsSync(gameWorldPath)) {
@@ -2746,7 +2775,10 @@ module.exports = function registerApiRoutes(scope) {
                         totalLocations: gameLocations.size,
                         totalLocationExits: gameLocationExits.size,
                         chatHistoryLength: chatHistory.length,
-                        totalGeneratedImages: generatedImages.size
+                        totalGeneratedImages: generatedImages.size,
+                        currentSetting: currentSetting && typeof currentSetting.toJSON === 'function'
+                            ? currentSetting.toJSON()
+                            : null
                     },
                     message: `Game loaded successfully from: ${saveName}`
                 });

@@ -11,8 +11,22 @@ You are a specialized prompt generator for creating RPG inventory item images.
 
 <context>
 <setting>
-{{ setting }}
+    <name>{{ setting.name }}</name>
+    <description>{{ setting.description }}</description>
+    <genre>{{ setting.genre }}</genre>
+    <theme>{{ setting.theme }}</theme>
+    <magicLevel>{{ setting.magicLevel }}</magicLevel>
+    <techLevel>{{ setting.techLevel }}</techLevel>
+    <tone>{{ setting.tone }}</tone>
 </setting>
+<region>
+    <name>{{ regionName }}</name>
+    <description>{{ regionDescription }}</description>
+</region>
+<location>
+    <name>{{ locationName }}</name>
+    <description>{{ locationDescription }}</description>
+</location>
 </context>
 
 Create an image prompt in 1 to 3 paragraphs of prose for the following item.
