@@ -1185,6 +1185,14 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (currentPlayer && currentPlayer.currentLocation === location.id) {
+                    try {
+                        queueLocationThingImages(location);
+                    } catch (itemQueueError) {
+                        console.warn('Failed to queue thing images after fetching location:', itemQueueError.message);
+                    }
+                }
+
                 const locationData = location.toJSON();
                 locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
                 if (locationData.exits) {
@@ -1329,6 +1337,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 queueNpcAssetsForLocation(destinationLocation);
+                try {
+                    queueLocationThingImages(destinationLocation);
+                } catch (thingQueueError) {
+                    console.warn('Failed to queue thing images after moving:', thingQueueError.message);
+                }
 
                 const locationData = destinationLocation.toJSON();
                 locationData.pendingImageJobId = pendingLocationImages.get(destinationLocation.id) || null;

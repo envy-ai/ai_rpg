@@ -852,6 +852,69 @@ function queueNpcAssetsForLocation(location) {
     }
 }
 
+function queueLocationThingImages(location) {
+    if (!location || !currentPlayer || currentPlayer.currentLocation !== location.id) {
+        return;
+    }
+
+    try {
+        const candidateIds = new Set();
+        const locationThingIds = Array.isArray(location.thingIds)
+            ? location.thingIds
+            : (typeof location.getThingIds === 'function' ? Array.from(location.getThingIds()) : []);
+
+        for (const thingId of locationThingIds) {
+            if (thingId) {
+                candidateIds.add(thingId);
+            }
+        }
+
+        for (const thing of things.values()) {
+            if (!thing || thing.thingType !== 'item') {
+                continue;
+            }
+
+            const metadata = thing.metadata || {};
+            const ownerId = metadata.ownerId || null;
+            const locationId = metadata.locationId || null;
+
+            if (ownerId && ownerId !== currentPlayer.id) {
+                continue;
+            }
+
+            if (locationId === location.id) {
+                candidateIds.add(thing.id);
+            }
+        }
+
+        if (!candidateIds.size) {
+            return;
+        }
+
+        for (const thingId of candidateIds) {
+            const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+            if (!thing || thing.thingType !== 'item') {
+                continue;
+            }
+
+            const metadata = thing.metadata || {};
+            if (metadata.ownerId && metadata.ownerId !== currentPlayer.id) {
+                continue;
+            }
+
+            if (!shouldGenerateThingImage(thing)) {
+                continue;
+            }
+
+            generateThingImage(thing).catch(err => {
+                console.warn('Failed to queue thing image generation:', err.message);
+            });
+        }
+    } catch (error) {
+        console.warn(`Failed to queue thing images for ${location.name || location.id}:`, error.message);
+    }
+}
+
 function buildNpcProfiles(location) {
     if (!location || typeof location.npcIds !== 'object') {
         return [];
@@ -2821,7 +2884,8 @@ function renderLocationNpcPrompt(location, options = {}) {
             existingNpcsInThisLocation: options.existingNpcsInThisLocation || [],
             existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
-            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt
+            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
+            bannedWords: options.bannedWords || getBannedNpcWords()
         });
     } catch (error) {
         console.error('Error rendering location NPC template:', error);
@@ -2842,7 +2906,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             region: safeRegion,
             allLocationsInRegion: options.allLocationsInRegion || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
-            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt
+            attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
+            bannedWords: options.bannedWords || getBannedNpcWords()
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -6039,6 +6104,7 @@ Events.initialize({
     scheduleStubExpansion,
     generateLocationImage,
     queueNpcAssetsForLocation,
+    queueLocationThingImages,
     generateLocationExitImage,
     ensureExitConnection,
     directionKeyFromName,
@@ -6080,6 +6146,7 @@ const apiScope = {
     generateRegionFromPrompt,
     generateSkillsList,
     generateThingImage,
+    queueLocationThingImages,
     getActiveSettingSnapshot,
     buildNewGameDefaults,
     getSuggestedPlayerLevel,

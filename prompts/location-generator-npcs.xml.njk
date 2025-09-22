@@ -10,8 +10,9 @@ Here is a list of all character attributes:
 
 Attributes for an NPC should be rated as one of: poor, below average, average, above average, excellent, legendary.
 
-Here's a list of deceased NPCs:
-{% include "_includes/npc-banlist.njk" %}
+Banned words:
+{% for word in bannedWords %}- {{ word }}
+{% endfor %}
 
 Here's a list of existing NPCs in other regions:
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
@@ -30,7 +31,8 @@ Generate 0 to 3 NPCs for the location above. Use your judgment about how many, b
 
 <npcs>
 <npc>
-<name>…</name>
+<generatedName>…</generatedName>
+<name>Does generatedName contain any forbidden words? If so, generate an alternative name. Otherwise, copy generatedName.</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
 <shortDescription>10 words or less description of the NPC</shortDescription>
 <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>

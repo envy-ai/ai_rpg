@@ -571,6 +571,7 @@ class Events {
             scheduleStubExpansion,
             generateLocationImage,
             queueNpcAssetsForLocation,
+            queueLocationThingImages,
             findRegionByLocationId,
             gameLocations,
             Location,
@@ -627,6 +628,12 @@ class Events {
             queueNpcAssetsForLocation(destination);
         } catch (error) {
             console.warn('Failed to queue NPC assets after event move:', error.message);
+        }
+
+        try {
+            queueLocationThingImages(destination);
+        } catch (error) {
+            console.warn('Failed to queue location item images after event move:', error.message);
         }
     }
 
