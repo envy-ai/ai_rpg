@@ -563,6 +563,8 @@ module.exports = function registerApiRoutes(scope) {
                     if (member && member.isNPC && shouldGenerateNpcImage(member)) {
                         generatePlayerImage(member).catch(err => console.warn('Failed to queue party member portrait:', err.message));
                     }
+                    // We don't need to generate party inventory item images, as they aren't visible anywhere.
+                    /*
                     const inventoryItems = typeof member?.getInventoryItems === 'function' ? member.getInventoryItems() : [];
                     for (const item of inventoryItems) {
                         if (!shouldGenerateThingImage(item)) {
@@ -572,6 +574,7 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to generate image for party item:', itemError.message);
                         });
                     }
+                    */
                 } catch (partyImageError) {
                     console.warn('Failed to schedule party imagery updates:', partyImageError.message);
                 }

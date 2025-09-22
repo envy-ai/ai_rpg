@@ -869,6 +869,7 @@ function queueLocationThingImages(location) {
             }
         }
 
+        /*
         for (const thing of things.values()) {
             if (!thing || thing.thingType !== 'item') {
                 continue;
@@ -886,6 +887,7 @@ function queueLocationThingImages(location) {
                 candidateIds.add(thing.id);
             }
         }
+        */
 
         if (!candidateIds.size) {
             return;
@@ -4787,6 +4789,9 @@ function renderThingImagePrompt(thing) {
         };
 
         console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
+
+        // Log call stack to console
+        console.trace('Thing image prompt render call stack:');
 
         // Render the template with the variables
         const renderedTemplate = promptEnv.render(templateName, variables);

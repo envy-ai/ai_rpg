@@ -10,7 +10,7 @@ Here is a list of all character attributes:
 
 Attributes for an NPC should be rated as one of: poor, below average, average, above average, excellent, legendary.
 
-Banned words:
+These NPCs are deceased:
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
 
@@ -36,12 +36,11 @@ Here are all the locations in the region:
 
 </context>
 
-Generate 0 or more (up to 6) important or prominent NPCs appropriate for the region above. What is considered important depends on the region. If the region is someone's house, then the people who live in the house are important. Other important people might be leaders of the region (mayor, etc); important merchants like a blacksmith, car salesman, arms dealer, etc; any other prominent individuals (famous people, wizards, healers, well known mercenaries); or just interesting people who aren't background characters.  Output the NPCs in this format:
+Generate 0 or more (up to 6) important or prominent NPCs appropriate for the region above. What is considered important depends on the region. If the region is someone's house, then the people who live in the house are important. Other important people might be leaders of the region (mayor, etc); important merchants like a blacksmith, car salesman, arms dealer, etc; any other prominent individuals (famous people, wizards, healers, well known mercenaries); or just interesting people who aren't background characters.  Do not reuse NPC names.  Output the NPCs in this format:
 
 <npcs>
 <npc>
-<generatedName>…</generatedName>
-<name>Does generatedName contain any forbidden words? If so, generate an alternative name. Otherwise, copy generatedName.</name>
+<name>Full name of the NPC</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
 <shortDescription>10 words or less description of the NPC</shortDescription>
 <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
