@@ -3045,6 +3045,14 @@ module.exports = function registerApiRoutes(scope) {
                     metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
                 }
 
+                // Reset in-memory image job state before loading new data
+                jobQueue.length = 0;
+                imageJobs.clear();
+                pendingLocationImages.clear();
+                generatedImages.clear();
+                npcGenerationPromises.clear();
+                isProcessingJob = false;
+
                 const skillsPath = path.join(saveDir, 'skills.json');
                 skills.clear();
                 if (fs.existsSync(skillsPath)) {
@@ -3216,6 +3224,110 @@ module.exports = function registerApiRoutes(scope) {
                     const imagesData = JSON.parse(fs.readFileSync(imagesPath, 'utf8')) || {};
                     for (const [id, imageData] of Object.entries(imagesData)) {
                         generatedImages.set(id, imageData);
+                    }
+                }
+
+                // Clean up stale image references
+                const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+                const hasImage = (imageId) => {
+                    console.log(`Checking existing image for ID: ${imageId}`);
+                    if (!imageId) {
+                        console.warn('No image ID provided');
+                        return false;
+                    }
+                    if (generatedImages.has(imageId)) {
+                        console.log(`Found existing image in cache for ID: ${imageId}`);
+                        return true;
+                    }
+                    console.log(`No existing image found for ID: ${imageId}`);
+                    const imagesDir = path.join(__dirname, 'public', 'generated-images');
+                    return KNOWN_EXTENSIONS.some(ext => fs.existsSync(path.join(imagesDir, `${imageId}${ext}`)));
+                };
+
+                for (const thing of things.values()) {
+                    console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
+                    if (thing && thing.imageId && !hasImage(thing.imageId)) {
+                        thing.imageId = null;
+                    }
+                }
+
+                for (const player of players.values()) {
+                    console.log(`Checking existing image for player ${player.name}: ${player.imageId}`);
+                    if (!player) {
+                        continue;
+                    }
+                    if (player.imageId && !hasImage(player.imageId)) {
+                        player.imageId = null;
+                    }
+                    if (typeof player.getInventoryItems === 'function') {
+                        const inventoryItems = player.getInventoryItems();
+                        for (const item of inventoryItems) {
+                            if (item && item.imageId && !hasImage(item.imageId)) {
+                                item.imageId = null;
+                            }
+                        }
+                    }
+                }
+
+                const ensureInventoryImages = (character) => {
+                    if (!character || typeof character.getInventoryItems !== 'function') {
+                        return;
+                    }
+                    const items = character.getInventoryItems();
+                    if (!Array.isArray(items)) {
+                        return;
+                    }
+                    for (const item of items) {
+                        if (!item) {
+                            continue;
+                        }
+                        try {
+                            if (shouldGenerateThingImage(item)) {
+                                generateThingImage(item).catch(error => {
+                                    console.warn('Failed to queue inventory item image:', error.message);
+                                });
+                            }
+                        } catch (error) {
+                            console.warn('Error evaluating inventory item for image generation:', error.message);
+                        }
+                    }
+                };
+
+                if (currentPlayer) {
+                    if (!currentPlayer.imageId || !hasImage(currentPlayer.imageId)) {
+                        generatePlayerImage(currentPlayer).catch(portraitError => {
+                            console.warn('Failed to queue player portrait after load:', portraitError.message);
+                        });
+                    }
+                    ensureInventoryImages(currentPlayer);
+                }
+
+                const currentLocationId = currentPlayer?.currentLocation || null;
+                if (currentLocationId && gameLocations.has(currentLocationId)) {
+                    const location = gameLocations.get(currentLocationId);
+                    try {
+                        queueNpcAssetsForLocation(location);
+                    } catch (npcQueueError) {
+                        console.warn('Failed to queue NPC assets after load:', npcQueueError.message);
+                    }
+                    try {
+                        queueLocationThingImages(location);
+                    } catch (thingQueueError) {
+                        console.warn('Failed to queue location thing images after load:', thingQueueError.message);
+                    }
+
+                    const npcIds = Array.isArray(location.npcIds) ? location.npcIds : [];
+                    for (const npcId of npcIds) {
+                        const npc = players.get(npcId);
+                        if (!npc) {
+                            continue;
+                        }
+                        if (!npc.imageId || !hasImage(npc.imageId)) {
+                            generatePlayerImage(npc).catch(error => {
+                                console.warn('Failed to queue NPC portrait after load:', error.message);
+                            });
+                        }
+                        ensureInventoryImages(npc);
                     }
                 }
 
@@ -3622,12 +3734,15 @@ module.exports = function registerApiRoutes(scope) {
             const metadata = generatedImages.get(imageId);
 
             if (!metadata) {
+                console.log('Image not found in metadata map:', imageId);
                 return res.status(404).json({
                     success: false,
                     error: 'Image not found'
                 });
             }
 
+            console.log('Retrieved image metadata for:', imageId);
+            console.log(metadata);
             res.json({
                 success: true,
                 metadata: metadata

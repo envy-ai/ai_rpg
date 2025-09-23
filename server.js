@@ -128,13 +128,22 @@ function imageFileExists(imageId) {
 }
 
 function hasExistingImage(imageId) {
+    console.log('Checking existing image for ID:', imageId);
     if (!imageId) {
+        console.warn('No image ID provided');
         return false;
     }
     if (generatedImages.has(imageId)) {
+        console.log(`Found existing image in cache for ID: ${imageId}`);
         return true;
     }
-    return imageFileExists(imageId);
+    console.log(`No existing image found for ID: ${imageId}`);
+    if (imageFileExists(imageId)) {
+        console.log(`Found existing image file for ID: ${imageId}`);
+        generatedImages.set(imageId, { id: imageId });
+        return true;
+    }
+    return false;
 }
 
 // Create a new image generation job
@@ -5876,6 +5885,7 @@ async function generateLocationExitImage(locationExit) {
 // Function to generate thing image
 async function generateThingImage(thing) {
     try {
+        console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping thing image generation');
@@ -5892,6 +5902,7 @@ async function generateThingImage(thing) {
         }
 
         if (thing.imageId) {
+            console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
             if (hasActiveImageJob(thing.imageId)) {
                 console.log(`🎒 Image job ${thing.imageId} already running for ${thing.name}, skipping duplicate request`);
                 return null;
@@ -5900,6 +5911,8 @@ async function generateThingImage(thing) {
                 console.log(`🎒 ${thing.name} (${thing.id}) already has an image (${thing.imageId}), skipping regeneration`);
                 return null;
             }
+        } else {
+            console.log(`No existing imageId for thing ${thing.name} (${thing.id}), proceeding with generation`);
         }
 
         if (!shouldGenerateThingImage(thing)) {
@@ -6783,10 +6796,12 @@ const apiScope = {
     gameLocations,
     gameLocationExits,
     pendingLocationImages,
+    npcGenerationPromises,
     stubExpansionPromises,
     imageJobs,
     jobQueue,
-    generatedImages
+    generatedImages,
+    imageFileExists
 };
 
 function defineApiStateProperty(name, getter, setter) {
