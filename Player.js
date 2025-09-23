@@ -518,6 +518,29 @@ class Player {
         }
     }
 
+    getModifiedAttribute(attributeName) {
+        // Return attribute plus values for equipped items
+        const baseValue = this.#attributes[attributeName];
+        if (baseValue === undefined) {
+            return null;
+        }
+
+        const equippedItems = this.getInventoryItems().filter(item => item.isEquipped);
+        const bonus = equippedItems.reduce((total, item) => {
+            const itemBonus = item.getAttributeBonus(attributeName);
+            return total + (itemBonus ?? 0);
+        }, 0);
+
+        return baseValue + bonus;
+    }
+
+    getAttributeBonus(attributeName) {
+        if (this.getModifiedAttribute(attributeName) !== null) {
+            return Math.floor(this.getModifiedAttribute(attributeName) / 2);
+        }
+        return null;
+    }
+
     // Public getters for private fields
     get attributeDefinitions() {
         return this.#definitions.attributes ?? {};

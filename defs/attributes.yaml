@@ -3,76 +3,29 @@ attributes:
     label: Strength
     abbreviation: STR
     description: A measure of your physical power.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["melee_damage", "carrying_capacity"]
+    default: 5
   dexterity:
     label: Dexterity
     abbreviation: DEX
     description: A measure of your agility and reflexes.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["initiative", "ranged_accuracy", "dodge"]
+    default: 5
   constitution:
     label: Constitution
     abbreviation: CON
     description: A measure of your health and stamina.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["health", "stamina", "poison_resistance"]
+    default: 5
   intelligence:
     label: Intelligence
     abbreviation: INT
     description: A measure of your mental acuity and problem-solving ability.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["spell_power", "skill_points", "knowledge"]
+    default: 5
   wisdom:
     label: Wisdom
     abbreviation: WIS
     description: A measure of your insight, perception, and willpower.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["perception", "divine_magic", "willpower"]
+    default: 5
   charisma:
     label: Charisma
     abbreviation: CHA
     description: A measure of your charm and influence over others.
-    default: 10
-    min: 3
-    max: 18
-    type: primary
-    affects: ["social_interactions", "leadership", "bard_magic"]
-
-# Configuration for attribute system
-system:
-  modifierFormula: "floor((value - 10) / 2)"
-  validationRules:
-    enforceMinMax: true
-    allowNegativeModifiers: true
-  generationMethods:
-    standard:
-      name: "Standard Array"
-      description: "Assign these values to attributes"
-      values: [15, 14, 13, 12, 10, 8]
-    rolled:
-      name: "Rolled Stats"
-      description: "Roll dice for each attribute"
-      method: "4d6kh3"
-      count: 6
-    pointBuy:
-      name: "Point Buy"
-      description: "Purchase attribute improvements with points"
-      baseValue: 8
-      maxValue: 15
-      totalPoints: 27
+    default: 5

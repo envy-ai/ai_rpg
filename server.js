@@ -1877,8 +1877,8 @@ function resolveActionOutcome({ plausibility, player }) {
     const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
 
     const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
-    const attributeValue = attributeKey ? player.getAttribute(attributeKey) : null;
-    const attributeBonus = Number.isFinite(attributeValue) ? Math.floor(attributeValue / 2) : 0;
+    //const attributeValue = attributeKey ? player.getModifiedAttribute(attributeKey) : null;
+    const attributeBonus = player.getAttributeBonus(attributeKey);
 
     const rollResult = diceModule.rollDice('1d20');
     const dieRoll = rollResult.total;
