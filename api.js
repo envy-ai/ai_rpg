@@ -65,6 +65,15 @@ module.exports = function registerApiRoutes(scope) {
                 return text;
             };
 
+            const extractNestedTag = (block, parentTag, childTag) => {
+                const parentRegex = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i');
+                const parentMatch = block.match(parentRegex);
+                if (!parentMatch) {
+                    return null;
+                }
+                return extractTag(parentMatch[1], childTag);
+            };
+
             const attacks = [];
             for (const [, rawBlock] of matchAllAttacks) {
                 const attacker = normalizeValue(extractTag(rawBlock, 'attacker'));
@@ -72,11 +81,46 @@ module.exports = function registerApiRoutes(scope) {
                 const ability = normalizeValue(extractTag(rawBlock, 'ability'));
                 const weapon = normalizeValue(extractTag(rawBlock, 'weapon'));
 
-                if (!attacker && !defender && !ability && !weapon) {
+                const attackSkill = normalizeValue(extractNestedTag(rawBlock, 'attackerInfo', 'attackSkill'));
+                const damageAttribute = normalizeValue(extractNestedTag(rawBlock, 'attackerInfo', 'damageAttribute'));
+                const defenseSkillLegacy = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'defenseSkill'));
+                const evadeSkill = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'evadeSkill')) || defenseSkillLegacy;
+                const deflectSkill = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'deflectSkill'));
+                const toughnessAttribute = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'toughnessAttribute'));
+
+                const hasNestedInfo = attackSkill || damageAttribute || evadeSkill || deflectSkill || toughnessAttribute;
+
+                if (!attacker && !defender && !ability && !weapon && !hasNestedInfo) {
                     continue;
                 }
 
-                attacks.push({ attacker, defender, ability, weapon });
+                const attackEntry = { attacker, defender, ability, weapon };
+
+                if (attackSkill || damageAttribute) {
+                    attackEntry.attackerInfo = {
+                        attackSkill: attackSkill || null,
+                        damageAttribute: damageAttribute || null
+                    };
+                }
+
+                if (evadeSkill || deflectSkill || toughnessAttribute || defenseSkillLegacy) {
+                    const defenderInfo = {};
+                    if (evadeSkill) {
+                        defenderInfo.evadeSkill = evadeSkill;
+                    }
+                    if (defenseSkillLegacy && !evadeSkill) {
+                        defenderInfo.defenseSkill = defenseSkillLegacy;
+                    }
+                    if (deflectSkill) {
+                        defenderInfo.deflectSkill = deflectSkill;
+                    }
+                    if (toughnessAttribute) {
+                        defenderInfo.toughnessAttribute = toughnessAttribute;
+                    }
+                    attackEntry.defenderInfo = defenderInfo;
+                }
+
+                attacks.push(attackEntry);
             }
 
             if (!attacks.length) {
