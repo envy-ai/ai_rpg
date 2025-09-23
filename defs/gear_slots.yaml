@@ -3,9 +3,11 @@ gear_slots:
   body: Body
   legs: Legs
   feet: Feet
-  hands: Hands
-  weapon: Weapon
-  shield: Shield
+  hands:
+    - Right hand
+    - Left hand
   accessory:
     - Accessory 1
     - Accessory 2
+  back: Back
+  neck: Neck

@@ -289,15 +289,24 @@
                     </div>
                 </section>
                 <section class="tab-panel" id="tab-inventory" role="tabpanel" aria-labelledby="tab-inventory-tab" hidden>
-                    <div class="inventory-panel">
-                        <div class="inventory-header">
-                            <h2>Inventory</h2>
-                            <span class="inventory-count" id="inventoryCount">0 items</span>
+                    <div class="inventory-layout">
+                        <div class="equipment-panel">
+                            <div class="equipment-header">
+                                <h2>Equipment</h2>
+                            </div>
+                            <div class="equipment-slots" id="equipmentSlots"></div>
+                            <div class="equipment-empty" id="equipmentEmpty">No equipment slots available.</div>
                         </div>
-                        <div class="inventory-scroll">
-                            <div class="inventory-grid" id="inventoryItems"></div>
+                        <div class="inventory-panel">
+                            <div class="inventory-header">
+                                <h2>Inventory</h2>
+                                <span class="inventory-count" id="inventoryCount">0 items</span>
+                            </div>
+                            <div class="inventory-scroll">
+                                <div class="inventory-grid" id="inventoryItems"></div>
+                            </div>
+                            <div class="inventory-empty" id="inventoryEmpty">Inventory is empty.</div>
                         </div>
-                        <div class="inventory-empty" id="inventoryEmpty">Inventory is empty.</div>
                     </div>
                 </section>
             </div>
@@ -981,6 +990,8 @@
             const countLabel = document.getElementById('inventoryCount');
             const floatingTooltip = document.getElementById('inventoryTooltip');
             const inventoryScroll = document.querySelector('.inventory-scroll');
+            const equipmentSlotsContainer = document.getElementById('equipmentSlots');
+            const equipmentEmpty = document.getElementById('equipmentEmpty');
             const imageMetadataCache = new Map();
             let inventoryRefreshTimeout = null;
             let tooltipController = null;
@@ -1002,13 +1013,84 @@
                         const response = await fetch('/api/player');
                         const data = await response.json();
                         if (data.success && data.player && window.updateInventoryDisplay) {
-                            window.updateInventoryDisplay(data.player.inventory || []);
+                            window.updateInventoryDisplay(data.player || {});
                         }
                     } catch (error) {
                         console.warn('Failed to refresh inventory while waiting for item images:', error);
                     }
                 }, delay);
             };
+
+            const getItemSlotTags = (item = {}) => {
+                const slots = new Set();
+                const addSlot = (value) => {
+                    if (!value && value !== 0) {
+                        return;
+                    }
+                    if (Array.isArray(value)) {
+                        value.forEach(addSlot);
+                        return;
+                    }
+                    const text = String(value).trim();
+                    if (text && text.toLowerCase() !== 'n/a') {
+                        slots.add(text.toLowerCase());
+                    }
+                };
+
+                addSlot(item.slot);
+                if (item.metadata && Object.prototype.hasOwnProperty.call(item.metadata, 'slot')) {
+                    addSlot(item.metadata.slot);
+                }
+
+                return Array.from(slots);
+            };
+
+            async function updateEquipmentSlot(slotName, itemId, selectElement) {
+                if (!slotName) {
+                    return;
+                }
+
+                const previousValue = selectElement ? (selectElement.dataset.previousValue || '') : '';
+
+                try {
+                    if (selectElement) {
+                        selectElement.disabled = true;
+                    }
+
+                    const response = await fetch('/api/player/equip', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            slotName,
+                            itemId: itemId || null
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok || !data.success) {
+                        const errorMessage = data?.error || `Request failed with status ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
+
+                    if (selectElement) {
+                        const updatedItemId = data.player?.gear?.[slotName]?.itemId || '';
+                        selectElement.dataset.previousValue = updatedItemId;
+                    }
+
+                    renderInventoryState(data.player || {});
+                } catch (error) {
+                    console.warn('Failed to update equipment slot:', error);
+                    if (selectElement) {
+                        selectElement.value = previousValue;
+                    }
+                    alert(`Failed to update equipment: ${error.message || error}`);
+                } finally {
+                    if (selectElement) {
+                        selectElement.disabled = false;
+                    }
+                }
+            }
 
             const resetIconToPlaceholder = (iconElement, item, fallbackSymbol = null) => {
                 if (!iconElement) return;
@@ -1039,6 +1121,118 @@
                     caption: iconElement.dataset.lightboxCaption
                 }));
             };
+
+            function renderEquipment(player = {}, inventoryItems = [], equippedItemIds = new Set()) {
+                if (!equipmentSlotsContainer) {
+                    return;
+                }
+
+                const gear = player && typeof player.gear === 'object' ? player.gear : {};
+                const gearEntries = Object.entries(gear);
+
+                equipmentSlotsContainer.innerHTML = '';
+
+                if (!gearEntries.length) {
+                    if (equipmentEmpty) {
+                        equipmentEmpty.style.display = 'block';
+                    }
+                    equipmentSlotsContainer.style.display = 'none';
+                    return;
+                }
+
+                equipmentSlotsContainer.style.display = 'flex';
+                if (equipmentEmpty) {
+                    equipmentEmpty.style.display = 'none';
+                }
+
+                const inventoryById = new Map();
+                inventoryItems.forEach(item => {
+                    if (item && item.id) {
+                        inventoryById.set(item.id, item);
+                    }
+                });
+
+                gearEntries
+                    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+                    .forEach(([slotName, slotData]) => {
+                        const slotType = (slotData?.slotType || '').toString().toLowerCase();
+                        const normalizedSlotName = (slotName || '').toLowerCase();
+
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'equipment-slot';
+
+                        const selectId = `equipment-select-${slotName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`;
+
+                        const label = document.createElement('label');
+                        label.className = 'equipment-slot-label';
+                        label.setAttribute('for', selectId);
+                        label.textContent = slotName || (slotType ? capitalize(slotType) : 'Slot');
+
+                        const select = document.createElement('select');
+                        select.className = 'equipment-select';
+                        select.id = selectId;
+                        select.dataset.slotName = slotName;
+                        select.dataset.previousValue = slotData?.itemId || '';
+
+                        const emptyOption = document.createElement('option');
+                        emptyOption.value = '';
+                        emptyOption.textContent = 'Empty';
+                        select.appendChild(emptyOption);
+
+                        const validItems = inventoryItems.filter(item => {
+                            const slots = getItemSlotTags(item);
+                            if (!slots.length) {
+                                return false;
+                            }
+                            return slots.includes(slotType) || slots.includes(normalizedSlotName);
+                        });
+
+                        const optionItems = [];
+                        if (slotData?.itemId) {
+                            const equippedItem = inventoryById.get(slotData.itemId);
+                            if (equippedItem) {
+                                optionItems.push(equippedItem);
+                            } else {
+                                optionItems.push({ id: slotData.itemId, name: `Equipped (${slotData.itemId})` });
+                            }
+                        }
+
+                        validItems.forEach(item => {
+                            if (!optionItems.some(optionItem => optionItem.id === item.id)) {
+                                optionItems.push(item);
+                            }
+                        });
+
+                        optionItems.forEach(item => {
+                            if (!item) {
+                                return;
+                            }
+                            const option = document.createElement('option');
+                            option.value = item.id || '';
+                            option.textContent = item.name || 'Unknown Item';
+                            if (slotData?.itemId && item.id === slotData.itemId) {
+                                option.selected = true;
+                            }
+                            select.appendChild(option);
+                        });
+
+                        if (!slotData?.itemId) {
+                            select.value = '';
+                        }
+
+                        select.addEventListener('change', (event) => {
+                            const newValue = event.target.value || '';
+                            if (newValue === (slotData?.itemId || '')) {
+                                return;
+                            }
+                            updateEquipmentSlot(slotName, newValue || null, event.target);
+                        });
+
+                        wrapper.appendChild(label);
+                        wrapper.appendChild(select);
+                        equipmentSlotsContainer.appendChild(wrapper);
+                    });
+            }
 
             const loadInventoryImage = async (item, iconElement) => {
                 const imageId = item?.imageId;
@@ -1083,7 +1277,7 @@
                 }
             };
 
-            function renderInventory(items = []) {
+            function renderInventory(items = [], equippedItemIds = new Set()) {
                 if (!inventoryGrid || !emptyState || !countLabel) {
                     return;
                 }
@@ -1095,6 +1289,7 @@
                 }
 
                 const safeItems = Array.isArray(items) ? items : [];
+                const equippedSet = equippedItemIds instanceof Set ? equippedItemIds : new Set();
                 inventoryGrid.innerHTML = '';
 
                 countLabel.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
@@ -1120,6 +1315,9 @@
 
                     card.appendChild(icon);
                     card.appendChild(name);
+                    if (equippedSet.has(item.id)) {
+                        card.classList.add('is-equipped');
+                    }
                     inventoryGrid.appendChild(card);
 
                     card.addEventListener('mouseenter', (event) => {
@@ -1145,6 +1343,21 @@
                 });
 
                 try { document.dispatchEvent(new Event('inventory:updated')); } catch (_) {}
+            }
+
+            function renderInventoryState(player = {}) {
+                const inventoryItems = Array.isArray(player.inventory) ? player.inventory : [];
+                const gear = player && typeof player.gear === 'object' ? player.gear : {};
+                const equippedItemIds = new Set();
+
+                Object.values(gear).forEach(slot => {
+                    if (slot && slot.itemId) {
+                        equippedItemIds.add(slot.itemId);
+                    }
+                });
+
+                renderEquipment(player, inventoryItems, equippedItemIds);
+                renderInventory(inventoryItems, equippedItemIds);
             }
 
             function selectInventoryIcon(item = {}) {
@@ -1213,14 +1426,14 @@
                 // Ignore environments without CustomEvent support.
             }
 
-            window.updateInventoryDisplay = renderInventory;
+            window.updateInventoryDisplay = renderInventoryState;
 
             async function refreshInventory() {
                 try {
                     const response = await fetch('/api/player');
                     const data = await response.json();
                     if (data.success && data.player) {
-                        renderInventory(data.player.inventory || []);
+                        renderInventoryState(data.player || {});
                     }
                 } catch (error) {
                     console.warn('Failed to refresh inventory:', error);

@@ -1147,6 +1147,84 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/player/equip', (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player found'
+                    });
+                }
+
+                const { slotName, itemId } = req.body || {};
+                const resolvedSlotName = typeof slotName === 'string' ? slotName.trim() : '';
+
+                if (!resolvedSlotName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Slot name is required'
+                    });
+                }
+
+                const gearSnapshot = currentPlayer.getGear();
+                if (!gearSnapshot || !Object.prototype.hasOwnProperty.call(gearSnapshot, resolvedSlotName)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Unknown equipment slot '${resolvedSlotName}'`
+                    });
+                }
+
+                let actionSucceeded = false;
+
+                if (itemId) {
+                    const inventoryItems = currentPlayer.getInventoryItems();
+                    const targetItem = inventoryItems.find(item => item?.id === itemId);
+
+                    if (!targetItem) {
+                        return res.status(404).json({
+                            success: false,
+                            error: 'Item not found in inventory'
+                        });
+                    }
+
+                    actionSucceeded = currentPlayer.equipItemInSlot(targetItem, resolvedSlotName);
+
+                    if (!actionSucceeded) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Failed to equip item in the requested slot'
+                        });
+                    }
+                } else {
+                    const gearEntry = gearSnapshot[resolvedSlotName];
+                    if (!gearEntry?.itemId) {
+                        actionSucceeded = true; // Already empty
+                    } else {
+                        actionSucceeded = currentPlayer.unequipSlot(resolvedSlotName);
+                    }
+                }
+
+                if (!actionSucceeded) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No changes were applied to equipment'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    player: currentPlayer.getStatus(),
+                    message: 'Equipment updated successfully'
+                });
+            } catch (error) {
+                console.error('Error equipping item:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // Player Stats Configuration Routes
 
         // Get player stats page

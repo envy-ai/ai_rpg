@@ -3236,6 +3236,7 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
 function renderInventoryPrompt(context = {}) {
     try {
         const templateName = 'inventory-generator.njk';
+        const gearSlotTypes = getGearSlotTypes();
         return promptEnv.render(templateName, {
             setting: context.setting || 'A mysterious fantasy realm.',
             region: {
@@ -3253,11 +3254,63 @@ function renderInventoryPrompt(context = {}) {
                 class: context.character?.class || 'citizen',
                 level: context.character?.level || 1,
                 race: context.character?.race || 'human'
-            }
+            },
+            gearSlots: gearSlotTypes
         });
     } catch (error) {
         console.error('Error rendering inventory template:', error);
         return null;
+    }
+}
+
+function getGearSlotTypes() {
+    try {
+        const definitions = Player.gearSlotDefinitions;
+        if (!definitions || !(definitions.byType instanceof Map)) {
+            return [];
+        }
+        const types = Array.from(definitions.byType.keys())
+            .filter(type => typeof type === 'string' && type.trim())
+            .map(type => type.trim());
+        return types.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    } catch (error) {
+        console.warn('Failed to resolve gear slot types:', error.message);
+        return [];
+    }
+}
+
+function getGearSlotNames() {
+    try {
+        const definitions = Player.gearSlotDefinitions;
+        if (!definitions) {
+            return [];
+        }
+        const slotSet = new Set();
+
+        if (definitions.byType instanceof Map) {
+            for (const names of definitions.byType.values()) {
+                if (Array.isArray(names)) {
+                    names.forEach(name => {
+                        if (typeof name === 'string' && name.trim()) {
+                            slotSet.add(name.trim());
+                        }
+                    });
+                }
+            }
+        }
+
+        if (definitions.byName instanceof Map) {
+            for (const name of definitions.byName.keys()) {
+                if (typeof name === 'string' && name.trim()) {
+                    slotSet.add(name.trim());
+                }
+            }
+        }
+
+        return Array.from(slotSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    } catch (error) {
+        console.warn('Failed to resolve gear slot names:', error.message);
+        return [];
     }
 }
 
@@ -4063,6 +4116,7 @@ function renderLocationThingsPrompt(context = {}) {
         const safeSetting = context.settingDescription || context.setting || 'An evocative roleplaying setting.';
         const safeRegion = context.region || {};
         const safeLocation = context.location || {};
+        const gearSlotTypes = getGearSlotTypes();
 
         const templatePayload = {
             setting: safeSetting,
@@ -4073,7 +4127,8 @@ function renderLocationThingsPrompt(context = {}) {
             location: {
                 name: safeLocation.name || 'Unknown Location',
                 description: safeLocation.description || 'No description provided.'
-            }
+            },
+            gearSlots: gearSlotTypes
         };
 
         const rendered = promptEnv.render(templateName, templatePayload);

@@ -751,7 +751,7 @@ class AIRPGChat {
 
             if (result.success && result.player) {
                 if (window.updateInventoryDisplay) {
-                    window.updateInventoryDisplay(result.player.inventory || []);
+                    window.updateInventoryDisplay(result.player || {});
                 }
                 if (window.refreshParty) {
                     window.refreshParty();
