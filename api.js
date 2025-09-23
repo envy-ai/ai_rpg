@@ -616,6 +616,9 @@ module.exports = function registerApiRoutes(scope) {
 
             const targetName = typeof playerAttack.defender === 'string' ? playerAttack.defender.trim() : '';
             const targetActor = targetName ? findActorByName(targetName) : null;
+            if (targetActor?.id) {
+                playerAttack.targetActorId = targetActor.id;
+            }
 
             const collectStatusEffects = (actor) => {
                 if (!actor || typeof actor.getStatusEffects !== 'function') {
@@ -710,10 +713,12 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const targetContext = {
+                id: targetActor?.id || null,
                 name: targetName || null,
                 level: typeof targetActor?.level === 'number' ? targetActor.level : 'unknown',
                 gear: targetGear,
-                statusEffects: targetStatus
+                statusEffects: targetStatus,
+                healthAttribute: targetActor?.healthAttribute || null
             };
 
             if (Number.isFinite(targetActor?.health)) {
@@ -738,6 +743,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const attackerContext = {
+                id: player?.id || null,
                 level: typeof player?.level === 'number' ? player.level : 'unknown',
                 weapon: attackerWeapon,
                 ability: attackerAbility,
@@ -787,6 +793,7 @@ module.exports = function registerApiRoutes(scope) {
                 let attackCheckInfo = null;
                 let attackContextForPlausibility = null;
                 let actionResolution = null;
+                let attackDamageApplication = null;
 
                 const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
                 const firstVisibleIndex = typeof originalUserContent === 'string' ? originalUserContent.search(/\S/) : -1;
@@ -894,6 +901,10 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.attackCheck = attackCheckInfo;
                     }
 
+                    if (attackDamageApplication) {
+                        responseData.attackDamage = attackDamageApplication;
+                    }
+
                     if (plausibilityInfo?.html) {
                         responseData.plausibility = plausibilityInfo.html;
                     }
@@ -919,6 +930,107 @@ module.exports = function registerApiRoutes(scope) {
                     return;
                 }
 
+                if (!isForcedEventAction
+                    && !isCreativeModeAction
+                    && attackContextForPlausibility?.isAttack
+                    && attackContextForPlausibility?.outcome?.hit
+                    && plausibilityType === 'plausible') {
+                    const attackOutcome = attackContextForPlausibility.outcome;
+                    const declaredDamage = Number.isFinite(attackOutcome?.damage?.total)
+                        ? attackOutcome.damage.total
+                        : 0;
+
+                    const targetId = attackContextForPlausibility?.target?.id
+                        || attackContextForPlausibility?.attackEntry?.targetActorId
+                        || null;
+
+                    let targetActor = null;
+                    if (targetId && players && typeof players.get === 'function') {
+                        targetActor = players.get(targetId) || null;
+                    }
+                    if (!targetActor) {
+                        const fallbackName = typeof attackContextForPlausibility?.attackEntry?.defender === 'string'
+                            ? attackContextForPlausibility.attackEntry.defender
+                            : (typeof attackContextForPlausibility?.target?.name === 'string'
+                                ? attackContextForPlausibility.target.name
+                                : null);
+                        if (fallbackName) {
+                            targetActor = findActorByName(fallbackName) || null;
+                        }
+                    }
+
+                    if (targetActor && typeof targetActor.modifyHealth === 'function' && Number.isFinite(declaredDamage)) {
+                        const startingHealth = targetActor.health;
+                        const maxHealthBefore = targetActor.maxHealth;
+                        const rawRemaining = startingHealth - declaredDamage;
+
+                        targetActor.modifyHealth(-declaredDamage, 'attack damage');
+
+                        const endingHealth = targetActor.health;
+                        const actualDamage = startingHealth - endingHealth;
+                        const maxHealthAfter = targetActor.maxHealth;
+
+                        const rawHealthLostPercent = maxHealthAfter > 0
+                            ? (actualDamage / maxHealthAfter) * 100
+                            : 0;
+                        const rawRemainingPercent = maxHealthAfter > 0
+                            ? (rawRemaining / maxHealthAfter) * 100
+                            : 0;
+
+                        const healthLostPercent = Number.isFinite(rawHealthLostPercent)
+                            ? Number(rawHealthLostPercent.toFixed(2))
+                            : 0;
+                        const remainingHealthPercent = Number.isFinite(rawRemainingPercent)
+                            ? Number(rawRemainingPercent.toFixed(2))
+                            : 0;
+
+                        if (attackOutcome.damage) {
+                            attackOutcome.damage.applied = actualDamage;
+                        } else {
+                            attackOutcome.damage = { applied: actualDamage };
+                        }
+
+                        if (!attackOutcome.target) {
+                            attackOutcome.target = {};
+                        }
+                        attackOutcome.target.startingHealth = startingHealth;
+                        attackOutcome.target.remainingHealth = endingHealth;
+                        attackOutcome.target.rawRemainingHealth = rawRemaining;
+                        attackOutcome.target.maxHealth = maxHealthAfter;
+                        attackOutcome.target.defeated = endingHealth <= 0;
+                        attackOutcome.target.healthLostPercent = healthLostPercent;
+                        attackOutcome.target.remainingHealthPercent = remainingHealthPercent;
+
+                        if (attackContextForPlausibility.target) {
+                            attackContextForPlausibility.target.health = endingHealth;
+                            attackContextForPlausibility.target.remainingHealth = endingHealth;
+                            attackContextForPlausibility.target.rawRemainingHealth = rawRemaining;
+                            attackContextForPlausibility.target.maxHealth = maxHealthAfter;
+                            attackContextForPlausibility.target.defeated = endingHealth <= 0;
+                            attackContextForPlausibility.target.healthLostPercent = healthLostPercent;
+                            attackContextForPlausibility.target.remainingHealthPercent = remainingHealthPercent;
+                        }
+
+                        attackDamageApplication = {
+                            targetId: targetActor.id || null,
+                            targetName: targetActor.name || attackContextForPlausibility?.target?.name || null,
+                            damageDeclared: declaredDamage,
+                            damageApplied: actualDamage,
+                            startingHealth,
+                            endingHealth,
+                            rawRemainingHealth: rawRemaining,
+                            maxHealthBefore,
+                            maxHealthAfter,
+                            healthLostPercent,
+                            remainingHealthPercent
+                        };
+                    }
+                }
+
+                if (attackDamageApplication) {
+                    attackDebugData.damageApplication = attackDamageApplication;
+                }
+
                 // If we have a current player, use the player action template for the system message
                 if (isForcedEventAction && !debugInfo) {
                     debugInfo = {
@@ -940,6 +1052,25 @@ module.exports = function registerApiRoutes(scope) {
                             promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
                             actionText: isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent
                         };
+
+                        if (attackContextForPlausibility) {
+                            const isAttack = Boolean(attackContextForPlausibility.isAttack);
+                            const attackerDetails = attackContextForPlausibility.attacker || null;
+                            const targetDetails = attackContextForPlausibility.target || null;
+                            const outcomeDetails = attackContextForPlausibility.outcome || null;
+
+                            promptVariables.isAttack = isAttack;
+                            promptVariables.attacker = attackerDetails;
+                            promptVariables.target = targetDetails;
+                            promptVariables.attackOutcome = outcomeDetails;
+                            promptVariables.attackContext = {
+                                isAttack,
+                                attacker: attackerDetails,
+                                target: targetDetails,
+                                outcome: outcomeDetails,
+                                damageApplication: attackDamageApplication || null
+                            };
+                        }
 
                         if (!isCreativeModeAction) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';

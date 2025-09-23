@@ -3346,7 +3346,8 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             level: 1,
             location: resolvedLocation?.id || null,
             attributes,
-            isNPC: true
+            isNPC: true,
+            healthAttribute: npcData?.healthAttribute
         });
 
         const locationBaseLevel = Number.isFinite(resolvedLocation?.baseLevel)
@@ -3840,6 +3841,7 @@ function parseLocationNpcs(xmlContent) {
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
+            const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
@@ -3848,6 +3850,7 @@ function parseLocationNpcs(xmlContent) {
             const role = roleNode ? roleNode.textContent.trim() : null;
             const attributes = {};
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+            const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
 
             if (attributesNode) {
                 const attrNodes = Array.from(attributesNode.getElementsByTagName('attribute'));
@@ -3868,7 +3871,8 @@ function parseLocationNpcs(xmlContent) {
                     class: className,
                     race,
                     attributes,
-                    relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null
+                    relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
+                    healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null
                 });
             }
         }
@@ -3903,6 +3907,7 @@ function parseRegionNpcs(xmlContent) {
             const locationNode = node.getElementsByTagName('location')[0];
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
+            const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             if (!name) {
@@ -3929,6 +3934,7 @@ function parseRegionNpcs(xmlContent) {
             }
 
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+            const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
 
             npcs.push({
                 name,
@@ -3939,7 +3945,8 @@ function parseRegionNpcs(xmlContent) {
                 race,
                 location: locationName,
                 attributes,
-                relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null
+                relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
+                healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null
             });
         }
 
@@ -5118,7 +5125,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 attributes,
                 class: npcData.class || null,
                 race: npcData.race,
-                isNPC: true
+                isNPC: true,
+                healthAttribute: npcData.healthAttribute
             });
 
             const locationBaseLevel = Number.isFinite(location.baseLevel)
@@ -5341,7 +5349,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 level: 1,
                 location: targetLocation ? targetLocation.id : null,
                 attributes,
-                isNPC: true
+                isNPC: true,
+                healthAttribute: npcData.healthAttribute
             });
 
             const baseLevelReference = Number.isFinite(region.averageLevel)
