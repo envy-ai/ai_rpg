@@ -232,6 +232,354 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        const RARITY_DAMAGE_RATINGS = {
+            junk: 0.75,
+            common: 1,
+            fine: 1.25,
+            superior: 1.5,
+            masterwork: 2,
+            rare: 2.5,
+            epic: 3,
+            legendary: 4
+        };
+
+        const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
+
+        const sanitizeNamedValue = (value) => {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            const lowered = trimmed.toLowerCase();
+            if (lowered === 'n/a' || lowered === 'none') {
+                return null;
+            }
+            return trimmed;
+        };
+
+        const resolveSkillDefinition = (skillName) => {
+            const sanitized = sanitizeNamedValue(skillName);
+            if (!sanitized || !skills || typeof skills.entries !== 'function') {
+                return null;
+            }
+            const direct = skills.get(sanitized) || skills.get(sanitized.toLowerCase());
+            if (direct) {
+                return direct;
+            }
+            const normalized = sanitized.toLowerCase();
+            for (const [name, definition] of skills.entries()) {
+                if (typeof name === 'string' && name.toLowerCase() === normalized) {
+                    return definition;
+                }
+            }
+            return null;
+        };
+
+        const resolveActorSkillInfo = (actor, skillName) => {
+            const sanitized = sanitizeNamedValue(skillName);
+            if (!actor || !sanitized) {
+                return { key: null, value: 0 };
+            }
+
+            if (typeof actor.getSkillValue === 'function') {
+                const directValue = actor.getSkillValue(sanitized);
+                if (Number.isFinite(directValue)) {
+                    return { key: sanitized, value: directValue };
+                }
+            }
+
+            if (typeof actor.getSkills === 'function') {
+                try {
+                    const skillMap = actor.getSkills();
+                    if (skillMap && typeof skillMap.entries === 'function') {
+                        const normalized = sanitized.toLowerCase();
+                        for (const [name, value] of skillMap.entries()) {
+                            if (typeof name === 'string' && name.toLowerCase() === normalized && Number.isFinite(value)) {
+                                return { key: name, value };
+                            }
+                        }
+                    }
+                } catch (_) {
+                    // ignore inventory/skill access issues for non-player actors
+                }
+            }
+
+            return { key: sanitized, value: 0 };
+        };
+
+        const resolveActorAttributeKey = (actor, attributeName) => {
+            const sanitized = sanitizeNamedValue(attributeName);
+            if (!actor || !sanitized || typeof actor.getAttributeNames !== 'function') {
+                return null;
+            }
+            const normalized = sanitized.toLowerCase();
+            try {
+                for (const name of actor.getAttributeNames()) {
+                    if (typeof name === 'string' && name.toLowerCase() === normalized) {
+                        return name;
+                    }
+                }
+            } catch (_) {
+                // Defensive: actor may not expose attribute list
+            }
+            return null;
+        };
+
+        const resolveActorAttributeInfo = (actor, attributeName) => {
+            const sanitized = sanitizeNamedValue(attributeName);
+            if (!actor || !sanitized) {
+                return { key: null, modifier: 0 };
+            }
+            const key = resolveActorAttributeKey(actor, sanitized) || sanitized;
+            if (typeof actor.getAttributeModifier === 'function') {
+                try {
+                    const modifier = actor.getAttributeModifier(key);
+                    return {
+                        key,
+                        modifier: Number.isFinite(modifier) ? modifier : 0
+                    };
+                } catch (_) {
+                    return { key, modifier: 0 };
+                }
+            }
+            return { key, modifier: 0 };
+        };
+
+        const resolveWeaponThing = (attacker, weaponName) => {
+            const sanitized = sanitizeNamedValue(weaponName);
+            const normalized = sanitized ? sanitized.toLowerCase() : '';
+            if (sanitized && Thing && typeof Thing.getByName === 'function') {
+                const byName = Thing.getByName(sanitized);
+                if (byName) {
+                    return byName;
+                }
+            }
+
+            if (attacker && typeof attacker.getInventoryItems === 'function' && sanitized) {
+                try {
+                    const items = attacker.getInventoryItems();
+                    if (Array.isArray(items)) {
+                        for (const item of items) {
+                            if (item && typeof item.name === 'string' && item.name.trim().toLowerCase() === normalized) {
+                                return item;
+                            }
+                        }
+                    }
+                } catch (_) {
+                    // ignore inventory access issues
+                }
+            }
+
+            if (attacker && typeof attacker.getEquippedItemIdForType === 'function') {
+                try {
+                    const equippedId = attacker.getEquippedItemIdForType('weapon');
+                    if (equippedId) {
+                        const byId = Thing.getById(equippedId);
+                        if (byId) {
+                            return byId;
+                        }
+                    }
+                } catch (_) {
+                    // ignore equip lookup issues
+                }
+            }
+
+            return null;
+        };
+
+        const resolveWeaponData = (attacker, weaponName) => {
+            const fallbackName = sanitizeNamedValue(weaponName) || 'Barehanded';
+            const normalizedName = fallbackName.toLowerCase();
+            const weaponThing = resolveWeaponThing(attacker, fallbackName);
+
+            let weaponLevel = Number.isFinite(weaponThing?.level) ? weaponThing.level : null;
+            if (!Number.isFinite(weaponLevel)) {
+                weaponLevel = Number.isFinite(attacker?.level) ? attacker.level : 1;
+            }
+            weaponLevel = Math.max(1, weaponLevel || 1);
+
+            const rarity = sanitizeNamedValue(weaponThing?.rarity);
+            let rating = rarity ? RARITY_DAMAGE_RATINGS[rarity.toLowerCase()] : null;
+            if (!rating) {
+                if (BAREHANDED_KEYWORDS.has(normalizedName)) {
+                    rating = 0.5;
+                } else {
+                    rating = RARITY_DAMAGE_RATINGS.common;
+                }
+            }
+
+            const baseDamage = 10 + weaponLevel * rating;
+
+            return {
+                thingId: weaponThing?.id || null,
+                name: weaponThing?.name || fallbackName,
+                level: weaponLevel,
+                rarity: rarity || null,
+                rating,
+                baseDamage
+            };
+        };
+
+        const computeAttackOutcome = ({ attackEntry, attacker, defender, weaponName }) => {
+            if (!attackEntry || !attacker) {
+                return null;
+            }
+
+            const attackerInfo = attackEntry.attackerInfo || {};
+            const defenderInfo = attackEntry.defenderInfo || {};
+
+            const attackSkillName = sanitizeNamedValue(attackerInfo.attackSkill);
+            const damageAttributeName = sanitizeNamedValue(attackerInfo.damageAttribute);
+            const attackSkillInfo = resolveActorSkillInfo(attacker, attackSkillName);
+            const attackSkillValue = Number.isFinite(attackSkillInfo.value) ? attackSkillInfo.value : 0;
+
+            let attackAttributeName = null;
+            const skillDefinition = attackSkillInfo.key ? resolveSkillDefinition(attackSkillInfo.key) : null;
+            if (skillDefinition && typeof skillDefinition.attribute === 'string' && skillDefinition.attribute.trim()) {
+                attackAttributeName = skillDefinition.attribute;
+            }
+            if (!attackAttributeName && typeof attackerInfo.attackAttribute === 'string') {
+                const sanitized = sanitizeNamedValue(attackerInfo.attackAttribute);
+                if (sanitized) {
+                    attackAttributeName = sanitized;
+                }
+            }
+            if (!attackAttributeName && damageAttributeName) {
+                attackAttributeName = damageAttributeName;
+            }
+
+            const attackAttributeInfo = resolveActorAttributeInfo(attacker, attackAttributeName);
+            const damageAttributeInfo = damageAttributeName
+                ? resolveActorAttributeInfo(attacker, damageAttributeName)
+                : attackAttributeInfo;
+
+            const rollResult = diceModule && typeof diceModule.rollDice === 'function'
+                ? diceModule.rollDice('1d20')
+                : { total: Math.floor(Math.random() * 20) + 1, detail: '1d20 (fallback)' };
+            const dieRoll = Number.isFinite(rollResult.total) ? rollResult.total : Math.floor(Math.random() * 20) + 1;
+
+            const defenseCandidates = [];
+            const addDefenseCandidate = (name, source) => {
+                const sanitized = sanitizeNamedValue(name);
+                if (sanitized) {
+                    defenseCandidates.push({ name: sanitized, source });
+                }
+            };
+            addDefenseCandidate(defenderInfo.evadeSkill, 'evade');
+            addDefenseCandidate(defenderInfo.deflectSkill, 'deflect');
+            addDefenseCandidate(defenderInfo.defenseSkill, 'defense');
+
+            if (!defenseCandidates.length && defender) {
+                addDefenseCandidate('Evade', 'fallback');
+                addDefenseCandidate('Deflect', 'fallback');
+            }
+
+            let bestDefense = { name: null, value: 0, source: null };
+            if (defender) {
+                for (const candidate of defenseCandidates) {
+                    const info = resolveActorSkillInfo(defender, candidate.name);
+                    const value = Number.isFinite(info.value) ? info.value : 0;
+                    if (value > bestDefense.value) {
+                        bestDefense = {
+                            name: info.key || candidate.name,
+                            value,
+                            source: candidate.source
+                        };
+                    }
+                }
+            }
+
+            const defenderLevel = Number.isFinite(defender?.level) ? defender.level : 0;
+            const hitDifficulty = 10 + defenderLevel + (Number.isFinite(bestDefense.value) ? bestDefense.value : 0);
+
+            const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier;
+            const hitDegreeRaw = (hitRollTotal - hitDifficulty) / 5;
+            const hitDegree = Number.isFinite(hitDegreeRaw) ? Math.round(hitDegreeRaw * 100) / 100 : 0;
+            const hit = hitRollTotal >= hitDifficulty;
+
+            const weaponData = resolveWeaponData(attacker, weaponName);
+
+            let attackDamage = 0;
+            let rawDamage = 0;
+            if (hit && hitDegreeRaw >= 0) {
+                rawDamage = 1 + Math.round(
+                    weaponData.baseDamage * (0.5 + hitDegreeRaw) + damageAttributeInfo.modifier
+                );
+                attackDamage = rawDamage > 0 ? rawDamage : 0;
+            }
+
+            const targetHealth = Number.isFinite(defender?.health) ? defender.health : null;
+            const targetMaxHealth = Number.isFinite(defender?.maxHealth) ? defender.maxHealth : null;
+            const rawRemainingHealth = targetHealth !== null ? targetHealth - attackDamage : null;
+            const remainingHealth = rawRemainingHealth !== null ? Math.max(0, rawRemainingHealth) : null;
+            const defeated = rawRemainingHealth !== null && attackDamage > 0 && rawRemainingHealth <= 0;
+            const killed = defeated && Number.isFinite(targetMaxHealth)
+                ? attackDamage >= targetHealth + targetMaxHealth
+                : false;
+
+            const toughnessAttributeName = sanitizeNamedValue(defenderInfo.toughnessAttribute);
+            const toughnessInfo = toughnessAttributeName && defender
+                ? resolveActorAttributeInfo(defender, toughnessAttributeName)
+                : { key: toughnessAttributeName || null, modifier: 0 };
+
+            return {
+                hit,
+                hitRoll: {
+                    die: dieRoll,
+                    total: hitRollTotal,
+                    detail: rollResult.detail || null,
+                    attackSkill: {
+                        name: attackSkillInfo.key,
+                        value: attackSkillValue
+                    },
+                    attackAttribute: {
+                        name: attackAttributeInfo.key,
+                        modifier: attackAttributeInfo.modifier
+                    }
+                },
+                difficulty: {
+                    value: hitDifficulty,
+                    base: 10,
+                    defenderLevel,
+                    defenseSkill: bestDefense.name ? {
+                        name: bestDefense.name,
+                        value: bestDefense.value,
+                        source: bestDefense.source
+                    } : null
+                },
+                hitDegree,
+                damage: {
+                    total: attackDamage,
+                    raw: rawDamage,
+                    baseWeaponDamage: weaponData.baseDamage,
+                    weaponLevel: weaponData.level,
+                    weaponRating: weaponData.rating,
+                    weaponName: weaponData.name,
+                    weaponRarity: weaponData.rarity,
+                    damageAttribute: {
+                        name: damageAttributeInfo.key,
+                        modifier: damageAttributeInfo.modifier
+                    }
+                },
+                target: {
+                    name: sanitizeNamedValue(attackEntry.defender) || null,
+                    startingHealth: targetHealth,
+                    remainingHealth,
+                    rawRemainingHealth,
+                    maxHealth: targetMaxHealth,
+                    defeated,
+                    killed,
+                    toughness: {
+                        name: toughnessInfo.key,
+                        modifier: toughnessInfo.modifier
+                    }
+                }
+            };
+        };
+
         function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
             if (!attackCheckInfo || !attackCheckInfo.structured) {
                 return null;
@@ -347,21 +695,72 @@ module.exports = function registerApiRoutes(scope) {
             const targetStatus = collectStatusEffects(targetActor);
             const targetGear = collectGearNames(targetActor);
 
+            const computedOutcome = computeAttackOutcome({
+                attackEntry: playerAttack,
+                attacker: player,
+                defender: targetActor,
+                weaponName: attackerWeapon
+            });
+
+            if (computedOutcome) {
+                playerAttack.outcome = computedOutcome;
+                attackCheckInfo.computedOutcome = computedOutcome;
+            }
+
+            const targetContext = {
+                name: targetName || null,
+                level: typeof targetActor?.level === 'number' ? targetActor.level : 'unknown',
+                gear: targetGear,
+                statusEffects: targetStatus
+            };
+
+            if (Number.isFinite(targetActor?.health)) {
+                targetContext.health = targetActor.health;
+            }
+            if (Number.isFinite(targetActor?.maxHealth)) {
+                targetContext.maxHealth = targetActor.maxHealth;
+            }
+            if (computedOutcome?.target) {
+                if (computedOutcome.target.remainingHealth !== null && computedOutcome.target.remainingHealth !== undefined) {
+                    targetContext.remainingHealth = computedOutcome.target.remainingHealth;
+                }
+                if (computedOutcome.target.rawRemainingHealth !== null && computedOutcome.target.rawRemainingHealth !== undefined) {
+                    targetContext.rawRemainingHealth = computedOutcome.target.rawRemainingHealth;
+                }
+                if (typeof computedOutcome.target.defeated === 'boolean') {
+                    targetContext.defeated = computedOutcome.target.defeated;
+                }
+                if (typeof computedOutcome.target.killed === 'boolean') {
+                    targetContext.killed = computedOutcome.target.killed;
+                }
+                if (computedOutcome.target.toughness) {
+                    targetContext.toughness = computedOutcome.target.toughness;
+                }
+            }
+
+            const attackerContext = {
+                level: typeof player?.level === 'number' ? player.level : 'unknown',
+                weapon: attackerWeapon,
+                ability: attackerAbility,
+                statusEffects: attackerStatus
+            };
+
+            if (computedOutcome?.damage) {
+                attackerContext.weaponInfo = {
+                    name: computedOutcome.damage.weaponName,
+                    rating: computedOutcome.damage.weaponRating,
+                    level: computedOutcome.damage.weaponLevel,
+                    baseDamage: computedOutcome.damage.baseWeaponDamage,
+                    rarity: computedOutcome.damage.weaponRarity || null
+                };
+            }
+
             return {
                 isAttack: true,
-                attacker: {
-                    level: typeof player?.level === 'number' ? player.level : 'unknown',
-                    weapon: attackerWeapon,
-                    ability: attackerAbility,
-                    statusEffects: attackerStatus
-                },
-                target: {
-                    name: targetName || null,
-                    level: typeof targetActor?.level === 'number' ? targetActor.level : 'unknown',
-                    gear: targetGear,
-                    statusEffects: targetStatus
-                },
-                attackEntry: playerAttack
+                attacker: attackerContext,
+                target: targetContext,
+                attackEntry: playerAttack,
+                outcome: computedOutcome || null
             };
         }
 
