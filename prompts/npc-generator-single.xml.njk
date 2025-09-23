@@ -40,6 +40,7 @@ Generate exactly one NPC entry for the character named "{{ npcName }}". Use the 
 {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
 {% endfor %}
     </attributes>
+    <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
   </npc>
 </npcs>
 

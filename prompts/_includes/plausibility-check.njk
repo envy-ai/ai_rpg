@@ -4,11 +4,11 @@ Guidelines:
 - Consider the player's current health, physical state, and status effects. The player's attributes are not listed here, because you are not making the skill check yourself, just determining if one is needed and what skills or attributes would be relevant.
 - If interacting with an object or NPC in the scene, consider their description and status
 - If attempting to interact with an object or NPC not specifically listed in the scene, consider whether the action is plausible given the context and setting.  For instance, if a player is in a hospital room and they say "I pick up the scalpel on the tray", this is plausible, even if a scalpel isn't listed among the items in the scene.  If they say "I pick up the MRI machine" or "I pick up the tuba", this is implausible (the MRI machine because it's too big to pick up, the tuba because it doesn't belong in a hospital room).
-- If the player is attempting an action that requires a skill check, determine the appropriate skill.
-- Do not consider the player's level or experience, only their current health, physical state, and status effects.
+{% if !isAttack %}- If the player is attempting an action that requires a skill check, determine the appropriate skill.
+{% endif %}- Do not consider the player's level or experience, only their current health, physical state, and status effects.
 - Do not consider whether an action is a good idea or bad idea, only whether it is trivial, plausible, or implausible.
 - Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
-- Extremely difficult doesn't mean implausible. For instance, "I throw a dart into the eye of the thug at the far side of the tavern" is plausible, but would require a very hard or legendary skill/attribute check.
+- Extremely difficult doesn't mean implausible. For instance, "I throw a dart into the eye of the thug at the far side of the tavern" is plausible, but would require a very hard or legendary skill/attribute check. {% if !isAttack %}The skill used is determined elsewhere.{% endif %}
 - The player may only act on behalf of themselves, not other characters or NPCs. If they attempt to do so, reject the action (this is different from being implausible in that we don't process the attempt). However, if they ask an NPC to do something, this is plausible, and may require a skill check depending on the NPC's disposition and relationship with the player.
 
 Current Situation:
@@ -17,25 +17,27 @@ The player is attempting:
 {{ actionText }}
 </playerAction>
 {% if isAttack %}
-This is an attack action. To determine difficulty and plausibility, consider the relevant gear, level, and status effects of the attacker and the target.
-<attackerInfo>
-  <level>{{ attacker.level }}</level>
-  <weapon>{{ attacker.weapon }}</weapon>
-  <ability>{{ attacker.ability }}</ability>
-  <statusEffects>
-    {% for effect in attacker.statusEffects %}<effect>{{ effect }}</effect>
-    {% endfor %}
-  </statusEffects>
-</attackerInfo>
-<targetInfo>
-  <level>{{ target.level }}</level>
-  <gear>{{ target.gear | join(", ") }}</gear>
-  <statusEffects>
-    {% for effect in target.statusEffects %}<effect>{{ effect }}</effect>
-    {% endfor %}
-  </statusEffects>
-</targetInfo>
-{% endif %}
+This is an attack action. Determine whether or not it is plausible and return one of the following:
+
+<plausibility>
+  <type>Plausible</type>
+</plausibility>
+
+or
+
+<plausibility>
+  <reason>Brief explanation of why the action is implausible (e.g., "The object is too large to pick up", "The NPC is not present in the scene", etc.)</reason>
+  <type>Implausible</type>
+</plausibility>
+
+or
+
+<plausibility>
+  <reason>Brief explanation of why the action is rejected.</reason>
+  <type>Rejected</type>
+</plausibility>
+
+{% else %}
 
 Respond with one of the following (reason about your decision in the reason tag before making up your mind):
 
@@ -70,3 +72,4 @@ or
   <type>Rejected</type>
 </plausibility>
 
+{% endif %}

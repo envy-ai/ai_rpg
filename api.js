@@ -500,15 +500,24 @@ module.exports = function registerApiRoutes(scope) {
             const hitDegree = Number.isFinite(hitDegreeRaw) ? Math.round(hitDegreeRaw * 100) / 100 : 0;
             const hit = hitRollTotal >= hitDifficulty;
 
+            const toughnessAttributeName = sanitizeNamedValue(defenderInfo.toughnessAttribute);
+            const toughnessInfo = toughnessAttributeName && defender
+                ? resolveActorAttributeInfo(defender, toughnessAttributeName)
+                : { key: toughnessAttributeName || null, modifier: 0 };
+
             const weaponData = resolveWeaponData(attacker, weaponName);
 
             let attackDamage = 0;
-            let rawDamage = 0;
+            let unmitigatedDamage = 0;
+            let mitigatedDamage = 0;
+            let toughnessReduction = 0;
             if (hit && hitDegreeRaw >= 0) {
-                rawDamage = 1 + Math.round(
+                unmitigatedDamage = 1 + Math.round(
                     weaponData.baseDamage * (0.5 + hitDegreeRaw) + damageAttributeInfo.modifier
                 );
-                attackDamage = rawDamage > 0 ? rawDamage : 0;
+                toughnessReduction = Number.isFinite(toughnessInfo.modifier) ? toughnessInfo.modifier : 0;
+                mitigatedDamage = unmitigatedDamage - toughnessReduction;
+                attackDamage = mitigatedDamage > 0 ? mitigatedDamage : 0;
             }
 
             const targetHealth = Number.isFinite(defender?.health) ? defender.health : null;
@@ -519,11 +528,6 @@ module.exports = function registerApiRoutes(scope) {
             const killed = defeated && Number.isFinite(targetMaxHealth)
                 ? attackDamage >= targetHealth + targetMaxHealth
                 : false;
-
-            const toughnessAttributeName = sanitizeNamedValue(defenderInfo.toughnessAttribute);
-            const toughnessInfo = toughnessAttributeName && defender
-                ? resolveActorAttributeInfo(defender, toughnessAttributeName)
-                : { key: toughnessAttributeName || null, modifier: 0 };
 
             return {
                 hit,
@@ -553,7 +557,9 @@ module.exports = function registerApiRoutes(scope) {
                 hitDegree,
                 damage: {
                     total: attackDamage,
-                    raw: rawDamage,
+                    raw: unmitigatedDamage,
+                    mitigated: mitigatedDamage,
+                    toughnessReduction,
                     baseWeaponDamage: weaponData.baseDamage,
                     weaponLevel: weaponData.level,
                     weaponRating: weaponData.rating,

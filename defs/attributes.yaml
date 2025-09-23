@@ -12,7 +12,7 @@ attributes:
   constitution:
     label: Constitution
     abbreviation: CON
-    description: A measure of your health and stamina.
+    description: A measure of your toughness, health, and stamina.
     default: 5
   intelligence:
     label: Intelligence
