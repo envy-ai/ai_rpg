@@ -2680,6 +2680,19 @@ module.exports = function registerApiRoutes(scope) {
                     .map(name => (typeof name === 'string' ? name.trim() : ''))
                     .filter(Boolean);
 
+                let detailedExistingSkills = [];
+                if (normalizedExistingSkills.length) {
+                    try {
+                        detailedExistingSkills = await generateSkillsByNames({
+                            skillNames: normalizedExistingSkills,
+                            settingDescription
+                        });
+                    } catch (detailedError) {
+                        console.warn('Failed to generate detailed skills by name:', detailedError.message);
+                        detailedExistingSkills = [];
+                    }
+                }
+
                 let generatedSkills = [];
                 try {
                     generatedSkills = await generateSkillsList({
@@ -2694,13 +2707,31 @@ module.exports = function registerApiRoutes(scope) {
 
                 const combinedSkills = new Map();
 
+                const addSkillToCombined = (skill) => {
+                    if (!skill || !skill.name) {
+                        return;
+                    }
+                    const key = skill.name.trim().toLowerCase();
+                    if (!key || combinedSkills.has(key)) {
+                        return;
+                    }
+                    combinedSkills.set(key, skill);
+                };
+
+                if (Array.isArray(detailedExistingSkills) && detailedExistingSkills.length) {
+                    detailedExistingSkills.forEach(addSkillToCombined);
+                }
+
                 for (const name of normalizedExistingSkills) {
                     if (!name) continue;
-                    combinedSkills.set(name.toLowerCase(), new Skill({
-                        name,
-                        description: '',
-                        attribute: ''
-                    }));
+                    const key = name.toLowerCase();
+                    if (!combinedSkills.has(key)) {
+                        combinedSkills.set(key, new Skill({
+                            name,
+                            description: '',
+                            attribute: ''
+                        }));
+                    }
                 }
 
                 for (const skill of generatedSkills) {

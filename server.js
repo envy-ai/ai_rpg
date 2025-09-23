@@ -4503,6 +4503,27 @@ function renderSkillsPrompt(context = {}) {
     }
 }
 
+function renderSkillsByNamePrompt(context = {}) {
+    try {
+        const templateName = 'skills-generator-by-name.xml.njk';
+        const skillsToGenerate = Array.isArray(context.skillsToGenerate)
+            ? context.skillsToGenerate
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+                .map(name => ({ name }))
+            : [];
+
+        return promptEnv.render(templateName, {
+            settingDescription: context.settingDescription || 'A fantastical realm of adventure.',
+            attributes: context.attributes || [],
+            skillsToGenerate
+        });
+    } catch (error) {
+        console.error('Error rendering skills-by-name template:', error);
+        return null;
+    }
+}
+
 function parseSkillsXml(xmlContent) {
     try {
         const parser = new DOMParser();
@@ -4719,6 +4740,112 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     } catch (error) {
         console.warn('Skill generation failed:', error.message);
         return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
+    }
+}
+
+async function generateSkillsByNames({ skillNames = [], settingDescription }) {
+    const normalized = Array.isArray(skillNames)
+        ? Array.from(new Set(
+            skillNames
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+        ))
+        : [];
+
+    if (!normalized.length) {
+        return [];
+    }
+
+    const attributeEntries = Object.entries(attributeDefinitionsForPrompt || {})
+        .map(([name, info]) => ({
+            name,
+            description: info?.description || info?.label || name
+        }));
+
+    const renderedTemplate = renderSkillsByNamePrompt({
+        settingDescription: settingDescription || 'A vibrant world of adventure.',
+        attributes: attributeEntries,
+        skillsToGenerate: normalized
+    });
+
+    if (!renderedTemplate) {
+        return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt;
+    const generationPrompt = parsedTemplate.generationPrompt;
+
+    if (!systemPrompt || !generationPrompt) {
+        return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
+    }
+
+    const endpoint = config.ai?.endpoint;
+    const apiKey = config.ai?.apiKey;
+    const model = config.ai?.model;
+
+    if (!endpoint || !apiKey || !model) {
+        return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
+    }
+
+    const chatEndpoint = endpoint.endsWith('/') ?
+        endpoint + 'chat/completions' :
+        endpoint + '/chat/completions';
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+
+    const requestData = {
+        model,
+        messages,
+        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
+        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
+    };
+
+    try {
+        const requestStart = Date.now();
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 45000
+        });
+
+        const skillResponse = response.data?.choices?.[0]?.message?.content || '';
+
+        logSkillGeneration({
+            systemPrompt,
+            generationPrompt,
+            responseText: skillResponse,
+            durationSeconds: (Date.now() - requestStart) / 1000
+        });
+
+        const parsedSkills = parseSkillsXml(skillResponse);
+        const parsedMap = new Map();
+        for (const parsed of parsedSkills) {
+            if (!parsed?.name) {
+                continue;
+            }
+            const key = parsed.name.trim().toLowerCase();
+            if (key) {
+                parsedMap.set(key, new Skill({
+                    name: parsed.name,
+                    description: parsed.description,
+                    attribute: parsed.attribute
+                }));
+            }
+        }
+
+        return normalized.map(name => {
+            const key = name.toLowerCase();
+            return parsedMap.get(key) || new Skill({ name, description: '', attribute: '' });
+        });
+    } catch (error) {
+        console.warn('Skill generation by name failed:', error.message);
+        return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
     }
 }
 
@@ -6615,6 +6742,7 @@ const apiScope = {
     generatePlayerImage,
     generateRegionFromPrompt,
     generateSkillsList,
+    generateSkillsByNames,
     generateThingImage,
     queueLocationThingImages,
     getActiveSettingSnapshot,

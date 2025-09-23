@@ -45,7 +45,6 @@ You are an AI designed to perform various tasks related to managing a text-based
       {% for skill in currentPlayer.skills %}
       <skill>
         <name>{{ skill.name }}</name>
-        <description>{{ skill.description }}</description>
       </skill>
       {% endfor %}
     </skills>
@@ -54,6 +53,7 @@ You are an AI designed to perform various tasks related to managing a text-based
       <item>
         <name>{{ item.name }}</name>
         <description>{{ item.description }}</description>
+        <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         <statusEffects>
           {% for effect in item.statusEffects %}
           <effect>
@@ -73,6 +73,12 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ npc.description }}</description>
       <class>{{ npc.class | default('Unknown') }}</class>
       <race>{{ npc.race | default('Unknown') }}</race>
+      <inventory>
+        {% for item in npc.inventory %}<item>
+          <name>{{ item.name }}</name>
+          <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+        </item>
+      {% endfor %}</inventory>
       <statusEffects>
         {% for effect in npc.statusEffects %}
         <effect>
@@ -91,6 +97,12 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ member.description }}</description>
       <class>{{ member.class | default('Unknown') }}</class>
       <race>{{ member.race | default('Unknown') }}</race>
+      <inventory>
+        {% for item in member.inventory %}<item>
+          <name>{{ item.name }}</name>
+          <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+        </item>
+      {% endfor %}</inventory>
       <statusEffects>
         {% for effect in member.statusEffects %}
         <effect>

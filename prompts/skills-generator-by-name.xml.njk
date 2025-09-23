@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Game Master</role>
+    <description>Generate a diverse list of skills tailored to the current setting</description>
+    <maxTokens>3000</maxTokens>
+
+    <systemPrompt>
+You are an AI game designer creating a roster of player skills for a tabletop-style RPG. Produce distinct, flavorful skills that fit the provided setting and leverage the available attributes. Every skill must:
+- Include a concise description (one sentence) focusing on what it enables.
+- Reference exactly one associated attribute, choosing only from the provided attribute list.
+    </systemPrompt>
+
+    <generationPrompt>
+Setting Overview:
+{{ settingDescription }}
+
+Available Attributes:
+{% for attribute in attributes %}- {{ attribute.name }}: {{ attribute.description }}
+{% endfor %}
+
+Skills to generate:
+{% for skill in skillsToGenerate %}- {{ skill.name }}
+{% endfor %}
+
+Generate descriptions and an attribute for each skill in the above "skills to generate" list in XML format using the following structure:
+<skills>
+  <skill>
+    <name>Skill Name</name>
+    <description>What the skill enables.</description>
+    <attribute>Associated Attribute Name</attribute>
+  </skill>
+  ...
+</skills>
+
+    </generationPrompt>
+</template>

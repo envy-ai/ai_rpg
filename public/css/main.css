@@ -467,6 +467,88 @@ p:not(:last-child) {
   color: rgba(248, 250, 252, 0.95);
 }
 
+.inventory-layout {
+  display: flex;
+  gap: 20px;
+  height: 100%;
+  align-items: stretch;
+}
+
+.equipment-panel {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: rgba(226, 232, 240, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+}
+
+.equipment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.equipment-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.equipment-slots {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.equipment-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.equipment-slot-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.equipment-select {
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #ffffff;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.equipment-select:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+.equipment-select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.equipment-empty {
+  margin-top: 16px;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.65);
+}
+
 .inventory-panel {
   display: flex;
   flex-direction: column;
@@ -474,6 +556,11 @@ p:not(:last-child) {
   padding: 20px;
   overflow: visible;
   color: #ffffff;
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .inventory-header {
@@ -514,6 +601,19 @@ p:not(:last-child) {
   font-size: 0.9rem;
 }
 
+.inventory-card.is-equipped {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.5);
+}
+
+@media (max-width: 980px) {
+  .inventory-layout {
+    flex-direction: column;
+  }
+  .equipment-panel {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}
 .location-entity-card,
 .inventory-card {
   position: relative;
