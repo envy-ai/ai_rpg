@@ -747,6 +747,73 @@ p .rarity-epic {
   font-size: 0.9rem;
 }
 
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.skill-card {
+  @include glass-effect(rgba(15, 23, 42, 0.55));
+  border-radius: $border-radius-md;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: $white;
+  transition: border 0.2s ease, transform 0.2s ease;
+
+  &:hover,
+  &:focus-within {
+    border-color: rgba(56, 189, 248, 0.45);
+    transform: translateY(-1px);
+  }
+}
+
+.skill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.skill-attribute {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+  background: rgba(71, 85, 105, 0.35);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.skill-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+
+  .skill-rank {
+    font-weight: 700;
+    color: rgba(248, 250, 252, 0.95);
+  }
+}
+
+.skill-description {
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.8);
+  line-height: 1.45;
+}
+
 .party-card {
   display: flex;
   flex-direction: column;

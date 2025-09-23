@@ -467,89 +467,6 @@ p:not(:last-child) {
   color: rgba(248, 250, 252, 0.95);
 }
 
-.inventory-layout {
-  display: flex;
-  gap: 20px;
-  height: 100%;
-  align-items: stretch;
-}
-
-.equipment-panel {
-  flex: 0 0 280px;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  background: rgba(15, 23, 42, 0.6);
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  color: #e2e8f0;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
-}
-
-.equipment-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.equipment-header h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.equipment-slots {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.equipment-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.equipment-slot-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.8);
-}
-
-.equipment-select {
-  appearance: none;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: #f8fafc;
-  font-size: 0.95rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.equipment-select:focus {
-  outline: none;
-  border-color: rgba(56, 189, 248, 0.65);
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
-}
-
-.equipment-select:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.equipment-empty {
-  margin-top: 16px;
-  font-size: 0.9rem;
-  color: rgba(226, 232, 240, 0.65);
-}
-
 .inventory-panel {
   display: flex;
   flex-direction: column;
@@ -557,11 +474,6 @@ p:not(:last-child) {
   padding: 20px;
   overflow: visible;
   color: #ffffff;
-  flex: 1 1 0;
-  min-width: 0;
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .inventory-header {
@@ -600,21 +512,6 @@ p:not(:last-child) {
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.65);
   font-size: 0.9rem;
-}
-
-.inventory-card.is-equipped {
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.5);
-}
-
-@media (max-width: 980px) {
-  .inventory-layout {
-    flex-direction: column;
-  }
-
-  .equipment-panel {
-    flex: 0 0 auto;
-    width: 100%;
-  }
 }
 
 .location-entity-card,
@@ -817,6 +714,73 @@ p .rarity-epic {
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.65);
   font-size: 0.9rem;
+}
+
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.skill-card {
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(10px);
+          backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #ffffff;
+  transition: border 0.2s ease, transform 0.2s ease;
+}
+.skill-card:hover, .skill-card:focus-within {
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
+}
+
+.skill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.skill-attribute {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+  background: rgba(71, 85, 105, 0.35);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.skill-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.skill-value .skill-rank {
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.skill-description {
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.8);
+  line-height: 1.45;
 }
 
 .party-card {
