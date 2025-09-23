@@ -619,7 +619,6 @@ class Events {
             context.location = destination;
             context.region = findRegionByLocationId(destination.id) || context.region;
 
-            await generateLocationImage(destination);
         } catch (error) {
             console.warn('Failed to finalize move location event:', error.message);
         }
@@ -697,7 +696,7 @@ class Events {
                 });
 
                 if (exit) {
-                    generateLocationExitImage(exit).catch(err => console.warn('Failed to queue exit image generation:', err.message));
+                    exit.imageId = null;
                 }
             }
         }
@@ -807,11 +806,6 @@ class Events {
                         }
                     }
 
-                    if (typeof generateLocationImage === 'function') {
-                        generateLocationImage(destinationLocation).catch(error => {
-                            console.warn('Failed to queue destination location image:', error.message);
-                        });
-                    }
                 } else {
                     try {
                         npc.setLocation(null);

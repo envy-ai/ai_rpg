@@ -97,6 +97,73 @@ const JOB_STATUS = {
 };
 
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+const entityImageJobs = new Map(); // Track active jobs per entity key
+
+function getJobSnapshot(jobId) {
+    if (!jobId) {
+        return null;
+    }
+
+    const job = imageJobs.get(jobId);
+    if (!job) {
+        return null;
+    }
+
+    return {
+        jobId: job.id,
+        status: job.status,
+        progress: job.progress,
+        message: job.message,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt || null
+    };
+}
+
+function makeEntityJobKey(type, id) {
+    if (!type || !id) {
+        return null;
+    }
+    return `${type}:${id}`;
+}
+
+function setEntityJob(type, id, jobId) {
+    const key = makeEntityJobKey(type, id);
+    if (!key || !jobId) {
+        return;
+    }
+    entityImageJobs.set(key, jobId);
+}
+
+function getEntityJob(type, id) {
+    const key = makeEntityJobKey(type, id);
+    if (!key) {
+        return null;
+    }
+    const jobId = entityImageJobs.get(key);
+    if (!jobId) {
+        return null;
+    }
+    if (hasActiveImageJob(jobId)) {
+        return jobId;
+    }
+    entityImageJobs.delete(key);
+    return null;
+}
+
+function clearEntityJob(type, id, jobId = null) {
+    const key = makeEntityJobKey(type, id);
+    if (!key) {
+        return;
+    }
+    if (jobId) {
+        const current = entityImageJobs.get(key);
+        if (current && current !== jobId) {
+            return;
+        }
+    }
+    entityImageJobs.delete(key);
+}
 
 function hasActiveImageJob(imageId) {
     if (!imageId) {
@@ -241,8 +308,10 @@ async function processJobQueue() {
                     const player = players.get(job.payload.playerId);
                     if (player) {
                         player.imageId = result.imageId;
+                        delete player.pendingImageJobId;
                         console.log(`🎨 Updated player ${player.name} imageId to: ${result.imageId}`);
                     }
+                    clearEntityJob('player', job.payload.playerId, job.id);
                 }
 
                 // Update location's imageId if this was a location scene job
@@ -250,6 +319,7 @@ async function processJobQueue() {
                     const location = gameLocations.get(job.payload.locationId);
                     if (location) {
                         location.imageId = result.imageId;
+                        delete location.pendingImageJobId;
                         console.log(`🏞️ Updated location ${location.id} imageId to: ${result.imageId}`);
                     }
                     pendingLocationImages.delete(job.payload.locationId);
@@ -272,8 +342,10 @@ async function processJobQueue() {
 
                     if (foundExit) {
                         foundExit.imageId = result.imageId;
+                        delete foundExit.pendingImageJobId;
                         console.log(`🚪 Updated location exit ${foundExit.id} imageId to: ${result.imageId}`);
                     }
+                    clearEntityJob('location-exit', job.payload.locationExitId, job.id);
                 }
 
                 // Update thing's imageId if this was a thing image job
@@ -281,8 +353,10 @@ async function processJobQueue() {
                     const thing = things.get(job.payload.thingId);
                     if (thing) {
                         thing.imageId = result.imageId;
+                        delete thing.pendingImageJobId;
                         console.log(`🎨 Updated thing ${thing.name} (${thing.thingType}) imageId to: ${result.imageId}`);
                     }
+                    clearEntityJob('thing', job.payload.thingId, job.id);
                 }
             }
 
@@ -306,6 +380,48 @@ async function processJobQueue() {
         const currentJob = job && job.id ? job : (jobId ? imageJobs.get(jobId) : null);
         if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
             pendingLocationImages.delete(currentJob.payload.locationId);
+        }
+
+        if (currentJob && currentJob.status !== JOB_STATUS.PROCESSING) {
+            const payload = currentJob.payload || {};
+
+            if (payload.isPlayerPortrait && payload.playerId) {
+                clearEntityJob('player', payload.playerId, currentJob.id);
+                const player = players.get(payload.playerId);
+                if (player && currentJob.status !== JOB_STATUS.COMPLETED) {
+                    delete player.pendingImageJobId;
+                }
+            }
+
+            if (payload.isThingImage && payload.thingId) {
+                clearEntityJob('thing', payload.thingId, currentJob.id);
+                const thing = things.get(payload.thingId);
+                if (thing && currentJob.status !== JOB_STATUS.COMPLETED) {
+                    delete thing.pendingImageJobId;
+                }
+            }
+
+            if (payload.isLocationExitImage && payload.locationExitId) {
+                clearEntityJob('location-exit', payload.locationExitId, currentJob.id);
+                if (currentJob.status !== JOB_STATUS.COMPLETED) {
+                    for (const location of gameLocations.values()) {
+                        const exits = location.exits;
+                        for (const exit of exits.values()) {
+                            if (exit.id === payload.locationExitId) {
+                                delete exit.pendingImageJobId;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (payload.isLocationScene && payload.locationId && currentJob.status !== JOB_STATUS.COMPLETED) {
+                const location = gameLocations.get(payload.locationId);
+                if (location) {
+                    delete location.pendingImageJobId;
+                }
+            }
         }
 
         if (jobQueue.length > 0) {
@@ -764,13 +880,12 @@ function shouldGenerateNpcImage(npc) {
         return false;
     }
 
-    if (npc.imageId) {
-        if (hasActiveImageJob(npc.imageId)) {
-            return false;
-        }
-        if (hasExistingImage(npc.imageId)) {
-            return false;
-        }
+    const activeJobId = getEntityJob('player', npc.id);
+    if (activeJobId) {
+        return false;
+    }
+    if (npc.imageId && hasExistingImage(npc.imageId)) {
+        return false;
     }
 
     if (!npc.isNPC) {
@@ -798,13 +913,12 @@ function shouldGenerateThingImage(thing) {
         return false;
     }
 
-    if (thing.imageId) {
-        if (hasActiveImageJob(thing.imageId)) {
-            return false;
-        }
-        if (hasExistingImage(thing.imageId)) {
-            return false;
-        }
+    if (getEntityJob('thing', thing.id)) {
+        return false;
+    }
+
+    if (thing.imageId && hasExistingImage(thing.imageId)) {
+        return false;
     }
 
     if (thing.thingType !== 'item') {
@@ -844,8 +958,8 @@ function queueNpcAssetsForLocation(location) {
                 continue;
             }
 
-            if (shouldGenerateNpcImage(npc)) {
-                generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+            if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
+                npc.imageId = null;
             }
 
             const npcItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
@@ -917,9 +1031,9 @@ function queueLocationThingImages(location) {
                 continue;
             }
 
-            generateThingImage(thing).catch(err => {
-                console.warn('Failed to queue thing image generation:', err.message);
-            });
+            if (!thing.imageId || !hasExistingImage(thing.imageId)) {
+                thing.imageId = null;
+            }
         }
     } catch (error) {
         console.warn(`Failed to queue thing images for ${location.name || location.id}:`, error.message);
@@ -2663,9 +2777,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     }
 
                     if (shouldGenerateThingImage(thing)) {
-                        generateThingImage(thing).catch(err => {
-                            console.warn('Failed to generate thing image:', err.message);
-                        });
+                        if (!thing.imageId || !hasExistingImage(thing.imageId)) {
+                            thing.imageId = null;
+                        }
                     } else {
                         console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player inventory`);
                     }
@@ -2928,9 +3042,9 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             }
 
             if (shouldGenerateThingImage(thing)) {
-                generateThingImage(thing).catch(err => {
-                    console.warn('Failed to queue image generation for generated item:', err.message);
-                });
+                if (!thing.imageId || !hasExistingImage(thing.imageId)) {
+                    thing.imageId = null;
+                }
             }
         }
 
@@ -3272,8 +3386,8 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
         }
 
-        if (shouldGenerateNpcImage(npc)) {
-            generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+        if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
+            npc.imageId = null;
         }
 
         if (resolvedLocation) {
@@ -4489,10 +4603,8 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         things.set(thing.id, thing);
         location.addThingId(thing.id);
 
-        if (shouldGenerateThingImage(thing)) {
-            generateThingImage(thing).catch(err => {
-                console.warn('Failed to queue thing image generation:', err.message);
-            });
+        if (shouldGenerateThingImage(thing) && (!thing.imageId || !hasExistingImage(thing.imageId))) {
+            thing.imageId = null;
         }
 
         createdThings.push(thing);
@@ -5034,8 +5146,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 apiKey
             });
 
-            if (shouldGenerateNpcImage(npc)) {
-                generatePlayerImage(npc).catch(err => console.warn('Failed to queue NPC portrait:', err.message));
+            if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
+                npc.imageId = null;
             } else {
                 console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
             }
@@ -5266,8 +5378,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 apiKey
             });
 
-            if (shouldGenerateNpcImage(npc)) {
-                generatePlayerImage(npc).catch(err => console.warn('Failed to queue region NPC portrait:', err.message));
+            if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
+                npc.imageId = null;
             } else {
                 console.log(`🎭 Skipping region NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
             }
@@ -5555,37 +5667,66 @@ function renderRegionGeneratorPrompt(options = {}) {
 }
 
 // Function to generate player portrait image
-async function generatePlayerImage(player) {
+async function generatePlayerImage(player, options = {}) {
     try {
+        const { force = false } = options;
+
         if (!player) {
             throw new Error('Player object is required');
         }
 
-        if (player.isNPC && !shouldGenerateNpcImage(player)) {
+        if (player.isNPC && !force && !shouldGenerateNpcImage(player)) {
             console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'not-in-context'
+            };
         }
 
-        if (player.imageId) {
-            if (hasActiveImageJob(player.imageId)) {
-                console.log(`🎨 Portrait job ${player.imageId} already in progress for ${player.name}, skipping duplicate request`);
-                return null;
-            }
-            if (hasExistingImage(player.imageId)) {
-                console.log(`🎨 ${player.name} (${player.id}) already has a portrait (${player.imageId}), skipping regeneration`);
-                return null;
-            }
+        const activeJobId = getEntityJob('player', player.id);
+        if (activeJobId) {
+            const snapshot = getJobSnapshot(activeJobId);
+            console.log(`🎨 Portrait job ${activeJobId} already in progress for ${player.name}, returning existing job`);
+            return {
+                success: true,
+                existingJob: true,
+                jobId: activeJobId,
+                job: snapshot
+            };
+        }
+
+        if (player.imageId && !force && hasExistingImage(player.imageId)) {
+            console.log(`🎨 ${player.name} (${player.id}) already has a portrait (${player.imageId}), skipping regeneration`);
+            return {
+                success: true,
+                skipped: true,
+                imageId: player.imageId
+            };
         }
 
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping player portrait generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'disabled'
+            };
         }
 
         if (!comfyUIClient) {
             console.log('ComfyUI client not initialized, skipping player portrait generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-client'
+            };
+        }
+
+        if (force && player.imageId) {
+            // Clear existing image reference so a new job can be tracked with a fresh ID
+            player.imageId = null;
         }
 
         // Generate the portrait prompt
@@ -5623,7 +5764,8 @@ async function generatePlayerImage(player) {
             negative_prompt: 'blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions',
             // Track which player this image is for
             playerId: player.id,
-            isPlayerPortrait: true
+            isPlayerPortrait: true,
+            force
         };
 
         console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
@@ -5635,11 +5777,12 @@ async function generatePlayerImage(player) {
         // Start processing if not already running
         setTimeout(() => processJobQueue(), 0);
 
-        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
-        player.imageId = jobId;
+        setEntityJob('player', player.id, jobId);
+        player.pendingImageJobId = jobId;
         console.log(`🎨 Queued portrait generation for player ${player.name}, tracking with job ID: ${jobId}`);
 
         return {
+            success: true,
             jobId: jobId,
             status: job.status,
             message: 'Player portrait generation job queued',
@@ -5727,26 +5870,39 @@ async function generateImagePromptFromTemplate(prompts) {
 }
 
 // Function to generate location scene image
-async function generateLocationImage(location) {
+async function generateLocationImage(location, options = {}) {
     try {
+        const { force = false } = options;
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping location scene generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'disabled'
+            };
         }
 
         if (!comfyUIClient) {
             console.log('ComfyUI client not initialized, skipping location scene generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-client'
+            };
         }
 
         if (!location) {
             throw new Error('Location object is required');
         }
 
-        if (!currentPlayer || currentPlayer.currentLocation !== location.id) {
+        if (!force && (!currentPlayer || currentPlayer.currentLocation !== location.id)) {
             console.log(`🏞️ Skipping scene generation for ${location.id} - not the current player location`);
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'not-in-context'
+            };
         }
 
         if (pendingLocationImages.has(location.id)) {
@@ -5755,24 +5911,29 @@ async function generateLocationImage(location) {
             console.log(`🏞️ Location ${location.id} already has a pending image job (${pendingJobId}), skipping new request`);
             if (pendingJob) {
                 return {
-                    jobId: pendingJobId,
-                    status: pendingJob.status,
-                    message: pendingJob.message,
-                    estimatedTime: '30-90 seconds'
+                    success: true,
+                    existingJob: true,
+                    job: getJobSnapshot(pendingJobId)
                 };
             }
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'pending-unknown'
+            };
         }
 
-        if (location.imageId) {
-            if (hasActiveImageJob(location.imageId)) {
-                console.log(`🏞️ Location ${location.id} image job ${location.imageId} still in progress, skipping duplicate generation`);
-                return null;
-            }
-            if (hasExistingImage(location.imageId)) {
-                console.log(`🏞️ Location ${location.id} already has an image (${location.imageId}), skipping regeneration`);
-                return null;
-            }
+        if (location.imageId && !force && hasExistingImage(location.imageId)) {
+            console.log(`🏞️ Location ${location.id} already has an image (${location.imageId}), skipping regeneration`);
+            return {
+                success: true,
+                skipped: true,
+                imageId: location.imageId
+            };
+        }
+
+        if (force && location.imageId) {
+            location.imageId = null;
         }
 
         // Generate the location scene prompt using LLM
@@ -5792,7 +5953,8 @@ async function generateLocationImage(location) {
             // Track which location this image is for
             locationId: location.id,
             renderedTemplate: promptTemplate.renderedTemplate,
-            isLocationScene: true
+            isLocationScene: true,
+            force
         };
 
         console.log(`🏞️ Generating scene for location ${location.id} with job ID: ${jobId}`);
@@ -5805,11 +5967,12 @@ async function generateLocationImage(location) {
         setTimeout(() => processJobQueue(), 0);
 
         // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
-        location.imageId = jobId;
+        location.pendingImageJobId = jobId;
         pendingLocationImages.set(location.id, jobId);
         console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
 
         return {
+            success: true,
             jobId: jobId,
             status: job.status,
             message: 'Location scene generation job queued',
@@ -5823,21 +5986,54 @@ async function generateLocationImage(location) {
 }
 
 // Function to generate location exit passage image
-async function generateLocationExitImage(locationExit) {
+async function generateLocationExitImage(locationExit, options = {}) {
     try {
+        const { force = false } = options;
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping location exit passage generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'disabled'
+            };
         }
 
         if (!comfyUIClient) {
             console.log('ComfyUI client not initialized, skipping location exit passage generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-client'
+            };
         }
 
         if (!locationExit) {
             throw new Error('LocationExit object is required');
+        }
+
+        const activeJobId = getEntityJob('location-exit', locationExit.id);
+        if (activeJobId) {
+            console.log(`🚪 Image job ${activeJobId} already running for exit ${locationExit.id}, returning existing job`);
+            return {
+                success: true,
+                existingJob: true,
+                jobId: activeJobId,
+                job: getJobSnapshot(activeJobId)
+            };
+        }
+
+        if (locationExit.imageId && !force && hasExistingImage(locationExit.imageId)) {
+            console.log(`🚪 Location exit ${locationExit.id} already has an image (${locationExit.imageId}), skipping regeneration`);
+            return {
+                success: true,
+                skipped: true,
+                imageId: locationExit.imageId
+            };
+        }
+
+        if (force && locationExit.imageId) {
+            locationExit.imageId = null;
         }
 
         // Generate the location exit passage prompt
@@ -5853,7 +6049,8 @@ async function generateLocationExitImage(locationExit) {
             negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, blocked passages',
             // Track which location exit this image is for
             locationExitId: locationExit.id,
-            isLocationExitImage: true
+            isLocationExitImage: true,
+            force
         };
 
         console.log(`🚪 Generating passage for location exit ${locationExit.id} with job ID: ${jobId}`);
@@ -5865,11 +6062,12 @@ async function generateLocationExitImage(locationExit) {
         // Start processing if not already running
         setTimeout(() => processJobQueue(), 0);
 
-        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
-        locationExit.imageId = jobId;
+        setEntityJob('location-exit', locationExit.id, jobId);
+        locationExit.pendingImageJobId = jobId;
         console.log(`🚪 Queued passage generation for location exit ${locationExit.id}, tracking with job ID: ${jobId}`);
 
         return {
+            success: true,
             jobId: jobId,
             status: job.status,
             message: 'Location exit passage generation job queued',
@@ -5883,41 +6081,66 @@ async function generateLocationExitImage(locationExit) {
 }
 
 // Function to generate thing image
-async function generateThingImage(thing) {
+async function generateThingImage(thing, options = {}) {
     try {
+        const { force = false } = options;
         console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping thing image generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'disabled'
+            };
         }
 
         if (!comfyUIClient) {
             console.log('ComfyUI client not initialized, skipping thing image generation');
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'no-client'
+            };
         }
 
         if (!thing) {
             throw new Error('Thing object is required');
         }
 
-        if (thing.imageId) {
-            console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
-            if (hasActiveImageJob(thing.imageId)) {
-                console.log(`🎒 Image job ${thing.imageId} already running for ${thing.name}, skipping duplicate request`);
-                return null;
-            }
-            if (hasExistingImage(thing.imageId)) {
-                console.log(`🎒 ${thing.name} (${thing.id}) already has an image (${thing.imageId}), skipping regeneration`);
-                return null;
-            }
-        } else {
-            console.log(`No existing imageId for thing ${thing.name} (${thing.id}), proceeding with generation`);
+        console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId || 'none'}`);
+
+        const activeJobId = getEntityJob('thing', thing.id);
+        if (activeJobId) {
+            console.log(`🎒 Image job ${activeJobId} already running for ${thing.name}, returning existing job`);
+            return {
+                success: true,
+                existingJob: true,
+                jobId: activeJobId,
+                job: getJobSnapshot(activeJobId)
+            };
         }
 
-        if (!shouldGenerateThingImage(thing)) {
+        if (thing.imageId && !force && hasExistingImage(thing.imageId)) {
+            console.log(`🎒 ${thing.name} (${thing.id}) already has an image (${thing.imageId}), skipping regeneration`);
+            return {
+                success: true,
+                skipped: true,
+                imageId: thing.imageId
+            };
+        }
+
+        if (!force && !shouldGenerateThingImage(thing)) {
             console.log(`🎒 Skipping ${thing.thingType} image generation for ${thing.name} (${thing.id}) - item not in player inventory`);
-            return null;
+            return {
+                success: false,
+                skipped: true,
+                reason: 'not-visible'
+            };
+        }
+
+        if (force && thing.imageId) {
+            thing.imageId = null;
         }
 
         // Generate the thing image prompt using LLM
@@ -5952,7 +6175,8 @@ async function generateThingImage(thing) {
             // Track which thing this image is for
             thingId: thing.id,
             renderedTemplate: promptTemplate.renderedTemplate,
-            isThingImage: true
+            isThingImage: true,
+            force
         };
 
         console.log(`🎨 Generating ${thing.thingType} image for ${thing.name} (${thing.id}) with job ID: ${jobId}`);
@@ -5964,11 +6188,12 @@ async function generateThingImage(thing) {
         // Start processing if not already running
         setTimeout(() => processJobQueue(), 0);
 
-        // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
-        thing.imageId = jobId;
+        setEntityJob('thing', thing.id, jobId);
+        thing.pendingImageJobId = jobId;
         console.log(`🎨 Queued ${thing.thingType} image generation for ${thing.name}, tracking with job ID: ${jobId}`);
 
         return {
+            success: true,
             jobId: jobId,
             status: job.status,
             message: `Thing ${thing.thingType} image generation job queued`,
@@ -6225,15 +6450,6 @@ async function generateLocationFromPrompt(options = {}) {
             model,
             apiKey
         });
-
-        // Automatically generate location scene image if image generation is enabled
-        try {
-            const imageResult = await generateLocationImage(location);
-            console.log(`🎨 Location scene generation initiated for ${location.id}:`, imageResult);
-        } catch (imageError) {
-            console.warn('Failed to generate location scene:', imageError.message);
-            // Don't fail location generation if image generation fails
-        }
 
         return {
             location: location,
@@ -6778,6 +6994,7 @@ const apiScope = {
     scheduleStubExpansion,
     shouldGenerateNpcImage,
     shouldGenerateThingImage,
+    getJobSnapshot,
     tickStatusEffectsForAction,
     buildBasePromptContext,
     buildLocationShortDescription,

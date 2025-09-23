@@ -337,6 +337,7 @@
     <script src="/vendor/cose-base.js"></script>
     <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/js/lightbox.js"></script>
+    <script src="/js/image-manager.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/player-stats.js"></script>
@@ -381,6 +382,63 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+
+        function renderEntityImage({
+            element,
+            entityType,
+            entityId,
+            imageId,
+            altText,
+            placeholderIcon = '🖼️',
+            placeholderClass = 'image-placeholder',
+            enableLightbox = true
+        }) {
+            if (!element) {
+                return;
+            }
+
+            const safeAltText = escapeHtml(altText || '');
+            const placeholderMarkup = `<div class="${placeholderClass}">${placeholderIcon}</div>`;
+
+            const applyImageMarkup = (url) => {
+                element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
+                const img = element.querySelector('img');
+                if (img && enableLightbox) {
+                    img.dataset.lightboxImage = img.src;
+                    img.dataset.lightboxAlt = altText || safeAltText || 'Image';
+                    img.dataset.lightboxCaption = altText || '';
+                    bindLightboxElement(img);
+                }
+            };
+
+            if (imageId) {
+                applyImageMarkup(`/generated-images/${imageId}.png`);
+            } else {
+                element.innerHTML = placeholderMarkup;
+            }
+
+            const manager = window.AIRPG?.imageManager;
+            if (!manager || !entityType || !entityId) {
+                return;
+            }
+
+            manager.ensureImage({
+                entityType,
+                entityId,
+                existingImageId: imageId || null
+            }).then(result => {
+                if (!result) {
+                    return;
+                }
+                const imageUrl = result.imageUrl || (result.imageId ? `/generated-images/${result.imageId}.png` : null);
+                if (imageUrl) {
+                    applyImageMarkup(imageUrl);
+                }
+            }).catch(error => {
+                console.warn(`Image generation failed for ${entityType} ${entityId}:`, error?.message || error);
+                element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
+            });
+        }
 
         const capitalize = (value) => {
             if (!value) return '';
@@ -591,7 +649,6 @@
         function initLocationDisplay() {
             // Function to update location display
             const locationCache = {};
-            const pendingImagePolls = new Map();
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
@@ -647,19 +704,24 @@
                         locationTooltip.setAttribute('aria-hidden', 'true');
                     }
                     if (locationHint) {
-                        if (location.pendingImageJobId) {
-                            locationHint.textContent = 'Generating location image...';
-                        } else {
-                            locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
-                        }
+                        const awaitingImage = !location.imageId;
+                        locationHint.textContent = awaitingImage
+                            ? 'Generating location image...'
+                            : (location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.');
                     }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
                     locationCache[location.id] = location.name || location.description || location.id;
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        if (location.imageId && !location.pendingImageJobId) {
-                            locationImage.innerHTML = `<img src="/generated-images/${location.imageId}.png" alt="${location.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
+                        const applyLocationImage = (imageUrl) => {
+                            if (!imageUrl) {
+                                locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
+                                return;
+                            }
+
+                            const safeAlt = (location.name || 'Location image').replace(/"/g, '&quot;');
+                            locationImage.innerHTML = `<img src="${imageUrl}" alt="${safeAlt}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
                             const previewImage = locationImage.querySelector('img');
                             if (previewImage) {
                                 previewImage.dataset.lightboxImage = previewImage.src;
@@ -667,9 +729,37 @@
                                 previewImage.dataset.lightboxCaption = location.name || '';
                                 bindLightboxElement(previewImage);
                             }
+                        };
+
+                        if (location.imageId && !location.pendingImageJobId) {
+                            applyLocationImage(`/generated-images/${location.imageId}.png`);
                         } else {
                             locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
                         }
+
+                        if (window.AIRPG?.imageManager && location.id) {
+                            window.AIRPG.imageManager.ensureImage({
+                                entityType: 'location',
+                                entityId: location.id,
+                                existingImageId: location.imageId || null
+                            }).then(result => {
+                                if (!result) {
+                                    return;
+                                }
+                                const imageUrl = result.imageUrl
+                                    || (result.imageId ? `/generated-images/${result.imageId}.png` : null);
+                                if (imageUrl) {
+                                    applyLocationImage(imageUrl);
+                                    if (locationHint) {
+                                        locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
+                                    }
+                                }
+                            }).catch(error => {
+                                console.warn('Location image generation failed:', error?.message || error);
+                                locationImage.innerHTML = '<div class="location-placeholder error"><span>⚠️</span><p>Image unavailable</p></div>';
+                            });
+                        }
+
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }
@@ -731,18 +821,15 @@
                                 const portrait = document.createElement('div');
                                 portrait.className = 'location-entity-icon';
 
-                                if (npc.imageId) {
-                                    portrait.innerHTML = `<img src="/generated-images/${npc.imageId}.png" alt="${npc.name}" onerror="this.parentElement.innerHTML='<div class=\\'location-entity-placeholder\\'>🎭</div>'">`;
-                                    const portraitImg = portrait.querySelector('img');
-                                    if (portraitImg) {
-                                        portraitImg.dataset.lightboxImage = portraitImg.src;
-                                        portraitImg.dataset.lightboxAlt = npc.name || 'NPC portrait';
-                                        portraitImg.dataset.lightboxCaption = npc.name || '';
-                                        bindLightboxElement(portraitImg);
-                                    }
-                                } else {
-                                    portrait.innerHTML = '<div class="location-entity-placeholder">🎭</div>';
-                                }
+                                renderEntityImage({
+                                    element: portrait,
+                                    entityType: npc.isNPC ? 'npc' : 'player',
+                                    entityId: npc.id,
+                                    imageId: npc.imageId || null,
+                                    altText: npc.name || 'NPC portrait',
+                                    placeholderIcon: '🎭',
+                                    placeholderClass: 'location-entity-placeholder'
+                                });
 
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
@@ -785,18 +872,16 @@
 
                                 const icon = document.createElement('div');
                                 icon.className = 'location-entity-icon';
-                                if (thing.imageId) {
-                                    icon.innerHTML = `<img src="/generated-images/${thing.imageId}.png" alt="${thing.name || 'Location item'}" onerror="this.parentElement.innerHTML='<div class=\\'location-entity-placeholder\\'>${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>'">`;
-                                    const img = icon.querySelector('img');
-                                    if (img) {
-                                        img.dataset.lightboxImage = img.src;
-                                        img.dataset.lightboxAlt = thing.name || 'Location item';
-                                        img.dataset.lightboxCaption = thing.name || '';
-                                        bindLightboxElement(img);
-                                    }
-                                } else {
-                                    icon.innerHTML = `<div class="location-entity-placeholder">${thing.thingType === 'scenery' ? '🏞️' : '🎁'}</div>`;
-                                }
+                                const placeholderIcon = thing.thingType === 'scenery' ? '🏞️' : '🎁';
+                                renderEntityImage({
+                                    element: icon,
+                                    entityType: 'thing',
+                                    entityId: thing.id,
+                                    imageId: thing.imageId || null,
+                                    altText: thing.name || 'Location item',
+                                    placeholderIcon,
+                                    placeholderClass: 'location-entity-placeholder'
+                                });
 
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
@@ -826,11 +911,6 @@
 
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
 
-                    if (location.pendingImageJobId) {
-                        startImagePolling(location.id, location.pendingImageJobId);
-                    } else {
-                        stopImagePolling(location.id);
-                    }
                     hideLocationOverlay();
                     lastRenderedLocation = location ? JSON.parse(JSON.stringify(location)) : null;
                 } else {
@@ -865,7 +945,6 @@
                         locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                     }
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
-                    stopImagePolling();
                     hideLocationOverlay();
                     lastRenderedLocation = null;
                 }
@@ -920,65 +999,6 @@
                 }
             }
 
-            function startImagePolling(locationId, jobId) {
-                if (!locationId || !jobId) return;
-                const existing = pendingImagePolls.get(locationId);
-                if (existing) {
-                    if (existing.jobId === jobId) {
-                        return;
-                    }
-                    clearInterval(existing.interval);
-                }
-
-                const interval = setInterval(async () => {
-                    try {
-                        const jobResponse = await fetch(`/api/jobs/${jobId}`);
-                        if (!jobResponse.ok) {
-                            throw new Error(`Job status ${jobResponse.status}`);
-                        }
-                        const jobData = await jobResponse.json();
-                        if (!jobData.success) {
-                            throw new Error(jobData.error || 'Job status error');
-                        }
-
-                        const status = jobData.job?.status;
-                        if (status === 'completed') {
-                            stopImagePolling(locationId);
-                            const locResponse = await fetch(`/api/locations/${locationId}`);
-                            const locData = await locResponse.json();
-                            if (locData.success && locData.location) {
-                                window.updateLocationDisplay(locData.location);
-                            }
-                        } else if (status === 'failed' || status === 'timeout') {
-                            stopImagePolling(locationId);
-                            const locationHint = document.getElementById('locationHint');
-                            if (locationHint) {
-                                locationHint.textContent = `Image generation ${status}.`;
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('Image polling error:', error.message);
-                    }
-                }, 4000);
-
-                pendingImagePolls.set(locationId, { interval, jobId });
-            }
-
-            function stopImagePolling(locationId = null) {
-                if (locationId) {
-                    const entry = pendingImagePolls.get(locationId);
-                    if (entry) {
-                        clearInterval(entry.interval);
-                        pendingImagePolls.delete(locationId);
-                    }
-                } else {
-                    for (const entry of pendingImagePolls.values()) {
-                        clearInterval(entry.interval);
-                    }
-                    pendingImagePolls.clear();
-                }
-            }
-
             // Load current player location on page load
             showLocationOverlay('Loading current location...');
             loadCurrentLocation().finally(() => hideLocationOverlay());
@@ -993,7 +1013,6 @@
             const equipmentSlotsContainer = document.getElementById('equipmentSlots');
             const equipmentEmpty = document.getElementById('equipmentEmpty');
             const imageMetadataCache = new Map();
-            let inventoryRefreshTimeout = null;
             let tooltipController = null;
 
             function hideTooltip() {
@@ -1001,25 +1020,6 @@
                 floatingTooltip.classList.remove('visible');
                 floatingTooltip.setAttribute('hidden', '');
             }
-
-            const scheduleInventoryRefresh = (delay = 5000) => {
-                if (inventoryRefreshTimeout) {
-                    return;
-                }
-
-                inventoryRefreshTimeout = setTimeout(async () => {
-                    inventoryRefreshTimeout = null;
-                    try {
-                        const response = await fetch('/api/player');
-                        const data = await response.json();
-                        if (data.success && data.player && window.updateInventoryDisplay) {
-                            window.updateInventoryDisplay(data.player || {});
-                        }
-                    } catch (error) {
-                        console.warn('Failed to refresh inventory while waiting for item images:', error);
-                    }
-                }, delay);
-            };
 
             const getItemSlotTags = (item = {}) => {
                 const slots = new Set();
@@ -1235,42 +1235,45 @@
             }
 
             const loadInventoryImage = async (item, iconElement) => {
-                const imageId = item?.imageId;
-                if (!imageId) {
-                    resetIconToPlaceholder(iconElement, item);
+                if (!iconElement || !item) {
                     return;
                 }
 
-                if (imageMetadataCache.has(imageId)) {
-                    applyImageToIcon(iconElement, imageMetadataCache.get(imageId), item);
+                const existingImageId = item.imageId || null;
+
+                if (existingImageId && imageMetadataCache.has(existingImageId)) {
+                    applyImageToIcon(iconElement, imageMetadataCache.get(existingImageId), item);
+                } else if (existingImageId) {
+                    applyImageToIcon(iconElement, `/generated-images/${existingImageId}.png`, item);
+                } else {
+                    resetIconToPlaceholder(iconElement, item);
+                }
+
+                const manager = window.AIRPG?.imageManager;
+                if (!manager || !item.id) {
                     return;
                 }
 
                 iconElement.classList.add('loading');
-                iconElement.textContent = '🖼️';
 
                 try {
-                    const response = await fetch(`/api/images/${encodeURIComponent(imageId)}`);
-                    if (!response.ok) {
-                        if (response.status === 404) {
-                            // Image metadata is not ready yet; refresh inventory soon.
-                            resetIconToPlaceholder(iconElement, item, '⏳');
-                            scheduleInventoryRefresh();
-                            return;
-                        }
-                        throw new Error(`Failed to load image metadata (status ${response.status})`);
-                    }
+                    const result = await manager.ensureImage({
+                        entityType: 'thing',
+                        entityId: item.id,
+                        existingImageId: existingImageId
+                    });
 
-                    const data = await response.json();
-                    const imageUrl = data?.metadata?.images?.[0]?.url;
-                    if (imageUrl) {
-                        imageMetadataCache.set(imageId, imageUrl);
+                    const resolvedImageId = result?.imageId || existingImageId;
+                    const imageUrl = result?.imageUrl || (resolvedImageId ? `/generated-images/${resolvedImageId}.png` : null);
+
+                    if (resolvedImageId && imageUrl) {
+                        imageMetadataCache.set(resolvedImageId, imageUrl);
                         applyImageToIcon(iconElement, imageUrl, item);
                     } else {
                         resetIconToPlaceholder(iconElement, item);
                     }
                 } catch (error) {
-                    console.warn(`Unable to load inventory image for ${item?.name || imageId}:`, error);
+                    console.warn(`Unable to load inventory image for ${item?.name || item.id}:`, error);
                     resetIconToPlaceholder(iconElement, item);
                 } finally {
                     iconElement.classList.remove('loading');
@@ -1303,10 +1306,7 @@
 
                     const icon = document.createElement('div');
                     icon.className = 'inventory-icon';
-                    resetIconToPlaceholder(icon, item);
-                    if (item.imageId) {
-                        loadInventoryImage(item, icon);
-                    }
+                    loadInventoryImage(item, icon);
 
                     const name = document.createElement('div');
                     name.className = 'inventory-name';
@@ -1513,11 +1513,15 @@
 
                     const portrait = document.createElement('div');
                     portrait.className = 'party-portrait';
-                    if (member.imageId) {
-                        portrait.innerHTML = `<img src="/generated-images/${member.imageId}.png" alt="${member.name}" onerror="this.parentElement.innerHTML='<div class=\\'party-portrait-placeholder\\'>🎭</div>'">`;
-                    } else {
-                        portrait.innerHTML = '<div class="party-portrait-placeholder">🎭</div>';
-                    }
+                    renderEntityImage({
+                        element: portrait,
+                        entityType: member.isNPC ? 'npc' : 'player',
+                        entityId: member.id,
+                        imageId: member.imageId || null,
+                        altText: member.name || 'Party member portrait',
+                        placeholderIcon: '🎭',
+                        placeholderClass: 'party-portrait-placeholder'
+                    });
 
                     const name = document.createElement('div');
                     name.className = 'party-name';

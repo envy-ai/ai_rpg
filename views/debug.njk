@@ -461,6 +461,7 @@ GET  /api/saves               - List available saves
 DELETE /api/save/:saveName    - Delete a save
 
 IMAGE GENERATION ENDPOINTS:
+POST /api/images/request     - Request or resume image generation for an entity
 POST /api/generate-image      - Generate new image from prompt
 GET  /api/images              - List all generated images
 GET  /api/images/:id          - Get specific image metadata
@@ -477,6 +478,7 @@ GET  /player-stats           - Player stats configuration page</pre>
         </div>
     </div>
 
+    <script src="/js/image-manager.js"></script>
     <script>
         // Console.log all JSON data displayed on the debug page
         document.addEventListener('DOMContentLoaded', function() {

@@ -120,6 +120,16 @@ document.addEventListener('DOMContentLoaded', function () {
         // Update the form with any calculated values
         updateFormWithPlayerData(result.player);
 
+        if (result.imageNeedsUpdate && result.player?.id && window.AIRPG?.imageManager) {
+          window.AIRPG.imageManager.ensureImage({
+            entityType: 'player',
+            entityId: result.player.id,
+            force: true
+          }).catch(error => {
+            console.warn('Failed to queue player portrait regeneration:', error);
+          });
+        }
+
         // If this was a new player creation, reload the page to show update mode
         if (!isUpdate) {
           setTimeout(() => {

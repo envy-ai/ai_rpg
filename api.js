@@ -793,15 +793,6 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to generate player inventory:', inventoryError);
                 }
 
-                // Automatically generate player portrait if image generation is enabled
-                try {
-                    const imageResult = await generatePlayerImage(player);
-                    console.log(`🎨 Player portrait generation initiated for ${player.name}:`, imageResult);
-                } catch (imageError) {
-                    console.warn('Failed to generate player portrait:', imageError.message);
-                    // Don't fail player creation if image generation fails
-                }
-
                 res.json({
                     success: true,
                     player: player.getStatus(),
@@ -890,9 +881,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 try {
-                    if (member && member.isNPC && shouldGenerateNpcImage(member)) {
-                        generatePlayerImage(member).catch(err => console.warn('Failed to queue party member portrait:', err.message));
-                    }
+                    // Image generation is now client-driven; ensure placeholders render on the frontend.
                     // We don't need to generate party inventory item images, as they aren't visible anywhere.
                     /*
                     const inventoryItems = typeof member?.getInventoryItems === 'function' ? member.getInventoryItems() : [];
@@ -1310,11 +1299,17 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Track if description changed for image regeneration
                 const originalDescription = currentPlayer.description;
+                const originalName = currentPlayer.name;
                 let descriptionChanged = false;
+                let nameChanged = false;
 
                 // Update basic information
                 if (name && name.trim()) {
-                    currentPlayer.setName(name.trim());
+                    const trimmedName = name.trim();
+                    if (trimmedName !== originalName) {
+                        nameChanged = true;
+                    }
+                    currentPlayer.setName(trimmedName);
                 }
 
                 if (description !== undefined) {
@@ -1363,14 +1358,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 // Trigger image regeneration if description changed
-                if (descriptionChanged) {
-                    generatePlayerImage(currentPlayer).catch(err => console.warn('Failed to regenerate player portrait:', err.message));
+                if (descriptionChanged || nameChanged) {
+                    currentPlayer.imageId = null;
                 }
 
+                const imageNeedsUpdate = descriptionChanged || nameChanged;
                 res.json({
                     success: true,
                     player: currentPlayer.getStatus(),
-                    message: 'Player stats updated successfully'
+                    message: 'Player stats updated successfully',
+                    imageNeedsUpdate
                 });
 
             } catch (error) {
@@ -1447,15 +1444,6 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 } catch (inventoryError) {
                     console.warn('Failed to generate player inventory (stats):', inventoryError);
-                }
-
-                // Automatically generate player portrait if image generation is enabled
-                try {
-                    const imageResult = await generatePlayerImage(player);
-                    console.log(`🎨 Player portrait generation initiated for ${player.name}:`, imageResult);
-                } catch (imageError) {
-                    console.warn('Failed to generate player portrait:', imageError.message);
-                    // Don't fail player creation if image generation fails
                 }
 
                 res.json({
@@ -1536,12 +1524,39 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 // Generate the portrait
-                const imageResult = await generatePlayerImage(player);
+                const imageResult = await generatePlayerImage(player, { force: true });
 
-                if (!imageResult) {
+                if (imageResult.success) {
+                    return res.json({
+                        success: true,
+                        player: {
+                            id: player.id,
+                            name: player.name,
+                            imageId: player.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: `Portrait regeneration initiated for ${player.name}`
+                    });
+                }
+
+                if (imageResult.existingJob) {
+                    return res.status(202).json({
+                        success: false,
+                        player: {
+                            id: player.id,
+                            name: player.name,
+                            imageId: player.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: 'Portrait job already in progress'
+                    });
+                }
+
+                if (imageResult.skipped) {
                     return res.status(409).json({
                         success: false,
                         error: 'Portrait generation is only available for companions in your party or at your current location.',
+                        reason: imageResult.reason,
                         player: {
                             id: player.id,
                             name: player.name,
@@ -1550,15 +1565,9 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                res.json({
-                    success: true,
-                    player: {
-                        id: player.id,
-                        name: player.name,
-                        imageId: player.imageId
-                    },
-                    imageGeneration: imageResult,
-                    message: `Portrait regeneration initiated for ${player.name}`
+                res.status(500).json({
+                    success: false,
+                    error: imageResult.message || 'Failed to queue portrait generation'
                 });
 
             } catch (error) {
@@ -1739,12 +1748,6 @@ module.exports = function registerApiRoutes(scope) {
                             }
                         }
                     }
-                }
-
-                try {
-                    await generateLocationImage(destinationLocation);
-                } catch (locationImageError) {
-                    console.warn('Failed to generate location scene:', locationImageError.message);
                 }
 
                 queueNpcAssetsForLocation(destinationLocation);
@@ -1990,23 +1993,18 @@ module.exports = function registerApiRoutes(scope) {
 
                 things.set(thing.id, thing);
 
-                // Automatically generate thing image if context allows
-                if (shouldGenerateThingImage(thing)) {
-                    try {
-                        const imageResult = await generateThingImage(thing);
-                        console.log(`🎨 Thing ${thing.thingType} image generation initiated for ${thing.name}:`, imageResult);
-                    } catch (imageError) {
-                        console.warn('Failed to generate thing image:', imageError.message);
-                        // Don't fail thing creation if image generation fails
-                    }
-                } else {
+                const imageEligible = shouldGenerateThingImage(thing);
+                if (!imageEligible) {
                     console.log(`🎒 Skipping automatic image generation for ${thing.name} (${thing.id}) - not in player inventory`);
+                } else {
+                    thing.imageId = null;
                 }
 
                 res.json({
                     success: true,
                     thing: thing.toJSON(),
-                    message: 'Thing created successfully'
+                    message: 'Thing created successfully',
+                    imageNeedsGeneration: Boolean(imageEligible)
                 });
             } catch (error) {
                 res.status(400).json({
@@ -2113,23 +2111,21 @@ module.exports = function registerApiRoutes(scope) {
                 if (imageId !== undefined) thing.imageId = imageId;
 
                 // Trigger image regeneration if visual properties changed (only when relevant)
+                let imageNeedsUpdate = false;
                 if (shouldRegenerateImage && imageId === undefined) {
-                    try {
-                        if (shouldGenerateThingImage(thing)) {
-                            await generateThingImage(thing);
-                            console.log(`🔄 Regenerated ${thing.thingType} image for ${thing.name} due to property changes`);
-                        } else {
-                            console.log(`🎒 Skipping ${thing.thingType} image regeneration for ${thing.name} - not in player inventory`);
-                        }
-                    } catch (imageError) {
-                        console.warn('Failed to schedule thing image regeneration:', imageError.message);
+                    if (shouldGenerateThingImage(thing)) {
+                        thing.imageId = null;
+                        imageNeedsUpdate = true;
+                    } else {
+                        console.log(`🎒 Skipping ${thing.thingType} image regeneration for ${thing.name} - not in player inventory`);
                     }
                 }
 
                 res.json({
                     success: true,
                     thing: thing.toJSON(),
-                    message: 'Thing updated successfully'
+                    message: 'Thing updated successfully',
+                    imageNeedsUpdate
                 });
             } catch (error) {
                 res.status(400).json({
@@ -2229,21 +2225,39 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const imageResult = await generateThingImage(thing);
+                const imageResult = await generateThingImage(thing, { force: true });
 
-                if (!imageResult) {
-                    return res.status(503).json({
+                if (imageResult.success) {
+                    return res.json({
+                        success: true,
+                        thing: thing.toJSON(),
+                        imageGeneration: imageResult,
+                        message: `${thing.thingType} image generation initiated for ${thing.name}`
+                    });
+                }
+
+                if (imageResult.existingJob) {
+                    return res.status(202).json({
+                        success: false,
+                        thing: thing.toJSON(),
+                        imageGeneration: imageResult,
+                        message: 'Image job already in progress'
+                    });
+                }
+
+                if (imageResult.skipped) {
+                    return res.status(409).json({
                         success: false,
                         error: 'Image generation is not available or disabled',
+                        reason: imageResult.reason,
                         thing: thing.toJSON()
                     });
                 }
 
-                res.json({
-                    success: true,
-                    thing: thing.toJSON(),
-                    imageGeneration: imageResult,
-                    message: `${thing.thingType} image generation initiated for ${thing.name}`
+                res.status(500).json({
+                    success: false,
+                    error: imageResult.message || 'Failed to queue image generation',
+                    thing: thing.toJSON()
                 });
             } catch (error) {
                 res.status(500).json({
@@ -2843,12 +2857,6 @@ module.exports = function registerApiRoutes(scope) {
                 queueNpcAssetsForLocation(entranceLocation);
 
                 try {
-                    await generateLocationImage(entranceLocation);
-                } catch (locationImageError) {
-                    console.warn('Failed to generate starting location image:', locationImageError.message);
-                }
-
-                try {
                     await generateInventoryForCharacter({
                         character: newPlayer,
                         characterDescriptor: { role: 'adventurer', class: newPlayer.class, race: newPlayer.race },
@@ -3281,23 +3289,15 @@ module.exports = function registerApiRoutes(scope) {
                         if (!item) {
                             continue;
                         }
-                        try {
-                            if (shouldGenerateThingImage(item)) {
-                                generateThingImage(item).catch(error => {
-                                    console.warn('Failed to queue inventory item image:', error.message);
-                                });
-                            }
-                        } catch (error) {
-                            console.warn('Error evaluating inventory item for image generation:', error.message);
+                        if (!item.imageId || !hasImage(item.imageId)) {
+                            item.imageId = null;
                         }
                     }
                 };
 
                 if (currentPlayer) {
                     if (!currentPlayer.imageId || !hasImage(currentPlayer.imageId)) {
-                        generatePlayerImage(currentPlayer).catch(portraitError => {
-                            console.warn('Failed to queue player portrait after load:', portraitError.message);
-                        });
+                        currentPlayer.imageId = null;
                     }
                     ensureInventoryImages(currentPlayer);
                 }
@@ -3323,9 +3323,7 @@ module.exports = function registerApiRoutes(scope) {
                             continue;
                         }
                         if (!npc.imageId || !hasImage(npc.imageId)) {
-                            generatePlayerImage(npc).catch(error => {
-                                console.warn('Failed to queue NPC portrait after load:', error.message);
-                            });
+                            npc.imageId = null;
                         }
                         ensureInventoryImages(npc);
                     }
@@ -3510,6 +3508,154 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Image generation functionality
+        app.post('/api/images/request', async (req, res) => {
+            try {
+                const { entityType, entityId, force = false } = req.body || {};
+
+                const normalizedType = typeof entityType === 'string'
+                    ? entityType.trim().toLowerCase()
+                    : '';
+
+                if (!normalizedType || !entityId || typeof entityId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'entityType and entityId are required'
+                    });
+                }
+
+                let entity = null;
+                let generator = null;
+                let resolvedType = normalizedType;
+
+                switch (normalizedType) {
+                    case 'player':
+                    case 'npc': {
+                        entity = players.get(entityId);
+                        if (!entity) {
+                            return res.status(404).json({
+                                success: false,
+                                error: `Player with ID '${entityId}' not found`
+                            });
+                        }
+                        generator = (options) => generatePlayerImage(entity, options);
+                        resolvedType = entity.isNPC ? 'npc' : 'player';
+                        break;
+                    }
+
+                    case 'location': {
+                        entity = gameLocations.get(entityId);
+                        if (!entity) {
+                            return res.status(404).json({
+                                success: false,
+                                error: `Location with ID '${entityId}' not found`
+                            });
+                        }
+                        generator = (options) => generateLocationImage(entity, options);
+                        break;
+                    }
+
+                    case 'exit':
+                    case 'location-exit':
+                    case 'location_exit': {
+                        entity = gameLocationExits.get(entityId);
+                        if (!entity) {
+                            return res.status(404).json({
+                                success: false,
+                                error: `Location exit with ID '${entityId}' not found`
+                            });
+                        }
+                        generator = (options) => generateLocationExitImage(entity, options);
+                        resolvedType = 'location-exit';
+                        break;
+                    }
+
+                    case 'thing':
+                    case 'item':
+                    case 'scenery': {
+                        entity = things.get(entityId);
+                        if (!entity) {
+                            return res.status(404).json({
+                                success: false,
+                                error: `Thing with ID '${entityId}' not found`
+                            });
+                        }
+                        generator = (options) => generateThingImage(entity, options);
+                        resolvedType = entity.thingType || normalizedType;
+                        break;
+                    }
+
+                    default:
+                        return res.status(400).json({
+                            success: false,
+                            error: `Unsupported entityType '${entityType}'`
+                        });
+                }
+
+                if (typeof generator !== 'function') {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Image generator not available for requested entity type'
+                    });
+                }
+
+                const generationResult = await generator({ force: Boolean(force) });
+
+                if (!generationResult) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Image generation did not return a result'
+                    });
+                }
+
+                const {
+                    success: generationSuccess = false,
+                    jobId = null,
+                    job: jobSnapshot = null,
+                    imageId = null,
+                    skipped = false,
+                    reason = null,
+                    existingJob = false,
+                    message = null
+                } = generationResult;
+
+                const responsePayload = {
+                    success: Boolean(generationSuccess),
+                    entityType: resolvedType,
+                    entityId,
+                    skipped: Boolean(skipped),
+                    reason,
+                    message,
+                    existingJob: Boolean(existingJob)
+                };
+
+                if (jobId) {
+                    responsePayload.jobId = jobId;
+                    responsePayload.job = jobSnapshot || getJobSnapshot(jobId);
+                }
+
+                if (imageId) {
+                    responsePayload.imageId = imageId;
+                }
+
+                if (!generationSuccess && skipped) {
+                    return res.status(202).json(responsePayload);
+                }
+
+                if (!generationSuccess && !existingJob) {
+                    return res.status(409).json(responsePayload);
+                }
+
+                return res.json(responsePayload);
+
+            } catch (error) {
+                console.error('Image request error:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // API endpoint for async image generation
         app.post('/api/generate-image', async (req, res) => {
             try {
