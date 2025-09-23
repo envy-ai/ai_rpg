@@ -525,9 +525,6 @@ module.exports = function registerApiRoutes(scope) {
             const rawRemainingHealth = targetHealth !== null ? targetHealth - attackDamage : null;
             const remainingHealth = rawRemainingHealth !== null ? Math.max(0, rawRemainingHealth) : null;
             const defeated = rawRemainingHealth !== null && attackDamage > 0 && rawRemainingHealth <= 0;
-            const killed = defeated && Number.isFinite(targetMaxHealth)
-                ? attackDamage >= targetHealth + targetMaxHealth
-                : false;
 
             return {
                 hit,
@@ -577,7 +574,6 @@ module.exports = function registerApiRoutes(scope) {
                     rawRemainingHealth,
                     maxHealth: targetMaxHealth,
                     defeated,
-                    killed,
                     toughness: {
                         name: toughnessInfo.key,
                         modifier: toughnessInfo.modifier
@@ -588,13 +584,13 @@ module.exports = function registerApiRoutes(scope) {
 
         function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
             if (!attackCheckInfo || !attackCheckInfo.structured) {
-                return null;
+                return { isAttack: false };
             }
 
             const structured = attackCheckInfo.structured;
             const attacks = Array.isArray(structured.attacks) ? structured.attacks : [];
             if (!attacks.length) {
-                return null;
+                return { isAttack: false };
             }
 
             const normalize = (value) => typeof value === 'string' ? value.trim().toLowerCase() : null;
@@ -615,7 +611,7 @@ module.exports = function registerApiRoutes(scope) {
             });
 
             if (!playerAttack) {
-                return null;
+                return { isAttack: false };
             }
 
             const targetName = typeof playerAttack.defender === 'string' ? playerAttack.defender.trim() : '';
@@ -735,9 +731,6 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (typeof computedOutcome.target.defeated === 'boolean') {
                     targetContext.defeated = computedOutcome.target.defeated;
-                }
-                if (typeof computedOutcome.target.killed === 'boolean') {
-                    targetContext.killed = computedOutcome.target.killed;
                 }
                 if (computedOutcome.target.toughness) {
                     targetContext.toughness = computedOutcome.target.toughness;
