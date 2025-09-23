@@ -1352,7 +1352,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         locations: regionLocations
     };
 
-    const mapItemContext = (item) => {
+    const mapItemContext = (item, equippedSlot = null) => {
         if (!item) {
             return null;
         }
@@ -1360,11 +1360,13 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         const name = item.name || item.title || 'Unknown Item';
         const description = item.description || item.summary || '';
         const statusEffects = normalizeStatusEffects(item);
+        const equipped = equippedSlot || null;
 
         return {
             name,
             description,
-            statusEffects
+            statusEffects,
+            equippedSlot: equipped
         };
     };
 
@@ -1390,7 +1392,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     };
 
     const currentPlayerInventory = Array.isArray(playerStatus?.inventory)
-        ? playerStatus.inventory.map(mapItemContext).filter(Boolean)
+        ? playerStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
         : [];
 
     const currentPlayerSkills = mapSkillContext();
@@ -1427,13 +1429,17 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
             const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : null;
+            const npcInventory = Array.isArray(npcStatus?.inventory)
+                ? npcStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
+                : [];
             npcs.push({
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
                 class: npcStatus?.class || npc.class || null,
                 race: npcStatus?.race || npc.race || null,
                 level: npcStatus?.level || npc.level || null,
-                statusEffects: normalizeStatusEffects(npc || npcStatus)
+                statusEffects: normalizeStatusEffects(npc || npcStatus),
+                inventory: npcInventory
             });
         }
     }
@@ -1447,13 +1453,17 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
             const memberStatus = typeof member.getStatus === 'function' ? member.getStatus() : null;
+            const memberInventory = Array.isArray(memberStatus?.inventory)
+                ? memberStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
+                : [];
             party.push({
                 name: memberStatus?.name || member.name || 'Unknown Ally',
                 description: memberStatus?.description || member.description || '',
                 class: memberStatus?.class || member.class || null,
                 race: memberStatus?.race || member.race || null,
                 level: memberStatus?.level || member.level || null,
-                statusEffects: normalizeStatusEffects(member || memberStatus)
+                statusEffects: normalizeStatusEffects(member || memberStatus),
+                inventory: memberInventory
             });
         }
     }

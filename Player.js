@@ -1412,6 +1412,32 @@ class Player {
         return snapshot;
     }
 
+    getEquippedSlotForThing(thingLike) {
+        const item = this.#resolveThing(thingLike);
+        if (!item || !item.slot) {
+            return null;
+        }
+        const slotType = this.#normalizeSlotType(item.slot);
+        if (!slotType || !this.#gearSlotsByType) {
+            return null;
+        }
+        const slotNames = this.#gearSlotsByType.get(slotType);
+        if (!slotNames || !slotNames.length) {
+            return null;
+        }
+        for (const slotName of slotNames) {
+            const slotData = this.#gearSlots.get(slotName);
+            if (slotData?.itemId === item.id) {
+                return slotName;
+            }
+        }
+        return null;
+    }
+
+    hasEquippedThing(thingLike) {
+        return this.getEquippedSlotForThing(thingLike) !== null;
+    }
+
     getEquippedItemIdForType(slotType) {
         const normalizedType = this.#normalizeSlotType(slotType);
         if (!normalizedType || !this.#gearSlotsByType) {

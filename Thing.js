@@ -151,6 +151,21 @@ class Thing {
     return this.#lastUpdated;
   }
 
+  get equippedBy() {
+    // This field is not tracked in the Thing class itself
+    const Player = require('./Player.js');
+    return Player.getAll().filter(player => player.hasEquippedThing(this.#id))[0] || null;
+  }
+
+  get isEquipped() {
+    return this.equippedBy !== null;
+  }
+
+  get equippedSlot() {
+    const player = this.equippedBy;
+    return player ? player.getEquippedSlotForThing(this.#id) : null;
+  }
+
   get rarity() {
     return this.#rarity;
   }
