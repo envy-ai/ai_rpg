@@ -1352,12 +1352,68 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         locations: regionLocations
     };
 
+    const mapItemContext = (item) => {
+        if (!item) {
+            return null;
+        }
+
+        const name = item.name || item.title || 'Unknown Item';
+        const description = item.description || item.summary || '';
+        const statusEffects = normalizeStatusEffects(item);
+
+        return {
+            name,
+            description,
+            statusEffects
+        };
+    };
+
+    const mapSkillContext = () => {
+        if (!playerStatus || !playerStatus.skills) {
+            return [];
+        }
+
+        const entries = [];
+        for (const [skillName, rank] of Object.entries(playerStatus.skills)) {
+            if (!skillName) {
+                continue;
+            }
+            const skillDef = skills.get(skillName) || skills.get(skillName.toLowerCase());
+            const description = skillDef?.description || skillDef?.details || '';
+            entries.push({
+                name: skillName,
+                rank,
+                description
+            });
+        }
+        return entries.sort((a, b) => a.name.localeCompare(b.name));
+    };
+
+    const currentPlayerInventory = Array.isArray(playerStatus?.inventory)
+        ? playerStatus.inventory.map(mapItemContext).filter(Boolean)
+        : [];
+
+    const currentPlayerSkills = mapSkillContext();
+
+    const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
+        ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
+            slot: slotName,
+            itemId: slotData?.itemId || null
+        }))
+        : [];
+
     const currentPlayerContext = {
         name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
         description: playerStatus?.description || currentPlayer?.description || '',
         health: playerStatus?.health ?? 'Unknown',
         maxHealth: playerStatus?.maxHealth ?? 'Unknown',
-        statusEffects: normalizeStatusEffects(currentPlayer || playerStatus)
+        level: playerStatus?.level ?? currentPlayer?.level ?? 'Unknown',
+        class: playerStatus?.class || currentPlayer?.class || 'Adventurer',
+        race: playerStatus?.race || currentPlayer?.race || 'Unknown',
+        statusEffects: normalizeStatusEffects(currentPlayer || playerStatus),
+        inventory: currentPlayerInventory,
+        skills: currentPlayerSkills,
+        gear: gearSnapshot
     };
 
     const npcs = [];
@@ -1374,6 +1430,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             npcs.push({
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
+                class: npcStatus?.class || npc.class || null,
+                race: npcStatus?.race || npc.race || null,
+                level: npcStatus?.level || npc.level || null,
                 statusEffects: normalizeStatusEffects(npc || npcStatus)
             });
         }
@@ -1391,6 +1450,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             party.push({
                 name: memberStatus?.name || member.name || 'Unknown Ally',
                 description: memberStatus?.description || member.description || '',
+                class: memberStatus?.class || member.class || null,
+                race: memberStatus?.race || member.race || null,
+                level: memberStatus?.level || member.level || null,
                 statusEffects: normalizeStatusEffects(member || memberStatus)
             });
         }

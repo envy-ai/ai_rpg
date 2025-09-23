@@ -71,8 +71,8 @@ You are an AI designed to perform various tasks related to managing a text-based
     <npc>
       <name>{{ npc.name }}</name>
       <description>{{ npc.description }}</description>
-      <class>{{ currentPlayer.class }}</class>
-      <race>{{ currentPlayer.race }}</race>
+      <class>{{ npc.class | default('Unknown') }}</class>
+      <race>{{ npc.race | default('Unknown') }}</race>
       <statusEffects>
         {% for effect in npc.statusEffects %}
         <effect>
@@ -89,6 +89,8 @@ You are an AI designed to perform various tasks related to managing a text-based
     <member>
       <name>{{ member.name }}</name>
       <description>{{ member.description }}</description>
+      <class>{{ member.class | default('Unknown') }}</class>
+      <race>{{ member.race | default('Unknown') }}</race>
       <statusEffects>
         {% for effect in member.statusEffects %}
         <effect>
