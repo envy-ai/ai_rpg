@@ -391,16 +391,25 @@
             altText,
             placeholderIcon = '🖼️',
             placeholderClass = 'image-placeholder',
-            enableLightbox = true
+            placeholderMarkup = null,
+            enableLightbox = true,
+            force = false
         }) {
             if (!element) {
-                return;
+                return Promise.resolve(null);
             }
 
             const safeAltText = escapeHtml(altText || '');
-            const placeholderMarkup = `<div class="${placeholderClass}">${placeholderIcon}</div>`;
+            const computedPlaceholderMarkup = placeholderMarkup !== null
+                ? placeholderMarkup
+                : `<div class="${placeholderClass}">${placeholderIcon}</div>`;
 
             const applyImageMarkup = (url) => {
+                if (!url) {
+                    element.innerHTML = computedPlaceholderMarkup;
+                    return;
+                }
+
                 element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
                 const img = element.querySelector('img');
                 if (img && enableLightbox) {
@@ -411,33 +420,142 @@
                 }
             };
 
+            const setPlaceholder = () => {
+                element.innerHTML = computedPlaceholderMarkup;
+            };
+
+            element.dataset.imageEntityType = entityType || '';
+            element.dataset.imageEntityId = entityId || '';
+            element.dataset.imagePlaceholder = placeholderIcon || '🖼️';
+            element.dataset.imagePlaceholderClass = placeholderClass || 'image-placeholder';
+            if (placeholderMarkup !== null && placeholderMarkup !== undefined) {
+                element.dataset.imagePlaceholderMarkup = placeholderMarkup;
+            } else {
+                delete element.dataset.imagePlaceholderMarkup;
+            }
+            element.dataset.imageAlt = altText || '';
+            element.dataset.imageLightbox = enableLightbox ? 'true' : 'false';
+            element.dataset.imageAuto = 'true';
+            if (force) {
+                element.dataset.imageForce = 'true';
+            } else {
+                delete element.dataset.imageForce;
+            }
+
+            element.dataset.imageProcessing = 'true';
+
             if (imageId) {
+                element.dataset.imageId = imageId;
                 applyImageMarkup(`/generated-images/${imageId}.png`);
             } else {
-                element.innerHTML = placeholderMarkup;
+                delete element.dataset.imageId;
+                setPlaceholder();
             }
+
+            const finalize = (result) => {
+                delete element.dataset.imageProcessing;
+                element.dataset.imageInitialized = 'true';
+                return result;
+            };
 
             const manager = window.AIRPG?.imageManager;
             if (!manager || !entityType || !entityId) {
-                return;
+                return Promise.resolve(finalize(null));
             }
 
-            manager.ensureImage({
+            return manager.ensureImage({
                 entityType,
                 entityId,
-                existingImageId: imageId || null
+                existingImageId: imageId || null,
+                force: Boolean(force)
             }).then(result => {
-                if (!result) {
-                    return;
+                if (result?.imageId) {
+                    element.dataset.imageId = result.imageId;
                 }
-                const imageUrl = result.imageUrl || (result.imageId ? `/generated-images/${result.imageId}.png` : null);
+
+                const imageUrl = result?.imageUrl || (result?.imageId ? `/generated-images/${result.imageId}.png` : null);
                 if (imageUrl) {
                     applyImageMarkup(imageUrl);
+                } else if (!result?.skipped) {
+                    setPlaceholder();
                 }
+
+                return finalize(result || null);
             }).catch(error => {
                 console.warn(`Image generation failed for ${entityType} ${entityId}:`, error?.message || error);
                 element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
+                return finalize(null);
             });
+        }
+
+        window.renderEntityImage = renderEntityImage;
+
+        function processAutoImageElement(element) {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+
+            const entityType = element.dataset.imageEntityType;
+            const entityId = element.dataset.imageEntityId;
+            if (!entityType || !entityId) {
+                return;
+            }
+
+            if (element.dataset.imageProcessing === 'true') {
+                return;
+            }
+
+            const force = element.dataset.imageForce === 'true';
+            renderEntityImage({
+                element,
+                entityType,
+                entityId,
+                imageId: element.dataset.imageId || null,
+                altText: element.dataset.imageAlt || '',
+                placeholderIcon: element.dataset.imagePlaceholder || '🖼️',
+                placeholderClass: element.dataset.imagePlaceholderClass || 'image-placeholder',
+                placeholderMarkup: element.dataset.imagePlaceholderMarkup || null,
+                enableLightbox: element.dataset.imageLightbox !== 'false',
+                force
+            }).finally(() => {
+                element.dataset.imageObserved = 'true';
+                if (force) {
+                    delete element.dataset.imageForce;
+                }
+            });
+        }
+
+        function initializeAutoImagePlaceholders(root = document) {
+            if (!root || typeof root.querySelectorAll !== 'function') {
+                return;
+            }
+
+            const elements = root.querySelectorAll('[data-image-entity-type][data-image-entity-id]');
+            elements.forEach(processAutoImageElement);
+        }
+
+        initializeAutoImagePlaceholders();
+
+        const autoImageObserver = new MutationObserver(mutations => {
+            for (const mutation of mutations) {
+                mutation.addedNodes.forEach(node => {
+                    if (!(node instanceof HTMLElement)) {
+                        return;
+                    }
+
+                    if (node.dataset && node.dataset.imageEntityType && node.dataset.imageEntityId) {
+                        processAutoImageElement(node);
+                    }
+
+                    initializeAutoImagePlaceholders(node);
+                });
+            }
+        });
+
+        try {
+            autoImageObserver.observe(document.body, { childList: true, subtree: true });
+        } catch (observerError) {
+            console.warn('Auto image observer unavailable:', observerError);
         }
 
         const capitalize = (value) => {
@@ -714,54 +832,40 @@
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        const applyLocationImage = (imageUrl) => {
-                            if (!imageUrl) {
-                                locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
-                                return;
-                            }
+                        const placeholderMarkup = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
 
-                            const safeAlt = (location.name || 'Location image').replace(/"/g, '&quot;');
-                            locationImage.innerHTML = `<img src="${imageUrl}" alt="${safeAlt}" onerror="this.parentElement.innerHTML='<div class=\\'location-placeholder\\'>🏞️<p>Image not found</p></div>'">`;
-                            const previewImage = locationImage.querySelector('img');
-                            if (previewImage) {
-                                previewImage.dataset.lightboxImage = previewImage.src;
-                                previewImage.dataset.lightboxAlt = location.name || 'Location image';
-                                previewImage.dataset.lightboxCaption = location.name || '';
-                                bindLightboxElement(previewImage);
+                        const finalizeTooltip = () => {
+                            if (existingTooltip && !existingTooltip.isConnected) {
+                                locationImage.appendChild(existingTooltip);
                             }
                         };
 
-                        if (location.imageId && !location.pendingImageJobId) {
-                            applyLocationImage(`/generated-images/${location.imageId}.png`);
-                        } else {
-                            locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
-                        }
+                        const renderPromise = renderEntityImage({
+                            element: locationImage,
+                            entityType: 'location',
+                            entityId: location.id,
+                            imageId: location.imageId || null,
+                            altText: location.name || 'Location image',
+                            placeholderIcon: '🏞️',
+                            placeholderClass: 'location-placeholder',
+                            placeholderMarkup,
+                            enableLightbox: true
+                        });
 
-                        if (window.AIRPG?.imageManager && location.id) {
-                            window.AIRPG.imageManager.ensureImage({
-                                entityType: 'location',
-                                entityId: location.id,
-                                existingImageId: location.imageId || null
-                            }).then(result => {
-                                if (!result) {
-                                    return;
+                        finalizeTooltip();
+
+                        if (renderPromise && typeof renderPromise.then === 'function') {
+                            renderPromise.then(result => {
+                                finalizeTooltip();
+                                if (result?.imageId && locationHint) {
+                                    locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
                                 }
-                                const imageUrl = result.imageUrl
-                                    || (result.imageId ? `/generated-images/${result.imageId}.png` : null);
-                                if (imageUrl) {
-                                    applyLocationImage(imageUrl);
-                                    if (locationHint) {
-                                        locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
-                                    }
+                            }).catch(() => {
+                                finalizeTooltip();
+                                if (locationHint) {
+                                    locationHint.textContent = 'Image unavailable.';
                                 }
-                            }).catch(error => {
-                                console.warn('Location image generation failed:', error?.message || error);
-                                locationImage.innerHTML = '<div class="location-placeholder error"><span>⚠️</span><p>Image unavailable</p></div>';
                             });
-                        }
-
-                        if (existingTooltip) {
-                            locationImage.appendChild(existingTooltip);
                         }
 
                         if (locationDescriptionText) {
