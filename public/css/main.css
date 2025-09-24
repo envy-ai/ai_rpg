@@ -1727,12 +1727,17 @@ body.modal-open {
   color: #f8fafc;
 }
 
+.npc-edit-field--wide {
+  grid-column: span 2;
+}
+
 .npc-edit-field label {
   font-size: 0.85rem;
   letter-spacing: 0.02em;
 }
 
 .npc-edit-field input,
+.npc-edit-field select,
 .npc-edit-section textarea,
 .npc-skill-row input,
 .npc-ability-row textarea,
@@ -1922,6 +1927,11 @@ body.modal-open {
   font-style: italic;
 }
 
+@media (max-width: 600px) {
+  .npc-edit-field--wide {
+    grid-column: span 1;
+  }
+}
 @media (max-width: 768px) {
   .attributes-grid {
     grid-template-columns: 1fr;

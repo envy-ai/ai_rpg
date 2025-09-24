@@ -1794,6 +1794,8 @@ module.exports = function registerApiRoutes(scope) {
                     class: className,
                     level,
                     health,
+                    shortDescription,
+                    healthAttribute,
                     attributes,
                     skills: skillValues,
                     abilities,
@@ -1816,6 +1818,10 @@ module.exports = function registerApiRoutes(scope) {
                     npc.class = className.trim();
                 }
 
+                if (typeof shortDescription === 'string') {
+                    npc.shortDescription = shortDescription;
+                }
+
                 if (level !== undefined) {
                     const parsedLevel = Number.parseInt(level, 10);
                     if (Number.isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 20) {
@@ -1827,6 +1833,14 @@ module.exports = function registerApiRoutes(scope) {
                     const parsedHealth = Number.parseInt(health, 10);
                     if (Number.isFinite(parsedHealth) && parsedHealth >= 0) {
                         npc.setHealth(parsedHealth);
+                    }
+                }
+
+                if (typeof healthAttribute === 'string' && healthAttribute.trim()) {
+                    try {
+                        npc.setHealthAttribute(healthAttribute.trim());
+                    } catch (healthAttrError) {
+                        console.warn(`Failed to set health attribute for NPC ${npcId}:`, healthAttrError.message);
                     }
                 }
 

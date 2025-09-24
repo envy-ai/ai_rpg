@@ -1733,7 +1733,11 @@ body.modal-open {
 }
 
 .modal__dialog {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 64, 175, 0.6));
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.95),
+    rgba(30, 64, 175, 0.6)
+  );
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 16px;
   width: min(760px, 95vw);
@@ -1799,12 +1803,17 @@ body.modal-open {
   color: #f8fafc;
 }
 
+.npc-edit-field--wide {
+  grid-column: span 2;
+}
+
 .npc-edit-field label {
   font-size: 0.85rem;
   letter-spacing: 0.02em;
 }
 
 .npc-edit-field input,
+.npc-edit-field select,
 .npc-edit-section textarea,
 .npc-skill-row input,
 .npc-ability-row textarea,
@@ -1992,6 +2001,12 @@ body.modal-open {
   color: #cbd5f5;
   font-size: 0.85rem;
   font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .npc-edit-field--wide {
+    grid-column: span 1;
+  }
 }
 
 // Responsive adjustments for player stats

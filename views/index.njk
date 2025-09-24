@@ -361,6 +361,10 @@
                         <label for="npcEditName">Name</label>
                         <input id="npcEditName" type="text" autocomplete="off">
                     </div>
+                    <div class="npc-edit-field npc-edit-field--wide">
+                        <label for="npcEditShortDescription">Short Description</label>
+                        <input id="npcEditShortDescription" type="text" autocomplete="off">
+                    </div>
                     <div class="npc-edit-field">
                         <label for="npcEditRace">Race</label>
                         <input id="npcEditRace" type="text" autocomplete="off">
@@ -376,6 +380,10 @@
                     <div class="npc-edit-field">
                         <label for="npcEditHealth">Health</label>
                         <input id="npcEditHealth" type="number" min="0" step="1">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="npcEditHealthAttribute">Health Bonus Attribute</label>
+                        <select id="npcEditHealthAttribute"></select>
                     </div>
                     <div class="npc-edit-field">
                         <label for="npcEditMaxHealth">Max Health</label>
@@ -813,11 +821,13 @@
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
         const npcEditNameInput = document.getElementById('npcEditName');
+        const npcEditShortDescriptionInput = document.getElementById('npcEditShortDescription');
         const npcEditRaceInput = document.getElementById('npcEditRace');
         const npcEditClassInput = document.getElementById('npcEditClass');
         const npcEditLevelInput = document.getElementById('npcEditLevel');
         const npcEditHealthInput = document.getElementById('npcEditHealth');
         const npcEditMaxHealthInput = document.getElementById('npcEditMaxHealth');
+        const npcEditHealthAttributeSelect = document.getElementById('npcEditHealthAttribute');
         const npcEditUnspentInput = document.getElementById('npcEditUnspent');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
@@ -831,6 +841,7 @@
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
 
         let currentNpcEditId = null;
+        let currentNpcOriginalHealthAttribute = '';
 
         function isNpcEditorAvailable() {
             return Boolean(npcEditModal && npcEditForm && npcEditBackdrop);
@@ -856,6 +867,109 @@
             } else if (type === 'success') {
                 npcEditStatus.classList.add('is-success');
             }
+        }
+
+        function resolveDefaultHealthAttributeKey(attributeKeys = [], preferred = '') {
+            if (!Array.isArray(attributeKeys)) {
+                return preferred || '';
+            }
+
+            const normalizedPreferred = typeof preferred === 'string' ? preferred.trim().toLowerCase() : '';
+            if (normalizedPreferred) {
+                const preferredMatch = attributeKeys.find(key => typeof key === 'string' && key.toLowerCase() === normalizedPreferred);
+                if (preferredMatch) {
+                    return preferredMatch;
+                }
+            }
+
+            const preferredList = ['constitution', 'endurance', 'stamina', 'vitality'];
+            for (const candidate of preferredList) {
+                const match = attributeKeys.find(key => typeof key === 'string' && key.toLowerCase() === candidate);
+                if (match) {
+                    return match;
+                }
+            }
+
+            return attributeKeys[0] || '';
+        }
+
+        function getNpcAttributesFromInputs() {
+            const attributes = {};
+            if (!npcEditAttributesContainer) {
+                return attributes;
+            }
+            npcEditAttributesContainer.querySelectorAll('input[data-attribute]').forEach(input => {
+                const attributeKey = input.dataset.attribute;
+                if (!attributeKey) {
+                    return;
+                }
+                const attributeValue = Number.parseInt(input.value ?? '', 10);
+                if (Number.isFinite(attributeValue)) {
+                    attributes[attributeKey] = attributeValue;
+                }
+            });
+            return attributes;
+        }
+
+        function populateHealthAttributeOptions(attributes = {}, current = '') {
+            if (!npcEditHealthAttributeSelect) {
+                return;
+            }
+
+            const attributeKeys = Object.keys(attributes || {});
+            const uniqueKeys = Array.from(new Set(attributeKeys.filter(key => typeof key === 'string' && key.trim().length > 0)));
+            const normalizedCurrent = typeof current === 'string' ? current.trim() : '';
+            if (normalizedCurrent && !uniqueKeys.some(key => key.toLowerCase() === normalizedCurrent.toLowerCase())) {
+                uniqueKeys.push(normalizedCurrent);
+            }
+
+            npcEditHealthAttributeSelect.innerHTML = '';
+
+            if (!uniqueKeys.length) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'No attributes available';
+                npcEditHealthAttributeSelect.appendChild(placeholder);
+                npcEditHealthAttributeSelect.disabled = true;
+                return;
+            }
+
+            npcEditHealthAttributeSelect.disabled = false;
+            const resolved = resolveDefaultHealthAttributeKey(uniqueKeys, normalizedCurrent);
+
+            uniqueKeys.forEach(key => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = formatNpcLabel(key);
+                if (key === resolved) {
+                    option.selected = true;
+                }
+                npcEditHealthAttributeSelect.appendChild(option);
+            });
+
+            npcEditHealthAttributeSelect.value = resolved || '';
+        }
+
+        function updateNpcMaxHealth() {
+            if (!npcEditMaxHealthInput) {
+                return;
+            }
+
+            const attributes = getNpcAttributesFromInputs();
+            const attributeKeys = Object.keys(attributes);
+
+            const selectedAttribute = npcEditHealthAttributeSelect && !npcEditHealthAttributeSelect.disabled
+                ? (npcEditHealthAttributeSelect.value || '').trim()
+                : '';
+
+            const resolvedAttribute = selectedAttribute || resolveDefaultHealthAttributeKey(attributeKeys, currentNpcOriginalHealthAttribute);
+            const attributeValue = Number.isFinite(attributes[resolvedAttribute]) ? attributes[resolvedAttribute] : 10;
+
+            const levelValue = Number.parseInt(npcEditLevelInput?.value ?? '', 10);
+            const level = Number.isFinite(levelValue) && levelValue >= 1 ? levelValue : 1;
+
+            const computed = Math.floor(10 + (attributeValue / 2) * (level + 1));
+            npcEditMaxHealthInput.value = Math.max(1, computed);
         }
 
         function populateNpcAttributes(attributes = {}) {
@@ -890,6 +1004,8 @@
 
                 wrapper.appendChild(label);
                 wrapper.appendChild(input);
+                input.addEventListener('input', updateNpcMaxHealth);
+                input.addEventListener('change', updateNpcMaxHealth);
                 npcEditAttributesContainer.appendChild(wrapper);
             });
         }
@@ -1035,6 +1151,7 @@
             }
 
             currentNpcEditId = npc.id || null;
+            currentNpcOriginalHealthAttribute = npc.healthAttribute || '';
             if (npcEditModalTitle) {
                 npcEditModalTitle.textContent = npc.name ? `Edit ${npc.name}` : 'Edit NPC';
             }
@@ -1044,6 +1161,9 @@
             }
             if (npcEditNameInput) {
                 npcEditNameInput.value = npc.name || '';
+            }
+            if (npcEditShortDescriptionInput) {
+                npcEditShortDescriptionInput.value = npc.shortDescription || '';
             }
             if (npcEditRaceInput) {
                 npcEditRaceInput.value = npc.race || '';
@@ -1074,6 +1194,8 @@
             populateNpcAttributes(npc.attributes || {});
             populateNpcSkills(npc.skills || {});
             populateNpcAbilities(Array.isArray(npc.abilities) ? npc.abilities : []);
+            populateHealthAttributeOptions(npc.attributes || {}, npc.healthAttribute || '');
+            updateNpcMaxHealth();
 
             updateNpcEditStatus('');
 
@@ -1097,6 +1219,7 @@
             npcEditBackdrop.setAttribute('hidden', '');
             document.body.classList.remove('modal-open');
             currentNpcEditId = null;
+            currentNpcOriginalHealthAttribute = '';
             updateNpcEditStatus('');
         }
 
@@ -1136,6 +1259,15 @@
             });
         }
 
+        if (npcEditLevelInput) {
+            npcEditLevelInput.addEventListener('input', updateNpcMaxHealth);
+            npcEditLevelInput.addEventListener('change', updateNpcMaxHealth);
+        }
+
+        if (npcEditHealthAttributeSelect) {
+            npcEditHealthAttributeSelect.addEventListener('change', updateNpcMaxHealth);
+        }
+
         if (npcEditForm) {
             npcEditForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
@@ -1152,6 +1284,9 @@
                 }
                 if (npcEditDescriptionInput) {
                     payload.description = npcEditDescriptionInput.value ?? '';
+                }
+                if (npcEditShortDescriptionInput) {
+                    payload.shortDescription = npcEditShortDescriptionInput.value ?? '';
                 }
                 if (npcEditRaceInput) {
                     payload.race = npcEditRaceInput.value ?? '';
@@ -1175,20 +1310,15 @@
                     payload.unspentSkillPoints = parsedUnspent;
                 }
 
-                const attributes = {};
-                if (npcEditAttributesContainer) {
-                    npcEditAttributesContainer.querySelectorAll('input[data-attribute]').forEach(input => {
-                        const attributeKey = input.dataset.attribute;
-                        if (!attributeKey) {
-                            return;
-                        }
-                        const attributeValue = Number.parseInt(input.value ?? '', 10);
-                        if (Number.isFinite(attributeValue)) {
-                            attributes[attributeKey] = attributeValue;
-                        }
-                    });
-                }
+                const attributes = getNpcAttributesFromInputs();
                 payload.attributes = attributes;
+
+                const selectedHealthAttribute = npcEditHealthAttributeSelect && !npcEditHealthAttributeSelect.disabled
+                    ? (npcEditHealthAttributeSelect.value || '').trim()
+                    : '';
+                if (selectedHealthAttribute) {
+                    payload.healthAttribute = selectedHealthAttribute;
+                }
 
                 const skills = {};
                 if (npcEditSkillsContainer) {
