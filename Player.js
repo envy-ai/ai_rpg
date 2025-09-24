@@ -1687,23 +1687,23 @@ class Player {
     }
 
     equipItemInSlot(thingLike, slotName, { suppressTimestamp = false } = {}) {
-        console.log(`Equipping item in slot: ${slotName}`);
+        //console.log(`Equipping item in slot: ${slotName}`);
         const item = this.#resolveThing(thingLike);
-        console.log(`Resolved item:`, item);
+        //console.log(`Resolved item:`, item);
         if (!item || !slotName) {
             return `Missing item or slot name: ` + `${!item ? 'item' : ''}${!item && !slotName ? ' and ' : ''}${!slotName ? 'slot name' : ''}`;
         }
-        console.log(1);
+
         const resolvedSlotName = this.#resolveSlotName(slotName);
         if (!resolvedSlotName) {
             return `Invalid slot name: ${slotName}`;
         }
-        console.log(2);
+
         const slotData = this.#gearSlots.get(resolvedSlotName);
         if (!slotData) {
             return `Slot not found: ${resolvedSlotName}`;
         }
-        console.log(3);
+
         const itemSlotType = this.#normalizeSlotType(item.slot);
         if (!itemSlotType || itemSlotType === 'n/a' || itemSlotType !== slotData.slotType) {
             console.log(`Incompatible slot types: item(${itemSlotType}) vs slot(${slotData.slotType})`);
@@ -1711,21 +1711,21 @@ class Player {
             console.trace();
             return `Incompatible item slot type: ${itemSlotType} (expected: ${slotData.slotType})`;
         }
-        console.log(4);
+
         if (!this.#inventory.has(item)) {
             return `Item not found in inventory: ${item.id}`;
         }
-        console.log(5);
+
         if (!resolvedSlotName) {
             return `Invalid slot name: ${slotName} (resolved to '${resolvedSlotName}')`;
         }
-        console.log(6);
+
         slotData.itemId = item.id;
         this.#gearSlots.set(resolvedSlotName, slotData);
 
-        console.log(`Equipping item ${item.id} in slot ${resolvedSlotName}`);
+        //console.log(`Equipping item ${item.id} in slot ${resolvedSlotName}`);
 
-        console.log(this.#gearSlots)
+        //console.log(this.#gearSlots)
 
         if (!suppressTimestamp) {
             this.#lastUpdated = new Date().toISOString();

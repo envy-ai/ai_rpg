@@ -4367,14 +4367,23 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
+            const formattedContext = Array.isArray(baseMessages) && baseMessages.length
+                ? baseMessages.map((message, index) => {
+                    const role = message?.role || 'unknown';
+                    const content = typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content);
+                    return `#${index + 1} [${role}] ${content}`;
+                }).join('\n')
+                : null;
             const lines = [
                 formatDurationLine(durationSeconds),
+                formattedContext ? '=== NPC ABILITIES CONTEXT ===' : null,
+                formattedContext,
                 '=== NPC ABILITIES PROMPT ===',
                 abilitiesPrompt,
                 '\n=== NPC ABILITIES RESPONSE ===',
                 abilityResponse,
                 '\n'
-            ];
+            ].filter(Boolean);
             fs.writeFileSync(logPath, lines.join('\n'), 'utf8');
         }
 
