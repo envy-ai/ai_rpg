@@ -1,3 +1,6 @@
+const { DOMParser } = require('xmldom');
+const Player = require('./Player.js');
+
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
         throw new Error('registerApiRoutes requires a scope object containing an Express app');
@@ -39,20 +42,41 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const matchAllAttacks = [...trimmed.matchAll(/<attack>([\s\S]*?)<\/attack>/gi)];
-            if (!matchAllAttacks.length) {
+            const sanitizeForDom = (input) => {
+                return `<root>${input}</root>`
+                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                    .replace(/<\s*br\s*>/gi, '<br/>')
+                    .replace(/<\s*hr\s*>/gi, '<hr/>');
+            };
+
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+            } catch (error) {
+                console.warn('Failed to parse attack check XML:', error.message);
+                return null;
+            }
+
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                console.warn('Attack check XML contained parser errors.');
+                return null;
+            }
+
+            const attackNodes = Array.from(doc.getElementsByTagName('attack'));
+            if (!attackNodes.length) {
                 const normalized = trimmed.toLowerCase();
                 if (normalized === 'n/a') {
                     return { attacks: [], hasAttack: false };
                 }
                 return null;
             }
-
-            const extractTag = (block, tag) => {
-                const tagRegex = new RegExp(`<${tag}>([\s\S]*?)<\/${tag}>`, 'i');
-                const tagMatch = block.match(tagRegex);
-                return tagMatch ? tagMatch[1].trim() : null;
-            };
 
             const normalizeValue = (value) => {
                 if (value === null || value === undefined) {
@@ -65,28 +89,39 @@ module.exports = function registerApiRoutes(scope) {
                 return text;
             };
 
-            const extractNestedTag = (block, parentTag, childTag) => {
-                const parentRegex = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i');
-                const parentMatch = block.match(parentRegex);
-                if (!parentMatch) {
+            const getTagValue = (node, tag) => {
+                const element = node.getElementsByTagName(tag)?.[0];
+                if (!element || typeof element.textContent !== 'string') {
                     return null;
                 }
-                return extractTag(parentMatch[1], childTag);
+                return normalizeValue(element.textContent);
+            };
+
+            const getNestedTagValue = (node, parentTag, childTag) => {
+                const parentNode = node.getElementsByTagName(parentTag)?.[0];
+                if (!parentNode) {
+                    return null;
+                }
+                const childNode = parentNode.getElementsByTagName(childTag)?.[0];
+                if (!childNode || typeof childNode.textContent !== 'string') {
+                    return null;
+                }
+                return normalizeValue(childNode.textContent);
             };
 
             const attacks = [];
-            for (const [, rawBlock] of matchAllAttacks) {
-                const attacker = normalizeValue(extractTag(rawBlock, 'attacker'));
-                const defender = normalizeValue(extractTag(rawBlock, 'defender'));
-                const ability = normalizeValue(extractTag(rawBlock, 'ability'));
-                const weapon = normalizeValue(extractTag(rawBlock, 'weapon'));
+            for (const attackNode of attackNodes) {
+                const attacker = getTagValue(attackNode, 'attacker');
+                const defender = getTagValue(attackNode, 'defender');
+                const ability = getTagValue(attackNode, 'ability');
+                const weapon = getTagValue(attackNode, 'weapon');
 
-                const attackSkill = normalizeValue(extractNestedTag(rawBlock, 'attackerInfo', 'attackSkill'));
-                const damageAttribute = normalizeValue(extractNestedTag(rawBlock, 'attackerInfo', 'damageAttribute'));
-                const defenseSkillLegacy = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'defenseSkill'));
-                const evadeSkill = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'evadeSkill')) || defenseSkillLegacy;
-                const deflectSkill = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'deflectSkill'));
-                const toughnessAttribute = normalizeValue(extractNestedTag(rawBlock, 'defenderInfo', 'toughnessAttribute'));
+                const attackSkill = getNestedTagValue(attackNode, 'attackerInfo', 'attackSkill');
+                const damageAttribute = getNestedTagValue(attackNode, 'attackerInfo', 'damageAttribute');
+                const defenseSkillLegacy = getNestedTagValue(attackNode, 'defenderInfo', 'defenseSkill');
+                const evadeSkill = getNestedTagValue(attackNode, 'defenderInfo', 'evadeSkill') || defenseSkillLegacy;
+                const deflectSkill = getNestedTagValue(attackNode, 'defenderInfo', 'deflectSkill');
+                const toughnessAttribute = getNestedTagValue(attackNode, 'defenderInfo', 'toughnessAttribute');
 
                 const hasNestedInfo = attackSkill || damageAttribute || evadeSkill || deflectSkill || toughnessAttribute;
 
@@ -161,12 +196,10 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runAttackCheckPrompt({ actionText, locationOverride }) {
             if (!actionText || !actionText.trim()) {
-                console.log("No action text")
                 return null;
             }
 
             if (!currentPlayer) {
-                console.log("No current player")
                 return null;
             }
 
@@ -584,10 +617,80 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
+        const buildAttackSummary = ({ attackContext, attackOutcome, damageApplication }) => {
+            if (!attackContext || !attackOutcome) {
+                return null;
+            }
+
+            const attacker = attackContext.attacker || {};
+            const target = attackContext.target || {};
+            const difficulty = attackOutcome.difficulty || {};
+            const roll = attackOutcome.hitRoll || {};
+            const damage = attackOutcome.damage || {};
+            const targetOutcome = attackOutcome.target || {};
+
+            const summary = {
+                hit: Boolean(attackOutcome.hit),
+                hitDegree: Number.isFinite(attackOutcome.hitDegree) ? attackOutcome.hitDegree : null,
+                attacker: {
+                    name: typeof attacker.name === 'string' ? attacker.name : null,
+                    level: Number.isFinite(attacker.level) ? attacker.level : null,
+                    weapon: attacker.weapon || null,
+                    ability: attacker.ability || null,
+                    attackSkill: roll.attackSkill || null,
+                    attackAttribute: roll.attackAttribute || null
+                },
+                defender: {
+                    name: target?.name || targetOutcome?.name || null,
+                    level: Number.isFinite(target?.level) ? target.level : (Number.isFinite(targetOutcome?.level) ? targetOutcome.level : null),
+                    defenseSkill: difficulty.defenseSkill || null
+                },
+                roll: {
+                    die: Number.isFinite(roll.die) ? roll.die : null,
+                    total: Number.isFinite(roll.total) ? roll.total : null,
+                    detail: typeof roll.detail === 'string' ? roll.detail : null,
+                    attackSkill: roll.attackSkill || null,
+                    attackAttribute: roll.attackAttribute || null
+                },
+                difficulty: {
+                    value: Number.isFinite(difficulty.value) ? difficulty.value : null,
+                    base: Number.isFinite(difficulty.base) ? difficulty.base : null,
+                    defenderLevel: Number.isFinite(difficulty.defenderLevel) ? difficulty.defenderLevel : null,
+                    defenseSkill: difficulty.defenseSkill || null
+                },
+                damage: {
+                    total: Number.isFinite(damage.total) ? damage.total : null,
+                    mitigated: Number.isFinite(damage.mitigated) ? damage.mitigated : null,
+                    raw: Number.isFinite(damage.raw) ? damage.raw : null,
+                    applied: Number.isFinite(damage.applied) ? damage.applied : (Number.isFinite(damageApplication?.damageApplied) ? damageApplication.damageApplied : null),
+                    toughnessReduction: Number.isFinite(damage.toughnessReduction) ? damage.toughnessReduction : null,
+                    baseWeaponDamage: Number.isFinite(damage.baseWeaponDamage) ? damage.baseWeaponDamage : null,
+                    weaponName: damage.weaponName || null,
+                    weaponRarity: damage.weaponRarity || null,
+                    weaponLevel: Number.isFinite(damage.weaponLevel) ? damage.weaponLevel : null,
+                    weaponRating: Number.isFinite(damage.weaponRating) ? damage.weaponRating : null,
+                    damageAttribute: damage.damageAttribute || null
+                },
+                target: {
+                    startingHealth: Number.isFinite(targetOutcome.startingHealth) ? targetOutcome.startingHealth : (Number.isFinite(target.health) ? target.health : null),
+                    remainingHealth: Number.isFinite(targetOutcome.remainingHealth) ? targetOutcome.remainingHealth : (Number.isFinite(target.remainingHealth) ? target.remainingHealth : null),
+                    rawRemainingHealth: Number.isFinite(targetOutcome.rawRemainingHealth) ? targetOutcome.rawRemainingHealth : null,
+                    defeated: typeof targetOutcome.defeated === 'boolean' ? targetOutcome.defeated : (typeof target.defeated === 'boolean' ? target.defeated : null),
+                    toughness: targetOutcome.toughness || target.toughness || null,
+                    healthLostPercent: Number.isFinite(targetOutcome.healthLostPercent)
+                        ? targetOutcome.healthLostPercent
+                        : (Number.isFinite(damageApplication?.healthLostPercent) ? damageApplication.healthLostPercent : null),
+                    remainingHealthPercent: Number.isFinite(targetOutcome.remainingHealthPercent)
+                        ? targetOutcome.remainingHealthPercent
+                        : (Number.isFinite(damageApplication?.remainingHealthPercent) ? damageApplication.remainingHealthPercent : null)
+                }
+            };
+
+            return summary;
+        };
+
         function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
-            console.log("Building attack context")
             if (!attackCheckInfo || !attackCheckInfo.structured) {
-                console.log("no attackCheckInfo")
                 return { isAttack: false };
             }
 
@@ -619,7 +722,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const targetName = typeof playerAttack.defender === 'string' ? playerAttack.defender.trim() : '';
-            const targetActor = targetName ? findActorByName(targetName) : null;
+            const targetActor = targetName ? Player.getByName(targetName) : null;
             if (targetActor?.id) {
                 playerAttack.targetActorId = targetActor.id;
             }
@@ -747,6 +850,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const attackerContext = {
+                name: typeof player?.name === 'string' ? player.name : null,
                 id: player?.id || null,
                 level: typeof player?.level === 'number' ? player.level : 'unknown',
                 weapon: attackerWeapon,
@@ -858,8 +962,6 @@ module.exports = function registerApiRoutes(scope) {
                                 actionText: attackActionText,
                                 locationOverride: location || null
                             });
-                            console.log("Attack check returned:");
-                            console.log(attackCheckInfo)
                             attackContextForPlausibility = buildAttackContextForPlausibility({
                                 attackCheckInfo,
                                 player: currentPlayer,
@@ -870,8 +972,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         try {
-                            console.log("Running plausibility check...");
-                            console.log(attackContextForPlausibility);
                             plausibilityInfo = await runPlausibilityCheck({
                                 actionText: userMessage.content,
                                 locationId: currentPlayer.currentLocation || null,
@@ -894,6 +994,8 @@ module.exports = function registerApiRoutes(scope) {
                     attackContext: attackContextForPlausibility
                 };
 
+                const attackOutcome = attackContextForPlausibility?.outcome || null;
+
                 const plausibilityType = (plausibilityInfo?.structured?.type || '').trim().toLowerCase();
                 if (!isForcedEventAction && !isCreativeModeAction && plausibilityType === 'rejected') {
                     const rejectionReasonRaw = plausibilityInfo?.structured?.reason || 'Action rejected.';
@@ -907,6 +1009,14 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (attackCheckInfo) {
                         responseData.attackCheck = attackCheckInfo;
+                    }
+
+                    if (attackContextForPlausibility?.summary) {
+                        responseData.attackSummary = attackContextForPlausibility.summary;
+                    }
+
+                    if (attackDamageApplication) {
+                        responseData.attackDamage = attackDamageApplication;
                     }
 
                     if (attackDamageApplication) {
@@ -941,9 +1051,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (!isForcedEventAction
                     && !isCreativeModeAction
                     && attackContextForPlausibility?.isAttack
-                    && attackContextForPlausibility?.outcome?.hit
+                    && attackOutcome?.hit
                     && plausibilityType === 'plausible') {
-                    const attackOutcome = attackContextForPlausibility.outcome;
                     const declaredDamage = Number.isFinite(attackOutcome?.damage?.total)
                         ? attackOutcome.damage.total
                         : 0;
@@ -1039,6 +1148,21 @@ module.exports = function registerApiRoutes(scope) {
                     attackDebugData.damageApplication = attackDamageApplication;
                 }
 
+                if (attackOutcome) {
+                    const attackSummary = buildAttackSummary({
+                        attackContext: attackContextForPlausibility,
+                        attackOutcome,
+                        damageApplication: attackDamageApplication
+                    });
+                    if (attackSummary) {
+                        attackContextForPlausibility.summary = attackSummary;
+                        if (attackCheckInfo) {
+                            attackCheckInfo.summary = attackSummary;
+                        }
+                        attackDebugData.attackSummary = attackSummary;
+                    }
+                }
+
                 // If we have a current player, use the player action template for the system message
                 if (isForcedEventAction && !debugInfo) {
                     debugInfo = {
@@ -1066,6 +1190,7 @@ module.exports = function registerApiRoutes(scope) {
                             const attackerDetails = attackContextForPlausibility.attacker || null;
                             const targetDetails = attackContextForPlausibility.target || null;
                             const outcomeDetails = attackContextForPlausibility.outcome || null;
+                            const summaryDetails = attackContextForPlausibility.summary || null;
 
                             promptVariables.isAttack = isAttack;
                             promptVariables.attacker = attackerDetails;
@@ -1076,14 +1201,21 @@ module.exports = function registerApiRoutes(scope) {
                                 attacker: attackerDetails,
                                 target: targetDetails,
                                 outcome: outcomeDetails,
-                                damageApplication: attackDamageApplication || null
+                                damageApplication: attackDamageApplication || null,
+                                summary: summaryDetails
                             };
+                            if (summaryDetails) {
+                                promptVariables.attackSummary = summaryDetails;
+                            }
+
                         }
 
                         if (!isCreativeModeAction) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';
                         }
 
+                        console.log("Action prompt variables:")
+                        console.log(promptVariables);
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
 
                         const promptData = parseXMLTemplate(renderedPrompt);
@@ -1265,7 +1397,11 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (attackCheckInfo) {
+                        console.log("Attached attack check info");
+                        console.log(attackCheckInfo.summary);
                         responseData.attackCheck = attackCheckInfo;
+                    } else {
+                        console.log("No attack check info to attach")
                     }
 
                     let eventResult = null;

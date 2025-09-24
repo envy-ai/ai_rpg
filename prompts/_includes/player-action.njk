@@ -4,8 +4,13 @@ The player is attempting:
 <playerAction>
 {{ actionText }}
 </playerAction>
+{% if isAttack %}
+This action is an attack. Here is how the attack resolved:
+
+{% else %}
 <actionStatus>
 {{ success_or_failure }}
 </actionStatus> 
-
 The player attempted the above action. Provide a response, strictly adhering to the degree of success listed in actionStatus.
+{% endif %}
+

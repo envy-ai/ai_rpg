@@ -57,6 +57,15 @@ class Player {
         return Array.from(this.#instances);
     }
 
+    static getByName(name) {
+        for (const player of this.#instances) {
+            if (player.name && player.name.toLowerCase() === name.toLowerCase()) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     static #notifyNpcInventoryChange(player, payload) {
         if (!player || !player.isNPC || !this.#npcInventoryChangeHandler) {
             return;
