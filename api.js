@@ -1774,6 +1774,120 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Update an NPC's core data (experimental editing UI)
+        app.put('/api/npcs/:id', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'NPC ID is required' });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
+                }
+
+                const {
+                    name,
+                    description,
+                    race,
+                    class: className,
+                    level,
+                    health,
+                    attributes,
+                    skills: skillValues,
+                    abilities,
+                    unspentSkillPoints
+                } = req.body || {};
+
+                if (typeof name === 'string' && name.trim()) {
+                    npc.setName(name.trim());
+                }
+
+                if (typeof description === 'string') {
+                    npc.description = description;
+                }
+
+                if (typeof race === 'string') {
+                    npc.race = race.trim();
+                }
+
+                if (typeof className === 'string') {
+                    npc.class = className.trim();
+                }
+
+                if (level !== undefined) {
+                    const parsedLevel = Number.parseInt(level, 10);
+                    if (Number.isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 20) {
+                        npc.setLevel(parsedLevel);
+                    }
+                }
+
+                if (health !== undefined) {
+                    const parsedHealth = Number.parseInt(health, 10);
+                    if (Number.isFinite(parsedHealth) && parsedHealth >= 0) {
+                        npc.setHealth(parsedHealth);
+                    }
+                }
+
+                if (attributes && typeof attributes === 'object') {
+                    for (const [attrName, value] of Object.entries(attributes)) {
+                        const numeric = Number(value);
+                        if (!Number.isFinite(numeric)) {
+                            continue;
+                        }
+                        try {
+                            npc.setAttribute(attrName, numeric);
+                        } catch (attrError) {
+                            console.warn(`Failed to set attribute '${attrName}' for NPC ${npcId}:`, attrError.message);
+                        }
+                    }
+                }
+
+                if (skillValues && typeof skillValues === 'object') {
+                    for (const [skillName, value] of Object.entries(skillValues)) {
+                        const numeric = Number(value);
+                        if (!Number.isFinite(numeric)) {
+                            continue;
+                        }
+                        const updated = npc.setSkillValue(skillName, numeric);
+                        if (updated === false) {
+                            console.warn(`Failed to set skill '${skillName}' for NPC ${npcId}`);
+                        }
+                    }
+                }
+
+                if (Array.isArray(abilities)) {
+                    try {
+                        npc.setAbilities(abilities);
+                    } catch (abilityError) {
+                        console.warn(`Failed to update abilities for NPC ${npcId}:`, abilityError.message);
+                    }
+                }
+
+                if (unspentSkillPoints !== undefined) {
+                    const parsedPoints = Number.parseInt(unspentSkillPoints, 10);
+                    if (Number.isFinite(parsedPoints) && parsedPoints >= 0) {
+                        try {
+                            npc.setUnspentSkillPoints(parsedPoints);
+                        } catch (uspError) {
+                            console.warn(`Failed to set unspent skill points for NPC ${npcId}:`, uspError.message);
+                        }
+                    }
+                }
+
+                const npcProfile = serializeNpcForClient(npc);
+                res.json({
+                    success: true,
+                    npc: npcProfile,
+                    message: `NPC '${npc.name}' updated`
+                });
+            } catch (error) {
+                console.error('Error updating NPC:', error);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // Get all players (for future multi-player support)
         app.get('/api/players', (req, res) => {
             const playerList = Array.from(players.values()).map(player => player.getStatus());

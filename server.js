@@ -1079,22 +1079,85 @@ function queueLocationThingImages(location) {
     }
 }
 
+function serializeNpcForClient(npc) {
+    if (!npc) {
+        return null;
+    }
+
+    let skills = {};
+    try {
+        const skillSource = typeof npc.getSkills === 'function' ? npc.getSkills() : null;
+        if (skillSource instanceof Map) {
+            skills = Object.fromEntries(skillSource);
+        } else if (skillSource && typeof skillSource === 'object') {
+            skills = { ...skillSource };
+        }
+    } catch (_) {
+        skills = {};
+    }
+
+    let abilities = [];
+    try {
+        abilities = typeof npc.getAbilities === 'function' ? npc.getAbilities() : [];
+    } catch (_) {
+        abilities = [];
+    }
+
+    let statusEffects = [];
+    try {
+        statusEffects = typeof npc.getStatusEffects === 'function' ? npc.getStatusEffects() : [];
+    } catch (_) {
+        statusEffects = [];
+    }
+
+    let attributes = {};
+    try {
+        attributes = npc.attributes ? { ...npc.attributes } : {};
+    } catch (_) {
+        attributes = {};
+    }
+
+    let unspentSkillPoints = null;
+    try {
+        if (typeof npc.getUnspentSkillPoints === 'function') {
+            unspentSkillPoints = npc.getUnspentSkillPoints();
+        }
+    } catch (_) {
+        unspentSkillPoints = null;
+    }
+
+    return {
+        id: npc.id,
+        name: npc.name,
+        description: npc.description,
+        shortDescription: npc.shortDescription,
+        class: npc.class,
+        race: npc.race,
+        level: npc.level,
+        health: npc.health,
+        maxHealth: npc.maxHealth,
+        healthAttribute: npc.healthAttribute,
+        imageId: npc.imageId,
+        isNPC: Boolean(npc.isNPC),
+        locationId: npc.currentLocation,
+        attributes,
+        skills,
+        abilities,
+        statusEffects,
+        unspentSkillPoints,
+        createdAt: npc.createdAt,
+        lastUpdated: npc.lastUpdated
+    };
+}
+
 function buildNpcProfiles(location) {
     if (!location || typeof location.npcIds !== 'object') {
         return [];
     }
     return location.npcIds
         .map(id => players.get(id))
-        .filter(Boolean)
-        .map(npc => ({
-            id: npc.id,
-            name: npc.name,
-            description: npc.description,
-            imageId: npc.imageId,
-            isNPC: Boolean(npc.isNPC),
-            locationId: npc.currentLocation,
-            attributes: npc.attributes
-        }));
+        .map(serializeNpcForClient)
+        .filter(Boolean);
 }
 
 function buildThingProfiles(location) {
@@ -7563,6 +7626,7 @@ const apiScope = {
     buildLocationShortDescription,
     buildLocationPurpose,
     buildNpcProfiles,
+    serializeNpcForClient,
     buildThingProfiles,
     describeSettingForPrompt,
     findRegionByLocationId,
