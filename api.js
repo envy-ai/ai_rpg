@@ -194,6 +194,29 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function logPlayerActionPrompt({ systemPrompt, generationPrompt }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `player_action_${timestamp}.log`);
+                const parts = [
+                    '=== PLAYER ACTION SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== PLAYER ACTION GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    ''
+                ];
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log player action prompt:', error.message);
+            }
+        }
+
         async function runAttackCheckPrompt({ actionText, locationOverride }) {
             if (!actionText || !actionText.trim()) {
                 return null;
@@ -1223,6 +1246,11 @@ module.exports = function registerApiRoutes(scope) {
                         if (!promptData.systemPrompt) {
                             throw new Error('Action template missing system prompt.');
                         }
+
+                        logPlayerActionPrompt({
+                            systemPrompt: String(promptData.systemPrompt).trim(),
+                            generationPrompt: promptData.generationPrompt || null
+                        });
 
                         const systemMessage = {
                             role: 'system',
