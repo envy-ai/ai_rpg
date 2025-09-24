@@ -2852,7 +2852,21 @@ module.exports = function registerApiRoutes(scope) {
         // Create a new thing
         app.post('/api/things', async (req, res) => {
             try {
-                const { name, description, thingType, imageId, rarity, itemTypeDetail, metadata } = req.body;
+                const {
+                    name,
+                    description,
+                    thingType,
+                    imageId,
+                    rarity,
+                    itemTypeDetail,
+                    metadata,
+                    slot,
+                    attributeBonuses,
+                    causeStatusEffect,
+                    level,
+                    relativeLevel,
+                    statusEffects
+                } = req.body || {};
 
                 const thing = new Thing({
                     name,
@@ -2861,7 +2875,13 @@ module.exports = function registerApiRoutes(scope) {
                     imageId,
                     rarity,
                     itemTypeDetail,
-                    metadata
+                    metadata,
+                    slot,
+                    attributeBonuses,
+                    causeStatusEffect,
+                    level,
+                    relativeLevel,
+                    statusEffects
                 });
 
                 things.set(thing.id, thing);
@@ -2945,7 +2965,21 @@ module.exports = function registerApiRoutes(scope) {
         app.put('/api/things/:id', async (req, res) => {
             try {
                 const { id } = req.params;
-                const { name, description, thingType, imageId, rarity, itemTypeDetail, metadata } = req.body;
+                const {
+                    name,
+                    description,
+                    thingType,
+                    imageId,
+                    rarity,
+                    itemTypeDetail,
+                    metadata,
+                    slot,
+                    attributeBonuses,
+                    causeStatusEffect,
+                    level,
+                    relativeLevel,
+                    statusEffects
+                } = req.body || {};
                 const thing = things.get(id);
 
                 if (!thing) {
@@ -2978,10 +3012,62 @@ module.exports = function registerApiRoutes(scope) {
                     shouldRegenerateImage = true;
                 }
                 if (metadata !== undefined) {
-                    thing.metadata = metadata;
-                    shouldRegenerateImage = true;
+                    if (metadata === null) {
+                        thing.metadata = {};
+                        shouldRegenerateImage = true;
+                    } else if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+                        thing.metadata = metadata;
+                        shouldRegenerateImage = true;
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Metadata must be an object.'
+                        });
+                    }
                 }
                 if (imageId !== undefined) thing.imageId = imageId;
+
+                if (slot !== undefined) {
+                    thing.slot = slot;
+                }
+
+                if (attributeBonuses !== undefined) {
+                    if (Array.isArray(attributeBonuses)) {
+                        thing.attributeBonuses = attributeBonuses;
+                    } else if (attributeBonuses === null) {
+                        thing.attributeBonuses = [];
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Attribute bonuses must be provided as an array.'
+                        });
+                    }
+                }
+
+                if (causeStatusEffect !== undefined) {
+                    thing.causeStatusEffect = causeStatusEffect;
+                }
+
+                if (level !== undefined) {
+                    thing.level = level;
+                }
+
+                if (relativeLevel !== undefined) {
+                    thing.relativeLevel = relativeLevel;
+                }
+
+                if (statusEffects !== undefined) {
+                    if (Array.isArray(statusEffects)) {
+                        thing.setStatusEffects(statusEffects);
+                    } else if (statusEffects === null) {
+                        thing.setStatusEffects([]);
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Status effects must be provided as an array.'
+                        });
+                    }
+                }
 
                 // Trigger image regeneration if visual properties changed (only when relevant)
                 let imageNeedsUpdate = false;

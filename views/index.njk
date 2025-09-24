@@ -451,6 +451,115 @@
             </form>
         </div>
     </div>
+    <div id="thingEditModal" class="modal thing-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="thingEditModalTitle">Edit Item</h2>
+                <button type="button" class="modal__close" id="thingEditCloseBtn" aria-label="Close item editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="thingEditForm" class="modal__body npc-edit-form" novalidate>
+                <div class="npc-edit-grid">
+                    <div class="npc-edit-field">
+                        <label for="thingEditId">Item ID</label>
+                        <input id="thingEditId" type="text" readonly>
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditName">Name</label>
+                        <input id="thingEditName" type="text" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditType">Type</label>
+                        <select id="thingEditType">
+                            <option value="item">Item</option>
+                            <option value="scenery">Scenery</option>
+                        </select>
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditRarity">Rarity</label>
+                        <input id="thingEditRarity" type="text" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditItemDetail">Item Detail</label>
+                        <input id="thingEditItemDetail" type="text" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditSlot">Slot</label>
+                        <input id="thingEditSlot" type="text" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditLevel">Level</label>
+                        <input id="thingEditLevel" type="number" min="1" max="20" step="1">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditRelativeLevel">Relative Level</label>
+                        <input id="thingEditRelativeLevel" type="number" min="-20" max="20" step="1">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="thingEditImageId">Image ID</label>
+                        <input id="thingEditImageId" type="text" autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="npc-edit-section">
+                    <label for="thingEditDescription">Description</label>
+                    <textarea id="thingEditDescription" rows="4"></textarea>
+                </div>
+
+                <div class="npc-edit-section">
+                    <div class="npc-edit-section-header">
+                        <h3>Metadata</h3>
+                        <button type="button" class="npc-edit-add-btn" id="thingMetadataAddBtn">Add Entry</button>
+                    </div>
+                    <div id="thingEditMetadataList" class="thing-edit-metadata-list"></div>
+                    <p class="npc-edit-hint">Use metadata for additional properties like value, weight, or lore tags.</p>
+                </div>
+
+                <div class="npc-edit-section">
+                    <div class="npc-edit-section-header">
+                        <h3>Attribute Bonuses</h3>
+                        <button type="button" class="npc-edit-add-btn" id="thingAttributeBonusAddBtn">Add Bonus</button>
+                    </div>
+                    <div id="thingEditAttributeBonusesList" class="thing-edit-bonus-list"></div>
+                </div>
+
+                <div class="npc-edit-section">
+                    <h3>On-Hit Status Effect</h3>
+                    <div class="thing-edit-cause-effect">
+                        <div class="npc-edit-field">
+                            <label for="thingEditCauseStatusEffectName">Name</label>
+                            <input id="thingEditCauseStatusEffectName" type="text" autocomplete="off">
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="thingEditCauseStatusEffectDescription">Description</label>
+                            <textarea id="thingEditCauseStatusEffectDescription" rows="2"></textarea>
+                        </div>
+                        <div class="npc-edit-field">
+                            <label for="thingEditCauseStatusEffectDuration">Duration</label>
+                            <input id="thingEditCauseStatusEffectDuration" type="text" autocomplete="off" placeholder="e.g. 3 or permanent">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="npc-edit-section">
+                    <div class="npc-edit-section-header">
+                        <h3>Status Effects</h3>
+                        <button type="button" class="npc-edit-add-btn" id="thingStatusEffectAddBtn">Add Effect</button>
+                    </div>
+                    <div id="thingEditStatusEffectsList" class="thing-edit-status-effects"></div>
+                </div>
+
+                <div class="npc-edit-footer">
+                    <div id="thingEditStatus" class="npc-edit-status" role="status" aria-live="polite"></div>
+                    <div class="npc-edit-actions">
+                        <button type="button" class="npc-edit-cancel" id="thingEditCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-edit-save-btn" id="thingEditSaveBtn">Save Changes</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <div id="inventoryTooltip" class="inventory-floating-tooltip" hidden></div>
     <div id="partyTooltip" class="inventory-floating-tooltip party-floating-tooltip" hidden></div>
@@ -766,6 +875,112 @@
             }
         };
 
+        const thingDataCache = window.currentThingData instanceof Map ? window.currentThingData : new Map();
+        window.currentThingData = thingDataCache;
+
+        const thingMenuState = { openMenu: null, trigger: null };
+        let thingMenuListenersAttached = false;
+
+        function attachThingMenuListeners() {
+            if (thingMenuListenersAttached) {
+                return;
+            }
+            document.addEventListener('click', () => {
+                if (thingMenuState.openMenu) {
+                    closeThingContextMenu();
+                }
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeThingContextMenu();
+                }
+            });
+            thingMenuListenersAttached = true;
+        }
+
+        function cacheThingData(thing) {
+            if (!thing || !thing.id) {
+                return;
+            }
+            thingDataCache.set(thing.id, { ...thing });
+        }
+
+        function closeThingContextMenu() {
+            if (thingMenuState.openMenu) {
+                thingMenuState.openMenu.classList.remove('is-open');
+            }
+            if (thingMenuState.trigger) {
+                thingMenuState.trigger.setAttribute('aria-expanded', 'false');
+            }
+            thingMenuState.openMenu = null;
+            thingMenuState.trigger = null;
+        }
+
+        function registerThingContextMenu(card, thing, options = {}) {
+            if (!card || !thing || !thing.id) {
+                return;
+            }
+
+            attachThingMenuListeners();
+            cacheThingData(thing);
+
+            card.dataset.thingId = thing.id;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'thing-card-menu-button';
+            button.setAttribute('aria-haspopup', 'true');
+            button.setAttribute('aria-expanded', 'false');
+            button.setAttribute('aria-label', `More actions for ${thing.name || 'item'}`);
+
+            const icon = document.createElement('span');
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = '•••';
+            button.appendChild(icon);
+
+            const menu = document.createElement('div');
+            menu.className = 'thing-card-menu';
+
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.className = 'thing-card-menu-item';
+            editButton.textContent = 'Edit';
+            menu.appendChild(editButton);
+
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const wasOpen = thingMenuState.openMenu === menu;
+                closeThingContextMenu();
+                if (!wasOpen) {
+                    menu.classList.add('is-open');
+                    button.setAttribute('aria-expanded', 'true');
+                    thingMenuState.openMenu = menu;
+                    thingMenuState.trigger = button;
+                }
+            });
+
+            editButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeThingContextMenu();
+                const cachedThing = thingDataCache.get(thing.id) || thing;
+                try {
+                    await showThingEditModal(cachedThing, options.context || 'general');
+                } catch (error) {
+                    console.warn('Failed to open thing editor:', error);
+                }
+            });
+
+            menu.addEventListener('click', (event) => event.stopPropagation());
+            card.addEventListener('click', () => {
+                if (thingMenuState.openMenu) {
+                    closeThingContextMenu();
+                }
+            });
+
+            card.appendChild(button);
+            card.appendChild(menu);
+        }
+
         const formatThingTooltip = (thing = {}) => {
             const normalizedType = normalizeThingType(thing);
 
@@ -865,10 +1080,473 @@
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
         const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
+        const thingEditModal = document.getElementById('thingEditModal');
+        const thingEditForm = document.getElementById('thingEditForm');
+        const thingEditModalTitle = document.getElementById('thingEditModalTitle');
+        const thingEditIdInput = document.getElementById('thingEditId');
+        const thingEditNameInput = document.getElementById('thingEditName');
+        const thingEditTypeSelect = document.getElementById('thingEditType');
+        const thingEditRarityInput = document.getElementById('thingEditRarity');
+        const thingEditItemDetailInput = document.getElementById('thingEditItemDetail');
+        const thingEditSlotInput = document.getElementById('thingEditSlot');
+        const thingEditLevelInput = document.getElementById('thingEditLevel');
+        const thingEditRelativeLevelInput = document.getElementById('thingEditRelativeLevel');
+        const thingEditImageIdInput = document.getElementById('thingEditImageId');
+        const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingMetadataList = document.getElementById('thingEditMetadataList');
+        const thingMetadataAddBtn = document.getElementById('thingMetadataAddBtn');
+        const thingAttributeBonusesList = document.getElementById('thingEditAttributeBonusesList');
+        const thingAttributeBonusAddBtn = document.getElementById('thingAttributeBonusAddBtn');
+        const thingCauseEffectNameInput = document.getElementById('thingEditCauseStatusEffectName');
+        const thingCauseEffectDescriptionInput = document.getElementById('thingEditCauseStatusEffectDescription');
+        const thingCauseEffectDurationInput = document.getElementById('thingEditCauseStatusEffectDuration');
+        const thingStatusEffectsList = document.getElementById('thingEditStatusEffectsList');
+        const thingStatusEffectAddBtn = document.getElementById('thingStatusEffectAddBtn');
+        const thingEditCancelBtn = document.getElementById('thingEditCancelBtn');
+        const thingEditCloseBtn = document.getElementById('thingEditCloseBtn');
+        const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
+        const thingEditStatus = document.getElementById('thingEditStatus');
+
+        function safeJsonStringify(value, fallback = '') {
+            try {
+                return JSON.stringify(value, null, 2);
+            } catch (_) {
+                return fallback;
+            }
+        }
+
+        function formatThingMetadataValue(value) {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value === 'object') {
+                return safeJsonStringify(value, '');
+            }
+            return String(value);
+        }
+
+        function extractEditableThingMetadata(thing = {}) {
+            if (!thing || typeof thing !== 'object') {
+                return {};
+            }
+            const metadata = thing.metadata && typeof thing.metadata === 'object'
+                ? { ...thing.metadata }
+                : {};
+            delete metadata.slot;
+            delete metadata.attributeBonuses;
+            delete metadata.causeStatusEffect;
+            delete metadata.level;
+            delete metadata.relativeLevel;
+            delete metadata.location;
+            delete metadata.locationId;
+            return metadata;
+        }
+
+        function createThingMetadataRow(entry = {}) {
+            if (!thingMetadataList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'thing-edit-row thing-edit-metadata-row';
+
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.className = 'thing-edit-metadata-key';
+            keyInput.placeholder = 'Key';
+            keyInput.autocomplete = 'off';
+            keyInput.value = entry.key || '';
+
+            const valueInput = document.createElement('textarea');
+            valueInput.className = 'thing-edit-metadata-value';
+            valueInput.rows = 1;
+            valueInput.placeholder = 'Value (text, number, or JSON)';
+            valueInput.value = entry.value !== undefined ? formatThingMetadataValue(entry.value) : '';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(keyInput);
+            row.appendChild(valueInput);
+            row.appendChild(removeBtn);
+
+            thingMetadataList.appendChild(row);
+
+            return row;
+        }
+
+        function renderThingMetadataEntries(metadata = {}) {
+            if (!thingMetadataList) {
+                return;
+            }
+            thingMetadataList.innerHTML = '';
+            const entries = metadata && typeof metadata === 'object'
+                ? Object.entries(metadata)
+                : [];
+            if (!entries.length) {
+                createThingMetadataRow({});
+                return;
+            }
+            entries.forEach(([key, value]) => {
+                createThingMetadataRow({ key, value });
+            });
+        }
+
+        function collectThingMetadataEntries() {
+            if (!thingMetadataList) {
+                return {};
+            }
+            const metadata = {};
+            thingMetadataList.querySelectorAll('.thing-edit-metadata-row').forEach(row => {
+                const key = row.querySelector('.thing-edit-metadata-key')?.value?.trim();
+                if (!key) {
+                    return;
+                }
+                const rawValue = row.querySelector('.thing-edit-metadata-value')?.value ?? '';
+                const trimmed = rawValue.trim();
+                if (!trimmed) {
+                    metadata[key] = '';
+                    return;
+                }
+                let parsed = trimmed;
+                try {
+                    parsed = JSON.parse(trimmed);
+                } catch (_) {
+                    parsed = trimmed;
+                }
+                metadata[key] = parsed;
+            });
+            return metadata;
+        }
+
+        function createThingAttributeBonusRow(entry = {}) {
+            if (!thingAttributeBonusesList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'thing-edit-row thing-edit-bonus-row';
+
+            const attributeInput = document.createElement('input');
+            attributeInput.type = 'text';
+            attributeInput.className = 'thing-edit-bonus-attribute';
+            attributeInput.placeholder = 'Attribute (e.g. Strength)';
+            attributeInput.autocomplete = 'off';
+            attributeInput.value = entry.attribute || entry.attributeName || '';
+
+            const bonusInput = document.createElement('input');
+            bonusInput.type = 'number';
+            bonusInput.step = '1';
+            bonusInput.className = 'thing-edit-bonus-value';
+            bonusInput.placeholder = 'Bonus';
+            if (entry.bonus !== undefined && entry.bonus !== null && entry.bonus !== '') {
+                const numericBonus = Number(entry.bonus);
+                if (!Number.isNaN(numericBonus)) {
+                    bonusInput.value = numericBonus;
+                }
+            }
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(attributeInput);
+            row.appendChild(bonusInput);
+            row.appendChild(removeBtn);
+
+            thingAttributeBonusesList.appendChild(row);
+
+            return row;
+        }
+
+        function renderThingAttributeBonuses(bonuses = []) {
+            if (!thingAttributeBonusesList) {
+                return;
+            }
+            thingAttributeBonusesList.innerHTML = '';
+            const entries = Array.isArray(bonuses) ? bonuses : [];
+            if (!entries.length) {
+                createThingAttributeBonusRow({});
+                return;
+            }
+            entries.forEach(entry => createThingAttributeBonusRow(entry));
+        }
+
+        function collectThingAttributeBonuses() {
+            if (!thingAttributeBonusesList) {
+                return [];
+            }
+            const bonuses = [];
+            thingAttributeBonusesList.querySelectorAll('.thing-edit-bonus-row').forEach(row => {
+                const attribute = row.querySelector('.thing-edit-bonus-attribute')?.value?.trim();
+                if (!attribute) {
+                    return;
+                }
+                const rawBonus = row.querySelector('.thing-edit-bonus-value')?.value ?? '';
+                const numeric = Number.parseFloat(rawBonus);
+                bonuses.push({
+                    attribute,
+                    bonus: Number.isFinite(numeric) ? numeric : 0
+                });
+            });
+            return bonuses;
+        }
+
+        function populateThingCauseStatusEffect(effect = null) {
+            if (thingCauseEffectNameInput) {
+                thingCauseEffectNameInput.value = effect?.name || '';
+            }
+            if (thingCauseEffectDescriptionInput) {
+                thingCauseEffectDescriptionInput.value = effect?.description || effect?.text || '';
+            }
+            if (thingCauseEffectDurationInput) {
+                if (effect && effect.duration !== undefined && effect.duration !== null) {
+                    thingCauseEffectDurationInput.value = String(effect.duration);
+                } else {
+                    thingCauseEffectDurationInput.value = '';
+                }
+            }
+        }
+
+        function collectThingCauseStatusEffect() {
+            const name = thingCauseEffectNameInput?.value?.trim();
+            const description = thingCauseEffectDescriptionInput?.value?.trim();
+            const durationRaw = thingCauseEffectDurationInput?.value?.trim();
+
+            if (!name && !description && !durationRaw) {
+                return null;
+            }
+
+            const effect = {};
+            if (name) {
+                effect.name = name;
+            }
+            if (description) {
+                effect.description = description;
+            }
+            if (durationRaw) {
+                const numeric = Number.parseInt(durationRaw, 10);
+                effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
+            }
+            return Object.keys(effect).length ? effect : null;
+        }
+
+        function createThingStatusEffectRow(effect = {}) {
+            if (!thingStatusEffectsList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'thing-edit-row thing-edit-status-row';
+
+            const descriptionInput = document.createElement('textarea');
+            descriptionInput.className = 'thing-edit-status-description';
+            descriptionInput.rows = 2;
+            descriptionInput.placeholder = 'Description';
+            descriptionInput.value = effect.description || effect.text || effect.name || '';
+
+            const durationInput = document.createElement('input');
+            durationInput.type = 'text';
+            durationInput.className = 'thing-edit-status-duration';
+            durationInput.placeholder = 'Duration';
+            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
+                durationInput.value = String(effect.duration);
+            }
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(descriptionInput);
+            row.appendChild(durationInput);
+            row.appendChild(removeBtn);
+
+            thingStatusEffectsList.appendChild(row);
+
+            return row;
+        }
+
+        function renderThingStatusEffects(effects = []) {
+            if (!thingStatusEffectsList) {
+                return;
+            }
+            thingStatusEffectsList.innerHTML = '';
+            const entries = Array.isArray(effects) ? effects : [];
+            if (!entries.length) {
+                createThingStatusEffectRow({});
+                return;
+            }
+            entries.forEach(effect => createThingStatusEffectRow(effect));
+        }
+
+        function collectThingStatusEffects() {
+            if (!thingStatusEffectsList) {
+                return [];
+            }
+            const effects = [];
+            thingStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
+                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
+                if (!description) {
+                    return;
+                }
+                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
+                const effect = { description };
+                if (durationRaw) {
+                    const numeric = Number.parseInt(durationRaw, 10);
+                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
+                }
+                effects.push(effect);
+            });
+            return effects;
+        }
+
+        function populateThingEditForm(thing) {
+            if (!thingEditForm) {
+                return;
+            }
+
+            thingEditForm.reset();
+
+            if (thingEditModalTitle) {
+                thingEditModalTitle.textContent = thing?.name ? `Edit ${thing.name}` : 'Edit Item';
+            }
+
+            if (thingEditIdInput) {
+                thingEditIdInput.value = thing?.id || '';
+            }
+
+            if (thingEditNameInput) {
+                thingEditNameInput.value = thing?.name || '';
+            }
+
+            if (thingEditTypeSelect) {
+                const typeValue = (thing?.thingType || thing?.type || 'item').toString().toLowerCase();
+                thingEditTypeSelect.value = typeValue === 'scenery' ? 'scenery' : 'item';
+            }
+
+            if (thingEditRarityInput) {
+                thingEditRarityInput.value = thing?.rarity || '';
+            }
+
+            if (thingEditItemDetailInput) {
+                const detail = thing?.itemTypeDetail || thing?.itemDetail || '';
+                thingEditItemDetailInput.value = detail;
+            }
+
+            if (thingEditSlotInput) {
+                thingEditSlotInput.value = thing?.slot || '';
+            }
+
+            if (thingEditLevelInput) {
+                const numericLevel = Number.parseInt(thing?.level, 10);
+                thingEditLevelInput.value = Number.isFinite(numericLevel) ? numericLevel : '';
+            }
+
+            if (thingEditRelativeLevelInput) {
+                const numericRelative = Number.parseInt(thing?.relativeLevel, 10);
+                thingEditRelativeLevelInput.value = Number.isFinite(numericRelative) ? numericRelative : '';
+            }
+
+            if (thingEditImageIdInput) {
+                thingEditImageIdInput.value = thing?.imageId || '';
+            }
+
+            if (thingEditDescriptionInput) {
+                thingEditDescriptionInput.value = thing?.description || '';
+            }
+
+            currentThingLockedMetadata = {};
+            if (thing && typeof thing.metadata === 'object' && thing.metadata) {
+                const locked = {};
+                if (thing.metadata.location !== undefined) {
+                    locked.location = thing.metadata.location;
+                }
+                if (thing.metadata.locationId !== undefined) {
+                    locked.locationId = thing.metadata.locationId;
+                }
+                currentThingLockedMetadata = locked;
+            }
+
+            const metadata = extractEditableThingMetadata(thing);
+            renderThingMetadataEntries(metadata);
+
+            const bonuses = Array.isArray(thing?.attributeBonuses)
+                ? thing.attributeBonuses
+                : Array.isArray(thing?.metadata?.attributeBonuses)
+                    ? thing.metadata.attributeBonuses
+                    : [];
+            renderThingAttributeBonuses(bonuses);
+
+            const causeStatusEffect = thing?.causeStatusEffect || thing?.metadata?.causeStatusEffect || null;
+            populateThingCauseStatusEffect(causeStatusEffect);
+
+            const statusEffects = Array.isArray(thing?.statusEffects) ? thing.statusEffects : [];
+            renderThingStatusEffects(statusEffects);
+
+            updateThingEditStatus('');
+        }
+
+        async function showThingEditModal(thing, context = 'general') {
+            if (!thing || !thing.id || !thingEditModal || !thingEditForm || !npcModalBackdrop) {
+                return;
+            }
+
+            let resolvedThing = { ...thing };
+
+            const needsDetails = resolvedThing.level === undefined
+                || resolvedThing.relativeLevel === undefined
+                || (resolvedThing.metadata && typeof resolvedThing.metadata === 'object'
+                    && ('level' in resolvedThing.metadata || 'relativeLevel' in resolvedThing.metadata));
+
+            if (needsDetails) {
+                try {
+                    const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data?.thing) {
+                            resolvedThing = { ...data.thing };
+                            cacheThingData(resolvedThing);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to fetch full item details:', error);
+                }
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            populateThingEditForm(resolvedThing);
+
+            currentThingEditId = resolvedThing.id;
+            currentThingEditContext = context;
+            thingEditForm.dataset.thingId = resolvedThing.id;
+            thingEditForm.dataset.thingContext = context;
+
+            thingEditModal.removeAttribute('hidden');
+            thingEditModal.setAttribute('aria-hidden', 'false');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+
+            setTimeout(() => {
+                thingEditNameInput?.focus();
+            }, 50);
+        }
 
         let currentNpcEditId = null;
         let currentNpcOriginalHealthAttribute = '';
         let currentNpcInventory = [];
+        let currentThingEditId = null;
+        let currentThingEditContext = null;
+        let currentThingLockedMetadata = {};
 
         function isNpcEditorAvailable() {
             return Boolean(npcEditModal && npcEditForm && npcModalBackdrop);
@@ -893,6 +1571,19 @@
                 npcEditStatus.classList.add('is-error');
             } else if (type === 'success') {
                 npcEditStatus.classList.add('is-success');
+            }
+        }
+
+        function updateThingEditStatus(message = '', type = null) {
+            if (!thingEditStatus) {
+                return;
+            }
+            thingEditStatus.textContent = message || '';
+            thingEditStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                thingEditStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                thingEditStatus.classList.add('is-success');
             }
         }
 
@@ -1271,6 +1962,39 @@
             }
         }
 
+        function closeThingEditModal() {
+            if (!thingEditModal) {
+                return;
+            }
+            thingEditModal.setAttribute('aria-hidden', 'true');
+            thingEditModal.setAttribute('hidden', '');
+            updateThingEditStatus('');
+            currentThingEditId = null;
+            currentThingEditContext = null;
+            if (thingEditForm) {
+                thingEditForm.reset();
+                delete thingEditForm.dataset.thingId;
+                delete thingEditForm.dataset.thingContext;
+            }
+            if (thingMetadataList) {
+                thingMetadataList.innerHTML = '';
+            }
+            if (thingAttributeBonusesList) {
+                thingAttributeBonusesList.innerHTML = '';
+            }
+            if (thingStatusEffectsList) {
+                thingStatusEffectsList.innerHTML = '';
+            }
+            populateThingCauseStatusEffect(null);
+            currentThingLockedMetadata = {};
+            const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
         if (npcAddSkillBtn) {
             npcAddSkillBtn.addEventListener('click', () => {
                 createSkillRow({ name: '', value: '' });
@@ -1307,12 +2031,47 @@
             });
         }
 
+        if (thingEditCancelBtn) {
+            thingEditCancelBtn.addEventListener('click', () => {
+                closeThingEditModal();
+            });
+        }
+
+        if (thingEditCloseBtn) {
+            thingEditCloseBtn.addEventListener('click', () => {
+                closeThingEditModal();
+            });
+        }
+
+        if (thingMetadataAddBtn) {
+            thingMetadataAddBtn.addEventListener('click', () => {
+                const row = createThingMetadataRow({});
+                row?.querySelector('.thing-edit-metadata-key')?.focus();
+            });
+        }
+
+        if (thingAttributeBonusAddBtn) {
+            thingAttributeBonusAddBtn.addEventListener('click', () => {
+                const row = createThingAttributeBonusRow({});
+                row?.querySelector('.thing-edit-bonus-attribute')?.focus();
+            });
+        }
+
+        if (thingStatusEffectAddBtn) {
+            thingStatusEffectAddBtn.addEventListener('click', () => {
+                const row = createThingStatusEffectRow({});
+                row?.querySelector('.thing-edit-status-description')?.focus();
+            });
+        }
+
         if (npcModalBackdrop) {
             npcModalBackdrop.addEventListener('click', (event) => {
                 if (event.target === npcModalBackdrop) {
-                    if (!npcInventoryModal.hasAttribute('hidden')) {
+                    if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
+                        closeThingEditModal();
+                    } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
                         closeNpcInventoryModal();
-                    } else {
+                    } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                         closeNpcEditModal();
                     }
                 }
@@ -1331,6 +2090,14 @@
             npcInventoryModal.addEventListener('click', (event) => {
                 if (event.target === npcInventoryModal) {
                     closeNpcInventoryModal();
+                }
+            });
+        }
+
+        if (thingEditModal) {
+            thingEditModal.addEventListener('click', (event) => {
+                if (event.target === thingEditModal) {
+                    closeThingEditModal();
                 }
             });
         }
@@ -1465,6 +2232,157 @@
             });
         }
 
+        if (thingEditForm) {
+            thingEditForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+
+                if (!currentThingEditId) {
+                    updateThingEditStatus('No item selected.', 'error');
+                    return;
+                }
+
+                updateThingEditStatus('');
+
+                const payload = {};
+
+                const trimmedName = thingEditNameInput?.value?.trim();
+                if (trimmedName) {
+                    payload.name = trimmedName;
+                }
+
+                if (thingEditDescriptionInput) {
+                    payload.description = thingEditDescriptionInput.value ?? '';
+                }
+
+                if (thingEditTypeSelect) {
+                    const typeValue = (thingEditTypeSelect.value || '').toLowerCase();
+                    payload.thingType = typeValue === 'scenery' ? 'scenery' : 'item';
+                }
+
+                if (thingEditRarityInput) {
+                    const rarityValue = thingEditRarityInput.value?.trim();
+                    payload.rarity = rarityValue || null;
+                }
+
+                if (thingEditItemDetailInput) {
+                    const detailValue = thingEditItemDetailInput.value?.trim();
+                    payload.itemTypeDetail = detailValue || null;
+                }
+
+                if (thingEditSlotInput) {
+                    const slotValue = thingEditSlotInput.value?.trim();
+                    payload.slot = slotValue || null;
+                }
+
+                if (thingEditLevelInput) {
+                    const parsedLevel = Number.parseInt(thingEditLevelInput.value ?? '', 10);
+                    payload.level = Number.isFinite(parsedLevel) ? parsedLevel : null;
+                }
+
+                if (thingEditRelativeLevelInput) {
+                    const parsedRelative = Number.parseInt(thingEditRelativeLevelInput.value ?? '', 10);
+                    payload.relativeLevel = Number.isFinite(parsedRelative) ? parsedRelative : null;
+                }
+
+                if (thingEditImageIdInput) {
+                    const imageValue = thingEditImageIdInput.value?.trim();
+                    payload.imageId = imageValue || null;
+                }
+
+                const metadataValue = collectThingMetadataEntries();
+                const finalMetadata = { ...metadataValue };
+                if (currentThingLockedMetadata && typeof currentThingLockedMetadata === 'object') {
+                    Object.entries(currentThingLockedMetadata).forEach(([key, value]) => {
+                        if (value !== undefined) {
+                            finalMetadata[key] = value;
+                        }
+                    });
+                }
+                payload.metadata = finalMetadata;
+
+                const attributeBonusesValue = collectThingAttributeBonuses();
+                payload.attributeBonuses = attributeBonusesValue;
+
+                const causeStatusEffectValue = collectThingCauseStatusEffect();
+                payload.causeStatusEffect = causeStatusEffectValue;
+
+                const statusEffectsValue = collectThingStatusEffects();
+                payload.statusEffects = statusEffectsValue;
+
+                if (!payload.thingType) {
+                    payload.thingType = 'item';
+                }
+
+                try {
+                    updateThingEditStatus('Saving changes...');
+                    if (thingEditSaveBtn) {
+                        thingEditSaveBtn.disabled = true;
+                    }
+
+                    const response = await fetch(`/api/things/${encodeURIComponent(currentThingEditId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    let result = {};
+                    try {
+                        result = await response.json();
+                    } catch (_) {
+                        // ignore JSON parse failures; handled below
+                    }
+
+                    if (!response.ok || !result?.success) {
+                        throw new Error(result?.error || 'Failed to update item.');
+                    }
+
+                    const updatedThing = result?.thing || { ...thingDataCache.get(currentThingEditId), ...payload, id: currentThingEditId };
+                    cacheThingData(updatedThing);
+
+                    if (currentThingEditContext === 'npc-inventory' && Array.isArray(currentNpcInventory)) {
+                        currentNpcInventory = currentNpcInventory.map(item => item && item.id === updatedThing.id ? updatedThing : item);
+                        renderNpcInventory(currentNpcInventory);
+                    }
+
+                    updateThingEditStatus('Changes saved.', 'success');
+
+                    try {
+                        if (currentThingEditContext === 'player-inventory') {
+                            if (typeof window.refreshInventory === 'function') {
+                                await window.refreshInventory();
+                            }
+                        } else if (currentThingEditContext === 'location') {
+                            if (typeof window.loadCurrentLocation === 'function') {
+                                await window.loadCurrentLocation();
+                            }
+                        } else if (currentThingEditContext === 'npc-inventory') {
+                            if (typeof window.loadCurrentLocation === 'function') {
+                                await window.loadCurrentLocation();
+                            }
+                        } else {
+                            if (typeof window.refreshInventory === 'function') {
+                                await window.refreshInventory();
+                            }
+                            if (typeof window.loadCurrentLocation === 'function') {
+                                await window.loadCurrentLocation();
+                            }
+                        }
+                        window.refreshParty?.();
+                    } catch (refreshError) {
+                        console.warn('Failed to refresh displays after item update:', refreshError);
+                    }
+
+                    closeThingEditModal();
+                } catch (error) {
+                    updateThingEditStatus(error?.message || 'Failed to update item.', 'error');
+                } finally {
+                    if (thingEditSaveBtn) {
+                        thingEditSaveBtn.disabled = false;
+                    }
+                }
+            });
+        }
+
         function renderNpcInventory(items = []) {
             if (!npcInventoryGrid || !npcInventoryEmpty || !npcInventoryCount) {
                 return;
@@ -1499,6 +2417,8 @@
 
                 card.appendChild(icon);
                 card.appendChild(name);
+
+                registerThingContextMenu(card, item, { context: 'npc-inventory' });
 
                 card.addEventListener('mouseenter', (event) => {
                     if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
@@ -1546,12 +2466,25 @@
         }
 
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && npcEditModal && !npcEditModal.hasAttribute('hidden')) {
+            if (event.key !== 'Escape') {
+                return;
+            }
+
+            if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
                 event.preventDefault();
-                closeNpcEditModal();
-            } else if (event.key === 'Escape' && npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
+                closeThingEditModal();
+                return;
+            }
+
+            if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
                 event.preventDefault();
                 closeNpcInventoryModal();
+                return;
+            }
+
+            if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeNpcEditModal();
             }
         });
 
@@ -1637,6 +2570,7 @@
                 }
                 npcMenuState.openMenu = null;
                 npcMenuState.trigger = null;
+                closeThingContextMenu();
             }
 
             function registerNpcContextMenu(card, npc) {
@@ -1951,6 +2885,8 @@
 
                                 card.appendChild(icon);
                                 card.appendChild(nameEl);
+
+                                registerThingContextMenu(card, thing, { context: 'location' });
 
                                 if (tooltipController && typeof tooltipController.show === 'function') {
                                     card.addEventListener('mouseenter', (event) => {
@@ -2381,6 +3317,7 @@
                     if (equippedSet.has(item.id)) {
                         card.classList.add('is-equipped');
                     }
+                    registerThingContextMenu(card, item, { context: 'player-inventory' });
                     inventoryGrid.appendChild(card);
 
                     card.addEventListener('mouseenter', (event) => {

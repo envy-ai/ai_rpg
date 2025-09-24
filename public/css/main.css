@@ -1559,7 +1559,8 @@ p .rarity-epic {
   color: rgb(255, 150, 150);
 }
 
-.npc-card-menu-button {
+.npc-card-menu-button,
+.thing-card-menu-button {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -1579,14 +1580,17 @@ p .rarity-epic {
 }
 
 .npc-card-menu-button:hover,
-.npc-card-menu-button:focus {
+.npc-card-menu-button:focus,
+.thing-card-menu-button:hover,
+.thing-card-menu-button:focus {
   background: rgba(30, 41, 59, 0.9);
   border-color: rgba(148, 163, 184, 0.6);
   color: #ffffff;
   outline: none;
 }
 
-.npc-card-menu {
+.npc-card-menu,
+.thing-card-menu {
   position: absolute;
   top: 42px;
   right: 8px;
@@ -1603,13 +1607,15 @@ p .rarity-epic {
   z-index: 5;
 }
 
-.npc-card-menu.is-open {
+.npc-card-menu.is-open,
+.thing-card-menu.is-open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
 }
 
-.npc-card-menu-item {
+.npc-card-menu-item,
+.thing-card-menu-item {
   width: 100%;
   border: none;
   background: transparent;
@@ -1739,6 +1745,8 @@ body.modal-open {
 .npc-edit-field input,
 .npc-edit-field select,
 .npc-edit-section textarea,
+.thing-edit-row input,
+.thing-edit-row textarea,
 .npc-skill-row input,
 .npc-ability-row textarea,
 .npc-ability-row select {
@@ -1753,6 +1761,8 @@ body.modal-open {
 
 .npc-edit-field input:focus,
 .npc-edit-section textarea:focus,
+.thing-edit-row input:focus,
+.thing-edit-row textarea:focus,
 .npc-skill-row input:focus,
 .npc-ability-row textarea:focus,
 .npc-ability-row select:focus {
@@ -1921,6 +1931,58 @@ body.modal-open {
   align-items: center;
 }
 
+.npc-edit-hint {
+  font-size: 0.8rem;
+  color: #cbd5f5;
+  margin: -4px 0 0;
+}
+
+.thing-edit-metadata-list,
+.thing-edit-bonus-list,
+.thing-edit-status-effects {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thing-edit-row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+}
+
+.thing-edit-metadata-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+}
+
+.thing-edit-metadata-value {
+  min-height: 38px;
+  resize: vertical;
+}
+
+.thing-edit-bonus-row {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.6fr) auto;
+}
+
+.thing-edit-status-row {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.6fr) auto;
+}
+
+.thing-edit-status-description {
+  min-height: 48px;
+  resize: vertical;
+}
+
+.thing-edit-status-duration {
+  width: 100%;
+}
+
+.thing-edit-cause-effect {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
 .npc-edit-footer {
   margin-top: 4px;
   display: flex;
@@ -1960,6 +2022,11 @@ body.modal-open {
 @media (max-width: 600px) {
   .npc-edit-field--wide {
     grid-column: span 1;
+  }
+  .thing-edit-metadata-row,
+  .thing-edit-bonus-row,
+  .thing-edit-status-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 768px) {
