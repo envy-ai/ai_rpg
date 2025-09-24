@@ -3363,8 +3363,58 @@ module.exports = function registerApiRoutes(scope) {
                             success: false,
                             error: 'Setting with this name already exists'
                         });
-                    }
-                }
+            }
+        }
+
+        function sanitizeForAbilityXml(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        }
+
+        function buildAbilityContextForPlayer(player, { settingDescription = '', location = null, region = null } = {}) {
+            if (!player || typeof player.getSkills !== 'function') {
+                return null;
+            }
+
+            const lines = [];
+            lines.push('<npcs>');
+            lines.push('  <npc>');
+            lines.push(`    <name>${sanitizeForAbilityXml(player.name || 'Unnamed Hero')}</name>`);
+            lines.push(`    <description>${sanitizeForAbilityXml(player.description || '')}</description>`);
+            lines.push(`    <class>${sanitizeForAbilityXml(player.class || '')}</class>`);
+            lines.push(`    <race>${sanitizeForAbilityXml(player.race || '')}</race>`);
+            lines.push(`    <level>${sanitizeForAbilityXml(player.level || 1)}</level>`);
+
+            if (settingDescription) {
+                lines.push(`    <setting>${sanitizeForAbilityXml(settingDescription)}</setting>`);
+            }
+            if (region && (region.name || region.description)) {
+                lines.push(`    <regionContext>${sanitizeForAbilityXml((region.name ? `${region.name}: ` : '') + (region.description || ''))}</regionContext>`);
+            }
+            if (location && (location.name || location.description)) {
+                lines.push(`    <locationContext>${sanitizeForAbilityXml((location.name ? `${location.name}: ` : '') + (location.description || ''))}</locationContext>`);
+            }
+
+            const skillsMap = player.getSkills();
+            lines.push('    <skills>');
+            if (skillsMap && typeof skillsMap.forEach === 'function') {
+                skillsMap.forEach((value, key) => {
+                    lines.push(`      <skill><name>${sanitizeForAbilityXml(key)}</name><rank>${sanitizeForAbilityXml(value)}</rank></skill>`);
+                });
+            }
+            lines.push('    </skills>');
+            lines.push('  </npc>');
+            lines.push('</npcs>');
+
+            return lines.join('\n');
+        }
 
                 setting.update(updates);
 
@@ -3668,6 +3718,12 @@ module.exports = function registerApiRoutes(scope) {
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
                 const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
                 const fallbackSkillCount = Math.max(1, Math.min(100, newGameDefaults.numSkills || 20));
+                const endpoint = config.ai?.endpoint;
+                const apiKey = config.ai?.apiKey;
+                const model = config.ai?.model;
+                const chatEndpoint = endpoint
+                    ? (endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`)
+                    : null;
                 const numSkills = Number.isFinite(parsedSkillCount)
                     ? Math.max(1, Math.min(100, parsedSkillCount))
                     : fallbackSkillCount;
@@ -3872,6 +3928,44 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 } catch (inventoryError) {
                     console.warn('Failed to generate inventory for new-game player:', inventoryError);
+                }
+
+                if (chatEndpoint && apiKey && model) {
+                    try {
+                        const playerContext = buildAbilityContextForPlayer(newPlayer, {
+                            settingDescription,
+                            location: entranceLocation,
+                            region
+                        });
+
+                        const abilityBaseMessages = playerContext
+                            ? [{ role: 'assistant', content: playerContext }]
+                            : [];
+
+                        const abilityLogPath = path.join(__dirname, 'logs', `player_${newPlayer.id}_abilities.log`);
+                        const abilityResult = await requestNpcAbilityAssignments({
+                            baseMessages: abilityBaseMessages,
+                            chatEndpoint,
+                            model,
+                            apiKey,
+                            logPath: abilityLogPath
+                        });
+
+                        const abilityAssignments = abilityResult.assignments || new Map();
+                        const abilityEntry = abilityAssignments.get((newPlayer.name || '').trim().toLowerCase());
+                        if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
+                            applyNpcAbilities(newPlayer, abilityEntry.abilities);
+                        } else {
+                            newPlayer.setAbilities([]);
+                        }
+                    } catch (abilityError) {
+                        console.warn('Failed to generate abilities for new-game player:', abilityError.message);
+                        if (typeof newPlayer.setAbilities === 'function') {
+                            newPlayer.setAbilities([]);
+                        }
+                    }
+                } else if (typeof newPlayer.setAbilities === 'function') {
+                    newPlayer.setAbilities([]);
                 }
 
                 console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);

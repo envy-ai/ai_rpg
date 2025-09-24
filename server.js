@@ -7536,6 +7536,8 @@ const apiScope = {
     generateSkillsByNames,
     generateThingImage,
     queueLocationThingImages,
+    requestNpcAbilityAssignments,
+    applyNpcAbilities,
     getActiveSettingSnapshot,
     buildNewGameDefaults,
     getSuggestedPlayerLevel,

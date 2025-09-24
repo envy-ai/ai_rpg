@@ -1003,7 +1003,15 @@ class Player {
             }
         }
 
-        return normalized;
+        normalized.sort((a, b) => {
+            const levelDiff = (a.level || 0) - (b.level || 0);
+            if (levelDiff !== 0) {
+                return levelDiff;
+            }
+            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        });
+
+        return normalized.slice(0, 60);
     }
 
     #normalizeAbilities(abilitiesInput = []) {

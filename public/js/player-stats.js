@@ -4,6 +4,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const form = document.getElementById('player-stats-form');
   const statusMessage = document.getElementById('status-message');
   const resetButton = document.getElementById('reset-stats');
+  const abilitiesSection = document.getElementById('abilitiesSection');
+  const abilitiesList = document.getElementById('abilitiesList');
+  const abilitiesEmpty = document.getElementById('abilitiesEmpty');
 
   // Initialize attribute modifier calculations
   initializeAttributeModifiers();
@@ -289,6 +292,8 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
+    renderAbilities(playerData.abilities || []);
+
     const unspentField = document.getElementById('unspent-skill-points-input');
     if (unspentField) {
       const nextValue = playerData.unspentSkillPoints ? parseInt(unspentField.value) : 0;
@@ -326,6 +331,7 @@ document.addEventListener('DOMContentLoaded', function () {
       unspentField.value = defaultPoints;
     }
 
+    renderAbilities([]);
     showStatusMessage('Stats reset to default values', 'info');
   }
 
@@ -352,5 +358,59 @@ document.addEventListener('DOMContentLoaded', function () {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  function renderAbilities(abilities = []) {
+    if (!abilitiesList || !abilitiesEmpty) {
+      return;
+    }
+
+    abilitiesList.innerHTML = '';
+
+    if (Array.isArray(abilities) && abilities.length) {
+      abilities.forEach(ability => {
+        const card = document.createElement('div');
+        const abilityType = typeof ability.type === 'string' ? ability.type.toLowerCase() : 'passive';
+        card.className = `ability-card ability-type-${abilityType}`;
+
+        const header = document.createElement('div');
+        header.className = 'ability-header';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'ability-name';
+        nameEl.textContent = ability.name || 'Unnamed Ability';
+
+        const metaEl = document.createElement('span');
+        metaEl.className = 'ability-meta';
+        const metaParts = [];
+        metaParts.push((ability.type || 'Passive'));
+        if (ability.level) {
+          metaParts.push(`Level ${ability.level}`);
+        }
+        metaEl.textContent = metaParts.join(' • ');
+
+        header.appendChild(nameEl);
+        header.appendChild(metaEl);
+
+        card.appendChild(header);
+
+        if (ability.description) {
+          const descEl = document.createElement('div');
+          descEl.className = 'ability-description';
+          descEl.textContent = ability.description;
+          card.appendChild(descEl);
+        }
+
+        abilitiesList.appendChild(card);
+      });
+
+      abilitiesEmpty.hidden = true;
+    } else {
+      abilitiesEmpty.hidden = false;
+    }
+
+    if (abilitiesSection) {
+      abilitiesSection.classList.toggle('has-abilities', Array.isArray(abilities) && abilities.length > 0);
+    }
   }
 });

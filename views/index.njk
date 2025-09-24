@@ -244,6 +244,28 @@
                         </div>
                         {% endif %}
 
+                        <div class="config-section" id="abilitiesSection">
+                            <h2>Abilities</h2>
+                            <div class="abilities-grid" id="abilitiesList">
+                                {% if player and player.abilities %}
+                                    {% for ability in player.abilities %}
+                                        <div class="ability-card ability-type-{{ ability.type | default('Passive') | lower }}">
+                                            <div class="ability-header">
+                                                <span class="ability-name">{{ ability.name }}</span>
+                                                <span class="ability-meta">{{ ability.type | default('Passive') }}{% if ability.level %} • Level {{ ability.level }}{% endif %}</span>
+                                            </div>
+                                            {% if ability.description %}
+                                            <div class="ability-description">{{ ability.description }}</div>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                {% endif %}
+                            </div>
+                            <div class="abilities-empty" id="abilitiesEmpty" {% if player and player.abilities and player.abilities|length %}hidden{% endif %}>
+                                No special abilities unlocked yet.
+                            </div>
+                        </div>
+
                         {% if player %}
                         <div class="config-section">
                             <h2>Current Status</h2>

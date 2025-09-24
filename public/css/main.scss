@@ -857,6 +857,75 @@ p .rarity-epic {
   margin-top: 16px;
 }
 
+.abilities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.ability-card {
+  @include glass-effect(rgba(15, 23, 42, 0.55));
+  border-radius: $border-radius-md;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: $white;
+  transition: border 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    border-color: rgba(94, 234, 212, 0.35);
+    transform: translateY(-1px);
+  }
+
+  &.ability-type-active {
+    border-left: 3px solid rgba(96, 165, 250, 0.85);
+  }
+
+  &.ability-type-passive {
+    border-left: 3px solid rgba(52, 211, 153, 0.85);
+  }
+
+  &.ability-type-triggered {
+    border-left: 3px solid rgba(249, 168, 212, 0.85);
+  }
+}
+
+.ability-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ability-name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ability-meta {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.ability-description {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.abilities-empty {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: rgba(148, 163, 184, 0.75);
+  font-style: italic;
+}
+
 .skill-card {
   @include glass-effect(rgba(15, 23, 42, 0.55));
   border-radius: $border-radius-md;
