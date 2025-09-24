@@ -37,6 +37,7 @@ class Player {
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
+    static #instances = new Set();
 
     static get gearSlotDefinitions() {
         if (!this.#gearSlotDefinitions) {
@@ -50,6 +51,10 @@ class Player {
             throw new Error('NPC inventory change handler must be a function');
         }
         this.#npcInventoryChangeHandler = handler || null;
+    }
+
+    static getAll() {
+        return Array.from(this.#instances);
     }
 
     static #notifyNpcInventoryChange(player, payload) {
@@ -146,6 +151,9 @@ class Player {
         // Initialize attributes dynamically from definitions
         this.#initializeAttributes(options.attributes ?? {});
 
+        this.#inventory = new Set();
+        this.#initializeInventory(options.inventory);
+
         this.#healthAttribute = this.#resolveHealthAttribute(options.healthAttribute);
 
         // Base stats (not attributes)
@@ -171,9 +179,6 @@ class Player {
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
 
-        this.#inventory = new Set();
-        this.#initializeInventory(options.inventory);
-
         this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
         this.#dispositions = this.#initializeDispositions(options.dispositions);
         this.#skills = new Map();
@@ -192,6 +197,8 @@ class Player {
         // Creation timestamp
         this.#createdAt = new Date().toISOString();
         this.#lastUpdated = this.#createdAt;
+
+        Player.#instances.add(this);
     }
 
     /**
@@ -569,10 +576,23 @@ class Player {
             return null;
         }
 
-        const equippedItems = this.getInventoryItems().filter(item => item.isEquipped);
+        const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
         const bonus = equippedItems.reduce((total, item) => {
-            const itemBonus = item.getAttributeBonus(attributeName);
-            return total + (itemBonus ?? 0);
+            if (!item) {
+                return total;
+            }
+            if (typeof item.getAttributeBonus === 'function') {
+                const itemBonus = item.getAttributeBonus(attributeName);
+                return total + (itemBonus ?? 0);
+            }
+            if (item.attributeBonuses && typeof item.attributeBonuses === 'object') {
+                const rawBonus = item.attributeBonuses[attributeName] ?? item.attributeBonuses[attributeName?.toLowerCase?.()];
+                const numericBonus = Number(rawBonus);
+                if (Number.isFinite(numericBonus)) {
+                    return total + numericBonus;
+                }
+            }
+            return total;
         }, 0);
 
         return baseValue + bonus;

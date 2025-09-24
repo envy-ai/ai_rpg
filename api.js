@@ -161,10 +161,12 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runAttackCheckPrompt({ actionText, locationOverride }) {
             if (!actionText || !actionText.trim()) {
+                console.log("No action text")
                 return null;
             }
 
             if (!currentPlayer) {
+                console.log("No current player")
                 return null;
             }
 
@@ -583,7 +585,9 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
+            console.log("Building attack context")
             if (!attackCheckInfo || !attackCheckInfo.structured) {
+                console.log("no attackCheckInfo")
                 return { isAttack: false };
             }
 
@@ -854,6 +858,8 @@ module.exports = function registerApiRoutes(scope) {
                                 actionText: attackActionText,
                                 locationOverride: location || null
                             });
+                            console.log("Attack check returned:");
+                            console.log(attackCheckInfo)
                             attackContextForPlausibility = buildAttackContextForPlausibility({
                                 attackCheckInfo,
                                 player: currentPlayer,
@@ -864,6 +870,8 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         try {
+                            console.log("Running plausibility check...");
+                            console.log(attackContextForPlausibility);
                             plausibilityInfo = await runPlausibilityCheck({
                                 actionText: userMessage.content,
                                 locationId: currentPlayer.currentLocation || null,

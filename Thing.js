@@ -218,6 +218,34 @@ class Thing {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  getAttributeBonus(attributeName) {
+    if (typeof attributeName !== 'string') {
+      return 0;
+    }
+    const normalized = attributeName.trim().toLowerCase();
+    if (!normalized) {
+      return 0;
+    }
+    if (!Array.isArray(this.#attributeBonuses) || this.#attributeBonuses.length === 0) {
+      return 0;
+    }
+
+    let total = 0;
+    for (const entry of this.#attributeBonuses) {
+      if (!entry || typeof entry.attribute !== 'string') {
+        continue;
+      }
+      if (entry.attribute.trim().toLowerCase() !== normalized) {
+        continue;
+      }
+      const numeric = Number(entry.bonus);
+      if (Number.isFinite(numeric)) {
+        total += numeric;
+      }
+    }
+    return total;
+  }
+
   get causeStatusEffect() {
     return this.#causeStatusEffect ? { ...this.#causeStatusEffect } : null;
   }
