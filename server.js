@@ -3996,6 +3996,418 @@ function parseRegionNpcs(xmlContent) {
     }
 }
 
+function renderNpcSkillsPrompt(skills = []) {
+    try {
+        const list = Array.isArray(skills) ? skills.filter(skill => skill && skill.name) : [];
+        if (!list.length) {
+            return null;
+        }
+        return promptEnv.render('npc-generate-skills.xml.njk', { skills: list });
+    } catch (error) {
+        console.error('Error rendering NPC skills template:', error);
+        return null;
+    }
+}
+
+function parseNpcSkillAssignments(xmlContent) {
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return new Map();
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const result = new Map();
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        for (const npcNode of npcNodes) {
+            const nameNode = npcNode.getElementsByTagName('name')[0];
+            const npcName = nameNode ? nameNode.textContent.trim() : '';
+            if (!npcName) {
+                continue;
+            }
+
+            const skillEntries = [];
+            const skillNodes = Array.from(npcNode.getElementsByTagName('skill'));
+            for (const skillNode of skillNodes) {
+                const skillNameNode = skillNode.getElementsByTagName('name')[0];
+                const priorityNode = skillNode.getElementsByTagName('priority')[0];
+                const skillName = skillNameNode ? skillNameNode.textContent.trim() : '';
+                if (!skillName) {
+                    continue;
+                }
+
+                const parsedPriority = Number.parseInt(priorityNode ? priorityNode.textContent.trim() : '', 10);
+                const priority = Number.isFinite(parsedPriority) ? parsedPriority : 1;
+                const clampedPriority = Math.max(1, Math.min(3, priority));
+
+                skillEntries.push({
+                    name: skillName,
+                    priority: clampedPriority
+                });
+            }
+
+            if (skillEntries.length) {
+                result.set(npcName.toLowerCase(), {
+                    name: npcName,
+                    skills: skillEntries
+                });
+            }
+        }
+
+        return result;
+    } catch (error) {
+        console.warn('Failed to parse NPC skills XML:', error.message);
+        return new Map();
+    }
+}
+
+async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath }) {
+    try {
+        const availableSkillsMap = Player.getAvailableSkills();
+        if (!availableSkillsMap || availableSkillsMap.size === 0) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const skillsForPrompt = Array.from(availableSkillsMap.values())
+            .filter(skill => skill && typeof skill.name === 'string' && skill.name.trim())
+            .map(skill => ({
+                name: skill.name.trim(),
+                description: skill.description || ''
+            }));
+
+        if (!skillsForPrompt.length) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const skillsPrompt = renderNpcSkillsPrompt(skillsForPrompt);
+        if (!skillsPrompt) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const messages = [...baseMessages, { role: 'user', content: skillsPrompt }];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 1200,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const requestStart = Date.now();
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 45000
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const skillResponse = response.data.choices[0]?.message?.content || '';
+        const durationSeconds = (Date.now() - requestStart) / 1000;
+
+        if (logPath) {
+            const logDir = path.dirname(logPath);
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const lines = [
+                formatDurationLine(durationSeconds),
+                '=== NPC SKILLS PROMPT ===',
+                skillsPrompt,
+                '\n=== NPC SKILLS RESPONSE ===',
+                skillResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, lines.join('\n'), 'utf8');
+        }
+
+        const assignments = parseNpcSkillAssignments(skillResponse);
+        const conversation = [...messages, { role: 'assistant', content: skillResponse }];
+
+        return {
+            assignments,
+            conversation,
+            prompt: skillsPrompt,
+            response: skillResponse
+        };
+    } catch (error) {
+        console.warn('Failed to request NPC skill assignments:', error.message);
+        return {
+            assignments: new Map(),
+            conversation: [...baseMessages]
+        };
+    }
+}
+
+function applyNpcSkillAllocations(npc, assignment) {
+    if (!npc || !assignment || !Array.isArray(assignment) || assignment.length === 0) {
+        return;
+    }
+
+    const availableSkills = Player.getAvailableSkills();
+    if (!availableSkills || availableSkills.size === 0) {
+        return;
+    }
+
+    const availableLookup = new Map();
+    for (const skillName of availableSkills.keys()) {
+        if (typeof skillName === 'string') {
+            availableLookup.set(skillName.toLowerCase(), skillName);
+        }
+    }
+
+    const totalPointsRaw = typeof npc.getUnspentSkillPoints === 'function'
+        ? npc.getUnspentSkillPoints()
+        : 0;
+    const totalPoints = Number.isFinite(totalPointsRaw) ? totalPointsRaw : 0;
+    if (totalPoints <= 0) {
+        return;
+    }
+
+    const usable = assignment
+        .map(entry => {
+            const skillName = typeof entry.name === 'string' ? entry.name.trim() : '';
+            if (!skillName) {
+                return null;
+            }
+            const canonicalName = availableLookup.get(skillName.toLowerCase());
+            if (!canonicalName || !availableSkills.has(canonicalName)) {
+                return null;
+            }
+            const priority = Number.isFinite(entry.priority) ? entry.priority : 1;
+            const clampedPriority = Math.max(1, Math.min(3, Math.round(priority)));
+            return {
+                name: canonicalName,
+                priority: clampedPriority
+            };
+        })
+        .filter(Boolean);
+
+    if (!usable.length) {
+        return;
+    }
+
+    const totalPriority = usable.reduce((sum, entry) => sum + entry.priority, 0);
+    if (totalPriority <= 0) {
+        return;
+    }
+
+    const allocations = usable.map(entry => ({
+        name: entry.name,
+        points: Math.floor((totalPoints * entry.priority) / totalPriority)
+    }));
+
+    let spent = allocations.reduce((sum, entry) => sum + entry.points, 0);
+    let remaining = totalPoints - spent;
+
+    while (remaining > 0 && allocations.length > 0) {
+        const index = Math.floor(Math.random() * allocations.length);
+        allocations[index].points += 1;
+        remaining -= 1;
+    }
+
+    let totalSpent = 0;
+    for (const allocation of allocations) {
+        const baseValue = npc.getSkillValue(allocation.name) ?? 1;
+        if (allocation.points <= 0) {
+            continue;
+        }
+
+        const targetValue = Math.max(1, baseValue + allocation.points);
+        const applied = npc.setSkillValue(allocation.name, targetValue);
+        if (applied) {
+            totalSpent += allocation.points;
+        }
+    }
+
+    if (totalSpent > 0 && typeof npc.setUnspentSkillPoints === 'function') {
+        const remainingPoints = Math.max(0, totalPoints - totalSpent);
+        npc.setUnspentSkillPoints(remainingPoints);
+    }
+}
+
+function renderNpcAbilitiesPrompt() {
+    try {
+        return promptEnv.render('npc-generate-abilities.xml.njk', {});
+    } catch (error) {
+        console.error('Error rendering NPC abilities template:', error);
+        return null;
+    }
+}
+
+function parseNpcAbilityAssignments(xmlContent) {
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return new Map();
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const mapping = new Map();
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        for (const npcNode of npcNodes) {
+            const nameNode = npcNode.getElementsByTagName('name')[0];
+            const npcName = nameNode ? nameNode.textContent.trim() : '';
+            if (!npcName) {
+                continue;
+            }
+
+            const abilities = [];
+            const abilityNodes = Array.from(npcNode.getElementsByTagName('ability'));
+            for (const abilityNode of abilityNodes) {
+                const abilityNameNode = abilityNode.getElementsByTagName('name')[0];
+                const descriptionNode = abilityNode.getElementsByTagName('description')[0];
+                const typeNode = abilityNode.getElementsByTagName('type')[0];
+                const levelNode = abilityNode.getElementsByTagName('level')[0];
+
+                const abilityName = abilityNameNode ? abilityNameNode.textContent.trim() : '';
+                if (!abilityName) {
+                    continue;
+                }
+
+                const description = descriptionNode ? descriptionNode.textContent.trim() : '';
+                const rawType = typeNode ? typeNode.textContent.trim() : '';
+                const loweredType = rawType.toLowerCase();
+                const normalizedType = loweredType === 'active' || loweredType === 'passive' || loweredType === 'triggered'
+                    ? loweredType.charAt(0).toUpperCase() + loweredType.slice(1)
+                    : 'Passive';
+
+                const parsedLevel = Number.parseInt(levelNode ? levelNode.textContent.trim() : '', 10);
+                const level = Number.isFinite(parsedLevel) ? Math.max(1, Math.min(20, parsedLevel)) : 1;
+
+                abilities.push({
+                    name: abilityName,
+                    description,
+                    type: normalizedType,
+                    level
+                });
+            }
+
+            if (abilities.length) {
+                mapping.set(npcName.toLowerCase(), {
+                    name: npcName,
+                    abilities
+                });
+            }
+        }
+
+        return mapping;
+    } catch (error) {
+        console.warn('Failed to parse NPC abilities XML:', error.message);
+        return new Map();
+    }
+}
+
+async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath }) {
+    try {
+        const abilitiesPrompt = renderNpcAbilitiesPrompt();
+        if (!abilitiesPrompt) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const messages = [...baseMessages, { role: 'user', content: abilitiesPrompt }];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 1600,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const requestStart = Date.now();
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
+
+        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+            return {
+                assignments: new Map(),
+                conversation: [...baseMessages]
+            };
+        }
+
+        const abilityResponse = response.data.choices[0]?.message?.content || '';
+        const durationSeconds = (Date.now() - requestStart) / 1000;
+
+        if (logPath) {
+            const logDir = path.dirname(logPath);
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const lines = [
+                formatDurationLine(durationSeconds),
+                '=== NPC ABILITIES PROMPT ===',
+                abilitiesPrompt,
+                '\n=== NPC ABILITIES RESPONSE ===',
+                abilityResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, lines.join('\n'), 'utf8');
+        }
+
+        const assignments = parseNpcAbilityAssignments(abilityResponse);
+        const conversation = [...messages, { role: 'assistant', content: abilityResponse }];
+
+        return {
+            assignments,
+            conversation,
+            prompt: abilitiesPrompt,
+            response: abilityResponse
+        };
+    } catch (error) {
+        console.warn('Failed to request NPC ability assignments:', error.message);
+        return {
+            assignments: new Map(),
+            conversation: [...baseMessages]
+        };
+    }
+}
+
+function applyNpcAbilities(npc, abilityList) {
+    if (!npc || !Array.isArray(abilityList) || abilityList.length === 0) {
+        return;
+    }
+
+    if (typeof npc.setAbilities !== 'function') {
+        return;
+    }
+
+    npc.setAbilities(abilityList);
+}
+
 function parseInventoryItems(xmlContent) {
     try {
         const parser = new DOMParser();
@@ -4301,7 +4713,7 @@ async function enforceBannedNpcNames({
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 20000
+                timeout: 60000
             });
             regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -5121,9 +5533,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         let npcs = parseLocationNpcs(npcResponse);
+        const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
 
         if (npcs.length) {
-            const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
             npcs = await enforceBannedNpcNames({
                 npcDataList: npcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
@@ -5132,6 +5544,42 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 model,
                 apiKey
             });
+        }
+
+        let npcSkillAssignments = new Map();
+        let skillConversation = [...baseConversation];
+        if (npcs.length) {
+            try {
+                const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
+                const skillResult = await requestNpcSkillAssignments({
+                    baseMessages: baseConversation,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    logPath: skillsLogPath
+                });
+                npcSkillAssignments = skillResult.assignments || new Map();
+                skillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : skillConversation;
+            } catch (skillError) {
+                console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
+            }
+        }
+
+        let npcAbilityAssignments = new Map();
+        if (npcs.length) {
+            try {
+                const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
+                const abilityResult = await requestNpcAbilityAssignments({
+                    baseMessages: skillConversation,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    logPath: abilitiesLogPath
+                });
+                npcAbilityAssignments = abilityResult.assignments || new Map();
+            } catch (abilityError) {
+                console.warn(`Failed to generate abilities for location NPCs (${location.id}):`, abilityError.message);
+            }
         }
 
         const created = [];
@@ -5182,6 +5630,16 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             location.addNpcId(npc.id);
             created.push(npc);
             console.log(`🤝 Created NPC ${npc.name} (${npc.id}) for location ${location.id}`);
+
+            const skillAssignmentEntry = npcSkillAssignments.get(((npcData.name || '').trim().toLowerCase()));
+            if (skillAssignmentEntry && Array.isArray(skillAssignmentEntry.skills) && skillAssignmentEntry.skills.length) {
+                applyNpcSkillAllocations(npc, skillAssignmentEntry.skills);
+            }
+
+            const abilityAssignmentEntry = npcAbilityAssignments.get(((npcData.name || '').trim().toLowerCase()));
+            if (abilityAssignmentEntry && Array.isArray(abilityAssignmentEntry.abilities) && abilityAssignmentEntry.abilities.length) {
+                applyNpcAbilities(npc, abilityAssignmentEntry.abilities);
+            }
 
             await generateInventoryForCharacter({
                 character: npc,
@@ -5330,9 +5788,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         }
 
         let parsedNpcs = parseRegionNpcs(npcResponse);
+        const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
 
         if (parsedNpcs.length) {
-            const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
@@ -5341,6 +5799,42 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 model,
                 apiKey
             });
+        }
+
+        let regionNpcSkillAssignments = new Map();
+        let regionSkillConversation = [...baseConversation];
+        if (parsedNpcs.length) {
+            try {
+                const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
+                const skillResult = await requestNpcSkillAssignments({
+                    baseMessages: baseConversation,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    logPath: skillsLogPath
+                });
+                regionNpcSkillAssignments = skillResult.assignments || new Map();
+                regionSkillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : regionSkillConversation;
+            } catch (skillError) {
+                console.warn(`Failed to generate skills for region NPCs (${region.id}):`, skillError.message);
+            }
+        }
+
+        let regionNpcAbilityAssignments = new Map();
+        if (parsedNpcs.length) {
+            try {
+                const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
+                const abilityResult = await requestNpcAbilityAssignments({
+                    baseMessages: regionSkillConversation,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    logPath: abilitiesLogPath
+                });
+                regionNpcAbilityAssignments = abilityResult.assignments || new Map();
+            } catch (abilityError) {
+                console.warn(`Failed to generate abilities for region NPCs (${region.id}):`, abilityError.message);
+            }
         }
 
         const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];
@@ -5415,6 +5909,16 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             region.npcIds.push(npc.id);
             created.push(npc);
             console.log(`🌟 Created region NPC ${npc.name} (${npc.id}) for region ${region.id}`);
+
+            const regionSkillAssignment = regionNpcSkillAssignments.get(((npcData.name || '').trim().toLowerCase()));
+            if (regionSkillAssignment && Array.isArray(regionSkillAssignment.skills) && regionSkillAssignment.skills.length) {
+                applyNpcSkillAllocations(npc, regionSkillAssignment.skills);
+            }
+
+            const regionAbilityAssignment = regionNpcAbilityAssignments.get(((npcData.name || '').trim().toLowerCase()));
+            if (regionAbilityAssignment && Array.isArray(regionAbilityAssignment.abilities) && regionAbilityAssignment.abilities.length) {
+                applyNpcAbilities(npc, regionAbilityAssignment.abilities);
+            }
 
             await generateInventoryForCharacter({
                 character: npc,

@@ -33,6 +33,7 @@ class Player {
     #gearSlots;
     #gearSlotsByType;
     #gearSlotNameIndex;
+    #abilities;
     static #npcInventoryChangeHandler = null;
 
     static availableSkills = new Map();
@@ -192,6 +193,7 @@ class Player {
         this.#dispositions = this.#initializeDispositions(options.dispositions);
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
+        this.#abilities = this.#normalizeAbilities(options.abilities);
         this.#initializeGear(options.gear);
 
         const providedPoints = Number(options.unspentSkillPoints);
@@ -1004,6 +1006,60 @@ class Player {
         return normalized;
     }
 
+    #normalizeAbilities(abilitiesInput = []) {
+        let entries;
+        if (Array.isArray(abilitiesInput)) {
+            entries = abilitiesInput;
+        } else if (abilitiesInput && typeof abilitiesInput === 'object') {
+            entries = Object.values(abilitiesInput);
+        } else {
+            entries = [];
+        }
+
+        const normalized = [];
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
+            }
+
+            let abilityObj = entry;
+            if (typeof entry === 'string') {
+                abilityObj = { name: entry };
+            }
+
+            if (!abilityObj || typeof abilityObj !== 'object') {
+                continue;
+            }
+
+            const name = typeof abilityObj.name === 'string' ? abilityObj.name.trim() : '';
+            if (!name) {
+                continue;
+            }
+
+            const description = typeof abilityObj.description === 'string' ? abilityObj.description.trim() : '';
+
+            let type = typeof abilityObj.type === 'string' ? abilityObj.type.trim() : '';
+            const lowered = type.toLowerCase();
+            if (lowered === 'active' || lowered === 'passive' || lowered === 'triggered') {
+                type = lowered.charAt(0).toUpperCase() + lowered.slice(1);
+            } else {
+                type = 'Passive';
+            }
+
+            const parsedLevel = Number.parseInt(abilityObj.level, 10);
+            const level = Number.isFinite(parsedLevel) ? Math.max(1, Math.min(20, parsedLevel)) : 1;
+
+            normalized.push({
+                name,
+                description,
+                type,
+                level
+            });
+        }
+
+        return normalized;
+    }
+
     getStatusEffects() {
         return this.#statusEffects.map(effect => ({ ...effect }));
     }
@@ -1409,6 +1465,7 @@ class Player {
             partyMembers: this.getPartyMembers(),
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
+            abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
@@ -1439,6 +1496,7 @@ class Player {
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
+            abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
@@ -1469,6 +1527,7 @@ class Player {
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
+            abilities: Array.isArray(data.abilities) ? data.abilities : (data.abilities && typeof data.abilities === 'object' ? data.abilities : []),
             unspentSkillPoints: data.unspentSkillPoints,
             statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
             gear: data.gear && typeof data.gear === 'object' ? data.gear : null,
@@ -1729,6 +1788,10 @@ class Player {
         return new Map(this.#skills);
     }
 
+    getAbilities() {
+        return this.#abilities.map(ability => ({ ...ability }));
+    }
+
     getSkillValue(skillName) {
         if (typeof skillName !== 'string') {
             return null;
@@ -1752,6 +1815,18 @@ class Player {
         this.#skills.set(trimmed, resolved);
         this.#lastUpdated = new Date().toISOString();
         return true;
+    }
+
+    setAbilities(abilitiesInput = []) {
+        this.#abilities = this.#normalizeAbilities(abilitiesInput);
+        this.#lastUpdated = new Date().toISOString();
+        return this.getAbilities();
+    }
+
+    addAbility(abilityInput) {
+        const current = this.getAbilities();
+        current.push(abilityInput);
+        return this.setAbilities(current);
     }
 
     getUnspentSkillPoints() {
