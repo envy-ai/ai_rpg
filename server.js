@@ -1126,6 +1126,15 @@ function serializeNpcForClient(npc) {
         unspentSkillPoints = null;
     }
 
+    let inventory = [];
+    try {
+        if (typeof npc.getInventoryItems === 'function') {
+            inventory = npc.getInventoryItems().map(item => typeof item.toJSON === 'function' ? item.toJSON() : item);
+        }
+    } catch (_) {
+        inventory = [];
+    }
+
     return {
         id: npc.id,
         name: npc.name,
@@ -1145,6 +1154,7 @@ function serializeNpcForClient(npc) {
         abilities,
         statusEffects,
         unspentSkillPoints,
+        inventory,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated
     };

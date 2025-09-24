@@ -342,7 +342,27 @@
         </div>
     </div>
 
-    <div id="npcEditBackdrop" class="modal-backdrop" hidden></div>
+    <div id="npcModalBackdrop" class="modal-backdrop" hidden></div>
+    <div id="npcInventoryModal" class="modal npc-inventory-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcInventoryModalTitle">NPC Inventory</h2>
+                <button type="button" class="modal__close" id="npcInventoryCloseBtn" aria-label="Close NPC inventory">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body npc-inventory-body">
+                <div class="npc-inventory-header">
+                    <h3 id="npcInventoryName">Character</h3>
+                    <span class="inventory-count" id="npcInventoryCount">0 items</span>
+                </div>
+                <div class="npc-inventory-scroll">
+                    <div class="inventory-grid" id="npcInventoryGrid"></div>
+                </div>
+                <div class="inventory-empty" id="npcInventoryEmpty">Inventory is empty.</div>
+            </div>
+        </div>
+    </div>
     <div id="npcEditModal" class="modal npc-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -816,7 +836,8 @@
         };
 
         const npcEditModal = document.getElementById('npcEditModal');
-        const npcEditBackdrop = document.getElementById('npcEditBackdrop');
+        const npcInventoryModal = document.getElementById('npcInventoryModal');
+        const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -839,12 +860,18 @@
         const npcEditCloseBtn = document.getElementById('npcEditCloseBtn');
         const npcEditStatus = document.getElementById('npcEditStatus');
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
+        const npcInventoryGrid = document.getElementById('npcInventoryGrid');
+        const npcInventoryEmpty = document.getElementById('npcInventoryEmpty');
+        const npcInventoryCount = document.getElementById('npcInventoryCount');
+        const npcInventoryName = document.getElementById('npcInventoryName');
+        const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
 
         let currentNpcEditId = null;
         let currentNpcOriginalHealthAttribute = '';
+        let currentNpcInventory = [];
 
         function isNpcEditorAvailable() {
-            return Boolean(npcEditModal && npcEditForm && npcEditBackdrop);
+            return Boolean(npcEditModal && npcEditForm && npcModalBackdrop);
         }
 
         function formatNpcLabel(value) {
@@ -1216,11 +1243,32 @@
             }
             npcEditModal.setAttribute('aria-hidden', 'true');
             npcEditModal.setAttribute('hidden', '');
-            npcEditBackdrop.setAttribute('hidden', '');
-            document.body.classList.remove('modal-open');
+            if (npcInventoryModal.hasAttribute('hidden')) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
             currentNpcEditId = null;
             currentNpcOriginalHealthAttribute = '';
             updateNpcEditStatus('');
+        }
+
+        function closeNpcInventoryModal() {
+            if (!npcInventoryModal) {
+                return;
+            }
+            npcInventoryModal.setAttribute('aria-hidden', 'true');
+            npcInventoryModal.setAttribute('hidden', '');
+            npcInventoryGrid.innerHTML = '';
+            npcInventoryEmpty.style.display = 'block';
+            npcInventoryCount.textContent = '0 items';
+            currentNpcInventory = [];
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+            if (npcEditModal.hasAttribute('hidden')) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
         }
 
         if (npcAddSkillBtn) {
@@ -1253,9 +1301,37 @@
             });
         }
 
-        if (npcEditBackdrop) {
-            npcEditBackdrop.addEventListener('click', () => {
-                closeNpcEditModal();
+        if (npcInventoryCloseBtn) {
+            npcInventoryCloseBtn.addEventListener('click', () => {
+                closeNpcInventoryModal();
+            });
+        }
+
+        if (npcModalBackdrop) {
+            npcModalBackdrop.addEventListener('click', (event) => {
+                if (event.target === npcModalBackdrop) {
+                    if (!npcInventoryModal.hasAttribute('hidden')) {
+                        closeNpcInventoryModal();
+                    } else {
+                        closeNpcEditModal();
+                    }
+                }
+            });
+        }
+
+        if (npcEditModal) {
+            npcEditModal.addEventListener('click', (event) => {
+                if (event.target === npcEditModal) {
+                    closeNpcEditModal();
+                }
+            });
+        }
+
+        if (npcInventoryModal) {
+            npcInventoryModal.addEventListener('click', (event) => {
+                if (event.target === npcInventoryModal) {
+                    closeNpcInventoryModal();
+                }
             });
         }
 
@@ -1389,10 +1465,93 @@
             });
         }
 
+        function renderNpcInventory(items = []) {
+            if (!npcInventoryGrid || !npcInventoryEmpty || !npcInventoryCount) {
+                return;
+            }
+
+            const safeItems = Array.isArray(items) ? items : [];
+            npcInventoryGrid.innerHTML = '';
+            npcInventoryCount.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
+            npcInventoryEmpty.style.display = safeItems.length ? 'none' : 'block';
+            npcInventoryGrid.style.display = safeItems.length ? 'flex' : 'none';
+
+            safeItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'location-entity-card inventory-card';
+
+                const icon = document.createElement('div');
+                icon.className = 'inventory-icon';
+                renderEntityImage({
+                    element: icon,
+                    entityType: 'thing',
+                    entityId: item.id,
+                    imageId: item.imageId || null,
+                    altText: item.name || 'Inventory item',
+                    placeholderIcon: item.thingType === 'scenery' ? '🏞️' : '🎁',
+                    placeholderClass: 'location-entity-placeholder'
+                });
+
+                const name = document.createElement('div');
+                name.className = 'inventory-name';
+                name.textContent = item.name || 'Unknown Item';
+                applyRarityClass(name, item.rarity);
+
+                card.appendChild(icon);
+                card.appendChild(name);
+
+                card.addEventListener('mouseenter', (event) => {
+                    if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
+                        const description = item.description || 'No description provided.';
+                        const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
+                        const tooltipContent = formatThingTooltip(item) || fallbackTooltip;
+                        window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
+                    }
+                });
+
+                card.addEventListener('mousemove', (event) => {
+                    if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
+                        window.floatingTooltipController.move(event);
+                    }
+                });
+
+                card.addEventListener('mouseleave', () => {
+                    if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
+                        window.floatingTooltipController.hide();
+                    }
+                });
+
+                npcInventoryGrid.appendChild(card);
+            });
+        }
+
+        function showNpcInventoryModal(npc) {
+            if (!npc || !npcInventoryModal || !npcModalBackdrop) {
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            npcInventoryModal.setAttribute('aria-hidden', 'false');
+            npcInventoryModal.removeAttribute('hidden');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+
+            npcInventoryName.textContent = npc.name || 'Character';
+            const items = Array.isArray(npc.inventory) ? npc.inventory : [];
+            currentNpcInventory = items;
+            renderNpcInventory(items);
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                 event.preventDefault();
                 closeNpcEditModal();
+            } else if (event.key === 'Escape' && npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeNpcInventoryModal();
             }
         });
 
@@ -1508,6 +1667,12 @@
                 editButton.textContent = 'Edit';
                 menu.appendChild(editButton);
 
+                const inventoryButton = document.createElement('button');
+                inventoryButton.type = 'button';
+                inventoryButton.className = 'npc-card-menu-item';
+                inventoryButton.textContent = 'Inventory';
+                menu.appendChild(inventoryButton);
+
                 button.addEventListener('click', (event) => {
                     event.stopPropagation();
                     const wasOpen = npcMenuState.openMenu === menu;
@@ -1525,6 +1690,13 @@
                     closeNpcContextMenu();
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcEditModal(latestNpc);
+                });
+
+                inventoryButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    closeNpcContextMenu();
+                    const latestNpc = npcDataCache.get(npc.id) || npc;
+                    showNpcInventoryModal(latestNpc);
                 });
 
                 menu.addEventListener('click', (event) => event.stopPropagation());

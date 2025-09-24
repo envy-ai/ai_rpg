@@ -1843,6 +1843,36 @@ body.modal-open {
   cursor: not-allowed;
 }
 
+.npc-inventory-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.npc-inventory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #f8fafc;
+}
+
+.npc-inventory-scroll {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.npc-inventory-modal .inventory-grid {
+  justify-content: center;
+}
+
+.npc-inventory-modal .inventory-card {
+  min-width: 120px;
+  max-width: 140px;
+}
+
 .npc-attribute-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
