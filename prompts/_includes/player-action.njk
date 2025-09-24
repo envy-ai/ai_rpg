@@ -7,6 +7,16 @@ The player is attempting:
 {% if isAttack %}
 This action is an attack. Here is how the attack resolved:
 
+Attacker: {{ attacker.name }}
+Hit: {{ attackOutcome.hit }}{% if attackOutcome.hit %}
+Weapon/ability: {{ attacker.weapon }}{{ attacker.ability }}
+Target: {{ attackOutcome.target.name }}
+Defeated: {{ attackOutcome.target.defeated }}
+% health lost: {{ attackOutcome.target.healthLostPercent }}
+% health remaining: {{ attackOutcome.target.remainingHealthPercent }}
+{% endif %}
+
+Provide a response in prose, strictly adhering to the outcome of the attack. Use the % health lost and % health remaining to describe the degree of damage. Use your judgement to determine whether "defeated" means killed, rendered unconscious, or just unable to continue fighting.  Note that the target may choose to surrender or stop fighting even if they aren't defeated.
 {% else %}
 <actionStatus>
 {{ success_or_failure }}
