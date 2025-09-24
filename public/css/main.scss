@@ -1214,7 +1214,7 @@ p .rarity-epic {
     border: none;
     border-radius: $border-radius;
     @include glass-effect($glass-bg-light);
-    color: $white;
+    color: $darkgrey;
     font-size: 16px;
     @include transition(background);
 

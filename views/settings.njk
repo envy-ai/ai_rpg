@@ -130,6 +130,20 @@
                         <div class="help-text">These skills will be added before new ones are generated.</div>
                     </div>
 
+                    <div class="form-divider">Character Options</div>
+
+                    <div class="form-group full-width">
+                        <label for="availableClasses">Available Classes (one per line)</label>
+                        <textarea id="availableClasses" name="availableClasses" rows="4" placeholder="Warrior\nRanger\nArcane Scholar"></textarea>
+                        <div class="help-text">Classes the player can pick during character creation.</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="availableRaces">Available Races (one per line)</label>
+                        <textarea id="availableRaces" name="availableRaces" rows="4" placeholder="Human\nElf\nClockwork Automaton"></textarea>
+                        <div class="help-text">Races or species available for new characters.</div>
+                    </div>
+
                     <!-- Preview Section -->
                     <div id="previewSection" class="preview-section" style="display: none;">
                         <div class="preview-title">Setting Preview</div>
@@ -141,6 +155,7 @@
                             <button type="button" id="clearBtn" class="btn btn-secondary">Clear</button>
                             <button type="submit" id="submitBtn" class="btn btn-primary">Create Setting</button>
                         </div>
+                        <button type="button" id="generateBtn" class="btn btn-accent">✨ Auto-Fill Blank Fields</button>
                     </div>
                 </form>
             </div>
@@ -272,6 +287,8 @@
             document.getElementById('defaultStartingLocation').value = setting.defaultStartingLocation || '';
             document.getElementById('defaultNumSkills').value = setting.defaultNumSkills || 20;
             document.getElementById('defaultExistingSkills').value = Array.isArray(setting.defaultExistingSkills) ? setting.defaultExistingSkills.join('\n') : '';
+            document.getElementById('availableClasses').value = Array.isArray(setting.availableClasses) ? setting.availableClasses.join('\n') : '';
+            document.getElementById('availableRaces').value = Array.isArray(setting.availableRaces) ? setting.availableRaces.join('\n') : '';
 
             // Update form title and button
             document.getElementById('formTitle').textContent = `✏️ Edit Setting: ${setting.name}`;
@@ -398,6 +415,14 @@
             if (defaultExistingSkillsField) {
                 defaultExistingSkillsField.value = '';
             }
+            const availableClassesField = document.getElementById('availableClasses');
+            if (availableClassesField) {
+                availableClassesField.value = '';
+            }
+            const availableRacesField = document.getElementById('availableRaces');
+            if (availableRacesField) {
+                availableRacesField.value = '';
+            }
             const defaultPlayerNameField = document.getElementById('defaultPlayerName');
             if (defaultPlayerNameField) {
                 defaultPlayerNameField.value = '';
@@ -435,12 +460,31 @@
             const difficulty = formData.get('difficulty') || 'Not set';
             const magicLevel = formData.get('magicLevel') || 'Not set';
             const techLevel = formData.get('techLevel') || 'Not set';
+            const classesText = formData.get('availableClasses') || '';
+            const racesText = formData.get('availableRaces') || '';
+
+            const classesCount = splitLines(classesText).length;
+            const racesCount = splitLines(racesText).length;
+            const extraLines = [];
+            if (classesCount > 0) {
+                extraLines.push(`Classes: ${classesCount}`);
+            }
+            if (racesCount > 0) {
+                extraLines.push(`Races: ${racesCount}`);
+            }
             
             content.innerHTML = `
                 <strong>${name}</strong><br>
                 <small>${theme}/${genre} setting with ${tone} tone and ${difficulty} difficulty</small><br>
-                Magic: ${magicLevel} • Tech: ${techLevel}
+                Magic: ${magicLevel} • Tech: ${techLevel}${extraLines.length ? `<br>${extraLines.join(' • ')}` : ''}
             `;
+        }
+
+        function splitLines(value) {
+            return (value || '')
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
         }
 
         function setupEventListeners() {
@@ -455,10 +499,9 @@
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;
                 settingData.defaultNumSkills = parseInt(settingData.defaultNumSkills) || 20;
                 const defaultExistingSkillsText = settingData.defaultExistingSkills || '';
-                settingData.defaultExistingSkills = defaultExistingSkillsText
-                    .split(/\r?\n/)
-                    .map(line => line.trim())
-                    .filter(line => line.length > 0);
+                settingData.defaultExistingSkills = splitLines(defaultExistingSkillsText);
+                settingData.availableClasses = splitLines(settingData.availableClasses);
+                settingData.availableRaces = splitLines(settingData.availableRaces);
                 
                 try {
                     let response;
@@ -538,7 +581,88 @@
             document.getElementById('settingForm').addEventListener('input', updatePreview);
             document.getElementById('settingForm').addEventListener('change', updatePreview);
 
+            const generateBtn = document.getElementById('generateBtn');
+            if (generateBtn) {
+                generateBtn.addEventListener('click', () => handleGenerateFill(generateBtn));
+            }
+
             // Save/Load buttons removed; auto behaviors implemented
+        }
+
+        async function handleGenerateFill(buttonEl) {
+            if (!buttonEl || buttonEl.disabled) {
+                return;
+            }
+
+            buttonEl.disabled = true;
+            const originalText = buttonEl.textContent;
+            buttonEl.textContent = '✨ Generating...';
+
+            try {
+                const form = document.getElementById('settingForm');
+                const formData = new FormData(form);
+                const settingPayload = Object.fromEntries(formData.entries());
+                settingPayload.playerStartingLevel = settingPayload.playerStartingLevel || '';
+                settingPayload.defaultNumSkills = settingPayload.defaultNumSkills || '';
+                settingPayload.defaultExistingSkills = splitLines(settingPayload.defaultExistingSkills);
+                settingPayload.availableClasses = splitLines(settingPayload.availableClasses);
+                settingPayload.availableRaces = splitLines(settingPayload.availableRaces);
+
+                const response = await fetch('/api/settings/fill-missing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ setting: settingPayload })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data?.success) {
+                    const errorMessage = data?.error || `Unexpected error (${response.status})`;
+                    showMessage('Generation failed: ' + errorMessage, 'error');
+                    return;
+                }
+
+                const filled = data.setting || {};
+                const applyText = (fieldId, value) => {
+                    const field = document.getElementById(fieldId);
+                    if (!field || value === undefined || value === null) {
+                        return;
+                    }
+                    if (Array.isArray(value)) {
+                        field.value = value.join('\n');
+                    } else {
+                        field.value = value;
+                    }
+                };
+
+                Object.entries({
+                    name: filled.name,
+                    description: filled.description,
+                    theme: filled.theme,
+                    genre: filled.genre,
+                    startingLocationType: filled.startingLocationType,
+                    magicLevel: filled.magicLevel,
+                    techLevel: filled.techLevel,
+                    tone: filled.tone,
+                    difficulty: filled.difficulty,
+                    playerStartingLevel: filled.playerStartingLevel,
+                    defaultPlayerName: filled.defaultPlayerName,
+                    defaultPlayerDescription: filled.defaultPlayerDescription,
+                    defaultStartingLocation: filled.defaultStartingLocation,
+                    defaultNumSkills: filled.defaultNumSkills,
+                    defaultExistingSkills: filled.defaultExistingSkills,
+                    availableClasses: filled.availableClasses,
+                    availableRaces: filled.availableRaces
+                }).forEach(([fieldId, value]) => applyText(fieldId, value));
+
+                showMessage('Blank fields populated successfully.', 'success');
+                updatePreview();
+            } catch (error) {
+                showMessage('Generation failed: ' + (error?.message || error), 'error');
+            } finally {
+                buttonEl.disabled = false;
+                buttonEl.textContent = originalText;
+            }
         }
 
         function showMessage(message, type) {

@@ -55,6 +55,36 @@
     {% set defaultStartingLocation = defaults.startingLocation | default('') %}
     {% set defaultNumSkills = defaults.numSkills | default(20) %}
     {% set defaultExistingSkills = (defaults.existingSkills or []) | join('\n') %}
+    {% set availableClasses = defaults.availableClasses or [] %}
+    {% set availableRaces = defaults.availableRaces or [] %}
+    {% set defaultPlayerClass = defaults.playerClass | default('') %}
+    {% set defaultPlayerRace = defaults.playerRace | default('') %}
+    {% set classInOptions = defaultPlayerClass and (defaultPlayerClass in availableClasses) %}
+    {% set raceInOptions = defaultPlayerRace and (defaultPlayerRace in availableRaces) %}
+    {% set classSelectValue = '' %}
+    {% if classInOptions %}
+        {% set classSelectValue = defaultPlayerClass %}
+    {% elseif defaultPlayerClass %}
+        {% set classSelectValue = '__other' %}
+    {% elseif (availableClasses | length) == 0 %}
+        {% set classSelectValue = '__other' %}
+    {% endif %}
+    {% set classOtherValue = '' %}
+    {% if defaultPlayerClass and not classInOptions %}
+        {% set classOtherValue = defaultPlayerClass %}
+    {% endif %}
+    {% set raceSelectValue = '' %}
+    {% if raceInOptions %}
+        {% set raceSelectValue = defaultPlayerRace %}
+    {% elseif defaultPlayerRace %}
+        {% set raceSelectValue = '__other' %}
+    {% elseif (availableRaces | length) == 0 %}
+        {% set raceSelectValue = '__other' %}
+    {% endif %}
+    {% set raceOtherValue = '' %}
+    {% if defaultPlayerRace and not raceInOptions %}
+        {% set raceOtherValue = defaultPlayerRace %}
+    {% endif %}
 </head>
 <body class="new-game-page">
     <div class="container">
@@ -78,6 +108,32 @@
                             <label for="playerDescription">Player Description</label>
                             <textarea id="playerDescription" name="playerDescription" rows="3" placeholder="{{ inputPlaceholderDesc }}">{{ defaultPlayerDescription }}</textarea>
                             <div class="help-text">{{ helpDesc }}</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="playerClassSelect">Class</label>
+                            <select id="playerClassSelect" name="playerClassSelect" data-other-input="playerClassOther">
+                                <option value="">-- Select Class --</option>
+                                {% for cls in availableClasses %}
+                                    <option value="{{ cls }}" {% if cls == classSelectValue %}selected{% endif %}>{{ cls }}</option>
+                                {% endfor %}
+                                <option value="__other" {% if classSelectValue == '__other' %}selected{% endif %}>Other...</option>
+                            </select>
+                            <input type="text" id="playerClassOther" name="playerClassOther" value="{{ classOtherValue }}" placeholder="Custom class" style="display: none; margin-top: 0.5rem;">
+                            <div class="help-text">Choose a class from the setting or provide your own.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="playerRaceSelect">Race</label>
+                            <select id="playerRaceSelect" name="playerRaceSelect" data-other-input="playerRaceOther">
+                                <option value="">-- Select Race --</option>
+                                {% for race in availableRaces %}
+                                    <option value="{{ race }}" {% if race == raceSelectValue %}selected{% endif %}>{{ race }}</option>
+                                {% endfor %}
+                                <option value="__other" {% if raceSelectValue == '__other' %}selected{% endif %}>Other...</option>
+                            </select>
+                            <input type="text" id="playerRaceOther" name="playerRaceOther" value="{{ raceOtherValue }}" placeholder="Custom race" style="display: none; margin-top: 0.5rem;">
+                            <div class="help-text">Pick a race from the setting or enter a custom one.</div>
                         </div>
 
                         <div class="form-group full-width">

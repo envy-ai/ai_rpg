@@ -28,12 +28,18 @@ class SettingInfo {
   #defaultExistingSkills;
   #createdAt;
   #lastUpdated;
+  #availableClasses;
+  #availableRaces;
 
   // Static indexing maps
   static #indexByID = new Map();
   static #indexByName = new Map();
 
   static #normalizeExistingSkills(value) {
+    return SettingInfo.#normalizeStringList(value);
+  }
+
+  static #normalizeStringList(value) {
     const entries = Array.isArray(value)
       ? value
       : (typeof value === 'string' ? value.split(/\r?\n/) : []);
@@ -94,6 +100,8 @@ class SettingInfo {
       ? Math.max(1, Math.min(100, parsedDefaultSkillCount))
       : 20;
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
+    this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
+    this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
 
     // Timestamps
     this.#createdAt = new Date().toISOString();
@@ -128,6 +136,8 @@ class SettingInfo {
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
+  get availableClasses() { return [...this.#availableClasses]; }
+  get availableRaces() { return [...this.#availableRaces]; }
 
   // Setters with validation
   set name(value) {
@@ -218,6 +228,16 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set availableClasses(value) {
+    this.#availableClasses = SettingInfo.#normalizeStringList(value);
+    this.#updateTimestamp();
+  }
+
+  set availableRaces(value) {
+    this.#availableRaces = SettingInfo.#normalizeStringList(value);
+    this.#updateTimestamp();
+  }
+
   // Static methods for CRUD operations
   static create(options) {
     return new SettingInfo(options);
@@ -302,6 +322,8 @@ class SettingInfo {
       defaultStartingLocation: this.#defaultStartingLocation,
       defaultNumSkills: this.#defaultNumSkills,
       defaultExistingSkills: [...this.#defaultExistingSkills],
+      availableClasses: [...this.#availableClasses],
+      availableRaces: [...this.#availableRaces],
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
@@ -345,7 +367,9 @@ class SettingInfo {
       difficulty: this.#difficulty,
       playerStartingLevel: this.#playerStartingLevel,
       settingName: this.#name,
-      settingDescription: this.#description
+      settingDescription: this.#description,
+      availableClasses: [...this.#availableClasses],
+      availableRaces: [...this.#availableRaces]
     };
   }
 

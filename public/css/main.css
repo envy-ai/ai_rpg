@@ -1171,7 +1171,7 @@ p .rarity-epic {
   -webkit-backdrop-filter: blur(10px);
           backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  color: #ffffff;
+  color: #444444;
   font-size: 16px;
   transition: background 0.3s ease;
 }

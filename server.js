@@ -707,7 +707,11 @@ function buildNewGameDefaults(settingSnapshot = null) {
         playerDescription: '',
         startingLocation: '',
         numSkills: 20,
-        existingSkills: []
+        existingSkills: [],
+        availableClasses: [],
+        availableRaces: [],
+        playerClass: '',
+        playerRace: ''
     };
 
     if (!settingSnapshot) {
@@ -740,6 +744,41 @@ function buildNewGameDefaults(settingSnapshot = null) {
     defaults.existingSkills = existingSkills
         .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
         .filter(skill => skill.length > 0);
+
+    const normalizeList = (value) => {
+        const rawEntries = Array.isArray(value)
+            ? value
+            : (typeof value === 'string' ? value.split(/\r?\n/) : []);
+
+        const seen = new Set();
+        const result = [];
+
+        for (const entry of rawEntries) {
+            if (typeof entry !== 'string') {
+                continue;
+            }
+            const trimmed = entry.trim();
+            if (!trimmed) {
+                continue;
+            }
+            const lower = trimmed.toLowerCase();
+            if (seen.has(lower)) {
+                continue;
+            }
+            seen.add(lower);
+            result.push(trimmed);
+        }
+
+        return result;
+    };
+
+    const classList = normalizeList(settingSnapshot.availableClasses);
+    const raceList = normalizeList(settingSnapshot.availableRaces);
+
+    defaults.availableClasses = classList;
+    defaults.availableRaces = raceList;
+    defaults.playerClass = classList.length ? classList[0] : '';
+    defaults.playerRace = raceList.length ? raceList[0] : '';
 
     return defaults;
 }

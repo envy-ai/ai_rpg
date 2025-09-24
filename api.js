@@ -3068,6 +3068,254 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function normalizeSettingPayload(raw = {}) {
+            const toStringValue = (value) => {
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                return String(value).trim();
+            };
+
+            const toNumberString = (value) => {
+                const str = toStringValue(value);
+                if (!str) {
+                    return '';
+                }
+                const parsed = parseInt(str, 10);
+                return Number.isFinite(parsed) ? String(parsed) : '';
+            };
+
+            const toStringArray = (value) => {
+                if (!value) {
+                    return [];
+                }
+                if (Array.isArray(value)) {
+                    return value
+                        .map(v => toStringValue(v))
+                        .filter(v => v.length > 0);
+                }
+                return toStringValue(value)
+                    .split(/\r?\n/)
+                    .map(item => item.trim())
+                    .filter(item => item.length > 0);
+            };
+
+            return {
+                name: toStringValue(raw.name),
+                description: toStringValue(raw.description),
+                theme: toStringValue(raw.theme),
+                genre: toStringValue(raw.genre),
+                startingLocationType: toStringValue(raw.startingLocationType),
+                magicLevel: toStringValue(raw.magicLevel),
+                techLevel: toStringValue(raw.techLevel),
+                tone: toStringValue(raw.tone),
+                difficulty: toStringValue(raw.difficulty),
+                playerStartingLevel: toNumberString(raw.playerStartingLevel),
+                defaultPlayerName: toStringValue(raw.defaultPlayerName),
+                defaultPlayerDescription: toStringValue(raw.defaultPlayerDescription),
+                defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
+                defaultNumSkills: toNumberString(raw.defaultNumSkills),
+                defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
+                availableClasses: toStringArray(raw.availableClasses),
+                availableRaces: toStringArray(raw.availableRaces)
+            };
+        }
+
+        function sanitizeXmlForDom(input) {
+            return (`<root>${input}</root>`)
+                .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                .replace(/<\s*br\s*>/gi, '<br/>')
+                .replace(/<\s*hr\s*>/gi, '<hr/>');
+        }
+
+        function parseSettingXmlResponse(xmlContent) {
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                throw new Error('AI response was empty');
+            }
+
+            const trimmed = xmlContent.trim();
+            if (!trimmed) {
+                throw new Error('AI response was empty');
+            }
+
+            const parser = new DOMParser({
+                errorHandler: {
+                    warning: () => { },
+                    error: () => { },
+                    fatalError: () => { }
+                }
+            });
+
+            const wrapped = sanitizeXmlForDom(trimmed);
+            const doc = parser.parseFromString(wrapped, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`AI response XML parsing error: ${parserError.textContent}`);
+            }
+
+            const settingNode = doc.getElementsByTagName('setting')[0];
+            if (!settingNode) {
+                throw new Error('AI response missing <setting> element');
+            }
+
+            const getText = (tag) => {
+                const node = settingNode.getElementsByTagName(tag)[0];
+                if (!node || typeof node.textContent !== 'string') {
+                    return '';
+                }
+                return node.textContent.trim();
+            };
+
+            const getList = (parentTag, childTag) => {
+                const parent = settingNode.getElementsByTagName(parentTag)[0];
+                if (!parent) {
+                    return [];
+                }
+                return Array.from(parent.getElementsByTagName(childTag))
+                    .map(node => (typeof node.textContent === 'string' ? node.textContent.trim() : ''))
+                    .filter(text => text.length > 0);
+            };
+
+            const toNumber = (value) => {
+                const parsed = parseInt(value, 10);
+                return Number.isFinite(parsed) ? parsed : '';
+            };
+
+            return {
+                name: getText('name'),
+                description: getText('description'),
+                theme: getText('theme'),
+                genre: getText('genre'),
+                startingLocationType: getText('startingLocationType'),
+                magicLevel: getText('magicLevel'),
+                techLevel: getText('techLevel'),
+                tone: getText('tone'),
+                difficulty: getText('difficulty'),
+                playerStartingLevel: toNumber(getText('playerStartingLevel')),
+                defaultPlayerName: getText('defaultPlayerName'),
+                defaultPlayerDescription: getText('defaultPlayerDescription'),
+                defaultStartingLocation: getText('defaultStartingLocation'),
+                defaultNumSkills: toNumber(getText('defaultNumSkills')),
+                defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
+                availableClasses: getList('availableClasses', 'class'),
+                availableRaces: getList('availableRaces', 'race')
+            };
+        }
+
+        function isEmptySettingValue(value) {
+            if (value === null || value === undefined) {
+                return true;
+            }
+            if (typeof value === 'string') {
+                return value.trim().length === 0;
+            }
+            if (Array.isArray(value)) {
+                return value.length === 0;
+            }
+            return false;
+        }
+
+        function mergeSettingValues(baseSetting, generatedSetting) {
+            const merged = { ...baseSetting };
+            for (const [key, value] of Object.entries(generatedSetting)) {
+                if (value === undefined || value === null) {
+                    continue;
+                }
+                if (isEmptySettingValue(merged[key]) && !isEmptySettingValue(value)) {
+                    merged[key] = value;
+                }
+            }
+            return merged;
+        }
+
+        app.post('/api/settings/fill-missing', async (req, res) => {
+            try {
+                const incomingSetting = req.body?.setting;
+                if (!incomingSetting || typeof incomingSetting !== 'object') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Request body must include a setting object'
+                    });
+                }
+
+                const normalizedSetting = normalizeSettingPayload(incomingSetting);
+
+                const renderedTemplate = promptEnv.render('fill-setting-form.xml.njk', {
+                    setting: {
+                        ...normalizedSetting,
+                        defaultExistingSkills: normalizedSetting.defaultExistingSkills,
+                        availableClasses: normalizedSetting.availableClasses,
+                        availableRaces: normalizedSetting.availableRaces
+                    }
+                });
+
+                const promptData = parseXMLTemplate(renderedTemplate);
+                const systemPrompt = promptData.systemPrompt ? promptData.systemPrompt.trim() : '';
+                const generationPrompt = promptData.generationPrompt ? promptData.generationPrompt.trim() : '';
+
+                if (!generationPrompt) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to build generation prompt from template'
+                    });
+                }
+
+                const messages = [];
+                if (systemPrompt) {
+                    messages.push({ role: 'system', content: systemPrompt });
+                }
+                messages.push({ role: 'user', content: generationPrompt });
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const model = config.ai.model;
+
+                if (!endpoint || !apiKey || !model) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'AI configuration is incomplete. Please update config.yaml.'
+                    });
+                }
+
+                const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
+
+                const requestPayload = {
+                    model,
+                    messages,
+                    max_tokens: promptData.maxTokens || config.ai.maxTokens || 800,
+                    temperature: (promptData.temperature ?? config.ai.temperature ?? 0.7)
+                };
+
+                const aiResponse = await axios.post(chatEndpoint, requestPayload, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 60000
+                });
+
+                const aiMessage = aiResponse?.data?.choices?.[0]?.message?.content;
+                if (!aiMessage || typeof aiMessage !== 'string') {
+                    throw new Error('AI did not return a usable response');
+                }
+
+                const generatedSetting = parseSettingXmlResponse(aiMessage);
+                const mergedSetting = mergeSettingValues(normalizedSetting, generatedSetting);
+
+                res.json({
+                    success: true,
+                    setting: mergedSetting,
+                    raw: aiMessage
+                });
+            } catch (error) {
+                console.error('Failed to fill setting form:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to generate setting details'
+                });
+            }
+        });
+
         // Get a specific setting by ID
         app.get('/api/settings/:id', (req, res) => {
             try {
@@ -3394,15 +3642,27 @@ module.exports = function registerApiRoutes(scope) {
         // Create a new game with fresh player and starting location
         app.post('/api/new-game', async (req, res) => {
             try {
-                const { playerName, playerDescription, startingLocation, numSkills: numSkillsInput, existingSkills: existingSkillsInput } = req.body || {};
+                const {
+                    playerName,
+                    playerDescription,
+                    playerClass: playerClassInput,
+                    playerRace: playerRaceInput,
+                    startingLocation,
+                    numSkills: numSkillsInput,
+                    existingSkills: existingSkillsInput
+                } = req.body || {};
                 const activeSetting = getActiveSettingSnapshot();
                 const newGameDefaults = buildNewGameDefaults(activeSetting);
                 const settingDescription = describeSettingForPrompt(activeSetting);
                 const rawPlayerName = typeof playerName === 'string' ? playerName.trim() : '';
                 const rawPlayerDescription = typeof playerDescription === 'string' ? playerDescription.trim() : '';
+                const rawPlayerClass = typeof playerClassInput === 'string' ? playerClassInput.trim() : '';
+                const rawPlayerRace = typeof playerRaceInput === 'string' ? playerRaceInput.trim() : '';
                 const requestedStartingLocation = typeof startingLocation === 'string' ? startingLocation.trim() : '';
                 const resolvedPlayerName = rawPlayerName || newGameDefaults.playerName || 'Adventurer';
                 const resolvedPlayerDescription = rawPlayerDescription || newGameDefaults.playerDescription || 'A brave soul embarking on a new adventure.';
+                const resolvedPlayerClass = rawPlayerClass || newGameDefaults.playerClass || 'Adventurer';
+                const resolvedPlayerRace = rawPlayerRace || newGameDefaults.playerRace || 'Human';
                 const resolvedStartingLocation = requestedStartingLocation || newGameDefaults.startingLocation;
                 const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
@@ -3520,6 +3780,8 @@ module.exports = function registerApiRoutes(scope) {
                 const newPlayer = new Player({
                     name: resolvedPlayerName,
                     description: resolvedPlayerDescription,
+                    class: resolvedPlayerClass,
+                    race: resolvedPlayerRace,
                     level: startingPlayerLevel,
                     health: 25,
                     maxHealth: 25,

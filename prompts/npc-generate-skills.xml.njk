@@ -1,0 +1,28 @@
+<template>
+    <comment>This prompt runs after the location generator prompt and location NPC generator prompt, with the context from the previous prompts still incliuded, hence the lack of a system prompt and other context.</comment>
+    <role>Location NPC generator</role>
+<generationPrompt>
+<skills>
+{% for skill in skills %}  <skill>
+    <name>{{ skill.name }}</name>
+    <description>One sentence description of the skill.</description>
+  </skill>
+{% endfor %}</skills>
+
+For each NPC generated above, pick a set of 2 to 8 skills from the list above that fit the NPC's class, role, and personality. Output the skills in this format:
+
+<npcs>
+  <npc>
+    <name>NPC's full exact name</name>
+    <skills>
+      <skill>
+        <name>Exact name of the skill</name>
+        <priority>Integer from 1 to 3 indicating much the character prioritizes spending points on this skill</priority>
+      </skill>
+      [... more skills ...]
+    </skills>
+  </npc>
+  [... more NPCs ...]
+</npcs>
+</generationPrompt>
+</template>

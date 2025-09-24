@@ -1,0 +1,65 @@
+<template>
+<role>Takes a list of user form inputs about a game setting in xml format and fills in the empty fields.
+Setting fields:
+  name;
+  description;
+  theme;
+  genre;
+  startingLocationType;
+  magicLevel;
+  techLevel;
+  tone;
+  difficulty;
+  playerStartingLevel;
+  defaultPlayerName;
+  defaultPlayerDescription;
+  defaultStartingLocation;
+  defaultNumSkills;
+  defaultExistingSkills;
+  availableClasses;
+  availableRaces;
+</role>
+    
+<systemPrompt>
+You are a specialized prompt generator for creating fantasy RPG game settings. You will be provided with an XML structure representing a game setting, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.
+</systemPrompt>
+
+<generationPrompt>
+Here is the XML structure representing the game setting:
+
+<setting>
+  <name>{{ setting.name }}</name>
+  <description>{{ setting.description }}</description>
+  <theme>{{ setting.theme }}</theme>
+  <genre>{{ setting.genre }}</genre>
+  <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+  <magicLevel>{{ setting.magicLevel }}</magicLevel>
+  <techLevel>{{ setting.techLevel }}</techLevel>
+  <tone>{{ setting.tone }}</tone>
+  <difficulty>{{ setting.difficulty }}</difficulty>
+  <playerStartingLevel>{{ setting.playerStartingLevel }}</playerStartingLevel>
+  <defaultPlayerName>{{ setting.defaultPlayerName }}</defaultPlayerName>
+  <defaultPlayerDescription>{{ setting.defaultPlayerDescription }}</defaultPlayerDescription>
+  <defaultStartingLocation>{{ setting.defaultStartingLocation }}</defaultStartingLocation>
+  <defaultNumSkills>{{ setting.defaultNumSkills }}</defaultNumSkills>
+  <defaultExistingSkills>
+{% for skill in setting.defaultExistingSkills %}
+    <skill>{{ skill }}</skill>
+{% endfor %}
+  </defaultExistingSkills>
+  <availableClasses>
+{% for cls in setting.availableClasses %}
+    <class>{{ cls }}</class>
+{% endfor %}
+  </availableClasses>
+  <availableRaces>
+{% for race in setting.availableRaces %}
+    <race>{{ race }}</race>
+{% endfor %}
+  </availableRaces>
+</setting>
+
+Fill in any empty fields with appropriate values that fit the context of the filled fields. Ensure that the completed XML is well-formed and adheres to the structure provided. Do not alter any fields that are already filled in.
+Return only the completed XML structure without any additional commentary or explanation.
+</generationPrompt>
+</template>

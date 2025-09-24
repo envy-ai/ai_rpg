@@ -3,6 +3,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
   const numSkillsField = document.getElementById('numSkills');
+  const classSelect = document.getElementById('playerClassSelect');
+  const classOtherInput = document.getElementById('playerClassOther');
+  const raceSelect = document.getElementById('playerRaceSelect');
+  const raceOtherInput = document.getElementById('playerRaceOther');
+  const otherSelectUpdaters = [];
 
   const defaultNumSkills = (() => {
     if (!numSkillsField) {
@@ -33,7 +38,42 @@ document.addEventListener('DOMContentLoaded', () => {
       el.disabled = !enabled;
     });
     startBtn.disabled = !enabled;
+    otherSelectUpdaters.forEach(fn => fn());
   }
+
+  const setupOtherSelect = (selectEl, otherEl) => {
+    if (!selectEl || !otherEl) {
+      return;
+    }
+
+    const update = () => {
+      const isOther = selectEl.value === '__other';
+      otherEl.style.display = isOther ? 'block' : 'none';
+      otherEl.disabled = !isOther;
+      if (isOther && !otherEl.value) {
+        otherEl.focus();
+      }
+    };
+
+    selectEl.addEventListener('change', update);
+    update();
+    otherSelectUpdaters.push(update);
+  };
+
+  const resolveSelectionValue = (selectEl, otherEl) => {
+    if (!selectEl) {
+      return '';
+    }
+    const selected = selectEl.value || '';
+    if (selected === '__other') {
+      const otherValue = otherEl ? otherEl.value || '' : '';
+      return otherValue.trim();
+    }
+    return selected.trim();
+  };
+
+  setupOtherSelect(classSelect, classOtherInput);
+  setupOtherSelect(raceSelect, raceOtherInput);
 
   if (form) {
     form.addEventListener('submit', async (e) => {
@@ -50,6 +90,8 @@ document.addEventListener('DOMContentLoaded', () => {
         .split(/\r?\n/)
         .map(line => line.trim())
         .filter(line => line.length > 0);
+      const playerClass = resolveSelectionValue(classSelect, classOtherInput);
+      const playerRace = resolveSelectionValue(raceSelect, raceOtherInput);
 
       try {
         setFormEnabled(false);
@@ -59,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/new-game', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerName, playerDescription, startingLocation, numSkills, existingSkills })
+          body: JSON.stringify({ playerName, playerDescription, playerClass, playerRace, startingLocation, numSkills, existingSkills })
         });
 
         const result = await response.json();
