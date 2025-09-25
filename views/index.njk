@@ -848,6 +848,13 @@
         const availableSlotTypes = window.availableSlotTypes instanceof Set ? window.availableSlotTypes : new Set();
         window.availableSlotTypes = availableSlotTypes;
 
+        const attributeOptions = Array.isArray(window.availableAttributes) ? window.availableAttributes : [];
+        window.availableAttributes = attributeOptions;
+        let attributeDefinitionsCache = typeof window.attributeDefinitionsMap === 'object' && window.attributeDefinitionsMap
+            ? window.attributeDefinitionsMap
+            : {};
+        window.attributeDefinitionsMap = attributeDefinitionsCache;
+
         const titleCase = (value) => {
             if (!value) {
                 return '';
@@ -910,6 +917,76 @@
             inventory.forEach(trackSlotTypeFromThing);
         };
 
+        let attributeOptionsLoaded = attributeOptions.length > 0;
+        let attributeFetchPromise = null;
+
+        function refreshAllAttributeSelects() {
+            if (!thingEditForm) {
+                return;
+            }
+            const selects = thingEditForm.querySelectorAll('.thing-edit-bonus-attribute');
+            selects.forEach(select => {
+                const currentValue = select?.value || '';
+                populateAttributeSelect(select, currentValue);
+            });
+        }
+
+        function ensureAttributeDefinitions() {
+            if (attributeOptionsLoaded) {
+                return Promise.resolve(attributeOptions);
+            }
+            if (attributeFetchPromise) {
+                return attributeFetchPromise;
+            }
+
+            attributeFetchPromise = (async () => {
+                try {
+                    const response = await fetch('/api/attributes');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (!data?.success || !Array.isArray(data.attributes)) {
+                        throw new Error(data?.error || 'Failed to load attribute definitions');
+                    }
+
+                    attributeOptions.length = 0;
+                    attributeDefinitionsCache = {};
+                    window.attributeDefinitionsMap = attributeDefinitionsCache;
+
+                    data.attributes.forEach(attr => {
+                        if (!attr || !attr.key) {
+                            return;
+                        }
+                        const key = String(attr.key).trim();
+                        if (!key) {
+                            return;
+                        }
+                        const entry = {
+                            key,
+                            keyLower: key.toLowerCase(),
+                            label: attr.label || titleCase(key),
+                            description: attr.description || '',
+                            abbreviation: attr.abbreviation || ''
+                        };
+                        attributeOptions.push(entry);
+                        attributeDefinitionsCache[key] = entry;
+                    });
+
+                    attributeOptionsLoaded = attributeOptions.length > 0;
+                    refreshAllAttributeSelects();
+                    return attributeOptions;
+                } catch (error) {
+                    console.warn('Failed to fetch attribute definitions:', error);
+                    return [];
+                } finally {
+                    attributeFetchPromise = null;
+                }
+            })();
+
+            return attributeFetchPromise;
+        }
+
         let gearSlotTypesLoaded = availableSlotTypes.size > 0;
         let gearSlotTypesPromise = null;
 
@@ -948,6 +1025,7 @@
         }
 
         ensureGearSlotTypes();
+        ensureAttributeDefinitions();
 
         const getRarityClass = (rarity) => {
             if (!rarity && rarity !== 0) {
@@ -1322,6 +1400,50 @@
             return metadata;
         }
 
+        function populateAttributeSelect(selectElement, selectedAttribute = '') {
+            if (!selectElement) {
+                return;
+            }
+
+            const normalized = typeof selectedAttribute === 'string' ? selectedAttribute.trim() : '';
+            const normalizedLower = normalized.toLowerCase();
+
+            selectElement.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select attribute';
+            selectElement.appendChild(placeholder);
+
+            let hasMatch = false;
+            if (Array.isArray(attributeOptions) && attributeOptions.length) {
+                attributeOptions.forEach(attr => {
+                    if (!attr || !attr.key) {
+                        return;
+                    }
+                    const option = document.createElement('option');
+                    option.value = attr.key;
+                    option.textContent = attr.label || titleCase(attr.key);
+                    if (attr.description) {
+                        option.dataset.description = attr.description;
+                    }
+                    if (normalizedLower && attr.keyLower === normalizedLower) {
+                        option.selected = true;
+                        hasMatch = true;
+                    }
+                    selectElement.appendChild(option);
+                });
+            }
+
+            if (normalized && !hasMatch) {
+                const customOption = document.createElement('option');
+                customOption.value = normalized;
+                customOption.textContent = titleCase(normalized);
+                customOption.selected = true;
+                selectElement.appendChild(customOption);
+            }
+        }
+
         function createThingAttributeBonusRow(entry = {}) {
             if (!thingAttributeBonusesList) {
                 return null;
@@ -1330,12 +1452,9 @@
             const row = document.createElement('div');
             row.className = 'thing-edit-row thing-edit-bonus-row';
 
-            const attributeInput = document.createElement('input');
-            attributeInput.type = 'text';
-            attributeInput.className = 'thing-edit-bonus-attribute';
-            attributeInput.placeholder = 'Attribute (e.g. Strength)';
-            attributeInput.autocomplete = 'off';
-            attributeInput.value = entry.attribute || entry.attributeName || '';
+            const attributeSelect = document.createElement('select');
+            attributeSelect.className = 'thing-edit-bonus-attribute';
+            populateAttributeSelect(attributeSelect, entry.attribute || entry.attributeName || '');
 
             const bonusInput = document.createElement('input');
             bonusInput.type = 'number';
@@ -1355,7 +1474,7 @@
             removeBtn.textContent = 'Remove';
             removeBtn.addEventListener('click', () => row.remove());
 
-            row.appendChild(attributeInput);
+            row.appendChild(attributeSelect);
             row.appendChild(bonusInput);
             row.appendChild(removeBtn);
 
@@ -1659,6 +1778,7 @@
                     ? thing.metadata.attributeBonuses
                     : [];
             renderThingAttributeBonuses(bonuses);
+            refreshAllAttributeSelects();
 
             const causeStatusEffect = thing?.causeStatusEffect || thing?.metadata?.causeStatusEffect || null;
             populateThingCauseStatusEffect(causeStatusEffect);
@@ -1695,7 +1815,7 @@
                 }
             }
 
-            await ensureGearSlotTypes();
+            await Promise.all([ensureGearSlotTypes(), ensureAttributeDefinitions()]);
 
             try {
                 window.floatingTooltipController?.hide?.();
@@ -2234,7 +2354,8 @@
         }
 
         if (thingAttributeBonusAddBtn) {
-            thingAttributeBonusAddBtn.addEventListener('click', () => {
+            thingAttributeBonusAddBtn.addEventListener('click', async () => {
+                await ensureAttributeDefinitions();
                 const row = createThingAttributeBonusRow({});
                 row?.querySelector('.thing-edit-bonus-attribute')?.focus();
             });

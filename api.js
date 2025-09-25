@@ -2989,6 +2989,36 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/attributes', (req, res) => {
+            try {
+                const template = new Player({ name: 'Attribute Loader' });
+                const definitions = template.attributeDefinitions || {};
+                const attributes = Object.entries(definitions)
+                    .filter(([key]) => typeof key === 'string' && key.trim())
+                    .map(([key, def]) => {
+                        const trimmed = key.trim();
+                        return {
+                            key: trimmed,
+                            label: def?.label || trimmed,
+                            description: def?.description || '',
+                            abbreviation: def?.abbreviation || ''
+                        };
+                    })
+                    .sort((a, b) => a.key.localeCompare(b.key, undefined, { sensitivity: 'base' }));
+
+                res.json({
+                    success: true,
+                    attributes
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: 'Failed to load attribute definitions',
+                    details: error.message
+                });
+            }
+        });
+
         // Update a thing
         app.put('/api/things/:id', async (req, res) => {
             try {

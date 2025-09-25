@@ -803,18 +803,42 @@ p .rarity-epic {
   background: rgba(37, 99, 235, 0.35);
 }
 
-#thingEditRarity option.rarity-junk { color: #9ca3af; }
-#thingEditRarity option.rarity-common { color: #d1d5db; }
-#thingEditRarity option.rarity-uncommon { color: #34d399; }
-#thingEditRarity option.rarity-rare { color: #60a5fa; }
-#thingEditRarity option.rarity-epic { color: #c084fc; }
-#thingEditRarity option.rarity-legendary { color: #fbbf24; }
-#thingEditRarity option.rarity-mythic { color: #f87171; }
-#thingEditRarity option.rarity-artifact { color: #f472b6; }
-#thingEditRarity option.rarity-unique { color: #fb923c; }
-#thingEditRarity option.rarity-exotic { color: #2dd4bf; }
-#thingEditRarity option.rarity-ancient { color: #fde68a; }
-#thingEditRarity option.rarity-masterwork { color: #a855f7; }
+#thingEditRarity option.rarity-junk {
+  color: #9ca3af;
+}
+#thingEditRarity option.rarity-common {
+  color: #d1d5db;
+}
+#thingEditRarity option.rarity-uncommon {
+  color: #34d399;
+}
+#thingEditRarity option.rarity-rare {
+  color: #60a5fa;
+}
+#thingEditRarity option.rarity-epic {
+  color: #c084fc;
+}
+#thingEditRarity option.rarity-legendary {
+  color: #fbbf24;
+}
+#thingEditRarity option.rarity-mythic {
+  color: #f87171;
+}
+#thingEditRarity option.rarity-artifact {
+  color: #f472b6;
+}
+#thingEditRarity option.rarity-unique {
+  color: #fb923c;
+}
+#thingEditRarity option.rarity-exotic {
+  color: #2dd4bf;
+}
+#thingEditRarity option.rarity-ancient {
+  color: #fde68a;
+}
+#thingEditRarity option.rarity-masterwork {
+  color: #a855f7;
+}
 
 .inventory-floating-tooltip {
   position: fixed;
@@ -1850,6 +1874,7 @@ body.modal-open {
 .npc-edit-section textarea,
 .thing-edit-row input,
 .thing-edit-row textarea,
+.thing-edit-row select,
 .npc-skill-row input,
 .npc-ability-row textarea,
 .npc-ability-row select {
@@ -1866,6 +1891,7 @@ body.modal-open {
 .npc-edit-section textarea:focus,
 .thing-edit-row input:focus,
 .thing-edit-row textarea:focus,
+.thing-edit-row select:focus,
 .npc-skill-row input:focus,
 .npc-ability-row textarea:focus,
 .npc-ability-row select:focus {
