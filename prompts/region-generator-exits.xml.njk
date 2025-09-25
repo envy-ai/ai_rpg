@@ -28,6 +28,8 @@ I'd like you to generate a set of 1 or more new regions that connect to the curr
 
 Generally, regions can only be contained by one other region, so only use the Contains relationship once at most (or not at all if it doesn't make sense). Regions can be adjacent to multiple other regions and have other regions within them. Regions should never be as small as a single area or room -- that is a location and should be generated later when the player visits the region.
 
+Make sure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
+
 <regions>
 <region>
 <regionName>…</regionName>

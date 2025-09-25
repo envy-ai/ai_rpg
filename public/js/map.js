@@ -254,7 +254,7 @@ function renderMap(region) {
         }
 
         const exitNodeId = `region-exit-${exit.id}`;
-        const regionName = exit.destinationRegionName || exit.destinationName || 'Unnanmed Region';
+        const regionName = exit.destinationRegionName || exit.destinationName || 'Unnamed Region';
         const expanded = Boolean(exit.destinationRegionExpanded);
         const symbol = expanded ? '⬈' : '?';
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="white" fill-opacity="0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="80">${symbol}</text></svg>`;

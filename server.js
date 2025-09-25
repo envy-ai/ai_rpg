@@ -2252,8 +2252,7 @@ function generateStubName(baseLocation, direction) {
     const baseName = baseLocation?.name || 'Uncharted';
     const normalizedDirection = normalizeDirection(direction);
     const directionLabel = normalizedDirection ? normalizedDirection.charAt(0).toUpperCase() + normalizedDirection.slice(1) : 'Adjacent';
-    //const suffixes = ['Path', 'Trail', 'Approach', 'Passage', 'Outlook', 'Frontier'];
-    //const suffix = suffixes[randomIntInclusive(0, suffixes.length - 1)];
+
     let candidate = `${baseName} ${directionLabel}`.trim();
 
     if (typeof Location.findByName === 'function' && Location.findByName(candidate)) {
@@ -2774,6 +2773,30 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     const stubDirections = typeof stubLocation.getAvailableDirections === 'function'
         ? stubLocation.getAvailableDirections()
         : [];
+
+    for (const direction of stubDirections) {
+        const exit = stubLocation.getExit(direction);
+        if (!exit) {
+            continue;
+        }
+
+        if (originLocation && exit.destination === originLocation.id) {
+            continue;
+        }
+
+        const targetLocation = gameLocations.get(exit.destination);
+        if (!targetLocation) {
+            continue;
+        }
+
+        const description = exit.description || `Path to ${targetLocation.name || exit.destination}`;
+        ensureExitConnection(entranceLocation, direction, targetLocation, {
+            description,
+            bidirectional: exit.bidirectional !== false,
+            destinationRegion: exit.destinationRegion || null
+        });
+    }
+
     for (const direction of stubDirections) {
         const exit = stubLocation.getExit(direction);
         if (exit) {

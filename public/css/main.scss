@@ -421,6 +421,34 @@ p:not(:last-child) {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+.exit-button.region-exit {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #ecfdf5;
+}
+
+.exit-button.region-exit.region-exit-unexplored {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(96, 165, 250, 0.55);
+  border-style: dashed;
+  color: #e0f2fe;
+}
+
+.exit-button.region-exit.region-exit-expanded {
+  background: rgba(16, 185, 129, 0.32);
+  border-color: rgba(20, 184, 166, 0.65);
+}
+
+.exit-button.region-exit:hover {
+  background: rgba(16, 185, 129, 0.42);
+  border-color: rgba(13, 148, 136, 0.75);
+}
+
+.exit-button.region-exit.region-exit-unexplored:hover {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: rgba(96, 165, 250, 0.75);
+}
+
 .no-exits {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.85rem;

@@ -3091,6 +3091,32 @@ module.exports = function registerApiRoutes(scope) {
                         if (destLocation) {
                             exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
                         }
+
+                        const destinationRegionId = exit.destinationRegion || null;
+                        let destinationRegionName = null;
+                        let destinationRegionExpanded = false;
+
+                        if (destinationRegionId) {
+                            if (regions.has(destinationRegionId)) {
+                                const targetRegion = regions.get(destinationRegionId);
+                                destinationRegionName = targetRegion?.name || null;
+                                destinationRegionExpanded = true;
+                            } else {
+                                const pending = pendingRegionStubs.get(destinationRegionId);
+                                if (pending) {
+                                    destinationRegionName = pending.name || null;
+                                } else if (destLocation?.stubMetadata?.targetRegionName) {
+                                    destinationRegionName = destLocation.stubMetadata.targetRegionName;
+                                }
+                            }
+                        }
+
+                        if (!destinationRegionName && destLocation) {
+                            destinationRegionName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || null;
+                        }
+
+                        exit.destinationRegionName = destinationRegionName;
+                        exit.destinationRegionExpanded = destinationRegionExpanded;
                     }
                 }
 
@@ -3256,6 +3282,32 @@ module.exports = function registerApiRoutes(scope) {
                         if (destLocation) {
                             exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
                         }
+
+                        const destinationRegionId = exit.destinationRegion || null;
+                        let destinationRegionName = null;
+                        let destinationRegionExpanded = false;
+
+                        if (destinationRegionId) {
+                            if (regions.has(destinationRegionId)) {
+                                const targetRegion = regions.get(destinationRegionId);
+                                destinationRegionName = targetRegion?.name || null;
+                                destinationRegionExpanded = true;
+                            } else {
+                                const pending = pendingRegionStubs.get(destinationRegionId);
+                                if (pending) {
+                                    destinationRegionName = pending.name || null;
+                                } else if (destLocation?.stubMetadata?.targetRegionName) {
+                                    destinationRegionName = destLocation.stubMetadata.targetRegionName;
+                                }
+                            }
+                        }
+
+                        if (!destinationRegionName && destLocation) {
+                            destinationRegionName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || null;
+                        }
+
+                        exit.destinationRegionName = destinationRegionName;
+                        exit.destinationRegionExpanded = destinationRegionExpanded;
                     }
                 }
                 locationData.npcs = buildNpcProfiles(destinationLocation);
