@@ -1659,6 +1659,14 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const npcs = [];
     const dispositionDefinitions = Player.getDispositionDefinitions();
     const dispositionTypes = Object.values(dispositionDefinitions?.types || {});
+    const dispositionTypesForPrompt = dispositionTypes.map((type) => ({
+        key: type.key,
+        name: type.label || type.key,
+        description: type.description || '',
+        move_up: Array.isArray(type.moveUp) ? type.moveUp : [],
+        move_down: Array.isArray(type.moveDown) ? type.moveDown : [],
+        move_way_down: Array.isArray(type.moveWayDown) ? type.moveWayDown : []
+    }));
     if (location) {
         const npcIds = Array.isArray(location.npcIds)
             ? location.npcIds
@@ -1760,7 +1768,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         currentPlayer: currentPlayerContext,
         npcs,
         party,
-        itemsInScene
+        itemsInScene,
+        dispositionTypes: dispositionTypesForPrompt,
+        dispositionRange: dispositionDefinitions?.range || {}
     };
 }
 

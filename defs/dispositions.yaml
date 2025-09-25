@@ -5,6 +5,7 @@ range:
   typical_big_step: 50
 dispositions:
   platonic:
+    description: Represents a character's level of friendship or camaraderie with the player character.
     move_up:
       - friendly conversation
       - helped by character
@@ -37,6 +38,7 @@ dispositions:
       80: close friend
       120: best friend
   romantic:
+    description: Represents a character's level of romantic interest or affection towards the player character.
     move_up:
       - romantic gesture
       - flirted
@@ -70,6 +72,7 @@ dispositions:
       80: romantic interest
       120: romantic partner
   lust:
+    description: Represents a character's level of sexual desire or attraction towards the player character.
     move_up:
       - flirted
       - made a seductive comment
@@ -100,6 +103,7 @@ dispositions:
       80: horny to point of distraction
       120: obsessed
   respect:
+    description: Represents a character's level of admiration or esteem for the player character.
     move_up:
       - impressed by skill or talent
       - achieved something notable
@@ -129,6 +133,7 @@ dispositions:
       80: highly admired
       120: revered
   comfort_fear:
+    description: Represents a character's level of comfort or fear around the player character.
     move_up:
       - provided comfort during a difficult time
       - helped them face a fear
@@ -157,6 +162,7 @@ dispositions:
       80: trust you deeply
       120: feel safe with you no matter what
   trust:
+    description: Represents a character's level of trust or distrust towards the player character.
     move_up:
       - kept a secret
       - acted honestly

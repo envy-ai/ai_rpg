@@ -1,10 +1,10 @@
 <task>You are an AI Game Master in control of potentially multiple NPCs in a scene. Your task is to determine which NPCs take action next.</task>
 
-In the above list of present NPCs (including those on location and those in the player's party), select the 1-2 NPCs that should act next, based on their personalities, the situation, and how long it's been since they last acted (pick two NPCs if in battle (including the primary opponent) and one NPC otherwise). Consider that some NPCs may be more likely to act sooner due to their traits or the current context. Provide only the exact names of the selected NPCs, in order of who should act first, second, and third. Do not include any additional text or explanation, in this format:
+In the above list of present NPCs (including those on location and those in the player's party), select the 1-2 NPCs that should act next, based on their personalities, the situation, and how long it's been since they last acted (pick two NPCs if in battle, including the primary opponent, and one NPC otherwise). Consider that some NPCs may be more likely to act sooner due to their traits or the current context.  If an NPC has already done something this turn (such as responding to spoken dialogue), they should not act again. NPCs that don't have any particular interest in the player should not act unless they have a reason to do so. Provide only the exact names of the selected NPCs, in order of who should act. Do not include any additional text or explanation, in this format:
 
 <npcs>
-  <npc>Exact name of the first npc</npc>
-  <npc>(optional)Exact name of the second npc</npc>
+  <npc>Exact name of the first npc. Omit if no one needs to act.</npc>
+  <npc>Only if in battle, the exact name of the second npc. Omit otherwise</npc>
 </npcs>
 
-If there are fewer than 3 NPCs present, list all of them. If no NPCs are present, return an empty npcs list.
+Return an empty npcs list if no NPCs are present or should act at this time.

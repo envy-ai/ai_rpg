@@ -32,6 +32,13 @@ module.exports = function registerApiRoutes(scope) {
             next();
         });
 
+        function sanitizeForXml(input) {
+            return `<root>${input}</root>`
+                .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                .replace(/<\s*br\s*>/gi, '<br/>')
+                .replace(/<\s*hr\s*>/gi, '<hr/>');
+        }
+
         function parseAttackCheckResponse(responseText) {
             if (!responseText || typeof responseText !== 'string') {
                 return null;
@@ -42,13 +49,6 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const sanitizeForDom = (input) => {
-                return `<root>${input}</root>`
-                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
-                    .replace(/<\s*br\s*>/gi, '<br/>')
-                    .replace(/<\s*hr\s*>/gi, '<hr/>');
-            };
-
             let doc;
             try {
                 const parser = new DOMParser({
@@ -58,7 +58,7 @@ module.exports = function registerApiRoutes(scope) {
                         fatalError: () => { }
                     }
                 });
-                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
                 console.warn('Failed to parse attack check XML:', error.message);
                 return null;
@@ -1036,13 +1036,6 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const sanitizeForDom = (input) => {
-                return `<root>${input}</root>`
-                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
-                    .replace(/<\s*br\s*>/gi, '<br/>')
-                    .replace(/<\s*hr\s*>/gi, '<hr/>');
-            };
-
             let doc;
             try {
                 const parser = new DOMParser({
@@ -1052,7 +1045,7 @@ module.exports = function registerApiRoutes(scope) {
                         fatalError: () => { }
                     }
                 });
-                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
                 return [];
             }
@@ -1140,13 +1133,6 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const sanitizeForDom = (input) => {
-                return `<root>${input}</root>`
-                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
-                    .replace(/<\s*br\s*>/gi, '<br/>')
-                    .replace(/<\s*hr\s*>/gi, '<hr/>');
-            };
-
             let doc;
             try {
                 const parser = new DOMParser({
@@ -1156,7 +1142,7 @@ module.exports = function registerApiRoutes(scope) {
                         fatalError: () => { }
                     }
                 });
-                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
                 return null;
             }
@@ -1199,6 +1185,287 @@ module.exports = function registerApiRoutes(scope) {
                 .split(' ')
                 .map(word => word ? word[0].toUpperCase() + word.slice(1) : '')
                 .join(' ');
+        }
+
+        function parseDispositionCheckResponse(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return [];
+            }
+
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return [];
+            }
+
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+            } catch (_) {
+                return [];
+            }
+
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return [];
+            }
+
+            const root = doc.getElementsByTagName('npcDispositions')[0] || doc.documentElement;
+            if (!root) {
+                return [];
+            }
+
+            const npcNodes = Array.from(root.getElementsByTagName('npc'));
+            const results = [];
+
+            for (const npcNode of npcNodes) {
+                if (!npcNode) {
+                    continue;
+                }
+
+                const nameNode = npcNode.getElementsByTagName('name')[0];
+                const name = nameNode && typeof nameNode.textContent === 'string'
+                    ? nameNode.textContent.trim()
+                    : '';
+                if (!name) {
+                    continue;
+                }
+
+                const container = npcNode.getElementsByTagName('dispositionsTowardsPlayer')[0] || null;
+                const dispositionNodes = container
+                    ? Array.from(container.getElementsByTagName('disposition'))
+                    : Array.from(npcNode.getElementsByTagName('disposition'));
+
+                const dispositions = [];
+
+                for (const dispositionNode of dispositionNodes) {
+                    if (!dispositionNode) {
+                        continue;
+                    }
+
+                    const getText = (tag) => {
+                        const node = dispositionNode.getElementsByTagName(tag)[0];
+                        if (!node || typeof node.textContent !== 'string') {
+                            return null;
+                        }
+                        const value = node.textContent.trim();
+                        return value || null;
+                    };
+
+                    const type = getText('type');
+                    const intensityText = getText('intensity');
+                    const reason = getText('reason');
+
+                    if (!type || !intensityText) {
+                        continue;
+                    }
+
+                    const intensityValue = parseInt(intensityText, 10);
+                    if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                        continue;
+                    }
+
+                    dispositions.push({
+                        type,
+                        intensity: intensityValue,
+                        reason: reason || null,
+                        rawIntensity: intensityText
+                    });
+                }
+
+                if (dispositions.length) {
+                    results.push({ name, dispositions });
+                }
+            }
+
+            return results;
+        }
+
+        async function runDispositionCheckPrompt({ locationOverride = null } = {}) {
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride });
+                const dispositionTypes = Array.isArray(baseContext?.dispositionTypes)
+                    ? baseContext.dispositionTypes
+                    : [];
+
+                if (!dispositionTypes.length || !Array.isArray(baseContext?.npcs) || !baseContext.npcs.length) {
+                    return { raw: '', structured: [] };
+                }
+
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'disposition-check',
+                    dispositionTypes
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    return { raw: '', structured: [] };
+                }
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? endpoint + 'chat/completions'
+                    : endpoint + '/chat/completions';
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 250,
+                    temperature: typeof parsedTemplate.temperature === 'number'
+                        ? parsedTemplate.temperature
+                        : 0.2
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 45000
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const structured = parseDispositionCheckResponse(raw);
+                return { raw, structured };
+            } catch (error) {
+                console.warn('Failed to run disposition check prompt:', error.message);
+                return { raw: '', structured: [] };
+            }
+        }
+
+        function applyDispositionChanges(dispositionEntries = []) {
+            if (!Array.isArray(dispositionEntries) || !dispositionEntries.length) {
+                return [];
+            }
+
+            if (!currentPlayer) {
+                return [];
+            }
+
+            const definitions = Player.getDispositionDefinitions();
+            const range = definitions?.range || {};
+
+            const minRange = Number.isFinite(Number(range.min)) ? Number(range.min) : null;
+            const maxRange = Number.isFinite(Number(range.max)) ? Number(range.max) : null;
+            const typicalStep = Number.isFinite(Number(range.typicalStep))
+                ? Number(range.typicalStep)
+                : null;
+            const typicalBigStep = Number.isFinite(Number(range.typicalBigStep))
+                ? Number(range.typicalBigStep)
+                : null;
+
+            const appliedChanges = [];
+
+            for (const npcEntry of dispositionEntries) {
+                const npcName = npcEntry?.name;
+                if (!npcName) {
+                    continue;
+                }
+
+                const npc = findActorByName(npcName);
+                if (!npc || npc === currentPlayer) {
+                    continue;
+                }
+
+                const dispositionList = Array.isArray(npcEntry.dispositions)
+                    ? npcEntry.dispositions
+                    : [];
+
+                for (const dispositionChange of dispositionList) {
+                    const typeLabel = dispositionChange?.type;
+                    if (!typeLabel) {
+                        continue;
+                    }
+
+                    const typeDefinition = Player.getDispositionDefinition(typeLabel);
+                    if (!typeDefinition || !typeDefinition.key) {
+                        console.warn(`Unknown disposition type '${typeLabel}'—skipping.`);
+                        continue;
+                    }
+
+                    const intensityValue = Number(dispositionChange.intensity);
+                    if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                        continue;
+                    }
+
+                    let delta = 0;
+
+                    if (intensityValue === -10) {
+                        if (!Number.isFinite(typicalBigStep)) {
+                            console.warn('typicalBigStep not defined; cannot apply major negative disposition change.');
+                            continue;
+                        }
+                        delta = -typicalBigStep;
+                    } else if (intensityValue >= -3 && intensityValue <= 3) {
+                        if (!Number.isFinite(typicalStep)) {
+                            console.warn('typicalStep not defined; cannot apply minor disposition change.');
+                            continue;
+                        }
+                        const scaled = (intensityValue / 2) * typicalStep;
+                        const rounded = Math.round(scaled);
+                        if (rounded !== 0) {
+                            delta = rounded;
+                        } else {
+                            delta = Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+                        }
+                    } else {
+                        if (!Number.isFinite(typicalStep)) {
+                            console.warn('typicalStep not defined; cannot apply disposition change.');
+                            continue;
+                        }
+                        const scaled = (intensityValue / 2) * typicalStep;
+                        const rounded = Math.round(scaled);
+                        if (rounded === 0) {
+                            delta = Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+                        } else {
+                            delta = rounded;
+                        }
+                    }
+
+                    if (delta === 0) {
+                        continue;
+                    }
+
+                    const currentValue = npc.getDispositionTowardsCurrentPlayer(typeDefinition.key);
+                    let newValue = currentValue + delta;
+
+                    if (Number.isFinite(minRange)) {
+                        newValue = Math.max(minRange, newValue);
+                    }
+                    if (Number.isFinite(maxRange)) {
+                        newValue = Math.min(maxRange, newValue);
+                    }
+
+                    npc.setDispositionTowardsCurrentPlayer(typeDefinition.key, newValue);
+
+                    const logReason = dispositionChange.reason ? ` Reason: ${dispositionChange.reason}` : '';
+                    console.log(`[Disposition] ${npc.name} (${typeDefinition.label || typeDefinition.key}) ${currentValue} -> ${newValue} (Δ ${delta >= 0 ? '+' : ''}${delta}).${logReason}`);
+
+                    appliedChanges.push({
+                        npcId: npc.id || null,
+                        npcName: npc.name || npcEntry.name,
+                        typeKey: typeDefinition.key,
+                        typeLabel: typeDefinition.label || typeDefinition.key,
+                        intensity: intensityValue,
+                        delta,
+                        previousValue: currentValue,
+                        newValue,
+                        reason: dispositionChange.reason || null
+                    });
+                }
+            }
+
+            return appliedChanges;
         }
 
         function mapNpcActionPlanToPlausibility(actionPlan) {
@@ -1978,6 +2245,17 @@ module.exports = function registerApiRoutes(scope) {
                         timestamp: new Date().toISOString()
                     });
 
+                    let dispositionPromptResult = null;
+                    let dispositionChanges = [];
+                    try {
+                        dispositionPromptResult = await runDispositionCheckPrompt({ location });
+                        if (Array.isArray(dispositionPromptResult?.structured) && dispositionPromptResult.structured.length) {
+                            dispositionChanges = applyDispositionChanges(dispositionPromptResult.structured);
+                        }
+                    } catch (dispositionError) {
+                        console.warn('Failed to evaluate disposition changes:', dispositionError.message);
+                    }
+
                     // Include debug information in response for development
                     const responseData = {
                         response: aiResponse
@@ -1987,7 +2265,17 @@ module.exports = function registerApiRoutes(scope) {
                     if (debugInfo) {
                         debugInfo.actionResolution = actionResolution;
                         debugInfo.plausibilityStructured = plausibilityInfo?.structured || null;
+                        if (dispositionPromptResult?.raw) {
+                            debugInfo.dispositionPrompt = dispositionPromptResult.raw;
+                        }
+                        if (dispositionChanges.length) {
+                            debugInfo.dispositionChanges = dispositionChanges;
+                        }
                         responseData.debug = debugInfo;
+                    }
+
+                    if (dispositionChanges.length) {
+                        responseData.dispositionChanges = dispositionChanges;
                     }
 
                     if (actionResolution) {

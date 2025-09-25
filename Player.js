@@ -263,6 +263,7 @@ class Player {
 
                 const key = this.#normalizeDispositionType(label);
 
+                const description = typeof config.description === 'string' ? config.description.trim() : '';
                 const moveUp = Array.isArray(config.move_up)
                     ? config.move_up.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
                     : [];
@@ -300,6 +301,7 @@ class Player {
                 types[key] = {
                     key,
                     label,
+                    description,
                     moveUp,
                     moveDown,
                     moveWayDown,
@@ -1748,7 +1750,16 @@ class Player {
      * Get player's current status with enhanced attribute information
      */
     getStatus() {
-        return {
+        const baseSnapshot = this.toJSON();
+        const inventoryIds = Array.isArray(baseSnapshot.inventory) ? [...baseSnapshot.inventory] : [];
+        const partyMemberIds = Array.isArray(baseSnapshot.partyMembers) ? [...baseSnapshot.partyMembers] : [];
+
+        const inventoryDetails = this.getInventoryItems().map(item => (
+            typeof item?.toJSON === 'function' ? item.toJSON() : item
+        ));
+
+        const status = {
+            ...baseSnapshot,
             id: this.#id,
             name: this.#name,
             description: this.#description,
@@ -1756,10 +1767,10 @@ class Player {
             class: this.#class,
             race: this.#race,
             level: this.#level,
+            experience: this.#experience,
             health: this.#health,
             maxHealth: this.maxHealth,
             healthAttribute: this.#healthAttribute,
-            experience: this.#experience,
             alive: this.isAlive(),
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
@@ -1767,16 +1778,26 @@ class Player {
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo(),
-            inventory: this.getInventoryItems().map(thing => thing.toJSON()),
-            partyMembers: this.getPartyMembers(),
+            attributeDefinitions: this.attributeDefinitions,
+            systemConfig: this.systemConfig,
+            inventory: inventoryDetails,
+            inventoryIds,
+            partyMembers: partyMemberIds,
+            partyMemberIds,
             dispositions: this.#serializeDispositions(),
+            dispositionDefinitions: Player.dispositionDefinitions,
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
-            gearSlotsByType: this.getGearSlotsByType()
+            gearSlotsByType: this.getGearSlotsByType(),
+            gearSlotDefinitions: Player.gearSlotDefinitions,
+            createdAt: this.#createdAt,
+            lastUpdated: this.#lastUpdated
         };
+
+        return status;
     }
 
     /**
