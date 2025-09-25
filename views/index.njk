@@ -832,6 +832,9 @@
             const container = chatSidebarElements.partyGrid;
             const emptyState = chatSidebarElements.partyEmpty;
             const countLabel = chatSidebarElements.partyCount;
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
 
             if (!container) {
                 if (countLabel) {
@@ -840,7 +843,9 @@
                 return;
             }
 
-            const safeMembers = Array.isArray(members) ? members : [];
+            const safeMembers = Array.isArray(members)
+                ? members.filter(member => member && typeof member === 'object')
+                : [];
             container.innerHTML = '';
 
             if (countLabel) {
@@ -909,6 +914,7 @@
                 }
 
                 if (typeof registerNpcContextMenu === 'function' && member.id) {
+                    npcDataCache.set(member.id, member);
                     registerNpcContextMenu(card, member);
                 }
 
@@ -3231,6 +3237,8 @@
                 card.appendChild(menu);
             }
 
+            window.registerNpcContextMenu = registerNpcContextMenu;
+
             document.addEventListener('click', () => {
                 if (npcMenuState.openMenu) {
                     closeNpcContextMenu();
@@ -4126,12 +4134,18 @@
                 floatingTooltip.style.top = `${y}px`;
             }
 
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
+
             function renderParty(members = []) {
                 if (!partyGrid || !emptyState || !countLabel) {
                     return;
                 }
 
-                const safeMembers = Array.isArray(members) ? members : [];
+                const safeMembers = Array.isArray(members)
+                    ? members.filter(member => member && typeof member === 'object')
+                    : [];
                 partyGrid.innerHTML = '';
                 hideTooltip();
 
@@ -4208,6 +4222,10 @@
                     card.appendChild(role);
                     card.appendChild(meta);
                     card.appendChild(stats);
+
+                    if (member && member.id) {
+                        npcDataCache.set(member.id, member);
+                    }
 
                     if (member && member.id && typeof registerNpcContextMenu === 'function') {
                         registerNpcContextMenu(card, member);
