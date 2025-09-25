@@ -3037,7 +3037,7 @@ module.exports = function registerApiRoutes(scope) {
         app.get('/api/locations/:id', async (req, res) => {
             try {
                 const locationId = req.params.id;
-                const location = Location.get(locationId);
+                let location = Location.get(locationId);
 
                 if (!location) {
                     return res.status(404).json({
@@ -3046,9 +3046,26 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (location.isStub) {
+                if (location.isStub && location.stubMetadata?.isRegionEntryStub) {
+                    try {
+                        const expanded = await expandRegionEntryStub(location);
+                        if (expanded) {
+                            location = expanded;
+                        }
+                    } catch (expansionError) {
+                        console.error('Failed to expand region entry stub:', expansionError);
+                        return res.status(500).json({
+                            success: false,
+                            error: `Failed to expand region: ${expansionError.message}`,
+                            trace: expansionError.stack || String(expansionError)
+                        });
+                    }
+                }
+
+                if (location.isStub && !location.stubMetadata?.isRegionEntryStub) {
                     try {
                         await scheduleStubExpansion(location);
+                        location = gameLocations.get(location.id) || location;
                     } catch (expansionError) {
                         return res.status(500).json({
                             success: false,
@@ -3153,7 +3170,28 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (destinationLocation.isStub) {
+                if (destinationLocation.isStub && destinationLocation.stubMetadata?.isRegionEntryStub) {
+                    try {
+                        const expanded = await expandRegionEntryStub(destinationLocation);
+                        if (expanded) {
+                            destinationLocation = expanded;
+                        } else {
+                            return res.status(500).json({
+                                success: false,
+                                error: 'Failed to generate destination region.'
+                            });
+                        }
+                    } catch (expansionError) {
+                        console.error('Failed to expand region entry stub:', expansionError);
+                        return res.status(500).json({
+                            success: false,
+                            error: `Failed to expand region: ${expansionError.message}`,
+                            trace: expansionError.stack || String(expansionError)
+                        });
+                    }
+                }
+
+                if (destinationLocation.isStub && !destinationLocation.stubMetadata?.isRegionEntryStub) {
                     try {
                         await scheduleStubExpansion(destinationLocation);
                         destinationLocation = gameLocations.get(destinationLocation.id);

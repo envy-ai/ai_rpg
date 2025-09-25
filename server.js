@@ -2518,6 +2518,257 @@ function scheduleStubExpansion(location) {
     return expansionPromise;
 }
 
+async function expandRegionEntryStub(stubLocation) {
+    if (!stubLocation || !stubLocation.isStub) {
+        return null;
+    }
+
+    const metadata = stubLocation.stubMetadata || {};
+    const targetRegionId = metadata.targetRegionId || null;
+    if (!targetRegionId) {
+        return null;
+    }
+
+    const endpoint = config.ai.endpoint;
+    const apiKey = config.ai.apiKey;
+    const model = config.ai.model;
+    const chatEndpoint = endpoint.endsWith('/')
+        ? endpoint + 'chat/completions'
+        : endpoint + '/chat/completions';
+
+    const settingDescription = metadata.settingDescription || describeSettingForPrompt(getActiveSettingSnapshot());
+    const themeHint = metadata.themeHint || null;
+    let regionAverageLevel = Number.isFinite(metadata.regionAverageLevel) ? metadata.regionAverageLevel : null;
+
+    let region = regions.get(targetRegionId) || null;
+    const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
+
+    if (pendingInfo?.parentRegionId && region && !region.parentRegionId) {
+        region.parentRegionId = pendingInfo.parentRegionId;
+    }
+
+    let stubPrompt = null;
+    let stubResponse = null;
+
+    if (!region || !Array.isArray(region.locationIds) || region.locationIds.length === 0) {
+        const regionName = pendingInfo?.name || metadata.targetRegionName || 'Uncharted Region';
+        const regionDescription = pendingInfo?.description || metadata.targetRegionDescription || 'No description available.';
+        const parentRegionId = pendingInfo?.parentRegionId || metadata.targetRegionParentId || null;
+
+        stubPrompt = renderRegionStubPrompt({
+            settingDescription,
+            region: {
+                name: regionName,
+                description: regionDescription
+            }
+        });
+
+        if (!stubPrompt) {
+            return null;
+        }
+
+        const messages = [
+            { role: 'system', content: stubPrompt.systemPrompt },
+            { role: 'user', content: stubPrompt.generationPrompt }
+        ];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 4000,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        try {
+            console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
+            const requestStart = Date.now();
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 90000
+            });
+
+            stubResponse = response.data?.choices?.[0]?.message?.content || '';
+            const durationSeconds = (Date.now() - requestStart) / 1000;
+
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+                const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+                const logPath = path.join(logDir, `region_stub_${targetRegionId}_${timestamp}.log`);
+                const logParts = [
+                    formatDurationLine(durationSeconds),
+                    '=== REGION STUB PROMPT ===',
+                    stubPrompt.generationPrompt,
+                    '\n=== REGION STUB RESPONSE ===',
+                    stubResponse,
+                    '\n'
+                ];
+                fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+            } catch (logError) {
+                console.warn('Failed to log region stub generation:', logError.message);
+            }
+        } catch (error) {
+            console.warn('Failed to generate region stub locations:', error.message);
+            return null;
+        }
+
+        const locationDefinitions = parseRegionStubLocations(stubResponse);
+        if (!locationDefinitions.length) {
+            console.warn('Region stub generation returned no locations.');
+            return null;
+        }
+
+        regionAverageLevel = regionAverageLevel ?? (Number.isFinite(pendingInfo?.relativeLevel)
+            ? clampLevel((metadata.regionAverageLevel || 1) + pendingInfo.relativeLevel, metadata.regionAverageLevel || 1)
+            : (metadata.regionAverageLevel || 1));
+
+        region = new Region({
+            id: targetRegionId,
+            name: pendingInfo?.name || metadata.targetRegionName || 'Uncharted Region',
+            description: pendingInfo?.description || metadata.targetRegionDescription || 'No description available.',
+            locations: locationDefinitions.map(def => ({
+                name: def.name,
+                description: def.description,
+                exits: def.exits,
+                relativeLevel: def.relativeLevel
+            })),
+            locationIds: [],
+            entranceLocationId: null,
+            parentRegionId: parentRegionId,
+            averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null
+        });
+
+        regions.set(region.id, region);
+
+        let stubMap = new Map();
+        try {
+            stubMap = await instantiateRegionLocations({
+                region,
+                themeHint,
+                regionAverageLevel,
+                settingDescription,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        } catch (instantiationError) {
+            console.warn('Failed to instantiate region from stub:', instantiationError.message);
+        }
+
+        const entranceInfo = await chooseRegionEntrance({
+            region,
+            stubMap,
+            systemPrompt: stubPrompt.systemPrompt,
+            generationPrompt: stubPrompt.generationPrompt,
+            aiResponse: stubResponse,
+            chatEndpoint,
+            model,
+            apiKey
+        });
+
+        const entranceLocation = entranceInfo.location || (entranceInfo.locationId ? gameLocations.get(entranceInfo.locationId) : null);
+        if (!entranceLocation) {
+            return null;
+        }
+
+        await finalizeRegionEntry({
+            stubLocation,
+            entranceLocation,
+            region,
+            originDescription: metadata.shortDescription || stubLocation.description || `Path to ${region.name}`
+        });
+
+        pendingRegionStubs.delete(targetRegionId);
+        return entranceLocation;
+    }
+
+    // Region already exists
+    const entranceLocationId = region.entranceLocationId || null;
+    let entranceLocation = entranceLocationId ? gameLocations.get(entranceLocationId) : null;
+    if (!entranceLocation) {
+        entranceLocation = region.locationIds
+            .map(id => gameLocations.get(id))
+            .find(Boolean);
+        if (entranceLocation) {
+            region.entranceLocationId = entranceLocation.id;
+        }
+    }
+
+    if (!entranceLocation) {
+        return null;
+    }
+
+    await finalizeRegionEntry({
+        stubLocation,
+        entranceLocation,
+        region,
+        originDescription: metadata.shortDescription || stubLocation.description || `Path to ${region.name}`
+    });
+
+    pendingRegionStubs.delete(targetRegionId);
+    return entranceLocation;
+}
+
+async function finalizeRegionEntry({ stubLocation, entranceLocation, region, originDescription }) {
+    if (!stubLocation || !entranceLocation) {
+        return;
+    }
+
+    const metadata = stubLocation.stubMetadata || {};
+    const originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
+    const originDirection = metadata.originDirection || null;
+
+    if (originLocation) {
+        ensureExitConnection(originLocation, originDirection || directionKeyFromName(entranceLocation.name), entranceLocation, {
+            description: originDescription,
+            bidirectional: true,
+            destinationRegion: region.id
+        });
+    }
+
+    if (originLocation && typeof originLocation.removeExit === 'function' && originDirection) {
+        // ensureExitConnection already handled replacement; no explicit removal required.
+    }
+
+    const entranceMetadata = entranceLocation.stubMetadata ? { ...entranceLocation.stubMetadata } : {};
+    if (metadata.originLocationId) {
+        entranceMetadata.originLocationId = metadata.originLocationId;
+    }
+    if (metadata.originDirection) {
+        entranceMetadata.originDirection = metadata.originDirection;
+    }
+    if (metadata.settingDescription && !entranceMetadata.settingDescription) {
+        entranceMetadata.settingDescription = metadata.settingDescription;
+    }
+    entranceLocation.stubMetadata = entranceMetadata;
+
+    const stubDirections = typeof stubLocation.getAvailableDirections === 'function'
+        ? stubLocation.getAvailableDirections()
+        : [];
+    for (const direction of stubDirections) {
+        const exit = stubLocation.getExit(direction);
+        if (exit) {
+            gameLocationExits.delete(exit.id);
+        }
+    }
+
+    gameLocations.delete(stubLocation.id);
+
+    const currentRegionLocationIds = region.locationIds || [];
+    if (Array.isArray(currentRegionLocationIds) && currentRegionLocationIds.includes(stubLocation.id)) {
+        region.locationIds = currentRegionLocationIds.filter(id => id !== stubLocation.id);
+    }
+
+    if (originLocation && typeof originLocation.removeNpcId === 'function') {
+        // no-op, placeholder in case stub stored NPCs
+    }
+}
+
 const HOST = config.server.host;
 
 // Configure Nunjucks for views
@@ -7255,6 +7506,100 @@ function parseRegionExitsResponse(xmlSnippet) {
     return results;
 }
 
+function renderRegionStubPrompt({ settingDescription, region }) {
+    try {
+        const templateName = 'region-generator.stub.xml.njk';
+        const variables = {
+            setting: settingDescription,
+            currentRegion: {
+                name: region.name,
+                description: region.description
+            }
+        };
+
+        const renderedTemplate = promptEnv.render(templateName, variables);
+        const parsed = parseXMLTemplate(renderedTemplate);
+
+        if (!parsed.systemPrompt || !parsed.generationPrompt) {
+            throw new Error('Region stub template missing prompts');
+        }
+
+        return {
+            systemPrompt: parsed.systemPrompt.trim(),
+            generationPrompt: parsed.generationPrompt.trim()
+        };
+    } catch (error) {
+        console.error('Error rendering region stub template:', error);
+        return null;
+    }
+}
+
+function parseRegionStubLocations(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return [];
+    }
+
+    const sanitize = (input) => `<root>${input}</root>`
+        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+        .replace(/<\s*br\s*>/gi, '<br/>')
+        .replace(/<\s*hr\s*>/gi, '<hr/>');
+
+    let doc;
+    try {
+        const parser = new DOMParser({
+            errorHandler: {
+                warning: () => {},
+                error: () => {},
+                fatalError: () => {}
+            }
+        });
+        doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+    } catch (error) {
+        console.warn('Failed to parse region stub XML:', error.message);
+        return [];
+    }
+
+    if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+        console.warn('Region stub XML contained parser errors.');
+        return [];
+    }
+
+    const locationNodes = Array.from(doc.getElementsByTagName('location'));
+    if (!locationNodes.length) {
+        return [];
+    }
+
+    const getTagValue = (node, tag) => {
+        const element = node.getElementsByTagName(tag)?.[0];
+        if (!element || typeof element.textContent !== 'string') {
+            return null;
+        }
+        const value = element.textContent.trim();
+        return value || null;
+    };
+
+    return locationNodes.map(node => {
+        const name = getTagValue(node, 'name');
+        const description = getTagValue(node, 'description') || '';
+        const relativeLevelRaw = getTagValue(node, 'relativeLevel');
+        const exitsParent = node.getElementsByTagName('exits')?.[0];
+        const exits = exitsParent
+            ? Array.from(exitsParent.getElementsByTagName('exit'))
+                .map(exitNode => exitNode.textContent?.trim())
+                .filter(Boolean)
+            : [];
+
+        const relativeLevel = Number.parseInt(relativeLevelRaw, 10);
+
+        return {
+            name: name || 'Unnamed Location',
+            description,
+            exits,
+            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0
+        };
+    }).filter(Boolean);
+}
+
 function generateRegionStubId() {
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2, 10);
@@ -7500,6 +7845,262 @@ function parseRegionEntranceResponse(xmlSnippet) {
     }
 }
 
+async function instantiateRegionLocations({
+    region,
+    themeHint,
+    regionAverageLevel,
+    settingDescription,
+    chatEndpoint,
+    model,
+    apiKey
+}) {
+    const stubMap = new Map();
+
+    for (const blueprint of region.locationBlueprints) {
+        const relativeLevel = Number.isFinite(blueprint.relativeLevel)
+            ? blueprint.relativeLevel
+            : 0;
+        const computedBaseLevel = Number.isFinite(regionAverageLevel)
+            ? clampLevel(regionAverageLevel + relativeLevel, regionAverageLevel)
+            : null;
+
+        const stub = new Location({
+            name: blueprint.name,
+            description: null,
+            baseLevel: computedBaseLevel,
+            isStub: true,
+            stubMetadata: {
+                regionId: region.id,
+                regionName: region.name,
+                blueprintDescription: blueprint.description,
+                suggestedRegionExits: (blueprint.exits || []).map(exit => exit.target ?? exit),
+                themeHint,
+                shortDescription: blueprint.description,
+                locationPurpose: `Part of the ${region.name} region`,
+                allowRename: false,
+                relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                computedBaseLevel
+            }
+        });
+
+        gameLocations.set(stub.id, stub);
+        region.addLocationId(stub.id);
+        const aliases = new Set();
+        aliases.add(normalizeRegionLocationName(blueprint.name));
+        if (Array.isArray(blueprint.aliases)) {
+            blueprint.aliases.forEach(alias => aliases.add(normalizeRegionLocationName(alias)));
+        }
+        aliases.forEach(alias => {
+            if (alias) {
+                stubMap.set(alias, stub);
+            }
+        });
+    }
+
+    const addStubExit = (fromStub, toStub, label) => {
+        if (!fromStub || !toStub || fromStub.id === toStub.id) {
+            return;
+        }
+
+        const existingDir = fromStub.getAvailableDirections()
+            .find(dir => {
+                const exit = fromStub.getExit(dir);
+                return exit && exit.destination === toStub.id;
+            });
+
+        if (existingDir) {
+            const existingExit = fromStub.getExit(existingDir);
+            if (existingExit && !existingExit.description) {
+                try {
+                    existingExit.description = `Path to ${toStub.name}`;
+                } catch (_) {
+                    existingExit.update({ description: `Path to ${toStub.name}` });
+                }
+            }
+            return;
+        }
+
+        const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
+        const existing = fromStub.getExit(directionKey);
+        if (existing) {
+            try {
+                existing.destination = toStub.id;
+            } catch (_) {
+                existing.update({ destination: toStub.id });
+            }
+            return;
+        }
+
+        const exit = new LocationExit({
+            description: `Path to ${toStub.name}`,
+            destination: toStub.id,
+            bidirectional: false
+        });
+        fromStub.addExit(directionKey, exit);
+    };
+
+    for (const blueprint of region.locationBlueprints) {
+        const sourceAliases = [normalizeRegionLocationName(blueprint.name)];
+        if (Array.isArray(blueprint.aliases)) {
+            sourceAliases.push(...blueprint.aliases.map(alias => normalizeRegionLocationName(alias)));
+        }
+        const sourceStub = sourceAliases
+            .map(alias => stubMap.get(alias))
+            .find(Boolean);
+        if (!sourceStub) continue;
+        const exits = blueprint.exits || [];
+
+        exits.forEach(exitInfo => {
+            const targetLabel = typeof exitInfo === 'string' ? exitInfo : exitInfo?.target;
+            if (!targetLabel) return;
+            const directionHint = typeof exitInfo === 'object' ? exitInfo.direction : null;
+
+            const candidateAliases = [normalizeRegionLocationName(targetLabel)];
+            const directStub = candidateAliases
+                .map(alias => stubMap.get(alias))
+                .find(Boolean);
+            const targetStub = directStub;
+            if (!targetStub) {
+                return;
+            }
+
+            const forwardDirection = directionHint || targetLabel;
+            addStubExit(sourceStub, targetStub, forwardDirection);
+        });
+    }
+
+    for (const [fromId, fromLocation] of gameLocations.entries()) {
+        if (!region.locationIds.includes(fromId)) {
+            continue;
+        }
+
+        const directions = fromLocation.getAvailableDirections();
+        for (const direction of directions) {
+            const exit = fromLocation.getExit(direction);
+            if (!exit) {
+                continue;
+            }
+
+            const toLocation = gameLocations.get(exit.destination);
+            if (!toLocation) {
+                continue;
+            }
+
+            const hasReturn = typeof toLocation.getAvailableDirections === 'function' &&
+                toLocation.getAvailableDirections().some(dir => {
+                    const destExit = toLocation.getExit(dir);
+                    return destExit && destExit.destination === fromId;
+                });
+
+            if (hasReturn) {
+                continue;
+            }
+
+            const reverseDirection = getOppositeDirection(direction) || `return_${directionKeyFromName(fromLocation.name || fromId)}`;
+            const description = `Path back to ${fromLocation.name || fromId}`;
+
+            const reverseExit = new LocationExit({
+                description,
+                destination: fromId,
+                bidirectional: false
+            });
+            toLocation.addExit(reverseDirection, reverseExit);
+            console.log(`🔁 Added reverse stub exit from ${toLocation.name || toLocation.id} to ${fromLocation.name || fromId}`);
+        }
+    }
+
+    await generateRegionExitStubs({
+        region,
+        stubMap,
+        settingDescription,
+        regionAverageLevel,
+        chatEndpoint,
+        model,
+        apiKey
+    });
+
+    return stubMap;
+}
+
+async function chooseRegionEntrance({
+    region,
+    stubMap,
+    systemPrompt,
+    generationPrompt,
+    aiResponse,
+    chatEndpoint,
+    model,
+    apiKey
+}) {
+    let entranceLocationId = null;
+    try {
+        const entrancePrompt = renderRegionEntrancePrompt();
+        const entranceMessages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt },
+            { role: 'assistant', content: aiResponse },
+            { role: 'user', content: entrancePrompt }
+        ];
+
+        const entranceRequest = {
+            model,
+            messages: entranceMessages,
+            max_tokens: 200,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        console.log('🚪 Requesting region entrance selection...');
+        const entranceResponse = await axios.post(chatEndpoint, entranceRequest, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+
+        const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
+        const entranceName = parseRegionEntranceResponse(entranceMessage);
+
+        if (entranceName) {
+            const matchedStub = stubMap.get(normalizeRegionLocationName(entranceName));
+            if (matchedStub) {
+                entranceLocationId = matchedStub.id;
+                const metadata = matchedStub.stubMetadata || {};
+                metadata.isRegionEntrance = true;
+                matchedStub.stubMetadata = metadata;
+                region.entranceLocationId = matchedStub.id;
+                return {
+                    locationId: matchedStub.id,
+                    location: matchedStub
+                };
+            } else {
+                console.warn(`Entrance location "${entranceName}" not found among generated stubs.`);
+            }
+        } else {
+            console.warn('Entrance selection response did not include a <name> tag.');
+        }
+    } catch (entranceError) {
+        console.warn('Failed to determine region entrance:', entranceError.message);
+    }
+
+    if (!entranceLocationId && region.locationIds.length > 0) {
+        const fallback = gameLocations.get(region.locationIds[0]);
+        if (fallback) {
+            region.entranceLocationId = fallback.id;
+            return {
+                locationId: fallback.id,
+                location: fallback
+            };
+        }
+    }
+
+    return {
+        locationId: entranceLocationId,
+        location: entranceLocationId ? gameLocations.get(entranceLocationId) : null
+    };
+}
+
 async function generateRegionFromPrompt(options = {}) {
     try {
         const settingDescription = options.setting || describeSettingForPrompt(getActiveSettingSnapshot());
@@ -7573,8 +8174,6 @@ async function generateRegionFromPrompt(options = {}) {
         const region = Region.fromXMLSnippet(aiResponse);
         regions.set(region.id, region);
 
-        const stubMap = new Map();
-
         const themeHint = generationOptions.regionNotes || null;
 
         const baseAverageLevel = Number.isFinite(region.averageLevel)
@@ -7582,223 +8181,34 @@ async function generateRegionFromPrompt(options = {}) {
             : (Number.isFinite(generationOptions.averageLevel) ? generationOptions.averageLevel : 1);
         const regionAverageLevel = baseAverageLevel;
 
-        for (const blueprint of region.locationBlueprints) {
-            const relativeLevel = Number.isFinite(blueprint.relativeLevel)
-                ? blueprint.relativeLevel
-                : 0;
-            const computedBaseLevel = clampLevel(regionAverageLevel + relativeLevel, regionAverageLevel);
-
-            const stub = new Location({
-                name: blueprint.name,
-                description: null,
-                baseLevel: computedBaseLevel,
-                isStub: true,
-                stubMetadata: {
-                    regionId: region.id,
-                    regionName: region.name,
-                    blueprintDescription: blueprint.description,
-                    suggestedRegionExits: (blueprint.exits || []).map(exit => exit.target),
-                    themeHint,
-                    shortDescription: blueprint.description,
-                    locationPurpose: `Part of the ${region.name} region`,
-                    allowRename: false,
-                    relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
-                    regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
-                    computedBaseLevel
-                }
-            });
-
-            gameLocations.set(stub.id, stub);
-            region.addLocationId(stub.id);
-            const aliases = new Set();
-            aliases.add(normalizeRegionLocationName(blueprint.name));
-            if (Array.isArray(blueprint.aliases)) {
-                blueprint.aliases.forEach(alias => aliases.add(normalizeRegionLocationName(alias)));
-            }
-            aliases.forEach(alias => {
-                if (alias) {
-                    stubMap.set(alias, stub);
-                }
-            });
-        }
-
-        // Connect stubs based on blueprint exits with placeholder exit data
-        const addStubExit = (fromStub, toStub, label) => {
-            if (!fromStub || !toStub || fromStub.id === toStub.id) {
-                return;
-            }
-
-            const existingDir = fromStub.getAvailableDirections()
-                .find(dir => {
-                    const exit = fromStub.getExit(dir);
-                    return exit && exit.destination === toStub.id;
-                });
-
-            if (existingDir) {
-                const existingExit = fromStub.getExit(existingDir);
-                if (existingExit && !existingExit.description) {
-                    try {
-                        existingExit.description = `Path to ${toStub.name}`;
-                    } catch (_) {
-                        existingExit.update({ description: `Path to ${toStub.name}` });
-                    }
-                }
-                return;
-            }
-
-            const directionKey = directionKeyFromName(label, `to_${toStub.id}`);
-            const existing = fromStub.getExit(directionKey);
-            if (existing) {
-                try {
-                    existing.destination = toStub.id;
-                } catch (_) {
-                    existing.update({ destination: toStub.id });
-                }
-                return;
-            }
-
-            const exit = new LocationExit({
-                description: `Path to ${toStub.name}`,
-                destination: toStub.id,
-                bidirectional: false
-            });
-            fromStub.addExit(directionKey, exit);
-        };
-
-        for (const blueprint of region.locationBlueprints) {
-            const sourceAliases = [normalizeRegionLocationName(blueprint.name)];
-            if (Array.isArray(blueprint.aliases)) {
-                sourceAliases.push(...blueprint.aliases.map(alias => normalizeRegionLocationName(alias)));
-            }
-            const sourceStub = sourceAliases
-                .map(alias => stubMap.get(alias))
-                .find(Boolean);
-            if (!sourceStub) continue;
-            const exits = blueprint.exits || [];
-
-            exits.forEach(exitInfo => {
-                const targetLabel = exitInfo?.target;
-                if (!targetLabel) return;
-                const directionHint = exitInfo.direction;
-
-                const candidateAliases = [normalizeRegionLocationName(targetLabel)];
-                const directStub = candidateAliases
-                    .map(alias => stubMap.get(alias))
-                    .find(Boolean);
-                const targetStub = directStub;
-                if (!targetStub) {
-                    return;
-                }
-
-                const forwardDirection = directionHint || targetLabel;
-                addStubExit(sourceStub, targetStub, forwardDirection);
-            });
-        }
-
-        const ensureBidirectionalStubConnections = () => {
-            for (const [fromId, fromLocation] of gameLocations.entries()) {
-                if (!region.locationIds.includes(fromId)) {
-                    continue;
-                }
-
-                const directions = fromLocation.getAvailableDirections();
-                for (const direction of directions) {
-                    const exit = fromLocation.getExit(direction);
-                    if (!exit) {
-                        continue;
-                    }
-
-                    const toLocation = gameLocations.get(exit.destination);
-                    if (!toLocation) {
-                        continue;
-                    }
-
-                    const hasReturn = typeof toLocation.getAvailableDirections === 'function' &&
-                        toLocation.getAvailableDirections().some(dir => {
-                            const destExit = toLocation.getExit(dir);
-                            return destExit && destExit.destination === fromId;
-                        });
-
-                    if (hasReturn) {
-                        continue;
-                    }
-
-                    const reverseDirection = getOppositeDirection(direction) || `return_${directionKeyFromName(fromLocation.name || fromId)}`;
-                    const description = `Path back to ${fromLocation.name || fromId}`;
-
-                    const reverseExit = new LocationExit({
-                        description,
-                        destination: fromId,
-                        bidirectional: false
-                    });
-                    toLocation.addExit(reverseDirection, reverseExit);
-                    console.log(`🔁 Added reverse stub exit from ${toLocation.name || toLocation.id} to ${fromLocation.name || fromId}`);
-                }
-            }
-        };
-
-        ensureBidirectionalStubConnections();
-
+        let stubMap = new Map();
         try {
-            await generateRegionExitStubs({
+            stubMap = await instantiateRegionLocations({
                 region,
-                stubMap,
-                settingDescription,
+                themeHint,
                 regionAverageLevel,
+                settingDescription,
                 chatEndpoint,
                 model,
                 apiKey
             });
-        } catch (exitError) {
-            console.warn('Failed to queue pending regions for exits:', exitError.message);
+        } catch (instantiationError) {
+            console.warn('Failed to instantiate region structure:', instantiationError.message);
         }
 
-        let entranceLocationId = null;
-        try {
-            const entrancePrompt = renderRegionEntrancePrompt();
-            const entranceMessages = [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: generationPrompt },
-                { role: 'assistant', content: aiResponse },
-                { role: 'user', content: entrancePrompt }
-            ];
-
-            const entranceRequest = {
-                model,
-                messages: entranceMessages,
-                max_tokens: 200,
-                temperature: config.ai.temperature || 0.7
-            };
-
-            console.log('🚪 Requesting region entrance selection...');
-            const entranceResponse = await axios.post(chatEndpoint, entranceRequest, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-
-            const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
-            //console.log('🏰 Entrance selection response:\n', entranceMessage);
-            const entranceName = parseRegionEntranceResponse(entranceMessage);
-
-            if (entranceName) {
-                const matchedStub = stubMap.get(normalizeRegionLocationName(entranceName));
-                if (matchedStub) {
-                    entranceLocationId = matchedStub.id;
-                    const metadata = matchedStub.stubMetadata || {};
-                    metadata.isRegionEntrance = true;
-                    matchedStub.stubMetadata = metadata;
-                    region.entranceLocationId = matchedStub.id;
-                } else {
-                    console.warn(`Entrance location "${entranceName}" not found among generated stubs.`);
-                }
-            } else {
-                console.warn('Entrance selection response did not include a <name> tag.');
-            }
-        } catch (entranceError) {
-            console.warn('Failed to determine region entrance:', entranceError.message);
+        const entranceInfo = await chooseRegionEntrance({
+            region,
+            stubMap,
+            systemPrompt,
+            generationPrompt,
+            aiResponse,
+            chatEndpoint,
+            model,
+            apiKey
+        });
+        const entranceLocationId = entranceInfo.locationId || null;
+        if (!region.entranceLocationId && entranceLocationId) {
+            region.entranceLocationId = entranceLocationId;
         }
 
         await generateRegionNPCs({
@@ -7993,6 +8403,7 @@ const apiScope = {
     generateSkillsList,
     generateSkillsByNames,
     generateThingImage,
+    expandRegionEntryStub,
     queueLocationThingImages,
     requestNpcAbilityAssignments,
     applyNpcAbilities,

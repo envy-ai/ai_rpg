@@ -1,11 +1,11 @@
 <template>
-<role>Region exit generator</role>
-    
-<systemPrompt>
+    <role>Region exit generator</role>
+
+    <systemPrompt>
 You are a an AI role-playing gamemaster.
-</systemPrompt>
-    
-<generationPrompt>
+    </systemPrompt>
+
+    <generationPrompt>
 <context>
 <setting>
 {{ setting }}
@@ -14,11 +14,13 @@ You are a an AI role-playing gamemaster.
 <name>{{ currentRegion.name }}</name>
 <description>{{ currentRegion.description }}</description>
 <locations>
-{% for loc in currentRegion.locations %}    <location>
+{% for loc in currentRegion.locations %}
+    <location>
         <name>{{ loc.name }}</name>
         <description>{{ loc.description }}</description>
     </location>
-{% endfor %}</locations>
+{% endfor %}
+</locations>
 </currentRegion>
 </context>
 
@@ -36,3 +38,5 @@ Generally, regions can only be contained by one other region, so only use the Co
 </region>
 ... repeat for each region ...
 </regions>
+    </generationPrompt>
+</template>
