@@ -66,34 +66,65 @@
                             </div>
                         </div>
 
-                        <div class="chat-container">
-                            <div class="chat-log" id="chatLog">
-                                {% if chatHistory and chatHistory.length > 0 %}
-                                    {% for message in chatHistory %}
-                                        <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
-                                            <div class="message-sender">
-                                                {% if message.role == 'user' %}
-                                                    👤 You
-                                                {% else %}
-                                                    🤖 AI Game Master
-                                                {% endif %}
+                        <div class="chat-wrapper">
+                            <div class="chat-container">
+                                <div class="chat-log" id="chatLog">
+                                    {% if chatHistory and chatHistory.length > 0 %}
+                                        {% for message in chatHistory %}
+                                            <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                                                <div class="message-sender">
+                                                    {% if message.role == 'user' %}
+                                                        👤 You
+                                                    {% else %}
+                                                        🤖 AI Game Master
+                                                    {% endif %}
+                                                </div>
+                                                <div>{{ message.content }}</div>
+                                                <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
                                             </div>
-                                            <div>{{ message.content }}</div>
-                                            <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <div class="message ai-message">
+                                            <div class="message-sender">🤖 AI Game Master</div>
+                                            <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
                                         </div>
-                                    {% endfor %}
-                                {% else %}
-                                    <div class="message ai-message">
-                                        <div class="message-sender">🤖 AI Game Master</div>
-                                        <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then describe what kind of adventure you'd like to embark on.</div>
+                                    {% endif %}
+                                </div>
+
+                                <div class="input-area">
+                                    <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
+                                    <button class="send-button" id="sendButton">Send</button>
+                                </div>
+                            </div>
+
+                            <aside class="chat-sidebar" aria-label="Player and party overview">
+                                <section class="chat-player-section">
+                                    <h3 class="chat-sidebar-heading">Player</h3>
+                                    <div class="chat-player-card" id="chatPlayerCard">
+                                        <div class="chat-player-portrait" id="chatPlayerPortrait">
+                                            <div class="chat-player-placeholder" aria-hidden="true">🧙</div>
+                                        </div>
+                                        <div class="chat-player-details">
+                                            <div class="chat-player-name" id="chatPlayerName">Unnamed Adventurer</div>
+                                            <div class="chat-player-meta">
+                                                <span class="chat-player-level" id="chatPlayerLevel">Level ?</span>
+                                                <span class="chat-player-archetype" id="chatPlayerArchetype">Class · Race</span>
+                                            </div>
+                                            <div class="chat-player-health" id="chatPlayerHealth">HP: ? / ?</div>
+                                            <p class="chat-player-description" id="chatPlayerDescription">No description available.</p>
+                                        </div>
                                     </div>
-                                {% endif %}
-                            </div>
-                            
-                            <div class="input-area">
-                                <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
-                                <button class="send-button" id="sendButton">Send</button>
-                            </div>
+                                </section>
+
+                                <section class="chat-party-section">
+                                    <div class="chat-party-header">
+                                        <h3 class="chat-sidebar-heading">Party</h3>
+                                        <span class="chat-party-count" id="chatPartyCount">0</span>
+                                    </div>
+                                    <div class="chat-party-empty" id="chatPartyEmpty">No companions are currently travelling with you.</div>
+                                    <div class="location-entity-grid chat-party-grid" id="chatPartyMembers"></div>
+                                </section>
+                            </aside>
                         </div>
                     </div>
                 </section>
@@ -731,6 +762,162 @@
         }
 
         window.renderEntityImage = renderEntityImage;
+
+        const chatSidebarElements = {
+            card: document.getElementById('chatPlayerCard'),
+            portrait: document.getElementById('chatPlayerPortrait'),
+            name: document.getElementById('chatPlayerName'),
+            level: document.getElementById('chatPlayerLevel'),
+            archetype: document.getElementById('chatPlayerArchetype'),
+            health: document.getElementById('chatPlayerHealth'),
+            description: document.getElementById('chatPlayerDescription'),
+            partyGrid: document.getElementById('chatPartyMembers'),
+            partyEmpty: document.getElementById('chatPartyEmpty'),
+            partyCount: document.getElementById('chatPartyCount')
+        };
+
+        function updateChatPlayerPanel(player = {}) {
+            if (!chatSidebarElements.card) {
+                return;
+            }
+
+            const name = player?.name || 'Unnamed Adventurer';
+            if (chatSidebarElements.name) {
+                chatSidebarElements.name.textContent = name;
+            }
+
+            const levelLabel = Number.isFinite(player?.level) ? `Level ${player.level}` : 'Level ?';
+            if (chatSidebarElements.level) {
+                chatSidebarElements.level.textContent = levelLabel;
+            }
+
+            const archetypeParts = [];
+            if (player?.class) {
+                archetypeParts.push(player.class);
+            }
+            if (player?.race) {
+                archetypeParts.push(player.race);
+            }
+            const archetypeLabel = archetypeParts.length ? archetypeParts.join(' · ') : 'Unknown origin';
+            if (chatSidebarElements.archetype) {
+                chatSidebarElements.archetype.textContent = archetypeLabel;
+            }
+
+            const healthCurrent = Number.isFinite(player?.health) ? player.health : '?';
+            const healthMaximum = Number.isFinite(player?.maxHealth) ? player.maxHealth : '?';
+            if (chatSidebarElements.health) {
+                chatSidebarElements.health.textContent = `HP: ${healthCurrent} / ${healthMaximum}`;
+            }
+
+            const description = (player?.shortDescription || player?.description || 'No description available.').trim();
+            if (chatSidebarElements.description) {
+                chatSidebarElements.description.textContent = description;
+            }
+
+            if (chatSidebarElements.portrait) {
+                renderEntityImage({
+                    element: chatSidebarElements.portrait,
+                    entityType: 'player',
+                    entityId: player?.id || null,
+                    imageId: player?.imageId || null,
+                    altText: `${name} portrait`,
+                    placeholderIcon: '🧙',
+                    placeholderClass: 'chat-player-placeholder',
+                    enableLightbox: true
+                });
+            }
+        }
+
+        function renderChatPartyPanel(members = []) {
+            const container = chatSidebarElements.partyGrid;
+            const emptyState = chatSidebarElements.partyEmpty;
+            const countLabel = chatSidebarElements.partyCount;
+
+            if (!container) {
+                if (countLabel) {
+                    countLabel.textContent = '0';
+                }
+                return;
+            }
+
+            const safeMembers = Array.isArray(members) ? members : [];
+            container.innerHTML = '';
+
+            if (countLabel) {
+                countLabel.textContent = String(safeMembers.length);
+            }
+
+            if (emptyState) {
+                emptyState.style.display = safeMembers.length ? 'none' : 'block';
+            }
+
+            container.style.display = safeMembers.length ? 'flex' : 'none';
+
+            const tooltipController = window.floatingTooltipController;
+
+            safeMembers.forEach(member => {
+                if (!member) {
+                    return;
+                }
+
+                const card = document.createElement('div');
+                card.className = 'location-entity-card is-npc';
+
+                const portrait = document.createElement('div');
+                portrait.className = 'location-entity-icon';
+
+                renderEntityImage({
+                    element: portrait,
+                    entityType: member.isNPC ? 'npc' : 'player',
+                    entityId: member.id || null,
+                    imageId: member.imageId || null,
+                    altText: member.name || 'Party member portrait',
+                    placeholderIcon: '🎭',
+                    placeholderClass: 'location-entity-placeholder'
+                });
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'location-entity-name';
+                nameEl.textContent = member.name || 'Unknown';
+
+                card.appendChild(portrait);
+                card.appendChild(nameEl);
+
+                const rawDescription = member?.description || member?.shortDescription || '';
+                const normalizedDescription = rawDescription
+                    .replace(/<[^>]+>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                const tooltipText = normalizedDescription || 'No description provided.';
+
+                if (tooltipText) {
+                    card.setAttribute('aria-label', tooltipText);
+                }
+
+                if (tooltipController && typeof tooltipController.show === 'function') {
+                    card.addEventListener('mouseenter', (event) => {
+                        tooltipController.show(tooltipText, event);
+                    });
+                    card.addEventListener('mousemove', (event) => {
+                        if (typeof tooltipController.move === 'function') {
+                            tooltipController.move(event);
+                        }
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        tooltipController.hide?.();
+                    });
+                }
+
+                if (typeof registerNpcContextMenu === 'function' && member.id) {
+                    registerNpcContextMenu(card, member);
+                }
+
+                container.appendChild(card);
+            });
+        }
+
+        window.updateChatPlayerPanel = updateChatPlayerPanel;
+        window.renderChatPartyPanel = renderChatPartyPanel;
 
         function processAutoImageElement(element) {
             if (!(element instanceof HTMLElement)) {
@@ -3783,6 +3970,11 @@
             }
 
             function renderInventoryState(player = {}) {
+                updateChatPlayerPanel(player);
+                if (Array.isArray(player?.partyMembers)) {
+                    renderChatPartyPanel(player.partyMembers);
+                }
+
                 ensureGearSlotTypes();
                 const inventoryItems = Array.isArray(player.inventory) ? player.inventory : [];
                 const gear = player && typeof player.gear === 'object' ? player.gear : {};
@@ -3947,6 +4139,8 @@
                 emptyState.style.display = safeMembers.length ? 'none' : 'block';
                 partyGrid.style.display = safeMembers.length ? 'flex' : 'none';
 
+                renderChatPartyPanel(safeMembers);
+
                 safeMembers.forEach(member => {
                     const card = document.createElement('div');
                     card.className = 'party-card';
@@ -4050,6 +4244,13 @@
                 const response = await fetch('/api/player', { cache: 'no-store' });
                 const result = await response.json();
                 
+                if (result.success && result.player) {
+                    updateChatPlayerPanel(result.player);
+                    if (Array.isArray(result.player.partyMembers)) {
+                        renderChatPartyPanel(result.player.partyMembers);
+                    }
+                }
+
                 if (result.success && result.player && result.player.currentLocation) {
                     // Fetch location details
                     console.log("Fetching location details for ID:", result.player.currentLocation);
