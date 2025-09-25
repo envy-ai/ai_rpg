@@ -5216,10 +5216,34 @@ module.exports = function registerApiRoutes(scope) {
                                 exit = new LocationExit({
                                     description: exitInfo.description || `Path to ${exitInfo.destination}`,
                                     destination: exitInfo.destination,
+                                    destinationRegion: exitInfo.destinationRegion || null,
                                     bidirectional: exitInfo.bidirectional !== false,
                                     id: exitId
                                 });
                                 gameLocationExits.set(exit.id, exit);
+                            } else {
+                                if (exitInfo.description) {
+                                    try {
+                                        exit.description = exitInfo.description;
+                                    } catch (_) {
+                                        exit.update({ description: exitInfo.description });
+                                    }
+                                }
+                                try {
+                                    exit.destination = exitInfo.destination;
+                                } catch (_) {
+                                    exit.update({ destination: exitInfo.destination });
+                                }
+                                try {
+                                    exit.bidirectional = exitInfo.bidirectional !== false;
+                                } catch (_) {
+                                    exit.update({ bidirectional: exitInfo.bidirectional !== false });
+                                }
+                                try {
+                                    exit.destinationRegion = exitInfo.destinationRegion || null;
+                                } catch (_) {
+                                    exit.update({ destinationRegion: exitInfo.destinationRegion || null });
+                                }
                             }
 
                             location.addExit(direction, exit);
@@ -5236,6 +5260,7 @@ module.exports = function registerApiRoutes(scope) {
                         const exit = new LocationExit({
                             description: exitData.description,
                             destination: exitData.destination,
+                            destinationRegion: exitData.destinationRegion || null,
                             bidirectional: exitData.bidirectional,
                             id: exitData.id
                         });
