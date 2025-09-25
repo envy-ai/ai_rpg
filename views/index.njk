@@ -1085,6 +1085,44 @@
 
         const thingDataCache = window.currentThingData instanceof Map ? window.currentThingData : new Map();
         window.currentThingData = thingDataCache;
+        const pendingThingRequests = new Map();
+
+        async function fetchThingDetails(thingId) {
+            if (!thingId) {
+                return null;
+            }
+
+            if (thingDataCache.has(thingId)) {
+                return thingDataCache.get(thingId);
+            }
+
+            if (pendingThingRequests.has(thingId)) {
+                return pendingThingRequests.get(thingId);
+            }
+
+            const request = fetch(`/api/things/${encodeURIComponent(thingId)}`, {
+                cache: 'no-store'
+            }).then(async response => {
+                try {
+                    const data = await response.json();
+                    if (data?.success && data.thing) {
+                        cacheThingData(data.thing);
+                        return data.thing;
+                    }
+                } catch (error) {
+                    console.warn('Failed to parse thing details:', error);
+                }
+                return null;
+            }).catch(error => {
+                console.warn(`Failed to load thing ${thingId}:`, error);
+                return null;
+            }).finally(() => {
+                pendingThingRequests.delete(thingId);
+            });
+
+            pendingThingRequests.set(thingId, request);
+            return request;
+        }
 
         const thingMenuState = { openMenu: null, trigger: null };
         let thingMenuListenersAttached = false;
@@ -3028,7 +3066,7 @@
                 }
             }
 
-            window.updateLocationDisplay = function(location) {
+            window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationTooltip = document.getElementById('locationTooltip');
                 const locationHint = document.getElementById('locationHint');
@@ -3043,6 +3081,21 @@
 
                 closeNpcContextMenu();
                 npcDataCache.clear();
+
+                const maybeLoadThingDetails = async (loc) => {
+                    if (!loc) {
+                        return [];
+                    }
+                    let resolvedThings = Array.isArray(loc.things) ? [...loc.things] : [];
+                    if (resolvedThings.length === 0 && Array.isArray(loc.thingIds) && loc.thingIds.length > 0) {
+                        const fetched = await Promise.all(loc.thingIds.map(fetchThingDetails));
+                        resolvedThings = fetched.filter(Boolean);
+                        if (resolvedThings.length > 0) {
+                            loc.things = resolvedThings;
+                        }
+                    }
+                    return resolvedThings;
+                };
 
                 if (location) {
                     const locationDescriptionHtml = location.description || 'No description available.';
@@ -3225,7 +3278,7 @@
                     }
 
                     if (locationThings) {
-                        const things = Array.isArray(location.things) ? location.things : [];
+                        const things = await maybeLoadThingDetails(location);
                         if (things.length === 0) {
                             locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
                         } else {
@@ -3352,7 +3405,7 @@
                                 }
                             });
                         }
-                        window.updateLocationDisplay(result.location);
+                        await window.updateLocationDisplay(result.location);
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
                         }
@@ -3998,7 +4051,7 @@
 
                     if (locationResult.success && locationResult.location) {
                         console.log("Updating location display");
-                        window.updateLocationDisplay(locationResult.location);
+                        await window.updateLocationDisplay(locationResult.location);
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
                         }
