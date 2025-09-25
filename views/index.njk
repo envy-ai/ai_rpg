@@ -419,7 +419,6 @@
                             <span class="npc-view-tag" id="npcViewLevel"></span>
                         </div>
                         <div class="npc-view-health" id="npcViewHealth"></div>
-                        <div class="npc-view-dispositions" id="npcViewDispositions"></div>
                     </div>
                 </div>
                 <div class="npc-view-sections">
@@ -428,9 +427,14 @@
                         <dl class="npc-view-attributes" id="npcViewAttributes"></dl>
                         <div class="npc-view-empty" id="npcViewAttributesEmpty">No attribute data available.</div>
                     </section>
+                    <section class="npc-view-section" id="npcViewEquipmentSection">
+                        <h4>Equipment</h4>
+                        <dl class="npc-view-equipment" id="npcViewEquipment"></dl>
+                        <div class="npc-view-empty" id="npcViewEquipmentEmpty">No equipment equipped.</div>
+                    </section>
                     <section class="npc-view-section" id="npcViewSkillsSection">
                         <h4>Skills</h4>
-                        <ul class="npc-view-list" id="npcViewSkills"></ul>
+                        <div class="npc-view-skills" id="npcViewSkills"></div>
                         <div class="npc-view-empty" id="npcViewSkillsEmpty">No skill data available.</div>
                     </section>
                     <section class="npc-view-section" id="npcViewAbilitiesSection">
@@ -444,6 +448,10 @@
                         <div class="npc-view-empty" id="npcViewStatusesEmpty">No active status effects.</div>
                     </section>
                 </div>
+                <details class="npc-view-dispositions" id="npcViewDispositions" hidden>
+                    <summary>Dispositions</summary>
+                    <div class="npc-view-disposition-list" id="npcViewDispositionsList"></div>
+                </details>
             </div>
         </div>
     </div>
@@ -1597,8 +1605,11 @@
         const npcViewLevel = document.getElementById('npcViewLevel');
         const npcViewHealth = document.getElementById('npcViewHealth');
         const npcViewDispositions = document.getElementById('npcViewDispositions');
+        const npcViewDispositionsList = document.getElementById('npcViewDispositionsList');
         const npcViewAttributes = document.getElementById('npcViewAttributes');
         const npcViewAttributesEmpty = document.getElementById('npcViewAttributesEmpty');
+        const npcViewEquipment = document.getElementById('npcViewEquipment');
+        const npcViewEquipmentEmpty = document.getElementById('npcViewEquipmentEmpty');
         const npcViewSkills = document.getElementById('npcViewSkills');
         const npcViewSkillsEmpty = document.getElementById('npcViewSkillsEmpty');
         const npcViewAbilities = document.getElementById('npcViewAbilities');
@@ -3278,14 +3289,13 @@
                     npcViewHealth.textContent = '';
                     npcViewHealth.setAttribute('hidden', '');
                 } else {
-                    const parts = [];
-                    if (healthValue !== null) {
-                        parts.push(`HP: ${healthValue}`);
+                    if (healthValue !== null && maxHealthValue !== null) {
+                        npcViewHealth.textContent = `${healthValue}/${maxHealthValue}`;
+                    } else if (healthValue !== null) {
+                        npcViewHealth.textContent = `${healthValue}`;
+                    } else {
+                        npcViewHealth.textContent = `${maxHealthValue}`;
                     }
-                    if (maxHealthValue !== null) {
-                        parts.push(`Max: ${maxHealthValue}`);
-                    }
-                    npcViewHealth.textContent = parts.join(' · ');
                     npcViewHealth.removeAttribute('hidden');
                 }
             }
@@ -3293,16 +3303,25 @@
             const dispositions = Array.isArray(latestNpc?.dispositionsTowardsPlayer)
                 ? latestNpc.dispositionsTowardsPlayer.filter(entry => entry && entry.type)
                 : [];
-            if (npcViewDispositions) {
+            if (npcViewDispositions && npcViewDispositionsList) {
                 if (!dispositions.length) {
-                    npcViewDispositions.textContent = '';
                     npcViewDispositions.setAttribute('hidden', '');
+                    npcViewDispositions.removeAttribute('open');
+                    npcViewDispositionsList.innerHTML = '';
                 } else {
-                    npcViewDispositions.innerHTML = dispositions.map(entry => {
-                        const valueText = Number.isFinite(Number(entry.value)) ? ` (${Number(entry.value)})` : '';
-                        return `<span class="npc-view-disposition-chip">${escapeHtml(entry.type)}: ${escapeHtml(entry.intensityName || 'neutral')}${escapeHtml(valueText)}</span>`;
-                    }).join('');
                     npcViewDispositions.removeAttribute('hidden');
+                    npcViewDispositions.open = false;
+                    npcViewDispositionsList.innerHTML = '';
+                    dispositions.forEach(entry => {
+                        const chip = document.createElement('span');
+                        chip.className = 'npc-view-disposition-chip';
+                        const numericValue = Number(entry.value);
+                        const formattedValue = Number.isFinite(numericValue)
+                            ? ` (${numericValue > 0 ? '+' : ''}${numericValue})`
+                            : '';
+                        chip.textContent = `${entry.type}: ${entry.intensityName || 'neutral'}${formattedValue}`;
+                        npcViewDispositionsList.appendChild(chip);
+                    });
                 }
             }
 
@@ -3329,9 +3348,9 @@
                         parts.push(value);
                     }
                     if (modifier !== null) {
-                        parts.push(`mod ${modifier >= 0 ? '+' : ''}${modifier}`);
+                        parts.push(`${modifier >= 0 ? '+' : ''}${modifier}`);
                     }
-                    attributeEntries.push({ term: label, detail: parts.join(' · ') || '—' });
+                    attributeEntries.push({ term: label, detail: parts.join(' ') || '—' });
                 }
             } else if (latestNpc?.attributes && typeof latestNpc.attributes === 'object') {
                 for (const [key, value] of Object.entries(latestNpc.attributes)) {
@@ -3343,27 +3362,101 @@
             attributeEntries.sort((a, b) => a.term.localeCompare(b.term));
             renderDefinitionList(npcViewAttributes, npcViewAttributesEmpty, attributeEntries);
 
-            const skillEntries = [];
+            const inventoryItems = Array.isArray(latestNpc?.inventory) ? latestNpc.inventory : [];
+            const inventoryMap = new Map();
+            inventoryItems.forEach(item => {
+                if (item && item.id) {
+                    inventoryMap.set(item.id, item);
+                }
+            });
+
+            const equipmentEntries = [];
+            if (latestNpc?.gear && typeof latestNpc.gear === 'object') {
+                for (const [slotName, slotData] of Object.entries(latestNpc.gear)) {
+                    if (!slotName && !slotData?.slotType) {
+                        continue;
+                    }
+
+                    const slotTypeLabel = slotData?.slotType ? formatSlotTypeLabel(slotData.slotType) : '';
+                    const resolvedSlotName = typeof slotName === 'string' && slotName.trim()
+                        ? slotName.trim()
+                        : '';
+                    const slotLabel = resolvedSlotName || (slotTypeLabel ? `${slotTypeLabel} Slot` : 'Slot');
+
+                    let detail = 'Empty';
+                    if (slotData && slotData.itemId) {
+                        const matchedItem = inventoryMap.get(slotData.itemId);
+                        const itemName = matchedItem?.name || slotData.itemName || slotData.itemId;
+                        detail = itemName;
+                    }
+
+                    equipmentEntries.push({ term: slotLabel, detail });
+                }
+            }
+            equipmentEntries.sort((a, b) => a.term.localeCompare(b.term));
+            renderDefinitionList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
+
+            const skillData = [];
             if (latestNpc?.skills) {
                 if (Array.isArray(latestNpc.skills)) {
                     latestNpc.skills.forEach(entry => {
                         if (!entry) return;
                         if (typeof entry === 'string') {
-                            skillEntries.push(entry);
+                            skillData.push({ name: entry, rank: null });
                         } else if (entry.name) {
-                            const rank = Number.isFinite(Number(entry.rank)) ? ` (Rank ${Number(entry.rank)})` : '';
-                            skillEntries.push(`${entry.name}${rank}`);
+                            const rankValue = Number.isFinite(Number(entry.rank)) ? Number(entry.rank) : null;
+                            skillData.push({ name: entry.name, rank: rankValue });
                         }
                     });
                 } else if (latestNpc.skills && typeof latestNpc.skills === 'object') {
                     for (const [skillName, rank] of Object.entries(latestNpc.skills)) {
-                        const suffix = Number.isFinite(Number(rank)) ? ` (Rank ${Number(rank)})` : '';
-                        skillEntries.push(`${skillName}${suffix}`);
+                        const rankValue = Number.isFinite(Number(rank)) ? Number(rank) : null;
+                        skillData.push({ name: skillName, rank: rankValue });
                     }
                 }
             }
-            skillEntries.sort((a, b) => a.localeCompare(b));
-            renderList(npcViewSkills, npcViewSkillsEmpty, skillEntries);
+            skillData.sort((a, b) => a.name.localeCompare(b.name));
+            if (npcViewSkills) {
+                npcViewSkills.innerHTML = '';
+                if (!skillData.length) {
+                    npcViewSkills.setAttribute('hidden', '');
+                    if (npcViewSkillsEmpty) {
+                        npcViewSkillsEmpty.removeAttribute('hidden');
+                    }
+                } else {
+                    if (npcViewSkillsEmpty) {
+                        npcViewSkillsEmpty.setAttribute('hidden', '');
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'npc-view-skills-table';
+                    const tbody = document.createElement('tbody');
+                    table.appendChild(tbody);
+
+                    for (let i = 0; i < skillData.length; i += 2) {
+                        const row = document.createElement('tr');
+                        if (((i / 2) % 2) === 1) {
+                            row.classList.add('is-alt');
+                        }
+
+                        for (let col = 0; col < 2; col++) {
+                            const cell = document.createElement('td');
+                            const entry = skillData[i + col] || null;
+                            if (entry) {
+                                const rankText = entry.rank !== null ? ` (Rank ${entry.rank})` : '';
+                                cell.textContent = `${entry.name}${rankText}`;
+                            } else {
+                                cell.innerHTML = '&nbsp;';
+                            }
+                            row.appendChild(cell);
+                        }
+
+                        tbody.appendChild(row);
+                    }
+
+                    npcViewSkills.appendChild(table);
+                    npcViewSkills.removeAttribute('hidden');
+                }
+            }
 
             const abilityEntries = [];
             if (Array.isArray(latestNpc?.abilities)) {

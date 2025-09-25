@@ -2258,6 +2258,12 @@ body.modal-open {
   gap: 12px;
 }
 
+.npc-view-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: rgba(165, 243, 252, 0.95);
+}
+
 .npc-view-description {
   margin: 0;
   color: rgba(226, 232, 240, 0.85);
@@ -2288,13 +2294,39 @@ body.modal-open {
 }
 
 .npc-view-dispositions {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.9);
+  margin-top: 4px;
+}
+
+.npc-view-dispositions summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: rgba(165, 243, 252, 0.95);
+  list-style: none;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.npc-view-dispositions summary::marker,
+.npc-view-dispositions summary::-webkit-details-marker {
+  display: none;
 }
 
 .npc-view-dispositions[hidden] {
   display: none;
+}
+
+.npc-view-disposition-list {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .npc-view-disposition-chip {
@@ -2344,6 +2376,26 @@ body.modal-open {
   display: none;
 }
 
+.npc-view-equipment {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 16px;
+}
+
+.npc-view-equipment dt {
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.npc-view-equipment dd {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.85);
+}
+
+.npc-view-equipment[hidden] {
+  display: none;
+}
+
 .npc-view-list {
   margin: 0;
   padding-left: 20px;
@@ -2367,6 +2419,40 @@ body.modal-open {
   font-weight: 400;
   margin-top: 2px;
   color: rgba(148, 163, 184, 0.85);
+}
+
+.npc-view-skills {
+  overflow-x: auto;
+}
+
+.npc-view-skills[hidden] {
+  display: none;
+}
+
+.npc-view-skills-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 280px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.npc-view-skills-table td {
+  width: 50%;
+  padding: 8px 12px;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.npc-view-skills-table tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.npc-view-skills-table tr:nth-child(odd) {
+  background: transparent;
+}
+
+.npc-view-skills-table tr.is-alt {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .npc-view-empty {
