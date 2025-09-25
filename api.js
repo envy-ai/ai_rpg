@@ -3343,6 +3343,10 @@ module.exports = function registerApiRoutes(scope) {
                             exits: Array.from(loc.getAvailableDirections()).map(direction => {
                                 const exit = loc.getExit(direction);
                                 const destinationRegionId = exit?.destinationRegion || null;
+                                const destinationLocation = exit?.destination ? gameLocations.get(exit.destination) : null;
+                                const destinationName = destinationLocation?.name
+                                    || destinationLocation?.stubMetadata?.blueprintDescription
+                                    || null;
 
                                 let destinationRegionName = null;
                                 let destinationRegionExpanded = false;
@@ -3366,6 +3370,7 @@ module.exports = function registerApiRoutes(scope) {
                                     destinationRegion: destinationRegionId,
                                     destinationRegionName,
                                     destinationRegionExpanded,
+                                    destinationName,
                                     bidirectional: exit?.bidirectional !== false
                                 };
                             })
@@ -4789,14 +4794,14 @@ module.exports = function registerApiRoutes(scope) {
                 // Generate an initial region and choose its entrance as the starting location
                 console.log('🗺️ Generating starting region...');
                 const defaultRegionName = activeSetting?.name
-                    ? `${activeSetting.name} Frontier`
+                    ? `${activeSetting.name}`
                     : resolvedStartingLocation
                         ? `${resolvedStartingLocation} Region`
                         : 'Starting Region';
 
                 const regionOptions = {
                     setting: settingDescription,
-                    regionName: resolvedStartingLocation ? `${resolvedStartingLocation} Frontier` : defaultRegionName,
+                    regionName: resolvedStartingLocation ? `${resolvedStartingLocation}` : defaultRegionName,
                     regionNotes: startingLocationStyle || null
                 };
 

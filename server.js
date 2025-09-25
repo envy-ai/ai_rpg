@@ -2252,9 +2252,9 @@ function generateStubName(baseLocation, direction) {
     const baseName = baseLocation?.name || 'Uncharted';
     const normalizedDirection = normalizeDirection(direction);
     const directionLabel = normalizedDirection ? normalizedDirection.charAt(0).toUpperCase() + normalizedDirection.slice(1) : 'Adjacent';
-    const suffixes = ['Path', 'Trail', 'Approach', 'Passage', 'Outlook', 'Frontier'];
-    const suffix = suffixes[randomIntInclusive(0, suffixes.length - 1)];
-    let candidate = `${baseName} ${directionLabel} ${suffix}`.trim();
+    //const suffixes = ['Path', 'Trail', 'Approach', 'Passage', 'Outlook', 'Frontier'];
+    //const suffix = suffixes[randomIntInclusive(0, suffixes.length - 1)];
+    let candidate = `${baseName} ${directionLabel}`.trim();
 
     if (typeof Location.findByName === 'function' && Location.findByName(candidate)) {
         candidate = `${candidate} ${randomIntInclusive(2, 99)}`;
@@ -7450,9 +7450,9 @@ function parseRegionExitsResponse(xmlSnippet) {
     try {
         const parser = new DOMParser({
             errorHandler: {
-                warning: () => {},
-                error: () => {},
-                fatalError: () => {}
+                warning: () => { },
+                error: () => { },
+                fatalError: () => { }
             }
         });
         doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
@@ -7548,9 +7548,9 @@ function parseRegionStubLocations(xmlSnippet) {
     try {
         const parser = new DOMParser({
             errorHandler: {
-                warning: () => {},
-                error: () => {},
-                fatalError: () => {}
+                warning: () => { },
+                error: () => { },
+                fatalError: () => { }
             }
         });
         doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
