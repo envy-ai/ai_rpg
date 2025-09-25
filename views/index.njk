@@ -2880,6 +2880,8 @@
             const tabButtons = document.querySelectorAll('.tab-button');
             const tabPanels = document.querySelectorAll('.tab-panel');
 
+            const hashPrefix = 'tab-';
+
             const activateTab = (tabName) => {
                 if (!tabName) return;
                 const targetButton = Array.from(tabButtons).find(btn => btn.dataset.tab === tabName);
@@ -2915,16 +2917,24 @@
                         return;
                     }
                     activateTab(button.dataset.tab);
-                    if (history.replaceState) {
-                        history.replaceState(null, '', `#${button.dataset.tab}`);
+                    const newHash = `#${hashPrefix}${button.dataset.tab}`;
+                    if (window.location.hash !== newHash) {
+                        window.location.hash = newHash;
                     }
                 });
             });
 
             const applyHashTab = () => {
-                const hash = window.location.hash ? window.location.hash.replace('#', '') : '';
-                if (hash) {
-                    activateTab(hash);
+                const rawHash = window.location.hash ? window.location.hash.replace('#', '') : '';
+                if (!rawHash) {
+                    return;
+                }
+
+                if (rawHash.startsWith(hashPrefix)) {
+                    const tabName = rawHash.substring(hashPrefix.length);
+                    activateTab(tabName);
+                } else {
+                    activateTab(rawHash);
                 }
             };
 
@@ -2933,7 +2943,9 @@
 
             if (!window.location.hash) {
                 const defaultButton = document.querySelector('.tab-button.active');
-                activateTab(defaultButton ? defaultButton.dataset.tab : 'adventure');
+                const defaultTab = defaultButton ? defaultButton.dataset.tab : 'adventure';
+                activateTab(defaultTab);
+                window.location.hash = `#${hashPrefix}${defaultTab}`;
             }
         }
 
