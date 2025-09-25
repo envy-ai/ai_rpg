@@ -1,0 +1,38 @@
+<template>
+<role>Region exit generator</role>
+    
+<systemPrompt>
+You are a an AI role-playing gamemaster.
+</systemPrompt>
+    
+<generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+<currentRegion>
+<name>{{ currentRegion.name }}</name>
+<description>{{ currentRegion.description }}</description>
+<locations>
+{% for loc in currentRegion.locations %}    <location>
+        <name>{{ loc.name }}</name>
+        <description>{{ loc.description }}</description>
+    </location>
+{% endfor %}</locations>
+</currentRegion>
+</context>
+
+I'd like you to generate a set of 1 or more new regions that connect to the current region. Each region should have a 3 sentence description. "Region" is defined loosely in that it's just a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. Locations within the region will be generated when the region is first visited by the player.
+
+Generally, regions can only be contained by one other region, so only use the Contains relationship once at most (or not at all if it doesn't make sense). Regions can be adjacent to multiple other regions and have other regions within them. Regions should never be as small as a single area or room -- that is a location and should be generated later when the player visits the region.
+
+<regions>
+<region>
+<regionName>…</regionName>
+<regionDescription>3 sentence description of the region as a whole</regionDescription>
+<relativeLevel>Integer from 0 to +3</relativeLevel>
+<relationshipToCurrentRegion>Within, Contains, or Adjacent</relationshipToCurrentRegion>
+<exitLocation>Location name of the exit point to this region</exitLocation>
+</region>
+... repeat for each region ...
+</regions>
