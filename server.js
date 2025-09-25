@@ -911,6 +911,7 @@ const skills = new Map(); // Store skill definitions by name
 const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
+const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized name
 
@@ -2266,7 +2267,7 @@ function normalizeRegionLocationName(name) {
     return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
-function ensureExitConnection(fromLocation, direction, toLocation, { description, bidirectional = false } = {}) {
+function ensureExitConnection(fromLocation, direction, toLocation, { description, bidirectional = false, destinationRegion } = {}) {
     if (!fromLocation || !toLocation) {
         return null;
     }
@@ -2293,6 +2294,13 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
         } catch (_) {
             exit.update({ bidirectional: Boolean(bidirectional) });
         }
+        if (destinationRegion !== undefined) {
+            try {
+                exit.destinationRegion = destinationRegion;
+            } catch (_) {
+                exit.destinationRegion = destinationRegion;
+            }
+        }
         if (bidirectional) {
             const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
             ensureExitConnection(
@@ -2309,6 +2317,7 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
     const newExit = new LocationExit({
         description: exitDescription,
         destination: toLocation.id,
+        destinationRegion: destinationRegion !== undefined ? destinationRegion : null,
         bidirectional: Boolean(bidirectional)
     });
 
@@ -2475,6 +2484,10 @@ const stubExpansionPromises = new Map();
 
 function scheduleStubExpansion(location) {
     if (!location || !location.isStub) {
+        return null;
+    }
+
+    if (location.stubMetadata?.isRegionEntryStub) {
         return null;
     }
 
@@ -7130,6 +7143,338 @@ function renderRegionEntrancePrompt() {
     }
 }
 
+function renderRegionExitsPrompt({ region, settingDescription }) {
+    try {
+        const templateName = 'region-generator-exits.xml.njk';
+        const locationEntries = Array.isArray(region.locationIds)
+            ? region.locationIds
+                .map(id => gameLocations.get(id))
+                .filter(Boolean)
+                .map(loc => ({
+                    name: loc.name || loc.id,
+                    description: loc.description
+                        || loc.stubMetadata?.blueprintDescription
+                        || loc.stubMetadata?.shortDescription
+                        || 'No description provided.'
+                }))
+            : [];
+
+        const variables = {
+            setting: settingDescription,
+            currentRegion: {
+                name: region.name,
+                description: region.description,
+                locations: locationEntries
+            }
+        };
+
+        const rendered = promptEnv.render(templateName, variables);
+        const parsed = parseXMLTemplate(rendered);
+
+        if (!parsed.systemPrompt || !parsed.generationPrompt) {
+            throw new Error('Region exits template missing prompts');
+        }
+
+        return {
+            systemPrompt: parsed.systemPrompt.trim(),
+            generationPrompt: parsed.generationPrompt.trim()
+        };
+    } catch (error) {
+        console.error('Error rendering region exits template:', error);
+        return null;
+    }
+}
+
+function parseRegionExitsResponse(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return [];
+    }
+
+    const sanitize = (input) => `<root>${input}</root>`
+        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+        .replace(/<\s*br\s*>/gi, '<br/>')
+        .replace(/<\s*hr\s*>/gi, '<hr/>');
+
+    let doc;
+    try {
+        const parser = new DOMParser({
+            errorHandler: {
+                warning: () => {},
+                error: () => {},
+                fatalError: () => {}
+            }
+        });
+        doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+    } catch (error) {
+        console.warn('Failed to parse region exits XML:', error.message);
+        return [];
+    }
+
+    if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+        console.warn('Region exits XML contained parser errors.');
+        return [];
+    }
+
+    const regionNodes = Array.from(doc.getElementsByTagName('region'));
+    if (!regionNodes.length) {
+        return [];
+    }
+
+    const getTagValue = (node, tag) => {
+        const element = node.getElementsByTagName(tag)?.[0];
+        if (!element || typeof element.textContent !== 'string') {
+            return null;
+        }
+        const value = element.textContent.trim();
+        return value || null;
+    };
+
+    const results = [];
+    for (const node of regionNodes) {
+        const name = getTagValue(node, 'regionName');
+        const description = getTagValue(node, 'regionDescription') || '';
+        const relativeLevelValue = getTagValue(node, 'relativeLevel');
+        const relationship = getTagValue(node, 'relationshipToCurrentRegion') || 'Adjacent';
+        const exitLocation = getTagValue(node, 'exitLocation');
+
+        if (!name || !exitLocation) {
+            continue;
+        }
+
+        const relativeLevel = Number.parseInt(relativeLevelValue, 10);
+
+        results.push({
+            name,
+            description,
+            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
+            relationship,
+            exitLocation
+        });
+    }
+
+    return results;
+}
+
+function generateRegionStubId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).slice(2, 10);
+    return `region_${timestamp}_${random}`;
+}
+
+async function generateRegionExitStubs({
+    region,
+    stubMap,
+    settingDescription,
+    regionAverageLevel,
+    chatEndpoint,
+    model,
+    apiKey
+}) {
+    if (!region) {
+        return;
+    }
+
+    const prompt = renderRegionExitsPrompt({ region, settingDescription });
+    if (!prompt) {
+        return;
+    }
+
+    const messages = [
+        { role: 'system', content: prompt.systemPrompt },
+        { role: 'user', content: prompt.generationPrompt }
+    ];
+
+    const requestData = {
+        model,
+        messages,
+        max_tokens: 1500,
+        temperature: config.ai.temperature || 0.6
+    };
+
+    let aiResponse = '';
+    try {
+        const requestStart = Date.now();
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 60000
+        });
+
+        aiResponse = response.data?.choices?.[0]?.message?.content || '';
+        const durationSeconds = (Date.now() - requestStart) / 1000;
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+            const logPath = path.join(logDir, `region_exits_${region.id}_${timestamp}.log`);
+            const logParts = [
+                formatDurationLine(durationSeconds),
+                '=== REGION EXITS PROMPT ===',
+                prompt.generationPrompt,
+                '\n=== REGION EXITS RESPONSE ===',
+                aiResponse,
+                '\n'
+            ];
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log region exits generation:', logError.message);
+        }
+    } catch (error) {
+        console.warn('Failed to generate region exits:', error.message);
+        return;
+    }
+
+    const definitions = parseRegionExitsResponse(aiResponse);
+    if (!definitions.length) {
+        return;
+    }
+
+    for (const definition of definitions) {
+        const normalizedExitName = normalizeRegionLocationName(definition.exitLocation);
+        let sourceLocation = stubMap.get(normalizedExitName) || null;
+        if (!sourceLocation) {
+            sourceLocation = (region.locationIds || [])
+                .map(id => gameLocations.get(id))
+                .find(loc => loc && normalizeRegionLocationName(loc.name) === normalizedExitName);
+        }
+
+        if (!sourceLocation) {
+            console.warn(`Unable to match exit location "${definition.exitLocation}" within region ${region.name}.`);
+            continue;
+        }
+
+        const normalizedTargetName = normalizeRegionLocationName(definition.name);
+        const existingExit = typeof sourceLocation.getAvailableDirections === 'function'
+            ? sourceLocation.getAvailableDirections().some(direction => {
+                const exit = sourceLocation.getExit(direction);
+                if (!exit) {
+                    return false;
+                }
+                if (exit.destinationRegion) {
+                    const pending = pendingRegionStubs.get(exit.destinationRegion);
+                    if (pending && normalizeRegionLocationName(pending.name) === normalizedTargetName) {
+                        return true;
+                    }
+                }
+                const destinationLocation = gameLocations.get(exit.destination);
+                if (destinationLocation?.stubMetadata?.targetRegionId) {
+                    const targetName = destinationLocation.stubMetadata.targetRegionName || '';
+                    return normalizeRegionLocationName(targetName) === normalizedTargetName;
+                }
+                return false;
+            })
+            : false;
+
+        if (existingExit) {
+            continue;
+        }
+
+        const newRegionId = generateRegionStubId();
+        const relationshipNormalized = (definition.relationship || 'Adjacent').trim().toLowerCase();
+        const existingParent = region.parentRegionId || null;
+        let newRegionParentId = null;
+
+        if (relationshipNormalized === 'within') {
+            newRegionParentId = region.id;
+        } else if (relationshipNormalized === 'contains') {
+            newRegionParentId = existingParent;
+            if (!region.parentRegionId) {
+                region.parentRegionId = newRegionId;
+            } else if (region.parentRegionId !== newRegionId) {
+                console.warn(`Region ${region.name} already has a parent region; skipping reassignment for "${definition.name}".`);
+            }
+        }
+
+        const baseLevel = Number.isFinite(regionAverageLevel) ? regionAverageLevel : null;
+        const relativeLevelOffset = Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0;
+        const computedBaseLevel = baseLevel !== null
+            ? clampLevel(baseLevel + relativeLevelOffset, baseLevel)
+            : null;
+
+        const initialDirection = directionKeyFromName(definition.name, `path_${randomIntInclusive(100, 999)}`);
+        let normalizedDirection = normalizeDirection(initialDirection) || initialDirection;
+        let directionCandidate = normalizedDirection;
+        let attempt = 2;
+        while (typeof sourceLocation.getExit === 'function' && sourceLocation.getExit(directionCandidate)) {
+            directionCandidate = `${normalizedDirection}_${attempt++}`;
+        }
+        normalizedDirection = directionCandidate;
+
+        let stubName = `${definition.name} Frontier`;
+        if (typeof Location.findByName === 'function') {
+            let suffix = 2;
+            let candidateName = stubName;
+            while (Location.findByName(candidateName)) {
+                candidateName = `${stubName} ${suffix++}`;
+            }
+            stubName = candidateName;
+        }
+
+        const stubMetadata = {
+            originLocationId: sourceLocation.id,
+            originRegionId: region.id,
+            originDirection: normalizedDirection,
+            regionId: newRegionId,
+            shortDescription: `An unexplored path leading toward ${definition.name}.`,
+            locationPurpose: `Entrance to ${definition.name}`,
+            allowRename: false,
+            isRegionEntryStub: true,
+            targetRegionId: newRegionId,
+            targetRegionName: definition.name,
+            targetRegionDescription: definition.description,
+            targetRegionRelationship: definition.relationship,
+            targetRegionRelativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
+            settingDescription
+        };
+
+        if (newRegionParentId) {
+            stubMetadata.targetRegionParentId = newRegionParentId;
+        }
+        if (baseLevel !== null) {
+            stubMetadata.regionAverageLevel = baseLevel;
+        }
+
+        const regionEntryStub = new Location({
+            name: stubName,
+            description: null,
+            baseLevel: computedBaseLevel,
+            isStub: true,
+            stubMetadata
+        });
+
+        gameLocations.set(regionEntryStub.id, regionEntryStub);
+        stubMap.set(normalizeRegionLocationName(regionEntryStub.name), regionEntryStub);
+
+        const exitDescription = `Path to ${definition.name}`;
+        ensureExitConnection(sourceLocation, normalizedDirection, regionEntryStub, {
+            description: exitDescription,
+            bidirectional: false,
+            destinationRegion: newRegionId
+        });
+
+        pendingRegionStubs.set(newRegionId, {
+            id: newRegionId,
+            name: definition.name,
+            description: definition.description,
+            relationship: definition.relationship,
+            relativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
+            parentRegionId: newRegionParentId,
+            sourceRegionId: region.id,
+            exitLocationId: sourceLocation.id,
+            entranceStubId: regionEntryStub.id,
+            createdAt: new Date().toISOString()
+        });
+
+        console.log(`🌐 Created pending region stub for "${definition.name}" linked to ${region.name}.`);
+    }
+}
+
+
 function parseRegionEntranceResponse(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
         return null;
@@ -7157,7 +7502,9 @@ function parseRegionEntranceResponse(xmlSnippet) {
 
 async function generateRegionFromPrompt(options = {}) {
     try {
-        const { systemPrompt, generationPrompt } = renderRegionGeneratorPrompt(options);
+        const settingDescription = options.setting || describeSettingForPrompt(getActiveSettingSnapshot());
+        const generationOptions = { ...options, setting: settingDescription };
+        const { systemPrompt, generationPrompt } = renderRegionGeneratorPrompt(generationOptions);
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -7228,9 +7575,12 @@ async function generateRegionFromPrompt(options = {}) {
 
         const stubMap = new Map();
 
-        const themeHint = options.regionNotes || null;
+        const themeHint = generationOptions.regionNotes || null;
 
-        const regionAverageLevel = options.newGame ? 1 : options.averageLevel + region.relativeLevel;
+        const baseAverageLevel = Number.isFinite(region.averageLevel)
+            ? region.averageLevel
+            : (Number.isFinite(generationOptions.averageLevel) ? generationOptions.averageLevel : 1);
+        const regionAverageLevel = baseAverageLevel;
 
         for (const blueprint of region.locationBlueprints) {
             const relativeLevel = Number.isFinite(blueprint.relativeLevel)
@@ -7388,6 +7738,20 @@ async function generateRegionFromPrompt(options = {}) {
         };
 
         ensureBidirectionalStubConnections();
+
+        try {
+            await generateRegionExitStubs({
+                region,
+                stubMap,
+                settingDescription,
+                regionAverageLevel,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+        } catch (exitError) {
+            console.warn('Failed to queue pending regions for exits:', exitError.message);
+        }
 
         let entranceLocationId = null;
         try {
@@ -7662,6 +8026,7 @@ const apiScope = {
     regions,
     gameLocations,
     gameLocationExits,
+    pendingRegionStubs,
     pendingLocationImages,
     npcGenerationPromises,
     stubExpansionPromises,

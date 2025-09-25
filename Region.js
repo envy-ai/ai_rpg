@@ -10,6 +10,7 @@ class Region {
   #locationBlueprints;
   #locationIds;
   #entranceLocationId;
+  #parentRegionId;
   #createdAt;
   #lastUpdated;
   #statusEffects;
@@ -25,7 +26,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, id = null, statusEffects = [], averageLevel = null } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -43,6 +44,9 @@ class Region {
     this.#locationIds = Array.isArray(locationIds) ? [...locationIds] : [];
     this.#entranceLocationId = entranceLocationId && typeof entranceLocationId === 'string'
       ? entranceLocationId
+      : null;
+    this.#parentRegionId = parentRegionId && typeof parentRegionId === 'string'
+      ? parentRegionId
       : null;
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
@@ -129,6 +133,7 @@ class Region {
       locations: data.locationBlueprints || [],
       locationIds: data.locationIds || [],
       entranceLocationId: data.entranceLocationId || null,
+      parentRegionId: data.parentRegionId || null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null
     });
@@ -305,6 +310,19 @@ class Region {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  get parentRegionId() {
+    return this.#parentRegionId;
+  }
+
+  set parentRegionId(regionId) {
+    if (regionId !== null && typeof regionId !== 'string') {
+      return;
+    }
+    this.#parentRegionId = regionId ? regionId.trim() || null : null;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+
   toJSON() {
     return {
       id: this.#id,
@@ -313,6 +331,7 @@ class Region {
       locationBlueprints: this.locationBlueprints,
       locationIds: this.locationIds,
       entranceLocationId: this.#entranceLocationId,
+      parentRegionId: this.#parentRegionId,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),

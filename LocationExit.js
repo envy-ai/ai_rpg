@@ -10,6 +10,7 @@ class LocationExit {
   #id;
   #description;
   #destination;
+  #destinationRegion;
   #bidirectional;
   #imageId;
   #createdAt;
@@ -27,11 +28,12 @@ class LocationExit {
    * @param {Object} options - Exit configuration
    * @param {string} options.description - Description of the exit
    * @param {string} options.destination - ID or reference to the destination location
+   * @param {string|null} [options.destinationRegion=null] - Region ID the exit leads to if it crosses regions
    * @param {boolean} [options.bidirectional=true] - Whether the exit works both ways (defaults to true)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    */
-  constructor({ description = '', destination, bidirectional = true, id = null, imageId = null } = {}) {
+  constructor({ description = '', destination, destinationRegion = null, bidirectional = true, id = null, imageId = null } = {}) {
     // Validate required parameters
     if (description !== undefined && typeof description !== 'string') {
       throw new Error('Exit description must be a string when provided');
@@ -49,6 +51,7 @@ class LocationExit {
     this.#id = id || LocationExit.#generateId();
     this.#description = typeof description === 'string' ? description.trim() : '';
     this.#destination = destination.trim();
+    this.#destinationRegion = destinationRegion && typeof destinationRegion === 'string' ? destinationRegion.trim() : null;
     this.#bidirectional = bidirectional;
     this.#imageId = imageId;
     this.#createdAt = new Date();
@@ -66,6 +69,10 @@ class LocationExit {
 
   get destination() {
     return this.#destination;
+  }
+
+  get destinationRegion() {
+    return this.#destinationRegion;
   }
 
   get bidirectional() {
@@ -98,6 +105,14 @@ class LocationExit {
       throw new Error('Destination must be a non-empty string');
     }
     this.#destination = newDestination.trim();
+    this.#lastUpdated = new Date();
+  }
+
+  set destinationRegion(regionId) {
+    if (regionId !== null && typeof regionId !== 'string') {
+      throw new Error('Destination region must be a string or null');
+    }
+    this.#destinationRegion = regionId ? regionId.trim() || null : null;
     this.#lastUpdated = new Date();
   }
 
@@ -154,14 +169,18 @@ class LocationExit {
    * @param {Object} updates - Properties to update
    * @param {string} [updates.description] - New description
    * @param {string} [updates.destination] - New destination
+   * @param {string|null} [updates.destinationRegion] - Region ID the exit leads to (for inter-region exits)
    * @param {boolean} [updates.bidirectional] - New bidirectional flag
    */
-  update({ description, destination, bidirectional } = {}) {
+  update({ description, destination, destinationRegion, bidirectional } = {}) {
     if (description !== undefined) {
       this.description = description;
     }
     if (destination !== undefined) {
       this.destination = destination;
+    }
+    if (destinationRegion !== undefined) {
+      this.destinationRegion = destinationRegion;
     }
     if (bidirectional !== undefined) {
       this.bidirectional = bidirectional;
@@ -177,6 +196,7 @@ class LocationExit {
       id: this.#id,
       description: this.#description,
       destination: this.#destination,
+      destinationRegion: this.#destinationRegion,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
       createdAt: this.#createdAt.toISOString(),
@@ -193,6 +213,7 @@ class LocationExit {
       id: this.#id,
       description: this.#description,
       destination: this.#destination,
+      destinationRegion: this.#destinationRegion,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
       type: this.#bidirectional ? 'two-way' : 'one-way',

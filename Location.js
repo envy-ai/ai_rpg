@@ -499,6 +499,7 @@ class Location {
         id: exit.id,
         description: exit.description || 'No description',
         destination: exit.destination,
+        destinationRegion: exit.destinationRegion || null,
         bidirectional: exit.bidirectional !== false
       };
     }

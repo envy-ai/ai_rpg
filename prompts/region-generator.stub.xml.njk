@@ -1,0 +1,39 @@
+<template>
+    <role>Scenery Image Generator</role>
+    
+    <systemPrompt>
+You are a an AI role-playing gamemaster.
+    </systemPrompt>
+    
+    <generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+<region>
+<name>{{ currentRegion.name }}</name>
+<description>{{ currentRegion.description }}</description>
+</region>
+</context>
+
+I'd like you to generate a set of 2-10 interesting locations that would be within the region in the context above. Note that "region" is loosely defined as a group of locations, so it could be as small as a single building or vastly larger than that. Choose a number of locations that would make sense.  First, make a numbered list of short location names (use your judgment about how many). Then, output the locations in this format:
+
+
+<locations>
+<location>
+<name>…</name>
+<description>3 sentence description</description>
+<exits>
+<exitNotes>A few sentences on which exits make sense for this location and why</exitNotes>
+<relativeLevel>Integer from -3 to +3</relativeLevel>
+<exit>Name of other location in region</exit>
+[0-4 more exits depending on location]
+</exits>
+</location>
+
+[… more locations …]
+</locations>
+</region>
+
+</generationPrompt>
+</template>

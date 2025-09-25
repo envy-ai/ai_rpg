@@ -3285,6 +3285,7 @@ module.exports = function registerApiRoutes(scope) {
                                 return {
                                     id: exit?.id || `${loc.id}_${direction}`,
                                     destination: exit?.destination,
+                                    destinationRegion: exit?.destinationRegion || null,
                                     bidirectional: exit?.bidirectional !== false
                                 };
                             })
