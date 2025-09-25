@@ -7651,6 +7651,7 @@ const apiScope = {
     serializeNpcForClient,
     buildThingProfiles,
     describeSettingForPrompt,
+    findActorByName,
     findRegionByLocationId,
     generateImageId,
     processJobQueue,

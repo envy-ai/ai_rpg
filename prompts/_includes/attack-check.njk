@@ -1,11 +1,14 @@
-You are an AI designed to analyze a text-based RPG scene and determine if specific events have occurred. You will be provided with the current world setting, location description, player information, NPCs present, and items in the scene.
+You are an AI designed to analyze a text-based RPG scene and determine if specific events have occurred. You will be provided with the current world setting, location description, character information, NPCs present, and items in the scene.
 
-The player is attempting:
+Character acting: 
+{{ characterName }}
+
+{{ characterName }} is attempting:
 <playerAction>
 {{ actionText }}
 </playerAction>
 
-<task>The player attempted the above action. Did the player attack anyone, either barehanded, with a weapon, or using an ability?</task>
+<task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability?</task>
 
 Format your answer as follows:
 

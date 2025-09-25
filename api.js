@@ -217,7 +217,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function runAttackCheckPrompt({ actionText, locationOverride }) {
+        async function runAttackCheckPrompt({ actionText, locationOverride, characterName = 'The player' }) {
             if (!actionText || !actionText.trim()) {
                 return null;
             }
@@ -231,7 +231,8 @@ module.exports = function registerApiRoutes(scope) {
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'attack-check',
-                    actionText
+                    actionText,
+                    characterName
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -712,8 +713,8 @@ module.exports = function registerApiRoutes(scope) {
             return summary;
         };
 
-        function buildAttackContextForPlausibility({ attackCheckInfo, player, location }) {
-            if (!attackCheckInfo || !attackCheckInfo.structured) {
+        function buildAttackContextForActor({ attackCheckInfo, actor, location }) {
+            if (!attackCheckInfo || !attackCheckInfo.structured || !actor) {
                 return { isAttack: false };
             }
 
@@ -724,9 +725,18 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const normalize = (value) => typeof value === 'string' ? value.trim().toLowerCase() : null;
-            const playerName = normalize(player?.name);
+            const actorName = normalize(actor.name);
+            const aliases = new Set();
+            if (actorName) {
+                aliases.add(actorName);
+            }
+            if (!actor.isNPC) {
+                aliases.add('player');
+                aliases.add('the player');
+                aliases.add('you');
+            }
 
-            const playerAttack = attacks.find(entry => {
+            const actorAttack = attacks.find(entry => {
                 if (!entry || typeof entry.attacker !== 'string') {
                     return false;
                 }
@@ -734,27 +744,32 @@ module.exports = function registerApiRoutes(scope) {
                 if (!attackerName) {
                     return false;
                 }
-                if (attackerName === 'player' || attackerName === 'the player' || attackerName === 'you') {
-                    return true;
-                }
-                return playerName && attackerName === playerName;
+                return aliases.has(attackerName);
             });
 
-            if (!playerAttack) {
+            if (!actorAttack) {
                 return { isAttack: false };
             }
 
-            const targetName = typeof playerAttack.defender === 'string' ? playerAttack.defender.trim() : '';
-            const targetActor = targetName ? Player.getByName(targetName) : null;
-            if (targetActor?.id) {
-                playerAttack.targetActorId = targetActor.id;
+            const targetNameRaw = typeof actorAttack.defender === 'string' ? actorAttack.defender : '';
+            const targetName = targetNameRaw ? targetNameRaw.trim() : '';
+
+            let targetActor = null;
+            if (targetName) {
+                targetActor = (typeof findActorByName === 'function' ? findActorByName(targetName) : null)
+                    || (typeof Player.getByName === 'function' ? Player.getByName(targetName) : null)
+                    || null;
             }
 
-            const collectStatusEffects = (actor) => {
-                if (!actor || typeof actor.getStatusEffects !== 'function') {
+            if (targetActor?.id) {
+                actorAttack.targetActorId = targetActor.id;
+            }
+
+            const collectStatusEffects = (entity) => {
+                if (!entity || typeof entity.getStatusEffects !== 'function') {
                     return [];
                 }
-                return actor.getStatusEffects()
+                return entity.getStatusEffects()
                     .map(effect => {
                         if (!effect) {
                             return null;
@@ -773,11 +788,11 @@ module.exports = function registerApiRoutes(scope) {
                     .filter(Boolean);
             };
 
-            const collectGearNames = (actor) => {
-                if (!actor || typeof actor.getGear !== 'function') {
+            const collectGearNames = (entity) => {
+                if (!entity || typeof entity.getGear !== 'function') {
                     return [];
                 }
-                const gear = actor.getGear();
+                const gear = entity.getGear();
                 if (!gear || typeof gear !== 'object') {
                     return [];
                 }
@@ -787,38 +802,31 @@ module.exports = function registerApiRoutes(scope) {
                         continue;
                     }
                     const thing = Thing.getById(slotInfo.itemId);
-                    if (thing && thing.name) {
-                        names.push(thing.name);
-                    } else {
-                        names.push(slotInfo.itemId);
-                    }
+                    names.push(thing?.name || slotInfo.itemId);
                 }
                 return names;
             };
 
             const attackerWeapon = (() => {
-                if (typeof playerAttack.weapon === 'string') {
-                    const trimmed = playerAttack.weapon.trim();
+                if (typeof actorAttack.weapon === 'string') {
+                    const trimmed = actorAttack.weapon.trim();
                     if (trimmed && trimmed.toLowerCase() !== 'n/a') {
                         return trimmed;
                     }
                 }
-                if (player && typeof player.getEquippedItemIdForType === 'function') {
-                    const weaponId = player.getEquippedItemIdForType('weapon');
+                if (typeof actor.getEquippedItemIdForType === 'function') {
+                    const weaponId = actor.getEquippedItemIdForType('weapon');
                     if (weaponId) {
                         const item = Thing.getById(weaponId);
-                        if (item && item.name) {
-                            return item.name;
-                        }
-                        return weaponId;
+                        return item?.name || weaponId;
                     }
                 }
                 return 'Barehanded';
             })();
 
             const attackerAbility = (() => {
-                if (typeof playerAttack.ability === 'string') {
-                    const trimmed = playerAttack.ability.trim();
+                if (typeof actorAttack.ability === 'string') {
+                    const trimmed = actorAttack.ability.trim();
                     if (trimmed && trimmed.toLowerCase() !== 'n/a') {
                         return trimmed;
                     }
@@ -826,26 +834,26 @@ module.exports = function registerApiRoutes(scope) {
                 return 'N/A';
             })();
 
-            const attackerStatus = collectStatusEffects(player);
+            const attackerStatus = collectStatusEffects(actor);
             const targetStatus = collectStatusEffects(targetActor);
             const targetGear = collectGearNames(targetActor);
 
             const computedOutcome = computeAttackOutcome({
-                attackEntry: playerAttack,
-                attacker: player,
+                attackEntry: actorAttack,
+                attacker: actor,
                 defender: targetActor,
                 weaponName: attackerWeapon
             });
 
             if (computedOutcome) {
-                playerAttack.outcome = computedOutcome;
+                actorAttack.outcome = computedOutcome;
                 attackCheckInfo.computedOutcome = computedOutcome;
             }
 
             const targetContext = {
                 id: targetActor?.id || null,
                 name: targetName || null,
-                level: typeof targetActor?.level === 'number' ? targetActor.level : 'unknown',
+                level: Number.isFinite(targetActor?.level) ? targetActor.level : 'unknown',
                 gear: targetGear,
                 statusEffects: targetStatus,
                 healthAttribute: targetActor?.healthAttribute || null
@@ -858,28 +866,42 @@ module.exports = function registerApiRoutes(scope) {
                 targetContext.maxHealth = targetActor.maxHealth;
             }
             if (computedOutcome?.target) {
-                if (computedOutcome.target.remainingHealth !== null && computedOutcome.target.remainingHealth !== undefined) {
-                    targetContext.remainingHealth = computedOutcome.target.remainingHealth;
+                const targetOutcome = computedOutcome.target;
+                if (targetOutcome.remainingHealth !== undefined && targetOutcome.remainingHealth !== null) {
+                    targetContext.remainingHealth = targetOutcome.remainingHealth;
                 }
-                if (computedOutcome.target.rawRemainingHealth !== null && computedOutcome.target.rawRemainingHealth !== undefined) {
-                    targetContext.rawRemainingHealth = computedOutcome.target.rawRemainingHealth;
+                if (targetOutcome.rawRemainingHealth !== undefined && targetOutcome.rawRemainingHealth !== null) {
+                    targetContext.rawRemainingHealth = targetOutcome.rawRemainingHealth;
                 }
-                if (typeof computedOutcome.target.defeated === 'boolean') {
-                    targetContext.defeated = computedOutcome.target.defeated;
+                if (typeof targetOutcome.defeated === 'boolean') {
+                    targetContext.defeated = targetOutcome.defeated;
                 }
-                if (computedOutcome.target.toughness) {
-                    targetContext.toughness = computedOutcome.target.toughness;
+                if (targetOutcome.toughness) {
+                    targetContext.toughness = targetOutcome.toughness;
+                }
+                if (Number.isFinite(targetOutcome.healthLostPercent)) {
+                    targetContext.healthLostPercent = targetOutcome.healthLostPercent;
+                }
+                if (Number.isFinite(targetOutcome.remainingHealthPercent)) {
+                    targetContext.remainingHealthPercent = targetOutcome.remainingHealthPercent;
                 }
             }
 
             const attackerContext = {
-                name: typeof player?.name === 'string' ? player.name : null,
-                id: player?.id || null,
-                level: typeof player?.level === 'number' ? player.level : 'unknown',
+                name: typeof actor?.name === 'string' ? actor.name : null,
+                id: actor?.id || null,
+                level: Number.isFinite(actor?.level) ? actor.level : 'unknown',
                 weapon: attackerWeapon,
                 ability: attackerAbility,
                 statusEffects: attackerStatus
             };
+
+            if (Number.isFinite(actor?.health)) {
+                attackerContext.health = actor.health;
+            }
+            if (Number.isFinite(actor?.maxHealth)) {
+                attackerContext.maxHealth = actor.maxHealth;
+            }
 
             if (computedOutcome?.damage) {
                 attackerContext.weaponInfo = {
@@ -895,9 +917,620 @@ module.exports = function registerApiRoutes(scope) {
                 isAttack: true,
                 attacker: attackerContext,
                 target: targetContext,
-                attackEntry: playerAttack,
+                attackEntry: actorAttack,
                 outcome: computedOutcome || null
             };
+        }
+
+        function applyAttackDamageToTarget({ attackContext, attackOutcome, attacker }) {
+            if (!attackContext?.isAttack || !attackOutcome?.hit) {
+                return { application: null, targetActor: null };
+            }
+
+            const declaredDamage = Number.isFinite(attackOutcome?.damage?.total)
+                ? attackOutcome.damage.total
+                : 0;
+
+            if (!Number.isFinite(declaredDamage) || declaredDamage <= 0) {
+                return { application: null, targetActor: null };
+            }
+
+            const targetId = attackContext?.target?.id
+                || attackContext?.attackEntry?.targetActorId
+                || null;
+
+            let targetActor = null;
+            if (targetId && players && typeof players.get === 'function') {
+                targetActor = players.get(targetId) || null;
+            }
+
+            if (!targetActor) {
+                const fallbackName = typeof attackContext?.attackEntry?.defender === 'string'
+                    ? attackContext.attackEntry.defender
+                    : (typeof attackContext?.target?.name === 'string' ? attackContext.target.name : null);
+                if (fallbackName && typeof findActorByName === 'function') {
+                    targetActor = findActorByName(fallbackName) || null;
+                }
+            }
+
+            if (!targetActor || typeof targetActor.modifyHealth !== 'function') {
+                return { application: null, targetActor: null };
+            }
+
+            const startingHealth = Number.isFinite(targetActor.health) ? targetActor.health : 0;
+            const maxHealthBefore = Number.isFinite(targetActor.maxHealth) ? targetActor.maxHealth : 0;
+            const rawRemaining = startingHealth - declaredDamage;
+
+            targetActor.modifyHealth(-declaredDamage, 'attack damage');
+
+            const endingHealth = Number.isFinite(targetActor.health) ? targetActor.health : startingHealth - declaredDamage;
+            const actualDamage = startingHealth - endingHealth;
+            const maxHealthAfter = Number.isFinite(targetActor.maxHealth) ? targetActor.maxHealth : maxHealthBefore;
+
+            const percent = (value, max) => {
+                if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) {
+                    return 0;
+                }
+                return Number(((value / max) * 100).toFixed(2));
+            };
+
+            const healthLostPercent = percent(actualDamage, maxHealthAfter);
+            const remainingHealthPercent = percent(endingHealth, maxHealthAfter);
+
+            if (attackOutcome.damage) {
+                attackOutcome.damage.applied = actualDamage;
+            } else {
+                attackOutcome.damage = { applied: actualDamage };
+            }
+
+            if (!attackOutcome.target) {
+                attackOutcome.target = {};
+            }
+
+            Object.assign(attackOutcome.target, {
+                startingHealth,
+                remainingHealth: endingHealth,
+                rawRemainingHealth: rawRemaining,
+                maxHealth: maxHealthAfter,
+                defeated: endingHealth <= 0,
+                healthLostPercent,
+                remainingHealthPercent
+            });
+
+            if (attackContext.target) {
+                Object.assign(attackContext.target, {
+                    health: endingHealth,
+                    remainingHealth: endingHealth,
+                    rawRemainingHealth: rawRemaining,
+                    maxHealth: maxHealthAfter,
+                    defeated: endingHealth <= 0,
+                    healthLostPercent,
+                    remainingHealthPercent
+                });
+            }
+
+            const application = {
+                targetId: targetActor.id || null,
+                targetName: targetActor.name || attackContext?.target?.name || null,
+                damageDeclared: declaredDamage,
+                damageApplied: actualDamage,
+                startingHealth,
+                endingHealth,
+                rawRemainingHealth: rawRemaining,
+                maxHealthBefore,
+                maxHealthAfter,
+                healthLostPercent,
+                remainingHealthPercent
+            };
+
+            return { application, targetActor };
+        }
+
+        function parseNpcQueueResponse(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return [];
+            }
+
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return [];
+            }
+
+            const sanitizeForDom = (input) => {
+                return `<root>${input}</root>`
+                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                    .replace(/<\s*br\s*>/gi, '<br/>')
+                    .replace(/<\s*hr\s*>/gi, '<hr/>');
+            };
+
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+            } catch (_) {
+                return [];
+            }
+
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return [];
+            }
+
+            const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+            if (!npcNodes.length) {
+                return [];
+            }
+
+            const seen = new Set();
+            const names = [];
+            for (const node of npcNodes) {
+                const value = typeof node.textContent === 'string' ? node.textContent.trim() : '';
+                if (!value) {
+                    continue;
+                }
+                const lowered = value.toLowerCase();
+                if (seen.has(lowered)) {
+                    continue;
+                }
+                seen.add(lowered);
+                names.push(value);
+            }
+
+            return names;
+        }
+
+        async function runNextNpcListPrompt({ locationOverride = null } = {}) {
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'next-npc-list'
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    return { raw: '', names: [] };
+                }
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? endpoint + 'chat/completions'
+                    : endpoint + '/chat/completions';
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 150,
+                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 45000
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const names = parseNpcQueueResponse(raw);
+                return { raw, names };
+            } catch (error) {
+                console.warn('Failed to run next NPC list prompt:', error.message);
+                return { raw: '', names: [] };
+            }
+        }
+
+        function parseNpcActionPlan(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return null;
+            }
+
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const sanitizeForDom = (input) => {
+                return `<root>${input}</root>`
+                    .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+                    .replace(/<\s*br\s*>/gi, '<br/>')
+                    .replace(/<\s*hr\s*>/gi, '<hr/>');
+            };
+
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForDom(trimmed), 'text/xml');
+            } catch (_) {
+                return null;
+            }
+
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return null;
+            }
+
+            const actionNode = doc.getElementsByTagName('npcAction')?.[0];
+            if (!actionNode) {
+                return null;
+            }
+
+            const getTagValue = (tag) => {
+                const node = actionNode.getElementsByTagName(tag)?.[0];
+                if (!node || typeof node.textContent !== 'string') {
+                    return null;
+                }
+                const value = node.textContent.trim();
+                return value || null;
+            };
+
+            return {
+                description: getTagValue('description'),
+                difficulty: getTagValue('difficulty'),
+                skill: getTagValue('skill')
+            };
+        }
+
+        function normalizeDifficultyLabel(value) {
+            if (!value || typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            return trimmed.replace(/\s+/g, ' ')
+                .toLowerCase()
+                .split(' ')
+                .map(word => word ? word[0].toUpperCase() + word.slice(1) : '')
+                .join(' ');
+        }
+
+        function mapNpcActionPlanToPlausibility(actionPlan) {
+            if (!actionPlan) {
+                return null;
+            }
+
+            const normalizedDifficulty = (actionPlan.difficulty || '').trim().toLowerCase();
+            const description = actionPlan.description || null;
+
+            if (!normalizedDifficulty || normalizedDifficulty === 'trivial' || normalizedDifficulty === 'automatic') {
+                return {
+                    type: 'Trivial',
+                    reason: description
+                };
+            }
+
+            if (normalizedDifficulty === 'implausible') {
+                return {
+                    type: 'Implausible',
+                    reason: description
+                };
+            }
+
+            if (normalizedDifficulty === 'rejected') {
+                return {
+                    type: 'Rejected',
+                    reason: description
+                };
+            }
+
+            const difficultyLabel = normalizeDifficultyLabel(actionPlan.difficulty) || 'Medium';
+            const skillLabel = actionPlan.skill && actionPlan.skill.trim() ? actionPlan.skill.trim() : 'N/A';
+
+            return {
+                type: 'Plausible',
+                reason: description,
+                skillCheck: {
+                    reason: description,
+                    skill: skillLabel,
+                    attribute: null,
+                    difficulty: difficultyLabel
+                }
+            };
+        }
+
+        async function runNpcPlausibilityPrompt({ npc, locationOverride = null } = {}) {
+            if (!npc) {
+                return { raw: '', structured: null };
+            }
+
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'npc-plausibility-check',
+                    characterName: npc.name || 'Unknown NPC'
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    return { raw: '', structured: null };
+                }
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? endpoint + 'chat/completions'
+                    : endpoint + '/chat/completions';
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
+                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 45000
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const actionPlan = parseNpcActionPlan(raw);
+                const structured = actionPlan
+                    ? {
+                        ...actionPlan,
+                        plausibility: mapNpcActionPlanToPlausibility(actionPlan)
+                    }
+                    : null;
+
+                return { raw, structured };
+            } catch (error) {
+                console.warn(`Failed to run NPC plausibility prompt for ${npc.name}:`, error.message);
+                return { raw: '', structured: null };
+            }
+        }
+
+        async function runActionNarrativeForActor({
+            actor,
+            actionText,
+            actionResolution,
+            attackContext,
+            attackDamageApplication = null,
+            locationOverride = null,
+            isCreativeModeAction = false
+        }) {
+            if (!actor) {
+                return { raw: '', debug: null };
+            }
+
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride });
+                const promptVariables = {
+                    ...baseContext,
+                    promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
+                    actionText: actionText || '',
+                    characterName: actor.isNPC ? (actor.name || 'Unknown NPC') : 'The player'
+                };
+
+                if (attackContext?.isAttack) {
+                    const attackOutcome = attackContext.outcome || null;
+                    const summary = attackContext.summary || null;
+                    promptVariables.isAttack = true;
+                    promptVariables.attacker = attackContext.attacker || null;
+                    promptVariables.target = attackContext.target || null;
+                    promptVariables.attackOutcome = attackOutcome;
+                    promptVariables.attackContext = {
+                        ...attackContext,
+                        damageApplication: attackDamageApplication || null
+                    };
+                    if (summary) {
+                        promptVariables.attackSummary = summary;
+                    }
+                } else {
+                    promptVariables.success_or_failure = actionResolution?.label || 'success';
+                }
+
+                const renderedPrompt = promptEnv.render('base-context.xml.njk', promptVariables);
+                const parsedTemplate = parseXMLTemplate(renderedPrompt);
+
+                if (!parsedTemplate.systemPrompt) {
+                    throw new Error('Action template missing system prompt.');
+                }
+
+                logPlayerActionPrompt({
+                    systemPrompt: String(parsedTemplate.systemPrompt).trim(),
+                    generationPrompt: parsedTemplate.generationPrompt || null
+                });
+
+                const systemMessage = {
+                    role: 'system',
+                    content: String(parsedTemplate.systemPrompt).trim()
+                };
+
+                const messages = [systemMessage];
+                if (parsedTemplate.generationPrompt) {
+                    messages.push({
+                        role: 'user',
+                        content: parsedTemplate.generationPrompt
+                    });
+                }
+
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? endpoint + 'chat/completions'
+                    : endpoint + '/chat/completions';
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages,
+                    max_tokens: config.ai.maxTokens || 800,
+                    temperature: config.ai.temperature || 0.7
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 60000
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const debug = {
+                    actorId: actor.id || null,
+                    actorName: actor.name || null,
+                    systemMessage: systemMessage.content,
+                    generationPrompt: parsedTemplate.generationPrompt || null,
+                    renderedTemplate: renderedPrompt,
+                    actionResolution,
+                    attackContext,
+                    attackDamageApplication
+                };
+
+                return { raw, debug };
+            } catch (error) {
+                console.warn(`Failed to run action narrative for ${actor.name}:`, error.message);
+                return { raw: '', debug: { error: error.message } };
+            }
+        }
+
+        async function executeNpcTurnsAfterPlayer({ location }) {
+            const results = [];
+
+            try {
+                const npcQueue = await runNextNpcListPrompt({ locationOverride: location });
+                const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
+
+                for (const npcName of npcNames) {
+                    const npc = typeof findActorByName === 'function' ? findActorByName(npcName) : null;
+                    if (!npc || !npc.isNPC) {
+                        continue;
+                    }
+
+                    let npcLocation = location;
+                    try {
+                        const tickResult = tickStatusEffectsForAction({ player: npc, location: npcLocation });
+                        if (tickResult?.location) {
+                            npcLocation = tickResult.location;
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to tick status effects for NPC ${npc.name}:`, error.message);
+                    }
+
+                    const plausibilityResult = await runNpcPlausibilityPrompt({ npc, locationOverride: npcLocation });
+                    const plan = plausibilityResult.structured;
+                    if (!plan || !plan.description) {
+                        continue;
+                    }
+
+                    const actionText = plan.description;
+
+                    const attackCheck = await runAttackCheckPrompt({
+                        actionText,
+                        locationOverride: npcLocation,
+                        characterName: npc.name || 'Unknown NPC'
+                    });
+
+                    let attackContext = buildAttackContextForActor({
+                        attackCheckInfo: attackCheck,
+                        actor: npc,
+                        location: npcLocation
+                    });
+
+                    const attackOutcome = attackContext?.outcome || null;
+                    let attackDamageApplication = null;
+
+                    const planType = plan.plausibility?.type ? plan.plausibility.type.toLowerCase() : '';
+
+                    if (attackContext?.isAttack && attackOutcome?.hit && planType === 'plausible') {
+                        const damageResult = applyAttackDamageToTarget({
+                            attackContext,
+                            attackOutcome,
+                            attacker: npc
+                        });
+                        attackDamageApplication = damageResult.application;
+                    }
+
+                    if (attackContext?.isAttack) {
+                        const attackSummary = buildAttackSummary({
+                            attackContext,
+                            attackOutcome,
+                            damageApplication: attackDamageApplication
+                        });
+                        if (attackSummary) {
+                            attackContext.summary = attackSummary;
+                            if (attackCheck) {
+                                attackCheck.summary = attackSummary;
+                            }
+                        }
+                    }
+
+                    const actionResolution = plan.plausibility
+                        ? resolveActionOutcome({ plausibility: plan.plausibility, player: npc })
+                        : null;
+
+                    const narrativeResult = await runActionNarrativeForActor({
+                        actor: npc,
+                        actionText,
+                        actionResolution,
+                        attackContext,
+                        attackDamageApplication,
+                        locationOverride: npcLocation
+                    });
+
+                    const npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
+                        ? narrativeResult.raw.trim()
+                        : `${npc.name} considers their options but ultimately does nothing noteworthy.`;
+
+                    let npcEventResult = null;
+                    try {
+                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse });
+                    } catch (error) {
+                        console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
+                    }
+
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: npcResponse,
+                        timestamp: new Date().toISOString(),
+                        actor: npc.name || null,
+                        isNpcTurn: true
+                    });
+
+                    results.push({
+                        name: npc.name,
+                        npcId: npc.id || null,
+                        plan,
+                        plausibilityRaw: plausibilityResult.raw,
+                        actionResolution,
+                        attackCheck,
+                        attackSummary: attackContext?.summary || null,
+                        attackDamage: attackDamageApplication,
+                        response: npcResponse,
+                        events: npcEventResult?.structured || null,
+                        eventChecks: npcEventResult?.html || null,
+                        debug: narrativeResult.debug
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to execute NPC turns:', error.message);
+            }
+
+            return results;
         }
 
         // Chat API endpoint
@@ -983,11 +1616,12 @@ module.exports = function registerApiRoutes(scope) {
                                 : (userMessage?.content || '');
                             attackCheckInfo = await runAttackCheckPrompt({
                                 actionText: attackActionText,
-                                locationOverride: location || null
+                                locationOverride: location || null,
+                                characterName: 'The player'
                             });
-                            attackContextForPlausibility = buildAttackContextForPlausibility({
+                            attackContextForPlausibility = buildAttackContextForActor({
                                 attackCheckInfo,
-                                player: currentPlayer,
+                                actor: currentPlayer,
                                 location
                             });
                         } catch (attackError) {
@@ -1076,95 +1710,12 @@ module.exports = function registerApiRoutes(scope) {
                     && attackContextForPlausibility?.isAttack
                     && attackOutcome?.hit
                     && plausibilityType === 'plausible') {
-                    const declaredDamage = Number.isFinite(attackOutcome?.damage?.total)
-                        ? attackOutcome.damage.total
-                        : 0;
-
-                    const targetId = attackContextForPlausibility?.target?.id
-                        || attackContextForPlausibility?.attackEntry?.targetActorId
-                        || null;
-
-                    let targetActor = null;
-                    if (targetId && players && typeof players.get === 'function') {
-                        targetActor = players.get(targetId) || null;
-                    }
-                    if (!targetActor) {
-                        const fallbackName = typeof attackContextForPlausibility?.attackEntry?.defender === 'string'
-                            ? attackContextForPlausibility.attackEntry.defender
-                            : (typeof attackContextForPlausibility?.target?.name === 'string'
-                                ? attackContextForPlausibility.target.name
-                                : null);
-                        if (fallbackName) {
-                            targetActor = findActorByName(fallbackName) || null;
-                        }
-                    }
-
-                    if (targetActor && typeof targetActor.modifyHealth === 'function' && Number.isFinite(declaredDamage)) {
-                        const startingHealth = targetActor.health;
-                        const maxHealthBefore = targetActor.maxHealth;
-                        const rawRemaining = startingHealth - declaredDamage;
-
-                        targetActor.modifyHealth(-declaredDamage, 'attack damage');
-
-                        const endingHealth = targetActor.health;
-                        const actualDamage = startingHealth - endingHealth;
-                        const maxHealthAfter = targetActor.maxHealth;
-
-                        const rawHealthLostPercent = maxHealthAfter > 0
-                            ? (actualDamage / maxHealthAfter) * 100
-                            : 0;
-                        const rawRemainingPercent = maxHealthAfter > 0
-                            ? (rawRemaining / maxHealthAfter) * 100
-                            : 0;
-
-                        const healthLostPercent = Number.isFinite(rawHealthLostPercent)
-                            ? Number(rawHealthLostPercent.toFixed(2))
-                            : 0;
-                        const remainingHealthPercent = Number.isFinite(rawRemainingPercent)
-                            ? Number(rawRemainingPercent.toFixed(2))
-                            : 0;
-
-                        if (attackOutcome.damage) {
-                            attackOutcome.damage.applied = actualDamage;
-                        } else {
-                            attackOutcome.damage = { applied: actualDamage };
-                        }
-
-                        if (!attackOutcome.target) {
-                            attackOutcome.target = {};
-                        }
-                        attackOutcome.target.startingHealth = startingHealth;
-                        attackOutcome.target.remainingHealth = endingHealth;
-                        attackOutcome.target.rawRemainingHealth = rawRemaining;
-                        attackOutcome.target.maxHealth = maxHealthAfter;
-                        attackOutcome.target.defeated = endingHealth <= 0;
-                        attackOutcome.target.healthLostPercent = healthLostPercent;
-                        attackOutcome.target.remainingHealthPercent = remainingHealthPercent;
-
-                        if (attackContextForPlausibility.target) {
-                            attackContextForPlausibility.target.health = endingHealth;
-                            attackContextForPlausibility.target.remainingHealth = endingHealth;
-                            attackContextForPlausibility.target.rawRemainingHealth = rawRemaining;
-                            attackContextForPlausibility.target.maxHealth = maxHealthAfter;
-                            attackContextForPlausibility.target.defeated = endingHealth <= 0;
-                            attackContextForPlausibility.target.healthLostPercent = healthLostPercent;
-                            attackContextForPlausibility.target.remainingHealthPercent = remainingHealthPercent;
-                        }
-
-                        attackDamageApplication = {
-                            targetId: targetActor.id || null,
-                            targetName: targetActor.name || attackContextForPlausibility?.target?.name || null,
-                            damageDeclared: declaredDamage,
-                            damageApplied: actualDamage,
-                            startingHealth,
-                            endingHealth,
-                            rawRemainingHealth: rawRemaining,
-                            maxHealthBefore,
-                            maxHealthAfter,
-                            healthLostPercent,
-                            remainingHealthPercent
-                        };
-                    }
+                    const damageResult = applyAttackDamageToTarget({
+                        attackContext: attackContextForPlausibility,
+                        attackOutcome,
+                        attacker: currentPlayer
+                    });
+                    attackDamageApplication = damageResult.application;
                 }
 
                 if (attackDamageApplication) {
@@ -1205,7 +1756,8 @@ module.exports = function registerApiRoutes(scope) {
                         const promptVariables = {
                             ...baseContext,
                             promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
-                            actionText: isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent
+                            actionText: isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent,
+                            characterName: 'The player'
                         };
 
                         if (attackContextForPlausibility) {
@@ -1460,6 +2012,15 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                             }
                         }
+                    }
+
+                    try {
+                        const npcTurns = await executeNpcTurnsAfterPlayer({ location });
+                        if (npcTurns && npcTurns.length) {
+                            responseData.npcTurns = npcTurns;
+                        }
+                    } catch (npcTurnError) {
+                        console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
                     }
 
                     if (plausibilityInfo && plausibilityInfo.html) {

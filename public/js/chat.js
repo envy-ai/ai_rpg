@@ -132,6 +132,34 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addNpcMessage(npcName, content) {
+        if (!content) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message npc-message ai-message';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = `🤖 NPC · ${npcName || 'Unknown NPC'}`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.textContent = content;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     addEventMessage(contentHtml) {
         if (!contentHtml) {
             return;
@@ -984,6 +1012,33 @@ class AIRPGChat {
 
                 if (data.plausibility) {
                     this.addPlausibilityMessage(data.plausibility);
+                }
+
+                if (Array.isArray(data.npcTurns) && data.npcTurns.length) {
+                    data.npcTurns.forEach(turn => {
+                        if (!turn || !turn.response) {
+                            return;
+                        }
+                        this.addNpcMessage(turn.name || 'NPC', turn.response);
+                        this.chatHistory.push({ role: 'assistant', content: turn.response });
+
+                        if (turn.eventChecks) {
+                            this.addEventMessage(turn.eventChecks);
+                        }
+
+                        if (turn.events) {
+                            this.addEventSummaries(turn.events);
+                        }
+
+                        if (turn.attackSummary) {
+                            this.addAttackCheckMessage(turn.attackSummary);
+                        }
+
+                        if (turn.actionResolution && turn.actionResolution.roll) {
+                            this.addSkillCheckMessage(turn.actionResolution);
+                        }
+                    });
+                    shouldRefreshLocation = true;
                 }
             }
         } catch (error) {

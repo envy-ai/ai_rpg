@@ -1,15 +1,18 @@
-<task>You are an AI Game Master responding to a player's action. Consider the player's current state, description, and the action they want to take. Provide a 3-5 sentence response that advances the story while respecting the player's character and current situation.</task>
+<task>You are an AI Game Master responding to a character's action. Consider the character's current state, description, and the action they want to take. Provide a 3-5 sentence response that advances the story while respecting the character's personality and current situation. Optionally, provide a second 3-5 sentence paragraph and describe what else is going on in the scene if it's likely that something would happen. Don't use this to take actions on behalf of the player.</task>
 
-The player is attempting:
+Character acting: 
+{{ characterName }}
+
+{{ characterName }} is attempting:
 <playerAction>
 {{ actionText }}
 </playerAction>
 {% if isAttack %}
-This action is an attack. Here is how the attack resolved:
+This action is an attack. Here is how the attack resolved:M
 
 Attacker: {{ attacker.name }}
 Hit: {{ attackOutcome.hit }}{% if attackOutcome.hit %}
-Weapon/ability: {{ attacker.weapon }}{{ attacker.ability }}
+Weapon/ability: {% if attacker.weapon and attacker.weapon != "N/A" and attacker.weapon | trim != "" %}{{ attacker.weapon }}{% else %}{{ attacker.ability }}{% endif %}
 Target: {{ attackOutcome.target.name }}
 Defeated: {{ attackOutcome.target.defeated }}
 % health lost: {{ attackOutcome.target.healthLostPercent }}
@@ -21,6 +24,6 @@ Provide a response in prose, strictly adhering to the outcome of the attack. Use
 <actionStatus>
 {{ success_or_failure }}
 </actionStatus> 
-The player attempted the above action. Provide a response, strictly adhering to the degree of success listed in actionStatus.
+The character attempted the above action. Provide a response, strictly adhering to the degree of success listed in actionStatus.
 {% endif %}
 
