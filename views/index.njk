@@ -4208,6 +4208,11 @@
                     card.appendChild(role);
                     card.appendChild(meta);
                     card.appendChild(stats);
+
+                    if (member && member.id && typeof registerNpcContextMenu === 'function') {
+                        registerNpcContextMenu(card, member);
+                    }
+
                     partyGrid.appendChild(card);
                 });
             }

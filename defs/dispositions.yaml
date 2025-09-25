@@ -1,0 +1,186 @@
+range:
+  min: -200
+  max: 200
+  typical_step: 5
+  typical_big_step: 50
+dispositions:
+  platonic:
+    move_up:
+      - friendly conversation
+      - helped by character
+      - shared a personal story
+      - complimented
+      - gave a gift
+      - acted in a way they approve of
+    move_down:
+      - insulted
+      - ignored
+      - betrayed (could include things like loss of respect or not being who they thought you were)
+      - lied to
+      - acted selfishly
+      - acted in a way they don't approve of
+    move_way_down:
+      - physically harmed
+      - caused significant emotional distress
+      - stole from
+      - endangered
+      - committed serious crime they don't approve of
+    min_thresholds:
+      minimum: hated
+      -30: dislike
+      -20: wary
+      -10: indifferent
+      0: neutral
+      1: casual acquaintance
+      20: acquaintance
+      40: friend
+      80: close friend
+      120: best friend
+  romantic:
+    move_up:
+      - romantic gesture
+      - flirted
+      - gave a meaningful personal gift (not necessarily valuable)
+      - they have a crush on you
+      - did something nice for them
+    move_down:
+      - rejected romantic advance
+      - acted jealous
+      - flirted with someone else
+      - broke a promise
+      - insulted
+      - lied to
+      - betrayed
+      - did something they don't approve of
+    move_way_down:
+      - cheated
+      - physically harmed
+      - caused significant emotional distress
+      - endangered
+      - committed serious crime they don't approve of
+    min_thresholds:
+      minimum: despised
+      -30: disliked
+      -20: wary
+      -10: indifferent
+      0: neutral
+      1: casual acquaintance
+      20: acquaintance
+      40: potential romantic interest
+      80: romantic interest
+      120: romantic partner
+  lust:
+    move_up:
+      - flirted
+      - made a seductive comment
+      - was found sexually attractive
+      - did something they find sexy
+      - liked your sexual advances
+    move_down:
+      - rejected flirtation
+      - flirted with someone else
+      - Was not found sexually attractive
+      - did something they find unsexy
+      - don't like your sexual advances
+      - they find you physically unattractive
+    move_way_down:
+      - Is related by blood
+      - Is a minor
+      - Sexuality is incompatible (they are asexual or not attracted to your gender)
+      - they find your body physically disgusting, repulsive, or fundamentally not attractive (you are swamp thing, robot, alien, a rock, etc)
+    min_thresholds:
+      minimum: repulsed
+      -30: disgusted
+      -20: uninterested
+      -10: indifferent
+      0: neutral
+      1: mildly interested
+      20: interested
+      40: aroused
+      80: horny to point of distraction
+      120: obsessed
+  respect:
+    move_up:
+      - impressed by skill or talent
+      - achieved something notable
+      - demonstrated leadership
+      - acted honorably
+      - helped others
+    move_down:
+      - acted incompetently
+      - failed at a task
+      - acted cowardly
+      - broke a promise
+      - acted selfishly
+    move_way_down:
+      - committed a serious crime
+      - betrayed trust
+      - endangered others
+      - acted in a way that is fundamentally against their values
+    min_thresholds:
+      minimum: despised
+      -30: disrespected
+      -20: wary
+      -10: indifferent
+      0: neutral
+      1: mildly respected
+      20: respected
+      40: admired
+      80: highly admired
+      120: revered
+  comfort_fear:
+    move_up:
+      - provided comfort during a difficult time
+      - helped them face a fear
+      - acted in a way that made them feel safe
+      - shared a personal story of overcoming fear
+      - showed empathy
+    move_down:
+      - dismissed their fears
+      - acted in a way that made them feel unsafe
+      - betrayed their trust
+      - ignored their emotional needs
+      - acted selfishly
+    move_way_down:
+      - caused significant emotional distress
+      - endangered them or someone they care about
+      - acted in a way that is fundamentally against their values
+    min_thresholds:
+      minimum: terrified of you
+      -30: very uncomfortable around you
+      -20: uncomfortable around you
+      -10: indifferent
+      0: neutral
+      1: mildly comfortable around you
+      20: comfortable around you
+      40: very comfortable around you
+      80: trust you deeply
+      120: feel safe with you no matter what
+  trust:
+    move_up:
+      - kept a secret
+      - acted honestly
+      - helped in a difficult situation
+      - demonstrated reliability
+      - shared personal information
+    move_down:
+      - lied
+      - broke a promise
+      - acted selfishly
+      - betrayed trust
+      - ignored their needs
+    move_way_down:
+      - committed a serious crime they disapprove of
+      - endangered them or someone they care about
+      - acted in a way that is fundamentally against their values
+    min_thresholds:
+      minimum: completely distrust you
+      -30: very wary of you
+      -20: somewhat wary of you
+      -10: indifferent
+      0: neutral
+      1: mildly trusting of you
+      20: somewhat trusting of you
+      40: trust you
+      80: trust you deeply
+      120: would trust you with their life

@@ -83,6 +83,14 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ npc.description }}</description>
       <class>{{ npc.class | default('Unknown') }}</class>
       <race>{{ npc.race | default('Unknown') }}</race>
+      <dispositionsTowardsPlayer>
+        {% for disposition in npc.dispositionsTowardsPlayer %}
+        <disposition>
+          <type>{{ disposition.type }}</type>
+          <intensity>{{ disposition.intensityName }}</intensity>
+        </disposition>
+        {% endfor %}
+      </dispositionsTowardsPlayer>
       <inventory>
         {% for item in npc.inventory %}<item>
           <name>{{ item.name }}</name>
@@ -117,6 +125,14 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ member.description }}</description>
       <class>{{ member.class | default('Unknown') }}</class>
       <race>{{ member.race | default('Unknown') }}</race>
+      <dispositionsTowardsPlayer>
+        {% for disposition in npc.dispositionsTowardsPlayer %}
+        <disposition>
+          <type>{{ disposition.type }}</type>
+          <intensity>{{ disposition.intensityName }}</intensity>
+        </disposition>
+        {% endfor %}
+      </dispositionsTowardsPlayer>
       <inventory>
         {% for item in member.inventory %}<item>
           <name>{{ item.name }}</name>
