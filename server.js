@@ -2303,11 +2303,23 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
         }
         if (bidirectional) {
             const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+            let reverseDestinationRegion = null;
+            const reverseRegion = findRegionByLocationId(fromLocation.id);
+            if (reverseRegion) {
+                reverseDestinationRegion = reverseRegion.id;
+            } else if (fromLocation.stubMetadata?.regionId) {
+                reverseDestinationRegion = fromLocation.stubMetadata.regionId;
+            }
+
             ensureExitConnection(
                 toLocation,
                 reverseKey,
                 fromLocation,
-                { description: `Path back to ${fromLocation.name || fromLocation.id}`, bidirectional: false }
+                {
+                    description: `Path back to ${fromLocation.name || fromLocation.id}`,
+                    bidirectional: false,
+                    destinationRegion: reverseDestinationRegion
+                }
             );
         }
         return exit;
@@ -2328,11 +2340,23 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
 
     if (bidirectional) {
         const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+        let reverseDestinationRegion = null;
+        const reverseRegion = findRegionByLocationId(fromLocation.id);
+        if (reverseRegion) {
+            reverseDestinationRegion = reverseRegion.id;
+        } else if (fromLocation.stubMetadata?.regionId) {
+            reverseDestinationRegion = fromLocation.stubMetadata.regionId;
+        }
+
         ensureExitConnection(
             toLocation,
             reverseKey,
             fromLocation,
-            { description: `Path back to ${fromLocation.name || fromLocation.id}`, bidirectional: false }
+            {
+                description: `Path back to ${fromLocation.name || fromLocation.id}`,
+                bidirectional: false,
+                destinationRegion: reverseDestinationRegion
+            }
         );
     }
     return newExit;
@@ -7750,7 +7774,7 @@ async function generateRegionExitStubs({
         }
         normalizedDirection = directionCandidate;
 
-        let stubName = `${definition.name} Frontier`;
+        let stubName = `${definition.name}`;
         if (typeof Location.findByName === 'function') {
             let suffix = 2;
             let candidateName = stubName;
