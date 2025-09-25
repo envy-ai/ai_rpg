@@ -118,14 +118,21 @@ function ensureCytoscape(container) {
         'background-color': '#22c55e',
         'width': 28,
         'height': 28,
-        'label': 'data(symbol)',
-        'font-size': '14px',
-        'color': '#064e3b',
-        'text-valign': 'center',
+        'label': 'data(regionName)',
+        'font-size': '9px',
+        'font-weight': 500,
+        'color': '#ccfbf1',
+        'text-valign': 'bottom',
         'text-halign': 'center',
+        'text-margin-y': '8px',
+        'text-outline-width': 3,
+        'text-outline-color': 'rgba(15, 23, 42, 0.85)',
         'text-background-opacity': 0,
         'border-width': 2,
         'border-color': '#047857',
+        'background-image': 'data(symbolImage)',
+        'background-fit': 'cover',
+        'background-clip': 'node',
         'shadow-blur': 4,
         'shadow-color': 'rgba(16, 185, 129, 0.35)'
       }
@@ -153,22 +160,7 @@ function ensureCytoscape(container) {
         'line-color': '#34d399',
         'target-arrow-color': '#34d399',
         'target-arrow-shape': 'triangle',
-        'target-distance-from-node': 12,
-        'label': 'data(regionName)',
-        'font-size': '10px',
-        'font-weight': 500,
-        'color': '#bbf7d0',
-        'text-wrap': 'wrap',
-        'text-max-width': '140px',
-        'text-background-color': 'rgba(15, 23, 42, 0.85)',
-        'text-background-opacity': 1,
-        'text-background-padding': '2px 4px',
-        'text-border-width': 1,
-        'text-border-color': 'rgba(34, 197, 94, 0.35)',
-        'text-border-opacity': 0.8,
-        'text-halign': 'center',
-        'text-valign': 'top',
-        'text-margin-y': '-6px'
+        'target-distance-from-node': 12
       }
     }
   ]);
@@ -265,12 +257,15 @@ function renderMap(region) {
         const regionName = exit.destinationRegionName || 'Uncharted Region';
         const expanded = Boolean(exit.destinationRegionExpanded);
         const symbol = expanded ? '⬈' : '?';
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="white" fill-opacity="0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="80">${symbol}</text></svg>`;
+        const symbolImage = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
         if (!regionExitNodes.has(exitNodeId)) {
           regionExitNodes.set(exitNodeId, {
             data: {
               id: exitNodeId,
               symbol,
+              symbolImage,
               regionName,
               targetRegionId: destinationRegionId,
               expanded
