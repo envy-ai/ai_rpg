@@ -399,6 +399,54 @@
             </div>
         </div>
     </div>
+    <div id="npcViewModal" class="modal npc-view-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcViewModalTitle">Character Overview</h2>
+                <button type="button" class="modal__close" id="npcViewCloseBtn" aria-label="Close character overview">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body npc-view-body">
+                <div class="npc-view-summary">
+                    <div class="npc-view-image" id="npcViewImage"></div>
+                    <div class="npc-view-summary-text">
+                        <h3 id="npcViewName">Unknown Character</h3>
+                        <p id="npcViewDescription" class="npc-view-description">No description available.</p>
+                        <div class="npc-view-tags" id="npcViewTags">
+                            <span class="npc-view-tag" id="npcViewClass"></span>
+                            <span class="npc-view-tag" id="npcViewRace"></span>
+                            <span class="npc-view-tag" id="npcViewLevel"></span>
+                        </div>
+                        <div class="npc-view-health" id="npcViewHealth"></div>
+                        <div class="npc-view-dispositions" id="npcViewDispositions"></div>
+                    </div>
+                </div>
+                <div class="npc-view-sections">
+                    <section class="npc-view-section" id="npcViewAttributesSection">
+                        <h4>Attributes</h4>
+                        <dl class="npc-view-attributes" id="npcViewAttributes"></dl>
+                        <div class="npc-view-empty" id="npcViewAttributesEmpty">No attribute data available.</div>
+                    </section>
+                    <section class="npc-view-section" id="npcViewSkillsSection">
+                        <h4>Skills</h4>
+                        <ul class="npc-view-list" id="npcViewSkills"></ul>
+                        <div class="npc-view-empty" id="npcViewSkillsEmpty">No skill data available.</div>
+                    </section>
+                    <section class="npc-view-section" id="npcViewAbilitiesSection">
+                        <h4>Abilities</h4>
+                        <ul class="npc-view-list" id="npcViewAbilities"></ul>
+                        <div class="npc-view-empty" id="npcViewAbilitiesEmpty">No abilities listed.</div>
+                    </section>
+                    <section class="npc-view-section" id="npcViewStatusSection">
+                        <h4>Status Effects</h4>
+                        <ul class="npc-view-list" id="npcViewStatuses"></ul>
+                        <div class="npc-view-empty" id="npcViewStatusesEmpty">No active status effects.</div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="npcEditModal" class="modal npc-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1510,6 +1558,7 @@
 
         const npcEditModal = document.getElementById('npcEditModal');
         const npcInventoryModal = document.getElementById('npcInventoryModal');
+        const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
@@ -1538,6 +1587,24 @@
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
         const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
+        const npcViewModalTitle = document.getElementById('npcViewModalTitle');
+        const npcViewCloseBtn = document.getElementById('npcViewCloseBtn');
+        const npcViewImage = document.getElementById('npcViewImage');
+        const npcViewName = document.getElementById('npcViewName');
+        const npcViewDescription = document.getElementById('npcViewDescription');
+        const npcViewClass = document.getElementById('npcViewClass');
+        const npcViewRace = document.getElementById('npcViewRace');
+        const npcViewLevel = document.getElementById('npcViewLevel');
+        const npcViewHealth = document.getElementById('npcViewHealth');
+        const npcViewDispositions = document.getElementById('npcViewDispositions');
+        const npcViewAttributes = document.getElementById('npcViewAttributes');
+        const npcViewAttributesEmpty = document.getElementById('npcViewAttributesEmpty');
+        const npcViewSkills = document.getElementById('npcViewSkills');
+        const npcViewSkillsEmpty = document.getElementById('npcViewSkillsEmpty');
+        const npcViewAbilities = document.getElementById('npcViewAbilities');
+        const npcViewAbilitiesEmpty = document.getElementById('npcViewAbilitiesEmpty');
+        const npcViewStatuses = document.getElementById('npcViewStatuses');
+        const npcViewStatusesEmpty = document.getElementById('npcViewStatusesEmpty');
         const thingEditModal = document.getElementById('thingEditModal');
         const thingEditForm = document.getElementById('thingEditForm');
         const thingEditModalTitle = document.getElementById('thingEditModalTitle');
@@ -2120,6 +2187,7 @@
         let currentNpcEditId = null;
         let currentNpcOriginalHealthAttribute = '';
         let currentNpcInventory = [];
+        let currentNpcViewId = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
         let currentThingLockedMetadata = {};
@@ -2510,7 +2578,10 @@
             }
             npcEditModal.setAttribute('aria-hidden', 'true');
             npcEditModal.setAttribute('hidden', '');
-            if (npcInventoryModal.hasAttribute('hidden')) {
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && thingHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -2532,7 +2603,26 @@
             try {
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
-            if (npcEditModal.hasAttribute('hidden')) {
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            if (editHidden && viewHidden && thingHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function closeNpcViewModal() {
+            if (!npcViewModal) {
+                return;
+            }
+            npcViewModal.setAttribute('aria-hidden', 'true');
+            npcViewModal.setAttribute('hidden', '');
+            currentNpcViewId = null;
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            if (inventoryHidden && editHidden && thingHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -2571,7 +2661,8 @@
             currentThingLockedMetadata = {};
             const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden) {
+            const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -2610,6 +2701,12 @@
         if (npcInventoryCloseBtn) {
             npcInventoryCloseBtn.addEventListener('click', () => {
                 closeNpcInventoryModal();
+            });
+        }
+
+        if (npcViewCloseBtn) {
+            npcViewCloseBtn.addEventListener('click', () => {
+                closeNpcViewModal();
             });
         }
 
@@ -2652,6 +2749,8 @@
                 if (event.target === npcModalBackdrop) {
                     if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
                         closeThingEditModal();
+                    } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
+                        closeNpcViewModal();
                     } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
                         closeNpcInventoryModal();
                     } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
@@ -2673,6 +2772,14 @@
             npcInventoryModal.addEventListener('click', (event) => {
                 if (event.target === npcInventoryModal) {
                     closeNpcInventoryModal();
+                }
+            });
+        }
+
+        if (npcViewModal) {
+            npcViewModal.addEventListener('click', (event) => {
+                if (event.target === npcViewModal) {
+                    closeNpcViewModal();
                 }
             });
         }
@@ -3046,6 +3153,252 @@
             renderNpcInventory(items);
         }
 
+        function formatTagValue(label, value) {
+            if (value === undefined || value === null || value === '') {
+                return '';
+            }
+            return `${label}: ${value}`;
+        }
+
+        function renderDefinitionList(container, emptyState, entries = []) {
+            if (!container) {
+                return;
+            }
+            container.innerHTML = '';
+            if (!Array.isArray(entries) || entries.length === 0) {
+                if (emptyState) {
+                    emptyState.removeAttribute('hidden');
+                }
+                container.setAttribute('hidden', '');
+                return;
+            }
+            container.removeAttribute('hidden');
+            if (emptyState) {
+                emptyState.setAttribute('hidden', '');
+            }
+            entries.forEach(({ term, detail }) => {
+                const dt = document.createElement('dt');
+                dt.textContent = term;
+                const dd = document.createElement('dd');
+                dd.textContent = detail;
+                container.appendChild(dt);
+                container.appendChild(dd);
+            });
+        }
+
+        function renderList(container, emptyState, items = [], options = {}) {
+            if (!container) {
+                return;
+            }
+            container.innerHTML = '';
+            const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+            if (safeItems.length === 0) {
+                if (emptyState) {
+                    emptyState.removeAttribute('hidden');
+                }
+                container.setAttribute('hidden', '');
+                return;
+            }
+            container.removeAttribute('hidden');
+            if (emptyState) {
+                emptyState.setAttribute('hidden', '');
+            }
+
+            const { allowHTML = false } = options;
+            safeItems.forEach(item => {
+                const li = document.createElement('li');
+                if (allowHTML) {
+                    li.innerHTML = item;
+                } else {
+                    li.textContent = item;
+                }
+                container.appendChild(li);
+            });
+        }
+
+        function showNpcViewModal(npc) {
+            if (!npc || !npcViewModal || !npcModalBackdrop) {
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
+
+            const latestNpc = npc && npc.id ? (npcDataCache.get(npc.id) || npc) : npc;
+            currentNpcViewId = latestNpc?.id || npc?.id || null;
+
+            npcModalBackdrop.removeAttribute('hidden');
+            npcViewModal.removeAttribute('hidden');
+            npcViewModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+
+            const name = latestNpc?.name || 'Unknown Character';
+            const description = latestNpc?.description || latestNpc?.shortDescription || 'No description available.';
+            const classLabel = latestNpc?.class || '';
+            const raceLabel = latestNpc?.race || '';
+            const levelValue = Number.isFinite(Number(latestNpc?.level)) ? Number(latestNpc.level) : null;
+            const healthValue = Number.isFinite(Number(latestNpc?.health)) ? Number(latestNpc.health) : null;
+            const maxHealthValue = Number.isFinite(Number(latestNpc?.maxHealth)) ? Number(latestNpc.maxHealth) : null;
+
+            if (npcViewModalTitle) {
+                npcViewModalTitle.textContent = latestNpc?.name ? `${latestNpc.name} · Overview` : 'Character Overview';
+            }
+
+            if (npcViewName) {
+                npcViewName.textContent = name;
+            }
+            if (npcViewDescription) {
+                npcViewDescription.textContent = description;
+            }
+
+            const updateTag = (element, label, value) => {
+                if (!element) {
+                    return;
+                }
+                if (value === undefined || value === null || value === '') {
+                    element.textContent = '';
+                    element.setAttribute('hidden', '');
+                    return;
+                }
+                element.textContent = formatTagValue(label, value);
+                element.removeAttribute('hidden');
+            };
+
+            updateTag(npcViewClass, 'Class', classLabel);
+            updateTag(npcViewRace, 'Race', raceLabel);
+            updateTag(npcViewLevel, 'Level', levelValue);
+
+            if (npcViewHealth) {
+                if (healthValue === null && maxHealthValue === null) {
+                    npcViewHealth.textContent = '';
+                    npcViewHealth.setAttribute('hidden', '');
+                } else {
+                    const parts = [];
+                    if (healthValue !== null) {
+                        parts.push(`HP: ${healthValue}`);
+                    }
+                    if (maxHealthValue !== null) {
+                        parts.push(`Max: ${maxHealthValue}`);
+                    }
+                    npcViewHealth.textContent = parts.join(' · ');
+                    npcViewHealth.removeAttribute('hidden');
+                }
+            }
+
+            const dispositions = Array.isArray(latestNpc?.dispositionsTowardsPlayer)
+                ? latestNpc.dispositionsTowardsPlayer.filter(entry => entry && entry.type)
+                : [];
+            if (npcViewDispositions) {
+                if (!dispositions.length) {
+                    npcViewDispositions.textContent = '';
+                    npcViewDispositions.setAttribute('hidden', '');
+                } else {
+                    npcViewDispositions.innerHTML = dispositions.map(entry => {
+                        const valueText = Number.isFinite(Number(entry.value)) ? ` (${Number(entry.value)})` : '';
+                        return `<span class="npc-view-disposition-chip">${escapeHtml(entry.type)}: ${escapeHtml(entry.intensityName || 'neutral')}${escapeHtml(valueText)}</span>`;
+                    }).join('');
+                    npcViewDispositions.removeAttribute('hidden');
+                }
+            }
+
+            if (npcViewImage) {
+                renderEntityImage({
+                    element: npcViewImage,
+                    entityType: latestNpc?.isNPC ? 'npc' : 'player',
+                    entityId: latestNpc?.id || null,
+                    imageId: latestNpc?.imageId || null,
+                    altText: `${name} portrait`,
+                    placeholderIcon: '🎭',
+                    placeholderClass: 'npc-view-image-placeholder'
+                });
+            }
+
+            const attributeEntries = [];
+            if (latestNpc?.attributeInfo && typeof latestNpc.attributeInfo === 'object') {
+                for (const [key, info] of Object.entries(latestNpc.attributeInfo)) {
+                    const label = info?.label || formatAttributeName(key);
+                    const value = Number.isFinite(Number(info?.value)) ? Number(info.value) : info?.value;
+                    const modifier = Number.isFinite(Number(info?.modifier)) ? Number(info.modifier) : null;
+                    const parts = [];
+                    if (value !== undefined && value !== null) {
+                        parts.push(value);
+                    }
+                    if (modifier !== null) {
+                        parts.push(`mod ${modifier >= 0 ? '+' : ''}${modifier}`);
+                    }
+                    attributeEntries.push({ term: label, detail: parts.join(' · ') || '—' });
+                }
+            } else if (latestNpc?.attributes && typeof latestNpc.attributes === 'object') {
+                for (const [key, value] of Object.entries(latestNpc.attributes)) {
+                    const label = formatAttributeName(key);
+                    const detail = Number.isFinite(Number(value)) ? Number(value) : (value ?? '—');
+                    attributeEntries.push({ term: label, detail });
+                }
+            }
+            attributeEntries.sort((a, b) => a.term.localeCompare(b.term));
+            renderDefinitionList(npcViewAttributes, npcViewAttributesEmpty, attributeEntries);
+
+            const skillEntries = [];
+            if (latestNpc?.skills) {
+                if (Array.isArray(latestNpc.skills)) {
+                    latestNpc.skills.forEach(entry => {
+                        if (!entry) return;
+                        if (typeof entry === 'string') {
+                            skillEntries.push(entry);
+                        } else if (entry.name) {
+                            const rank = Number.isFinite(Number(entry.rank)) ? ` (Rank ${Number(entry.rank)})` : '';
+                            skillEntries.push(`${entry.name}${rank}`);
+                        }
+                    });
+                } else if (latestNpc.skills && typeof latestNpc.skills === 'object') {
+                    for (const [skillName, rank] of Object.entries(latestNpc.skills)) {
+                        const suffix = Number.isFinite(Number(rank)) ? ` (Rank ${Number(rank)})` : '';
+                        skillEntries.push(`${skillName}${suffix}`);
+                    }
+                }
+            }
+            skillEntries.sort((a, b) => a.localeCompare(b));
+            renderList(npcViewSkills, npcViewSkillsEmpty, skillEntries);
+
+            const abilityEntries = [];
+            if (Array.isArray(latestNpc?.abilities)) {
+                latestNpc.abilities.forEach(ability => {
+                    if (!ability) return;
+                    const label = ability.name || 'Ability';
+                    const typeSuffix = ability.type ? ` (${ability.type})` : '';
+                    const descriptionText = ability.description || ability.text || '';
+                    const entry = `<strong>${escapeHtml(label)}${escapeHtml(typeSuffix)}</strong>${descriptionText ? `<span class="npc-view-list-description">${escapeHtml(descriptionText)}</span>` : ''}`;
+                    abilityEntries.push(entry);
+                });
+            }
+            renderList(npcViewAbilities, npcViewAbilitiesEmpty, abilityEntries, { allowHTML: true });
+
+            const statusEntries = [];
+            if (Array.isArray(latestNpc?.statusEffects)) {
+                latestNpc.statusEffects.forEach(effect => {
+                    if (!effect) return;
+                    if (typeof effect === 'string') {
+                        statusEntries.push(effect);
+                        return;
+                    }
+                    const descriptionText = effect.description || effect.text || effect.name || '';
+                    if (!descriptionText) {
+                        return;
+                    }
+                    const durationText = Number.isFinite(Number(effect.duration))
+                        ? ` (Duration ${Number(effect.duration)})`
+                        : '';
+                    statusEntries.push(`${descriptionText}${durationText}`);
+                });
+            }
+            renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries);
+        }
+
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') {
                 return;
@@ -3054,6 +3407,12 @@
             if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
                 event.preventDefault();
                 closeThingEditModal();
+                return;
+            }
+
+            if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeNpcViewModal();
                 return;
             }
 
@@ -3188,6 +3547,12 @@
                 const menu = document.createElement('div');
                 menu.className = 'npc-card-menu';
 
+                const viewButton = document.createElement('button');
+                viewButton.type = 'button';
+                viewButton.className = 'npc-card-menu-item';
+                viewButton.textContent = 'View';
+                menu.appendChild(viewButton);
+
                 const editButton = document.createElement('button');
                 editButton.type = 'button';
                 editButton.className = 'npc-card-menu-item';
@@ -3210,6 +3575,13 @@
                         npcMenuState.openMenu = menu;
                         npcMenuState.trigger = button;
                     }
+                });
+
+                viewButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    closeNpcContextMenu();
+                    const latestNpc = npcDataCache.get(npc.id) || npc;
+                    showNpcViewModal(latestNpc);
                 });
 
                 editButton.addEventListener('click', (event) => {
