@@ -2961,6 +2961,34 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/gear-slots', (req, res) => {
+            try {
+                const definitions = Player.gearSlotDefinitions;
+                const slotTypes = [];
+
+                if (definitions?.byType instanceof Map) {
+                    for (const type of definitions.byType.keys()) {
+                        if (typeof type === 'string' && type.trim()) {
+                            slotTypes.push(type.trim());
+                        }
+                    }
+                }
+
+                slotTypes.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+                res.json({
+                    success: true,
+                    slotTypes
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: 'Failed to load gear slot definitions',
+                    details: error.message
+                });
+            }
+        });
+
         // Update a thing
         app.put('/api/things/:id', async (req, res) => {
             try {

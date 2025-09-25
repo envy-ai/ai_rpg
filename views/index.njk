@@ -478,7 +478,7 @@
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditRarity">Rarity</label>
-                        <input id="thingEditRarity" type="text" autocomplete="off">
+                        <select id="thingEditRarity"></select>
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditItemDetail">Item Detail</label>
@@ -486,15 +486,11 @@
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditSlot">Slot</label>
-                        <input id="thingEditSlot" type="text" autocomplete="off">
+                        <select id="thingEditSlot"></select>
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditLevel">Level</label>
                         <input id="thingEditLevel" type="number" min="1" max="20" step="1">
-                    </div>
-                    <div class="npc-edit-field">
-                        <label for="thingEditRelativeLevel">Relative Level</label>
-                        <input id="thingEditRelativeLevel" type="number" min="-20" max="20" step="1">
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditImageId">Image ID</label>
@@ -849,6 +845,110 @@
             { key: 'masterwork', className: 'rarity-masterwork' }
         ];
 
+        const availableSlotTypes = window.availableSlotTypes instanceof Set ? window.availableSlotTypes : new Set();
+        window.availableSlotTypes = availableSlotTypes;
+
+        const titleCase = (value) => {
+            if (!value) {
+                return '';
+            }
+            return String(value)
+                .split(/[\s_-]+/)
+                .filter(Boolean)
+                .map(part => capitalize(part.toLowerCase()))
+                .join(' ');
+        };
+
+        const getRarityLabel = (key) => titleCase(key);
+
+        const normalizeSlotType = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value).trim().toLowerCase();
+        };
+
+        const formatSlotTypeLabel = (slotType) => titleCase(slotType);
+
+        const addAvailableSlotType = (value) => {
+            const normalized = normalizeSlotType(value);
+            if (!normalized || normalized === 'n/a' || normalized === 'none') {
+                return;
+            }
+            availableSlotTypes.add(normalized);
+        };
+
+        const trackSlotTypeFromThing = (thing = {}) => {
+            if (!thing) {
+                return;
+            }
+            const directSlot = typeof thing.slot === 'string' ? thing.slot : null;
+            const metadataSlot = typeof thing.metadata?.slot === 'string' ? thing.metadata.slot : null;
+            if (directSlot) {
+                addAvailableSlotType(directSlot);
+            } else if (metadataSlot) {
+                addAvailableSlotType(metadataSlot);
+            }
+        };
+
+        const updateAvailableSlotTypesFromPlayer = (player = {}) => {
+            const gearSlotsByType = player && typeof player.gearSlotsByType === 'object' ? player.gearSlotsByType : null;
+            if (gearSlotsByType) {
+                Object.keys(gearSlotsByType).forEach(addAvailableSlotType);
+            }
+
+            const gear = player && typeof player.gear === 'object' ? player.gear : null;
+            if (gear) {
+                Object.values(gear).forEach(slot => {
+                    if (slot && slot.slotType) {
+                        addAvailableSlotType(slot.slotType);
+                    }
+                });
+            }
+
+            const inventory = Array.isArray(player.inventory) ? player.inventory : [];
+            inventory.forEach(trackSlotTypeFromThing);
+        };
+
+        let gearSlotTypesLoaded = availableSlotTypes.size > 0;
+        let gearSlotTypesPromise = null;
+
+        function ensureGearSlotTypes() {
+            if (gearSlotTypesLoaded) {
+                return Promise.resolve(availableSlotTypes);
+            }
+            if (gearSlotTypesPromise) {
+                return gearSlotTypesPromise;
+            }
+            gearSlotTypesPromise = (async () => {
+                try {
+                    const response = await fetch('/api/gear-slots');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (!data?.success) {
+                        throw new Error(data?.error || 'Failed to load gear slot definitions');
+                    }
+
+                    if (Array.isArray(data.slotTypes)) {
+                        data.slotTypes.forEach(addAvailableSlotType);
+                    }
+
+                    gearSlotTypesLoaded = availableSlotTypes.size > 0;
+                    return data;
+                } catch (error) {
+                    console.warn('Failed to fetch gear slot definitions:', error);
+                    return null;
+                } finally {
+                    gearSlotTypesPromise = null;
+                }
+            })();
+            return gearSlotTypesPromise;
+        }
+
+        ensureGearSlotTypes();
+
         const getRarityClass = (rarity) => {
             if (!rarity && rarity !== 0) {
                 return '';
@@ -903,6 +1003,7 @@
                 return;
             }
             thingDataCache.set(thing.id, { ...thing });
+            trackSlotTypeFromThing(thing);
         }
 
         function closeThingContextMenu() {
@@ -1088,9 +1189,8 @@
         const thingEditTypeSelect = document.getElementById('thingEditType');
         const thingEditRarityInput = document.getElementById('thingEditRarity');
         const thingEditItemDetailInput = document.getElementById('thingEditItemDetail');
-        const thingEditSlotInput = document.getElementById('thingEditSlot');
+        const thingEditSlotSelect = document.getElementById('thingEditSlot');
         const thingEditLevelInput = document.getElementById('thingEditLevel');
-        const thingEditRelativeLevelInput = document.getElementById('thingEditRelativeLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
@@ -1407,6 +1507,89 @@
             return effects;
         }
 
+        function populateThingRarityOptions(selectedRarity = '') {
+            if (!thingEditRarityInput) {
+                return;
+            }
+
+            const normalized = typeof selectedRarity === 'string' ? selectedRarity.trim().toLowerCase() : '';
+
+            thingEditRarityInput.innerHTML = '';
+
+            const unspecifiedOption = document.createElement('option');
+            unspecifiedOption.value = '';
+            unspecifiedOption.textContent = 'Not specified';
+            thingEditRarityInput.appendChild(unspecifiedOption);
+
+            rarityClassLookup.forEach(({ key, className }) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = getRarityLabel(key);
+                option.className = className;
+                if (normalized && (normalized === key || normalized.includes(key))) {
+                    option.selected = true;
+                }
+                thingEditRarityInput.appendChild(option);
+            });
+
+            if (normalized && !rarityClassLookup.some(entry => entry.key === normalized)) {
+                const customOption = document.createElement('option');
+                customOption.value = normalized;
+                customOption.textContent = getRarityLabel(normalized);
+                const customClass = getRarityClass(normalized);
+                if (customClass) {
+                    customOption.className = customClass;
+                }
+                customOption.selected = true;
+                thingEditRarityInput.appendChild(customOption);
+            }
+
+            if (!thingEditRarityInput.value && normalized) {
+                thingEditRarityInput.value = normalized;
+            }
+        }
+
+        function populateThingSlotOptions(selectedSlot = '') {
+            if (!thingEditSlotSelect) {
+                return;
+            }
+
+            const normalized = normalizeSlotType(selectedSlot);
+            if (normalized) {
+                addAvailableSlotType(normalized);
+            }
+            const slotTypes = Array.from(availableSlotTypes);
+            if (normalized && !slotTypes.includes(normalized)) {
+                slotTypes.push(normalized);
+            }
+
+            slotTypes.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+            thingEditSlotSelect.innerHTML = '';
+
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'Not equippable';
+            thingEditSlotSelect.appendChild(emptyOption);
+
+            slotTypes.forEach(slotType => {
+                if (!slotType) {
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = slotType;
+                option.textContent = formatSlotTypeLabel(slotType);
+                if (slotType === normalized) {
+                    option.selected = true;
+                }
+                thingEditSlotSelect.appendChild(option);
+            });
+
+            if (!thingEditSlotSelect.value && normalized) {
+                thingEditSlotSelect.value = normalized;
+            }
+        }
+
         function populateThingEditForm(thing) {
             if (!thingEditForm) {
                 return;
@@ -1431,28 +1614,21 @@
                 thingEditTypeSelect.value = typeValue === 'scenery' ? 'scenery' : 'item';
             }
 
-            if (thingEditRarityInput) {
-                thingEditRarityInput.value = thing?.rarity || '';
-            }
+            const rarityValue = thing?.rarity || thing?.metadata?.rarity || '';
+            populateThingRarityOptions(rarityValue);
 
             if (thingEditItemDetailInput) {
                 const detail = thing?.itemTypeDetail || thing?.itemDetail || '';
                 thingEditItemDetailInput.value = detail;
             }
 
-            if (thingEditSlotInput) {
-                thingEditSlotInput.value = thing?.slot || '';
-            }
+            populateThingSlotOptions(thing?.slot || thing?.metadata?.slot || '');
 
             if (thingEditLevelInput) {
                 const numericLevel = Number.parseInt(thing?.level, 10);
                 thingEditLevelInput.value = Number.isFinite(numericLevel) ? numericLevel : '';
             }
 
-            if (thingEditRelativeLevelInput) {
-                const numericRelative = Number.parseInt(thing?.relativeLevel, 10);
-                thingEditRelativeLevelInput.value = Number.isFinite(numericRelative) ? numericRelative : '';
-            }
 
             if (thingEditImageIdInput) {
                 thingEditImageIdInput.value = thing?.imageId || '';
@@ -1501,9 +1677,8 @@
             let resolvedThing = { ...thing };
 
             const needsDetails = resolvedThing.level === undefined
-                || resolvedThing.relativeLevel === undefined
                 || (resolvedThing.metadata && typeof resolvedThing.metadata === 'object'
-                    && ('level' in resolvedThing.metadata || 'relativeLevel' in resolvedThing.metadata));
+                    && ('level' in resolvedThing.metadata));
 
             if (needsDetails) {
                 try {
@@ -1519,6 +1694,8 @@
                     console.warn('Failed to fetch full item details:', error);
                 }
             }
+
+            await ensureGearSlotTypes();
 
             try {
                 window.floatingTooltipController?.hide?.();
@@ -1986,6 +2163,12 @@
                 thingStatusEffectsList.innerHTML = '';
             }
             populateThingCauseStatusEffect(null);
+            if (thingEditRarityInput) {
+                thingEditRarityInput.innerHTML = '';
+            }
+            if (thingEditSlotSelect) {
+                thingEditSlotSelect.innerHTML = '';
+            }
             currentThingLockedMetadata = {};
             const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
@@ -2260,8 +2443,8 @@
                 }
 
                 if (thingEditRarityInput) {
-                    const rarityValue = thingEditRarityInput.value?.trim();
-                    payload.rarity = rarityValue || null;
+                    const rarityKey = thingEditRarityInput.value?.trim();
+                    payload.rarity = rarityKey ? getRarityLabel(rarityKey) : null;
                 }
 
                 if (thingEditItemDetailInput) {
@@ -2269,19 +2452,17 @@
                     payload.itemTypeDetail = detailValue || null;
                 }
 
-                if (thingEditSlotInput) {
-                    const slotValue = thingEditSlotInput.value?.trim();
+                if (thingEditSlotSelect) {
+                    const slotValue = normalizeSlotType(thingEditSlotSelect.value);
+                    if (slotValue) {
+                        addAvailableSlotType(slotValue);
+                    }
                     payload.slot = slotValue || null;
                 }
 
                 if (thingEditLevelInput) {
                     const parsedLevel = Number.parseInt(thingEditLevelInput.value ?? '', 10);
                     payload.level = Number.isFinite(parsedLevel) ? parsedLevel : null;
-                }
-
-                if (thingEditRelativeLevelInput) {
-                    const parsedRelative = Number.parseInt(thingEditRelativeLevelInput.value ?? '', 10);
-                    payload.relativeLevel = Number.isFinite(parsedRelative) ? parsedRelative : null;
                 }
 
                 if (thingEditImageIdInput) {
@@ -3157,6 +3338,8 @@
                         const slotType = (slotData?.slotType || '').toString().toLowerCase();
                         const normalizedSlotName = (slotName || '').toLowerCase();
 
+                        addAvailableSlotType(slotType);
+
                         const wrapper = document.createElement('div');
                         wrapper.className = 'equipment-slot';
 
@@ -3291,6 +3474,7 @@
                 }
 
                 const safeItems = Array.isArray(items) ? items : [];
+                safeItems.forEach(trackSlotTypeFromThing);
                 const equippedSet = equippedItemIds instanceof Set ? equippedItemIds : new Set();
                 inventoryGrid.innerHTML = '';
 
@@ -3346,9 +3530,12 @@
             }
 
             function renderInventoryState(player = {}) {
+                ensureGearSlotTypes();
                 const inventoryItems = Array.isArray(player.inventory) ? player.inventory : [];
                 const gear = player && typeof player.gear === 'object' ? player.gear : {};
                 const equippedItemIds = new Set();
+
+                updateAvailableSlotTypesFromPlayer(player);
 
                 Object.values(gear).forEach(slot => {
                     if (slot && slot.itemId) {

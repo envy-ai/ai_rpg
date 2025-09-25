@@ -1,0 +1,10 @@
+rarities:
+  junk: 0.75
+  common: 1
+  fine: 1.25
+  superior: 1.5
+  masterwork: 2
+  rare: 2.5
+  epic: 3
+  legendary: 4
+  artifact: 5
