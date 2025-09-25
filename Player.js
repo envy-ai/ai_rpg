@@ -34,11 +34,15 @@ class Player {
     #gearSlotsByType;
     #gearSlotNameIndex;
     #abilities;
+    #experience;
     static #npcInventoryChangeHandler = null;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
     static #instances = new Set();
+
+    static #experienceThreshold = 100;
+    static #experienceRolloverMultiplier = 2 / 3;
 
     static get gearSlotDefinitions() {
         if (!this.#gearSlotDefinitions) {
@@ -205,9 +209,15 @@ class Player {
 
         this.#statusEffects = this.#normalizeStatusEffects(options.statusEffects);
 
+        const initialExperience = Number.isFinite(options.experience)
+            ? Math.max(0, Number(options.experience))
+            : 0;
+        this.#experience = initialExperience;
+        this.#processExperienceOverflow();
+
         // Creation timestamp
-        this.#createdAt = new Date().toISOString();
-        this.#lastUpdated = this.#createdAt;
+        this.#createdAt = options.createdAt || new Date().toISOString();
+        this.#lastUpdated = options.lastUpdated || this.#createdAt;
 
         Player.#instances.add(this);
     }
@@ -633,6 +643,21 @@ class Player {
         return this.#level;
     }
 
+    get experience() {
+        return this.#experience;
+    }
+
+    static setExperienceRolloverMultiplier(value) {
+        if (!Number.isFinite(value) || value < 0 || value > 1) {
+            throw new Error('Experience rollover multiplier must be a number between 0 and 1');
+        }
+        Player.#experienceRolloverMultiplier = value;
+    }
+
+    static get experienceRolloverMultiplier() {
+        return Player.#experienceRolloverMultiplier;
+    }
+
     get health() {
         return this.#health;
     }
@@ -944,6 +969,28 @@ class Player {
             this.#unspentSkillPoints += pointsPerLevel;
         }
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    addExperience(amount) {
+        if (!Number.isFinite(amount)) {
+            return this.#experience;
+        }
+
+        this.#experience = Math.max(0, this.#experience + Number(amount));
+        this.#processExperienceOverflow();
+        this.#lastUpdated = new Date().toISOString();
+        return this.#experience;
+    }
+
+    setExperience(value) {
+        if (!Number.isFinite(value) || value < 0) {
+            throw new Error('Experience must be a non-negative number');
+        }
+
+        this.#experience = Number(value);
+        this.#processExperienceOverflow();
+        this.#lastUpdated = new Date().toISOString();
+        return this.#experience;
     }
 
     /**
@@ -1462,6 +1509,7 @@ class Player {
             health: this.#health,
             maxHealth: this.maxHealth,
             healthAttribute: this.#healthAttribute,
+            experience: this.#experience,
             alive: this.isAlive(),
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
@@ -1510,7 +1558,8 @@ class Player {
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
             createdAt: this.#createdAt,
-            lastUpdated: this.#lastUpdated
+            lastUpdated: this.#lastUpdated,
+            experience: this.#experience
         };
     }
 
@@ -1539,7 +1588,10 @@ class Player {
             unspentSkillPoints: data.unspentSkillPoints,
             statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
             gear: data.gear && typeof data.gear === 'object' ? data.gear : null,
-            healthAttribute: data.healthAttribute
+            healthAttribute: data.healthAttribute,
+            experience: data.experience,
+            createdAt: data.createdAt,
+            lastUpdated: data.lastUpdated
         });
         player.#maxHealth = player.#calculateBaseHealth();
         player.#health = Math.min(player.#health, player.#maxHealth);
@@ -2026,6 +2078,17 @@ class Player {
         }
 
         return newAttributes;
+    }
+
+    #processExperienceOverflow() {
+        const threshold = Player.#experienceThreshold;
+        const multiplier = Player.#experienceRolloverMultiplier;
+
+        while (this.#experience > threshold) {
+            this.levelUp();
+            const excess = Math.max(0, this.#experience - threshold);
+            this.#experience = excess * multiplier;
+        }
     }
 
     /**
