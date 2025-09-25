@@ -830,6 +830,18 @@
             return escapeHtml(value);
         };
 
+        const getAttributeBonuses = (thing = {}) => {
+            if (Array.isArray(thing?.attributeBonuses)) {
+                return thing.attributeBonuses;
+            }
+            if (Array.isArray(thing?.metadata?.attributeBonuses)) {
+                return thing.metadata.attributeBonuses;
+            }
+            return [];
+        };
+
+        const formatAttributeName = (name = '') => titleCase(name);
+
         const rarityClassLookup = [
             { key: 'mythic', className: 'rarity-mythic' },
             { key: 'legendary', className: 'rarity-legendary' },
@@ -947,7 +959,20 @@
                     }
                     const data = await response.json();
                     if (!data?.success || !Array.isArray(data.attributes)) {
-                        throw new Error(data?.error || 'Failed to load attribute definitions');
+                        if (!data?.success || !data.attributes) {
+                            throw new Error(data?.error || 'Failed to load attribute definitions');
+                        }
+                        if (data.attributes && typeof data.attributes === 'object') {
+                            data.attributes = Object.entries(data.attributes).map(([key, def]) => ({
+                                key,
+                                label: def?.label || titleCase(key),
+                                description: def?.description || '',
+                                abbreviation: def?.abbreviation || ''
+                            }));
+                        }
+                        if (!Array.isArray(data.attributes)) {
+                            throw new Error(data?.error || 'Failed to load attribute definitions');
+                        }
                     }
 
                     attributeOptions.length = 0;
@@ -1209,6 +1234,23 @@
                 ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
                 : '';
             const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
+
+            const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
+            const bonusesHtml = attributeBonuses.length
+                ? `<div class="tooltip-thing-bonuses">
+                        <div class="tooltip-thing-bonuses-title">Attribute Bonuses</div>
+                        <ul class="tooltip-thing-bonuses-list">
+                            ${attributeBonuses.map(bonus => {
+                                const attrName = formatAttributeName(bonus?.attribute || bonus?.name || 'Attribute');
+                                const rawBonus = Number.parseFloat(bonus?.bonus ?? bonus?.value ?? 0);
+                                const formattedBonus = Number.isFinite(rawBonus)
+                                    ? (rawBonus > 0 ? `+${rawBonus}` : `${rawBonus}`)
+                                    : escapeHtml(bonus?.bonus ?? bonus?.value ?? '0');
+                                return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(attrName)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedBonus)}</span></li>`;
+                            }).join('')}
+                        </ul>
+                    </div>`
+                : '';
             const detailsHtml = detailItems.length
                 ? `<div class="tooltip-thing-details">${detailItems.map(item => `
                         <div class="tooltip-thing-detail">
@@ -1224,6 +1266,7 @@
                     ${nameHtml}
                     ${metaHtml}
                     ${descriptionHtml}
+                    ${bonusesHtml}
                     ${detailsHtml}
                 </div>
             `.trim();
