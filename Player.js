@@ -40,6 +40,8 @@ class Player {
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
     static #instances = new Set();
+    static #dispositionDefinitions = null;
+    static #currentPlayerResolver = null;
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
@@ -49,6 +51,75 @@ class Player {
             this.#gearSlotDefinitions = this.#loadGearSlotDefinitions();
         }
         return this.#gearSlotDefinitions;
+    }
+
+    static get dispositionDefinitions() {
+        if (!this.#dispositionDefinitions) {
+            this.#dispositionDefinitions = this.#loadDispositionDefinitions();
+        }
+        return this.#dispositionDefinitions;
+    }
+
+    static getDispositionDefinitions() {
+        return this.dispositionDefinitions;
+    }
+
+    static getDispositionDefinition(name) {
+        const key = this.#normalizeDispositionType(name);
+        const definitions = this.dispositionDefinitions;
+        return definitions.types[key] || null;
+    }
+
+    static resolveDispositionIntensity(type, value = 0) {
+        const key = this.#normalizeDispositionType(type);
+        const definitions = this.dispositionDefinitions;
+        const dispositionDef = definitions.types[key];
+        if (!dispositionDef || !Array.isArray(dispositionDef.thresholds) || dispositionDef.thresholds.length === 0) {
+            return 'neutral';
+        }
+
+        const thresholds = dispositionDef.thresholds;
+        const numericValue = Number(value);
+        const resolvedValue = Number.isFinite(numericValue) ? numericValue : 0;
+        let intensity = thresholds[0]?.name || 'neutral';
+        for (const entry of thresholds) {
+            if (resolvedValue >= entry.threshold) {
+                intensity = entry.name || intensity;
+            }
+        }
+        return intensity || 'neutral';
+    }
+
+    static setCurrentPlayerResolver(resolver) {
+        if (resolver && typeof resolver !== 'function') {
+            throw new Error('Current player resolver must be a function or null');
+        }
+        this.#currentPlayerResolver = resolver || null;
+    }
+
+    static getCurrentPlayer() {
+        return typeof this.#currentPlayerResolver === 'function'
+            ? this.#currentPlayerResolver()
+            : null;
+    }
+
+    static getCurrentPlayerId() {
+        const player = this.getCurrentPlayer();
+        return player && typeof player.id === 'string' ? player.id : null;
+    }
+
+    static resolvePlayerId(playerLike) {
+        if (!playerLike) {
+            return null;
+        }
+        if (typeof playerLike === 'string') {
+            const trimmed = playerLike.trim();
+            return trimmed || null;
+        }
+        if (typeof playerLike.id === 'string') {
+            return playerLike.id;
+        }
+        return null;
     }
 
     static setNpcInventoryChangeHandler(handler) {
@@ -89,6 +160,14 @@ class Player {
         } catch (error) {
             console.warn('NPC inventory change handler errored:', error?.message || error);
         }
+    }
+
+    static #normalizeDispositionType(type) {
+        if (typeof type !== 'string') {
+            return 'default';
+        }
+        const normalized = type.trim().toLowerCase();
+        return normalized || 'default';
     }
 
     static #loadGearSlotDefinitions() {
@@ -149,6 +228,99 @@ class Player {
                 byType: new Map(),
                 byName: new Map(),
                 nameLookup: new Map()
+            };
+        }
+    }
+
+    static #loadDispositionDefinitions() {
+        try {
+            const dispositionPath = path.join(__dirname, 'defs', 'dispositions.yaml');
+            const raw = fs.readFileSync(dispositionPath, 'utf8');
+            const data = yaml.load(raw) || {};
+
+            const rangeSource = typeof data.range === 'object' && data.range !== null ? data.range : {};
+            const range = {
+                min: Number.isFinite(Number(rangeSource.min)) ? Number(rangeSource.min) : null,
+                max: Number.isFinite(Number(rangeSource.max)) ? Number(rangeSource.max) : null,
+                typicalStep: Number.isFinite(Number(rangeSource.typical_step)) ? Number(rangeSource.typical_step) : null,
+                typicalBigStep: Number.isFinite(Number(rangeSource.typical_big_step)) ? Number(rangeSource.typical_big_step) : null
+            };
+
+            const dispositionSource = typeof data.dispositions === 'object' && data.dispositions !== null
+                ? data.dispositions
+                : {};
+
+            const types = {};
+            for (const [name, config] of Object.entries(dispositionSource)) {
+                if (!name || typeof config !== 'object' || config === null) {
+                    continue;
+                }
+
+                const label = String(name).trim();
+                if (!label) {
+                    continue;
+                }
+
+                const key = this.#normalizeDispositionType(label);
+
+                const moveUp = Array.isArray(config.move_up)
+                    ? config.move_up.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
+                    : [];
+                const moveDown = Array.isArray(config.move_down)
+                    ? config.move_down.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
+                    : [];
+                const moveWayDown = Array.isArray(config.move_way_down)
+                    ? config.move_way_down.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
+                    : [];
+
+                const thresholdsSource = typeof config.min_thresholds === 'object' && config.min_thresholds !== null
+                    ? config.min_thresholds
+                    : {};
+
+                const thresholds = Object.entries(thresholdsSource)
+                    .map(([rawThreshold, rawLabel]) => {
+                        const numericThreshold = Number(rawThreshold);
+                        if (!Number.isFinite(numericThreshold)) {
+                            return null;
+                        }
+                        const thresholdLabel = typeof rawLabel === 'string'
+                            ? rawLabel.trim()
+                            : (rawLabel ? String(rawLabel).trim() : '');
+                        if (!thresholdLabel) {
+                            return null;
+                        }
+                        return {
+                            threshold: numericThreshold,
+                            name: thresholdLabel
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.threshold - b.threshold);
+
+                types[key] = {
+                    key,
+                    label,
+                    moveUp,
+                    moveDown,
+                    moveWayDown,
+                    thresholds
+                };
+            }
+
+            return {
+                range,
+                types
+            };
+        } catch (error) {
+            console.error('Error loading dispositions definitions:', error.message);
+            return {
+                range: {
+                    min: null,
+                    max: null,
+                    typicalStep: null,
+                    typicalBigStep: null
+                },
+                types: {}
             };
         }
     }
@@ -395,9 +567,12 @@ class Player {
             }
             const typeMap = new Map();
             for (const [type, value] of Object.entries(types)) {
-                if (typeof type === 'string' && Number.isFinite(value)) {
-                    typeMap.set(type, Number(value));
+                const normalizedType = Player.#normalizeDispositionType(type);
+                const numericValue = Number(value);
+                if (!normalizedType || !Number.isFinite(numericValue)) {
+                    continue;
                 }
+                typeMap.set(normalizedType, numericValue);
             }
             if (typeMap.size > 0) {
                 dispositionMap.set(npcId, typeMap);
@@ -819,55 +994,127 @@ class Player {
     }
 
     getDisposition(targetId, type = 'default') {
-        if (typeof targetId !== 'string' || !targetId.trim()) {
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
             return 0;
         }
-        const npcKey = targetId.trim();
-        const dispositionType = typeof type === 'string' && type.trim() ? type.trim() : 'default';
-        const typeMap = this.#dispositions.get(npcKey);
+        const dispositionType = Player.#normalizeDispositionType(type);
+        const typeMap = this.#dispositions.get(resolvedId);
         if (!typeMap) {
             return 0;
         }
-        return typeMap.get(dispositionType) ?? 0;
+
+        if (typeMap.has(dispositionType)) {
+            const storedValue = typeMap.get(dispositionType);
+            return storedValue ?? 0;
+        }
+
+        const rawType = typeof type === 'string' ? type.trim() : '';
+        if (rawType && typeMap.has(rawType)) {
+            const storedValue = typeMap.get(rawType);
+            return storedValue ?? 0;
+        }
+
+        return 0;
     }
 
     setDisposition(targetId, type = 'default', value = 0) {
-        if (typeof targetId !== 'string' || !targetId.trim()) {
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
             return this.getDisposition(targetId, type);
         }
-        const npcKey = targetId.trim();
-        const dispositionType = typeof type === 'string' && type.trim() ? type.trim() : 'default';
+        const dispositionType = Player.#normalizeDispositionType(type);
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue)) {
-            return this.getDisposition(targetId, type);
+            return this.getDisposition(resolvedId, type);
         }
 
-        let typeMap = this.#dispositions.get(npcKey);
+        let typeMap = this.#dispositions.get(resolvedId);
         if (!typeMap) {
             typeMap = new Map();
-            this.#dispositions.set(npcKey, typeMap);
+            this.#dispositions.set(resolvedId, typeMap);
         }
         typeMap.set(dispositionType, numericValue);
+
+        const rawType = typeof type === 'string' ? type.trim() : '';
+        if (rawType && rawType !== dispositionType && typeMap.has(rawType)) {
+            typeMap.delete(rawType);
+        }
+
         this.#lastUpdated = new Date().toISOString();
         return numericValue;
     }
 
     increaseDisposition(targetId, type = 'default', amount = 1) {
-        const current = this.getDisposition(targetId, type);
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
+            return 0;
+        }
+        const current = this.getDisposition(resolvedId, type);
         const increment = Number(amount);
         if (!Number.isFinite(increment)) {
             return current;
         }
-        return this.setDisposition(targetId, type, current + increment);
+        return this.setDisposition(resolvedId, type, current + increment);
     }
 
     decreaseDisposition(targetId, type = 'default', amount = 1) {
-        const current = this.getDisposition(targetId, type);
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
+            return 0;
+        }
+        const current = this.getDisposition(resolvedId, type);
         const decrement = Number(amount);
         if (!Number.isFinite(decrement)) {
             return current;
         }
-        return this.setDisposition(targetId, type, current - decrement);
+        return this.setDisposition(resolvedId, type, current - decrement);
+    }
+
+    getDispositionValue(playerId, type = 'default') {
+        const resolvedId = Player.resolvePlayerId(playerId);
+        if (!resolvedId) {
+            return 0;
+        }
+        return this.getDisposition(resolvedId, type);
+    }
+
+    getDispositionTowards(player, type = 'default') {
+        return this.getDispositionValue(player, type);
+    }
+
+    setDispositionTowards(player, type = 'default', value = 0) {
+        const resolvedId = Player.resolvePlayerId(player);
+        if (!resolvedId) {
+            return this.getDisposition(player, type);
+        }
+        return this.setDisposition(resolvedId, type, value);
+    }
+
+    getDispositionIntensityTowards(player, type = 'default') {
+        const value = this.getDispositionTowards(player, type);
+        return Player.resolveDispositionIntensity(type, value);
+    }
+
+    getDispositionTowardsCurrentPlayer(type = 'default') {
+        const currentPlayerId = Player.getCurrentPlayerId();
+        if (!currentPlayerId || currentPlayerId === this.#id) {
+            return 0;
+        }
+        return this.getDisposition(currentPlayerId, type);
+    }
+
+    setDispositionTowardsCurrentPlayer(type = 'default', value = 0) {
+        const currentPlayerId = Player.getCurrentPlayerId();
+        if (!currentPlayerId || currentPlayerId === this.#id) {
+            return 0;
+        }
+        return this.setDisposition(currentPlayerId, type, value);
+    }
+
+    getDispositionIntensityTowardsCurrentPlayer(type = 'default') {
+        const value = this.getDispositionTowardsCurrentPlayer(type);
+        return Player.resolveDispositionIntensity(type, value);
     }
 
     get createdAt() {

@@ -694,6 +694,8 @@ let chatHistory = [];
 let currentPlayer = null;
 let currentSetting = null; // Current game setting
 
+Player.setCurrentPlayerResolver(() => currentPlayer);
+
 function getActiveSettingSnapshot() {
     if (currentSetting && typeof currentSetting.toJSON === 'function') {
         return currentSetting.toJSON();
@@ -1655,6 +1657,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     };
 
     const npcs = [];
+    const dispositionDefinitions = Player.getDispositionDefinitions();
+    const dispositionTypes = Object.values(dispositionDefinitions?.types || {});
     if (location) {
         const npcIds = Array.isArray(location.npcIds)
             ? location.npcIds
@@ -1668,6 +1672,30 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const npcInventory = Array.isArray(npcStatus?.inventory)
                 ? npcStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
+
+            const dispositionsTowardsPlayer = [];
+            if (currentPlayer && typeof currentPlayer.id === 'string' && currentPlayer.id && dispositionTypes.length) {
+                for (const dispositionType of dispositionTypes) {
+                    if (!dispositionType || !dispositionType.key) {
+                        continue;
+                    }
+                    const typeKey = dispositionType.key;
+                    const typeLabel = dispositionType.label || typeKey;
+                    let value = 0;
+                    if (typeof npc.getDispositionTowardsCurrentPlayer === 'function') {
+                        value = npc.getDispositionTowardsCurrentPlayer(typeKey) ?? 0;
+                    } else if (typeof npc.getDisposition === 'function') {
+                        value = npc.getDisposition(currentPlayer.id, typeKey) ?? 0;
+                    }
+                    const intensityName = Player.resolveDispositionIntensity(typeKey, value);
+                    dispositionsTowardsPlayer.push({
+                        type: typeLabel,
+                        value,
+                        intensityName
+                    });
+                }
+            }
+
             npcs.push({
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
@@ -1675,7 +1703,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 race: npcStatus?.race || npc.race || null,
                 level: npcStatus?.level || npc.level || null,
                 statusEffects: normalizeStatusEffects(npc || npcStatus),
-                inventory: npcInventory
+                inventory: npcInventory,
+                dispositionsTowardsPlayer
             });
         }
     }
