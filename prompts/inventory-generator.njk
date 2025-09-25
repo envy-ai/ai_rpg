@@ -7,6 +7,14 @@ You are a an AI role-playing gamemaster.
     
     <generationPrompt>
 <context>
+Here is a list of all character attributes:
+{% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }}
+{% endfor %}
+
+Here is a list of available equipment slot types:
+{% for slot in gearSlots %}- {{ slot }}
+{% endfor %}
+
 <setting>
 {{ setting }}
 </setting>

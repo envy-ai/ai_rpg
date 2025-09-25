@@ -11,7 +11,7 @@
 <attributeBonuses>
     (optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses)
     <attributeBonus>
-        <attribute>Attribute name (e.g., Strength, Dexterity, Intelligence, etc.) or N/A</attribute>
+        <attribute>one of: {% for attribute in attributes %}{{ attribute }}{% if not loop.last %}, {% endif %}{% endfor %}</attribute>
         <bonus>Bonus value (between -4 and +4)</bonus>
     </attributeBonus>
 </attributeBonuses>

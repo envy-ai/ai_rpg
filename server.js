@@ -3545,6 +3545,9 @@ function renderInventoryPrompt(context = {}) {
     try {
         const templateName = 'inventory-generator.njk';
         const gearSlotTypes = getGearSlotTypes();
+        const attributeNames = Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
         return promptEnv.render(templateName, {
             setting: context.setting || 'A mysterious fantasy realm.',
             region: {
@@ -3563,7 +3566,10 @@ function renderInventoryPrompt(context = {}) {
                 level: context.character?.level || 1,
                 race: context.character?.race || 'human'
             },
-            gearSlots: gearSlotTypes
+            gearSlots: gearSlotTypes,
+            equipmentSlots: gearSlotTypes,
+            attributeDefinitions: attributeDefinitionsForPrompt,
+            attributes: attributeNames
         });
     } catch (error) {
         console.error('Error rendering inventory template:', error);
@@ -4852,6 +4858,9 @@ function renderLocationThingsPrompt(context = {}) {
         const safeRegion = context.region || {};
         const safeLocation = context.location || {};
         const gearSlotTypes = getGearSlotTypes();
+        const attributeNames = Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
         const templatePayload = {
             setting: safeSetting,
@@ -4863,7 +4872,10 @@ function renderLocationThingsPrompt(context = {}) {
                 name: safeLocation.name || 'Unknown Location',
                 description: safeLocation.description || 'No description provided.'
             },
-            gearSlots: gearSlotTypes
+            gearSlots: gearSlotTypes,
+            equipmentSlots: gearSlotTypes,
+            attributeDefinitions: attributeDefinitionsForPrompt,
+            attributes: attributeNames
         };
 
         const rendered = promptEnv.render(templateName, templatePayload);
