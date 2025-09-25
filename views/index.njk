@@ -99,7 +99,12 @@
                 </section>
 
                 <section class="tab-panel" id="tab-map" role="tabpanel" aria-labelledby="tab-map-tab" hidden>
-                    <div id="mapContainer" class="map-placeholder"></div>
+                    <div class="map-panel">
+                        <div class="map-header">
+                            <h2 id="mapTitle" class="map-title">Region Map</h2>
+                        </div>
+                        <div id="mapContainer" class="map-placeholder" aria-live="polite"></div>
+                    </div>
                 </section>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
                     <div class="config-content character-panel">

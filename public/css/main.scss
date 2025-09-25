@@ -283,6 +283,38 @@ p:not(:last-child) {
   font-size: 1.1rem;
 }
 
+#tab-map {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+
+  .map-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1 1 auto;
+  }
+
+  .map-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .map-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: rgba(224, 242, 254, 0.92);
+    letter-spacing: 0.03em;
+  }
+
+  #mapContainer {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
 .location-image {
   position: relative;
   display: flex;

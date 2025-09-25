@@ -153,7 +153,22 @@ function ensureCytoscape(container) {
         'line-color': '#34d399',
         'target-arrow-color': '#34d399',
         'target-arrow-shape': 'triangle',
-        'target-distance-from-node': 12
+        'target-distance-from-node': 12,
+        'label': 'data(regionName)',
+        'font-size': '10px',
+        'font-weight': 500,
+        'color': '#bbf7d0',
+        'text-wrap': 'wrap',
+        'text-max-width': '140px',
+        'text-background-color': 'rgba(15, 23, 42, 0.85)',
+        'text-background-opacity': 1,
+        'text-background-padding': '2px 4px',
+        'text-border-width': 1,
+        'text-border-color': 'rgba(34, 197, 94, 0.35)',
+        'text-border-opacity': 0.8,
+        'text-halign': 'center',
+        'text-valign': 'top',
+        'text-margin-y': '-6px'
       }
     }
   ]);
@@ -171,6 +186,11 @@ function loadRegionMap(regionId = null) {
 
   container.classList.add('map-placeholder');
   container.textContent = 'Loading map...';
+
+  const titleEl = document.getElementById('mapTitle');
+  if (titleEl) {
+    titleEl.textContent = 'Loading region…';
+  }
 
   let url = '/api/map/region';
   if (regionId) {
@@ -201,6 +221,11 @@ function renderMap(region) {
     container.setAttribute('aria-label', `Region map for ${region.regionName}`);
   } else {
     container.removeAttribute('aria-label');
+  }
+
+  const titleEl = document.getElementById('mapTitle');
+  if (titleEl) {
+    titleEl.textContent = region.regionName || 'Region Map';
   }
 
   const cy = ensureCytoscape(container);
@@ -237,13 +262,15 @@ function renderMap(region) {
         }
 
         const exitNodeId = `region-exit-${exit.id}`;
+        const regionName = exit.destinationRegionName || 'Uncharted Region';
+        const expanded = Boolean(exit.destinationRegionExpanded);
+        const symbol = expanded ? '⬈' : '?';
+
         if (!regionExitNodes.has(exitNodeId)) {
-          const expanded = Boolean(exit.destinationRegionExpanded);
-          const regionName = exit.destinationRegionName || 'Uncharted Region';
           regionExitNodes.set(exitNodeId, {
             data: {
               id: exitNodeId,
-              symbol: expanded ? '⬈' : '?',
+              symbol,
               regionName,
               targetRegionId: destinationRegionId,
               expanded
@@ -256,7 +283,8 @@ function renderMap(region) {
           data: {
             id: `${loc.id}_${exitNodeId}`,
             source: loc.id,
-            target: exitNodeId
+            target: exitNodeId,
+            regionName
           },
           classes: 'region-exit-edge'
         });
@@ -326,6 +354,11 @@ function showMapError(message) {
   if (container) {
     container.classList.add('map-placeholder');
     container.textContent = message;
+  }
+
+  const titleEl = document.getElementById('mapTitle');
+  if (titleEl) {
+    titleEl.textContent = 'Region Map';
   }
 }
 
