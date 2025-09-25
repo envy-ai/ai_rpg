@@ -26,7 +26,7 @@ module.exports = function registerApiRoutes(scope) {
 
             res.on('finish', () => {
                 const duration = (Date.now() - millisecond_timestamp) / 1000;
-                console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
+                //console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
             });
 
             next();
@@ -1454,9 +1454,9 @@ module.exports = function registerApiRoutes(scope) {
                     const attackOutcome = attackContext?.outcome || null;
                     let attackDamageApplication = null;
 
-                    const planType = plan.plausibility?.type ? plan.plausibility.type.toLowerCase() : '';
+                    const isAttack = Boolean(attackContext?.isAttack);
 
-                    if (attackContext?.isAttack && attackOutcome?.hit && planType === 'plausible') {
+                    if (isAttack && attackOutcome?.hit) {
                         const damageResult = applyAttackDamageToTarget({
                             attackContext,
                             attackOutcome,
@@ -1465,7 +1465,7 @@ module.exports = function registerApiRoutes(scope) {
                         attackDamageApplication = damageResult.application;
                     }
 
-                    if (attackContext?.isAttack) {
+                    if (isAttack) {
                         const attackSummary = buildAttackSummary({
                             attackContext,
                             attackOutcome,
@@ -1479,15 +1479,19 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    const actionResolution = plan.plausibility
+                    const actionResolution = (!isAttack && plan.plausibility)
                         ? resolveActionOutcome({ plausibility: plan.plausibility, player: npc })
                         : null;
+
+                    const attackContextForNarrative = isAttack ? attackContext : null;
+                    const attackSummaryValue = isAttack ? (attackContext?.summary || null) : null;
+                    const attackCheckForResult = isAttack ? attackCheck : null;
 
                     const narrativeResult = await runActionNarrativeForActor({
                         actor: npc,
                         actionText,
                         actionResolution,
-                        attackContext,
+                        attackContext: attackContextForNarrative,
                         attackDamageApplication,
                         locationOverride: npcLocation
                     });
@@ -1511,20 +1515,34 @@ module.exports = function registerApiRoutes(scope) {
                         isNpcTurn: true
                     });
 
-                    results.push({
+                    const npcTurnResult = {
                         name: npc.name,
                         npcId: npc.id || null,
                         plan,
                         plausibilityRaw: plausibilityResult.raw,
-                        actionResolution,
-                        attackCheck,
-                        attackSummary: attackContext?.summary || null,
-                        attackDamage: attackDamageApplication,
                         response: npcResponse,
                         events: npcEventResult?.structured || null,
                         eventChecks: npcEventResult?.html || null,
                         debug: narrativeResult.debug
-                    });
+                    };
+
+                    if (!isAttack && actionResolution) {
+                        npcTurnResult.actionResolution = actionResolution;
+                    }
+
+                    if (isAttack) {
+                        if (attackSummaryValue) {
+                            npcTurnResult.attackSummary = attackSummaryValue;
+                        }
+                        if (attackDamageApplication) {
+                            npcTurnResult.attackDamage = attackDamageApplication;
+                        }
+                        if (attackCheckForResult) {
+                            npcTurnResult.attackCheck = attackCheckForResult;
+                        }
+                    }
+
+                    results.push(npcTurnResult);
                 }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
