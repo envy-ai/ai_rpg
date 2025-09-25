@@ -3277,40 +3277,62 @@ module.exports = function registerApiRoutes(scope) {
 
         app.get('/api/map/region', (req, res) => {
             try {
-                if (!currentPlayer) {
+                let requestedRegionId = null;
+                if (req.query && typeof req.query.regionId === 'string') {
+                    requestedRegionId = req.query.regionId.trim() || null;
+                }
+
+                if (!currentPlayer && !requestedRegionId) {
                     return res.status(404).json({
                         success: false,
                         error: 'No current player found'
                     });
                 }
 
-                const currentLocationId = currentPlayer.currentLocation;
+                const currentLocationId = currentPlayer ? currentPlayer.currentLocation : null;
                 const currentLocation = currentLocationId ? gameLocations.get(currentLocationId) : null;
-                if (!currentLocation) {
+
+                let region = null;
+
+                if (requestedRegionId) {
+                    if (regions.has(requestedRegionId)) {
+                        region = regions.get(requestedRegionId);
+                    } else {
+                        return res.status(404).json({
+                            success: false,
+                            error: `Region with ID '${requestedRegionId}' not found`
+                        });
+                    }
+                } else {
+                    if (!currentLocation) {
+                        return res.status(404).json({
+                            success: false,
+                            error: 'Current location not found'
+                        });
+                    }
+
+                    const regionId = currentLocation.stubMetadata?.regionId;
+                    if (regionId && regions.has(regionId)) {
+                        region = regions.get(regionId);
+                    } else {
+                        region = Array.from(regions.values()).find(r => r.locationIds.includes(currentLocationId)) || null;
+                    }
+                }
+
+                if (!region) {
                     return res.status(404).json({
                         success: false,
-                        error: 'Current location not found'
+                        error: 'Region not found for mapping'
                     });
                 }
 
-                let region = null;
-                const regionId = currentLocation.stubMetadata?.regionId;
-                if (regionId && regions.has(regionId)) {
-                    region = regions.get(regionId);
-                } else {
-                    region = Array.from(regions.values()).find(r => r.locationIds.includes(currentLocationId)) || null;
-                }
-
-                let locations = [];
-                if (region) {
-                    locations = region.locationIds
-                        .map(id => gameLocations.get(id))
-                        .filter(Boolean);
-                } else {
-                    locations = Array.from(gameLocations.values());
-                }
+                const locations = region.locationIds
+                    .map(id => gameLocations.get(id))
+                    .filter(Boolean);
 
                 const payload = {
+                    regionId: region.id,
+                    regionName: region.name,
                     currentLocationId,
                     locations: locations.map(loc => {
                         const locationPayload = {
@@ -3320,10 +3342,30 @@ module.exports = function registerApiRoutes(scope) {
                             visited: Boolean(loc.visited),
                             exits: Array.from(loc.getAvailableDirections()).map(direction => {
                                 const exit = loc.getExit(direction);
+                                const destinationRegionId = exit?.destinationRegion || null;
+
+                                let destinationRegionName = null;
+                                let destinationRegionExpanded = false;
+
+                                if (destinationRegionId) {
+                                    if (regions.has(destinationRegionId)) {
+                                        const targetRegion = regions.get(destinationRegionId);
+                                        destinationRegionName = targetRegion?.name || null;
+                                        destinationRegionExpanded = true;
+                                    } else if (typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
+                                        const pending = pendingRegionStubs.get(destinationRegionId);
+                                        if (pending) {
+                                            destinationRegionName = pending.name || null;
+                                        }
+                                    }
+                                }
+
                                 return {
                                     id: exit?.id || `${loc.id}_${direction}`,
-                                    destination: exit?.destination,
-                                    destinationRegion: exit?.destinationRegion || null,
+                                    destination: exit?.destination || null,
+                                    destinationRegion: destinationRegionId,
+                                    destinationRegionName,
+                                    destinationRegionExpanded,
                                     bidirectional: exit?.bidirectional !== false
                                 };
                             })
