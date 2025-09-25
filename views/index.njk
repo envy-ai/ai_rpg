@@ -3082,6 +3082,33 @@
             });
         }
 
+        function bindThingTooltip(element, thing) {
+            if (!element || !thing) {
+                return;
+            }
+
+            element.addEventListener('mouseenter', (event) => {
+                if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
+                    const description = thing.description || 'No description provided.';
+                    const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
+                    const tooltipContent = formatThingTooltip(thing) || fallbackTooltip;
+                    window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
+                }
+            });
+
+            element.addEventListener('mousemove', (event) => {
+                if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
+                    window.floatingTooltipController.move(event);
+                }
+            });
+
+            element.addEventListener('mouseleave', () => {
+                if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
+                    window.floatingTooltipController.hide();
+                }
+            });
+        }
+
         function renderNpcInventory(items = []) {
             if (!npcInventoryGrid || !npcInventoryEmpty || !npcInventoryCount) {
                 return;
@@ -3119,26 +3146,7 @@
 
                 registerThingContextMenu(card, item, { context: 'npc-inventory' });
 
-                card.addEventListener('mouseenter', (event) => {
-                    if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
-                        const description = item.description || 'No description provided.';
-                        const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
-                        const tooltipContent = formatThingTooltip(item) || fallbackTooltip;
-                        window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
-                    }
-                });
-
-                card.addEventListener('mousemove', (event) => {
-                    if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
-                        window.floatingTooltipController.move(event);
-                    }
-                });
-
-                card.addEventListener('mouseleave', () => {
-                    if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
-                        window.floatingTooltipController.hide();
-                    }
-                });
+                bindThingTooltip(card, item);
 
                 npcInventoryGrid.appendChild(card);
             });
@@ -3197,6 +3205,95 @@
             });
         }
 
+        function renderEquipmentList(container, emptyState, entries = []) {
+            if (!container) {
+                return;
+            }
+
+            container.innerHTML = '';
+            const safeEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
+
+            if (!safeEntries.length) {
+                if (emptyState) {
+                    emptyState.removeAttribute('hidden');
+                }
+                container.setAttribute('hidden', '');
+                return;
+            }
+
+            container.removeAttribute('hidden');
+            if (emptyState) {
+                emptyState.setAttribute('hidden', '');
+            }
+
+            safeEntries.forEach(entry => {
+                const row = document.createElement('div');
+                row.className = 'npc-view-equipment-row';
+
+                const slotContainer = document.createElement('div');
+                slotContainer.className = 'npc-view-equipment-slot';
+                const slotName = document.createElement('div');
+                slotName.className = 'npc-view-equipment-slot-name';
+                slotName.textContent = entry.slotLabel || 'Slot';
+                slotContainer.appendChild(slotName);
+
+                if (entry.slotTypeLabel && entry.slotTypeLabel !== entry.slotLabel) {
+                    const slotType = document.createElement('div');
+                    slotType.className = 'npc-view-equipment-slot-type';
+                    slotType.textContent = entry.slotTypeLabel;
+                    slotContainer.appendChild(slotType);
+                }
+
+                const itemContainer = document.createElement('div');
+                itemContainer.className = 'npc-view-equipment-item';
+
+                if (entry.item && typeof entry.item === 'object') {
+                    const card = document.createElement('div');
+                    card.className = 'npc-view-equipment-item-card';
+
+                    const icon = document.createElement('div');
+                    icon.className = 'npc-view-equipment-icon';
+                    const placeholderIcon = entry.item.thingType === 'scenery' ? '🏞️' : '🎁';
+                    renderEntityImage({
+                        element: icon,
+                        entityType: 'thing',
+                        entityId: entry.item.id || null,
+                        imageId: entry.item.imageId || null,
+                        altText: entry.item.name || 'Equipped item',
+                        placeholderIcon,
+                        placeholderClass: 'npc-view-equipment-icon-placeholder'
+                    });
+
+                    const textWrapper = document.createElement('div');
+                    textWrapper.className = 'npc-view-equipment-text';
+                    const name = document.createElement('div');
+                    name.className = 'npc-view-equipment-name';
+                    name.textContent = entry.item.name || 'Unknown Item';
+                    applyRarityClass(name, entry.item.rarity);
+                    textWrapper.appendChild(name);
+
+                    card.appendChild(icon);
+                    card.appendChild(textWrapper);
+
+                    if (entry.item && entry.item.id) {
+                        registerThingContextMenu(card, entry.item, { context: 'npc-equipment' });
+                    }
+
+                    bindThingTooltip(card, entry.item);
+                    itemContainer.appendChild(card);
+                } else {
+                    const empty = document.createElement('span');
+                    empty.className = 'npc-view-equipment-empty';
+                    empty.textContent = 'Empty';
+                    itemContainer.appendChild(empty);
+                }
+
+                row.appendChild(slotContainer);
+                row.appendChild(itemContainer);
+                container.appendChild(row);
+            });
+        }
+
         function renderList(container, emptyState, items = [], options = {}) {
             if (!container) {
                 return;
@@ -3250,8 +3347,24 @@
 
             const name = latestNpc?.name || 'Unknown Character';
             const description = latestNpc?.description || latestNpc?.shortDescription || 'No description available.';
-            const classLabel = latestNpc?.class || '';
-            const raceLabel = latestNpc?.race || '';
+            const resolveTagValue = (...values) => {
+                for (const value of values) {
+                    if (value === undefined || value === null) {
+                        continue;
+                    }
+                    if (typeof value === 'string') {
+                        const trimmed = value.trim();
+                        if (trimmed) {
+                            return trimmed;
+                        }
+                    } else if (value !== '') {
+                        return value;
+                    }
+                }
+                return null;
+            };
+            const classLabel = resolveTagValue(latestNpc?.class, latestNpc?.className, latestNpc?.classLabel) || 'Unknown';
+            const raceLabel = resolveTagValue(latestNpc?.race, latestNpc?.species, latestNpc?.raceName) || 'Unknown';
             const levelValue = Number.isFinite(Number(latestNpc?.level)) ? Number(latestNpc.level) : null;
             const healthValue = Number.isFinite(Number(latestNpc?.health)) ? Number(latestNpc.health) : null;
             const maxHealthValue = Number.isFinite(Number(latestNpc?.maxHealth)) ? Number(latestNpc.maxHealth) : null;
@@ -3383,18 +3496,31 @@
                         : '';
                     const slotLabel = resolvedSlotName || (slotTypeLabel ? `${slotTypeLabel} Slot` : 'Slot');
 
-                    let detail = 'Empty';
+                    let resolvedItem = null;
                     if (slotData && slotData.itemId) {
-                        const matchedItem = inventoryMap.get(slotData.itemId);
-                        const itemName = matchedItem?.name || slotData.itemName || slotData.itemId;
-                        detail = itemName;
+                        resolvedItem = inventoryMap.get(slotData.itemId) || null;
+                    }
+                    if (!resolvedItem && slotData && typeof slotData.item === 'object') {
+                        resolvedItem = slotData.item;
+                    }
+                    if (!resolvedItem && slotData && (slotData.itemName || slotData.itemId)) {
+                        resolvedItem = {
+                            id: slotData.itemId || null,
+                            name: slotData.itemName || slotData.itemId || 'Unknown Item',
+                            rarity: slotData.itemRarity || null,
+                            thingType: slotData.itemType || null
+                        };
                     }
 
-                    equipmentEntries.push({ term: slotLabel, detail });
+                    equipmentEntries.push({
+                        slotLabel,
+                        slotTypeLabel,
+                        item: resolvedItem
+                    });
                 }
             }
-            equipmentEntries.sort((a, b) => a.term.localeCompare(b.term));
-            renderDefinitionList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
+            equipmentEntries.sort((a, b) => a.slotLabel.localeCompare(b.slotLabel));
+            renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
 
             const skillData = [];
             if (latestNpc?.skills) {
@@ -3432,26 +3558,31 @@
                     const tbody = document.createElement('tbody');
                     table.appendChild(tbody);
 
-                    for (let i = 0; i < skillData.length; i += 2) {
+                    skillData.forEach((entry, index) => {
                         const row = document.createElement('tr');
-                        if (((i / 2) % 2) === 1) {
+                        if ((index % 2) === 1) {
                             row.classList.add('is-alt');
                         }
 
-                        for (let col = 0; col < 2; col++) {
-                            const cell = document.createElement('td');
-                            const entry = skillData[i + col] || null;
-                            if (entry) {
-                                const rankText = entry.rank !== null ? ` (Rank ${entry.rank})` : '';
-                                cell.textContent = `${entry.name}${rankText}`;
-                            } else {
-                                cell.innerHTML = '&nbsp;';
-                            }
-                            row.appendChild(cell);
+                        const nameCell = document.createElement('td');
+                        nameCell.className = 'npc-view-skill-name';
+                        nameCell.textContent = entry.name || 'Unknown Skill';
+
+                        const rankCell = document.createElement('td');
+                        rankCell.className = 'npc-view-skill-rank';
+                        if (entry.rank !== null && entry.rank !== undefined) {
+                            const numericRank = Number(entry.rank);
+                            rankCell.textContent = Number.isFinite(numericRank)
+                                ? `${numericRank > 0 ? '+' : ''}${numericRank}`
+                                : `${entry.rank}`;
+                        } else {
+                            rankCell.textContent = '—';
                         }
 
+                        row.appendChild(nameCell);
+                        row.appendChild(rankCell);
                         tbody.appendChild(row);
-                    }
+                    });
 
                     npcViewSkills.appendChild(table);
                     npcViewSkills.removeAttribute('hidden');
