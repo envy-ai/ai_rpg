@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Item Image Generator</role>
+    
+    <systemPrompt>
+You are a specialized prompt generator for creating RPG inventory item images.
+
+    </systemPrompt>
+    
+    <generationPrompt>
+
+<context>
+<setting>
+    <name>{{ setting.name }}</name>
+    <description>{{ setting.description }}</description>
+    <genre>{{ setting.genre }}</genre>
+    <theme>{{ setting.theme }}</theme>
+    <magicLevel>{{ setting.magicLevel }}</magicLevel>
+    <techLevel>{{ setting.techLevel }}</techLevel>
+    <tone>{{ setting.tone }}</tone>
+</setting>
+<region>
+    <name>{{ regionName }}</name>
+    <description>{{ regionDescription }}</description>
+</region>
+<location>
+    <name>{{ locationName }}</name>
+    <description>{{ locationDescription }}</description>
+</location>
+</context>
+
+Create a tag-based image prompt in 30 tags or less describing this item or scenery.  Append the tags "simple background, grey background" to the end.
+
+<item>
+    <name>{{ thingName }}</name>
+    <description>{{ thingDescription }}</description>
+    <type>{{ thingType }}</type>
+    <rarity>{{ thingRarity }}</rarity>
+</item>
+
+    </generationPrompt>
+</template>

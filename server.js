@@ -103,6 +103,41 @@ const JOB_STATUS = {
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const entityImageJobs = new Map(); // Track active jobs per entity key
 
+function getImagePromptTemplateName(kind, fallback) {
+    const templates = config?.imagegen?.prompt_generator_templates || {};
+    const template = templates[kind];
+    if (typeof template === 'string' && template.trim()) {
+        return template.trim();
+    }
+    return fallback;
+}
+
+function buildNegativePrompt(extra = '') {
+    const base = (config?.imagegen?.default_negative_prompt || '').trim();
+    const extraPart = (extra || '').trim();
+    if (base && extraPart) {
+        const separator = extraPart.startsWith(',') ? '' : ', ';
+        return `${base}${separator}${extraPart}`;
+    }
+    return base || extraPart;
+}
+
+function getDefaultMegapixels() {
+    const value = Number(config?.imagegen?.megapixels);
+    if (Number.isFinite(value) && value > 0) {
+        return value;
+    }
+    return 1.0;
+}
+
+function resolveMegapixels(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric;
+    }
+    return getDefaultMegapixels();
+}
+
 function getJobSnapshot(jobId) {
     if (!jobId) {
         return null;
@@ -476,6 +511,13 @@ async function processJobQueue() {
             clearTimeout(timeoutId);
 
             if (job.status !== JOB_STATUS.TIMEOUT) {
+                console.error('❌ Image generation job failed:', {
+                    jobId: job.id,
+                    entityType: job.payload?.entityType,
+                    entityId: job.payload?.entityId,
+                    error: error?.message,
+                    stack: error?.stack
+                });
                 job.status = JOB_STATUS.FAILED;
                 job.error = error.message;
                 job.message = `Generation failed: ${error.message}`;
@@ -545,20 +587,25 @@ async function processJobQueue() {
 
 // Process a single image generation job
 async function processImageGeneration(job) {
-    const { prompt, width, height, seed, negative_prompt } = job.payload;
+    const { prompt, width, height, seed, negative_prompt, megapixels } = job.payload;
 
     // Generate unique image ID
     const imageId = generateImageId();
 
     // Prepare template variables
+    const fallbackNegativePrompt = buildNegativePrompt();
+    const effectiveNegativePrompt = (typeof negative_prompt === 'string' && negative_prompt.trim()) || fallbackNegativePrompt || 'blurry, low quality, distorted';
+    const effectiveMegapixels = resolveMegapixels(megapixels);
     const templateVars = {
         image: {
             prompt: prompt.trim(),
             width: width || config.imagegen.default_settings.image.width || 1024,
             height: height || config.imagegen.default_settings.image.height || 1024,
-            seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000)
+            seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000),
+            negativePrompt: effectiveNegativePrompt,
+            megapixels: effectiveMegapixels
         },
-        negative_prompt: negative_prompt || 'blurry, low quality, distorted'
+        negative_prompt: effectiveNegativePrompt
     };
 
     job.progress = 20;
@@ -3356,7 +3403,7 @@ function renderSystemPrompt(settingInfo = null) {
 // Function to render player portrait prompt from template
 function renderPlayerPortraitPrompt(player) {
     try {
-        const templateName = 'player-portrait.xml.njk';
+        const templateName = getImagePromptTemplateName('character', 'player-portrait.xml.njk');
         const activeSetting = getActiveSettingSnapshot();
 
         if (!player) {
@@ -3378,7 +3425,9 @@ function renderPlayerPortraitPrompt(player) {
 
         const variables = {
             setting: settingDescription,
-            characterDescription
+            characterDescription,
+            characterClass: player.class || 'Adventurer',
+            characterRace: player.race || 'Human'
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -6906,7 +6955,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
 function renderLocationImagePrompt(location) {
     try {
-        const templateName = 'location-image.xml.njk';
+        const templateName = getImagePromptTemplateName('location', 'location-image.xml.njk');
 
         if (!location) {
             throw new Error('Location object is required');
@@ -6951,7 +7000,7 @@ function renderLocationImagePrompt(location) {
 // Function to render location exit image prompt from template
 function renderLocationExitImagePrompt(locationExit) {
     try {
-        const templateName = 'locationexit-image.xml.njk';
+        const templateName = getImagePromptTemplateName('location_exit', 'locationexit-image.xml.njk');
 
         if (!locationExit) {
             throw new Error('LocationExit object is required');
@@ -6990,8 +7039,8 @@ function renderThingImagePrompt(thing) {
     try {
         // Select the appropriate template based on thing type
         const templateName = thing.thingType === 'item'
-            ? 'item-image.xml.njk'
-            : 'scenery-image.xml.njk';
+            ? getImagePromptTemplateName('item', 'item-image.xml.njk')
+            : getImagePromptTemplateName('scenery', 'scenery-image.xml.njk');
 
         // Set up variables for the template
         const settingSnapshot = getActiveSettingSnapshot();
@@ -7267,12 +7316,14 @@ async function generatePlayerImage(player, options = {}) {
 
         // Create image generation job with player-specific settings
         const jobId = generateImageId();
+        const portraitNegative = buildNegativePrompt('blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions');
         const payload = {
             prompt: finalImagePrompt,
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: 'blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions',
+            negative_prompt: portraitNegative,
+            megapixels: getDefaultMegapixels(),
             // Track which player this image is for
             playerId: player.id,
             isPlayerPortrait: true,
@@ -7502,16 +7553,49 @@ async function generateLocationImage(location, options = {}) {
         const promptTemplate = renderLocationImagePrompt(location);
         const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
 
+        const locationLogTimestamp = Date.now();
+        try {
+            const logsDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+            }
+
+            const safeLocationId = String(location.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const locationLogPath = path.join(logsDir, `location_image_${locationLogTimestamp}_${safeLocationId}.log`);
+            const logSections = [
+                `Timestamp: ${new Date(locationLogTimestamp).toISOString()}`,
+                `Location ID: ${location.id}`,
+                `Location Name: ${location.name || ''}`,
+                '=== SYSTEM PROMPT ===',
+                promptTemplate.systemPrompt || '(none)',
+                '',
+                '=== GENERATION PROMPT ===',
+                promptTemplate.generationPrompt || '(none)',
+                '',
+                '=== RENDERED TEMPLATE ===',
+                promptTemplate.renderedTemplate || '(none)',
+                '',
+                '=== FINAL IMAGE PROMPT ===',
+                finalImagePrompt,
+                ''
+            ];
+            fs.writeFileSync(locationLogPath, logSections.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log location image prompt:', logError.message);
+        }
+
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
         const locationImageSettings = config.imagegen.location_settings?.image || {};
         const defaultImageSettings = config.imagegen.default_settings?.image || {};
+        const locationNegative = buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only');
         const payload = {
             prompt: finalImagePrompt,
             width: locationImageSettings.width || defaultImageSettings.width || 1024,
             height: locationImageSettings.height || defaultImageSettings.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only',
+            negative_prompt: locationNegative,
+            megapixels: resolveMegapixels(locationImageSettings.megapixels),
             // Track which location this image is for
             locationId: location.id,
             renderedTemplate: promptTemplate.renderedTemplate,
@@ -7608,12 +7692,14 @@ async function generateLocationExitImage(locationExit, options = {}) {
 
         // Create image generation job with location exit-specific settings
         const jobId = generateImageId();
+        const exitNegative = buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, blocked passages');
         const payload = {
             prompt: prefixedPassagePrompt,
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: 'blurry, low quality, modern elements, cars, technology, people, characters, blocked passages',
+            negative_prompt: exitNegative,
+            megapixels: getDefaultMegapixels(),
             // Track which location exit this image is for
             locationExitId: locationExit.id,
             isLocationExitImage: true,
@@ -7719,6 +7805,39 @@ async function generateThingImage(thing, options = {}) {
         const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
         const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
 
+        const thingLogTimestamp = Date.now();
+        try {
+            const logsDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+            }
+
+            const safeThingId = String(thing.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const logCategory = thing.thingType === 'item' ? 'item' : (thing.thingType === 'scenery' ? 'scenery' : 'thing');
+            const thingLogPath = path.join(logsDir, `${logCategory}_image_${thingLogTimestamp}_${safeThingId}.log`);
+            const logSections = [
+                `Timestamp: ${new Date(thingLogTimestamp).toISOString()}`,
+                `Thing ID: ${thing.id}`,
+                `Thing Name: ${thing.name || ''}`,
+                `Thing Type: ${thing.thingType || thing.type || 'unknown'}`,
+                '=== SYSTEM PROMPT ===',
+                promptTemplate.systemPrompt || '(none)',
+                '',
+                '=== GENERATION PROMPT ===',
+                promptTemplate.generationPrompt || '(none)',
+                '',
+                '=== RENDERED TEMPLATE ===',
+                promptTemplate.renderedTemplate || '(none)',
+                '',
+                '=== FINAL IMAGE PROMPT ===',
+                finalImagePrompt,
+                ''
+            ];
+            fs.writeFileSync(thingLogPath, logSections.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log thing image prompt:', logError.message);
+        }
+
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();
 
@@ -7736,14 +7855,16 @@ async function generateThingImage(thing, options = {}) {
             height = 768;
         }
 
+        const thingNegative = thing.thingType === 'item'
+            ? buildNegativePrompt('blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements')
+            : buildNegativePrompt('blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits');
         const payload = {
             prompt: finalImagePrompt,
             width: width,
             height: height,
             seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: thing.thingType === 'item'
-                ? 'blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements'
-                : 'blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits',
+            negative_prompt: thingNegative,
+            megapixels: getDefaultMegapixels(),
             // Track which thing this image is for
             thingId: thing.id,
             renderedTemplate: promptTemplate.renderedTemplate,
@@ -8768,14 +8889,29 @@ async function chooseRegionEntrance({
 
 async function generateRegionFromPrompt(options = {}) {
     try {
-        const settingDescription = options.setting || describeSettingForPrompt(getActiveSettingSnapshot());
-        const generationOptions = { ...options, setting: settingDescription };
+        const { report: progressReporter, ...rawOptions } = options || {};
+        const report = typeof progressReporter === 'function'
+            ? (stage, payload = {}) => {
+                try {
+                    progressReporter(stage, payload);
+                } catch (_) {
+                    // Ignore reporter errors
+                }
+            }
+            : () => { };
+
+        report('region:prepare', { message: 'Preparing region prompt...' });
+
+        const settingDescription = rawOptions.setting || describeSettingForPrompt(getActiveSettingSnapshot());
+        const generationOptions = { ...rawOptions, setting: settingDescription };
         const { systemPrompt, generationPrompt } = renderRegionGeneratorPrompt(generationOptions);
 
         const messages = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: generationPrompt }
         ];
+
+        report('region:request', { message: 'Requesting region layout from AI...' });
 
         const endpoint = config.ai.endpoint;
         const apiKey = config.ai.apiKey;
@@ -8809,6 +8945,7 @@ async function generateRegionFromPrompt(options = {}) {
 
         const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
+        report('region:response', { message: 'Region response received.' });
 
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
@@ -8838,6 +8975,7 @@ async function generateRegionFromPrompt(options = {}) {
 
         const region = Region.fromXMLSnippet(aiResponse);
         regions.set(region.id, region);
+        report('region:parse', { message: 'Interpreting region blueprint...' });
 
         const themeHint = generationOptions.regionNotes || null;
 
@@ -8848,6 +8986,7 @@ async function generateRegionFromPrompt(options = {}) {
 
         let stubMap = new Map();
         try {
+            report('region:instantiate', { message: 'Placing region locations...' });
             stubMap = await instantiateRegionLocations({
                 region,
                 themeHint,
@@ -8871,11 +9010,13 @@ async function generateRegionFromPrompt(options = {}) {
             model,
             apiKey
         });
+        report('region:entrance', { message: 'Selecting region entrance...' });
         const entranceLocationId = entranceInfo.locationId || null;
         if (!region.entranceLocationId && entranceLocationId) {
             region.entranceLocationId = entranceLocationId;
         }
 
+        report('region:npcs', { message: 'Populating region with NPCs...' });
         await generateRegionNPCs({
             region,
             systemPrompt,
@@ -8885,6 +9026,8 @@ async function generateRegionFromPrompt(options = {}) {
             model,
             apiKey
         });
+
+        report('region:complete', { message: 'Region generation complete.' });
 
         return {
             region,
@@ -8905,12 +9048,12 @@ app.use(express.static('public'));
 
 // Route for AI RPG Chat Interface
 app.get('/', (req, res) => {
-    const systemPrompt = renderSystemPrompt(currentSetting);
+    //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
 
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
-        systemPrompt: systemPrompt,
+        //systemPrompt: systemPrompt,
         chatHistory: chatHistory,
         currentPage: 'chat',
         player: currentPlayer ? currentPlayer.getStatus() : null,

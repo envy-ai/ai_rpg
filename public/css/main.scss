@@ -2933,3 +2933,37 @@ body.modal-open {
     }
   }
 }
+.tab-panel#tab-adventure {
+  position: relative;
+  overflow: hidden;
+}
+
+.adventure-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--adventure-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 300ms ease, filter 300ms ease;
+  filter: saturate(120%) contrast(110%);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%);
+  }
+
+  &.has-image {
+    opacity: 0.25;
+  }
+}
+
+.adventure-content {
+  position: relative;
+  z-index: 1;
+}

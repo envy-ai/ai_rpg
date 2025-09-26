@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Location Scene Generator</role>
+    
+    <systemPrompt>
+You are a specialized prompt generator for creating fantasy RPG location scene images.
+
+Location Information:
+Name/ID: {{ locationId }}
+Description: 
+    {{ locationDescription | replace('\n', '\n    ') }}
+Base Level: {{ locationBaseLevel }}
+
+{% if locationExits %}
+Available Exits:
+{% for direction, exit in locationExits %}
+- {{ direction }}: {{ exit.description or 'An unexplored passage' }}
+{% endfor %}
+{% endif %}
+</systemPrompt>
+    
+<generationPrompt>
+Create a tag-based image prompt in 30 tags or less describing this scene.
+
+Scene Description: 
+    {{ locationDescription | replace('\n', '\n    ') }}
+
+Location Level: {{ locationBaseLevel }} (1-20+ scale, where 1 is very easy and 20 is extremely difficult; difficult locations should look dangerous, forboding, and/or epic)
+
+Do not include art style information.
+
+</generationPrompt>
+</template>

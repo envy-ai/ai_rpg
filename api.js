@@ -4065,21 +4065,23 @@ module.exports = function registerApiRoutes(scope) {
                     setting: describeSettingForPrompt(activeSetting),
                     regionName: regionName && regionName.trim() ? regionName.trim() : null,
                     regionDescription: regionDescription || null,
-                    regionNotes: regionNotes || null
+                    regionNotes: regionNotes || null,
+                    report: (stage, info = {}) => {
+                        const message = info.message || `Stage: ${stage}`;
+                        stream.emit('generation_status', {
+                            scope: 'region',
+                            stage,
+                            message
+                        });
+                    }
                 };
-
-                stream.emit('generation_status', {
-                    scope: 'region',
-                    stage: 'start',
-                    message: 'Generating region from prompts.'
-                });
 
                 const result = await generateRegionFromPrompt(options);
 
                 stream.emit('generation_status', {
                     scope: 'region',
-                    stage: 'complete',
-                    message: `Region "${result.region.name}" generated.`
+                    stage: 'region:complete',
+                    message: `Region "${result.region.name}" ready.`
                 });
 
                 if (stream.isEnabled) {
@@ -5373,6 +5375,19 @@ module.exports = function registerApiRoutes(scope) {
 
         // Create a new game with fresh player and starting location
         app.post('/api/new-game', async (req, res) => {
+            const body = req.body || {};
+            const stream = createStreamEmitter({ clientId: body.clientId, requestId: body.requestId });
+            const report = (stage, message) => {
+                if (stream && stream.isEnabled) {
+                    stream.status(stage, message, { scope: 'new_game' });
+                }
+            };
+            const reportError = (message) => {
+                if (stream && stream.isEnabled) {
+                    stream.status('new_game:error', message, { scope: 'new_game' });
+                }
+            };
+
             try {
                 const {
                     playerName,
@@ -5383,7 +5398,7 @@ module.exports = function registerApiRoutes(scope) {
                     numSkills: numSkillsInput,
                     existingSkills: existingSkillsInput,
                     startingCurrency: startingCurrencyInput
-                } = req.body || {};
+                } = body;
                 const activeSetting = getActiveSettingSnapshot();
                 const newGameDefaults = buildNewGameDefaults(activeSetting);
                 const settingDescription = describeSettingForPrompt(activeSetting);
@@ -5420,6 +5435,9 @@ module.exports = function registerApiRoutes(scope) {
                     ? Math.max(1, Math.min(100, parsedSkillCount))
                     : fallbackSkillCount;
 
+                report('new_game:start', 'Preparing your adventure...');
+                report('new_game:reset', 'Clearing previous game state...');
+
                 // Clear existing game state
                 players.clear();
                 gameLocations.clear();
@@ -5432,6 +5450,7 @@ module.exports = function registerApiRoutes(scope) {
                 Player.setAvailableSkills(new Map());
 
                 console.log('🎮 Starting new game...');
+                report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
 
                 const rawExistingSkills = typeof existingSkillsInput === 'undefined'
                     ? newGameDefaults.existingSkills
@@ -5450,6 +5469,7 @@ module.exports = function registerApiRoutes(scope) {
                 let detailedExistingSkills = [];
                 if (normalizedExistingSkills.length) {
                     try {
+                        report('new_game:skills_existing', 'Integrating existing skills...');
                         detailedExistingSkills = await generateSkillsByNames({
                             skillNames: normalizedExistingSkills,
                             settingDescription
@@ -5462,6 +5482,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let generatedSkills = [];
                 try {
+                    report('new_game:skills_generate', `Generating ${numSkills} new skills...`);
                     generatedSkills = await generateSkillsList({
                         count: numSkills,
                         settingDescription,
@@ -5524,6 +5545,8 @@ module.exports = function registerApiRoutes(scope) {
                     Player.setAvailableSkills(new Map());
                 }
 
+                report('new_game:skills_ready', 'Skill library ready. Forging your hero...');
+
                 // Create new player
                 const newPlayer = new Player({
                     name: resolvedPlayerName,
@@ -5547,6 +5570,8 @@ module.exports = function registerApiRoutes(scope) {
                     newPlayer.syncSkillsWithAvailable();
                 }
 
+                report('new_game:player_created', `Forged ${resolvedPlayerName}. Generating starting region...`);
+
                 // Generate an initial region and choose its entrance as the starting location
                 console.log('🗺️ Generating starting region...');
                 const defaultRegionName = activeSetting?.name
@@ -5555,10 +5580,27 @@ module.exports = function registerApiRoutes(scope) {
                         ? `${resolvedStartingLocation} Region`
                         : 'Starting Region';
 
+                const regionStageDetails = {
+                    'region:prepare': { stage: 'new_game:region_prepare', message: 'Preparing region prompt...' },
+                    'region:request': { stage: 'new_game:region_request', message: 'Requesting region layout from AI...' },
+                    'region:response': { stage: 'new_game:region_response', message: 'Region layout received.' },
+                    'region:parse': { stage: 'new_game:region_parse', message: 'Interpreting region blueprint...' },
+                    'region:instantiate': { stage: 'new_game:region_instantiate', message: 'Placing region locations...' },
+                    'region:entrance': { stage: 'new_game:region_entrance', message: 'Selecting starting entrance...' },
+                    'region:npcs': { stage: 'new_game:region_npcs', message: 'Populating region with NPCs...' },
+                    'region:complete': { stage: 'new_game:region_complete', message: 'Region generation complete.' }
+                };
+
                 const regionOptions = {
                     setting: settingDescription,
                     regionName: resolvedStartingLocation ? `${resolvedStartingLocation}` : defaultRegionName,
-                    regionNotes: startingLocationStyle || null
+                    regionNotes: startingLocationStyle || null,
+                    report: (stage, info = {}) => {
+                        const detail = regionStageDetails[stage] || null;
+                        const targetStage = detail?.stage || 'new_game:region';
+                        const message = detail?.message || info.message || 'Generating starting region...';
+                        report(targetStage, message);
+                    }
                 };
 
                 const regionResult = await generateRegionFromPrompt(regionOptions);
@@ -5579,6 +5621,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (entranceLocation.isStub) {
+                    report('new_game:location_detail', 'Detailing starting location...');
                     try {
                         const expansion = await generateLocationFromPrompt({
                             stubLocation: entranceLocation,
@@ -5612,6 +5655,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 queueNpcAssetsForLocation(entranceLocation);
 
+                report('new_game:inventory', 'Outfitting your character...');
                 try {
                     await generateInventoryForCharacter({
                         character: newPlayer,
@@ -5625,6 +5669,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (chatEndpoint && apiKey && model) {
                     try {
+                        report('new_game:abilities', 'Discovering unique abilities...');
                         const playerContext = buildAbilityContextForPlayer(newPlayer, {
                             settingDescription,
                             location: entranceLocation,
@@ -5663,10 +5708,13 @@ module.exports = function registerApiRoutes(scope) {
 
                 console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);
 
+                report('new_game:finalizing', 'Finalizing world setup...');
+
                 const startingLocationData = entranceLocation.toJSON();
                 startingLocationData.pendingImageJobId = pendingLocationImages.get(entranceLocation.id) || null;
                 startingLocationData.npcs = buildNpcProfiles(entranceLocation);
 
+                report('new_game:complete', 'Adventure ready! Redirecting...');
                 res.json({
                     success: true,
                     message: 'New game started successfully',
@@ -5684,6 +5732,7 @@ module.exports = function registerApiRoutes(scope) {
 
             } catch (error) {
                 console.error('Error creating new game:', error);
+                reportError(error?.message || 'Failed to create new game');
                 res.status(500).json({
                     success: false,
                     error: 'Failed to create new game',
@@ -6588,7 +6637,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
             } catch (error) {
-                console.error('Image generation request error:', error.message);
+                console.error('Image generation request error:', {
+                    message: error?.message,
+                    stack: error?.stack
+                });
                 return res.status(500).json({
                     success: false,
                     error: `Request failed: ${error.message}`

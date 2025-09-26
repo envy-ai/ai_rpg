@@ -25,6 +25,7 @@
 
             <div class="tab-panels">
                 <section class="tab-panel active" id="tab-adventure" role="tabpanel" aria-labelledby="tab-adventure-tab">
+                    <div class="adventure-background" id="adventureBackground" aria-hidden="true"></div>
                     <div class="adventure-content">
                         <div class="location-block">
                             <div class="container">
@@ -689,7 +690,7 @@
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
-            window.systemPrompt = {{ systemPrompt | dump | safe }};
+            //window.systemPrompt = {{ systemPrompt | dump | safe }};
             new AIRPGChat();
             
             // Add save/load functionality
@@ -834,6 +835,20 @@
         }
 
         window.renderEntityImage = renderEntityImage;
+
+        const adventureBackgroundElement = document.getElementById('adventureBackground');
+        function updateAdventureBackground(imageUrl) {
+            if (!adventureBackgroundElement) {
+                return;
+            }
+            if (imageUrl) {
+                adventureBackgroundElement.style.setProperty('--adventure-bg-image', `url("${imageUrl}")`);
+                adventureBackgroundElement.classList.add('has-image');
+            } else {
+                adventureBackgroundElement.style.removeProperty('--adventure-bg-image');
+                adventureBackgroundElement.classList.remove('has-image');
+            }
+        }
 
         function createHealthBar(additionalClassNames = '') {
             const bar = document.createElement('div');
@@ -4107,12 +4122,18 @@
                                 if (result?.imageId && locationHint) {
                                     locationHint.textContent = location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.';
                                 }
+                                const imageUrl = result?.imageUrl || (result?.imageId ? `/generated-images/${result.imageId}.png` : null);
+                                updateAdventureBackground(imageUrl);
                             }).catch(() => {
                                 finalizeTooltip();
                                 if (locationHint) {
                                     locationHint.textContent = 'Image unavailable.';
                                 }
+                                updateAdventureBackground(null);
                             });
+                        } else {
+                            const fallbackUrl = location.imageId ? `/generated-images/${location.imageId}.png` : null;
+                            updateAdventureBackground(fallbackUrl);
                         }
 
                         if (locationDescriptionText) {
@@ -4344,6 +4365,7 @@
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
                     hideLocationOverlay();
                     lastRenderedLocation = null;
+                    updateAdventureBackground(null);
                 }
             };
 

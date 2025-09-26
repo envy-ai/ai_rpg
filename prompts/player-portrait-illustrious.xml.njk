@@ -1,0 +1,26 @@
+<template>
+    <role>Player Portrait Generator</role>
+    <description>Generate a detailed player portrait for AI RPG world creation</description>
+    
+    <systemPrompt>
+You are an AI Player Portrait Generator image prompt for a fantasy RPG world. Your task is to create a detailed image generation prompt for player portrait.
+    </systemPrompt>
+    <generationPrompt>
+<context>
+<setting>
+{{ setting }}
+</setting>
+</context>
+
+Generate a prompt for a detailed player portrait image based on the following character description:
+
+Class: {{ characterClass }}
+Race: {{ characterRace }}
+{{ characterDescription | replace('\n', '\n    ') }}\
+
+Your output should be a set of danbooru tags starting with 1girl or 1boy (unless not humanoiod) followed by descriptive tags separated by commas. Include details about the character's appearance, clothing, accessories, pose, expression, and any relevant background elements. Ensure the tags are specific and vivid to guide the image generation effectively. Use 20 tags maximum, and append the tags "cowboy shot, facing viewer" to the end.
+
+After the booru tags, add "location: " followed by a brief description of the setting or background where the character is located, in 10 words or less.
+
+</generationPrompt>
+</template>
