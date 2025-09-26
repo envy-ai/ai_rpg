@@ -156,7 +156,31 @@ class Events {
                     return null;
                 }
                 return { giver, item, receiver };
-            }).filter(Boolean)
+            }).filter(Boolean),
+            currency: raw => {
+                if (this.isNoEventAnswer(raw)) {
+                    return null;
+                }
+                const value = this.extractNumericValue(raw);
+                return Number.isFinite(value) ? value : null;
+            },
+            experience_check: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+                const parts = entry.split(/->/);
+                const scorePart = parts[0] ? parts[0].trim() : entry.trim();
+                const reasonPart = parts.length > 1 ? parts.slice(1).join('->').trim() : '';
+                const amount = this.extractNumericValue(scorePart);
+                if (!Number.isFinite(amount)) {
+                    return null;
+                }
+                return {
+                    amount,
+                    reason: reasonPart
+                };
+            }).filter(Boolean),
+            defeated_enemy: raw => this.splitSemicolonEntries(raw)
         };
 
         this._handlers = {
@@ -172,7 +196,10 @@ class Events {
             party_change: (entries, context) => this.handlePartyChangeEvents(entries, context),
             pick_up_item: (entries, context) => this.handlePickUpItemEvents(entries, context),
             status_effect_change: (entries, context) => this.handleStatusEffectChangeEvents(entries, context),
-            transfer_item: (entries, context) => this.handleTransferItemEvents(entries, context)
+            transfer_item: (entries, context) => this.handleTransferItemEvents(entries, context),
+            currency: (entries, context) => this.handleCurrencyEvents(entries, context),
+            experience_check: (entries, context) => this.handleExperienceCheckEvents(entries, context),
+            defeated_enemy: (entries, context) => this.handleDefeatedEnemyEvents(entries, context)
         };
     }
 
@@ -774,7 +801,8 @@ class Events {
                             name: destinationName,
                             originLocation: location,
                             descriptionHint: `Path leading from ${location.name || location.id} toward ${destinationName}.`,
-                            directionHint: null
+                            directionHint: null,
+                            expandStub: false
                         });
                     } catch (error) {
                         console.warn('Failed to create destination from NPC departure event:', error.message);
@@ -1151,6 +1179,142 @@ class Events {
         }
     }
 
+    static handleCurrencyEvents(entries, context = {}) {
+        const deltas = Array.isArray(entries)
+            ? entries
+            : (entries === null || entries === undefined ? [] : [entries]);
+
+        if (!deltas.length) {
+            return;
+        }
+
+        const player = context.player || this.currentPlayer;
+        if (!player || typeof player.adjustCurrency !== 'function') {
+            return;
+        }
+
+        for (const entry of deltas) {
+            const numeric = Number(entry);
+            if (!Number.isFinite(numeric) || numeric === 0) {
+                continue;
+            }
+            player.adjustCurrency(numeric);
+        }
+    }
+
+    static handleExperienceCheckEvents(entries, context = {}) {
+        const items = Array.isArray(entries)
+            ? entries
+            : (entries === null || entries === undefined ? [] : [entries]);
+
+        if (!items.length) {
+            return;
+        }
+
+        const player = context.player || this.currentPlayer;
+        if (!player || typeof player.addExperience !== 'function') {
+            return;
+        }
+
+        const playerLevelRaw = Number(player.level);
+        const playerLevel = Number.isFinite(playerLevelRaw) ? playerLevelRaw : 1;
+        const locationLevelRaw = Number(context.location?.baseLevel);
+        const locationLevel = Number.isFinite(locationLevelRaw) ? locationLevelRaw : playerLevel;
+        const levelDelta = locationLevel - playerLevel;
+        const multiplier = Number.isFinite(levelDelta) ? Math.pow(1.15, levelDelta) : 1;
+
+        const scale = Number.isFinite(multiplier) ? multiplier : 1;
+        let totalXp = 0;
+        const awards = [];
+
+        for (const entry of items) {
+            const value = typeof entry === 'object' && entry !== null ? entry.amount : entry;
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric <= 0) {
+                continue;
+            }
+
+            const xpAward = Math.round(Math.max(0, numeric) * 10 * scale);
+            if (xpAward <= 0) {
+                continue;
+            }
+
+            totalXp += xpAward;
+
+            let reason = '';
+            if (entry && typeof entry === 'object' && entry.reason) {
+                reason = String(entry.reason).trim();
+            }
+            if (!reason) {
+                reason = 'Accomplishment';
+            }
+
+            awards.push({ amount: xpAward, reason });
+        }
+
+        if (totalXp > 0) {
+            player.addExperience(totalXp);
+        }
+
+        if (awards.length) {
+            if (!Array.isArray(context.experienceAwards)) {
+                context.experienceAwards = [];
+            }
+            context.experienceAwards.push(...awards);
+        }
+    }
+
+    static handleDefeatedEnemyEvents(entries = [], context = {}) {
+        const names = Array.isArray(entries)
+            ? entries
+            : (entries === null || entries === undefined ? [] : [entries]);
+
+        if (!names.length) {
+            return;
+        }
+
+        const player = context.player || this.currentPlayer;
+        if (!player || typeof player.addExperience !== 'function') {
+            return;
+        }
+
+        const playerLevelRaw = Number(player.level);
+        const playerLevel = Number.isFinite(playerLevelRaw) ? playerLevelRaw : 1;
+        const { findActorByName } = this.deps;
+
+        const awards = [];
+        let totalXp = 0;
+
+        for (const name of names) {
+            if (!name || typeof name !== 'string') {
+                continue;
+            }
+
+            let enemy = findActorByName(name);
+
+            const enemyLevelRaw = Number(enemy?.level);
+            const enemyLevel = Number.isFinite(enemyLevelRaw) ? enemyLevelRaw : playerLevel;
+            const multiplier = Math.pow(1.15, enemyLevel - playerLevel);
+            const total = Math.round(50 * (Number.isFinite(multiplier) ? multiplier : 1));
+            if (total > 0) {
+                totalXp += total;
+                const reason = `Defeated ${String(name).trim() || 'an enemy'}`;
+                awards.push({ amount: total, reason });
+            }
+        }
+
+        if (totalXp > 0) {
+            player.addExperience(totalXp);
+        }
+
+        if (awards.length) {
+            if (!Array.isArray(context.experienceAwards)) {
+                context.experienceAwards = [];
+            }
+            context.experienceAwards.push(...awards);
+        }
+    }
+
     static async applyEventOutcomes(parsedEvents, context = {}) {
         if (!parsedEvents || !parsedEvents.parsed) {
             return context;
@@ -1238,6 +1402,15 @@ class Events {
                 ? Location.get(currentPlayer.currentLocation)
                 : null;
 
+            let region = null;
+            if (location) {
+                try {
+                    region = findRegionByLocationId(location.id);
+                } catch (_) {
+                    region = null;
+                }
+            }
+
             const baseContext = buildBasePromptContext({ locationOverride: location });
             const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                 ...baseContext,
@@ -1293,13 +1466,18 @@ class Events {
             }
 
             const structured = this.parseEventCheckResponse(eventPromptTemplates, eventResponse);
+            let experienceAwards = [];
             if (structured) {
                 try {
-                    await this.applyEventOutcomes(structured, {
+                    const outcomeContext = await this.applyEventOutcomes(structured, {
                         player: currentPlayer,
                         location,
-                        region: location ? findRegionByLocationId(location.id) : null
+                        region,
+                        experienceAwards: []
                     });
+                    if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
+                        experienceAwards = outcomeContext.experienceAwards;
+                    }
                 } catch (applyError) {
                     console.warn('Failed to apply event outcomes:', applyError.message);
                 }
@@ -1309,7 +1487,8 @@ class Events {
             return {
                 raw: eventResponse,
                 html: safeResponse.replace(/\n/g, '<br>'),
-                structured
+                structured,
+                experienceAwards
             };
         } catch (error) {
             console.warn('Event check execution failed:', error.message);

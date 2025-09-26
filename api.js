@@ -1793,6 +1793,10 @@ module.exports = function registerApiRoutes(scope) {
                         debug: narrativeResult.debug
                     };
 
+                    if (Array.isArray(npcEventResult?.experienceAwards) && npcEventResult.experienceAwards.length) {
+                        npcTurnResult.experienceAwards = npcEventResult.experienceAwards;
+                    }
+
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
                     }
@@ -2195,6 +2199,9 @@ module.exports = function registerApiRoutes(scope) {
                         if (forcedEventResult.structured) {
                             responseData.events = forcedEventResult.structured;
                         }
+                        if (Array.isArray(forcedEventResult.experienceAwards) && forcedEventResult.experienceAwards.length) {
+                            responseData.experienceAwards = forcedEventResult.experienceAwards;
+                        }
                     }
 
                     if (debugInfo) {
@@ -2317,6 +2324,9 @@ module.exports = function registerApiRoutes(scope) {
                                     // ignore lookup failures here
                                 }
                             }
+                        }
+                        if (Array.isArray(eventResult.experienceAwards) && eventResult.experienceAwards.length) {
+                            responseData.experienceAwards = eventResult.experienceAwards;
                         }
                     }
 

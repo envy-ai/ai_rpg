@@ -2601,7 +2601,7 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
     return newExit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -2648,13 +2648,15 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         region.locationIds.push(stub.id);
     }
 
-    try {
-        const expansion = await scheduleStubExpansion(stub);
-        if (expansion?.location) {
-            return expansion.location;
+    if (expandStub) {
+        try {
+            const expansion = await scheduleStubExpansion(stub);
+            if (expansion?.location) {
+                return expansion.location;
+            }
+        } catch (error) {
+            console.warn(`Failed to expand event-created stub "${stub.name}":`, error.message);
         }
-    } catch (error) {
-        console.warn(`Failed to expand event-created stub "${stub.name}":`, error.message);
     }
 
     return stub;

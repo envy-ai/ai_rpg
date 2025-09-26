@@ -223,6 +223,50 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addExperienceAward(amount, reason = '') {
+        const numeric = Number(amount);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary xp-award';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '✨ Experience Gained';
+
+        const contentDiv = document.createElement('div');
+        const reasonText = reason && String(reason).trim();
+        contentDiv.textContent = `+${numeric} XP${reasonText ? ` (${reasonText})` : ''}`;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addExperienceAwards(awards) {
+        if (!Array.isArray(awards)) {
+            return;
+        }
+        awards.forEach(entry => {
+            if (!entry) {
+                return;
+            }
+            const amount = typeof entry === 'object' ? entry.amount : entry;
+            const reason = typeof entry === 'object' ? entry.reason : '';
+            this.addExperienceAward(amount, reason);
+        });
+    }
+
     addEventSummaries(eventData) {
         if (!eventData) {
             return;
@@ -1034,6 +1078,10 @@ class AIRPGChat {
                     shouldRefreshLocation = true;
                 }
 
+                if (Array.isArray(data.experienceAwards) && data.experienceAwards.length) {
+                    this.addExperienceAwards(data.experienceAwards);
+                }
+
                 if (data.plausibility) {
                     this.addPlausibilityMessage(data.plausibility);
                 }
@@ -1052,6 +1100,10 @@ class AIRPGChat {
 
                         if (turn.events) {
                             this.addEventSummaries(turn.events);
+                        }
+
+                        if (Array.isArray(turn.experienceAwards) && turn.experienceAwards.length) {
+                            this.addExperienceAwards(turn.experienceAwards);
                         }
 
                         if (turn.attackSummary) {
