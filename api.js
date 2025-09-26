@@ -1854,7 +1854,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     let npcEventResult = null;
                     try {
-                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream });
+                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false });
                     } catch (error) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
@@ -1951,6 +1951,22 @@ module.exports = function registerApiRoutes(scope) {
                 forcedEvent: false
             };
             let playerActionStreamSent = false;
+
+            const stripStreamedEventArtifacts = (payload) => {
+                if (!payload || typeof payload !== 'object') {
+                    return;
+                }
+
+                delete payload.eventChecks;
+                delete payload.events;
+                delete payload.experienceAwards;
+                delete payload.currencyChanges;
+                delete payload.environmentalDamageEvents;
+
+                if (Array.isArray(payload.npcTurns)) {
+                    payload.npcTurns.forEach(turn => stripStreamedEventArtifacts(turn));
+                }
+            };
 
             try {
                 if (!messages) {
@@ -2392,6 +2408,10 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
 
+                    if (stream.isEnabled) {
+                        stripStreamedEventArtifacts(responseData);
+                    }
+
                     res.json(responseData);
                     return;
                 }
@@ -2581,6 +2601,10 @@ module.exports = function registerApiRoutes(scope) {
                         hasNpcTurns: Boolean(responseData.npcTurns && responseData.npcTurns.length),
                         playerActionStreamed: Boolean(playerActionStreamSent)
                     });
+
+                    if (stream.isEnabled) {
+                        stripStreamedEventArtifacts(responseData);
+                    }
 
                     res.json(responseData);
                 } else {

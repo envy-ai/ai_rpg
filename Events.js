@@ -1392,6 +1392,10 @@ class Events {
     }
 
     static handleEnvironmentalStatusDamageEvents(entries = [], context = {}) {
+        if (context && context.allowEnvironmentalEffects === false) {
+            return;
+        }
+
         const items = Array.isArray(entries)
             ? entries
             : (entries === null || entries === undefined ? [] : [entries]);
@@ -1610,7 +1614,7 @@ class Events {
         });
     }
 
-    static async runEventChecks({ textToCheck, stream = null }) {
+    static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true } = {}) {
         if (!textToCheck || !textToCheck.trim()) {
             return null;
         }
@@ -1696,6 +1700,14 @@ class Events {
             let currencyChanges = [];
             let environmentalDamageEvents = [];
             if (structured) {
+                if (allowEnvironmentalEffects === false) {
+                    if (structured.parsed && Array.isArray(structured.parsed.environmental_status_damage)) {
+                        structured.parsed.environmental_status_damage = [];
+                    }
+                    if (structured.rawEntries && Object.prototype.hasOwnProperty.call(structured.rawEntries, 'environmental_status_damage')) {
+                        structured.rawEntries.environmental_status_damage = '';
+                    }
+                }
                 try {
                     const outcomeContext = await this.applyEventOutcomes(structured, {
                         player: currentPlayer,
@@ -1704,6 +1716,7 @@ class Events {
                         experienceAwards: [],
                         currencyChanges: [],
                         environmentalDamageEvents: [],
+                        allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                         stream
                     });
                     if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
