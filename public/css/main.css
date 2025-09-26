@@ -2834,7 +2834,7 @@ body.modal-open {
   .status-display .status-item {
     justify-content: space-between;
   }
-}/*# sourceMappingURL=main.css.map */
+}
 .tab-panel#tab-adventure {
   position: relative;
   overflow: hidden;
@@ -2850,20 +2850,20 @@ body.modal-open {
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
-  transition: opacity 0.3s ease, filter 0.3s ease;
+  transition: opacity 300ms ease, filter 300ms ease;
   filter: saturate(120%) contrast(110%);
 }
 .adventure-background::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.75) 0%, rgba(15, 23, 42, 0.9) 100%);
 }
 .adventure-background.has-image {
-  opacity: 0.25;
+  opacity: 0.6;
 }
 
 .adventure-content {
   position: relative;
   z-index: 1;
-}
+}/*# sourceMappingURL=main.css.map */

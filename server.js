@@ -7079,6 +7079,9 @@ function renderThingImagePrompt(thing) {
         const renderedTemplate = promptEnv.render(templateName, variables);
 
         const logTimestamp = Date.now();
+
+        // Don't log here.  We log in the caller after image is generated.
+        /*
         let logPath = null;
         try {
             const logDir = path.join(__dirname, 'logs');
@@ -7101,8 +7104,11 @@ function renderThingImagePrompt(thing) {
         } catch (logError) {
             console.warn('Failed to log item image template:', logError.message);
         }
+        */
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+        /*
         try {
             if (logPath) {
                 const appendParts = [
@@ -7115,7 +7121,7 @@ function renderThingImagePrompt(thing) {
         } catch (logError) {
             console.warn('Failed to append item image prompt log:', logError.message);
         }
-
+        */
         if (!parsedTemplate.generationPrompt) {
             throw new Error(`No generationPrompt found in ${templateName} template`);
         }
@@ -7561,8 +7567,18 @@ async function generateLocationImage(location, options = {}) {
             }
 
             const safeLocationId = String(location.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const locationLogPath = path.join(logsDir, `location_image_${locationLogTimestamp}_${safeLocationId}.log`);
+            const safeLocationName = typeof location.name === 'string'
+                ? location.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+                : '';
+            const locationFilename = safeLocationName
+                ? `location_image_${locationLogTimestamp}_${safeLocationId}_${safeLocationName}.log`
+                : `location_image_${locationLogTimestamp}_${safeLocationId}.log`;
+            const locationLogPath = path.join(logsDir, locationFilename);
+            const locationLogStack = new Error('Location image log trace').stack || 'No stack trace available';
             const logSections = [
+                '=== STACK TRACE ===',
+                locationLogStack,
+                '',
                 `Timestamp: ${new Date(locationLogTimestamp).toISOString()}`,
                 `Location ID: ${location.id}`,
                 `Location Name: ${location.name || ''}`,
@@ -7814,8 +7830,21 @@ async function generateThingImage(thing, options = {}) {
 
             const safeThingId = String(thing.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
             const logCategory = thing.thingType === 'item' ? 'item' : (thing.thingType === 'scenery' ? 'scenery' : 'thing');
-            const thingLogPath = path.join(logsDir, `${logCategory}_image_${thingLogTimestamp}_${safeThingId}.log`);
+            const safeThingName = typeof thing.name === 'string'
+                ? thing.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+                : '';
+            const filename = safeThingName
+                ? `${logCategory}_image_${thingLogTimestamp}_${safeThingId}_${safeThingName}.log`
+                : `${logCategory}_image_${thingLogTimestamp}_${safeThingId}.log`;
+            const thingLogPath = path.join(logsDir, filename);
+
+            // no need for this at the moment.
+            //const logStack = new Error('Thing image log trace').stack || 'No stack trace available';
+
             const logSections = [
+                '=== STACK TRACE ===',
+                //logStack,
+                '',
                 `Timestamp: ${new Date(thingLogTimestamp).toISOString()}`,
                 `Thing ID: ${thing.id}`,
                 `Thing Name: ${thing.name || ''}`,
