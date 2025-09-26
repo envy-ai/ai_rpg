@@ -4,6 +4,8 @@
       this.pending = new Map();
       this.pollInterval = options.pollInterval || 2000;
       this.maxAttempts = options.maxAttempts || 120;
+      this.realtimeEnabled = false;
+      this.jobWaiters = new Map();
     }
 
     _buildKey(entityType, entityId) {
@@ -63,10 +65,12 @@
     }
 
     async _requestImage({ entityType, entityId, existingImageId, force }) {
+      const clientId = window.AIRPG_CLIENT_ID || null;
       const payload = {
         entityType,
         entityId,
-        force: Boolean(force)
+        force: Boolean(force),
+        clientId
       };
       if (existingImageId && force) {
         payload.existingImageId = existingImageId;
@@ -121,14 +125,14 @@
       }
 
       if (baseResult.jobId) {
-        return this._watchJob(baseResult.jobId, {
+        return this._trackJob(baseResult.jobId, {
           entityType,
           entityId
         });
       }
 
       if (baseResult.existingJob && baseResult.job?.jobId) {
-        return this._watchJob(baseResult.job.jobId, {
+        return this._trackJob(baseResult.job.jobId, {
           entityType,
           entityId
         });
@@ -137,57 +141,145 @@
       return baseResult;
     }
 
-    async _watchJob(jobId, context) {
-      for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
-        await this._sleep(this.pollInterval);
-        const jobData = await this._fetchJob(jobId);
-
-        const detail = {
-          ...context,
-          jobId,
-          job: jobData.job,
-          result: jobData.result || null,
-          error: jobData.error || null
-        };
-        this._dispatch('image:job-progress', detail);
-
-        const status = jobData?.job?.status;
-        if (status === 'completed' && jobData.result) {
-          const imageId = jobData.result.imageId || null;
-          let imageUrl = jobData.result.images && jobData.result.images[0]
-            ? jobData.result.images[0].url
-            : null;
-          if (!imageUrl && imageId) {
-            imageUrl = this._buildImageUrl(imageId);
-          }
-
-          const resolved = {
-            entityType: context.entityType,
-            entityId: context.entityId,
-            imageId,
-            imageUrl,
-            jobId,
-            job: jobData.job,
-            metadata: jobData.result.metadata || null
-          };
-
-          this._dispatch('image:updated', resolved);
-          return resolved;
-        }
-
-        if (status === 'failed' || status === 'timeout') {
-          this._dispatch('image:error', detail);
-          throw new Error(detail.error || `Image job ${status}`);
-        }
+    _trackJob(jobId, context) {
+      if (!jobId) {
+        return Promise.resolve(null);
       }
 
-      const timeoutError = `Image job ${jobId} timed out`;
-      this._dispatch('image:error', {
+      return this._awaitJobRealtime(jobId, context || {});
+
+      /*
+      if (!this.realtimeEnabled) {
+        return this._watchJob(jobId, context || {});
+      }
+      */
+    }
+
+    _awaitJobRealtime(jobId, context = {}) {
+      let entry = this.jobWaiters.get(jobId);
+      if (!entry) {
+        entry = {
+          context: { ...context },
+          resolve: null,
+          reject: null,
+          promise: null,
+          pollingPromise: null
+        };
+        entry.promise = new Promise((resolve, reject) => {
+          entry.resolve = resolve;
+          entry.reject = reject;
+        });
+        this.jobWaiters.set(jobId, entry);
+      } else {
+        entry.context = { ...entry.context, ...context };
+      }
+
+      return entry.promise;
+    }
+
+    /*
+    async _watchJob(jobId, context) {
+      // Legacy polling implementation disabled for now.
+    }
+    */
+
+    setRealtimeAvailable(isAvailable) {
+      const wasEnabled = this.realtimeEnabled;
+      this.realtimeEnabled = Boolean(isAvailable);
+
+      /*
+      if (!this.realtimeEnabled && wasEnabled) {
+        this.jobWaiters.forEach((entry, jobId) => {
+          if (entry.pollingPromise) {
+            return;
+          }
+          entry.pollingPromise = this._watchJob(jobId, entry.context || {})
+            .then(result => {
+              if (this.jobWaiters.has(jobId)) {
+                entry.resolve(result);
+                this.jobWaiters.delete(jobId);
+              }
+            })
+            .catch(error => {
+              if (this.jobWaiters.has(jobId)) {
+                entry.reject(error);
+                this.jobWaiters.delete(jobId);
+              }
+            });
+        });
+      }
+      */
+    }
+
+    handleRealtimeJobUpdate(update) {
+      if (!update || !update.jobId) {
+        return;
+      }
+
+      const entry = this.jobWaiters.get(update.jobId);
+      const context = entry?.context || {};
+      const detail = {
         ...context,
-        jobId,
-        error: timeoutError
-      });
-      throw new Error(timeoutError);
+        jobId: update.jobId,
+        payload: update.payload || {},
+        job: {
+          id: update.jobId,
+          status: update.status,
+          progress: update.progress,
+          message: update.message,
+          createdAt: update.createdAt,
+          startedAt: update.startedAt,
+          completedAt: update.completedAt
+        },
+        result: update.result || null,
+        error: update.error || null
+      };
+
+      this._dispatch('image:job-progress', detail);
+
+      if (update.status === 'completed' && update.result) {
+        const resolved = this._buildResolvedJobResult(detail);
+        if (entry) {
+          entry.resolve(resolved);
+          this.jobWaiters.delete(update.jobId);
+        }
+        this._dispatch('image:updated', resolved);
+        return;
+      }
+
+      if (update.status === 'failed' || update.status === 'timeout') {
+        const errorMessage = update.error || `Image job ${update.status}`;
+        if (entry) {
+          entry.reject(new Error(errorMessage));
+          this.jobWaiters.delete(update.jobId);
+        }
+        this._dispatch('image:error', { ...detail, error: errorMessage });
+      }
+    }
+
+    _buildResolvedJobResult(detail) {
+      const payload = detail.payload || {};
+      const result = detail.result || {};
+      const entityType = payload.entityType || detail.entityType || null;
+      const entityId = payload.entityId || detail.entityId || null;
+      const imageId = result.imageId || null;
+
+      let imageUrl = null;
+      if (Array.isArray(result.images) && result.images[0]?.url) {
+        imageUrl = result.images[0].url;
+      } else if (imageId) {
+        imageUrl = this._buildImageUrl(imageId);
+      }
+
+      return {
+        entityType,
+        entityId,
+        imageId,
+        imageUrl,
+        jobId: detail.jobId,
+        job: detail.job,
+        metadata: result.metadata || null
+      };
     }
 
     async _fetchJob(jobId) {

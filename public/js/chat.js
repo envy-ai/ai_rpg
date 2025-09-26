@@ -186,6 +186,13 @@ class AIRPGChat {
         this.ws = null;
         this.wsReady = false;
         this.flushWebSocketWaiters(false);
+        if (window.AIRPG?.imageManager?.setRealtimeAvailable) {
+            try {
+                window.AIRPG.imageManager.setRealtimeAvailable(false);
+            } catch (_) {
+                // Ignore realtime errors on disconnect
+            }
+        }
         this.scheduleWebSocketReconnect();
     }
 
@@ -193,14 +200,24 @@ class AIRPGChat {
         if (!payload || !payload.clientId) {
             return;
         }
-        if (payload.clientId === this.clientId) {
-            return;
+        const assignedClientId = payload.clientId;
+        const changed = assignedClientId !== this.clientId;
+        this.clientId = assignedClientId;
+        window.AIRPG_CLIENT_ID = this.clientId;
+        if (changed) {
+            try {
+                window.localStorage.setItem('airpg:clientId', this.clientId);
+            } catch (_) {
+                // Ignore storage issues
+            }
         }
-        this.clientId = payload.clientId;
-        try {
-            window.localStorage.setItem('airpg:clientId', this.clientId);
-        } catch (_) {
-            // Ignore storage issues
+
+        if (window.AIRPG?.imageManager?.setRealtimeAvailable) {
+            try {
+                window.AIRPG.imageManager.setRealtimeAvailable(true);
+            } catch (_) {
+                // Ignore realtime errors on ack
+            }
         }
     }
 
@@ -248,6 +265,9 @@ class AIRPGChat {
                 break;
             case 'location_generated':
                 this.handleLocationGenerated(payload);
+                break;
+            case 'image_job_update':
+                this.handleImageJobUpdate(payload);
                 break;
             default:
                 console.log('Realtime update:', payload);
@@ -1573,6 +1593,19 @@ class AIRPGChat {
             return;
         }
         this.addMessage('ai', `📍 Location generated: ${name}`, false);
+    }
+
+    handleImageJobUpdate(payload) {
+        if (!payload || !payload.jobId) {
+            return;
+        }
+        if (window.AIRPG?.imageManager?.handleRealtimeJobUpdate) {
+            try {
+                window.AIRPG.imageManager.handleRealtimeJobUpdate(payload);
+            } catch (error) {
+                console.warn('Failed to process image job update:', error);
+            }
+        }
     }
 
     finalizeChatRequest(requestId) {

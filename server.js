@@ -199,7 +199,7 @@ function imageFileExists(imageId) {
 }
 
 function hasExistingImage(imageId) {
-    console.log('Checking existing image for ID:', imageId);
+    //console.log('Checking existing image for ID:', imageId);
     if (!imageId) {
         console.warn('No image ID provided');
         return false;
@@ -218,11 +218,11 @@ function hasExistingImage(imageId) {
 }
 
 // Create a new image generation job
-function createImageJob(jobId, payload) {
+function createImageJob(jobId, payload = {}) {
     const job = {
         id: jobId,
         status: JOB_STATUS.QUEUED,
-        payload: payload,
+        payload,
         progress: 0,
         message: 'Job queued for processing',
         createdAt: new Date().toISOString(),
@@ -230,10 +230,114 @@ function createImageJob(jobId, payload) {
         completedAt: null,
         result: null,
         error: null,
-        timeout: 120000 // 2 minutes timeout
+        timeout: 120000, // 2 minutes timeout
+        subscribers: new Set()
     };
 
+    if (payload && payload.clientId) {
+        job.subscribers.add(payload.clientId);
+    }
+
     imageJobs.set(jobId, job);
+    emitJobUpdate(job, { phase: 'queued' });
+    return job;
+}
+
+function sanitizeJobForRealtime(job, extra = {}) {
+    if (!job) {
+        return null;
+    }
+
+    const jobPayload = job.payload || {};
+    const base = {
+        jobId: job.id,
+        status: job.status,
+        progress: job.progress,
+        message: job.message,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        error: job.error || null,
+        result: job.result || null,
+        payload: {
+            entityType: jobPayload.entityType || null,
+            entityId: jobPayload.entityId || null,
+            isPlayerPortrait: Boolean(jobPayload.isPlayerPortrait),
+            isLocationScene: Boolean(jobPayload.isLocationScene),
+            isThingImage: Boolean(jobPayload.isThingImage),
+            isLocationExitImage: Boolean(jobPayload.isLocationExitImage),
+            isCustomImage: Boolean(jobPayload.isCustomImage || jobPayload.customJob)
+        }
+    };
+
+    return { ...base, ...extra };
+}
+
+function emitJobUpdate(job, extra = {}, options = {}) {
+    if (!job) {
+        return;
+    }
+
+    const payload = sanitizeJobForRealtime(job, extra);
+    if (!payload) {
+        return;
+    }
+
+    const recipients = new Set();
+
+    if (options.target) {
+        recipients.add(options.target);
+    }
+
+    if (Array.isArray(options.targets)) {
+        options.targets.forEach(target => {
+            if (target) {
+                recipients.add(target);
+            }
+        });
+    }
+
+    if (!options.target && !options.targets && job.subscribers && job.subscribers.size) {
+        job.subscribers.forEach(clientId => {
+            if (clientId) {
+                recipients.add(clientId);
+            }
+        });
+    }
+
+    if (options.broadcast) {
+        recipients.add(null);
+    }
+
+    if (!recipients.size) {
+        return;
+    }
+
+    for (const clientId of recipients) {
+        realtimeHub.emit(clientId || null, 'image_job_update', payload);
+    }
+}
+
+function addJobSubscriber(jobOrId, clientId, { emitSnapshot = false } = {}) {
+    if (!clientId) {
+        return null;
+    }
+
+    const job = typeof jobOrId === 'string' ? imageJobs.get(jobOrId) : jobOrId;
+    if (!job) {
+        return null;
+    }
+
+    if (!job.subscribers) {
+        job.subscribers = new Set();
+    }
+
+    job.subscribers.add(clientId);
+
+    if (emitSnapshot) {
+        emitJobUpdate(job, { phase: 'snapshot' }, { target: clientId });
+    }
+
     return job;
 }
 
@@ -285,6 +389,7 @@ async function processJobQueue() {
         job.startedAt = new Date().toISOString();
         job.progress = 10;
         job.message = 'Starting image generation...';
+        emitJobUpdate(job, { phase: 'processing' });
 
         // Set timeout
         const timeoutId = setTimeout(() => {
@@ -292,6 +397,7 @@ async function processJobQueue() {
                 job.status = JOB_STATUS.TIMEOUT;
                 job.error = 'Job timed out after 2 minutes';
                 job.completedAt = new Date().toISOString();
+                emitJobUpdate(job, { phase: 'timeout' });
             }
         }, job.timeout);
 
@@ -362,6 +468,8 @@ async function processJobQueue() {
                     }
                     clearEntityJob('thing', job.payload.thingId, job.id);
                 }
+
+                emitJobUpdate(job, { phase: 'completed' });
             }
 
         } catch (error) {
@@ -375,6 +483,7 @@ async function processJobQueue() {
                 if (job.payload.isLocationScene && job.payload.locationId) {
                     pendingLocationImages.delete(job.payload.locationId);
                 }
+                emitJobUpdate(job, { phase: 'failed' });
             }
         }
 
@@ -7070,7 +7179,7 @@ function renderRegionGeneratorPrompt(options = {}) {
 // Function to generate player portrait image
 async function generatePlayerImage(player, options = {}) {
     try {
-        const { force = false } = options;
+        const { force = false, clientId = null } = options || {};
 
         if (!player) {
             throw new Error('Player object is required');
@@ -7087,6 +7196,7 @@ async function generatePlayerImage(player, options = {}) {
 
         const activeJobId = getEntityJob('player', player.id);
         if (activeJobId) {
+            addJobSubscriber(activeJobId, clientId, { emitSnapshot: true });
             const snapshot = getJobSnapshot(activeJobId);
             console.log(`🎨 Portrait job ${activeJobId} already in progress for ${player.name}, returning existing job`);
             return {
@@ -7166,7 +7276,10 @@ async function generatePlayerImage(player, options = {}) {
             // Track which player this image is for
             playerId: player.id,
             isPlayerPortrait: true,
-            force
+            force,
+            entityType: player.isNPC ? 'npc' : 'player',
+            entityId: player.id,
+            clientId
         };
 
         console.log(`🎨 Generating portrait for player ${player.name} with job ID: ${jobId}`);
@@ -7319,7 +7432,7 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
 // Function to generate location scene image
 async function generateLocationImage(location, options = {}) {
     try {
-        const { force = false } = options;
+        const { force = false, clientId = null } = options || {};
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping location scene generation');
@@ -7357,9 +7470,11 @@ async function generateLocationImage(location, options = {}) {
             const pendingJob = imageJobs.get(pendingJobId);
             console.log(`🏞️ Location ${location.id} already has a pending image job (${pendingJobId}), skipping new request`);
             if (pendingJob) {
+                addJobSubscriber(pendingJob, clientId, { emitSnapshot: true });
                 return {
                     success: true,
                     existingJob: true,
+                    jobId: pendingJobId,
                     job: getJobSnapshot(pendingJobId)
                 };
             }
@@ -7401,7 +7516,10 @@ async function generateLocationImage(location, options = {}) {
             locationId: location.id,
             renderedTemplate: promptTemplate.renderedTemplate,
             isLocationScene: true,
-            force
+            force,
+            entityType: 'location',
+            entityId: location.id,
+            clientId
         };
 
         console.log(`🏞️ Generating scene for location ${location.id} with job ID: ${jobId}`);
@@ -7435,7 +7553,7 @@ async function generateLocationImage(location, options = {}) {
 // Function to generate location exit passage image
 async function generateLocationExitImage(locationExit, options = {}) {
     try {
-        const { force = false } = options;
+        const { force = false, clientId = null } = options || {};
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             console.log('Image generation is not enabled, skipping location exit passage generation');
@@ -7462,6 +7580,7 @@ async function generateLocationExitImage(locationExit, options = {}) {
         const activeJobId = getEntityJob('location-exit', locationExit.id);
         if (activeJobId) {
             console.log(`🚪 Image job ${activeJobId} already running for exit ${locationExit.id}, returning existing job`);
+            addJobSubscriber(activeJobId, clientId, { emitSnapshot: true });
             return {
                 success: true,
                 existingJob: true,
@@ -7498,7 +7617,10 @@ async function generateLocationExitImage(locationExit, options = {}) {
             // Track which location exit this image is for
             locationExitId: locationExit.id,
             isLocationExitImage: true,
-            force
+            force,
+            entityType: 'location-exit',
+            entityId: locationExit.id,
+            clientId
         };
 
         console.log(`🚪 Generating passage for location exit ${locationExit.id} with job ID: ${jobId}`);
@@ -7531,7 +7653,7 @@ async function generateLocationExitImage(locationExit, options = {}) {
 // Function to generate thing image
 async function generateThingImage(thing, options = {}) {
     try {
-        const { force = false } = options;
+        const { force = false, clientId = null } = options || {};
         console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
@@ -7556,11 +7678,12 @@ async function generateThingImage(thing, options = {}) {
             throw new Error('Thing object is required');
         }
 
-        console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId || 'none'}`);
+        //console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId || 'none'}`);
 
         const activeJobId = getEntityJob('thing', thing.id);
         if (activeJobId) {
             console.log(`🎒 Image job ${activeJobId} already running for ${thing.name}, returning existing job`);
+            addJobSubscriber(activeJobId, clientId, { emitSnapshot: true });
             return {
                 success: true,
                 existingJob: true,
@@ -7625,7 +7748,10 @@ async function generateThingImage(thing, options = {}) {
             thingId: thing.id,
             renderedTemplate: promptTemplate.renderedTemplate,
             isThingImage: true,
-            force
+            force,
+            entityType: thing.thingType || thing.type || 'thing',
+            entityId: thing.id,
+            clientId
         };
 
         console.log(`🎨 Generating ${thing.thingType} image for ${thing.name} (${thing.id}) with job ID: ${jobId}`);
@@ -8988,7 +9114,8 @@ const apiScope = {
     jobQueue,
     generatedImages,
     imageFileExists,
-    realtimeHub
+    realtimeHub,
+    addJobSubscriber
 };
 
 function defineApiStateProperty(name, getter, setter) {

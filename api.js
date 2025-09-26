@@ -6024,7 +6024,7 @@ module.exports = function registerApiRoutes(scope) {
                 // Clean up stale image references
                 const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
                 const hasImage = (imageId) => {
-                    console.log(`Checking existing image for ID: ${imageId}`);
+                    //console.log(`Checking existing image for ID: ${imageId}`);
                     if (!imageId) {
                         console.warn('No image ID provided');
                         return false;
@@ -6039,14 +6039,14 @@ module.exports = function registerApiRoutes(scope) {
                 };
 
                 for (const thing of things.values()) {
-                    console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
+                    //console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
                     if (thing && thing.imageId && !hasImage(thing.imageId)) {
                         thing.imageId = null;
                     }
                 }
 
                 for (const player of players.values()) {
-                    console.log(`Checking existing image for player ${player.name}: ${player.imageId}`);
+                    //console.log(`Checking existing image for player ${player.name}: ${player.imageId}`);
                     if (!player) {
                         continue;
                     }
@@ -6296,7 +6296,7 @@ module.exports = function registerApiRoutes(scope) {
         // Image generation functionality
         app.post('/api/images/request', async (req, res) => {
             try {
-                const { entityType, entityId, force = false } = req.body || {};
+                const { entityType, entityId, force = false, clientId = null } = req.body || {};
 
                 const normalizedType = typeof entityType === 'string'
                     ? entityType.trim().toLowerCase()
@@ -6384,7 +6384,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const generationResult = await generator({ force: Boolean(force) });
+                const generationResult = await generator({ force: Boolean(force), clientId });
 
                 if (!generationResult) {
                     return res.status(500).json({
@@ -6460,7 +6460,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const { prompt, width, height, seed, negative_prompt, async: isAsync } = req.body;
+                const { prompt, width, height, seed, negative_prompt, async: isAsync, clientId = null } = req.body || {};
 
                 // Enhanced parameter validation
                 if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
@@ -6503,7 +6503,11 @@ module.exports = function registerApiRoutes(scope) {
                     width: validatedWidth,
                     height: validatedHeight,
                     seed: validatedSeed,
-                    negative_prompt: negative_prompt || 'blurry, low quality, distorted'
+                    negative_prompt: negative_prompt || 'blurry, low quality, distorted',
+                    entityType: 'custom',
+                    entityId: null,
+                    isCustomImage: true,
+                    clientId
                 };
 
                 // Create and queue the job
