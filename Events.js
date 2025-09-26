@@ -180,6 +180,52 @@ class Events {
                     reason: reasonPart
                 };
             }).filter(Boolean),
+            environmental_status_damage: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+
+                const segments = entry
+                    .split(/->/)
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!segments.length) {
+                    return null;
+                }
+
+                const name = segments[0];
+                if (!name) {
+                    return null;
+                }
+
+                let effectType = 'damage';
+                let severityIndex = 1;
+                if (segments.length >= 4) {
+                    effectType = segments[1].toLowerCase();
+                    severityIndex = 2;
+                }
+
+                let severity = segments[severityIndex] || '';
+                if (!severity) {
+                    severity = 'medium';
+                }
+                const normalizedSeverity = String(severity).trim().toLowerCase().split(/\s+/)[0] || 'medium';
+
+                const reasonSegments = segments.slice(severityIndex + 1);
+                const reason = reasonSegments.length ? reasonSegments.join(' -> ').trim() : '';
+
+                const normalizedEffect = effectType && typeof effectType === 'string'
+                    ? effectType.trim().toLowerCase()
+                    : 'damage';
+
+                return {
+                    name,
+                    effect: normalizedEffect,
+                    severity: normalizedSeverity,
+                    reason
+                };
+            }).filter(Boolean),
             defeated_enemy: raw => this.splitSemicolonEntries(raw)
         };
 
@@ -199,6 +245,7 @@ class Events {
             transfer_item: (entries, context) => this.handleTransferItemEvents(entries, context),
             currency: (entries, context) => this.handleCurrencyEvents(entries, context),
             experience_check: (entries, context) => this.handleExperienceCheckEvents(entries, context),
+            environmental_status_damage: (entries, context) => this.handleEnvironmentalStatusDamageEvents(entries, context),
             defeated_enemy: (entries, context) => this.handleDefeatedEnemyEvents(entries, context)
         };
     }
@@ -1344,6 +1391,105 @@ class Events {
         }
     }
 
+    static handleEnvironmentalStatusDamageEvents(entries = [], context = {}) {
+        const items = Array.isArray(entries)
+            ? entries
+            : (entries === null || entries === undefined ? [] : [entries]);
+
+        if (!items.length) {
+            return;
+        }
+
+        if (!Array.isArray(context.environmentalDamageEvents)) {
+            context.environmentalDamageEvents = [];
+        }
+
+        const { findActorByName } = this.deps;
+
+        const locationLevelRaw = Number(context.location?.baseLevel);
+        const playerLevelRaw = Number(context.player?.level);
+        const resolvedLevel = Number.isFinite(locationLevelRaw)
+            ? locationLevelRaw
+            : (Number.isFinite(playerLevelRaw) ? playerLevelRaw : 1);
+
+        const mediumDamage = Math.max(1, Math.floor(8 + (resolvedLevel * 2)));
+        const highDamage = Math.max(1, Math.floor(mediumDamage * 1.75));
+        const lowDamage = Math.max(1, Math.floor(mediumDamage * 0.25));
+
+        const severityLookup = {
+            low: lowDamage,
+            medium: mediumDamage,
+            high: highDamage
+        };
+
+        for (const entry of items) {
+            if (!entry) {
+                continue;
+            }
+
+            const name = typeof entry === 'object' && entry !== null && entry.name
+                ? String(entry.name).trim()
+                : (typeof entry === 'string' ? entry.trim() : '');
+            if (!name) {
+                continue;
+            }
+
+            let severityKey = 'medium';
+            if (typeof entry === 'object' && entry !== null && entry.severity) {
+                const normalized = String(entry.severity).trim().toLowerCase();
+                if (normalized) {
+                    severityKey = normalized.split(/\s+/)[0] || severityKey;
+                }
+            }
+            if (!severityLookup[severityKey]) {
+                severityKey = 'medium';
+            }
+
+            const reason = typeof entry === 'object' && entry !== null && entry.reason
+                ? String(entry.reason).trim()
+                : '';
+
+            const plannedAmount = severityLookup[severityKey] || mediumDamage;
+
+            const effectTypeRaw = typeof entry === 'object' && entry !== null && entry.effect
+                ? String(entry.effect).trim().toLowerCase()
+                : 'damage';
+            const isHealing = effectTypeRaw === 'healing' || effectTypeRaw === 'heal' || effectTypeRaw === 'healed';
+
+            const actor = findActorByName ? findActorByName(name) : null;
+            let appliedAmount = plannedAmount;
+
+            if (actor && typeof actor.modifyHealth === 'function') {
+                try {
+                    const delta = isHealing ? plannedAmount : -plannedAmount;
+                    const fallbackReason = isHealing ? 'Environmental healing' : 'Environmental damage';
+                    const result = actor.modifyHealth(delta, reason || fallbackReason);
+                    if (result && typeof result.change === 'number') {
+                        const magnitude = Math.abs(result.change);
+                        if (magnitude > 0) {
+                            appliedAmount = magnitude;
+                        } else {
+                            appliedAmount = plannedAmount;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to apply environmental status effect:', error.message);
+                }
+            }
+
+            appliedAmount = Math.max(1, Math.floor(appliedAmount));
+
+            context.environmentalDamageEvents.push({
+                name,
+                amount: appliedAmount,
+                severity: severityKey,
+                reason,
+                actorId: actor?.id || null,
+                type: isHealing ? 'healing' : 'damage'
+            });
+        }
+    }
+
     static handleDefeatedEnemyEvents(entries = [], context = {}) {
         const names = Array.isArray(entries)
             ? entries
@@ -1548,6 +1694,7 @@ class Events {
             const structured = this.parseEventCheckResponse(eventPromptTemplates, eventResponse);
             let experienceAwards = [];
             let currencyChanges = [];
+            let environmentalDamageEvents = [];
             if (structured) {
                 try {
                     const outcomeContext = await this.applyEventOutcomes(structured, {
@@ -1556,6 +1703,7 @@ class Events {
                         region,
                         experienceAwards: [],
                         currencyChanges: [],
+                        environmentalDamageEvents: [],
                         stream
                     });
                     if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
@@ -1563,6 +1711,9 @@ class Events {
                     }
                     if (Array.isArray(outcomeContext?.currencyChanges) && outcomeContext.currencyChanges.length) {
                         currencyChanges = outcomeContext.currencyChanges;
+                    }
+                    if (Array.isArray(outcomeContext?.environmentalDamageEvents) && outcomeContext.environmentalDamageEvents.length) {
+                        environmentalDamageEvents = outcomeContext.environmentalDamageEvents;
                     }
                 } catch (applyError) {
                     console.warn('Failed to apply event outcomes:', applyError.message);
@@ -1575,7 +1726,8 @@ class Events {
                 html: safeResponse.replace(/\n/g, '<br>'),
                 structured,
                 experienceAwards,
-                currencyChanges
+                currencyChanges,
+                environmentalDamageEvents
             };
         } catch (error) {
             console.warn('Event check execution failed:', error.message);

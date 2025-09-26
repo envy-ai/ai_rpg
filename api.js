@@ -1884,6 +1884,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.currencyChanges) && npcEventResult.currencyChanges.length) {
                         npcTurnResult.currencyChanges = npcEventResult.currencyChanges;
                     }
+                    if (Array.isArray(npcEventResult?.environmentalDamageEvents) && npcEventResult.environmentalDamageEvents.length) {
+                        npcTurnResult.environmentalDamageEvents = npcEventResult.environmentalDamageEvents;
+                    }
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -2343,6 +2346,9 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(forcedEventResult.currencyChanges) && forcedEventResult.currencyChanges.length) {
                             responseData.currencyChanges = forcedEventResult.currencyChanges;
                         }
+                        if (Array.isArray(forcedEventResult.environmentalDamageEvents) && forcedEventResult.environmentalDamageEvents.length) {
+                            responseData.environmentalDamageEvents = forcedEventResult.environmentalDamageEvents;
+                        }
                     }
 
                     if (debugInfo) {
@@ -2510,6 +2516,9 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (Array.isArray(eventResult.currencyChanges) && eventResult.currencyChanges.length) {
                             responseData.currencyChanges = eventResult.currencyChanges;
+                        }
+                        if (Array.isArray(eventResult.environmentalDamageEvents) && eventResult.environmentalDamageEvents.length) {
+                            responseData.environmentalDamageEvents = eventResult.environmentalDamageEvents;
                         }
                     }
 

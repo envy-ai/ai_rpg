@@ -645,6 +645,81 @@ class AIRPGChat {
         });
     }
 
+    addEnvironmentalDamageEvent(event) {
+        if (!event) {
+            return;
+        }
+
+        const rawAmount = typeof event === 'object' ? (event.amount ?? event.damage ?? event.value) : event;
+        const numericAmount = Number(rawAmount);
+        const damageAmount = Number.isFinite(numericAmount) ? Math.max(1, Math.round(Math.abs(numericAmount))) : null;
+        if (!damageAmount) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary environmental-damage';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        const effectTypeRaw = event && typeof event === 'object' && event.type
+            ? String(event.type).trim().toLowerCase()
+            : 'damage';
+        const isHealing = effectTypeRaw === 'healing' || effectTypeRaw === 'heal';
+        senderDiv.textContent = isHealing ? '🌿 Environmental Healing' : '☠️ Environmental Damage';
+
+        const contentDiv = document.createElement('div');
+        const name = event && typeof event === 'object' && event.name ? String(event.name).trim() : '';
+        const severityRaw = event && typeof event === 'object' && event.severity ? String(event.severity).trim() : '';
+        const reason = event && typeof event === 'object' && event.reason ? String(event.reason).trim() : '';
+        const severityLabel = severityRaw ? severityRaw.charAt(0).toUpperCase() + severityRaw.slice(1) : '';
+
+        let description;
+        if (name) {
+            description = isHealing
+                ? `${name} regained ${damageAmount} HP`
+                : `${name} took ${damageAmount} damage`;
+        } else {
+            description = isHealing
+                ? `Regained ${damageAmount} HP`
+                : `Took ${damageAmount} damage`;
+        }
+
+        if (severityLabel) {
+            description += ` (${severityLabel})`;
+        }
+
+        if (reason) {
+            description += ` - ${reason}`;
+        }
+
+        contentDiv.textContent = description;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addEnvironmentalDamageEvents(events) {
+        if (!Array.isArray(events)) {
+            return;
+        }
+        events.forEach(entry => {
+            if (!entry) {
+                return;
+            }
+            this.addEnvironmentalDamageEvent(entry);
+        });
+    }
+
     addEventSummaries(eventData) {
         if (!eventData) {
             return;
@@ -1437,6 +1512,10 @@ class AIRPGChat {
             this.addCurrencyChanges(payload.currencyChanges);
         }
 
+        if (Array.isArray(payload.environmentalDamageEvents) && payload.environmentalDamageEvents.length) {
+            this.addEnvironmentalDamageEvents(payload.environmentalDamageEvents);
+        }
+
         if (payload.plausibility) {
             this.addPlausibilityMessage(payload.plausibility);
         }
@@ -1484,6 +1563,9 @@ class AIRPGChat {
         }
         if (Array.isArray(turn.currencyChanges) && turn.currencyChanges.length) {
             this.addCurrencyChanges(turn.currencyChanges);
+        }
+        if (Array.isArray(turn.environmentalDamageEvents) && turn.environmentalDamageEvents.length) {
+            this.addEnvironmentalDamageEvents(turn.environmentalDamageEvents);
         }
         if (turn.attackSummary) {
             this.addAttackCheckMessage(turn.attackSummary);
