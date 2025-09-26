@@ -35,6 +35,7 @@ class Player {
     #gearSlotNameIndex;
     #abilities;
     #experience;
+    #currency;
     #personalityType;
     #personalityTraits;
     #personalityNotes;
@@ -431,6 +432,10 @@ class Player {
             ? Math.max(0, Number(options.experience))
             : 0;
         this.#experience = initialExperience;
+        const initialCurrency = Number.isFinite(options.currency)
+            ? Math.max(0, Math.floor(options.currency))
+            : 0;
+        this.#currency = initialCurrency;
         this.#processExperienceOverflow();
 
         // Creation timestamp
@@ -1867,6 +1872,7 @@ class Player {
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
             gearSlotDefinitions: Player.gearSlotDefinitions,
+            currency: this.#currency,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
         };
@@ -1908,6 +1914,7 @@ class Player {
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
+            currency: this.#currency,
             personality: {
                 type: this.#personalityType,
                 traits: this.#personalityTraits,
@@ -1918,7 +1925,8 @@ class Player {
             personalityNotes: this.#personalityNotes,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
-            experience: this.#experience
+            experience: this.#experience,
+            currency: this.#currency
         };
     }
 
@@ -1952,6 +1960,7 @@ class Player {
             gear: data.gear && typeof data.gear === 'object' ? data.gear : null,
             healthAttribute: data.healthAttribute,
             experience: data.experience,
+            currency: data.currency,
             createdAt: data.createdAt,
             lastUpdated: data.lastUpdated
         });
@@ -2249,6 +2258,34 @@ class Player {
         const current = this.getAbilities();
         current.push(abilityInput);
         return this.setAbilities(current);
+    }
+
+    getCurrency() {
+        return this.#currency;
+    }
+
+    setCurrency(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            throw new Error('Currency must be a finite number');
+        }
+
+        const sanitized = Math.max(0, Math.floor(numeric));
+        this.#currency = sanitized;
+        this.#lastUpdated = new Date().toISOString();
+        return this.#currency;
+    }
+
+    adjustCurrency(delta) {
+        const numeric = Number(delta);
+        if (!Number.isFinite(numeric)) {
+            return this.#currency;
+        }
+
+        const updated = Math.max(0, Math.floor(this.#currency + numeric));
+        this.#currency = updated;
+        this.#lastUpdated = new Date().toISOString();
+        return this.#currency;
     }
 
     getUnspentSkillPoints() {

@@ -93,6 +93,18 @@
                     </div>
 
                     <div class="form-group">
+                        <label for="currencyName">Currency Name</label>
+                        <input type="text" id="currencyName" name="currencyName" placeholder="e.g., Credit, Coin, Gil">
+                        <div class="help-text">Singular name used when referencing a single unit of currency.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="currencyNamePlural">Currency Name (Plural)</label>
+                        <input type="text" id="currencyNamePlural" name="currencyNamePlural" placeholder="e.g., Credits, Coins, Gil">
+                        <div class="help-text">Plural form of the currency for amounts above one.</div>
+                    </div>
+
+                    <div class="form-group">
                         <label for="playerStartingLevel">Player Starting Level</label>
                         <input type="number" id="playerStartingLevel" name="playerStartingLevel" min="1" max="20" value="1">
                         <div class="help-text">Level for new players (1-20)</div>
@@ -142,6 +154,20 @@
                         <label for="availableRaces">Available Races (one per line)</label>
                         <textarea id="availableRaces" name="availableRaces" rows="4" placeholder="Human\nElf\nClockwork Automaton"></textarea>
                         <div class="help-text">Races or species available for new characters.</div>
+                    </div>
+
+                    <div class="form-divider">Worldbuilding Notes</div>
+
+                    <div class="form-group full-width">
+                        <label for="currencyValueNotes">Currency Value Notes</label>
+                        <textarea id="currencyValueNotes" name="currencyValueNotes" rows="4" placeholder="Describe how valuable different amounts of currency are, typical wages, or trade conventions..."></textarea>
+                        <div class="help-text">Explain what typical amounts of money can buy or how wealth is perceived.</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="styleNotes">Style Notes</label>
+                        <textarea id="styleNotes" name="styleNotes" rows="4" placeholder="Provide storytelling tone, visual motifs, cultural details, or vibe notes for the Game Master..."></textarea>
+                        <div class="help-text">Additional guidance for narrative voice, aesthetic, or flavor details.</div>
                     </div>
 
                     <!-- Preview Section -->
@@ -281,6 +307,8 @@
             document.getElementById('techLevel').value = setting.techLevel || '';
             document.getElementById('tone').value = setting.tone || '';
             document.getElementById('difficulty').value = setting.difficulty || '';
+            document.getElementById('currencyName').value = setting.currencyName || '';
+            document.getElementById('currencyNamePlural').value = setting.currencyNamePlural || '';
             document.getElementById('playerStartingLevel').value = setting.playerStartingLevel;
             document.getElementById('defaultPlayerName').value = setting.defaultPlayerName || '';
             document.getElementById('defaultPlayerDescription').value = setting.defaultPlayerDescription || '';
@@ -289,6 +317,8 @@
             document.getElementById('defaultExistingSkills').value = Array.isArray(setting.defaultExistingSkills) ? setting.defaultExistingSkills.join('\n') : '';
             document.getElementById('availableClasses').value = Array.isArray(setting.availableClasses) ? setting.availableClasses.join('\n') : '';
             document.getElementById('availableRaces').value = Array.isArray(setting.availableRaces) ? setting.availableRaces.join('\n') : '';
+            document.getElementById('currencyValueNotes').value = setting.currencyValueNotes || '';
+            document.getElementById('styleNotes').value = setting.styleNotes || '';
 
             // Update form title and button
             document.getElementById('formTitle').textContent = `✏️ Edit Setting: ${setting.name}`;
@@ -404,6 +434,10 @@
             const inputs = document.querySelectorAll('#settingForm input, #settingForm select');
             inputs.forEach(input => {
                 input.value = '';
+            });
+            const textareas = document.querySelectorAll('#settingForm textarea');
+            textareas.forEach(area => {
+                area.value = '';
             });
 
             document.getElementById('playerStartingLevel').value = '1';
@@ -645,6 +679,8 @@
                     techLevel: filled.techLevel,
                     tone: filled.tone,
                     difficulty: filled.difficulty,
+                    currencyName: filled.currencyName,
+                    currencyNamePlural: filled.currencyNamePlural,
                     playerStartingLevel: filled.playerStartingLevel,
                     defaultPlayerName: filled.defaultPlayerName,
                     defaultPlayerDescription: filled.defaultPlayerDescription,
@@ -652,7 +688,9 @@
                     defaultNumSkills: filled.defaultNumSkills,
                     defaultExistingSkills: filled.defaultExistingSkills,
                     availableClasses: filled.availableClasses,
-                    availableRaces: filled.availableRaces
+                    availableRaces: filled.availableRaces,
+                    currencyValueNotes: filled.currencyValueNotes,
+                    styleNotes: filled.styleNotes
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
 
                 showMessage('Blank fields populated successfully.', 'success');

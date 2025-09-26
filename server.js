@@ -1599,12 +1599,45 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         const description = item.description || item.summary || '';
         const statusEffects = normalizeStatusEffects(item);
         const equipped = equippedSlot || null;
+        const metadataIsScenery = typeof item?.metadata?.isScenery === 'boolean'
+            ? item.metadata.isScenery
+            : null;
+
+        const resolveTypeValue = (value) => {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            return trimmed ? trimmed.toLowerCase() : null;
+        };
+
+        const normalizedThingType = resolveTypeValue(
+            item?.thingType
+            ?? item?.itemOrScenery
+            ?? item?.type
+            ?? item?.itemTypeDetail
+        );
+
+        let isScenery = null;
+        if (typeof item?.isScenery === 'boolean') {
+            isScenery = item.isScenery;
+        } else if (metadataIsScenery !== null) {
+            isScenery = metadataIsScenery;
+        } else if (normalizedThingType) {
+            isScenery = normalizedThingType === 'scenery';
+        }
+
+        if (isScenery === null) {
+            isScenery = false;
+        }
 
         return {
             name,
             description,
             statusEffects,
-            equippedSlot: equipped
+            equippedSlot: equipped,
+            isScenery,
+            thingType: normalizedThingType || (isScenery ? 'scenery' : null)
         };
     };
 
@@ -1883,11 +1916,10 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         for (const thing of things.values()) {
             const metadata = thing.metadata || {};
             if (metadata.locationId === location.id && !metadata.ownerId) {
-                itemsInScene.push({
-                    name: thing.name || 'Unnamed Item',
-                    description: thing.description || '',
-                    statusEffects: normalizeStatusEffects(thing)
-                });
+                const mappedThing = mapItemContext(thing);
+                if (mappedThing) {
+                    itemsInScene.push(mappedThing);
+                }
             }
         }
     }

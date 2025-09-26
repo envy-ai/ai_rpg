@@ -177,10 +177,11 @@ You are an AI designed to perform various tasks related to managing a text-based
     {% endfor %}
   </playerParty>
   <itemsInScene>
-    {% for item in itemsInScene %}
+    {% for item in itemsInScene %}{% if not item.isScenery %}
     <item>
       <name>{{ item.name }}</name>
       <description>{{ item.description }}</description>
+      <isScenery>{{ item.isScenery | default(false) }}</isScenery>
       <statusEffects>
         {% for effect in item.statusEffects %}
         <effect>
@@ -190,8 +191,26 @@ You are an AI designed to perform various tasks related to managing a text-based
         {% endfor %}
       </statusEffects>
     </item>
-    {% endfor %}
+    {% endif %}{% endfor %}
   </itemsInScene>
+  <sceneryList>
+    {% for item in itemsInScene %}{% if item.isScenery %}
+    <sceneryItem>
+      <name>{{ item.name }}</name>
+      <description>{{ item.description }}</description>
+      <isScenery>{{ item.isScenery | default(true) }}</isScenery>
+      <statusEffects>
+        {% for effect in item.statusEffects %}
+        <effect>
+          <description>{{ effect.description }}</description>
+          <duration>{{ effect.duration | default('unknown') }}</duration>
+        </effect>
+        {% endfor %}
+      </statusEffects>
+    </sceneryItem>
+    {% endif %}{% endfor %}
+  </sceneryList>
+
 </context>
 
 {% if promptType == "event-checks" %}

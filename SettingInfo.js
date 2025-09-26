@@ -20,6 +20,10 @@ class SettingInfo {
   #techLevel;
   #tone;
   #difficulty;
+  #currencyName;
+  #currencyNamePlural;
+  #currencyValueNotes;
+  #styleNotes;
   #playerStartingLevel;
   #defaultPlayerName;
   #defaultPlayerDescription;
@@ -89,6 +93,14 @@ class SettingInfo {
     this.#techLevel = options.techLevel || '';
     this.#tone = options.tone || '';
     this.#difficulty = options.difficulty || '';
+    this.#currencyName = typeof options.currencyName === 'string' ? options.currencyName : '';
+    this.#currencyNamePlural = typeof options.currencyNamePlural === 'string' ? options.currencyNamePlural : '';
+    this.#currencyValueNotes = typeof options.currencyValueNotes === 'string'
+      ? options.currencyValueNotes.replace(/\r\n/g, '\n')
+      : '';
+    this.#styleNotes = typeof options.styleNotes === 'string'
+      ? options.styleNotes.replace(/\r\n/g, '\n')
+      : '';
 
     // Additional properties
     this.#playerStartingLevel = Math.max(1, Math.min(20, options.playerStartingLevel || 1));
@@ -128,6 +140,10 @@ class SettingInfo {
   get techLevel() { return this.#techLevel; }
   get tone() { return this.#tone; }
   get difficulty() { return this.#difficulty; }
+  get currencyName() { return this.#currencyName; }
+  get currencyNamePlural() { return this.#currencyNamePlural; }
+  get currencyValueNotes() { return this.#currencyValueNotes; }
+  get styleNotes() { return this.#styleNotes; }
   get playerStartingLevel() { return this.#playerStartingLevel; }
   get defaultPlayerName() { return this.#defaultPlayerName; }
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
@@ -192,6 +208,30 @@ class SettingInfo {
 
   set difficulty(value) {
     this.#difficulty = value;
+    this.#updateTimestamp();
+  }
+
+  set currencyName(value) {
+    this.#currencyName = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set currencyNamePlural(value) {
+    this.#currencyNamePlural = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set currencyValueNotes(value) {
+    this.#currencyValueNotes = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set styleNotes(value) {
+    this.#styleNotes = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
     this.#updateTimestamp();
   }
 
@@ -316,6 +356,10 @@ class SettingInfo {
       techLevel: this.#techLevel,
       tone: this.#tone,
       difficulty: this.#difficulty,
+      currencyName: this.#currencyName,
+      currencyNamePlural: this.#currencyNamePlural,
+      currencyValueNotes: this.#currencyValueNotes,
+      styleNotes: this.#styleNotes,
       playerStartingLevel: this.#playerStartingLevel,
       defaultPlayerName: this.#defaultPlayerName,
       defaultPlayerDescription: this.#defaultPlayerDescription,
@@ -365,6 +409,10 @@ class SettingInfo {
       techLevel: this.#techLevel,
       tone: this.#tone,
       difficulty: this.#difficulty,
+      currencyName: this.#currencyName,
+      currencyNamePlural: this.#currencyNamePlural,
+      currencyValueNotes: this.#currencyValueNotes,
+      styleNotes: this.#styleNotes,
       playerStartingLevel: this.#playerStartingLevel,
       settingName: this.#name,
       settingDescription: this.#description,
