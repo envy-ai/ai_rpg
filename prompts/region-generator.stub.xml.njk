@@ -7,9 +7,21 @@ You are a an AI role-playing gamemaster.
     
     <generationPrompt>
 <context>
-<setting>
-{{ setting }}
-</setting>
+  <setting>
+    <name>{{ setting.name }}</name>
+    <description>{{ setting.description }}</description>
+    <theme>{{ setting.theme }}</theme>
+    <genre>{{ setting.genre }}</genre>
+    <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+    <magicLevel>{{ setting.magicLevel }}</magicLevel>
+    <techLevel>{{ setting.techLevel }}</techLevel>
+    <tone>{{ setting.tone }}</tone>
+    <difficulty>{{ setting.difficulty }}</difficulty>
+    <currencyName>{{ setting.currencyName }}</currencyName>
+    <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+    <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+    <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  </setting>
 <region>
 <name>{{ currentRegion.name }}</name>
 <description>{{ currentRegion.description }}</description>

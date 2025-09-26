@@ -1285,10 +1285,7 @@ class Player {
         const oldMaxHealth = this.maxHealth;
         const newMaxHealth = this.#calculateBaseHealth();
         this.#maxHealth = newMaxHealth;
-
-        // Add the health increase to current health
-        const delta = newMaxHealth - oldMaxHealth;
-        this.#health = Math.max(0, Math.min(newMaxHealth, this.#health + delta));
+        this.#health = this.#maxHealth;
         const pointsPerLevel = this.#skillPointsPerLevel();
         if (pointsPerLevel > 0) {
             this.#unspentSkillPoints += pointsPerLevel;
@@ -1380,6 +1377,8 @@ class Player {
             if (levelDiff !== 0) {
                 return levelDiff;
             }
+            if (!a?.name) return -1;
+            if (!b?.name) return 1;
             return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
         });
 

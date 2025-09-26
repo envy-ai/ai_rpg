@@ -7,7 +7,21 @@ You are an experienced AI game master who writes concise XML data about non-play
 
     <generationPrompt>
 <context>
-<setting>{{ settingDescription }}</setting>
+<setting>
+  <name>{{ setting.name }}</name>
+  <description>{{ setting.description }}</description>
+  <theme>{{ setting.theme }}</theme>
+  <genre>{{ setting.genre }}</genre>
+  <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+  <magicLevel>{{ setting.magicLevel }}</magicLevel>
+  <techLevel>{{ setting.techLevel }}</techLevel>
+  <tone>{{ setting.tone }}</tone>
+  <difficulty>{{ setting.difficulty }}</difficulty>
+  <currencyName>{{ setting.currencyName }}</currencyName>
+  <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+  <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+  <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+</setting>
 <region>
 <name>{{ region.name }}</name>
 <description>{{ region.description }}</description>
@@ -36,6 +50,7 @@ Generate exactly one NPC entry for the character named "{{ npcName }}". Use the 
     <class>RPG class, vocation, or archetype.</class>
     <race>Species or origin.</race>
     <relativeLevel>Integer from -3 to +3</relativeLevel>
+    <currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
     <attributes>
 {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
 {% endfor %}

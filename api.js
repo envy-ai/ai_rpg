@@ -1796,6 +1796,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.experienceAwards) && npcEventResult.experienceAwards.length) {
                         npcTurnResult.experienceAwards = npcEventResult.experienceAwards;
                     }
+                    if (Array.isArray(npcEventResult?.currencyChanges) && npcEventResult.currencyChanges.length) {
+                        npcTurnResult.currencyChanges = npcEventResult.currencyChanges;
+                    }
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -2202,6 +2205,9 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(forcedEventResult.experienceAwards) && forcedEventResult.experienceAwards.length) {
                             responseData.experienceAwards = forcedEventResult.experienceAwards;
                         }
+                        if (Array.isArray(forcedEventResult.currencyChanges) && forcedEventResult.currencyChanges.length) {
+                            responseData.currencyChanges = forcedEventResult.currencyChanges;
+                        }
                     }
 
                     if (debugInfo) {
@@ -2327,6 +2333,9 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (Array.isArray(eventResult.experienceAwards) && eventResult.experienceAwards.length) {
                             responseData.experienceAwards = eventResult.experienceAwards;
+                        }
+                        if (Array.isArray(eventResult.currencyChanges) && eventResult.currencyChanges.length) {
+                            responseData.currencyChanges = eventResult.currencyChanges;
                         }
                     }
 
@@ -2676,7 +2685,9 @@ module.exports = function registerApiRoutes(scope) {
                     attributes,
                     skills: skillValues,
                     abilities,
-                    unspentSkillPoints
+                    unspentSkillPoints,
+                    currency,
+                    experience
                 } = req.body || {};
 
                 if (typeof name === 'string' && name.trim()) {
@@ -2763,6 +2774,28 @@ module.exports = function registerApiRoutes(scope) {
                             npc.setUnspentSkillPoints(parsedPoints);
                         } catch (uspError) {
                             console.warn(`Failed to set unspent skill points for NPC ${npcId}:`, uspError.message);
+                        }
+                    }
+                }
+
+                if (currency !== undefined) {
+                    const parsedCurrency = Number.parseInt(currency, 10);
+                    if (Number.isFinite(parsedCurrency) && parsedCurrency >= 0) {
+                        try {
+                            npc.setCurrency(parsedCurrency);
+                        } catch (currencyError) {
+                            console.warn(`Failed to set currency for NPC ${npcId}:`, currencyError.message);
+                        }
+                    }
+                }
+
+                if (experience !== undefined) {
+                    const parsedExperience = Number.parseInt(experience, 10);
+                    if (Number.isFinite(parsedExperience) && parsedExperience >= 0) {
+                        try {
+                            npc.setExperience(parsedExperience);
+                        } catch (experienceError) {
+                            console.warn(`Failed to set experience for NPC ${npcId}:`, experienceError.message);
                         }
                     }
                 }

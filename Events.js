@@ -1193,12 +1193,32 @@ class Events {
             return;
         }
 
+        if (!Array.isArray(context.currencyChanges)) {
+            context.currencyChanges = [];
+        }
+
+        const getCurrentCurrency = () => {
+            try {
+                if (typeof player.getCurrency === 'function') {
+                    return player.getCurrency();
+                }
+            } catch (_) {}
+            const fallback = Number(player.currency);
+            return Number.isFinite(fallback) ? fallback : 0;
+        };
+
         for (const entry of deltas) {
             const numeric = Number(entry);
             if (!Number.isFinite(numeric) || numeric === 0) {
                 continue;
             }
+            const before = getCurrentCurrency();
             player.adjustCurrency(numeric);
+            const after = getCurrentCurrency();
+            const delta = after - before;
+            if (delta !== 0) {
+                context.currencyChanges.push({ amount: delta });
+            }
         }
     }
 
@@ -1467,16 +1487,21 @@ class Events {
 
             const structured = this.parseEventCheckResponse(eventPromptTemplates, eventResponse);
             let experienceAwards = [];
+            let currencyChanges = [];
             if (structured) {
                 try {
                     const outcomeContext = await this.applyEventOutcomes(structured, {
                         player: currentPlayer,
                         location,
                         region,
-                        experienceAwards: []
+                        experienceAwards: [],
+                        currencyChanges: []
                     });
                     if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
                         experienceAwards = outcomeContext.experienceAwards;
+                    }
+                    if (Array.isArray(outcomeContext?.currencyChanges) && outcomeContext.currencyChanges.length) {
+                        currencyChanges = outcomeContext.currencyChanges;
                     }
                 } catch (applyError) {
                     console.warn('Failed to apply event outcomes:', applyError.message);
@@ -1488,7 +1513,8 @@ class Events {
                 raw: eventResponse,
                 html: safeResponse.replace(/\n/g, '<br>'),
                 structured,
-                experienceAwards
+                experienceAwards,
+                currencyChanges
             };
         } catch (error) {
             console.warn('Event check execution failed:', error.message);

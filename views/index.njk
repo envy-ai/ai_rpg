@@ -419,6 +419,8 @@
                             <span class="npc-view-tag" id="npcViewLevel"></span>
                         </div>
                         <div class="npc-view-health" id="npcViewHealth"></div>
+                        <div class="npc-view-meta" id="npcViewCurrency" hidden></div>
+                        <div class="npc-view-meta" id="npcViewExperience" hidden></div>
                     </div>
                 </div>
                 <div class="npc-view-sections">
@@ -504,6 +506,14 @@
                     <div class="npc-edit-field">
                         <label for="npcEditUnspent">Unspent Skill Points</label>
                         <input id="npcEditUnspent" type="number" min="0" step="1">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="npcEditCurrency">Currency</label>
+                        <input id="npcEditCurrency" type="number" min="0" step="1">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="npcEditExperience">Experience</label>
+                        <input id="npcEditExperience" type="number" min="0" step="1">
                     </div>
                 </div>
 
@@ -671,6 +681,7 @@
     <script defer src="/js/map.js"></script>
     <script defer src="/js/player-stats.js"></script>
     <script>
+        window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
             window.systemPrompt = {{ systemPrompt | dump | safe }};
@@ -1580,6 +1591,8 @@
         const npcEditMaxHealthInput = document.getElementById('npcEditMaxHealth');
         const npcEditHealthAttributeSelect = document.getElementById('npcEditHealthAttribute');
         const npcEditUnspentInput = document.getElementById('npcEditUnspent');
+        const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
+        const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
         const npcEditSkillsContainer = document.getElementById('npcEditSkills');
@@ -1604,6 +1617,8 @@
         const npcViewRace = document.getElementById('npcViewRace');
         const npcViewLevel = document.getElementById('npcViewLevel');
         const npcViewHealth = document.getElementById('npcViewHealth');
+        const npcViewCurrency = document.getElementById('npcViewCurrency');
+        const npcViewExperience = document.getElementById('npcViewExperience');
         const npcViewDispositions = document.getElementById('npcViewDispositions');
         const npcViewDispositionsList = document.getElementById('npcViewDispositionsList');
         const npcViewAttributes = document.getElementById('npcViewAttributes');
@@ -2560,6 +2575,14 @@
                 const numericUnspent = Number.parseInt(npc.unspentSkillPoints, 10);
                 npcEditUnspentInput.value = Number.isFinite(numericUnspent) ? numericUnspent : 0;
             }
+            if (npcEditCurrencyInput) {
+                const numericCurrency = Number.parseInt(npc.currency, 10);
+                npcEditCurrencyInput.value = Number.isFinite(numericCurrency) && numericCurrency >= 0 ? numericCurrency : '';
+            }
+            if (npcEditExperienceInput) {
+                const numericExperience = Number.parseInt(npc.experience, 10);
+                npcEditExperienceInput.value = Number.isFinite(numericExperience) && numericExperience >= 0 ? numericExperience : '';
+            }
             if (npcEditDescriptionInput) {
                 npcEditDescriptionInput.value = npc.description || '';
             }
@@ -2852,6 +2875,16 @@
                 const parsedUnspent = Number.parseInt(npcEditUnspentInput?.value ?? '', 10);
                 if (Number.isFinite(parsedUnspent) && parsedUnspent >= 0) {
                     payload.unspentSkillPoints = parsedUnspent;
+                }
+
+                const parsedCurrency = Number.parseInt(npcEditCurrencyInput?.value ?? '', 10);
+                if (Number.isFinite(parsedCurrency) && parsedCurrency >= 0) {
+                    payload.currency = parsedCurrency;
+                }
+
+                const parsedExperience = Number.parseInt(npcEditExperienceInput?.value ?? '', 10);
+                if (Number.isFinite(parsedExperience) && parsedExperience >= 0) {
+                    payload.experience = parsedExperience;
                 }
 
                 const attributes = getNpcAttributesFromInputs();
@@ -3368,6 +3401,10 @@
             const levelValue = Number.isFinite(Number(latestNpc?.level)) ? Number(latestNpc.level) : null;
             const healthValue = Number.isFinite(Number(latestNpc?.health)) ? Number(latestNpc.health) : null;
             const maxHealthValue = Number.isFinite(Number(latestNpc?.maxHealth)) ? Number(latestNpc.maxHealth) : null;
+            const parseNonNegativeInt = (value) => {
+                const parsed = Number.parseInt(value, 10);
+                return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+            };
 
             if (npcViewModalTitle) {
                 npcViewModalTitle.textContent = latestNpc?.name ? `${latestNpc.name} · Overview` : 'Character Overview';
@@ -3410,6 +3447,33 @@
                         npcViewHealth.textContent = `${maxHealthValue}`;
                     }
                     npcViewHealth.removeAttribute('hidden');
+                }
+            }
+
+            if (npcViewCurrency) {
+                const currencyValue = parseNonNegativeInt(latestNpc?.currency);
+                if (currencyValue === null) {
+                    npcViewCurrency.textContent = '';
+                    npcViewCurrency.setAttribute('hidden', '');
+                } else {
+                    const currencyLabel = (() => {
+                        const setting = window.currentSetting || {};
+                        const label = typeof setting.currencyNamePlural === 'string' ? setting.currencyNamePlural.trim() : '';
+                        return label || 'coins';
+                    })();
+                    npcViewCurrency.textContent = `Currency: ${currencyValue} ${currencyLabel}`;
+                    npcViewCurrency.removeAttribute('hidden');
+                }
+            }
+
+            if (npcViewExperience) {
+                const experienceValue = parseNonNegativeInt(latestNpc?.experience);
+                if (experienceValue === null) {
+                    npcViewExperience.textContent = '';
+                    npcViewExperience.setAttribute('hidden', '');
+                } else {
+                    npcViewExperience.textContent = `Experience: ${experienceValue}`;
+                    npcViewExperience.removeAttribute('hidden');
                 }
             }
 

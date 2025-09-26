@@ -1144,6 +1144,31 @@ function serializeNpcForClient(npc) {
         inventory = [];
     }
 
+    let currency = null;
+    try {
+        if (typeof npc.getCurrency === 'function') {
+            currency = npc.getCurrency();
+        } else if (npc.currency !== undefined && npc.currency !== null) {
+            currency = npc.currency;
+        }
+        if (currency !== null) {
+            const numericCurrency = Number.parseInt(currency, 10);
+            currency = Number.isFinite(numericCurrency) && numericCurrency >= 0 ? numericCurrency : null;
+        }
+    } catch (_) {
+        currency = null;
+    }
+
+    let experience = null;
+    try {
+        if (npc.experience !== undefined && npc.experience !== null) {
+            const numericExperience = Number.parseInt(npc.experience, 10);
+            experience = Number.isFinite(numericExperience) && numericExperience >= 0 ? numericExperience : null;
+        }
+    } catch (_) {
+        experience = null;
+    }
+
     return {
         id: npc.id,
         name: npc.name,
@@ -1164,6 +1189,8 @@ function serializeNpcForClient(npc) {
         statusEffects,
         unspentSkillPoints,
         inventory,
+        currency,
+        experience,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated
     };
@@ -4494,6 +4521,22 @@ Player.setNpcInventoryChangeHandler(async ({ character }) => {
     }
 });
 
+function parseIntegerFromText(value) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const text = String(value).replace(/[,]/g, ' ').trim();
+    if (!text) {
+        return null;
+    }
+    const match = text.match(/-?\d+/);
+    if (!match) {
+        return null;
+    }
+    const parsed = Number.parseInt(match[0], 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
 function parseLocationNpcs(xmlContent) {
     try {
         const parser = new DOMParser();
@@ -4510,6 +4553,7 @@ function parseLocationNpcs(xmlContent) {
         for (const node of npcNodes) {
             const nameNode = node.getElementsByTagName('name')[0];
             const descriptionNode = node.getElementsByTagName('description')[0];
+            const shortDescriptionNode = node.getElementsByTagName('shortDescription')[0];
             const roleNode = node.getElementsByTagName('role')[0];
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const classNode = node.getElementsByTagName('class')[0];
@@ -4517,15 +4561,18 @@ function parseLocationNpcs(xmlContent) {
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
+            const currencyNode = node.getElementsByTagName('currency')[0];
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
             const name = nameNode ? nameNode.textContent.trim() : null;
             const description = descriptionNode ? descriptionNode.textContent.trim() : '';
+            const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
             const attributes = {};
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
+            const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
             let personalityTraits = null;
@@ -4569,12 +4616,14 @@ function parseLocationNpcs(xmlContent) {
                 npcs.push({
                     name,
                     description,
+                    shortDescription,
                     role,
                     class: className,
                     race,
                     attributes,
                     relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                     healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
+                    currency: Number.isFinite(currencyValue) && currencyValue >= 0 ? currencyValue : null,
                     personalityType,
                     personalityTraits,
                     personalityNotes
@@ -4614,6 +4663,7 @@ function parseRegionNpcs(xmlContent) {
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
+            const currencyNode = node.getElementsByTagName('currency')[0];
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             if (!name) {
@@ -4641,6 +4691,7 @@ function parseRegionNpcs(xmlContent) {
 
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
+            const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
             let personalityTraits = null;
@@ -4681,6 +4732,7 @@ function parseRegionNpcs(xmlContent) {
                 attributes,
                 relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                 healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
+                currency: Number.isFinite(currencyValue) && currencyValue >= 0 ? currencyValue : null,
                 personalityType,
                 personalityTraits,
                 personalityNotes
@@ -6385,6 +6437,14 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 personalityNotes: npcData.personalityNotes || null
             });
 
+            if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {
+                try {
+                    npc.setCurrency(npcData.currency);
+                } catch (currencyError) {
+                    console.warn(`Failed to set currency for generated NPC ${npcData.name || npc.id}:`, currencyError.message);
+                }
+            }
+
             const locationBaseLevel = Number.isFinite(location.baseLevel)
                 ? location.baseLevel
                 : (Number.isFinite(region?.averageLevel) ? region.averageLevel : (currentPlayer?.level || 1));
@@ -6662,6 +6722,14 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null
             });
+
+            if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {
+                try {
+                    npc.setCurrency(npcData.currency);
+                } catch (currencyError) {
+                    console.warn(`Failed to set currency for region NPC ${npcData.name || npc.id}:`, currencyError.message);
+                }
+            }
 
             const baseLevelReference = Number.isFinite(region.averageLevel)
                 ? region.averageLevel
@@ -8708,13 +8776,16 @@ app.use(express.static('public'));
 // Route for AI RPG Chat Interface
 app.get('/', (req, res) => {
     const systemPrompt = renderSystemPrompt(currentSetting);
+    const activeSetting = getActiveSettingSnapshot();
+
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
         systemPrompt: systemPrompt,
         chatHistory: chatHistory,
         currentPage: 'chat',
         player: currentPlayer ? currentPlayer.getStatus() : null,
-        availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
+        availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
+        currentSetting: activeSetting
     });
 });
 

@@ -1,5 +1,5 @@
 <template>
-    <comment>This prompt runs after the location generator prompt, with the context from the location generator still incliuded, hence the lack of a system prompt and other context.</comment>
+    <comment>This prompt runs after the location generator prompt, with the context from the location generator still included, hence the lack of a system prompt and other context.</comment>
     <role>Location NPC generator</role>
     <generationPrompt>
 
@@ -47,6 +47,7 @@ Generate 0 or more (up to 6) important or prominent NPCs appropriate for the reg
 <race>human, elf, android, etc</race>
 <relativeLevel>Integer from +2 to +5 (relative to the average level in the region)</relativeLevel>
 <location>The location in the region where this NPC is located</location>
+<currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
 <attributes>
 {% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
 {% endfor %}

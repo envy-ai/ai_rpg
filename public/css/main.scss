@@ -2366,6 +2366,16 @@ body.modal-open {
   display: none;
 }
 
+.npc-view-meta {
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
+  margin-top: 4px;
+}
+
+.npc-view-meta[hidden] {
+  display: none;
+}
+
 .npc-view-dispositions {
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid rgba(148, 163, 184, 0.25);

@@ -267,6 +267,62 @@ class AIRPGChat {
         });
     }
 
+    getCurrencyLabel(amount) {
+        const setting = window.currentSetting || {};
+        const singular = typeof setting.currencyName === 'string' && setting.currencyName.trim()
+            ? setting.currencyName.trim()
+            : 'coin';
+        const plural = typeof setting.currencyNamePlural === 'string' && setting.currencyNamePlural.trim()
+            ? setting.currencyNamePlural.trim()
+            : `${singular}s`;
+        return Math.abs(Number(amount)) === 1 ? singular : plural;
+    }
+
+    addCurrencyChange(amount) {
+        const numeric = Number(amount);
+        if (!Number.isFinite(numeric) || numeric === 0) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary currency-change';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '💰 Currency Update';
+
+        const contentDiv = document.createElement('div');
+        const sign = numeric > 0 ? '+' : '-';
+        const absolute = Math.abs(numeric);
+        const label = this.getCurrencyLabel(absolute);
+        contentDiv.textContent = `${sign}${absolute} ${label}`;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addCurrencyChanges(changes) {
+        if (!Array.isArray(changes)) {
+            return;
+        }
+        changes.forEach(entry => {
+            if (!entry) {
+                return;
+            }
+            const amount = typeof entry === 'object' ? entry.amount : entry;
+            this.addCurrencyChange(amount);
+        });
+    }
+
     addEventSummaries(eventData) {
         if (!eventData) {
             return;
@@ -1082,6 +1138,10 @@ class AIRPGChat {
                     this.addExperienceAwards(data.experienceAwards);
                 }
 
+                if (Array.isArray(data.currencyChanges) && data.currencyChanges.length) {
+                    this.addCurrencyChanges(data.currencyChanges);
+                }
+
                 if (data.plausibility) {
                     this.addPlausibilityMessage(data.plausibility);
                 }
@@ -1104,6 +1164,10 @@ class AIRPGChat {
 
                         if (Array.isArray(turn.experienceAwards) && turn.experienceAwards.length) {
                             this.addExperienceAwards(turn.experienceAwards);
+                        }
+
+                        if (Array.isArray(turn.currencyChanges) && turn.currencyChanges.length) {
+                            this.addCurrencyChanges(turn.currencyChanges);
                         }
 
                         if (turn.attackSummary) {
