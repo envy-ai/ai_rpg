@@ -23,6 +23,8 @@ class AIRPGChat {
         this.wsReconnectDelay = 1000;
         this.wsReconnectTimer = null;
         this.streamingStatusElements = new Map();
+        this.wsReadyWaiters = [];
+        this.wsReady = false;
         window.AIRPG_CLIENT_ID = this.clientId;
 
         this.init();
@@ -92,6 +94,8 @@ class AIRPGChat {
             this.wsReconnectTimer = null;
         }
 
+        this.wsReady = false;
+
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const url = `${protocol}://${window.location.host}/ws?clientId=${encodeURIComponent(this.clientId)}`;
 
@@ -127,16 +131,58 @@ class AIRPGChat {
         }, this.wsReconnectDelay);
     }
 
+    flushWebSocketWaiters(success) {
+        if (!Array.isArray(this.wsReadyWaiters) || !this.wsReadyWaiters.length) {
+            return;
+        }
+        const waiters = this.wsReadyWaiters.slice();
+        this.wsReadyWaiters = [];
+        waiters.forEach(waiter => {
+            if (waiter && typeof waiter.resolve === 'function') {
+                if (waiter.timeoutId) {
+                    window.clearTimeout(waiter.timeoutId);
+                }
+                waiter.resolve(success);
+            }
+        });
+    }
+
+    waitForWebSocketReady(timeoutMs = 0) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.wsReady) {
+            return Promise.resolve(true);
+        }
+
+        if (timeoutMs <= 0) {
+            return Promise.resolve(false);
+        }
+
+        return new Promise(resolve => {
+            const waiter = {
+                resolve: (value) => resolve(value),
+                timeoutId: null
+            };
+            waiter.timeoutId = window.setTimeout(() => {
+                this.wsReadyWaiters = this.wsReadyWaiters.filter(item => item !== waiter);
+                resolve(false);
+            }, timeoutMs);
+            this.wsReadyWaiters.push(waiter);
+        });
+    }
+
     handleWebSocketOpen() {
         this.wsReconnectDelay = 1000;
         if (this.wsReconnectTimer) {
             window.clearTimeout(this.wsReconnectTimer);
             this.wsReconnectTimer = null;
         }
+        this.wsReady = true;
+        this.flushWebSocketWaiters(true);
     }
 
     handleWebSocketClose() {
         this.ws = null;
+        this.wsReady = false;
+        this.flushWebSocketWaiters(false);
         this.scheduleWebSocketReconnect();
     }
 
@@ -1516,10 +1562,13 @@ class AIRPGChat {
     }
 
     handleLocationGenerated(payload) {
-        if (!payload || !payload.location) {
+        if (!payload) {
             return;
         }
-        const name = payload.location.name || 'Location';
+        const name = (payload.location && payload.location.name) || payload.name || 'Location';
+        if (!name) {
+            return;
+        }
         this.addMessage('ai', `📍 Location generated: ${name}`, false);
     }
 
@@ -1548,6 +1597,7 @@ class AIRPGChat {
         let shouldRefreshLocation = false;
 
         try {
+            await this.waitForWebSocketReady(1000);
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {

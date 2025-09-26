@@ -608,6 +608,9 @@ class Events {
             generateLocationExitImage
         } = this.deps;
 
+        const stream = context.stream;
+        let emittedLocationGenerated = false;
+
         let destination = findLocationByNameLoose(destinationName);
         if (!destination) {
             let originLocation = context.location || null;
@@ -619,12 +622,41 @@ class Events {
                 }
             }
 
+            if (stream && stream.isEnabled) {
+                stream.status('event:location:generate_start', `Generating location "${destinationName}"...`, { scope: 'location' });
+            }
+
             destination = await createLocationFromEvent({
                 name: destinationName,
                 originLocation,
                 descriptionHint: originLocation ? `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.` : null,
                 directionHint: null
             });
+
+            if (stream && stream.isEnabled) {
+                if (destination) {
+                    stream.status('event:location:generate_complete', `Location ready: ${destination.name || destinationName}`, { scope: 'location' });
+                    if (!destination.isStub) {
+                        if (typeof destination?.toJSON === 'function') {
+                            stream.emit('location_generated', {
+                                location: destination.toJSON(),
+                                locationId: destination.id,
+                                source: 'event-move'
+                            });
+                        } else {
+                            stream.emit('location_generated', {
+                                location: null,
+                                locationId: destination?.id || null,
+                                name: destination?.name || destinationName,
+                                source: 'event-move'
+                            });
+                        }
+                        emittedLocationGenerated = true;
+                    }
+                } else {
+                    stream.status('event:location:generate_error', `Failed to generate location "${destinationName}".`, { scope: 'location' });
+                }
+            }
 
             if (!destination) {
                 console.warn(`Unable to resolve or generate destination location "${destinationName}" from event.`);
@@ -633,11 +665,39 @@ class Events {
         }
 
         if (destination.isStub) {
+            const initialLabel = destination.name || destinationName;
+            if (stream && stream.isEnabled) {
+                stream.status('event:location:expand_start', `Expanding location "${initialLabel}"...`, { scope: 'location' });
+            }
             try {
                 await scheduleStubExpansion(destination);
                 destination = gameLocations.get(destination.id) || destination;
+                if (stream && stream.isEnabled) {
+                    const updatedLabel = destination?.name || initialLabel;
+                    stream.status('event:location:expand_complete', `Expansion complete: ${updatedLabel}`, { scope: 'location' });
+                    if (!emittedLocationGenerated) {
+                        if (typeof destination?.toJSON === 'function') {
+                            stream.emit('location_generated', {
+                                location: destination.toJSON(),
+                                locationId: destination.id,
+                                source: 'event-move'
+                            });
+                        } else {
+                            stream.emit('location_generated', {
+                                location: null,
+                                locationId: destination?.id || null,
+                                name: updatedLabel,
+                                source: 'event-move'
+                            });
+                        }
+                        emittedLocationGenerated = true;
+                    }
+                }
             } catch (error) {
                 console.warn('Failed to expand stub during move event:', error.message);
+                if (stream && stream.isEnabled) {
+                    stream.status('event:location:expand_error', `Failed to expand location "${initialLabel}".`, { scope: 'location' });
+                }
             }
         }
 
@@ -1404,7 +1464,7 @@ class Events {
         });
     }
 
-    static async runEventChecks({ textToCheck }) {
+    static async runEventChecks({ textToCheck, stream = null }) {
         if (!textToCheck || !textToCheck.trim()) {
             return null;
         }
@@ -1495,7 +1555,8 @@ class Events {
                         location,
                         region,
                         experienceAwards: [],
-                        currencyChanges: []
+                        currencyChanges: [],
+                        stream
                     });
                     if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
                         experienceAwards = outcomeContext.experienceAwards;

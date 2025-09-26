@@ -1854,7 +1854,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     let npcEventResult = null;
                     try {
-                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse });
+                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream });
                     } catch (error) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
@@ -1947,6 +1947,7 @@ module.exports = function registerApiRoutes(scope) {
                 npcTurns: 0,
                 forcedEvent: false
             };
+            let playerActionStreamSent = false;
 
             try {
                 if (!messages) {
@@ -2315,7 +2316,7 @@ module.exports = function registerApiRoutes(scope) {
                 let forcedEventResult = null;
                 if (isForcedEventAction && forcedEventText && forcedEventText.trim()) {
                     try {
-                        forcedEventResult = await Events.runEventChecks({ textToCheck: forcedEventText });
+                        forcedEventResult = await Events.runEventChecks({ textToCheck: forcedEventText, stream });
                         if (forcedEventResult && debugInfo) {
                             debugInfo.forcedEventStructured = forcedEventResult.structured || null;
                         }
@@ -2361,28 +2362,27 @@ module.exports = function registerApiRoutes(scope) {
 
                     stream.status('player_action:complete', 'Forced event processed.');
 
-                    let playerActionSent = false;
                     if (stream.isEnabled) {
                         const previewMeta = {
                             ...streamState,
                             playerAction: true,
                             enabled: true
                         };
-                        playerActionSent = stream.playerAction({
+                        playerActionStreamSent = stream.playerAction({
                             ...responseData,
                             streamMeta: previewMeta
                         });
-                        if (playerActionSent) {
+                        if (playerActionStreamSent) {
                             streamState.playerAction = true;
                         }
-                        stream.complete({ forcedEvent: true, playerActionStreamed: Boolean(playerActionSent) });
+                        stream.complete({ forcedEvent: true, playerActionStreamed: Boolean(playerActionStreamSent) });
                     }
 
                     if (stream.requestId) {
                         responseData.streamMeta = {
                             ...streamState,
                             enabled: stream.isEnabled,
-                            playerActionStreamed: Boolean(playerActionSent)
+                            playerActionStreamed: Boolean(playerActionStreamSent)
                         };
                     }
 
@@ -2482,7 +2482,7 @@ module.exports = function registerApiRoutes(scope) {
                     } else {
                         try {
                             stream.status('player_action:event_checks', 'Evaluating resulting events.');
-                            eventResult = await Events.runEventChecks({ textToCheck: aiResponse });
+                            eventResult = await Events.runEventChecks({ textToCheck: aiResponse, stream });
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
                         }
@@ -2513,6 +2513,21 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    if (stream.isEnabled && !playerActionStreamSent) {
+                        const playerActionPreview = { ...responseData };
+                        delete playerActionPreview.npcTurns;
+                        playerActionPreview.streamMeta = {
+                            ...streamState,
+                            playerAction: true,
+                            enabled: true,
+                            phase: 'player'
+                        };
+                        playerActionStreamSent = stream.playerAction(playerActionPreview);
+                        if (playerActionStreamSent) {
+                            streamState.playerAction = true;
+                        }
+                    }
+
                     try {
                         stream.status('npc_turns:pending', 'Resolving NPC turns.');
                         const npcTurns = await executeNpcTurnsAfterPlayer({ location, stream });
@@ -2528,33 +2543,34 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.plausibility = plausibilityInfo.html;
                     }
 
-                    let playerActionSent = false;
-                    if (stream.isEnabled) {
+                    if (stream.isEnabled && !playerActionStreamSent) {
                         const previewMeta = {
                             ...streamState,
                             playerAction: true,
                             enabled: true
                         };
-                        playerActionSent = stream.playerAction({
+                        const streamedNow = stream.playerAction({
                             ...responseData,
                             streamMeta: previewMeta
                         });
-                        if (playerActionSent) {
+                        if (streamedNow) {
                             streamState.playerAction = true;
+                            playerActionStreamSent = true;
                         }
                     }
 
                     if (stream.requestId) {
                         responseData.streamMeta = {
                             ...streamState,
-                            enabled: stream.isEnabled
+                            enabled: stream.isEnabled,
+                            playerActionStreamed: Boolean(playerActionStreamSent)
                         };
                     }
 
                     stream.status('player_action:complete', 'Player action resolved.');
                     stream.complete({
                         hasNpcTurns: Boolean(responseData.npcTurns && responseData.npcTurns.length),
-                        playerActionStreamed: playerActionSent
+                        playerActionStreamed: Boolean(playerActionStreamSent)
                     });
 
                     res.json(responseData);

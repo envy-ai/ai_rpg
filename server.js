@@ -205,12 +205,12 @@ function hasExistingImage(imageId) {
         return false;
     }
     if (generatedImages.has(imageId)) {
-        console.log(`Found existing image in cache for ID: ${imageId}`);
+        //console.log(`Found existing image in cache for ID: ${imageId}`);
         return true;
     }
     console.log(`No existing image found for ID: ${imageId}`);
     if (imageFileExists(imageId)) {
-        console.log(`Found existing image file for ID: ${imageId}`);
+        //console.log(`Found existing image file for ID: ${imageId}`);
         generatedImages.set(imageId, { id: imageId });
         return true;
     }
@@ -1850,18 +1850,18 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
         const type = sanitizePersonalityValue(
             personalitySource?.type
-                ?? primaryObj?.personalityType
-                ?? fallbackObj?.personalityType
+            ?? primaryObj?.personalityType
+            ?? fallbackObj?.personalityType
         );
         const traits = sanitizePersonalityValue(
             personalitySource?.traits
-                ?? primaryObj?.personalityTraits
-                ?? fallbackObj?.personalityTraits
+            ?? primaryObj?.personalityTraits
+            ?? fallbackObj?.personalityTraits
         );
         const notes = sanitizePersonalityValue(
             personalitySource?.notes
-                ?? primaryObj?.personalityNotes
-                ?? fallbackObj?.personalityNotes
+            ?? primaryObj?.personalityNotes
+            ?? fallbackObj?.personalityNotes
         );
 
         return { type, traits, notes };
