@@ -41,13 +41,9 @@ You are an AI designed to perform various tasks related to managing a text-based
       </effect>
       {% endfor %}
     </statusEffects>
-    <skills>
-      {% for skill in currentPlayer.skills %}
-      <skill>
-        <name>{{ skill.name }}</name>
-      </skill>
-      {% endfor %}
-    </skills>
+      <skills>
+        {% for skill in currentPlayer.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+      </skills>
     <abilities>
       {% for ability in currentPlayer.abilities %}
       <ability>
@@ -84,9 +80,9 @@ You are an AI designed to perform various tasks related to managing a text-based
       <class>{{ npc.class | default('Unknown') }}</class>
       <race>{{ npc.race | default('Unknown') }}</race>
       <personality>
-        <type>{{ npc.personality.type | default('Unknown') }}</type>
-        <traits>{{ npc.personality.traits | default('None') }}</traits>
-        <notes>{{ npc.personality.notes | default('') }}</notes>
+        <type>{{ npc.personality.type | default('Unknown', true) }}</type>
+        <traits>{{ npc.personality.traits | default('None', true) }}</traits>
+        <notes>{{ npc.personality.notes | default('', true) }}</notes>
       </personality>
       <health>{{ npc.health | default('unknown') }}</health>
       <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
@@ -104,6 +100,9 @@ You are an AI designed to perform various tasks related to managing a text-based
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
       {% endfor %}</inventory>
+      <skills>
+        {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+      </skills>
       <abilities>
         {% for ability in npc.abilities %}
         <ability>
@@ -133,9 +132,9 @@ You are an AI designed to perform various tasks related to managing a text-based
       <class>{{ member.class | default('Unknown') }}</class>
       <race>{{ member.race | default('Unknown') }}</race>
       <personality>
-        <type>{{ member.personality.type | default('Unknown') }}</type>
-        <traits>{{ member.personality.traits | default('None') }}</traits>
-        <notes>{{ member.personality.notes | default('') }}</notes>
+        <type>{{ member.personality.type | default('Unknown', true) }}</type>
+        <traits>{{ member.personality.traits | default('None', true) }}</traits>
+        <notes>{{ member.personality.notes | default('', true) }}</notes>
       </personality>
       <health>{{ member.health | default('unknown') }}</health>
       <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth>
@@ -153,6 +152,9 @@ You are an AI designed to perform various tasks related to managing a text-based
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
       {% endfor %}</inventory>
+      <skills>
+        {% for skill in member.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+      </skills>
       <abilities>
         {% for ability in member.abilities %}
         <ability>

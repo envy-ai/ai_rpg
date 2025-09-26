@@ -1608,32 +1608,86 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         };
     };
 
-    const mapSkillContext = () => {
-        if (!playerStatus || !playerStatus.skills) {
+    const isInterestingSkill = (skillName, rank) => {
+        if (!skillName) {
+            return false;
+        }
+        const normalized = skillName.trim().toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+
+        const boringPrefixes = ['basic ', 'common ', 'general '];
+        if (boringPrefixes.some(prefix => normalized.startsWith(prefix))) {
+            return false;
+        }
+
+        if (normalized === 'common knowledge' || normalized === 'general knowledge') {
+            return false;
+        }
+
+        const rankValue = Number.isFinite(rank) ? rank : 0;
+        return rankValue >= 2 || normalized.length > 4;
+    };
+
+    const mapSkillContext = (skillsSource) => {
+        if (!skillsSource) {
             return [];
         }
 
         const entries = [];
-        for (const [skillName, rank] of Object.entries(playerStatus.skills)) {
+        const skillEntries = skillsSource instanceof Map
+            ? Array.from(skillsSource.entries())
+            : (typeof skillsSource === 'object' && skillsSource !== null
+                ? Object.entries(skillsSource)
+                : []);
+
+        for (const [skillName, rank] of skillEntries) {
             if (!skillName) {
                 continue;
             }
+
+            const numericRank = Number.isFinite(rank) ? rank : Number(rank);
+            if (!isInterestingSkill(skillName, numericRank)) {
+                continue;
+            }
+
             const skillDef = skills.get(skillName) || skills.get(skillName.toLowerCase());
             const description = skillDef?.description || skillDef?.details || '';
             entries.push({
                 name: skillName,
-                rank,
+                value: Number.isFinite(numericRank) ? numericRank : null,
                 description
             });
         }
+
         return entries.sort((a, b) => a.name.localeCompare(b.name));
+    };
+
+    const collectActorSkills = (status, actor) => {
+        if (status?.skillInfo && Array.isArray(status.skillInfo)) {
+            return status.skillInfo;
+        }
+
+        if (status?.skills) {
+            return mapSkillContext(status.skills);
+        }
+
+        if (actor && typeof actor.getSkills === 'function') {
+            const source = actor.getSkills();
+            if (source) {
+                return mapSkillContext(source);
+            }
+        }
+
+        return [];
     };
 
     const currentPlayerInventory = Array.isArray(playerStatus?.inventory)
         ? playerStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
         : [];
 
-    const currentPlayerSkills = mapSkillContext();
+    const currentPlayerSkills = collectActorSkills(playerStatus, currentPlayer);
 
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
@@ -1653,31 +1707,71 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         statusEffects: normalizeStatusEffects(currentPlayer || playerStatus),
         inventory: currentPlayerInventory,
         skills: currentPlayerSkills,
-        gear: gearSnapshot
+        gear: gearSnapshot,
+        personality: extractPersonality(playerStatus, currentPlayer)
     };
 
-    const extractPersonality = (primary = null, fallback = null) => {
+    function sanitizePersonalityValue(value) {
+        if (typeof value !== 'string') {
+            return null;
+        }
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
+    }
+
+    function extractPersonality(primary = null, fallback = null) {
         const primaryObj = primary && typeof primary === 'object' ? primary : null;
         const fallbackObj = fallback && typeof fallback === 'object' ? fallback : null;
         const personalitySource = primaryObj?.personality && typeof primaryObj.personality === 'object'
             ? primaryObj.personality
             : null;
 
-        const type = personalitySource?.type
-            ?? primaryObj?.personalityType
-            ?? fallbackObj?.personalityType
-            ?? null;
-        const traits = personalitySource?.traits
-            ?? primaryObj?.personalityTraits
-            ?? fallbackObj?.personalityTraits
-            ?? null;
-        const notes = personalitySource?.notes
-            ?? primaryObj?.personalityNotes
-            ?? fallbackObj?.personalityNotes
-            ?? null;
+        const type = sanitizePersonalityValue(
+            personalitySource?.type
+                ?? primaryObj?.personalityType
+                ?? fallbackObj?.personalityType
+        );
+        const traits = sanitizePersonalityValue(
+            personalitySource?.traits
+                ?? primaryObj?.personalityTraits
+                ?? fallbackObj?.personalityTraits
+        );
+        const notes = sanitizePersonalityValue(
+            personalitySource?.notes
+                ?? primaryObj?.personalityNotes
+                ?? fallbackObj?.personalityNotes
+        );
 
         return { type, traits, notes };
-    };
+    }
+
+    function computeDispositionsTowardsPlayer(actor) {
+        if (!actor || !currentPlayer || typeof currentPlayer.id !== 'string' || !currentPlayer.id || !dispositionTypes.length) {
+            return [];
+        }
+
+        const dispositions = [];
+        for (const dispositionType of dispositionTypes) {
+            if (!dispositionType || !dispositionType.key) {
+                continue;
+            }
+            const typeKey = dispositionType.key;
+            const typeLabel = dispositionType.label || typeKey;
+            let value = 0;
+            if (typeof actor.getDispositionTowardsCurrentPlayer === 'function') {
+                value = actor.getDispositionTowardsCurrentPlayer(typeKey) ?? 0;
+            } else if (typeof actor.getDisposition === 'function') {
+                value = actor.getDisposition(currentPlayer.id, typeKey) ?? 0;
+            }
+            const intensityName = Player.resolveDispositionIntensity(typeKey, value);
+            dispositions.push({
+                type: typeLabel,
+                value,
+                intensityName
+            });
+        }
+        return dispositions;
+    }
 
     const npcs = [];
     const dispositionDefinitions = Player.getDispositionDefinitions();
@@ -1704,29 +1798,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 ? npcStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
 
-            const dispositionsTowardsPlayer = [];
-            if (currentPlayer && typeof currentPlayer.id === 'string' && currentPlayer.id && dispositionTypes.length) {
-                for (const dispositionType of dispositionTypes) {
-                    if (!dispositionType || !dispositionType.key) {
-                        continue;
-                    }
-                    const typeKey = dispositionType.key;
-                    const typeLabel = dispositionType.label || typeKey;
-                    let value = 0;
-                    if (typeof npc.getDispositionTowardsCurrentPlayer === 'function') {
-                        value = npc.getDispositionTowardsCurrentPlayer(typeKey) ?? 0;
-                    } else if (typeof npc.getDisposition === 'function') {
-                        value = npc.getDisposition(currentPlayer.id, typeKey) ?? 0;
-                    }
-                    const intensityName = Player.resolveDispositionIntensity(typeKey, value);
-                    dispositionsTowardsPlayer.push({
-                        type: typeLabel,
-                        value,
-                        intensityName
-                    });
-                }
-            }
-
+            const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(npc);
+            const skills = collectActorSkills(npcStatus, npc);
             const personality = extractPersonality(npcStatus, npc);
 
             npcs.push({
@@ -1740,6 +1813,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 statusEffects: normalizeStatusEffects(npc || npcStatus),
                 inventory: npcInventory,
                 dispositionsTowardsPlayer,
+                skills,
                 personality
             });
         }
@@ -1758,6 +1832,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 ? memberStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
             const personality = extractPersonality(memberStatus, member);
+            const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(member);
+            const skills = collectActorSkills(memberStatus, member);
 
             party.push({
                 name: memberStatus?.name || member.name || 'Unknown Ally',
@@ -1770,7 +1846,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 statusEffects: normalizeStatusEffects(member || memberStatus),
                 inventory: memberInventory,
                 personality,
-                dispositionsTowardsPlayer: []
+                skills,
+                dispositionsTowardsPlayer
             });
         }
     }
@@ -6151,13 +6228,17 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             const npc = new Player({
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
+                shortDescription: npcData.shortDescription || '',
                 level: 1,
                 location: location.id,
                 attributes,
                 class: npcData.class || null,
                 race: npcData.race,
                 isNPC: true,
-                healthAttribute: npcData.healthAttribute
+                healthAttribute: npcData.healthAttribute,
+                personalityType: npcData.personalityType || null,
+                personalityTraits: npcData.personalityTraits || null,
+                personalityNotes: npcData.personalityNotes || null
             });
 
             const locationBaseLevel = Number.isFinite(location.baseLevel)
