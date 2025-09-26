@@ -771,9 +771,18 @@ p:not(:last-child) {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
   border: 1px solid rgba(148, 163, 184, 0.32);
   box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.45);
   font-size: 2rem;
+}
+
+.location-entity-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .location-entity-card.is-npc .location-entity-icon {
@@ -1138,10 +1147,27 @@ p .rarity-epic {
   aspect-ratio: 1/1;
   border-radius: 12px;
   overflow: hidden;
+  position: relative;
   background: rgba(15, 23, 42, 0.9);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.party-portrait-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.party-portrait-image img {
+  width: 100%;
+  height: 100%;
+  -o-object-fit: cover;
+     object-fit: cover;
+  display: block;
 }
 
 .party-portrait img {
@@ -1270,6 +1296,64 @@ p .rarity-epic {
   -o-object-fit: cover;
      object-fit: cover;
   display: block;
+}
+
+.chat-player-portrait-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.health-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(248, 113, 113, 0.24), inset 0 0 6px rgba(15, 23, 42, 0.8);
+  -webkit-backdrop-filter: blur(2px);
+          backdrop-filter: blur(2px);
+}
+
+.health-bar[aria-hidden=true] {
+  display: none;
+}
+
+.health-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #fecaca 0%, #fca5a5 25%, #f87171 60%, #ef4444 100%);
+  transition: width 220ms ease-in-out;
+}
+
+.chat-health-bar {
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  height: 0.65rem;
+  border-width: 1.5px;
+  box-shadow: 0 4px 10px rgba(248, 113, 113, 0.3), inset 0 0 8px rgba(15, 23, 42, 0.85);
+}
+
+.chat-health-bar-fill {
+  background: linear-gradient(90deg, #fca5a5 0%, #f87171 45%, #ef4444 100%);
+}
+
+.npc-health-bar {
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  height: 0.45rem;
+}
+
+.npc-health-bar-fill {
+  background: linear-gradient(90deg, #fecaca 0%, #f97316 45%, #ef4444 85%, #b91c1c 100%);
 }
 
 .chat-player-placeholder {
@@ -2290,6 +2374,16 @@ body.modal-open {
 }
 
 .npc-view-health[hidden] {
+  display: none;
+}
+
+.npc-view-meta {
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
+  margin-top: 4px;
+}
+
+.npc-view-meta[hidden] {
   display: none;
 }
 

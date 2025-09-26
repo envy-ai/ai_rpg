@@ -102,7 +102,12 @@
                                     <h3 class="chat-sidebar-heading">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
                                         <div class="chat-player-portrait" id="chatPlayerPortrait">
-                                            <div class="chat-player-placeholder" aria-hidden="true">🧙</div>
+                                            <div class="chat-player-portrait-image" id="chatPlayerPortraitImage">
+                                                <div class="chat-player-placeholder" aria-hidden="true">🧙</div>
+                                            </div>
+                                            <div class="health-bar chat-health-bar" id="chatPlayerHealthBar" aria-hidden="true">
+                                                <div class="health-bar-fill chat-health-bar-fill" id="chatPlayerHealthBarFill"></div>
+                                            </div>
                                         </div>
                                         <div class="chat-player-details">
                                             <div class="chat-player-name" id="chatPlayerName">Unnamed Adventurer</div>
@@ -830,9 +835,61 @@
 
         window.renderEntityImage = renderEntityImage;
 
+        function createHealthBar(additionalClassNames = '') {
+            const bar = document.createElement('div');
+            bar.className = ['health-bar', additionalClassNames].filter(Boolean).join(' ');
+            bar.setAttribute('aria-hidden', 'true');
+
+            const fill = document.createElement('div');
+            fill.className = 'health-bar-fill';
+            bar.appendChild(fill);
+
+            return { bar, fill };
+        }
+
+        function updateHealthBar(barElement, fillElement, currentValue, maxValue) {
+            if (!barElement || !fillElement) {
+                return;
+            }
+
+            if (!barElement.hasAttribute('role')) {
+                barElement.setAttribute('role', 'progressbar');
+                barElement.setAttribute('aria-valuemin', '0');
+            }
+
+            const current = Number.isFinite(Number(currentValue))
+                ? Math.max(0, Number(currentValue))
+                : null;
+            const maxRaw = Number.isFinite(Number(maxValue))
+                ? Math.max(0, Number(maxValue))
+                : null;
+            const max = maxRaw && maxRaw > 0 ? maxRaw : null;
+
+            if (current === null) {
+                fillElement.style.width = '0%';
+                barElement.setAttribute('aria-hidden', 'true');
+                barElement.removeAttribute('aria-valuenow');
+                barElement.removeAttribute('aria-valuemax');
+                barElement.removeAttribute('title');
+                return;
+            }
+
+            const ratio = max ? current / max : (current > 0 ? 1 : 0);
+            const clampedRatio = Math.max(0, Math.min(1, ratio));
+            fillElement.style.width = `${(clampedRatio * 100).toFixed(1)}%`;
+
+            barElement.setAttribute('aria-hidden', 'false');
+            barElement.setAttribute('aria-valuenow', String(current));
+            barElement.setAttribute('aria-valuemax', String(max || Math.max(current, 1)));
+            barElement.setAttribute('title', max ? `Health: ${current} / ${max}` : `Health: ${current}`);
+        }
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
+            portraitImage: document.getElementById('chatPlayerPortraitImage'),
+            healthBar: document.getElementById('chatPlayerHealthBar'),
+            healthBarFill: document.getElementById('chatPlayerHealthBarFill'),
             name: document.getElementById('chatPlayerName'),
             level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
@@ -881,9 +938,10 @@
                 chatSidebarElements.description.textContent = description;
             }
 
-            if (chatSidebarElements.portrait) {
+            const portraitElement = chatSidebarElements.portraitImage || chatSidebarElements.portrait;
+            if (portraitElement) {
                 renderEntityImage({
-                    element: chatSidebarElements.portrait,
+                    element: portraitElement,
                     entityType: 'player',
                     entityId: player?.id || null,
                     imageId: player?.imageId || null,
@@ -893,6 +951,21 @@
                     enableLightbox: true
                 });
             }
+
+            if (chatSidebarElements.healthBar) {
+                if (name) {
+                    chatSidebarElements.healthBar.setAttribute('aria-label', `${name} health`);
+                } else {
+                    chatSidebarElements.healthBar.removeAttribute('aria-label');
+                }
+            }
+
+            updateHealthBar(
+                chatSidebarElements.healthBar,
+                chatSidebarElements.healthBarFill,
+                player?.health,
+                player?.maxHealth
+            );
         }
 
         function renderChatPartyPanel(members = []) {
@@ -938,8 +1011,16 @@
                 const portrait = document.createElement('div');
                 portrait.className = 'location-entity-icon';
 
+                const portraitImage = document.createElement('div');
+                portraitImage.className = 'location-entity-image';
+                portrait.appendChild(portraitImage);
+
+                const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
+                npcHealthFill.classList.add('npc-health-bar-fill');
+                portrait.appendChild(npcHealthBar);
+
                 renderEntityImage({
-                    element: portrait,
+                    element: portraitImage,
                     entityType: member.isNPC ? 'npc' : 'player',
                     entityId: member.id || null,
                     imageId: member.imageId || null,
@@ -947,6 +1028,16 @@
                     placeholderIcon: '🎭',
                     placeholderClass: 'location-entity-placeholder'
                 });
+
+                if (npcHealthBar) {
+                    if (member?.name) {
+                        npcHealthBar.setAttribute('aria-label', `${member.name} health`);
+                    } else {
+                        npcHealthBar.removeAttribute('aria-label');
+                    }
+                }
+
+                updateHealthBar(npcHealthBar, npcHealthFill, member?.health, member?.maxHealth);
 
                 const nameEl = document.createElement('div');
                 nameEl.className = 'location-entity-name';
@@ -4100,8 +4191,16 @@
                                 const portrait = document.createElement('div');
                                 portrait.className = 'location-entity-icon';
 
+                                const portraitImage = document.createElement('div');
+                                portraitImage.className = 'location-entity-image';
+                                portrait.appendChild(portraitImage);
+
+                                const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
+                                npcHealthFill.classList.add('npc-health-bar-fill');
+                                portrait.appendChild(npcHealthBar);
+
                                 renderEntityImage({
-                                    element: portrait,
+                                    element: portraitImage,
                                     entityType: npc.isNPC ? 'npc' : 'player',
                                     entityId: npc.id,
                                     imageId: npc.imageId || null,
@@ -4109,6 +4208,16 @@
                                     placeholderIcon: '🎭',
                                     placeholderClass: 'location-entity-placeholder'
                                 });
+
+                                if (npcHealthBar) {
+                                    if (npc?.name) {
+                                        npcHealthBar.setAttribute('aria-label', `${npc.name} health`);
+                                    } else {
+                                        npcHealthBar.removeAttribute('aria-label');
+                                    }
+                                }
+
+                                updateHealthBar(npcHealthBar, npcHealthFill, npc?.health, npc?.maxHealth);
 
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
@@ -4821,8 +4930,17 @@
 
                     const portrait = document.createElement('div');
                     portrait.className = 'party-portrait';
+
+                    const portraitImage = document.createElement('div');
+                    portraitImage.className = 'party-portrait-image';
+                    portrait.appendChild(portraitImage);
+
+                    const { bar: portraitHealthBar, fill: portraitHealthFill } = createHealthBar('npc-health-bar');
+                    portraitHealthFill.classList.add('npc-health-bar-fill');
+                    portrait.appendChild(portraitHealthBar);
+
                     renderEntityImage({
-                        element: portrait,
+                        element: portraitImage,
                         entityType: member.isNPC ? 'npc' : 'player',
                         entityId: member.id,
                         imageId: member.imageId || null,
@@ -4830,6 +4948,16 @@
                         placeholderIcon: '🎭',
                         placeholderClass: 'party-portrait-placeholder'
                     });
+
+                    if (portraitHealthBar) {
+                        if (member?.name) {
+                            portraitHealthBar.setAttribute('aria-label', `${member.name} health`);
+                        } else {
+                            portraitHealthBar.removeAttribute('aria-label');
+                        }
+                    }
+
+                    updateHealthBar(portraitHealthBar, portraitHealthFill, member?.health, member?.maxHealth);
 
                     const name = document.createElement('div');
                     name.className = 'party-name';
