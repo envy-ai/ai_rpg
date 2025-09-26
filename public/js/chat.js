@@ -84,6 +84,9 @@ class AIRPGChat {
     }
 
     connectWebSocket(delay = 0) {
+        // log a trace to the console
+        console.log(`Connecting WebSocket with delay: ${delay}`);
+        console.trace('WebSocket connect stack trace');
         if (delay > 0) {
             window.setTimeout(() => this.connectWebSocket(0), delay);
             return;
@@ -1689,5 +1692,5 @@ console.log("chat.js loaded");
 
 // Initialize the app when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new AIRPGChat();
+    //new AIRPGChat();
 });
