@@ -1712,11 +1712,37 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     };
 
     function sanitizePersonalityValue(value) {
-        if (typeof value !== 'string') {
+        const collectValues = (input) => {
+            if (input === null || input === undefined) {
+                return [];
+            }
+
+            if (typeof input === 'string') {
+                const trimmed = input.trim();
+                return trimmed ? [trimmed] : [];
+            }
+
+            if (typeof input === 'number' || typeof input === 'boolean') {
+                return [String(input)];
+            }
+
+            if (Array.isArray(input)) {
+                return input.flatMap(collectValues);
+            }
+
+            if (typeof input === 'object') {
+                return Object.values(input).flatMap(collectValues);
+            }
+
+            return [];
+        };
+
+        const parts = collectValues(value);
+        if (!parts.length) {
             return null;
         }
-        const trimmed = value.trim();
-        return trimmed ? trimmed : null;
+
+        return parts.join(', ');
     }
 
     function extractPersonality(primary = null, fallback = null) {
@@ -5378,6 +5404,53 @@ async function enforceBannedNpcNames({
     return workingList;
 }
 
+function computeNpcRenameMap(originalNames = [], updatedNpcs = []) {
+    const renameMap = new Map();
+    if (!Array.isArray(originalNames) || !Array.isArray(updatedNpcs)) {
+        return renameMap;
+    }
+
+    const length = Math.min(originalNames.length, updatedNpcs.length);
+    for (let index = 0; index < length; index += 1) {
+        const originalName = typeof originalNames[index] === 'string'
+            ? originalNames[index].trim()
+            : '';
+        const updatedName = typeof updatedNpcs[index]?.name === 'string'
+            ? updatedNpcs[index].name.trim()
+            : '';
+
+        if (!originalName || !updatedName) {
+            continue;
+        }
+
+        const originalKey = originalName.toLowerCase();
+        const updatedKey = updatedName.toLowerCase();
+        if (originalKey && updatedKey && originalKey !== updatedKey) {
+            renameMap.set(originalKey, updatedKey);
+        }
+    }
+
+    return renameMap;
+}
+
+function rekeyNpcLookupMap(sourceMap, renameMap) {
+    if (!sourceMap || typeof sourceMap.entries !== 'function' || !renameMap || renameMap.size === 0) {
+        return sourceMap;
+    }
+
+    const updated = new Map();
+    for (const [key, value] of sourceMap.entries()) {
+        const normalizedKey = typeof key === 'string' ? key.trim().toLowerCase() : '';
+        if (!normalizedKey) {
+            continue;
+        }
+        const replacement = renameMap.get(normalizedKey) || normalizedKey;
+        updated.set(replacement, value);
+    }
+
+    return updated;
+}
+
 function renderLocationThingsPrompt(context = {}) {
     try {
         const templateName = 'location-generator-things.njk';
@@ -6156,6 +6229,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let npcs = parseLocationNpcs(npcResponse);
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
 
+        const originalNpcNames = npcs.map(npc => npc?.name || null);
+        let npcRenameMap = new Map();
         if (npcs.length) {
             npcs = await enforceBannedNpcNames({
                 npcDataList: npcs,
@@ -6165,6 +6240,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 model,
                 apiKey
             });
+            npcRenameMap = computeNpcRenameMap(originalNpcNames, npcs);
         }
 
         let npcSkillAssignments = new Map();
@@ -6179,7 +6255,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     apiKey,
                     logPath: skillsLogPath
                 });
-                npcSkillAssignments = skillResult.assignments || new Map();
+                const rawAssignments = skillResult.assignments || new Map();
+                npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
                 skillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : skillConversation;
             } catch (skillError) {
                 console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
@@ -6197,7 +6274,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     apiKey,
                     logPath: abilitiesLogPath
                 });
-                npcAbilityAssignments = abilityResult.assignments || new Map();
+                const rawAbilityAssignments = abilityResult.assignments || new Map();
+                npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
             } catch (abilityError) {
                 console.warn(`Failed to generate abilities for location NPCs (${location.id}):`, abilityError.message);
             }
@@ -6415,6 +6493,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         let parsedNpcs = parseRegionNpcs(npcResponse);
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
 
+        const originalRegionNpcNames = parsedNpcs.map(npc => npc?.name || null);
+        let regionNpcRenameMap = new Map();
         if (parsedNpcs.length) {
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
@@ -6424,6 +6504,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 model,
                 apiKey
             });
+            regionNpcRenameMap = computeNpcRenameMap(originalRegionNpcNames, parsedNpcs);
         }
 
         let regionNpcSkillAssignments = new Map();
@@ -6438,7 +6519,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     apiKey,
                     logPath: skillsLogPath
                 });
-                regionNpcSkillAssignments = skillResult.assignments || new Map();
+                const rawAssignments = skillResult.assignments || new Map();
+                regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
                 regionSkillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : regionSkillConversation;
             } catch (skillError) {
                 console.warn(`Failed to generate skills for region NPCs (${region.id}):`, skillError.message);
@@ -6456,7 +6538,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     apiKey,
                     logPath: abilitiesLogPath
                 });
-                regionNpcAbilityAssignments = abilityResult.assignments || new Map();
+                const rawAbilityAssignments = abilityResult.assignments || new Map();
+                regionNpcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, regionNpcRenameMap) || new Map();
             } catch (abilityError) {
                 console.warn(`Failed to generate abilities for region NPCs (${region.id}):`, abilityError.message);
             }

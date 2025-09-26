@@ -174,11 +174,37 @@ class Player {
     }
 
     static #sanitizePersonalityValue(value) {
-        if (typeof value !== 'string') {
+        const collectValues = (input) => {
+            if (input === null || input === undefined) {
+                return [];
+            }
+
+            if (typeof input === 'string') {
+                const trimmed = input.trim();
+                return trimmed ? [trimmed] : [];
+            }
+
+            if (typeof input === 'number' || typeof input === 'boolean') {
+                return [String(input)];
+            }
+
+            if (Array.isArray(input)) {
+                return input.flatMap(collectValues);
+            }
+
+            if (typeof input === 'object') {
+                return Object.values(input).flatMap(collectValues);
+            }
+
+            return [];
+        };
+
+        const parts = collectValues(value);
+        if (!parts.length) {
             return null;
         }
-        const trimmed = value.trim();
-        return trimmed || null;
+
+        return parts.join(', ');
     }
 
     static #loadGearSlotDefinitions() {
