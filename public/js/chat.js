@@ -173,7 +173,14 @@ class AIRPGChat {
         senderDiv.textContent = '📊 Event Checks';
 
         const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = contentHtml;
+        const details = document.createElement('details');
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Event Checks';
+        details.appendChild(summaryEl);
+        const detailsBody = document.createElement('div');
+        detailsBody.innerHTML = contentHtml;
+        details.appendChild(detailsBody);
+        contentDiv.appendChild(details);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -445,7 +452,16 @@ class AIRPGChat {
         senderDiv.textContent = '🧭 Plausibility Check';
 
         const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = contentHtml;
+        const details = document.createElement('details');
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Plausibility Check';
+        details.appendChild(summaryEl);
+
+        const body = document.createElement('div');
+        body.innerHTML = contentHtml;
+        details.appendChild(body);
+
+        contentDiv.appendChild(details);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -571,13 +587,17 @@ class AIRPGChat {
             return;
         }
 
-        contentDiv.innerHTML = `
-            <div class="skill-check-details">
-                <ul>
-                    ${lines.join('\n')}
-                </ul>
-            </div>
-        `;
+        const details = document.createElement('details');
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Skill Check';
+        details.appendChild(summaryEl);
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'skill-check-details';
+        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
+        details.appendChild(wrapper);
+
+        contentDiv.appendChild(details);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -821,13 +841,17 @@ class AIRPGChat {
             return;
         }
 
-        contentDiv.innerHTML = `
-            <div class="skill-check-details attack-check-details">
-                <ul>
-                    ${lines.join('\n')}
-                </ul>
-            </div>
-        `;
+        const details = document.createElement('details');
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Attack Check';
+        details.appendChild(summaryEl);
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'skill-check-details attack-check-details';
+        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
+        details.appendChild(wrapper);
+
+        contentDiv.appendChild(details);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';

@@ -131,6 +131,12 @@
                     </div>
 
                     <div class="form-group">
+                        <label for="defaultStartingCurrency">Default Starting Currency</label>
+                        <input type="number" id="defaultStartingCurrency" name="defaultStartingCurrency" min="0" value="0">
+                        <div class="help-text">Prefills the Starting Currency field on the New Game screen.</div>
+                    </div>
+
+                    <div class="form-group">
                         <label for="defaultNumSkills">Default Number of Skills</label>
                         <input type="number" id="defaultNumSkills" name="defaultNumSkills" min="1" max="100" value="20">
                         <div class="help-text">Prefills the number of skills to generate (1-100).</div>
@@ -165,9 +171,35 @@
                     </div>
 
                     <div class="form-group full-width">
-                        <label for="styleNotes">Style Notes</label>
-                        <textarea id="styleNotes" name="styleNotes" rows="4" placeholder="Provide storytelling tone, visual motifs, cultural details, or vibe notes for the Game Master..."></textarea>
+                        <label for="writingStyleNotes">Writing Style Notes</label>
+                        <textarea id="writingStyleNotes" name="writingStyleNotes" rows="4" placeholder="Provide storytelling tone, visual motifs, cultural details, or vibe notes for the Game Master..."></textarea>
                         <div class="help-text">Additional guidance for narrative voice, aesthetic, or flavor details.</div>
+                    </div>
+
+                    <div class="form-divider">Image Prompt Prefixes</div>
+
+                    <div class="form-group full-width">
+                        <label for="imagePromptPrefixCharacter">Character Image Prompt Prefix</label>
+                        <textarea id="imagePromptPrefixCharacter" name="imagePromptPrefixCharacter" rows="3" placeholder="Short guidance appended before character portrait prompts..."></textarea>
+                        <div class="help-text">Optional text prepended to character portrait prompts (e.g., art style, lighting, tone).</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="imagePromptPrefixLocation">Location Image Prompt Prefix</label>
+                        <textarea id="imagePromptPrefixLocation" name="imagePromptPrefixLocation" rows="3" placeholder="Short guidance for location images..."></textarea>
+                        <div class="help-text">Optional text prepended to location art prompts.</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="imagePromptPrefixItem">Item Image Prompt Prefix</label>
+                        <textarea id="imagePromptPrefixItem" name="imagePromptPrefixItem" rows="3" placeholder="Short guidance for item renders..."></textarea>
+                        <div class="help-text">Optional text prepended to item illustration prompts.</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="imagePromptPrefixScenery">Scenery Image Prompt Prefix</label>
+                        <textarea id="imagePromptPrefixScenery" name="imagePromptPrefixScenery" rows="3" placeholder="Short guidance for scenery/establishing shot art..."></textarea>
+                        <div class="help-text">Optional text prepended to scenery/background prompts.</div>
                     </div>
 
                     <!-- Preview Section -->
@@ -310,6 +342,11 @@
             document.getElementById('currencyName').value = setting.currencyName || '';
             document.getElementById('currencyNamePlural').value = setting.currencyNamePlural || '';
             document.getElementById('playerStartingLevel').value = setting.playerStartingLevel;
+            const defaultStartingCurrencyField = document.getElementById('defaultStartingCurrency');
+            if (defaultStartingCurrencyField) {
+                const parsedCurrency = parseInt(setting.defaultStartingCurrency, 10);
+                defaultStartingCurrencyField.value = Number.isFinite(parsedCurrency) ? parsedCurrency : 0;
+            }
             document.getElementById('defaultPlayerName').value = setting.defaultPlayerName || '';
             document.getElementById('defaultPlayerDescription').value = setting.defaultPlayerDescription || '';
             document.getElementById('defaultStartingLocation').value = setting.defaultStartingLocation || '';
@@ -318,7 +355,11 @@
             document.getElementById('availableClasses').value = Array.isArray(setting.availableClasses) ? setting.availableClasses.join('\n') : '';
             document.getElementById('availableRaces').value = Array.isArray(setting.availableRaces) ? setting.availableRaces.join('\n') : '';
             document.getElementById('currencyValueNotes').value = setting.currencyValueNotes || '';
-            document.getElementById('styleNotes').value = setting.styleNotes || '';
+            document.getElementById('writingStyleNotes').value = setting.writingStyleNotes || '';
+            document.getElementById('imagePromptPrefixCharacter').value = setting.imagePromptPrefixCharacter || '';
+            document.getElementById('imagePromptPrefixLocation').value = setting.imagePromptPrefixLocation || '';
+            document.getElementById('imagePromptPrefixItem').value = setting.imagePromptPrefixItem || '';
+            document.getElementById('imagePromptPrefixScenery').value = setting.imagePromptPrefixScenery || '';
 
             // Update form title and button
             document.getElementById('formTitle').textContent = `✏️ Edit Setting: ${setting.name}`;
@@ -469,6 +510,10 @@
             if (defaultStartingLocationField) {
                 defaultStartingLocationField.value = '';
             }
+            const defaultStartingCurrencyField = document.getElementById('defaultStartingCurrency');
+            if (defaultStartingCurrencyField) {
+                defaultStartingCurrencyField.value = '0';
+            }
             renderSettingsList();
             updatePreview();
         }
@@ -528,10 +573,12 @@
                 
                 const formData = new FormData(e.target);
                 const settingData = Object.fromEntries(formData.entries());
-                
+
                 // Convert playerStartingLevel to number
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;
                 settingData.defaultNumSkills = parseInt(settingData.defaultNumSkills) || 20;
+                const parsedDefaultCurrency = parseInt(settingData.defaultStartingCurrency, 10);
+                settingData.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency) ? Math.max(0, parsedDefaultCurrency) : 0;
                 const defaultExistingSkillsText = settingData.defaultExistingSkills || '';
                 settingData.defaultExistingSkills = splitLines(defaultExistingSkillsText);
                 settingData.availableClasses = splitLines(settingData.availableClasses);
@@ -641,6 +688,10 @@
                 settingPayload.defaultExistingSkills = splitLines(settingPayload.defaultExistingSkills);
                 settingPayload.availableClasses = splitLines(settingPayload.availableClasses);
                 settingPayload.availableRaces = splitLines(settingPayload.availableRaces);
+                const parsedDefaultCurrency = parseInt(settingPayload.defaultStartingCurrency, 10);
+                settingPayload.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency)
+                    ? Math.max(0, parsedDefaultCurrency)
+                    : '';
 
                 const response = await fetch('/api/settings/fill-missing', {
                     method: 'POST',
@@ -685,12 +736,17 @@
                     defaultPlayerName: filled.defaultPlayerName,
                     defaultPlayerDescription: filled.defaultPlayerDescription,
                     defaultStartingLocation: filled.defaultStartingLocation,
+                    defaultStartingCurrency: filled.defaultStartingCurrency,
                     defaultNumSkills: filled.defaultNumSkills,
                     defaultExistingSkills: filled.defaultExistingSkills,
                     availableClasses: filled.availableClasses,
                     availableRaces: filled.availableRaces,
                     currencyValueNotes: filled.currencyValueNotes,
-                    styleNotes: filled.styleNotes
+                    writingStyleNotes: filled.writingStyleNotes,
+                    imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
+                    imagePromptPrefixLocation: filled.imagePromptPrefixLocation,
+                    imagePromptPrefixItem: filled.imagePromptPrefixItem,
+                    imagePromptPrefixScenery: filled.imagePromptPrefixScenery
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
 
                 showMessage('Blank fields populated successfully.', 'success');

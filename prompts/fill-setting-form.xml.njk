@@ -21,11 +21,16 @@ Here is the XML structure representing the game setting:
   <currencyName>{{ setting.currencyName }}</currencyName>
   <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
   <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
-  <styleNotes>{{ setting.styleNotes }}</styleNotes>
+  <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <imagePromptPrefixCharacter>{{ setting.imagePromptPrefixCharacter }}</imagePromptPrefixCharacter>
+  <imagePromptPrefixLocation>{{ setting.imagePromptPrefixLocation }}</imagePromptPrefixLocation>
+  <imagePromptPrefixItem>{{ setting.imagePromptPrefixItem }}</imagePromptPrefixItem>
+  <imagePromptPrefixScenery>{{ setting.imagePromptPrefixScenery }}</imagePromptPrefixScenery>
   <playerStartingLevel>{{ setting.playerStartingLevel }}</playerStartingLevel>
   <defaultPlayerName>{{ setting.defaultPlayerName }}</defaultPlayerName>
   <defaultPlayerDescription>{{ setting.defaultPlayerDescription }}</defaultPlayerDescription>
   <defaultStartingLocation>{{ setting.defaultStartingLocation }}</defaultStartingLocation>
+  <defaultStartingCurrency>{{ setting.defaultStartingCurrency }}</defaultStartingCurrency>
   <defaultNumSkills>{{ setting.defaultNumSkills }}</defaultNumSkills>
   <defaultExistingSkills>
 {% for skill in setting.defaultExistingSkills %}
@@ -45,7 +50,7 @@ Here is the XML structure representing the game setting:
 </setting>
 
 Fill in any empty fields with appropriate values that fit the context of the filled fields. Ensure that the completed XML is well-formed and adheres to the structure provided. Do not alter any fields that are already filled in.
-Return only the completed XML structure without any additional commentary or explanation. The available setting fields are: name, description, theme, genre, startingLocationType, magicLevel, techLevel, tone, difficulty, currencyName, currencyNamePlural, currencyValueNotes, styleNotes, playerStartingLevel, defaultPlayerName, defaultPlayerDescription, defaultStartingLocation, defaultNumSkills, defaultExistingSkills, availableClasses, and availableRaces.
+Return only the completed XML structure without any additional commentary or explanation. The available setting fields are: name, description, theme, genre, startingLocationType, magicLevel, techLevel, tone, difficulty, currencyName, currencyNamePlural, currencyValueNotes, writingStyleNotes, imagePromptPrefixCharacter, imagePromptPrefixLocation, imagePromptPrefixItem, imagePromptPrefixScenery, playerStartingLevel, defaultPlayerName, defaultPlayerDescription, defaultStartingLocation, defaultStartingCurrency, defaultNumSkills, defaultExistingSkills, availableClasses, and availableRaces.
 
 When populating currencyValueNotes, describe the relative value of the currency in terms of common goods and services in the setting, using 5 or 6 entries ordered from cheapest to most expensive with the format:
 

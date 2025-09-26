@@ -713,7 +713,8 @@ function buildNewGameDefaults(settingSnapshot = null) {
         availableClasses: [],
         availableRaces: [],
         playerClass: '',
-        playerRace: ''
+        playerRace: '',
+        startingCurrency: 0
     };
 
     if (!settingSnapshot) {
@@ -779,6 +780,11 @@ function buildNewGameDefaults(settingSnapshot = null) {
 
     defaults.availableClasses = classList;
     defaults.availableRaces = raceList;
+
+    const parsedDefaultCurrency = Number.parseInt(settingSnapshot.defaultStartingCurrency, 10);
+    if (Number.isFinite(parsedDefaultCurrency)) {
+        defaults.startingCurrency = Math.max(0, parsedDefaultCurrency);
+    }
     defaults.playerClass = classList.length ? classList[0] : '';
     defaults.playerRace = raceList.length ? raceList[0] : '';
 
@@ -1462,6 +1468,32 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
 
+    const normalizeSettingValue = (value, fallback = '') => {
+        if (value === null || value === undefined) {
+            return fallback;
+        }
+        if (typeof value === 'string') {
+            return value;
+        }
+        return String(value);
+    };
+
+    const settingContext = {
+        name: normalizeSettingValue(activeSetting?.name, ''),
+        description: normalizeSettingValue(activeSetting?.description, settingDescription || ''),
+        theme: normalizeSettingValue(activeSetting?.theme, ''),
+        genre: normalizeSettingValue(activeSetting?.genre, ''),
+        startingLocationType: normalizeSettingValue(activeSetting?.startingLocationType, ''),
+        magicLevel: normalizeSettingValue(activeSetting?.magicLevel, ''),
+        techLevel: normalizeSettingValue(activeSetting?.techLevel, ''),
+        tone: normalizeSettingValue(activeSetting?.tone, ''),
+        difficulty: normalizeSettingValue(activeSetting?.difficulty, ''),
+        currencyName: normalizeSettingValue(activeSetting?.currencyName, ''),
+        currencyNamePlural: normalizeSettingValue(activeSetting?.currencyNamePlural, ''),
+        currencyValueNotes: normalizeSettingValue(activeSetting?.currencyValueNotes, ''),
+        writingStyleNotes: normalizeSettingValue(activeSetting?.writingStyleNotes, '')
+    };
+
     let location = locationOverride;
     if (!location && currentPlayer && currentPlayer.currentLocation) {
         try {
@@ -1930,7 +1962,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         : 'No significant prior events.';
 
     return {
-        setting: settingDescription,
+        setting: settingContext,
         gameHistory,
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
@@ -7026,7 +7058,7 @@ async function generatePlayerImage(player, options = {}) {
 
         // Generate the portrait prompt
         const portraitPrompt = renderPlayerPortraitPrompt(player);
-        const { prompt: finalImagePrompt, durationSeconds: promptDurationSeconds } = await generateImagePromptFromTemplate(portraitPrompt);
+        const { prompt: finalImagePrompt, durationSeconds: promptDurationSeconds } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
 
         try {
             const logDir = path.join(__dirname, 'logs');
@@ -7091,7 +7123,49 @@ async function generatePlayerImage(player, options = {}) {
 }
 
 // Function to generate image prompt using LLM
-async function generateImagePromptFromTemplate(prompts) {
+function applyImagePromptPrefix(promptText, prefixType = null) {
+    if (!promptText || typeof promptText !== 'string' || !prefixType) {
+        return typeof promptText === 'string' ? promptText : '';
+    }
+
+    const settingSnapshot = getActiveSettingSnapshot();
+    if (!settingSnapshot) {
+        return promptText.trim();
+    }
+
+    const resolvedType = String(prefixType).toLowerCase();
+    let prefix = '';
+
+    switch (resolvedType) {
+        case 'character':
+            prefix = settingSnapshot.imagePromptPrefixCharacter || '';
+            break;
+        case 'location':
+            prefix = settingSnapshot.imagePromptPrefixLocation || '';
+            break;
+        case 'item':
+            prefix = settingSnapshot.imagePromptPrefixItem || '';
+            break;
+        case 'scenery':
+            prefix = settingSnapshot.imagePromptPrefixScenery || '';
+            break;
+        default:
+            prefix = '';
+            break;
+    }
+
+    const trimmedPrefix = typeof prefix === 'string' ? prefix.trim() : '';
+    const trimmedPrompt = promptText.trim();
+
+    if (!trimmedPrefix) {
+        return trimmedPrompt;
+    }
+
+    return `${trimmedPrefix}\n\n${trimmedPrompt}`;
+}
+
+async function generateImagePromptFromTemplate(prompts, options = {}) {
+    const { prefixType = null } = options || {};
     try {
         // Prepare the messages for the AI API
         const messages = [
@@ -7147,7 +7221,7 @@ async function generateImagePromptFromTemplate(prompts) {
             .replace(/[—–]/g, '-')     // Normalize dashes
             .trim();
 
-        //console.log('🧽 Cleaned Image Prompt:', generatedImagePrompt);
+        generatedImagePrompt = applyImagePromptPrefix(generatedImagePrompt, prefixType);
 
         return {
             prompt: generatedImagePrompt,
@@ -7157,8 +7231,12 @@ async function generateImagePromptFromTemplate(prompts) {
     } catch (error) {
         console.error('Error generating image prompt with LLM:', error);
         // Fallback to the user prompt if LLM fails
+        const fallbackPrompt = typeof prompts?.generationPrompt === 'string'
+            ? prompts.generationPrompt
+            : 'high quality fantasy illustration of subject';
+
         return {
-            prompt: prompts.generationPrompt,
+            prompt: applyImagePromptPrefix(fallbackPrompt, prefixType),
             durationSeconds: null
         };
     }
@@ -7233,7 +7311,7 @@ async function generateLocationImage(location, options = {}) {
 
         // Generate the location scene prompt using LLM
         const promptTemplate = renderLocationImagePrompt(location);
-        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate);
+        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
 
         // Create image generation job with location-specific settings
         const jobId = generateImageId();
@@ -7333,11 +7411,12 @@ async function generateLocationExitImage(locationExit, options = {}) {
 
         // Generate the location exit passage prompt
         const passagePrompt = renderLocationExitImagePrompt(locationExit);
+        const prefixedPassagePrompt = applyImagePromptPrefix(passagePrompt, 'scenery');
 
         // Create image generation job with location exit-specific settings
         const jobId = generateImageId();
         const payload = {
-            prompt: passagePrompt,
+            prompt: prefixedPassagePrompt,
             width: config.imagegen.default_settings.image.width || 1024,
             height: config.imagegen.default_settings.image.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
@@ -7440,7 +7519,8 @@ async function generateThingImage(thing, options = {}) {
 
         // Generate the thing image prompt using LLM
         const promptTemplate = renderThingImagePrompt(thing);
-        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate);
+        const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
+        const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();

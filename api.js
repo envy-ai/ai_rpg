@@ -4390,11 +4390,16 @@ module.exports = function registerApiRoutes(scope) {
                 currencyName: toStringValue(raw.currencyName),
                 currencyNamePlural: toStringValue(raw.currencyNamePlural),
                 currencyValueNotes: toStringValue(raw.currencyValueNotes),
-                styleNotes: toStringValue(raw.styleNotes),
+                writingStyleNotes: toStringValue(raw.writingStyleNotes ?? raw.styleNotes),
+                imagePromptPrefixCharacter: toStringValue(raw.imagePromptPrefixCharacter),
+                imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
+                imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
+                imagePromptPrefixScenery: toStringValue(raw.imagePromptPrefixScenery),
                 playerStartingLevel: toNumberString(raw.playerStartingLevel),
                 defaultPlayerName: toStringValue(raw.defaultPlayerName),
                 defaultPlayerDescription: toStringValue(raw.defaultPlayerDescription),
                 defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
+                defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
                 defaultNumSkills: toNumberString(raw.defaultNumSkills),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 availableClasses: toStringArray(raw.availableClasses),
@@ -4475,11 +4480,16 @@ module.exports = function registerApiRoutes(scope) {
                 currencyName: getText('currencyName'),
                 currencyNamePlural: getText('currencyNamePlural'),
                 currencyValueNotes: getText('currencyValueNotes'),
-                styleNotes: getText('styleNotes'),
+                writingStyleNotes: getText('writingStyleNotes') || getText('styleNotes'),
+                imagePromptPrefixCharacter: getText('imagePromptPrefixCharacter'),
+                imagePromptPrefixLocation: getText('imagePromptPrefixLocation'),
+                imagePromptPrefixItem: getText('imagePromptPrefixItem'),
+                imagePromptPrefixScenery: getText('imagePromptPrefixScenery'),
                 playerStartingLevel: toNumber(getText('playerStartingLevel')),
                 defaultPlayerName: getText('defaultPlayerName'),
                 defaultPlayerDescription: getText('defaultPlayerDescription'),
                 defaultStartingLocation: getText('defaultStartingLocation'),
+                defaultStartingCurrency: toNumber(getText('defaultStartingCurrency')),
                 defaultNumSkills: toNumber(getText('defaultNumSkills')),
                 defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
                 availableClasses: getList('availableClasses', 'class'),
@@ -4984,7 +4994,8 @@ module.exports = function registerApiRoutes(scope) {
                     playerRace: playerRaceInput,
                     startingLocation,
                     numSkills: numSkillsInput,
-                    existingSkills: existingSkillsInput
+                    existingSkills: existingSkillsInput,
+                    startingCurrency: startingCurrencyInput
                 } = req.body || {};
                 const activeSetting = getActiveSettingSnapshot();
                 const newGameDefaults = buildNewGameDefaults(activeSetting);
@@ -4999,6 +5010,15 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedPlayerClass = rawPlayerClass || newGameDefaults.playerClass || 'Adventurer';
                 const resolvedPlayerRace = rawPlayerRace || newGameDefaults.playerRace || 'Human';
                 const resolvedStartingLocation = requestedStartingLocation || newGameDefaults.startingLocation;
+                const parsedStartingCurrency = Number.parseInt(startingCurrencyInput, 10);
+                const fallbackStartingCurrencySource = newGameDefaults.startingCurrency;
+                const fallbackStartingCurrencyParsed = Number.parseInt(fallbackStartingCurrencySource, 10);
+                const fallbackStartingCurrency = Number.isFinite(fallbackStartingCurrencyParsed)
+                    ? Math.max(0, fallbackStartingCurrencyParsed)
+                    : 0;
+                const resolvedStartingCurrency = Number.isFinite(parsedStartingCurrency)
+                    ? Math.max(0, parsedStartingCurrency)
+                    : fallbackStartingCurrency;
                 const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
                 const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
@@ -5126,6 +5146,7 @@ module.exports = function registerApiRoutes(scope) {
                     level: startingPlayerLevel,
                     health: 25,
                     maxHealth: 25,
+                    currency: resolvedStartingCurrency,
                     attributes: {
                         strength: 10,
                         dexterity: 10,

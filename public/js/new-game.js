@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
   const numSkillsField = document.getElementById('numSkills');
+  const startingCurrencyField = document.getElementById('startingCurrency');
   const classSelect = document.getElementById('playerClassSelect');
   const classOtherInput = document.getElementById('playerClassOther');
   const raceSelect = document.getElementById('playerRaceSelect');
@@ -92,6 +93,15 @@ document.addEventListener('DOMContentLoaded', () => {
         .filter(line => line.length > 0);
       const playerClass = resolveSelectionValue(classSelect, classOtherInput);
       const playerRace = resolveSelectionValue(raceSelect, raceOtherInput);
+      const startingCurrencyRaw = (startingCurrencyField?.value || '').trim();
+      const parsedStartingCurrency = Number.parseInt(startingCurrencyRaw, 10);
+      const fallbackStartingCurrency = Number.parseInt(startingCurrencyField?.dataset?.defaultValue ?? '', 10);
+      const safeFallbackCurrency = Number.isFinite(fallbackStartingCurrency)
+        ? Math.max(0, fallbackStartingCurrency)
+        : 0;
+      const startingCurrency = Number.isFinite(parsedStartingCurrency)
+        ? Math.max(0, parsedStartingCurrency)
+        : safeFallbackCurrency;
 
       try {
         setFormEnabled(false);
@@ -101,7 +111,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await fetch('/api/new-game', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerName, playerDescription, playerClass, playerRace, startingLocation, numSkills, existingSkills })
+          body: JSON.stringify({
+            playerName,
+            playerDescription,
+            playerClass,
+            playerRace,
+            startingLocation,
+            numSkills,
+            existingSkills,
+            startingCurrency
+          })
         });
 
         const result = await response.json();

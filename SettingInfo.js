@@ -23,8 +23,13 @@ class SettingInfo {
   #currencyName;
   #currencyNamePlural;
   #currencyValueNotes;
-  #styleNotes;
+  #writingStyleNotes;
+  #imagePromptPrefixCharacter;
+  #imagePromptPrefixLocation;
+  #imagePromptPrefixItem;
+  #imagePromptPrefixScenery;
   #playerStartingLevel;
+  #defaultStartingCurrency;
   #defaultPlayerName;
   #defaultPlayerDescription;
   #defaultStartingLocation;
@@ -98,12 +103,29 @@ class SettingInfo {
     this.#currencyValueNotes = typeof options.currencyValueNotes === 'string'
       ? options.currencyValueNotes.replace(/\r\n/g, '\n')
       : '';
-    this.#styleNotes = typeof options.styleNotes === 'string'
-      ? options.styleNotes.replace(/\r\n/g, '\n')
+    const writingStyleSource = options.writingStyleNotes ?? options.styleNotes;
+    this.#writingStyleNotes = typeof writingStyleSource === 'string'
+      ? writingStyleSource.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixCharacter = typeof options.imagePromptPrefixCharacter === 'string'
+      ? options.imagePromptPrefixCharacter.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixLocation = typeof options.imagePromptPrefixLocation === 'string'
+      ? options.imagePromptPrefixLocation.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixItem = typeof options.imagePromptPrefixItem === 'string'
+      ? options.imagePromptPrefixItem.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixScenery = typeof options.imagePromptPrefixScenery === 'string'
+      ? options.imagePromptPrefixScenery.replace(/\r\n/g, '\n')
       : '';
 
     // Additional properties
     this.#playerStartingLevel = Math.max(1, Math.min(20, options.playerStartingLevel || 1));
+    const parsedDefaultCurrency = Number.parseInt(options.defaultStartingCurrency, 10);
+    this.#defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency)
+      ? Math.max(0, parsedDefaultCurrency)
+      : 0;
     this.#defaultPlayerName = typeof options.defaultPlayerName === 'string' ? options.defaultPlayerName : '';
     this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
@@ -143,8 +165,13 @@ class SettingInfo {
   get currencyName() { return this.#currencyName; }
   get currencyNamePlural() { return this.#currencyNamePlural; }
   get currencyValueNotes() { return this.#currencyValueNotes; }
-  get styleNotes() { return this.#styleNotes; }
+  get writingStyleNotes() { return this.#writingStyleNotes; }
+  get imagePromptPrefixCharacter() { return this.#imagePromptPrefixCharacter; }
+  get imagePromptPrefixLocation() { return this.#imagePromptPrefixLocation; }
+  get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
+  get imagePromptPrefixScenery() { return this.#imagePromptPrefixScenery; }
   get playerStartingLevel() { return this.#playerStartingLevel; }
+  get defaultStartingCurrency() { return this.#defaultStartingCurrency; }
   get defaultPlayerName() { return this.#defaultPlayerName; }
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
   get defaultStartingLocation() { return this.#defaultStartingLocation; }
@@ -228,8 +255,36 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
-  set styleNotes(value) {
-    this.#styleNotes = typeof value === 'string'
+  set writingStyleNotes(value) {
+    this.#writingStyleNotes = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixCharacter(value) {
+    this.#imagePromptPrefixCharacter = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixLocation(value) {
+    this.#imagePromptPrefixLocation = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixItem(value) {
+    this.#imagePromptPrefixItem = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixScenery(value) {
+    this.#imagePromptPrefixScenery = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
       : '';
     this.#updateTimestamp();
@@ -237,6 +292,14 @@ class SettingInfo {
 
   set playerStartingLevel(value) {
     this.#playerStartingLevel = Math.max(1, Math.min(20, parseInt(value) || 1));
+    this.#updateTimestamp();
+  }
+
+  set defaultStartingCurrency(value) {
+    const parsed = Number.parseInt(value, 10);
+    this.#defaultStartingCurrency = Number.isFinite(parsed)
+      ? Math.max(0, parsed)
+      : 0;
     this.#updateTimestamp();
   }
 
@@ -359,8 +422,13 @@ class SettingInfo {
       currencyName: this.#currencyName,
       currencyNamePlural: this.#currencyNamePlural,
       currencyValueNotes: this.#currencyValueNotes,
-      styleNotes: this.#styleNotes,
+      writingStyleNotes: this.#writingStyleNotes,
+      imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
+      imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
+      imagePromptPrefixItem: this.#imagePromptPrefixItem,
+      imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       playerStartingLevel: this.#playerStartingLevel,
+      defaultStartingCurrency: this.#defaultStartingCurrency,
       defaultPlayerName: this.#defaultPlayerName,
       defaultPlayerDescription: this.#defaultPlayerDescription,
       defaultStartingLocation: this.#defaultStartingLocation,
@@ -412,8 +480,13 @@ class SettingInfo {
       currencyName: this.#currencyName,
       currencyNamePlural: this.#currencyNamePlural,
       currencyValueNotes: this.#currencyValueNotes,
-      styleNotes: this.#styleNotes,
+      writingStyleNotes: this.#writingStyleNotes,
+      imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
+      imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
+      imagePromptPrefixItem: this.#imagePromptPrefixItem,
+      imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       playerStartingLevel: this.#playerStartingLevel,
+      defaultStartingCurrency: this.#defaultStartingCurrency,
       settingName: this.#name,
       settingDescription: this.#description,
       availableClasses: [...this.#availableClasses],

@@ -17,70 +17,17 @@ Available Exits:
 - {{ direction }}: {{ exit.description or 'An unexplored passage' }}
 {% endfor %}
 {% endif %}
-    </systemPrompt>
+</systemPrompt>
     
-    <generationPrompt>
-Create an image prompt in 1 to 4 paragraphs of prose for the following.
+<generationPrompt>
+Create an image prompt in 1 to 2 paragraphs of prose for the following.
 
 Scene Description: 
     {{ locationDescription | replace('\n', '\n    ') }}
 
-Environmental Details Based on Level:
-{% if locationBaseLevel <= 3 %}
-- Peaceful, well-maintained area with safe pathways
-- Gentle lighting, welcoming atmosphere
-- Signs of civilization or friendly inhabitants
-{% elif locationBaseLevel <= 7 %}
-- Moderately challenging terrain with some hazards
-- Balanced lighting with areas of shadow and light
-- Mix of natural and civilized elements
-{% elif locationBaseLevel <= 12 %}
-- Dangerous, foreboding landscape
-- Dramatic lighting with deep shadows
-- Wild, untamed environment with visible threats
-{% else %}
-- Extremely perilous, otherworldly terrain
-- Ominous, supernatural lighting effects
-- Hostile environment with epic scale dangers
-{% endif %}
+Location Level: {{ locationBaseLevel }} (1-20+ scale, where 1 is very easy and 20 is extremely difficult; difficult locations should look dangerous, forboding, and/or epic)
 
-Visual Style Guidelines:
-- Environment concept art
-- Atmospheric perspective with depth
-- Rich environmental storytelling
-- Immersive world-building details
+Do not include art style information.
 
-Technical Specifications:
-Camera: Wide establishing shot showing the full environment
-Perspective: Ground level view as an adventurer would see it
-Depth of Field: Sharp foreground with atmospheric background
-
-{% if locationExits %}
-Composition: Include visible pathways or passages leading {{ locationExits | list | join(', ') }}
-{% else %}
-Composition: Self-contained environment with clear boundaries
-{% endif %}
-
-Lighting: 
-{% if locationBaseLevel <= 5 %}
-Natural, welcoming light that highlights safe travel routes
-{% else %}
-Dramatic, moody lighting that emphasizes danger and mystery
-{% endif %}
-
-Art Style: High-quality fantasy environment art, detailed location scene, professional digital matte painting, fantasy RPG world concept art
-
-Mood: 
-{% if locationBaseLevel <= 3 %}
-Peaceful and inviting, safe haven atmosphere
-{% elif locationBaseLevel <= 7 %}
-Adventurous and mysterious, moderate danger
-{% elif locationBaseLevel <= 12 %}
-Ominous and challenging, clear danger signals
-{% else %}
-Epic and terrifying, legendary-level threats
-{% endif %}
-
-Quality Tags: masterpiece, best quality, highly detailed, fantasy environment, RPG location art, professional concept art, atmospheric scene, environmental storytelling
-    </generationPrompt>
+</generationPrompt>
 </template>
