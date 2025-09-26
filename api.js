@@ -32,6 +32,61 @@ module.exports = function registerApiRoutes(scope) {
             next();
         });
 
+        function createStreamEmitter({ clientId, requestId } = {}) {
+            const hasRealtime = Boolean(realtimeHub && typeof realtimeHub.emit === 'function');
+            const targetClientId = (typeof clientId === 'string' && clientId.trim()) ? clientId.trim() : null;
+            const targetRequestId = (typeof requestId === 'string' && requestId.trim()) ? requestId.trim() : null;
+            const isEnabled = hasRealtime && targetClientId;
+
+            const emit = (type, payload = {}) => {
+                if (!isEnabled || !type) {
+                    return false;
+                }
+                const enrichedPayload = {
+                    requestId: targetRequestId,
+                    serverTime: new Date().toISOString(),
+                    ...payload
+                };
+                try {
+                    return Boolean(realtimeHub.emit(targetClientId, type, enrichedPayload));
+                } catch (error) {
+                    console.warn('Failed to emit realtime message:', error.message);
+                    return false;
+                }
+            };
+
+            return {
+                clientId: targetClientId,
+                requestId: targetRequestId,
+                isEnabled,
+                emit,
+                status(stage, message = null, extra = {}) {
+                    if (!stage) {
+                        return false;
+                    }
+                    const payload = { stage, ...extra };
+                    if (typeof message === 'string' && message.trim()) {
+                        payload.message = message;
+                    } else if (message && typeof message === 'object') {
+                        Object.assign(payload, message);
+                    }
+                    return emit('chat_status', payload);
+                },
+                playerAction(payload = {}) {
+                    return emit('player_action', payload);
+                },
+                npcTurn(payload = {}) {
+                    return emit('npc_turn', payload);
+                },
+                complete(payload = {}) {
+                    return emit('chat_complete', payload);
+                },
+                error(payload = {}) {
+                    return emit('chat_error', payload);
+                }
+            };
+        }
+
         function sanitizeForXml(input) {
             return `<root>${input}</root>`
                 .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
@@ -1675,17 +1730,33 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null }) {
             const results = [];
 
             try {
                 const npcQueue = await runNextNpcListPrompt({ locationOverride: location });
                 const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
+                if (stream && stream.isEnabled && npcNames.length) {
+                    stream.status('npc_turns:start', {
+                        message: `Processing ${npcNames.length} NPC ${npcNames.length === 1 ? 'turn' : 'turns'}.`,
+                        count: npcNames.length
+                    });
+                }
+
+                let npcTurnIndex = 0;
                 for (const npcName of npcNames) {
                     const npc = typeof findActorByName === 'function' ? findActorByName(npcName) : null;
                     if (!npc || !npc.isNPC) {
                         continue;
+                    }
+
+                    if (stream && stream.isEnabled) {
+                        stream.status('npc_turn:planning', {
+                            message: `Planning action for ${npc.name || 'NPC'}.`,
+                            npcName: npc.name || npcName,
+                            index: npcTurnIndex
+                        });
                     }
 
                     let npcLocation = location;
@@ -1705,6 +1776,13 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const actionText = plan.description;
+
+                    if (stream && stream.isEnabled) {
+                        stream.status('npc_turn:attack_check', {
+                            npcName: npc.name || npcName,
+                            index: npcTurnIndex
+                        });
+                    }
 
                     const attackCheck = await runAttackCheckPrompt({
                         actionText,
@@ -1753,6 +1831,13 @@ module.exports = function registerApiRoutes(scope) {
                     const attackContextForNarrative = isAttack ? attackContext : null;
                     const attackSummaryValue = isAttack ? (attackContext?.summary || null) : null;
                     const attackCheckForResult = isAttack ? attackCheck : null;
+
+                    if (stream && stream.isEnabled) {
+                        stream.status('npc_turn:narrative', {
+                            npcName: npc.name || npcName,
+                            index: npcTurnIndex
+                        });
+                    }
 
                     const narrativeResult = await runActionNarrativeForActor({
                         actor: npc,
@@ -1817,9 +1902,32 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     results.push(npcTurnResult);
+
+                    if (stream && stream.isEnabled) {
+                        stream.npcTurn({
+                            index: npcTurnIndex,
+                            total: npcNames.length,
+                            ...npcTurnResult
+                        });
+                    }
+
+                    npcTurnIndex += 1;
+                }
+
+                if (stream && stream.isEnabled) {
+                    stream.status('npc_turns:complete', {
+                        message: 'NPC turns complete.',
+                        count: results.length
+                    });
                 }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
+                if (stream && stream.isEnabled) {
+                    stream.error({
+                        scope: 'npc_turns',
+                        message: error.message || 'Failed to execute NPC turns'
+                    });
+                }
             }
 
             return results;
@@ -1827,12 +1935,27 @@ module.exports = function registerApiRoutes(scope) {
 
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
-            try {
-                const { messages } = req.body;
+            const requestBody = req.body || {};
+            const {
+                messages,
+                clientId: rawClientId,
+                requestId: rawRequestId
+            } = requestBody;
+            const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
+            const streamState = {
+                playerAction: false,
+                npcTurns: 0,
+                forcedEvent: false
+            };
 
+            try {
                 if (!messages) {
+                    stream.error({ message: 'Missing messages parameter.' });
+                    stream.complete({ aborted: true });
                     return res.status(400).json({ error: 'Missing messages parameter' });
                 }
+
+                stream.status('player_action:received', 'Processing player action.');
 
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
@@ -1843,6 +1966,8 @@ module.exports = function registerApiRoutes(scope) {
                         timestamp: new Date().toISOString()
                     });
                 }
+
+                stream.status('player_action:context', 'Preparing game state for action.');
 
                 let location = null;
                 let plausibilityInfo = null;
@@ -1870,6 +1995,12 @@ module.exports = function registerApiRoutes(scope) {
                 const sanitizedUserContent = isForcedEventAction
                     ? (forcedEventText || '')
                     : (isCreativeModeAction ? (creativeActionText || '') : originalUserContent);
+
+                if (isForcedEventAction) {
+                    stream.status('player_action:forced_event', 'Processing forced event override.');
+                } else if (isCreativeModeAction) {
+                    stream.status('player_action:creative', 'Processing creative mode action.');
+                }
 
                 let finalMessages = messages;
                 if (userMessage && sanitizedUserContent !== undefined && sanitizedUserContent !== userMessage.content) {
@@ -1903,6 +2034,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (!isCreativeModeAction && !isForcedEventAction) {
                         try {
+                            stream.status('player_action:attack_check', 'Checking for potential attacks.');
                             const attackActionText = typeof sanitizedUserContent === 'string'
                                 ? sanitizedUserContent
                                 : (userMessage?.content || '');
@@ -1921,6 +2053,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         try {
+                            stream.status('player_action:plausibility', 'Evaluating plausibility.');
                             plausibilityInfo = await runPlausibilityCheck({
                                 actionText: userMessage.content,
                                 locationId: currentPlayer.currentLocation || null,
@@ -2042,6 +2175,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                     try {
+                        stream.status('player_action:prompt', 'Building prompt for AI response.');
                         const baseContext = buildBasePromptContext({ locationOverride: location });
                         const templateName = 'base-context.xml.njk';
 
@@ -2219,6 +2353,39 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
 
+                    if (stream.requestId) {
+                        responseData.requestId = stream.requestId;
+                    }
+
+                    streamState.forcedEvent = true;
+
+                    stream.status('player_action:complete', 'Forced event processed.');
+
+                    let playerActionSent = false;
+                    if (stream.isEnabled) {
+                        const previewMeta = {
+                            ...streamState,
+                            playerAction: true,
+                            enabled: true
+                        };
+                        playerActionSent = stream.playerAction({
+                            ...responseData,
+                            streamMeta: previewMeta
+                        });
+                        if (playerActionSent) {
+                            streamState.playerAction = true;
+                        }
+                        stream.complete({ forcedEvent: true, playerActionStreamed: Boolean(playerActionSent) });
+                    }
+
+                    if (stream.requestId) {
+                        responseData.streamMeta = {
+                            ...streamState,
+                            enabled: stream.isEnabled,
+                            playerActionStreamed: Boolean(playerActionSent)
+                        };
+                    }
+
                     res.json(responseData);
                     return;
                 }
@@ -2251,6 +2418,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
                     const aiResponse = response.data.choices[0].message.content;
 
+                    stream.status('player_action:llm_complete', 'AI response received.');
+
                     // Store AI response in history
                     chatHistory.push({
                         role: 'assistant',
@@ -2273,6 +2442,10 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+
+                    if (stream.requestId) {
+                        responseData.requestId = stream.requestId;
+                    }
 
                     // Add debug info if available
                     if (debugInfo) {
@@ -2308,6 +2481,7 @@ module.exports = function registerApiRoutes(scope) {
                         eventResult = forcedEventResult;
                     } else {
                         try {
+                            stream.status('player_action:event_checks', 'Evaluating resulting events.');
                             eventResult = await Events.runEventChecks({ textToCheck: aiResponse });
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
@@ -2340,9 +2514,11 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
-                        const npcTurns = await executeNpcTurnsAfterPlayer({ location });
+                        stream.status('npc_turns:pending', 'Resolving NPC turns.');
+                        const npcTurns = await executeNpcTurnsAfterPlayer({ location, stream });
                         if (npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
+                            streamState.npcTurns = npcTurns.length;
                         }
                     } catch (npcTurnError) {
                         console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
@@ -2352,6 +2528,35 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.plausibility = plausibilityInfo.html;
                     }
 
+                    let playerActionSent = false;
+                    if (stream.isEnabled) {
+                        const previewMeta = {
+                            ...streamState,
+                            playerAction: true,
+                            enabled: true
+                        };
+                        playerActionSent = stream.playerAction({
+                            ...responseData,
+                            streamMeta: previewMeta
+                        });
+                        if (playerActionSent) {
+                            streamState.playerAction = true;
+                        }
+                    }
+
+                    if (stream.requestId) {
+                        responseData.streamMeta = {
+                            ...streamState,
+                            enabled: stream.isEnabled
+                        };
+                    }
+
+                    stream.status('player_action:complete', 'Player action resolved.');
+                    stream.complete({
+                        hasNpcTurns: Boolean(responseData.npcTurns && responseData.npcTurns.length),
+                        playerActionStreamed: playerActionSent
+                    });
+
                     res.json(responseData);
                 } else {
                     res.status(500).json({ error: 'Invalid response from AI API' });
@@ -2360,20 +2565,35 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Chat API error:', error);
 
+                stream.error({ message: error.message || 'Chat processing failed.' });
+                stream.complete({ aborted: true, error: error.message || 'Chat processing failed.' });
+
+                const withMeta = (payload) => {
+                    if (stream.requestId) {
+                        payload.requestId = stream.requestId;
+                        payload.streamMeta = {
+                            ...streamState,
+                            enabled: stream.isEnabled,
+                            error: true
+                        };
+                    }
+                    return payload;
+                };
+
                 if (error.response) {
                     // API returned an error
                     const statusCode = error.response.status;
                     const errorMessage = error.response.data?.error?.message || 'API request failed';
-                    res.status(statusCode).json({ error: `API Error (${statusCode}): ${errorMessage}` });
+                    res.status(statusCode).json(withMeta({ error: `API Error (${statusCode}): ${errorMessage}` }));
                 } else if (error.code === 'ECONNABORTED') {
                     // Timeout
-                    res.status(408).json({ error: 'Request timeout - AI API took too long to respond' });
+                    res.status(408).json(withMeta({ error: 'Request timeout - AI API took too long to respond' }));
                 } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
                     // Connection issues
-                    res.status(503).json({ error: 'Cannot connect to AI API - check your endpoint URL' });
+                    res.status(503).json(withMeta({ error: 'Cannot connect to AI API - check your endpoint URL' }));
                 } else {
                     // Other errors
-                    res.status(500).json({ error: `Request failed: ${error.message}` });
+                    res.status(500).json(withMeta({ error: `Request failed: ${error.message}` }));
                 }
             }
         });
@@ -3785,8 +4005,11 @@ module.exports = function registerApiRoutes(scope) {
 
         // Generate a new region using AI
         app.post('/api/regions/generate', async (req, res) => {
+            const body = req.body || {};
+            const stream = createStreamEmitter({ clientId: body.clientId, requestId: body.requestId });
+
             try {
-                const { regionName, regionDescription, regionNotes } = req.body || {};
+                const { regionName, regionDescription, regionNotes } = body;
                 const activeSetting = getActiveSettingSnapshot();
 
                 const options = {
@@ -3796,29 +4019,66 @@ module.exports = function registerApiRoutes(scope) {
                     regionNotes: regionNotes || null
                 };
 
+                stream.emit('generation_status', {
+                    scope: 'region',
+                    stage: 'start',
+                    message: 'Generating region from prompts.'
+                });
+
                 const result = await generateRegionFromPrompt(options);
 
-                res.json({
+                stream.emit('generation_status', {
+                    scope: 'region',
+                    stage: 'complete',
+                    message: `Region "${result.region.name}" generated.`
+                });
+
+                if (stream.isEnabled) {
+                    stream.emit('region_generated', {
+                        region: result.region.toJSON(),
+                        createdLocationIds: result.region.locationIds,
+                        entranceLocationId: result.region.entranceLocationId || result.entranceLocationId
+                    });
+                }
+
+                const payload = {
                     success: true,
                     region: result.region.toJSON(),
                     createdLocationIds: result.region.locationIds,
                     createdLocations: result.createdLocations.map(loc => loc.toJSON()),
                     entranceLocationId: result.region.entranceLocationId || result.entranceLocationId,
                     message: `Region "${result.region.name}" generated with ${result.region.locationIds.length} stub locations.`
-                });
+                };
+
+                if (stream.requestId) {
+                    payload.requestId = stream.requestId;
+                }
+
+                res.json(payload);
             } catch (error) {
                 console.error('Error generating region:', error);
-                res.status(500).json({
+                stream.emit('generation_status', {
+                    scope: 'region',
+                    stage: 'error',
+                    message: error.message || 'Region generation failed.'
+                });
+                const errorPayload = {
                     success: false,
                     error: error.message
-                });
+                };
+                if (stream.requestId) {
+                    errorPayload.requestId = stream.requestId;
+                }
+                res.status(500).json(errorPayload);
             }
         });
 
         // Generate a new location using AI
         app.post('/api/locations/generate', async (req, res) => {
+            const body = req.body || {};
+            const stream = createStreamEmitter({ clientId: body.clientId, requestId: body.requestId });
+
             try {
-                const body = req.body || {};
                 const activeSetting = getActiveSettingSnapshot();
                 const derivedLocationStyle = resolveLocationStyle(body.locationStyle, activeSetting);
                 const settingDescription = describeSettingForPrompt(activeSetting);
@@ -3839,15 +4099,33 @@ module.exports = function registerApiRoutes(scope) {
 
                 console.log('🏗️  Starting location generation with options derived from current setting:', options);
 
-                // Generate the location
+                stream.emit('generation_status', {
+                    scope: 'location',
+                    stage: 'start',
+                    message: 'Generating new location.'
+                });
+
                 const result = await generateLocationFromPrompt(options);
+
+                stream.emit('generation_status', {
+                    scope: 'location',
+                    stage: 'complete',
+                    message: `Location "${result.location.name || result.location.id}" generated.`
+                });
 
                 const locationData = result.location.toJSON();
                 locationData.pendingImageJobId = pendingLocationImages.get(result.location.id) || null;
                 locationData.npcs = buildNpcProfiles(result.location);
                 locationData.things = buildThingProfiles(result.location);
 
-                res.json({
+                if (stream.isEnabled) {
+                    stream.emit('location_generated', {
+                        location: locationData,
+                        locationId: result.location.id
+                    });
+                }
+
+                const payload = {
                     success: true,
                     location: locationData,
                     locationId: result.location.id,
@@ -3865,12 +4143,17 @@ module.exports = function registerApiRoutes(scope) {
                         newStubs: result.newStubs || []
                     },
                     message: `Location "${result.location.name || result.location.id}" generated successfully`
-                });
+                };
+
+                if (stream.requestId) {
+                    payload.requestId = stream.requestId;
+                }
+
+                res.json(payload);
 
             } catch (error) {
                 console.error('Error in location generation API:', error);
 
-                // Provide more specific error messages
                 let errorMessage = error.message;
                 let statusCode = 500;
 
@@ -3887,11 +4170,23 @@ module.exports = function registerApiRoutes(scope) {
                     statusCode = apiStatusCode;
                 }
 
-                res.status(statusCode).json({
+                stream.emit('generation_status', {
+                    scope: 'location',
+                    stage: 'error',
+                    message: errorMessage
+                });
+
+                const errorPayload = {
                     success: false,
                     error: errorMessage,
                     details: error.message
-                });
+                };
+
+                if (stream.requestId) {
+                    errorPayload.requestId = stream.requestId;
+                }
+
+                res.status(statusCode).json(errorPayload);
             }
         });
 

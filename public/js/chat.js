@@ -17,8 +17,17 @@ class AIRPGChat {
         // Load any existing chat history for AI context
         this.loadExistingHistory();
 
+        this.clientId = this.loadClientId();
+        this.pendingRequests = new Map();
+        this.ws = null;
+        this.wsReconnectDelay = 1000;
+        this.wsReconnectTimer = null;
+        this.streamingStatusElements = new Map();
+        window.AIRPG_CLIENT_ID = this.clientId;
+
         this.init();
         this.initSkillIncreaseControls();
+        this.connectWebSocket();
 
         this.locationRefreshTimers = [];
         this.locationRefreshPending = false;
@@ -41,6 +50,250 @@ class AIRPGChat {
             }
         } catch (error) {
             console.log('No existing history to load:', error.message);
+        }
+    }
+
+    loadClientId() {
+        const storageKey = 'airpg:clientId';
+        try {
+            const existing = window.localStorage.getItem(storageKey);
+            if (existing && existing.length > 0) {
+                return existing;
+            }
+        } catch (_) {
+            // Ignore localStorage failures
+        }
+        const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
+            ? window.crypto.randomUUID()
+            : `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        try {
+            window.localStorage.setItem(storageKey, generated);
+        } catch (_) {
+            // Ignore storage write errors
+        }
+        return generated;
+    }
+
+    generateRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    connectWebSocket(delay = 0) {
+        if (delay > 0) {
+            window.setTimeout(() => this.connectWebSocket(0), delay);
+            return;
+        }
+
+        if (this.wsReconnectTimer) {
+            window.clearTimeout(this.wsReconnectTimer);
+            this.wsReconnectTimer = null;
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const url = `${protocol}://${window.location.host}/ws?clientId=${encodeURIComponent(this.clientId)}`;
+
+        try {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.close();
+            }
+
+            const socket = new WebSocket(url);
+            this.ws = socket;
+
+            socket.addEventListener('open', () => this.handleWebSocketOpen());
+            socket.addEventListener('close', event => this.handleWebSocketClose(event));
+            socket.addEventListener('error', error => {
+                console.warn('Realtime websocket error:', error.message || error);
+            });
+            socket.addEventListener('message', event => this.handleWebSocketMessage(event));
+        } catch (error) {
+            console.warn('Failed to establish realtime connection:', error.message);
+            this.scheduleWebSocketReconnect();
+        }
+    }
+
+    scheduleWebSocketReconnect() {
+        if (this.wsReconnectTimer) {
+            return;
+        }
+
+        this.wsReconnectDelay = Math.min(this.wsReconnectDelay * 2, 15000);
+        this.wsReconnectTimer = window.setTimeout(() => {
+            this.wsReconnectTimer = null;
+            this.connectWebSocket();
+        }, this.wsReconnectDelay);
+    }
+
+    handleWebSocketOpen() {
+        this.wsReconnectDelay = 1000;
+        if (this.wsReconnectTimer) {
+            window.clearTimeout(this.wsReconnectTimer);
+            this.wsReconnectTimer = null;
+        }
+    }
+
+    handleWebSocketClose() {
+        this.ws = null;
+        this.scheduleWebSocketReconnect();
+    }
+
+    handleConnectionAck(payload) {
+        if (!payload || !payload.clientId) {
+            return;
+        }
+        if (payload.clientId === this.clientId) {
+            return;
+        }
+        this.clientId = payload.clientId;
+        try {
+            window.localStorage.setItem('airpg:clientId', this.clientId);
+        } catch (_) {
+            // Ignore storage issues
+        }
+    }
+
+    handleWebSocketMessage(event) {
+        if (!event || typeof event.data !== 'string') {
+            return;
+        }
+
+        let payload = null;
+        try {
+            payload = JSON.parse(event.data);
+        } catch (error) {
+            console.warn('Received invalid realtime payload:', error.message);
+            return;
+        }
+
+        if (!payload || !payload.type) {
+            return;
+        }
+
+        switch (payload.type) {
+            case 'connection_ack':
+                this.handleConnectionAck(payload);
+                break;
+            case 'chat_status':
+                this.handleChatStatus(payload);
+                break;
+            case 'player_action':
+                this.handlePlayerActionStream(payload);
+                break;
+            case 'npc_turn':
+                this.handleNpcTurnStream(payload);
+                break;
+            case 'chat_complete':
+                this.handleChatComplete(payload);
+                break;
+            case 'chat_error':
+                this.handleChatError(payload);
+                break;
+            case 'generation_status':
+                this.handleGenerationStatus(payload);
+                break;
+            case 'region_generated':
+                this.handleRegionGenerated(payload);
+                break;
+            case 'location_generated':
+                this.handleLocationGenerated(payload);
+                break;
+            default:
+                console.log('Realtime update:', payload);
+                break;
+        }
+    }
+
+    ensureRequestContext(requestId) {
+        if (!requestId) {
+            return null;
+        }
+        let context = this.pendingRequests.get(requestId);
+        if (!context) {
+            context = {
+                requestId,
+                playerActionRendered: false,
+                renderedNpcTurns: new Set(),
+                streamed: {
+                    playerAction: false
+                },
+                statusElement: null,
+                httpResolved: false,
+                streamComplete: false,
+                streamMeta: null
+            };
+            this.pendingRequests.set(requestId, context);
+        }
+        return context;
+    }
+
+    getRequestContext(requestId) {
+        if (!requestId) {
+            return null;
+        }
+        return this.pendingRequests.get(requestId) || null;
+    }
+
+    createStatusElement(requestId) {
+        const element = document.createElement('div');
+        element.className = 'message ai-message loading status-update';
+        element.dataset.requestId = requestId;
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🤖 AI Game Master';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.textContent = 'Processing...';
+
+        element.appendChild(senderDiv);
+        element.appendChild(contentDiv);
+        this.chatLog.appendChild(element);
+        this.streamingStatusElements.set(requestId, element);
+        this.scrollToBottom();
+        return element;
+    }
+
+    updateStatusMessage(requestId, message, { stage = null, scope = 'chat' } = {}) {
+        if (!requestId) {
+            return;
+        }
+        const context = this.ensureRequestContext(requestId);
+        if (!context) {
+            return;
+        }
+
+        let element = context.statusElement;
+        if (!element) {
+            element = this.createStatusElement(requestId);
+            context.statusElement = element;
+        }
+
+        if (element) {
+            element.dataset.stage = stage || '';
+            element.dataset.scope = scope;
+            const contentDiv = element.querySelector('.message-content');
+            if (contentDiv) {
+                contentDiv.textContent = message;
+            }
+        }
+    }
+
+    removeStatusMessage(requestId) {
+        if (!requestId) {
+            return;
+        }
+        const element = this.streamingStatusElements.get(requestId);
+        if (element) {
+            element.remove();
+            this.streamingStatusElements.delete(requestId);
+        }
+        const context = this.pendingRequests.get(requestId);
+        if (context) {
+            context.statusElement = null;
         }
     }
 
@@ -1046,34 +1299,236 @@ class AIRPGChat {
         return div.innerHTML;
     }
 
-    showLoading() {
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message ai-message loading';
-        loadingDiv.id = 'loading-message';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🤖 AI Game Master';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.textContent = 'Thinking...';
-
-        loadingDiv.appendChild(senderDiv);
-        loadingDiv.appendChild(contentDiv);
-        this.chatLog.appendChild(loadingDiv);
-
-        this.scrollToBottom();
+    showLoading(requestId, message = 'Thinking...') {
+        if (!requestId) {
+            return;
+        }
+        this.updateStatusMessage(requestId, message, { stage: 'loading' });
     }
 
-    hideLoading() {
-        const loadingMessage = document.getElementById('loading-message');
-        if (loadingMessage) {
-            loadingMessage.remove();
+    hideLoading(requestId) {
+        if (!requestId) {
+            return;
         }
+        this.removeStatusMessage(requestId);
     }
 
     scrollToBottom() {
         this.chatLog.scrollTop = this.chatLog.scrollHeight;
+    }
+
+    processChatPayload(requestId, payload, { fromStream = false } = {}) {
+        const context = requestId ? this.ensureRequestContext(requestId) : null;
+        if (!payload || typeof payload !== 'object') {
+            return { shouldRefreshLocation: false };
+        }
+
+        if (payload.streamMeta && context) {
+            context.streamMeta = payload.streamMeta;
+        }
+
+        let shouldRefreshLocation = false;
+
+        if (payload.response && (!context || !context.playerActionRendered)) {
+            this.hideLoading(requestId);
+            this.addMessage('ai', payload.response, false, payload.debug);
+            this.chatHistory.push({ role: 'assistant', content: payload.response });
+            shouldRefreshLocation = true;
+            if (context) {
+                context.playerActionRendered = true;
+                if (context.streamed) {
+                    context.streamed.playerAction = context.streamed.playerAction || fromStream;
+                }
+            }
+        }
+
+        if (payload.eventChecks) {
+            this.addEventMessage(payload.eventChecks);
+        }
+
+        if (payload.actionResolution && payload.actionResolution.roll !== null && payload.actionResolution.roll !== undefined) {
+            this.addSkillCheckMessage(payload.actionResolution);
+        }
+
+        const resolvedAttackSummary = payload.attackSummary || payload.attackCheck?.summary || null;
+        if (resolvedAttackSummary) {
+            this.addAttackCheckMessage(resolvedAttackSummary);
+        }
+
+        if (payload.events) {
+            this.addEventSummaries(payload.events);
+            shouldRefreshLocation = true;
+        }
+
+        if (Array.isArray(payload.experienceAwards) && payload.experienceAwards.length) {
+            this.addExperienceAwards(payload.experienceAwards);
+        }
+
+        if (Array.isArray(payload.currencyChanges) && payload.currencyChanges.length) {
+            this.addCurrencyChanges(payload.currencyChanges);
+        }
+
+        if (payload.plausibility) {
+            this.addPlausibilityMessage(payload.plausibility);
+        }
+
+        if (Array.isArray(payload.npcTurns) && payload.npcTurns.length) {
+            payload.npcTurns.forEach((turn, index) => {
+                this.renderNpcTurn(requestId, turn, index, fromStream);
+            });
+            shouldRefreshLocation = true;
+        }
+
+        return { shouldRefreshLocation };
+    }
+
+    renderNpcTurn(requestId, turn, index = 0) {
+        if (!turn || !turn.response) {
+            return;
+        }
+
+        const context = this.getRequestContext(requestId);
+        const keyBase = turn.npcId || turn.name || `npc-${index}`;
+        const key = `${keyBase}:${turn.response}`;
+
+        if (context) {
+            if (!context.renderedNpcTurns) {
+                context.renderedNpcTurns = new Set();
+            }
+            if (context.renderedNpcTurns.has(key)) {
+                return;
+            }
+            context.renderedNpcTurns.add(key);
+        }
+
+        this.addNpcMessage(turn.name || 'NPC', turn.response);
+        this.chatHistory.push({ role: 'assistant', content: turn.response });
+
+        if (turn.eventChecks) {
+            this.addEventMessage(turn.eventChecks);
+        }
+        if (turn.events) {
+            this.addEventSummaries(turn.events);
+        }
+        if (Array.isArray(turn.experienceAwards) && turn.experienceAwards.length) {
+            this.addExperienceAwards(turn.experienceAwards);
+        }
+        if (Array.isArray(turn.currencyChanges) && turn.currencyChanges.length) {
+            this.addCurrencyChanges(turn.currencyChanges);
+        }
+        if (turn.attackSummary) {
+            this.addAttackCheckMessage(turn.attackSummary);
+        } else if (turn.attackCheck && turn.attackCheck.summary) {
+            this.addAttackCheckMessage(turn.attackCheck.summary);
+        }
+        if (turn.actionResolution && turn.actionResolution.roll !== null && turn.actionResolution.roll !== undefined) {
+            this.addSkillCheckMessage(turn.actionResolution);
+        }
+    }
+
+    handleChatStatus(payload) {
+        if (!payload) {
+            return;
+        }
+        const requestId = payload.requestId;
+        if (!requestId) {
+            return;
+        }
+        const message = typeof payload.message === 'string' && payload.message.length
+            ? payload.message
+            : (payload.stage ? payload.stage.replace(/[:_]/g, ' ') : 'Processing...');
+        this.updateStatusMessage(requestId, message, {
+            stage: payload.stage || 'status',
+            scope: payload.scope || 'chat'
+        });
+    }
+
+    handlePlayerActionStream(payload) {
+        if (!payload || !payload.requestId) {
+            return;
+        }
+        const result = this.processChatPayload(payload.requestId, payload, { fromStream: true });
+        if (result.shouldRefreshLocation) {
+            this.scheduleLocationRefresh();
+        }
+    }
+
+    handleNpcTurnStream(payload) {
+        if (!payload || !payload.requestId) {
+            return;
+        }
+        const normalized = { npcTurns: [payload] };
+        const result = this.processChatPayload(payload.requestId, normalized, { fromStream: true });
+        if (result.shouldRefreshLocation) {
+            this.scheduleLocationRefresh();
+        }
+    }
+
+    handleChatComplete(payload) {
+        if (!payload || !payload.requestId) {
+            return;
+        }
+        const context = this.ensureRequestContext(payload.requestId);
+        if (context) {
+            context.streamComplete = true;
+            if (context.httpResolved) {
+                this.finalizeChatRequest(payload.requestId);
+            }
+        }
+        this.removeStatusMessage(payload.requestId);
+    }
+
+    handleChatError(payload) {
+        if (!payload) {
+            return;
+        }
+        const requestId = payload.requestId || null;
+        const message = payload.message || 'Chat processing failed.';
+        if (requestId) {
+            this.hideLoading(requestId);
+        }
+        this.addMessage('system', message, true);
+        if (requestId) {
+            const context = this.ensureRequestContext(requestId);
+            context.streamComplete = true;
+            if (context.httpResolved) {
+                this.finalizeChatRequest(requestId);
+            }
+        }
+    }
+
+    handleGenerationStatus(payload) {
+        if (!payload) {
+            return;
+        }
+        const scope = payload.scope || 'generation';
+        const stageText = payload.stage ? payload.stage.replace(/[:_]/g, ' ') : 'update';
+        const message = payload.message || `${scope} ${stageText}`;
+        console.log(`[${scope}] ${stageText}: ${message}`);
+    }
+
+    handleRegionGenerated(payload) {
+        if (!payload || !payload.region) {
+            return;
+        }
+        const name = payload.region.name || 'Region';
+        this.addMessage('ai', `🗺️ Region generated: ${name}`, false);
+    }
+
+    handleLocationGenerated(payload) {
+        if (!payload || !payload.location) {
+            return;
+        }
+        const name = payload.location.name || 'Location';
+        this.addMessage('ai', `📍 Location generated: ${name}`, false);
+    }
+
+    finalizeChatRequest(requestId) {
+        if (!requestId) {
+            return;
+        }
+        this.removeStatusMessage(requestId);
+        this.pendingRequests.delete(requestId);
     }
 
     async sendMessage() {
@@ -1086,7 +1541,9 @@ class AIRPGChat {
 
         this.messageInput.value = '';
         this.sendButton.disabled = true;
-        this.showLoading();
+        const requestId = this.generateRequestId();
+        const context = this.ensureRequestContext(requestId);
+        this.showLoading(requestId);
 
         let shouldRefreshLocation = false;
 
@@ -1097,93 +1554,33 @@ class AIRPGChat {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    messages: this.chatHistory
+                    messages: this.chatHistory,
+                    clientId: this.clientId,
+                    requestId
                 })
             });
 
             const data = await response.json();
-            this.hideLoading();
+            context.httpResolved = true;
 
             if (data.error) {
+                this.hideLoading(requestId);
                 this.addMessage('system', `Error: ${data.error}`, true);
             } else {
-                this.addMessage('ai', data.response, false, data.debug);
-                this.chatHistory.push({ role: 'assistant', content: data.response });
-                shouldRefreshLocation = true;
+                const result = this.processChatPayload(requestId, data, { fromStream: false });
+                shouldRefreshLocation = result.shouldRefreshLocation || shouldRefreshLocation;
 
-                if (data.eventChecks) {
-                    this.addEventMessage(data.eventChecks);
-                }
-
-                if (data.actionResolution?.roll !== null) {
-                    console.log(data.actionResolution);
-                    this.addSkillCheckMessage(data.actionResolution);
-                }
-
-                const resolvedAttackSummary = data.attackSummary || data.attackCheck?.summary || null;
-                console.log("AI message");
-                console.log(data.attackSummary);
-                console.log(data.attackCheck);
-                console.log(resolvedAttackSummary);
-                if (resolvedAttackSummary) {
-                    this.addAttackCheckMessage(resolvedAttackSummary);
-                }
-
-                if (data.events) {
-                    this.addEventSummaries(data.events);
-                    shouldRefreshLocation = true;
-                }
-
-                if (Array.isArray(data.experienceAwards) && data.experienceAwards.length) {
-                    this.addExperienceAwards(data.experienceAwards);
-                }
-
-                if (Array.isArray(data.currencyChanges) && data.currencyChanges.length) {
-                    this.addCurrencyChanges(data.currencyChanges);
-                }
-
-                if (data.plausibility) {
-                    this.addPlausibilityMessage(data.plausibility);
-                }
-
-                if (Array.isArray(data.npcTurns) && data.npcTurns.length) {
-                    data.npcTurns.forEach(turn => {
-                        if (!turn || !turn.response) {
-                            return;
-                        }
-                        this.addNpcMessage(turn.name || 'NPC', turn.response);
-                        this.chatHistory.push({ role: 'assistant', content: turn.response });
-
-                        if (turn.eventChecks) {
-                            this.addEventMessage(turn.eventChecks);
-                        }
-
-                        if (turn.events) {
-                            this.addEventSummaries(turn.events);
-                        }
-
-                        if (Array.isArray(turn.experienceAwards) && turn.experienceAwards.length) {
-                            this.addExperienceAwards(turn.experienceAwards);
-                        }
-
-                        if (Array.isArray(turn.currencyChanges) && turn.currencyChanges.length) {
-                            this.addCurrencyChanges(turn.currencyChanges);
-                        }
-
-                        if (turn.attackSummary) {
-                            this.addAttackCheckMessage(turn.attackSummary);
-                        }
-
-                        if (turn.actionResolution && turn.actionResolution.roll) {
-                            this.addSkillCheckMessage(turn.actionResolution);
-                        }
-                    });
-                    shouldRefreshLocation = true;
+                if (context.streamMeta && context.streamMeta.enabled === false) {
+                    this.finalizeChatRequest(requestId);
+                } else if (context.streamComplete) {
+                    this.finalizeChatRequest(requestId);
                 }
             }
         } catch (error) {
-            this.hideLoading();
+            this.hideLoading(requestId);
             this.addMessage('system', `Connection error: ${error.message}`, true);
+            context.httpResolved = true;
+            this.finalizeChatRequest(requestId);
         }
 
         if (shouldRefreshLocation) {

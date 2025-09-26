@@ -1,3 +1,4 @@
+const http = require('http');
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
@@ -30,6 +31,7 @@ const Region = require('./Region.js');
 // Import ComfyUI client
 const ComfyUIClient = require('./ComfyUIClient.js');
 const Events = require('./Events.js');
+const RealtimeHub = require('./RealtimeHub.js');
 
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 let cachedBannedNpcWords = null;
@@ -65,6 +67,8 @@ try {
 }
 
 const app = express();
+const server = http.createServer(app);
+const realtimeHub = new RealtimeHub({ logger: console });
 
 // If --port is provided, override config.server.port
 const args = process.argv.slice(2);
@@ -8914,6 +8918,7 @@ Events.initialize({
 // API routes are registered via api.js
 const apiScope = {
     app,
+    server,
     axios,
     yaml,
     fs,
@@ -8982,7 +8987,8 @@ const apiScope = {
     imageJobs,
     jobQueue,
     generatedImages,
-    imageFileExists
+    imageFileExists,
+    realtimeHub
 };
 
 function defineApiStateProperty(name, getter, setter) {
@@ -9068,8 +9074,14 @@ async function startServer() {
         comfyUIClient = null;
     }
 
-    // Step 3: Start the server
-    app.listen(PORT, HOST, () => {
+    // Step 3: Prepare realtime hub and start the server
+    try {
+        realtimeHub.attach(server, { path: '/ws' });
+    } catch (error) {
+        console.error('⚠️  Failed to initialize realtime hub:', error.message);
+    }
+
+    server.listen(PORT, HOST, () => {
         console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
         console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
         console.log(`🎮 Using AI model: ${config.ai.model}`);
