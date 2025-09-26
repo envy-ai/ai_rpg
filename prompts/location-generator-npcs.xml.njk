@@ -41,6 +41,11 @@ Generate 0 to 3 NPCs for the location above. Use your judgment about how many, b
 {% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
 {% endfor %}
 </attributes>
+<personality>
+    <type>Myers-Briggs type, -dere archetype, Enneagram type, DnD alignment, or "automaton", as appropriate -- whatever works best. Optionally, 2 types separated by commas, so long as they make sense together.</type>
+    <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, etc). Comma separated, usually none, no more than 3</traits>
+    <notes>0 to 2 sentences of additional information not covered by the above</notes>
+</personality>
 <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
 </npc>
 

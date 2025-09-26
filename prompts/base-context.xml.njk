@@ -83,6 +83,13 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ npc.description }}</description>
       <class>{{ npc.class | default('Unknown') }}</class>
       <race>{{ npc.race | default('Unknown') }}</race>
+      <personality>
+        <type>{{ npc.personality.type | default('Unknown') }}</type>
+        <traits>{{ npc.personality.traits | default('None') }}</traits>
+        <notes>{{ npc.personality.notes | default('') }}</notes>
+      </personality>
+      <health>{{ npc.health | default('unknown') }}</health>
+      <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
       <dispositionsTowardsPlayer>
         {% for disposition in npc.dispositionsTowardsPlayer %}
         <disposition>
@@ -125,8 +132,15 @@ You are an AI designed to perform various tasks related to managing a text-based
       <description>{{ member.description }}</description>
       <class>{{ member.class | default('Unknown') }}</class>
       <race>{{ member.race | default('Unknown') }}</race>
+      <personality>
+        <type>{{ member.personality.type | default('Unknown') }}</type>
+        <traits>{{ member.personality.traits | default('None') }}</traits>
+        <notes>{{ member.personality.notes | default('') }}</notes>
+      </personality>
+      <health>{{ member.health | default('unknown') }}</health>
+      <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth>
       <dispositionsTowardsPlayer>
-        {% for disposition in npc.dispositionsTowardsPlayer %}
+        {% for disposition in member.dispositionsTowardsPlayer %}
         <disposition>
           <type>{{ disposition.type }}</type>
           <intensity>{{ disposition.intensityName }}</intensity>

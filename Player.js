@@ -35,6 +35,9 @@ class Player {
     #gearSlotNameIndex;
     #abilities;
     #experience;
+    #personalityType;
+    #personalityTraits;
+    #personalityNotes;
     static #npcInventoryChangeHandler = null;
 
     static availableSkills = new Map();
@@ -168,6 +171,14 @@ class Player {
         }
         const normalized = type.trim().toLowerCase();
         return normalized || 'default';
+    }
+
+    static #sanitizePersonalityValue(value) {
+        if (typeof value !== 'string') {
+            return null;
+        }
+        const trimmed = value.trim();
+        return trimmed || null;
     }
 
     static #loadGearSlotDefinitions() {
@@ -366,6 +377,13 @@ class Player {
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
+
+        const personalityOption = options.personality && typeof options.personality === 'object'
+            ? options.personality
+            : null;
+        this.#personalityType = Player.#sanitizePersonalityValue(options.personalityType ?? personalityOption?.type);
+        this.#personalityTraits = Player.#sanitizePersonalityValue(options.personalityTraits ?? personalityOption?.traits);
+        this.#personalityNotes = Player.#sanitizePersonalityValue(options.personalityNotes ?? personalityOption?.notes);
 
         this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
         this.#dispositions = this.#initializeDispositions(options.dispositions);
@@ -872,6 +890,33 @@ class Player {
 
     get race() {
         return this.#race;
+    }
+
+    get personalityType() {
+        return this.#personalityType;
+    }
+
+    set personalityType(value) {
+        this.#personalityType = Player.#sanitizePersonalityValue(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get personalityTraits() {
+        return this.#personalityTraits;
+    }
+
+    set personalityTraits(value) {
+        this.#personalityTraits = Player.#sanitizePersonalityValue(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get personalityNotes() {
+        return this.#personalityNotes;
+    }
+
+    set personalityNotes(value) {
+        this.#personalityNotes = Player.#sanitizePersonalityValue(value);
+        this.#lastUpdated = new Date().toISOString();
     }
 
     set class(newClass) {
@@ -1775,6 +1820,9 @@ class Player {
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
+            personalityType: this.#personalityType,
+            personalityTraits: this.#personalityTraits,
+            personalityNotes: this.#personalityNotes,
             attributes: { ...this.#attributes },
             modifiers: this.getAttributeModifiers(),
             attributeInfo: this.getAttributeInfo(),
@@ -1795,6 +1843,12 @@ class Player {
             gearSlotDefinitions: Player.gearSlotDefinitions,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated
+        };
+
+        status.personality = {
+            type: this.#personalityType,
+            traits: this.#personalityTraits,
+            notes: this.#personalityNotes
         };
 
         return status;
@@ -1828,6 +1882,14 @@ class Player {
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
+            personality: {
+                type: this.#personalityType,
+                traits: this.#personalityTraits,
+                notes: this.#personalityNotes
+            },
+            personalityType: this.#personalityType,
+            personalityTraits: this.#personalityTraits,
+            personalityNotes: this.#personalityNotes,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
             experience: this.#experience
@@ -1851,6 +1913,9 @@ class Player {
             shortDescription: data.shortDescription,
             class: data.class,
             race: data.race,
+            personalityType: data.personality?.type ?? data.personalityType,
+            personalityTraits: data.personality?.traits ?? data.personalityTraits,
+            personalityNotes: data.personality?.notes ?? data.personalityNotes,
             inventory: Array.isArray(data.inventory) ? data.inventory : [],
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},

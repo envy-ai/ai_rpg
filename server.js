@@ -1656,6 +1656,29 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         gear: gearSnapshot
     };
 
+    const extractPersonality = (primary = null, fallback = null) => {
+        const primaryObj = primary && typeof primary === 'object' ? primary : null;
+        const fallbackObj = fallback && typeof fallback === 'object' ? fallback : null;
+        const personalitySource = primaryObj?.personality && typeof primaryObj.personality === 'object'
+            ? primaryObj.personality
+            : null;
+
+        const type = personalitySource?.type
+            ?? primaryObj?.personalityType
+            ?? fallbackObj?.personalityType
+            ?? null;
+        const traits = personalitySource?.traits
+            ?? primaryObj?.personalityTraits
+            ?? fallbackObj?.personalityTraits
+            ?? null;
+        const notes = personalitySource?.notes
+            ?? primaryObj?.personalityNotes
+            ?? fallbackObj?.personalityNotes
+            ?? null;
+
+        return { type, traits, notes };
+    };
+
     const npcs = [];
     const dispositionDefinitions = Player.getDispositionDefinitions();
     const dispositionTypes = Object.values(dispositionDefinitions?.types || {});
@@ -1704,15 +1727,20 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 }
             }
 
+            const personality = extractPersonality(npcStatus, npc);
+
             npcs.push({
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
                 class: npcStatus?.class || npc.class || null,
                 race: npcStatus?.race || npc.race || null,
                 level: npcStatus?.level || npc.level || null,
+                health: npcStatus?.health ?? npc.health ?? null,
+                maxHealth: npcStatus?.maxHealth ?? npc.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(npc || npcStatus),
                 inventory: npcInventory,
-                dispositionsTowardsPlayer
+                dispositionsTowardsPlayer,
+                personality
             });
         }
     }
@@ -1729,14 +1757,20 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const memberInventory = Array.isArray(memberStatus?.inventory)
                 ? memberStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
+            const personality = extractPersonality(memberStatus, member);
+
             party.push({
                 name: memberStatus?.name || member.name || 'Unknown Ally',
                 description: memberStatus?.description || member.description || '',
                 class: memberStatus?.class || member.class || null,
                 race: memberStatus?.race || member.race || null,
                 level: memberStatus?.level || member.level || null,
+                health: memberStatus?.health ?? member.health ?? null,
+                maxHealth: memberStatus?.maxHealth ?? member.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(member || memberStatus),
-                inventory: memberInventory
+                inventory: memberInventory,
+                personality,
+                dispositionsTowardsPlayer: []
             });
         }
     }
@@ -3809,7 +3843,10 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             location: resolvedLocation?.id || null,
             attributes,
             isNPC: true,
-            healthAttribute: npcData?.healthAttribute
+            healthAttribute: npcData?.healthAttribute,
+            personalityType: npcData?.personalityType || null,
+            personalityTraits: npcData?.personalityTraits || null,
+            personalityNotes: npcData?.personalityNotes || null
         });
 
         const locationBaseLevel = Number.isFinite(resolvedLocation?.baseLevel)
@@ -4310,6 +4347,7 @@ function parseLocationNpcs(xmlContent) {
             const raceNode = node.getElementsByTagName('race')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
+            const personalityNode = node.getElementsByTagName('personality')[0];
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
@@ -4319,6 +4357,33 @@ function parseLocationNpcs(xmlContent) {
             const attributes = {};
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
+
+            let personalityType = null;
+            let personalityTraits = null;
+            let personalityNotes = null;
+            if (personalityNode) {
+                const typeNode = personalityNode.getElementsByTagName('type')[0];
+                const traitsNode = personalityNode.getElementsByTagName('traits')[0];
+                const notesNode = personalityNode.getElementsByTagName('notes')[0];
+                if (typeNode && typeof typeNode.textContent === 'string') {
+                    const value = typeNode.textContent.trim();
+                    if (value) {
+                        personalityType = value;
+                    }
+                }
+                if (traitsNode && typeof traitsNode.textContent === 'string') {
+                    const value = traitsNode.textContent.trim();
+                    if (value) {
+                        personalityTraits = value;
+                    }
+                }
+                if (notesNode && typeof notesNode.textContent === 'string') {
+                    const value = notesNode.textContent.trim();
+                    if (value) {
+                        personalityNotes = value;
+                    }
+                }
+            }
 
             if (attributesNode) {
                 const attrNodes = Array.from(attributesNode.getElementsByTagName('attribute'));
@@ -4340,7 +4405,10 @@ function parseLocationNpcs(xmlContent) {
                     race,
                     attributes,
                     relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
-                    healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null
+                    healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
+                    personalityType,
+                    personalityTraits,
+                    personalityNotes
                 });
             }
         }
@@ -4376,6 +4444,7 @@ function parseRegionNpcs(xmlContent) {
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
+            const personalityNode = node.getElementsByTagName('personality')[0];
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             if (!name) {
@@ -4404,6 +4473,34 @@ function parseRegionNpcs(xmlContent) {
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
 
+            let personalityType = null;
+            let personalityTraits = null;
+            let personalityNotes = null;
+            if (personalityNode) {
+                const typeNode = personalityNode.getElementsByTagName('type')[0];
+                const traitsNode = personalityNode.getElementsByTagName('traits')[0];
+                const notesNode = personalityNode.getElementsByTagName('notes')[0];
+
+                if (typeNode && typeof typeNode.textContent === 'string') {
+                    const value = typeNode.textContent.trim();
+                    if (value) {
+                        personalityType = value;
+                    }
+                }
+                if (traitsNode && typeof traitsNode.textContent === 'string') {
+                    const value = traitsNode.textContent.trim();
+                    if (value) {
+                        personalityTraits = value;
+                    }
+                }
+                if (notesNode && typeof notesNode.textContent === 'string') {
+                    const value = notesNode.textContent.trim();
+                    if (value) {
+                        personalityNotes = value;
+                    }
+                }
+            }
+
             npcs.push({
                 name,
                 description,
@@ -4414,7 +4511,10 @@ function parseRegionNpcs(xmlContent) {
                 location: locationName,
                 attributes,
                 relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
-                healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null
+                healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
+                personalityType,
+                personalityTraits,
+                personalityNotes
             });
         }
 
@@ -6327,7 +6427,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 location: targetLocation ? targetLocation.id : null,
                 attributes,
                 isNPC: true,
-                healthAttribute: npcData.healthAttribute
+                healthAttribute: npcData.healthAttribute,
+                personalityType: npcData.personalityType || null,
+                personalityTraits: npcData.personalityTraits || null,
+                personalityNotes: npcData.personalityNotes || null
             });
 
             const baseLevelReference = Number.isFinite(region.averageLevel)

@@ -40,6 +40,11 @@ Generate exactly one NPC entry for the character named "{{ npcName }}". Use the 
 {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
 {% endfor %}
     </attributes>
+    <personality>
+        <type>Myers-Briggs type, -dere archetype, Enneagram type, DnD alignment, or "automaton", as appropriate -- whatever works best. Optionally, 2 types separated by commas, so long as they make sense together.</type>
+        <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, mania, any phobias, etc). Comma separated, usually none, no more than 3</traits>
+        <notes>0 to 2 sentences of additional information not covered by the above that's unique to the character</notes>
+    </personality>
     <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
   </npc>
 </npcs>
