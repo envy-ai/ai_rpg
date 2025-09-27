@@ -1006,35 +1006,38 @@
                 return;
             }
 
-            const name = player?.name || 'Unnamed Adventurer';
+            const data = (player && typeof player === 'object') ? player : {};
+            window.currentPlayerData = data;
+
+            const name = data?.name || 'Unnamed Adventurer';
             if (chatSidebarElements.name) {
                 chatSidebarElements.name.textContent = name;
             }
 
-            const levelLabel = Number.isFinite(player?.level) ? `Level ${player.level}` : 'Level ?';
+            const levelLabel = Number.isFinite(data?.level) ? `Level ${data.level}` : 'Level ?';
             if (chatSidebarElements.level) {
                 chatSidebarElements.level.textContent = levelLabel;
             }
 
             const archetypeParts = [];
-            if (player?.class) {
-                archetypeParts.push(player.class);
+            if (data?.class) {
+                archetypeParts.push(data.class);
             }
-            if (player?.race) {
-                archetypeParts.push(player.race);
+            if (data?.race) {
+                archetypeParts.push(data.race);
             }
             const archetypeLabel = archetypeParts.length ? archetypeParts.join(' · ') : 'Unknown origin';
             if (chatSidebarElements.archetype) {
                 chatSidebarElements.archetype.textContent = archetypeLabel;
             }
 
-            const healthCurrent = Number.isFinite(player?.health) ? player.health : '?';
-            const healthMaximum = Number.isFinite(player?.maxHealth) ? player.maxHealth : '?';
+            const healthCurrent = Number.isFinite(data?.health) ? data.health : '?';
+            const healthMaximum = Number.isFinite(data?.maxHealth) ? data.maxHealth : '?';
             if (chatSidebarElements.health) {
                 chatSidebarElements.health.textContent = `HP: ${healthCurrent} / ${healthMaximum}`;
             }
 
-            const description = (player?.shortDescription || player?.description || 'No description available.').trim();
+            const description = (data?.shortDescription || data?.description || 'No description available.').trim();
             if (chatSidebarElements.description) {
                 chatSidebarElements.description.textContent = description;
             }
@@ -1044,8 +1047,8 @@
                 renderEntityImage({
                     element: portraitElement,
                     entityType: 'player',
-                    entityId: player?.id || null,
-                    imageId: player?.imageId || null,
+                    entityId: data?.id || null,
+                    imageId: data?.imageId || null,
                     altText: `${name} portrait`,
                     placeholderIcon: '🧙',
                     placeholderClass: 'chat-player-placeholder',
@@ -1064,20 +1067,29 @@
             updateHealthBar(
                 chatSidebarElements.healthBar,
                 chatSidebarElements.healthBarFill,
-                player?.health,
-                player?.maxHealth
+                data?.health,
+                data?.maxHealth
             );
 
             if (chatSidebarElements.needBars) {
                 renderNeedBars(
                     chatSidebarElements.needBars,
-                    Array.isArray(player?.needBars) ? player.needBars : [],
+                    Array.isArray(data?.needBars) ? data.needBars : [],
                     {
                         showIcon: true,
                         includePlayerOnly: true,
                         variant: 'player'
                     }
                 );
+            }
+
+            if (data?.id) {
+                if (window.currentNpcData instanceof Map) {
+                    window.currentNpcData.set(data.id, { ...data });
+                }
+                if (typeof window.registerNpcContextMenu === 'function' && chatSidebarElements.card) {
+                    window.registerNpcContextMenu(chatSidebarElements.card, { ...data, isNPC: false });
+                }
             }
         }
 
@@ -4036,7 +4048,18 @@
                     return;
                 }
 
-                card.dataset.npcId = npc.id;
+                const npcIdString = String(npc.id);
+                if (card.dataset.npcMenuAttached === 'true' && card.dataset.npcId === npcIdString) {
+                    return;
+                }
+
+                card.dataset.npcId = npcIdString;
+                card.dataset.npcMenuAttached = 'true';
+
+                const existingButton = card.querySelector('.npc-card-menu-button');
+                const existingMenu = card.querySelector('.npc-card-menu');
+                existingButton?.remove();
+                existingMenu?.remove();
 
                 const button = document.createElement('button');
                 button.type = 'button';

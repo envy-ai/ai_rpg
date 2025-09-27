@@ -1290,6 +1290,7 @@ p .rarity-epic {
 }
 
 .chat-player-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1rem;
