@@ -1903,9 +1903,47 @@ class Player {
         return results;
     }
 
+    getNeedBarValue(identifier) {
+        const bar = this.#resolveNeedBarByIdentifier(identifier);
+        if (!bar) {
+            return null;
+        }
+        return Number.isFinite(bar.value) ? bar.value : null;
+    }
+
     setNeedBars(needBars = []) {
         this.#initializeNeedBars(needBars);
         return this.getNeedBars();
+    }
+
+    setNeedBarValue(identifier, value, options = {}) {
+        if (identifier === undefined || identifier === null) {
+            throw new Error('Need bar identifier is required');
+        }
+
+        const { allowPlayerOnly = true } = options;
+        const bar = this.#resolveNeedBarByIdentifier(String(identifier));
+        if (!bar) {
+            throw new Error(`Need bar '${identifier}' not found`);
+        }
+
+        if (!allowPlayerOnly && bar.playerOnly) {
+            throw new Error(`Need bar '${identifier}' is restricted to the player`);
+        }
+
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            throw new Error('Need bar value must be a finite number');
+        }
+
+        const previous = Number.isFinite(bar.value) ? bar.value : null;
+        const resolved = Player.#applyNeedBarValue(bar, numericValue);
+
+        if (previous === null || resolved !== previous) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return Player.#cloneNeedBarDefinition(bar);
     }
 
     applyNeedBarTurnChange(multiplier = 1) {

@@ -3473,6 +3473,92 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/player/needs', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            try {
+                const payload = buildNeedBarSnapshot(currentPlayer, {
+                    includePlayerOnly: true,
+                    type: 'player'
+                });
+
+                res.json({
+                    success: true,
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to load player needs:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to load player needs'
+                });
+            }
+        });
+
+        app.put('/api/player/needs', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            try {
+                const { needs: needUpdates } = req.body || {};
+                if (!Array.isArray(needUpdates)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'needs must be provided as an array'
+                    });
+                }
+
+                const applied = [];
+                for (const entry of needUpdates) {
+                    if (!entry || typeof entry !== 'object') {
+                        continue;
+                    }
+                    const rawId = typeof entry.id === 'string' ? entry.id.trim() : '';
+                    if (!rawId) {
+                        continue;
+                    }
+
+                    const numericValue = Number(entry.value);
+                    if (!Number.isFinite(numericValue)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `Invalid value for need '${rawId}'.`
+                        });
+                    }
+
+                    const updatedBar = currentPlayer.setNeedBarValue(rawId, numericValue);
+                    applied.push(normalizeNeedBarResponse(updatedBar));
+                }
+
+                const payload = buildNeedBarSnapshot(currentPlayer, {
+                    includePlayerOnly: true,
+                    type: 'player'
+                });
+                payload.applied = applied;
+
+                res.json({
+                    success: true,
+                    message: applied.length ? 'Need bars updated successfully' : 'No need bar changes applied',
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to update player needs:', error);
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to update player needs'
+                });
+            }
+        });
+
         function buildNpcDispositionSnapshot(npc) {
             if (!npc) {
                 return {
@@ -3559,6 +3645,125 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return resolved;
+        }
+
+        function normalizeNeedBarResponse(bar) {
+            if (!bar) {
+                return null;
+            }
+
+            const toNumber = (input) => {
+                const numeric = Number(input);
+                return Number.isFinite(numeric) ? numeric : null;
+            };
+
+            const sanitizeList = (input) => Array.isArray(input)
+                ? input.map(item => (typeof item === 'string' ? item.trim() : `${item ?? ''}`.trim())).filter(Boolean)
+                : [];
+
+            const effectThresholds = Array.isArray(bar.effectThresholds)
+                ? bar.effectThresholds.map(entry => ({
+                    threshold: toNumber(entry?.threshold),
+                    name: typeof entry?.name === 'string' ? entry.name : '',
+                    effect: typeof entry?.effect === 'string' ? entry.effect : ''
+                }))
+                : [];
+
+            const currentThreshold = bar.currentThreshold && typeof bar.currentThreshold === 'object'
+                ? {
+                    threshold: toNumber(bar.currentThreshold.threshold),
+                    name: typeof bar.currentThreshold.name === 'string' ? bar.currentThreshold.name : '',
+                    effect: typeof bar.currentThreshold.effect === 'string' ? bar.currentThreshold.effect : ''
+                }
+                : null;
+
+            const min = toNumber(bar.min);
+            const max = toNumber(bar.max);
+            const value = toNumber(bar.value);
+            const changePerTurn = toNumber(bar.changePerTurn);
+
+            return {
+                id: typeof bar.id === 'string' ? bar.id : null,
+                name: typeof bar.name === 'string' ? bar.name : (typeof bar.id === 'string' ? bar.id : 'Need'),
+                description: typeof bar.description === 'string' ? bar.description : '',
+                icon: typeof bar.icon === 'string' ? bar.icon : null,
+                color: typeof bar.color === 'string' ? bar.color : null,
+                min,
+                max,
+                value,
+                changePerTurn,
+                playerOnly: Boolean(bar.playerOnly),
+                initialValue: toNumber(bar.initialValue),
+                currentThreshold,
+                effectThresholds,
+                increases: {
+                    small: sanitizeList(bar.increases?.small),
+                    large: sanitizeList(bar.increases?.large),
+                    fill: sanitizeList(bar.increases?.fill)
+                },
+                decreases: {
+                    small: sanitizeList(bar.decreases?.small),
+                    large: sanitizeList(bar.decreases?.large)
+                },
+                relatedAttribute: typeof bar.relatedAttribute === 'string' ? bar.relatedAttribute : null,
+                relativeToLevel: typeof bar.relativeToLevel === 'string' ? bar.relativeToLevel : null
+            };
+        }
+
+        function buildNeedBarSnapshot(actor, { includePlayerOnly, type } = {}) {
+            if (!actor) {
+                return {
+                    needs: [],
+                    includePlayerOnly: Boolean(includePlayerOnly),
+                    npc: null,
+                    player: null
+                };
+            }
+
+            const isNPC = Boolean(actor.isNPC);
+            const resolvedIncludePlayerOnly = includePlayerOnly !== undefined
+                ? Boolean(includePlayerOnly)
+                : !isNPC;
+
+            let bars = [];
+            try {
+                if (typeof actor.getNeedBars === 'function') {
+                    bars = actor.getNeedBars({ includePlayerOnly: resolvedIncludePlayerOnly }) || [];
+                }
+            } catch (error) {
+                console.warn('Failed to collect need bars:', error?.message || error);
+                bars = [];
+            }
+
+            const normalizedNeeds = bars
+                .map(normalizeNeedBarResponse)
+                .filter(Boolean)
+                .sort((a, b) => {
+                    const nameA = (a.name || '').toLowerCase();
+                    const nameB = (b.name || '').toLowerCase();
+                    if (nameA < nameB) return -1;
+                    if (nameA > nameB) return 1;
+                    return 0;
+                });
+
+            const identity = {
+                id: actor.id,
+                name: actor.name || (isNPC ? 'Unknown NPC' : 'Player'),
+                isNPC
+            };
+
+            const payload = {
+                needs: normalizedNeeds,
+                includePlayerOnly: resolvedIncludePlayerOnly
+            };
+
+            if (type === 'player') {
+                payload.player = identity;
+            } else {
+                payload.npc = identity;
+            }
+
+            return payload;
         }
 
         // Update an NPC's core data (experimental editing UI)
@@ -3710,6 +3915,110 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Error updating NPC:', error);
                 res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        app.get('/api/npcs/:id/needs', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                const payload = buildNeedBarSnapshot(npc, {
+                    includePlayerOnly: false,
+                    type: 'npc'
+                });
+
+                res.json({
+                    success: true,
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to load NPC needs:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to load NPC needs'
+                });
+            }
+        });
+
+        app.put('/api/npcs/:id/needs', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                const { needs: needUpdates } = req.body || {};
+                if (!Array.isArray(needUpdates)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'needs must be provided as an array'
+                    });
+                }
+
+                const applied = [];
+                for (const entry of needUpdates) {
+                    if (!entry || typeof entry !== 'object') {
+                        continue;
+                    }
+                    const rawId = typeof entry.id === 'string' ? entry.id.trim() : '';
+                    if (!rawId) {
+                        continue;
+                    }
+
+                    const numericValue = Number(entry.value);
+                    if (!Number.isFinite(numericValue)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `Invalid value for need '${rawId}'.`
+                        });
+                    }
+
+                    const updatedBar = npc.setNeedBarValue(rawId, numericValue, { allowPlayerOnly: false });
+                    applied.push(normalizeNeedBarResponse(updatedBar));
+                }
+
+                const payload = buildNeedBarSnapshot(npc, {
+                    includePlayerOnly: false,
+                    type: 'npc'
+                });
+                payload.applied = applied;
+
+                res.json({
+                    success: true,
+                    message: applied.length ? 'Need bars updated successfully' : 'No need bar changes applied',
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to update NPC needs:', error);
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to update NPC needs'
+                });
             }
         });
 

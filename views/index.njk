@@ -488,6 +488,30 @@
             </form>
         </div>
     </div>
+    <div id="npcNeedsModal" class="modal npc-needs-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcNeedsModalTitle">Adjust Needs</h2>
+                <button type="button" class="modal__close" id="npcNeedsCloseBtn" aria-label="Close needs editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="npcNeedsForm" class="modal__body npc-needs-body" novalidate>
+                <div class="npc-needs-summary" id="npcNeedsSummary"></div>
+                <div class="npc-needs-loading" id="npcNeedsLoading" hidden>Loading needs…</div>
+                <div class="npc-needs-list" id="npcNeedsList">
+                    <div class="npc-needs-empty" id="npcNeedsEmpty">No need bars available.</div>
+                </div>
+                <footer class="npc-needs-footer">
+                    <div class="npc-needs-status" id="npcNeedsStatus" role="status" aria-live="polite"></div>
+                    <div class="npc-needs-actions">
+                        <button type="button" class="npc-needs-cancel" id="npcNeedsCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-needs-save-btn" id="npcNeedsSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
     <div id="npcEditModal" class="modal npc-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1993,6 +2017,16 @@
         const npcDispositionCancelBtn = document.getElementById('npcDispositionCancelBtn');
         const npcDispositionSaveBtn = document.getElementById('npcDispositionSaveBtn');
         const npcDispositionCloseBtn = document.getElementById('npcDispositionCloseBtn');
+        const npcNeedsModal = document.getElementById('npcNeedsModal');
+        const npcNeedsForm = document.getElementById('npcNeedsForm');
+        const npcNeedsSummary = document.getElementById('npcNeedsSummary');
+        const npcNeedsList = document.getElementById('npcNeedsList');
+        const npcNeedsEmpty = document.getElementById('npcNeedsEmpty');
+        const npcNeedsStatus = document.getElementById('npcNeedsStatus');
+        const npcNeedsLoading = document.getElementById('npcNeedsLoading');
+        const npcNeedsCancelBtn = document.getElementById('npcNeedsCancelBtn');
+        const npcNeedsSaveBtn = document.getElementById('npcNeedsSaveBtn');
+        const npcNeedsCloseBtn = document.getElementById('npcNeedsCloseBtn');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -2631,6 +2665,9 @@
         let currentNpcViewId = null;
         let currentNpcDispositionId = null;
         let currentNpcDispositionData = null;
+        let currentNpcNeedsTargetId = null;
+        let currentNpcNeedsTargetType = null;
+        let currentNpcNeedsData = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
         let currentThingLockedMetadata = {};
@@ -2973,6 +3010,325 @@
             });
 
             setNpcDispositionDirty();
+        }
+
+        function clampNeedValue(value, min, max) {
+            let numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                numeric = Number.isFinite(min) ? min : 0;
+            }
+            if (Number.isFinite(min)) {
+                numeric = Math.max(min, numeric);
+            }
+            if (Number.isFinite(max)) {
+                numeric = Math.min(max, numeric);
+            }
+            return Math.round(numeric);
+        }
+
+        function resolveNeedThreshold(effectThresholds, value) {
+            if (!Array.isArray(effectThresholds) || !effectThresholds.length) {
+                return null;
+            }
+            if (!Number.isFinite(value)) {
+                return null;
+            }
+
+            let resolved = null;
+            for (const entry of effectThresholds) {
+                if (!entry) {
+                    continue;
+                }
+                const threshold = Number(entry.threshold);
+                if (!Number.isFinite(threshold)) {
+                    continue;
+                }
+                if (value >= threshold && (!resolved || threshold >= resolved.threshold)) {
+                    resolved = {
+                        threshold,
+                        name: typeof entry.name === 'string' ? entry.name : '',
+                        effect: typeof entry.effect === 'string' ? entry.effect : ''
+                    };
+                }
+            }
+            return resolved;
+        }
+
+        function updateCachedNpcNeeds(npcId, needs, options = {}) {
+            const cache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            if (!cache || !npcId) {
+                return null;
+            }
+
+            const baseNpc = cache.get(npcId) || { id: npcId, isNPC: options.isNPC !== undefined ? options.isNPC : true };
+            const needBars = Array.isArray(needs)
+                ? needs.map(bar => ({ ...bar }))
+                : [];
+
+            const updatedNpc = {
+                ...baseNpc,
+                isNPC: options.isNPC !== undefined ? options.isNPC : baseNpc.isNPC,
+                needBars
+            };
+
+            cache.set(npcId, updatedNpc);
+            return updatedNpc;
+        }
+
+        function setNpcNeedsStatus(message = '', type = null) {
+            if (!npcNeedsStatus) {
+                return;
+            }
+            npcNeedsStatus.textContent = message || '';
+            npcNeedsStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                npcNeedsStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                npcNeedsStatus.classList.add('is-success');
+            }
+        }
+
+        function setNpcNeedsDirty() {
+            if (!npcNeedsSaveBtn) {
+                return;
+            }
+            if (!currentNpcNeedsData || !Array.isArray(currentNpcNeedsData.needs)) {
+                npcNeedsSaveBtn.disabled = true;
+                return;
+            }
+            const hasChanges = currentNpcNeedsData.needs.some(entry => entry.value !== entry.originalValue);
+            npcNeedsSaveBtn.disabled = !hasChanges;
+        }
+
+        function updateNpcNeedsSummary(payload) {
+            if (!npcNeedsSummary) {
+                return;
+            }
+            if (!payload) {
+                npcNeedsSummary.textContent = '';
+                return;
+            }
+
+            const subject = payload.player || payload.npc || {};
+            const name = subject.name || 'the character';
+            const isPlayer = Boolean(payload.player && !payload.player.isNPC);
+
+            const notes = [`Adjust the need bars for ${name}.`];
+            if (!isPlayer && payload.includePlayerOnly === false) {
+                notes.push('Player-only needs are hidden for NPCs.');
+            }
+            npcNeedsSummary.textContent = notes.join(' ');
+        }
+
+        function renderNpcNeedsEntries(data) {
+            if (!npcNeedsList || !npcNeedsEmpty) {
+                return;
+            }
+
+            npcNeedsList.innerHTML = '';
+
+            const needs = Array.isArray(data?.needs) ? data.needs : [];
+            if (!needs.length) {
+                npcNeedsEmpty.removeAttribute('hidden');
+                setNpcNeedsDirty();
+                return;
+            }
+
+            npcNeedsEmpty.setAttribute('hidden', '');
+
+            needs.forEach(entry => {
+                const min = Number.isFinite(Number(entry.min)) ? Number(entry.min) : 0;
+                let max = Number.isFinite(Number(entry.max)) ? Number(entry.max) : null;
+                if (!Number.isFinite(max)) {
+                    max = min + Math.max(100, Math.abs(min) || 100);
+                }
+                if (max <= min) {
+                    max = min + 100;
+                }
+
+                const normalizedValue = clampNeedValue(entry.value, min, max);
+                entry.value = normalizedValue;
+                if (entry.originalValue === undefined || entry.originalValue === null) {
+                    entry.originalValue = normalizedValue;
+                }
+
+                const card = document.createElement('div');
+                card.className = 'npc-needs-entry';
+                card.dataset.needId = entry.id || '';
+
+                const heading = document.createElement('div');
+                heading.className = 'npc-needs-heading';
+
+                const labelEl = document.createElement('div');
+                labelEl.className = 'npc-needs-label';
+                if (entry.icon) {
+                    const iconEl = document.createElement('span');
+                    iconEl.textContent = entry.icon;
+                    iconEl.setAttribute('aria-hidden', 'true');
+                    labelEl.appendChild(iconEl);
+                }
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = entry.name || entry.id || 'Need';
+                labelEl.appendChild(nameSpan);
+                heading.appendChild(labelEl);
+
+                const metaEl = document.createElement('div');
+                metaEl.className = 'npc-needs-meta';
+                const rangeLabel = document.createElement('span');
+                rangeLabel.textContent = `Range ${min} – ${max}`;
+                metaEl.appendChild(rangeLabel);
+                if (Number.isFinite(entry.changePerTurn) && entry.changePerTurn !== 0) {
+                    const rateLabel = document.createElement('span');
+                    rateLabel.textContent = `Δ/turn ${entry.changePerTurn > 0 ? `+${entry.changePerTurn}` : entry.changePerTurn}`;
+                    metaEl.appendChild(rateLabel);
+                }
+                if (entry.playerOnly) {
+                    const badge = document.createElement('span');
+                    badge.textContent = 'Player-only';
+                    badge.style.color = '#fde68a';
+                    metaEl.appendChild(badge);
+                }
+                heading.appendChild(metaEl);
+                card.appendChild(heading);
+
+                if (entry.description) {
+                    const descriptionEl = document.createElement('p');
+                    descriptionEl.className = 'npc-needs-description';
+                    descriptionEl.textContent = entry.description;
+                    card.appendChild(descriptionEl);
+                }
+
+                const progress = document.createElement('div');
+                progress.className = 'npc-needs-progress';
+                if (entry.color) {
+                    progress.style.setProperty('--npc-needs-color', entry.color);
+                }
+                const progressFill = document.createElement('div');
+                progressFill.className = 'npc-needs-progress-fill';
+                progress.appendChild(progressFill);
+                card.appendChild(progress);
+
+                const sliderRow = document.createElement('div');
+                sliderRow.className = 'npc-needs-slider-row';
+
+                const valueDisplay = document.createElement('span');
+                valueDisplay.className = 'npc-needs-value-display';
+                sliderRow.appendChild(valueDisplay);
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.className = 'npc-needs-slider';
+                slider.min = String(min);
+                slider.max = String(max);
+                slider.step = '1';
+                slider.value = String(normalizedValue);
+                sliderRow.appendChild(slider);
+
+                card.appendChild(sliderRow);
+
+                const inputRow = document.createElement('div');
+                inputRow.className = 'npc-needs-input-row';
+
+                const valueWrapper = document.createElement('label');
+                valueWrapper.className = 'npc-needs-value-input';
+                valueWrapper.textContent = 'Value';
+                const numberInput = document.createElement('input');
+                numberInput.type = 'number';
+                numberInput.value = String(normalizedValue);
+                numberInput.step = '1';
+                numberInput.min = String(min);
+                numberInput.max = String(max);
+                valueWrapper.appendChild(numberInput);
+                inputRow.appendChild(valueWrapper);
+
+                const buttonsWrapper = document.createElement('div');
+                buttonsWrapper.className = 'npc-needs-buttons';
+
+                const addButton = (label, action, delta = 0) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.dataset.action = action;
+                    button.dataset.delta = String(delta);
+                    button.textContent = label;
+                    buttonsWrapper.appendChild(button);
+                };
+
+                addButton('Min', 'min');
+                const rangeSpan = max - min;
+                const step = Math.max(1, Math.round(rangeSpan / 10));
+                addButton(`-${step}`, 'delta', -step);
+                addButton(`+${step}`, 'delta', step);
+                addButton('Max', 'max');
+
+                inputRow.appendChild(buttonsWrapper);
+                card.appendChild(inputRow);
+
+                const thresholdLabel = resolveNeedThreshold(entry.effectThresholds, normalizedValue);
+                const thresholdEl = document.createElement('div');
+                thresholdEl.className = 'npc-needs-thresholds';
+                thresholdEl.textContent = thresholdLabel
+                    ? `Current effect: ${thresholdLabel.name || thresholdLabel.effect || 'None'}`
+                    : 'Current effect: None';
+                card.appendChild(thresholdEl);
+
+                const updateDisplays = (current) => {
+                    const denominator = max - min;
+                    const ratio = denominator ? Math.max(0, Math.min(1, (current - min) / denominator)) : 1;
+                    progressFill.style.width = `${(ratio * 100).toFixed(1)}%`;
+                    valueDisplay.textContent = `${current} / ${max}`;
+                    const resolvedThreshold = resolveNeedThreshold(entry.effectThresholds, current);
+                    thresholdEl.textContent = resolvedThreshold
+                        ? `Current effect: ${resolvedThreshold.name || resolvedThreshold.effect || 'None'}`
+                        : 'Current effect: None';
+                };
+
+                updateDisplays(normalizedValue);
+
+                const applyValue = (nextValue) => {
+                    const clampedValue = clampNeedValue(nextValue, min, max);
+                    slider.value = String(clampedValue);
+                    numberInput.value = String(clampedValue);
+                    entry.value = clampedValue;
+                    updateDisplays(clampedValue);
+                    setNpcNeedsDirty();
+                };
+
+                slider.addEventListener('input', () => {
+                    applyValue(Number(slider.value));
+                });
+
+                numberInput.addEventListener('input', () => {
+                    const parsed = Number(numberInput.value);
+                    if (Number.isFinite(parsed)) {
+                        applyValue(parsed);
+                    }
+                });
+
+                numberInput.addEventListener('blur', () => {
+                    applyValue(Number(numberInput.value));
+                });
+
+                buttonsWrapper.querySelectorAll('button').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        const action = button.dataset.action;
+                        if (action === 'min') {
+                            applyValue(min);
+                        } else if (action === 'max') {
+                            applyValue(max);
+                        } else if (action === 'delta') {
+                            const delta = Number(button.dataset.delta);
+                            if (Number.isFinite(delta)) {
+                                applyValue(entry.value + delta);
+                            }
+                        }
+                    });
+                });
+
+                npcNeedsList.appendChild(card);
+            });
+
+            setNpcNeedsDirty();
         }
 
         function updateThingEditStatus(message = '', type = null) {
@@ -3406,7 +3762,42 @@
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden) {
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function closeNpcNeedsModal() {
+            if (!npcNeedsModal) {
+                return;
+            }
+            npcNeedsModal.setAttribute('aria-hidden', 'true');
+            npcNeedsModal.setAttribute('hidden', '');
+            currentNpcNeedsTargetId = null;
+            currentNpcNeedsTargetType = null;
+            currentNpcNeedsData = null;
+            if (npcNeedsList) {
+                npcNeedsList.innerHTML = '';
+                npcNeedsList.removeAttribute('aria-busy');
+            }
+            if (npcNeedsSummary) {
+                npcNeedsSummary.textContent = '';
+            }
+            if (npcNeedsLoading) {
+                npcNeedsLoading.setAttribute('hidden', '');
+            }
+            setNpcNeedsStatus('', null);
+            if (npcNeedsSaveBtn) {
+                npcNeedsSaveBtn.disabled = true;
+            }
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3522,6 +3913,22 @@
             npcDispositionForm.addEventListener('submit', submitNpcDispositions);
         }
 
+        if (npcNeedsCancelBtn) {
+            npcNeedsCancelBtn.addEventListener('click', () => {
+                closeNpcNeedsModal();
+            });
+        }
+
+        if (npcNeedsCloseBtn) {
+            npcNeedsCloseBtn.addEventListener('click', () => {
+                closeNpcNeedsModal();
+            });
+        }
+
+        if (npcNeedsForm) {
+            npcNeedsForm.addEventListener('submit', submitNpcNeeds);
+        }
+
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
                 closeNpcViewModal();
@@ -3562,15 +3969,17 @@
             });
         }
 
-            if (npcModalBackdrop) {
-                npcModalBackdrop.addEventListener('click', (event) => {
-                    if (event.target === npcModalBackdrop) {
-                        if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
-                            closeNpcDispositionModal();
-                        } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
-                            closeThingEditModal();
-                        } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
-                            closeNpcViewModal();
+        if (npcModalBackdrop) {
+            npcModalBackdrop.addEventListener('click', (event) => {
+                if (event.target === npcModalBackdrop) {
+                    if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
+                        closeNpcNeedsModal();
+                    } else if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
+                        closeNpcDispositionModal();
+                    } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
+                        closeThingEditModal();
+                    } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
+                        closeNpcViewModal();
                         } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
                             closeNpcInventoryModal();
                     } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
@@ -4136,6 +4545,233 @@
             }
         }
 
+        async function showNpcNeedsModal(target, options = {}) {
+            if (!target || !npcNeedsModal || !npcModalBackdrop) {
+                return;
+            }
+
+            const type = options.type || (target.isNPC ? 'npc' : 'player');
+            const fallbackPlayerId = window.currentPlayerData && typeof window.currentPlayerData.id === 'string'
+                ? window.currentPlayerData.id
+                : null;
+            const targetId = typeof target.id === 'string' && target.id
+                ? target.id
+                : (type === 'player' ? fallbackPlayerId : null);
+
+            if (type === 'npc' && !targetId) {
+                console.warn('Unable to open needs editor: NPC id missing');
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            currentNpcNeedsTargetId = targetId || null;
+            currentNpcNeedsTargetType = type;
+            currentNpcNeedsData = null;
+            updateNpcNeedsSummary(null);
+            setNpcNeedsStatus('', null);
+            if (npcNeedsLoading) {
+                npcNeedsLoading.removeAttribute('hidden');
+            }
+            if (npcNeedsList) {
+                npcNeedsList.innerHTML = '';
+                npcNeedsList.setAttribute('aria-busy', 'true');
+            }
+            if (npcNeedsEmpty) {
+                npcNeedsEmpty.setAttribute('hidden', '');
+            }
+            if (npcNeedsSaveBtn) {
+                npcNeedsSaveBtn.disabled = true;
+            }
+
+            npcModalBackdrop.removeAttribute('hidden');
+            npcNeedsModal.removeAttribute('hidden');
+            npcNeedsModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+
+            const endpoint = type === 'player'
+                ? '/api/player/needs'
+                : `/api/npcs/${encodeURIComponent(targetId)}/needs`;
+
+            try {
+                const response = await fetch(endpoint, { cache: 'no-store' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const normalizedNeeds = Array.isArray(data.needs)
+                    ? data.needs.map(entry => ({
+                        ...entry,
+                        value: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0,
+                        originalValue: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0
+                    }))
+                    : [];
+
+                const payload = {
+                    type,
+                    targetId,
+                    player: data.player || (type === 'player' ? { id: targetId, name: target.name || 'Player', isNPC: false } : null),
+                    npc: data.npc || (type === 'npc' ? { id: targetId, name: target.name || 'NPC', isNPC: true } : null),
+                    includePlayerOnly: data.includePlayerOnly !== undefined ? Boolean(data.includePlayerOnly) : type !== 'npc',
+                    needs: normalizedNeeds
+                };
+
+                currentNpcNeedsData = payload;
+                currentNpcNeedsTargetId = payload.npc?.id || payload.player?.id || targetId || null;
+                updateNpcNeedsSummary(payload);
+                renderNpcNeedsEntries(payload);
+                setNpcNeedsStatus('', null);
+
+                if (type === 'npc') {
+                    updateCachedNpcNeeds(targetId, normalizedNeeds);
+                } else {
+                    if (window.currentPlayerData && (!targetId || window.currentPlayerData.id === targetId)) {
+                        window.currentPlayerData = {
+                            ...window.currentPlayerData,
+                            needBars: normalizedNeeds.map(bar => ({ ...bar }))
+                        };
+                        updateChatPlayerPanel(window.currentPlayerData);
+                        renderNeedBars(chatSidebarElements.needBars, window.currentPlayerData.needBars, {
+                            includePlayerOnly: true,
+                            variant: 'player'
+                        });
+                    }
+                    if (window.currentNpcData instanceof Map && payload.player?.id) {
+                        updateCachedNpcNeeds(payload.player.id, normalizedNeeds);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load needs:', error);
+                currentNpcNeedsData = null;
+                updateNpcNeedsSummary({
+                    player: type === 'player' ? { name: target.name || 'Player' } : null,
+                    npc: type === 'npc' ? { name: target.name || 'NPC' } : null
+                });
+                if (npcNeedsList) {
+                    npcNeedsList.innerHTML = '';
+                }
+                if (npcNeedsEmpty) {
+                    npcNeedsEmpty.removeAttribute('hidden');
+                }
+                setNpcNeedsStatus(`Failed to load needs: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (npcNeedsList) {
+                    npcNeedsList.removeAttribute('aria-busy');
+                }
+                if (npcNeedsLoading) {
+                    npcNeedsLoading.setAttribute('hidden', '');
+                }
+                setNpcNeedsDirty();
+            }
+        }
+
+        async function submitNpcNeeds(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            if (!currentNpcNeedsData || !currentNpcNeedsTargetId) {
+                setNpcNeedsStatus('No need changes to save.', null);
+                setNpcNeedsDirty();
+                return;
+            }
+
+            const updates = currentNpcNeedsData.needs
+                .filter(entry => entry.value !== entry.originalValue)
+                .map(entry => ({ id: entry.id, value: entry.value }));
+
+            if (!updates.length) {
+                setNpcNeedsStatus('No changes to save.', null);
+                setNpcNeedsDirty();
+                return;
+            }
+
+            setNpcNeedsStatus('Saving need changes…', null);
+            if (npcNeedsSaveBtn) {
+                npcNeedsSaveBtn.disabled = true;
+            }
+
+            const endpoint = currentNpcNeedsTargetType === 'player'
+                ? '/api/player/needs'
+                : `/api/npcs/${encodeURIComponent(currentNpcNeedsTargetId)}/needs`;
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ needs: updates })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const normalizedNeeds = Array.isArray(data.needs)
+                    ? data.needs.map(entry => ({
+                        ...entry,
+                        value: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0,
+                        originalValue: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0
+                    }))
+                    : [];
+
+                const payload = {
+                    type: currentNpcNeedsTargetType,
+                    targetId: currentNpcNeedsTargetId,
+                    player: data.player || currentNpcNeedsData.player || null,
+                    npc: data.npc || currentNpcNeedsData.npc || null,
+                    includePlayerOnly: data.includePlayerOnly !== undefined
+                        ? Boolean(data.includePlayerOnly)
+                        : currentNpcNeedsData.includePlayerOnly,
+                    needs: normalizedNeeds
+                };
+
+                currentNpcNeedsData = payload;
+                currentNpcNeedsTargetId = payload.npc?.id || payload.player?.id || currentNpcNeedsTargetId;
+                updateNpcNeedsSummary(payload);
+                renderNpcNeedsEntries(payload);
+                setNpcNeedsStatus(data.message || 'Need bars updated successfully.', 'success');
+
+                if (payload.type === 'npc') {
+                    const npcId = payload.npc?.id || currentNpcNeedsTargetId;
+                    const updatedNpc = updateCachedNpcNeeds(npcId, normalizedNeeds);
+                    if (updatedNpc) {
+                        if (currentNpcViewId === npcId) {
+                            showNpcViewModal(updatedNpc);
+                        }
+                        window.refreshParty?.();
+                        window.loadCurrentLocation?.();
+                    }
+                } else {
+                    const playerId = payload.player?.id || currentNpcNeedsTargetId;
+                    if (window.currentPlayerData && window.currentPlayerData.id === playerId) {
+                        window.currentPlayerData = {
+                            ...window.currentPlayerData,
+                            needBars: normalizedNeeds.map(bar => ({ ...bar }))
+                        };
+                        updateChatPlayerPanel(window.currentPlayerData);
+                        renderNeedBars(chatSidebarElements.needBars, window.currentPlayerData.needBars, {
+                            includePlayerOnly: true,
+                            variant: 'player'
+                        });
+                    }
+                    if (window.currentNpcData instanceof Map && playerId) {
+                        updateCachedNpcNeeds(playerId, normalizedNeeds);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to update needs:', error);
+                setNpcNeedsStatus(`Failed to update needs: ${error?.message || 'Unknown error'}`, 'error');
+                if (npcNeedsSaveBtn) {
+                    npcNeedsSaveBtn.disabled = false;
+                }
+            } finally {
+                setNpcNeedsDirty();
+            }
+        }
+
         function showNpcInventoryModal(npc) {
             if (!npc || !npcInventoryModal || !npcModalBackdrop) {
                 return;
@@ -4644,34 +5280,40 @@
                     return;
                 }
 
-            if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeNpcDispositionModal();
-                return;
-            }
+                if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcNeedsModal();
+                    return;
+                }
 
-            if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeThingEditModal();
-                return;
-            }
+                if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcDispositionModal();
+                    return;
+                }
 
-            if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeNpcViewModal();
-                return;
-            }
+                if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeThingEditModal();
+                    return;
+                }
 
-            if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeNpcInventoryModal();
-                return;
-            }
+                if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcViewModal();
+                    return;
+                }
 
-            if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeNpcEditModal();
-            }
+                if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcInventoryModal();
+                    return;
+                }
+
+                if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcEditModal();
+                }
         });
 
         function initTabs() {
@@ -4822,6 +5464,12 @@
                 inventoryButton.textContent = 'Inventory';
                 menu.appendChild(inventoryButton);
 
+                const needsButton = document.createElement('button');
+                needsButton.type = 'button';
+                needsButton.className = 'npc-card-menu-item';
+                needsButton.textContent = 'Needs';
+                menu.appendChild(needsButton);
+
                 let dispositionButton = null;
                 let deleteButton = null;
                 if (npc && npc.isNPC) {
@@ -4869,6 +5517,18 @@
                     closeNpcContextMenu();
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcInventoryModal(latestNpc);
+                });
+
+                needsButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeNpcContextMenu();
+                    const latestNpc = npcDataCache.get(npc.id) || npc;
+                    const type = npc.isNPC ? 'npc' : 'player';
+                    try {
+                        await showNpcNeedsModal(latestNpc, { type });
+                    } catch (error) {
+                        console.warn('Failed to open needs editor:', error);
+                    }
                 });
 
                 if (dispositionButton) {

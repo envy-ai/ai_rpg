@@ -23,6 +23,7 @@ You are an AI Location Generator for a fantasy RPG world. Your task is to create
     <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
     <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+    <races>{{ (setting.races or []) | join(', ') }}</races>
   </setting>
 
 <existingLocations>

@@ -21,6 +21,7 @@ You are a an AI role-playing gamemaster.
     <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
     <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+    <races>{{ (setting.races or []) | join(', ') }}</races>
   </setting>
 </context>
 

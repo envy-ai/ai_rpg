@@ -863,6 +863,46 @@ function getActiveSettingSnapshot() {
     return null;
 }
 
+function normalizeSettingValue(value, fallback = '') {
+    if (value === null || value === undefined) {
+        return fallback;
+    }
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+    }
+    return fallback;
+}
+
+function normalizeSettingList(value) {
+    const rawEntries = Array.isArray(value)
+        ? value
+        : (typeof value === 'string' ? value.split(/\r?\n/) : []);
+
+    const seen = new Set();
+    const result = [];
+
+    for (const entry of rawEntries) {
+        if (typeof entry !== 'string') {
+            continue;
+        }
+        const trimmed = entry.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const lower = trimmed.toLowerCase();
+        if (seen.has(lower)) {
+            continue;
+        }
+        seen.add(lower);
+        result.push(trimmed);
+    }
+
+    return result;
+}
+
 function buildNewGameDefaults(settingSnapshot = null) {
     const defaults = {
         playerName: '',
@@ -908,35 +948,8 @@ function buildNewGameDefaults(settingSnapshot = null) {
         .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
         .filter(skill => skill.length > 0);
 
-    const normalizeList = (value) => {
-        const rawEntries = Array.isArray(value)
-            ? value
-            : (typeof value === 'string' ? value.split(/\r?\n/) : []);
-
-        const seen = new Set();
-        const result = [];
-
-        for (const entry of rawEntries) {
-            if (typeof entry !== 'string') {
-                continue;
-            }
-            const trimmed = entry.trim();
-            if (!trimmed) {
-                continue;
-            }
-            const lower = trimmed.toLowerCase();
-            if (seen.has(lower)) {
-                continue;
-            }
-            seen.add(lower);
-            result.push(trimmed);
-        }
-
-        return result;
-    };
-
-    const classList = normalizeList(settingSnapshot.availableClasses);
-    const raceList = normalizeList(settingSnapshot.availableRaces);
+    const classList = normalizeSettingList(settingSnapshot.availableClasses);
+    const raceList = normalizeSettingList(settingSnapshot.availableRaces);
 
     defaults.availableClasses = classList;
     defaults.availableRaces = raceList;
@@ -1009,6 +1022,36 @@ function describeSettingForPrompt(settingSnapshot = null) {
     }
 
     return 'A rich fantasy world filled with adventure.';
+}
+
+function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback = null } = {}) {
+    const fallbackDescription = typeof descriptionFallback === 'string' && descriptionFallback
+        ? descriptionFallback
+        : describeSettingForPrompt(settingSnapshot);
+
+    const context = {
+        name: normalizeSettingValue(settingSnapshot?.name, ''),
+        description: normalizeSettingValue(settingSnapshot?.description, fallbackDescription || ''),
+        theme: normalizeSettingValue(settingSnapshot?.theme, ''),
+        genre: normalizeSettingValue(settingSnapshot?.genre, ''),
+        startingLocationType: normalizeSettingValue(settingSnapshot?.startingLocationType, ''),
+        magicLevel: normalizeSettingValue(settingSnapshot?.magicLevel, ''),
+        techLevel: normalizeSettingValue(settingSnapshot?.techLevel, ''),
+        tone: normalizeSettingValue(settingSnapshot?.tone, ''),
+        difficulty: normalizeSettingValue(settingSnapshot?.difficulty, ''),
+        currencyName: normalizeSettingValue(settingSnapshot?.currencyName, ''),
+        currencyNamePlural: normalizeSettingValue(settingSnapshot?.currencyNamePlural, ''),
+        currencyValueNotes: normalizeSettingValue(settingSnapshot?.currencyValueNotes, ''),
+        writingStyleNotes: normalizeSettingValue(settingSnapshot?.writingStyleNotes, '')
+    };
+
+    if (!context.description && fallbackDescription) {
+        context.description = fallbackDescription;
+    }
+
+    context.races = normalizeSettingList(settingSnapshot?.availableRaces);
+
+    return context;
 }
 
 function resolveLocationStyle(requestedStyle, settingSnapshot = null) {
@@ -1656,32 +1699,7 @@ function getEventPromptTemplates() {
 function buildBasePromptContext({ locationOverride = null } = {}) {
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
-
-    const normalizeSettingValue = (value, fallback = '') => {
-        if (value === null || value === undefined) {
-            return fallback;
-        }
-        if (typeof value === 'string') {
-            return value;
-        }
-        return String(value);
-    };
-
-    const settingContext = {
-        name: normalizeSettingValue(activeSetting?.name, ''),
-        description: normalizeSettingValue(activeSetting?.description, settingDescription || ''),
-        theme: normalizeSettingValue(activeSetting?.theme, ''),
-        genre: normalizeSettingValue(activeSetting?.genre, ''),
-        startingLocationType: normalizeSettingValue(activeSetting?.startingLocationType, ''),
-        magicLevel: normalizeSettingValue(activeSetting?.magicLevel, ''),
-        techLevel: normalizeSettingValue(activeSetting?.techLevel, ''),
-        tone: normalizeSettingValue(activeSetting?.tone, ''),
-        difficulty: normalizeSettingValue(activeSetting?.difficulty, ''),
-        currencyName: normalizeSettingValue(activeSetting?.currencyName, ''),
-        currencyNamePlural: normalizeSettingValue(activeSetting?.currencyNamePlural, ''),
-        currencyValueNotes: normalizeSettingValue(activeSetting?.currencyValueNotes, ''),
-        writingStyleNotes: normalizeSettingValue(activeSetting?.writingStyleNotes, '')
-    };
+    const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
 
     const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
 
@@ -5603,21 +5621,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 
     const abilityPromise = (async () => {
         const settingSnapshot = getActiveSettingSnapshot();
-        const settingContext = {
-            name: settingSnapshot?.name || '',
-            description: settingSnapshot?.description || '',
-            theme: settingSnapshot?.theme || '',
-            genre: settingSnapshot?.genre || '',
-            startingLocationType: settingSnapshot?.startingLocationType || '',
-            magicLevel: settingSnapshot?.magicLevel || '',
-            techLevel: settingSnapshot?.techLevel || '',
-            tone: settingSnapshot?.tone || '',
-            difficulty: settingSnapshot?.difficulty || '',
-            currencyName: settingSnapshot?.currencyName || '',
-            currencyNamePlural: settingSnapshot?.currencyNamePlural || '',
-            currencyValueNotes: settingSnapshot?.currencyValueNotes || '',
-            writingStyleNotes: settingSnapshot?.writingStyleNotes || ''
-        };
+        const settingContext = buildSettingPromptContext(settingSnapshot);
 
         const locationId = typeof character.currentLocation === 'string'
             ? character.currentLocation
@@ -7696,12 +7700,53 @@ function renderLocationGeneratorPrompt(options = {}) {
     try {
         const activeSetting = getActiveSettingSnapshot();
         const isStubExpansion = Boolean(options.isStubExpansion);
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+        const overrideSetting = options.setting;
+
+        const settingKeys = [
+            'name',
+            'description',
+            'theme',
+            'genre',
+            'startingLocationType',
+            'magicLevel',
+            'techLevel',
+            'tone',
+            'difficulty',
+            'currencyName',
+            'currencyNamePlural',
+            'currencyValueNotes',
+            'writingStyleNotes'
+        ];
+
+        let settingContext = defaultSettingContext;
+        if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
+            settingContext = { ...defaultSettingContext };
+            for (const key of settingKeys) {
+                if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
+                    settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
+                settingContext.races = normalizeSettingList(overrideSetting.races);
+            }
+            if (!settingContext.description) {
+                settingContext.description = defaultSettingContext.description;
+            }
+        } else if (typeof overrideSetting === 'string') {
+            settingContext = {
+                ...defaultSettingContext,
+                description: overrideSetting
+            };
+        }
+
         const templateName = isStubExpansion
             ? 'location-generator.stub.xml.njk'
             : 'location-generator.full.xml.njk';
 
         const baseVariables = {
-            setting: options.setting || describeSettingForPrompt(activeSetting),
+            setting: settingContext,
             existingLocations: options.existingLocations || [],
             shortDescription: options.shortDescription || null,
             locationTheme: options.locationTheme || options.theme || null,
@@ -7752,8 +7797,49 @@ function renderRegionGeneratorPrompt(options = {}) {
     try {
         const templateName = 'region-generator.full.xml.njk';
         const activeSetting = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+        const overrideSetting = options.setting;
+
+        const settingKeys = [
+            'name',
+            'description',
+            'theme',
+            'genre',
+            'startingLocationType',
+            'magicLevel',
+            'techLevel',
+            'tone',
+            'difficulty',
+            'currencyName',
+            'currencyNamePlural',
+            'currencyValueNotes',
+            'writingStyleNotes'
+        ];
+
+        let settingContext = defaultSettingContext;
+        if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
+            settingContext = { ...defaultSettingContext };
+            for (const key of settingKeys) {
+                if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
+                    settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
+                settingContext.races = normalizeSettingList(overrideSetting.races);
+            }
+            if (!settingContext.description) {
+                settingContext.description = defaultSettingContext.description;
+            }
+        } else if (typeof overrideSetting === 'string') {
+            settingContext = {
+                ...defaultSettingContext,
+                description: overrideSetting
+            };
+        }
+
         const variables = {
-            setting: options.setting || describeSettingForPrompt(activeSetting),
+            setting: settingContext,
             regionName: options.regionName || null,
             regionDescription: options.regionDescription || null,
             regionNotes: options.regionNotes || null
