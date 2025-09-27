@@ -1,0 +1,89 @@
+need_bars:
+  food:
+    name: Food
+    description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: -1
+    relative_to_level: false
+    small_increase:
+      - light meal
+      - snack
+      - foraged food
+    large_increase:
+      - hearty meal
+      - feast
+      - well-prepared food
+    fill_completely:
+      - large meal
+    small_decrease:
+      - light activity
+    large_decrease:
+      - strenuous activity
+    effect_thresholds:
+      0:
+        name: Starving
+        effect: -10% to health and attributes, chance of fainting
+      1:
+        name: Hungry
+        effect: -5% to health and attributes
+      25:
+        name: Peckish
+        effect: No effect
+      40:
+        name: Not Hungry
+        effect: No effect
+      60:
+        name: Satisfied
+        effect: No effect
+      80:
+        name: Full
+        effect: No effect
+      100:
+        name: Stuffed
+        effect: No effect
+  rest:
+    name: Rest
+    description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: -1
+    relative_to_level: false
+    small_increase:
+      - short rest
+      - nap
+      - took minor stimulant
+      - light meditation
+    large_increase:
+      - restless night's sleep
+      - took strong stimulant
+    fill_completely:
+      - restful night's sleep
+    small_decrease:
+      - light activity
+    large_decrease:
+      - strenuous activity
+    effect_thresholds:
+      0:
+        name: Exhausted
+        effect: -10% to health and attributes, chance of passing out
+      1:
+        name: Very Tired
+        effect: -5% to health and attributes
+      25:
+        name: Tired
+        effect: Reduced focus and minor penalties
+      40:
+        name: Weary
+        effect: No effect
+      60:
+        name: Rested
+        effect: No effect
+      80:
+        name: Well Rested
+        effect: No effect
+      100:
+        name: Fully Rested
+        effect: No effect
