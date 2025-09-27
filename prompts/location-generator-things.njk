@@ -31,11 +31,21 @@ Equipment slots:
 </location>
 </context>
 
-I'd like you to generate a set of 1 to 5 items that would be found in the above location in the above setting. The items should be appropriate for the setting. Output them in the format below:
+I'd like you to generate a set of items and scenery that would be found in the above location in the above setting. The items should be appropriate for the setting. Output them in the format below:
 
-<items>
+<things>
 {% include "_includes/item.njk" %}
-[0-4 more items depending on how many you generate]
-</items>
+[... more items and scenery as appropriate ...]
+</things>
+
+You should generate a mix of items and scenery at the number and rarity levels according to these lists:
+
+Items:
+{% set itemRarities = rarityList and rarityList.items or {} %}{% if itemRarities %}{% for rarity, count in itemRarities | dictsort %}  {{ rarity }}: {{ count }}
+{% endfor %}{% else %}  (none){% endif %}
+
+Scenery:
+{% set sceneryRarities = rarityList and rarityList.scenery or {} %}{% if sceneryRarities %}{% for rarity, count in sceneryRarities | dictsort %}  {{ rarity }}: {{ count }}
+{% endfor %}{% else %}  (none){% endif %}
 </generationPrompt>
 </template>

@@ -26,6 +26,7 @@ class Location {
   #npcIds;
   #statusEffects;
   #thingIds;
+  #generationHints;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -44,7 +45,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [] } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -77,6 +78,7 @@ class Location {
       ? [...new Set(thingIds.filter(id => typeof id === 'string'))]
       : [];
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
+    this.#generationHints = Location.#normalizeGenerationHints(generationHints);
 
     // Index by ID and name if provided
     Location.#indexByID.set(this.#id, this);
@@ -134,10 +136,12 @@ class Location {
           value = child.textContent.trim();
         }
 
-        // Convert baseLevel to number
+        // Convert numeric fields to numbers
         if (child.tagName === 'baseLevel') {
           locationData[child.tagName] = parseInt(value, 10);
         } else if (child.tagName === 'relativeLevel') {
+          locationData[child.tagName] = parseInt(value, 10);
+        } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
           locationData[child.tagName] = parseInt(value, 10);
         } else {
           locationData[child.tagName] = value;
@@ -183,7 +187,13 @@ class Location {
 
       const promotionData = {
         description: locationData.description,
-        baseLevel: parsedBaseLevel
+        baseLevel: parsedBaseLevel,
+        generationHints: {
+          numItems: locationData.numItems,
+          numScenery: locationData.numScenery,
+          numNpcs: locationData.numNpcs,
+          numHostiles: locationData.numHostiles
+        }
       };
 
       if (allowRename && locationData.name) {
@@ -233,7 +243,13 @@ class Location {
     return new Location({
       description: locationData.description,
       baseLevel,
-      name: locationData.name
+      name: locationData.name,
+      generationHints: {
+        numItems: locationData.numItems,
+        numScenery: locationData.numScenery,
+        numNpcs: locationData.numNpcs,
+        numHostiles: locationData.numHostiles
+      }
     });
   }
 
@@ -359,7 +375,7 @@ class Location {
     this.#hasGeneratedStubs = Boolean(value);
   }
 
-  promoteFromStub({ name, description, baseLevel, imageId } = {}) {
+  promoteFromStub({ name, description, baseLevel, imageId, generationHints } = {}) {
     if (!description || typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
@@ -377,9 +393,29 @@ class Location {
     if (imageId !== undefined) {
       this.imageId = imageId;
     }
+    if (generationHints !== undefined) {
+      this.generationHints = generationHints;
+    }
     this.#isStub = false;
     this.#stubMetadata = null;
     this.#hasGeneratedStubs = false;
+  }
+
+  get generationHints() {
+    if (!this.#generationHints) {
+      return {
+        numItems: null,
+        numScenery: null,
+        numNpcs: null,
+        numHostiles: null
+      };
+    }
+    return { ...this.#generationHints };
+  }
+
+  set generationHints(hints) {
+    this.#generationHints = Location.#normalizeGenerationHints(hints);
+    this.#lastUpdated = new Date();
   }
 
   markStubsGenerated() {
@@ -666,6 +702,43 @@ class Location {
     }
 
     return normalized;
+  }
+
+  static #normalizeGenerationHints(hints = null) {
+    const clampCount = (value) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return 0;
+      }
+      return Math.max(0, Math.min(20, Math.round(numeric)));
+    };
+
+    if (!hints || typeof hints !== 'object') {
+      return {
+        numItems: null,
+        numScenery: null,
+        numNpcs: null,
+        numHostiles: null
+      };
+    }
+
+    const normalize = (value) => {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return null;
+      }
+      return Math.max(0, Math.min(20, Math.round(numeric)));
+    };
+
+    return {
+      numItems: normalize(hints.numItems),
+      numScenery: normalize(hints.numScenery),
+      numNpcs: normalize(hints.numNpcs),
+      numHostiles: normalize(hints.numHostiles)
+    };
   }
 
   getStatusEffects() {
