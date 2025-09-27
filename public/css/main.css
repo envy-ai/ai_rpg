@@ -2354,6 +2354,7 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  color: #f8fafc;
 }
 
 .npc-edit-section h3 {
