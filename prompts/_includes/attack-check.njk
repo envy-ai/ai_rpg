@@ -35,6 +35,11 @@ or
   </defenderInfo>
   <ability>N/A or name of the ability used</ability>
   <weapon>N/A or name of the weapon used (barehanded if none equipped or specified in the playerAction)</weapon>
-  <circumstanceModifier>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</circumstanceModifier>
-  <circumstanceModifierReason>Brief explanation of the circumstance modifier, N/A if 0</circumstanceModifierReason>
+  <curcumstanceModifiers>
+    <circumstanceModifier>
+      <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
+      <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
+    </circumstanceModifier>
+    ... additional circumstanceModifier tags as needed ...
+  </curcumstanceModifiers>
 </attack>

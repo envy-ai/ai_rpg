@@ -9,4 +9,11 @@ Accounting for their information above, what has recently happened, their goals,
   <description>1-2 sentence description of what the NPC will attempt to do next. This may be any plausible thing that NPC might do, including spoken dialogue or just going about their business.</description>
   <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary)</difficulty>
   <skill>Name of a skill, or N/A if trivial</skill>
+  <curcumstanceModifiers>
+    <circumstanceModifier>
+      <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
+      <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
+    </circumstanceModifier>
+    ... additional circumstanceModifier tags as needed ...
+  </curcumstanceModifiers>
 </npcAction>

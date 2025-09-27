@@ -501,6 +501,45 @@ module.exports = function registerApiRoutes(scope) {
 
                 const attackEntry = { attacker, defender, ability, weapon };
 
+                const collectCircumstanceModifiers = (node) => {
+                    if (!node || typeof node.getElementsByTagName !== 'function') {
+                        return [];
+                    }
+
+                    const modifierNodes = Array.from(node.getElementsByTagName('circumstanceModifier') || []);
+                    const modifiers = [];
+
+                    for (const modifierNode of modifierNodes) {
+                        if (!modifierNode || typeof modifierNode.getElementsByTagName !== 'function') {
+                            continue;
+                        }
+
+                        const amountNode = modifierNode.getElementsByTagName('amount')?.[0] || null;
+                        const reasonNode = modifierNode.getElementsByTagName('reason')?.[0] || null;
+
+                        const amountText = amountNode && typeof amountNode.textContent === 'string'
+                            ? amountNode.textContent.trim()
+                            : null;
+                        const reasonText = reasonNode && typeof reasonNode.textContent === 'string'
+                            ? reasonNode.textContent.trim()
+                            : null;
+
+                        const amount = amountText !== null && amountText !== '' ? Number(amountText) : null;
+                        const hasReason = reasonText && reasonText.toLowerCase() !== 'n/a';
+
+                        if (!Number.isFinite(amount) && !hasReason) {
+                            continue;
+                        }
+
+                        modifiers.push({
+                            amount: Number.isFinite(amount) ? amount : 0,
+                            reason: hasReason ? reasonText : null
+                        });
+                    }
+
+                    return modifiers;
+                };
+
                 if (attackSkill || damageAttribute) {
                     attackEntry.attackerInfo = {
                         attackSkill: attackSkill || null,
@@ -525,13 +564,48 @@ module.exports = function registerApiRoutes(scope) {
                     attackEntry.defenderInfo = defenderInfo;
                 }
 
-                const circumstanceModifier = getNumericTagValue(attackNode, 'circumstanceModifier');
-                if (Number.isFinite(circumstanceModifier)) {
-                    attackEntry.circumstanceModifier = circumstanceModifier;
-                }
-                const circumstanceReason = getTagValue(attackNode, 'circumstanceModifierReason');
-                if (circumstanceReason) {
-                    attackEntry.circumstanceModifierReason = circumstanceReason;
+                const parsedCircumstances = collectCircumstanceModifiers(attackNode);
+                if (parsedCircumstances.length) {
+                    attackEntry.circumstanceModifiers = parsedCircumstances;
+                    const totalModifier = parsedCircumstances.reduce((sum, entry) => {
+                        return sum + (Number.isFinite(entry?.amount) ? entry.amount : 0);
+                    }, 0);
+                    attackEntry.circumstanceModifier = totalModifier;
+
+                    const combinedReasons = parsedCircumstances
+                        .map(entry => (entry && entry.reason && entry.reason.toLowerCase() !== 'n/a') ? entry.reason : null)
+                        .filter(Boolean);
+                    if (combinedReasons.length) {
+                        attackEntry.circumstanceModifierReason = combinedReasons.join('; ');
+                    }
+                } else {
+                    const circumstanceModifier = getNumericTagValue(attackNode, 'circumstanceModifier');
+                    if (Number.isFinite(circumstanceModifier)) {
+                        attackEntry.circumstanceModifier = circumstanceModifier;
+                        attackEntry.circumstanceModifiers = [{
+                            amount: circumstanceModifier,
+                            reason: null
+                        }];
+                    }
+                    const circumstanceReason = getTagValue(attackNode, 'circumstanceModifierReason');
+                    if (circumstanceReason) {
+                        attackEntry.circumstanceModifierReason = circumstanceReason;
+                        if (!attackEntry.circumstanceModifiers) {
+                            attackEntry.circumstanceModifiers = [{
+                                amount: Number.isFinite(attackEntry.circumstanceModifier)
+                                    ? attackEntry.circumstanceModifier
+                                    : 0,
+                                reason: circumstanceReason && circumstanceReason.toLowerCase() !== 'n/a'
+                                    ? circumstanceReason
+                                    : null
+                            }];
+                        } else if (attackEntry.circumstanceModifiers.length) {
+                            const firstEntry = attackEntry.circumstanceModifiers[0];
+                            if (firstEntry && !firstEntry.reason && circumstanceReason.toLowerCase() !== 'n/a') {
+                                firstEntry.reason = circumstanceReason;
+                            }
+                        }
+                    }
                 }
 
                 attacks.push(attackEntry);
@@ -901,11 +975,36 @@ module.exports = function registerApiRoutes(scope) {
 
             const attackerInfo = attackEntry.attackerInfo || {};
             const defenderInfo = attackEntry.defenderInfo || {};
-            const circumstanceModifierRaw = Number(attackEntry.circumstanceModifier);
-            const circumstanceModifier = Number.isFinite(circumstanceModifierRaw) ? circumstanceModifierRaw : 0;
-            const circumstanceReason = typeof attackEntry.circumstanceModifierReason === 'string'
+
+            const parsedCircumstanceModifiers = Array.isArray(attackEntry.circumstanceModifiers)
+                ? attackEntry.circumstanceModifiers.map(entry => ({
+                    amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+                    reason: entry && entry.reason && entry.reason.toLowerCase() !== 'n/a'
+                        ? entry.reason
+                        : null
+                }))
+                : [];
+
+            const legacyCircumstanceValueRaw = Number(attackEntry.circumstanceModifier);
+            const legacyCircumstanceValue = Number.isFinite(legacyCircumstanceValueRaw) ? legacyCircumstanceValueRaw : 0;
+
+            const totalCircumstanceModifier = parsedCircumstanceModifiers.length
+                ? parsedCircumstanceModifiers.reduce((sum, entry) => sum + (Number.isFinite(entry.amount) ? entry.amount : 0), 0)
+                : legacyCircumstanceValue;
+
+            const legacyCircumstanceReason = typeof attackEntry.circumstanceModifierReason === 'string'
                 ? attackEntry.circumstanceModifierReason.trim()
                 : null;
+
+            const combinedCircumstanceReasons = parsedCircumstanceModifiers
+                .map(entry => entry.reason && entry.reason.toLowerCase() !== 'n/a' ? entry.reason : null)
+                .filter(Boolean);
+
+            const circumstanceReason = combinedCircumstanceReasons.length
+                ? combinedCircumstanceReasons.join('; ')
+                : (legacyCircumstanceReason && legacyCircumstanceReason.toLowerCase() !== 'n/a'
+                    ? legacyCircumstanceReason
+                    : null);
 
             const attackSkillName = sanitizeNamedValue(attackerInfo.attackSkill);
             const damageAttributeName = sanitizeNamedValue(attackerInfo.damageAttribute);
@@ -971,7 +1070,7 @@ module.exports = function registerApiRoutes(scope) {
             const defenderLevel = Number.isFinite(defender?.level) ? defender.level : 0;
             const hitDifficulty = 10 + defenderLevel + (Number.isFinite(bestDefense.value) ? bestDefense.value : 0);
 
-            const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier + circumstanceModifier;
+            const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier + totalCircumstanceModifier;
             const hitDegreeRaw = (hitRollTotal - hitDifficulty) / 5;
             const hitDegree = Number.isFinite(hitDegreeRaw) ? Math.round(hitDegreeRaw * 100) / 100 : 0;
             const hit = hitRollTotal >= hitDifficulty;
@@ -1016,7 +1115,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: attackAttributeInfo.key,
                         modifier: attackAttributeInfo.modifier
                     },
-                    circumstanceModifier,
+                    circumstanceModifier: totalCircumstanceModifier,
+                    circumstanceModifiers: parsedCircumstanceModifiers,
                     circumstanceReason: circumstanceReason && circumstanceReason.toLowerCase() !== 'n/a'
                         ? circumstanceReason
                         : null
@@ -1097,6 +1197,12 @@ module.exports = function registerApiRoutes(scope) {
                     attackSkill: roll.attackSkill || null,
                     attackAttribute: roll.attackAttribute || null,
                     circumstanceModifier: Number.isFinite(roll.circumstanceModifier) ? roll.circumstanceModifier : null,
+                    circumstanceModifiers: Array.isArray(roll.circumstanceModifiers)
+                        ? roll.circumstanceModifiers.map(entry => ({
+                            amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+                            reason: entry && entry.reason ? entry.reason : null
+                        }))
+                        : [],
                     circumstanceReason: roll.circumstanceReason || null
                 },
                 difficulty: {

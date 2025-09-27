@@ -2068,8 +2068,8 @@ class Player {
             magnitude = 'small';
         } else if (['large', 'major', 'big', 'heavy'].includes(magnitudeRaw)) {
             magnitude = 'large';
-        } else if (['fill', 'full', 'max', 'maximum'].includes(magnitudeRaw)) {
-            magnitude = 'fill';
+        } else if (['all', 'fill', 'full', 'max', 'maximum'].includes(magnitudeRaw)) {
+            magnitude = 'all';
         } else if (magnitudeRaw) {
             magnitude = magnitudeRaw;
         } else {
@@ -2094,7 +2094,7 @@ class Player {
 
         let newValue = previousValue;
 
-        if (magnitude === 'fill') {
+        if (magnitude === 'all') {
             if (direction === 'increase') {
                 if (Number.isFinite(bar.max)) {
                     newValue = bar.max;

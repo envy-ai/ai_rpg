@@ -2227,8 +2227,48 @@ function parsePlausibilityOutcome(xmlSnippet) {
             const attribute = getText(skillCheckNode, 'attribute');
             const difficulty = getText(skillCheckNode, 'difficulty');
             const skillReason = getText(skillCheckNode, 'reason');
+            const collectCircumstanceModifiers = (parentNode) => {
+                if (!parentNode || typeof parentNode.getElementsByTagName !== 'function') {
+                    return [];
+                }
+
+                const modifierNodes = Array.from(parentNode.getElementsByTagName('circumstanceModifier') || []);
+                const modifiers = [];
+
+                for (const modifierNode of modifierNodes) {
+                    if (!modifierNode || typeof modifierNode.getElementsByTagName !== 'function') {
+                        continue;
+                    }
+
+                    const amountNode = modifierNode.getElementsByTagName('amount')?.[0] || null;
+                    const reasonNode = modifierNode.getElementsByTagName('reason')?.[0] || null;
+
+                    const amountText = amountNode && typeof amountNode.textContent === 'string'
+                        ? amountNode.textContent.trim()
+                        : null;
+                    const reasonText = reasonNode && typeof reasonNode.textContent === 'string'
+                        ? reasonNode.textContent.trim()
+                        : null;
+
+                    const amount = amountText !== null && amountText !== '' ? Number(amountText) : null;
+                    const hasReason = reasonText && reasonText.toLowerCase() !== 'n/a';
+
+                    if (!Number.isFinite(amount) && !hasReason) {
+                        continue;
+                    }
+
+                    modifiers.push({
+                        amount: Number.isFinite(amount) ? amount : 0,
+                        reason: hasReason ? reasonText : null
+                    });
+                }
+
+                return modifiers;
+            };
+
+            const parsedModifiers = collectCircumstanceModifiers(skillCheckNode);
             const circumstanceModifierRaw = getText(skillCheckNode, 'circumstanceModifier');
-            const circumstanceModifier = circumstanceModifierRaw !== null ? Number(circumstanceModifierRaw) : null;
+            const legacyCircumstanceModifier = circumstanceModifierRaw !== null ? Number(circumstanceModifierRaw) : null;
             const circumstanceModifierReason = getText(skillCheckNode, 'circumstanceModifierReason');
 
             if (skill || attribute || difficulty || skillReason) {
@@ -2239,12 +2279,33 @@ function parsePlausibilityOutcome(xmlSnippet) {
                     reason: skillReason
                 };
 
-                if (Number.isFinite(circumstanceModifier)) {
-                    skillCheck.circumstanceModifier = circumstanceModifier;
-                }
+                if (parsedModifiers.length) {
+                    skillCheck.circumstanceModifiers = parsedModifiers;
+                    const totalModifier = parsedModifiers.reduce((sum, entry) => {
+                        return sum + (Number.isFinite(entry?.amount) ? entry.amount : 0);
+                    }, 0);
+                    skillCheck.circumstanceModifier = totalModifier;
 
-                if (circumstanceModifierReason && circumstanceModifierReason.toLowerCase() !== 'n/a') {
-                    skillCheck.circumstanceModifierReason = circumstanceModifierReason;
+                    const combinedReasons = parsedModifiers
+                        .map(entry => (entry && entry.reason && entry.reason.toLowerCase() !== 'n/a') ? entry.reason : null)
+                        .filter(Boolean);
+                    if (combinedReasons.length) {
+                        skillCheck.circumstanceModifierReason = combinedReasons.join('; ');
+                    }
+                } else {
+                    if (Number.isFinite(legacyCircumstanceModifier)) {
+                        skillCheck.circumstanceModifier = legacyCircumstanceModifier;
+                        skillCheck.circumstanceModifiers = [{
+                            amount: legacyCircumstanceModifier,
+                            reason: circumstanceModifierReason && circumstanceModifierReason.toLowerCase() !== 'n/a'
+                                ? circumstanceModifierReason
+                                : null
+                        }];
+                    }
+
+                    if (circumstanceModifierReason && circumstanceModifierReason.toLowerCase() !== 'n/a') {
+                        skillCheck.circumstanceModifierReason = circumstanceModifierReason;
+                    }
                 }
             }
         }
@@ -2432,14 +2493,35 @@ function resolveActionOutcome({ plausibility, player }) {
     const resolvedSkill = skillCheck.skill || null;
     const resolvedAttributeName = skillCheck.attribute || null;
     const resolvedDifficulty = skillCheck.difficulty || null;
-    const circumstanceModifierRaw = Number(skillCheck.circumstanceModifier);
-    const circumstanceModifier = Number.isFinite(circumstanceModifierRaw) ? circumstanceModifierRaw : 0;
+    const circumstanceModifiers = Array.isArray(skillCheck.circumstanceModifiers)
+        ? skillCheck.circumstanceModifiers.map(entry => ({
+            amount: Number.isFinite(entry?.amount) ? entry.amount : 0,
+            reason: entry && entry.reason && entry.reason.toLowerCase() !== 'n/a'
+                ? entry.reason
+                : null
+        }))
+        : [];
+
+    const legacyCircumstanceValueRaw = Number(skillCheck.circumstanceModifier);
+    const legacyCircumstanceValue = Number.isFinite(legacyCircumstanceValueRaw) ? legacyCircumstanceValueRaw : 0;
+
+    const summedCircumstanceValue = circumstanceModifiers.reduce((sum, entry) => {
+        return sum + (Number.isFinite(entry.amount) ? entry.amount : 0);
+    }, 0);
+
+    const circumstanceModifier = circumstanceModifiers.length ? summedCircumstanceValue : legacyCircumstanceValue;
+
     const circumstanceModifierReasonRaw = typeof skillCheck.circumstanceModifierReason === 'string'
         ? skillCheck.circumstanceModifierReason.trim()
         : null;
-    const circumstanceModifierReason = circumstanceModifierReasonRaw && circumstanceModifierReasonRaw.toLowerCase() !== 'n/a'
-        ? circumstanceModifierReasonRaw
-        : null;
+    const combinedCircumstanceReason = circumstanceModifiers
+        .map(entry => entry.reason && entry.reason.toLowerCase() !== 'n/a' ? entry.reason : null)
+        .filter(Boolean);
+    const circumstanceModifierReason = combinedCircumstanceReason.length
+        ? combinedCircumstanceReason.join('; ')
+        : (circumstanceModifierReasonRaw && circumstanceModifierReasonRaw.toLowerCase() !== 'n/a'
+            ? circumstanceModifierReasonRaw
+            : null);
 
     const dc = difficultyToDC(resolvedDifficulty);
     if (!dc) {
@@ -2485,6 +2567,7 @@ function resolveActionOutcome({ plausibility, player }) {
             skillValue,
             attributeBonus,
             circumstanceModifier,
+            circumstanceModifiers,
             circumstanceReason: circumstanceModifierReason,
             total
         },
@@ -2496,6 +2579,7 @@ function resolveActionOutcome({ plausibility, player }) {
         attribute: attributeKey,
         margin,
         circumstanceModifier,
+        circumstanceModifiers,
         circumstanceReason: circumstanceModifierReason
     };
 }
@@ -5585,12 +5669,28 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             previousLevel: priorLevel
         });
 
+        const activePlayer = Player.getCurrentPlayer?.() || currentPlayer || null;
+        const currentPlayerContext = activePlayer ? {
+            name: activePlayer.name || '',
+            description: activePlayer.description || '',
+            level: Number.isFinite(activePlayer.level) ? activePlayer.level : null,
+            class: activePlayer.class || '',
+            race: activePlayer.race || ''
+        } : {
+            name: '',
+            description: '',
+            level: null,
+            class: '',
+            race: ''
+        };
+
         const templateVars = {
             setting: settingContext,
             gameHistory,
             region: regionContext,
             location: locationContext,
-            existingNpcSummaries
+            existingNpcSummaries,
+            currentPlayer: currentPlayerContext
         };
 
         let renderedTemplate;

@@ -257,8 +257,8 @@ class Events {
                     magnitude = 'small';
                 } else if (['large', 'major', 'big', 'heavy'].includes(magnitudeCandidate)) {
                     magnitude = 'large';
-                } else if (['fill', 'full', 'max', 'maximum'].includes(magnitudeCandidate)) {
-                    magnitude = 'fill';
+                } else if (['all', 'fill', 'full', 'max', 'maximum'].includes(magnitudeCandidate)) {
+                    magnitude = 'all';
                 } else {
                     magnitude = magnitudeCandidate || 'small';
                 }

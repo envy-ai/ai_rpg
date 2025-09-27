@@ -691,7 +691,7 @@ class AIRPGChat {
 
             if (Number.isFinite(delta) && delta !== 0) {
                 segments.push(`${delta > 0 ? '+' : ''}${delta}`);
-            } else if (change.magnitude === 'fill') {
+            } else if (change.magnitude === 'all' || change.magnitude === 'fill') {
                 segments.push('Adjusted to limit');
             }
 
@@ -1177,14 +1177,58 @@ class AIRPGChat {
             }
         }
 
-        if (typeof roll.circumstanceModifier === 'number' && roll.circumstanceModifier !== 0) {
-            const modifier = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
-            const reasonText = roll.circumstanceReason
-                ? ` – ${this.escapeHtml(String(roll.circumstanceReason))}`
-                : '';
-            lines.push(`<li><strong>Circumstances:</strong> ${modifier}${reasonText}</li>`);
-        } else if (roll.circumstanceReason) {
-            lines.push(`<li><strong>Circumstances:</strong> ${this.escapeHtml(String(roll.circumstanceReason))}</li>`);
+        const circumstanceEntries = Array.isArray(roll.circumstanceModifiers)
+            ? roll.circumstanceModifiers
+            : [];
+        const formatCircumstanceEntry = (entry) => {
+            if (!entry) {
+                return null;
+            }
+            const hasAmount = typeof entry.amount === 'number' && !Number.isNaN(entry.amount);
+            const amountText = hasAmount
+                ? (formatSigned(entry.amount) ?? String(entry.amount))
+                : null;
+            const reasonText = entry.reason ? String(entry.reason) : null;
+
+            const parts = [];
+            if (amountText) {
+                parts.push(amountText);
+            }
+            if (reasonText) {
+                parts.push(amountText ? `– ${reasonText}` : reasonText);
+            }
+
+            if (!parts.length) {
+                return null;
+            }
+
+            return this.escapeHtml(parts.join(' '));
+        };
+
+        const formattedCircumstances = circumstanceEntries
+            .map(formatCircumstanceEntry)
+            .filter(Boolean);
+
+        const hasCircumstanceDetails = formattedCircumstances.length > 0;
+        const hasCircumstanceReason = Boolean(roll.circumstanceReason);
+        const circumstanceTotalAvailable = typeof roll.circumstanceModifier === 'number' && !Number.isNaN(roll.circumstanceModifier);
+        const shouldShowCircumstances = hasCircumstanceDetails
+            || hasCircumstanceReason
+            || (circumstanceTotalAvailable && roll.circumstanceModifier !== 0);
+
+        if (shouldShowCircumstances) {
+            const parts = [];
+            if (circumstanceTotalAvailable && (roll.circumstanceModifier !== 0 || hasCircumstanceDetails)) {
+                const totalText = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
+                parts.push(`Total ${totalText}`);
+            }
+            if (formattedCircumstances.length) {
+                parts.push(`<small>${formattedCircumstances.join('<br>')}</small>`);
+            } else if (hasCircumstanceReason) {
+                parts.push(this.escapeHtml(String(roll.circumstanceReason)));
+            }
+
+            lines.push(`<li><strong>Circumstances:</strong> ${parts.join('<br>')}</li>`);
         }
 
         if (roll && (typeof roll.die === 'number' || typeof roll.total === 'number')) {
@@ -1200,7 +1244,9 @@ class AIRPGChat {
                 const modifier = formatSigned(roll.attributeBonus);
                 segments.push(`Attribute ${modifier !== null ? modifier : roll.attributeBonus}`);
             }
-            if (typeof roll.circumstanceModifier === 'number' && roll.circumstanceModifier !== 0) {
+            if (typeof roll.circumstanceModifier === 'number'
+                && !Number.isNaN(roll.circumstanceModifier)
+                && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
                 const modifier = formatSigned(roll.circumstanceModifier);
                 segments.push(`Circumstances ${modifier !== null ? modifier : roll.circumstanceModifier}`);
             }
@@ -1388,6 +1434,57 @@ class AIRPGChat {
         }
 
         const roll = summary.roll || {};
+        const circumstanceEntries = Array.isArray(roll.circumstanceModifiers)
+            ? roll.circumstanceModifiers
+            : [];
+        const formatCircumstanceEntry = (entry) => {
+            if (!entry) {
+                return null;
+            }
+            const hasAmount = typeof entry.amount === 'number' && !Number.isNaN(entry.amount);
+            const amountText = hasAmount
+                ? (formatSigned(entry.amount) ?? String(entry.amount))
+                : null;
+            const reasonText = entry.reason ? String(entry.reason) : null;
+
+            const parts = [];
+            if (amountText) {
+                parts.push(amountText);
+            }
+            if (reasonText) {
+                parts.push(amountText ? `– ${reasonText}` : reasonText);
+            }
+
+            if (!parts.length) {
+                return null;
+            }
+            return this.escapeHtml(parts.join(' '));
+        };
+
+        const formattedCircumstances = circumstanceEntries
+            .map(formatCircumstanceEntry)
+            .filter(Boolean);
+        const totalCircumstanceAvailable = typeof roll.circumstanceModifier === 'number' && !Number.isNaN(roll.circumstanceModifier);
+        const hasCircumstanceReason = Boolean(roll.circumstanceReason);
+        const shouldShowCircumstances = formattedCircumstances.length
+            || hasCircumstanceReason
+            || (totalCircumstanceAvailable && roll.circumstanceModifier !== 0);
+
+        if (shouldShowCircumstances) {
+            const parts = [];
+            if (totalCircumstanceAvailable && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
+                const totalText = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
+                parts.push(`Total ${totalText}`);
+            }
+            if (formattedCircumstances.length) {
+                parts.push(`<small>${formattedCircumstances.join('<br>')}</small>`);
+            } else if (hasCircumstanceReason) {
+                parts.push(this.escapeHtml(String(roll.circumstanceReason)));
+            }
+
+            lines.push(`<li><strong>Circumstances:</strong> ${parts.join('<br>')}</li>`);
+        }
+
         if (typeof roll.die === 'number' || typeof roll.total === 'number' || roll.attackSkill || roll.attackAttribute) {
             const rollSegments = [];
             if (typeof roll.die === 'number') {
@@ -1402,6 +1499,11 @@ class AIRPGChat {
                 const attrName = roll.attackAttribute.name ? `${this.escapeHtml(String(roll.attackAttribute.name))} ` : '';
                 const modifier = formatSigned(roll.attackAttribute.modifier);
                 rollSegments.push(`${attrName}${modifier !== null ? modifier : roll.attackAttribute.modifier}`);
+            }
+            if (totalCircumstanceAvailable
+                && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
+                const modifier = formatSigned(roll.circumstanceModifier);
+                rollSegments.push(`Circumstances ${modifier !== null ? modifier : roll.circumstanceModifier}`);
             }
             if (typeof roll.total === 'number') {
                 rollSegments.push(`Total ${roll.total}`);

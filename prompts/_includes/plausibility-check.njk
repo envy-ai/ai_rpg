@@ -57,8 +57,13 @@ or
     <skill>Exact name of the most relevant skill the player has (If none are relevant, make up a new one. If the action doesn't require any particular skill, respond with N/A)</skill>
     <attribute>Relevant attribute</attribute>
     <difficulty>Difficulty level (Easy, Medium, Hard, Very Hard, Legendary)</difficulty>
-    <circumstanceModifier>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</circumstanceModifier>
-    <circumstanceModifierReason>Brief explanation of the circumstance modifier, N/A if 0</circumstanceModifierReason>
+    <curcumstanceModifiers>
+      <circumstanceModifier>
+        <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
+        <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
+      </circumstanceModifier>
+      ... additional circumstanceModifier tags as needed ...
+    </curcumstanceModifiers>
   </skillCheck>
 </plausibility>
 
