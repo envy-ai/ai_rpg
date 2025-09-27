@@ -1467,6 +1467,7 @@ p .rarity-epic {
   flex-direction: column;
   gap: 3px;
   pointer-events: none;
+  width: auto;
 }
 
 .npc-need-bars[hidden] {
