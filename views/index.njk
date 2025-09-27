@@ -837,6 +837,7 @@
     <script defer src="/js/player-stats.js"></script>
     <script>
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
+        window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
             //window.systemPrompt = {{ systemPrompt | dump | safe }};
@@ -1566,22 +1567,72 @@
             return [];
         };
 
+        const titleCase = (value) => {
+            if (!value) {
+                return '';
+            }
+            return String(value)
+                .split(/[\s_-]+/)
+                .filter(Boolean)
+                .map(part => {
+                    const lowered = part.toLowerCase();
+                    return lowered.charAt(0).toUpperCase() + lowered.slice(1);
+                })
+                .join(' ');
+        };
+
         const formatAttributeName = (name = '') => titleCase(name);
 
-        const rarityClassLookup = [
-            { key: 'mythic', className: 'rarity-mythic' },
-            { key: 'legendary', className: 'rarity-legendary' },
-            { key: 'epic', className: 'rarity-epic' },
-            { key: 'very rare', className: 'rarity-rare' },
-            { key: 'rare', className: 'rarity-rare' },
-            { key: 'uncommon', className: 'rarity-uncommon' },
-            { key: 'common', className: 'rarity-common' },
-            { key: 'artifact', className: 'rarity-artifact' },
-            { key: 'unique', className: 'rarity-unique' },
-            { key: 'exotic', className: 'rarity-exotic' },
-            { key: 'ancient', className: 'rarity-ancient' },
-            { key: 'masterwork', className: 'rarity-masterwork' }
-        ];
+        const rarityDefinitions = Array.isArray(window.rarityDefinitions) ? window.rarityDefinitions : [];
+        const rarityInfoByKey = new Map();
+        const rarityClassLookup = [];
+
+        const normalizeRarityKey = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value).trim().toLowerCase();
+        };
+
+        const raritySlug = (value) => {
+            const normalized = normalizeRarityKey(value);
+            const slug = normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            return slug || 'unknown';
+        };
+
+        const rarityStyleRules = [];
+        rarityDefinitions.forEach((definition) => {
+            if (!definition) {
+                return;
+            }
+            const normalizedKey = normalizeRarityKey(definition.key || definition.label);
+            if (!normalizedKey || rarityInfoByKey.has(normalizedKey)) {
+                return;
+            }
+            const className = `rarity-${raritySlug(normalizedKey)}`;
+            const label = definition.label || titleCase(normalizedKey);
+            const color = typeof definition.color === 'string' && definition.color.trim() ? definition.color.trim() : null;
+            const info = { key: normalizedKey, className, label, color };
+
+            rarityInfoByKey.set(normalizedKey, info);
+            rarityClassLookup.push(info);
+
+            if (color) {
+                rarityStyleRules.push(`.${className} { color: ${color}; }`);
+                rarityStyleRules.push(`#thingEditRarity option.${className} { color: ${color}; }`);
+            }
+        });
+
+        if (rarityStyleRules.length) {
+            const styleElementId = 'dynamic-rarity-styles';
+            let styleElement = document.getElementById(styleElementId);
+            if (!styleElement) {
+                styleElement = document.createElement('style');
+                styleElement.id = styleElementId;
+                document.head.appendChild(styleElement);
+            }
+            styleElement.textContent = rarityStyleRules.join('\n');
+        }
 
         const availableSlotTypes = window.availableSlotTypes instanceof Set ? window.availableSlotTypes : new Set();
         window.availableSlotTypes = availableSlotTypes;
@@ -1593,18 +1644,17 @@
             : {};
         window.attributeDefinitionsMap = attributeDefinitionsCache;
 
-        const titleCase = (value) => {
-            if (!value) {
+        const getRarityLabel = (key) => {
+            const normalized = normalizeRarityKey(key);
+            if (!normalized) {
                 return '';
             }
-            return String(value)
-                .split(/[\s_-]+/)
-                .filter(Boolean)
-                .map(part => capitalize(part.toLowerCase()))
-                .join(' ');
+            const info = rarityInfoByKey.get(normalized);
+            if (info && info.label) {
+                return info.label;
+            }
+            return titleCase(normalized);
         };
-
-        const getRarityLabel = (key) => titleCase(key);
 
         const normalizeSlotType = (value) => {
             if (value === null || value === undefined) {
@@ -1782,7 +1832,7 @@
             if (!rarity && rarity !== 0) {
                 return '';
             }
-            const normalized = String(rarity).trim().toLowerCase();
+            const normalized = normalizeRarityKey(rarity);
             if (!normalized) {
                 return '';
             }
@@ -2776,10 +2826,10 @@
             unspecifiedOption.textContent = 'Not specified';
             thingEditRarityInput.appendChild(unspecifiedOption);
 
-            rarityClassLookup.forEach(({ key, className }) => {
+            rarityClassLookup.forEach(({ key, className, label }) => {
                 const option = document.createElement('option');
                 option.value = key;
-                option.textContent = getRarityLabel(key);
+                option.textContent = label || getRarityLabel(key);
                 option.className = className;
                 if (normalized && (normalized === key || normalized.includes(key))) {
                     option.selected = true;

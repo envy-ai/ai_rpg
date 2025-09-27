@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
 
 /**
  * Thing class for AI RPG
@@ -28,8 +31,194 @@ class Thing {
   static #indexByID = new Map();
   static #indexByName = new Map();
 
+  // Rarity definitions loaded from defs/rarities.yaml
+  static #rarityDefinitions = new Map();
+  static #defaultRarityKey = null;
+
   // Valid thing types
   static #validTypes = ['scenery', 'item'];
+
+  static #normalizeRarityKey(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).trim().toLowerCase();
+  }
+
+  static #titleCase(value) {
+    if (!value) {
+      return '';
+    }
+    return String(value)
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  static #getDefaultRarityDefinition() {
+    if (this.#defaultRarityKey && this.#rarityDefinitions.has(this.#defaultRarityKey)) {
+      return this.#rarityDefinitions.get(this.#defaultRarityKey);
+    }
+    const firstEntry = this.#rarityDefinitions.values().next();
+    return firstEntry && !firstEntry.done ? firstEntry.value : null;
+  }
+
+  static #cloneRarityDefinition(definition) {
+    if (!definition) {
+      return null;
+    }
+    return {
+      key: definition.key,
+      label: definition.label,
+      color: definition.color,
+      damageMultiplier: definition.damageMultiplier,
+      valueMultiplier: definition.valueMultiplier,
+      attributeMultiplier: definition.attributeMultiplier,
+      prevalence: definition.prevalence,
+      order: definition.order
+    };
+  }
+
+  static loadRarityDefinitions({ forceReload = false } = {}) {
+    if (!forceReload && this.#rarityDefinitions.size > 0) {
+      return this.getAllRarityDefinitions();
+    }
+
+    const raritiesPath = path.join(__dirname, 'defs', 'rarities.yaml');
+    const parsedEntries = [];
+
+    try {
+      const yamlContent = fs.readFileSync(raritiesPath, 'utf8');
+      const parsedYaml = yaml.load(yamlContent) || {};
+      const entries = parsedYaml && typeof parsedYaml === 'object' ? parsedYaml.rarities : null;
+      if (entries && typeof entries === 'object') {
+        let order = 0;
+        for (const [rawKey, rawDefinition] of Object.entries(entries)) {
+          if (!rawKey || !rawDefinition || typeof rawDefinition !== 'object') {
+            continue;
+          }
+
+          const key = this.#normalizeRarityKey(rawKey);
+          if (!key) {
+            continue;
+          }
+
+          const labelSource = typeof rawDefinition.label === 'string' && rawDefinition.label.trim()
+            ? rawDefinition.label.trim()
+            : rawKey;
+
+          const safeNumber = (value, fallback) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : fallback;
+          };
+
+          parsedEntries.push({
+            key,
+            label: this.#titleCase(labelSource),
+            color: typeof rawDefinition.color === 'string' && rawDefinition.color.trim() ? rawDefinition.color.trim() : null,
+            damageMultiplier: safeNumber(rawDefinition.damage_multiplier, 1),
+            valueMultiplier: safeNumber(rawDefinition.value_multiplier, 1),
+            attributeMultiplier: safeNumber(rawDefinition.attribute_multiplier, 1),
+            prevalence: safeNumber(rawDefinition.prevalence, 0),
+            order: order++
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to load rarity definitions from ${raritiesPath}: ${error.message}`);
+    }
+
+    this.#rarityDefinitions.clear();
+
+    if (parsedEntries.length === 0) {
+      // Minimal fallback to keep game functional if file is missing or invalid
+      const fallback = {
+        key: 'common',
+        label: 'Common',
+        color: null,
+        damageMultiplier: 1,
+        valueMultiplier: 1,
+        attributeMultiplier: 1,
+        prevalence: 0,
+        order: 0
+      };
+      this.#rarityDefinitions.set(fallback.key, fallback);
+      this.#defaultRarityKey = fallback.key;
+      return [this.#cloneRarityDefinition(fallback)];
+    }
+
+    parsedEntries.forEach(entry => {
+      this.#rarityDefinitions.set(entry.key, entry);
+    });
+
+    this.#defaultRarityKey = this.#rarityDefinitions.has('common') ? 'common' : parsedEntries[0].key;
+
+    return this.getAllRarityDefinitions();
+  }
+
+  static getAllRarityDefinitions() {
+    if (this.#rarityDefinitions.size === 0) {
+      this.loadRarityDefinitions({ forceReload: false });
+    }
+    return Array.from(this.#rarityDefinitions.values())
+      .sort((a, b) => a.order - b.order)
+      .map(entry => this.#cloneRarityDefinition(entry));
+  }
+
+  static getRarityDefinition(rarity, { fallbackToDefault = false } = {}) {
+    if (this.#rarityDefinitions.size === 0) {
+      this.loadRarityDefinitions({ forceReload: false });
+    }
+    const normalized = this.#normalizeRarityKey(rarity);
+    if (normalized && this.#rarityDefinitions.has(normalized)) {
+      return this.#cloneRarityDefinition(this.#rarityDefinitions.get(normalized));
+    }
+    if (!fallbackToDefault) {
+      return null;
+    }
+    return this.#cloneRarityDefinition(this.#getDefaultRarityDefinition());
+  }
+
+  static getDefaultRarityKey() {
+    if (this.#rarityDefinitions.size === 0) {
+      this.loadRarityDefinitions({ forceReload: false });
+    }
+    if (this.#defaultRarityKey) {
+      return this.#defaultRarityKey;
+    }
+    const fallback = this.#getDefaultRarityDefinition();
+    return fallback ? fallback.key : 'common';
+  }
+
+  static getDefaultRarityLabel() {
+    const definition = this.getRarityDefinition(this.getDefaultRarityKey(), { fallbackToDefault: true });
+    return definition?.label || 'Common';
+  }
+
+  static getRarityDamageMultiplier(rarity) {
+    const definition = this.getRarityDefinition(rarity, { fallbackToDefault: true });
+    return Number.isFinite(definition?.damageMultiplier) ? definition.damageMultiplier : 1;
+  }
+
+  static getRarityValueMultiplier(rarity) {
+    const definition = this.getRarityDefinition(rarity, { fallbackToDefault: true });
+    return Number.isFinite(definition?.valueMultiplier) ? definition.valueMultiplier : 1;
+  }
+
+  static getRarityAttributeMultiplier(rarity) {
+    const definition = this.getRarityDefinition(rarity, { fallbackToDefault: true });
+    return Number.isFinite(definition?.attributeMultiplier) ? definition.attributeMultiplier : 1;
+  }
+
+  static getRarityColor(rarity) {
+    const definition = this.getRarityDefinition(rarity, { fallbackToDefault: false });
+    return definition?.color || null;
+  }
+
+  static normalizeRarityKey(value) {
+    return this.#normalizeRarityKey(value);
+  }
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -709,6 +898,12 @@ class Thing {
   toString() {
     return `Thing(${this.#name}: ${this.#thingType})`;
   }
+}
+
+try {
+  Thing.loadRarityDefinitions();
+} catch (error) {
+  console.warn(`Failed to initialize rarity definitions: ${error.message}`);
 }
 
 module.exports = Thing;

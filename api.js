@@ -1,5 +1,6 @@
 const { DOMParser } = require('xmldom');
 const Player = require('./Player.js');
+const Thing = require('./Thing.js');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -744,17 +745,6 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        const RARITY_DAMAGE_RATINGS = {
-            junk: 0.75,
-            common: 1,
-            fine: 1.25,
-            superior: 1.5,
-            masterwork: 2,
-            rare: 2.5,
-            epic: 3,
-            legendary: 4
-        };
-
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
 
         const ensureNeedBarsInStatus = (status, actor) => {
@@ -947,12 +937,12 @@ module.exports = function registerApiRoutes(scope) {
             weaponLevel = Math.max(1, weaponLevel || 1);
 
             const rarity = sanitizeNamedValue(weaponThing?.rarity);
-            let rating = rarity ? RARITY_DAMAGE_RATINGS[rarity.toLowerCase()] : null;
+            let rating = rarity ? Thing.getRarityDamageMultiplier(rarity) : null;
             if (!rating) {
                 if (BAREHANDED_KEYWORDS.has(normalizedName)) {
                     rating = 0.5;
                 } else {
-                    rating = RARITY_DAMAGE_RATINGS.common;
+                    rating = Thing.getRarityDamageMultiplier(Thing.getDefaultRarityKey());
                 }
             }
 

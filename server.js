@@ -19,6 +19,10 @@ const LocationExit = require('./LocationExit.js');
 // Import Thing class
 const Thing = require('./Thing.js');
 
+function getDefaultRarityLabel() {
+    return Thing.getDefaultRarityLabel();
+}
+
 // Import Skill class
 const Skill = require('./Skill.js');
 
@@ -3605,6 +3609,13 @@ addDiceFilters(viewsEnv);
 addDiceFilters(promptEnv);
 addDiceFilters(imagePromptEnv);
 
+const rarityDefinitions = Thing.getAllRarityDefinitions();
+[viewsEnv, promptEnv, imagePromptEnv].forEach(env => {
+    if (env && typeof env.addGlobal === 'function') {
+        env.addGlobal('rarityDefinitions', rarityDefinitions);
+    }
+});
+
 // Add JSON escape filter for ComfyUI templates
 imagePromptEnv.addFilter('json', function (str) {
     if (typeof str !== 'string') {
@@ -5020,7 +5031,7 @@ async function equipBestGearForCharacter({
             itemOrScenery: 'item',
             type: item.itemTypeDetail || metadata.itemTypeDetail || metadata.itemType || 'item',
             slot: normalizedSlot ? [normalizedSlot] : [],
-            rarity: item.rarity || metadata.rarity || 'Common',
+            rarity: item.rarity || metadata.rarity || getDefaultRarityLabel(),
             value: metadata.value ?? '',
             weight: metadata.weight ?? '',
             relativeLevel: metadata.relativeLevel ?? item.relativeLevel ?? 0,
@@ -6307,7 +6318,7 @@ function parseInventoryItems(xmlContent) {
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
                 type: node.getElementsByTagName('type')[0]?.textContent?.trim() || 'item',
                 slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
-                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || 'Common',
+                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || getDefaultRarityLabel(),
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
@@ -7984,7 +7995,7 @@ function renderThingImagePrompt(thing) {
             thingName: thing.name,
             thingType: metadata.itemType || thing.itemTypeDetail || thing.thingType,
             thingDescription: thing.description,
-            thingRarity: metadata.rarity || thing.rarity || 'Common'
+            thingRarity: metadata.rarity || thing.rarity || getDefaultRarityLabel()
         };
 
         console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
@@ -10086,7 +10097,8 @@ app.get('/', (req, res) => {
         currentPage: 'chat',
         player: currentPlayer ? currentPlayer.getStatus() : null,
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
-        currentSetting: activeSetting
+        currentSetting: activeSetting,
+        rarityDefinitions
     });
 });
 

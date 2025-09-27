@@ -10,7 +10,21 @@
         [Available gear slots: {% if gearSlots %}[{% for slot in gearSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}]{% else %}N/A if not equippable{% endif %}]
     {% endif %}
 </slot>
-<rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}[Junk, Common, Uncommon, Rare, Epic, Legendary, Artifact]{% endif %}</rarity>
+<rarity>
+    {% if thingSeed.rarity %}
+        {{ thingSeed.rarity }}
+    {% else %}
+        [
+        {%- if rarityDefinitions and rarityDefinitions | length > 0 -%}
+            {%- for rarity in rarityDefinitions -%}
+                {{ rarity.label or rarity.key | title }}{%- if not loop.last -%}, {% endif %}
+            {%- endfor -%}
+        {%- else -%}
+            {{ 'Common' }}
+        {%- endif -%}
+        ]
+    {% endif %}
+</rarity>
 <value>{% if thingSeed.value is defined %}{{ thingSeed.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
 <weight>{% if thingSeed.weight is defined %}{{ thingSeed.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
 <relativeLevel>{% if thingSeed.relativeLevel is defined %}{{ thingSeed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
