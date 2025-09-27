@@ -15,6 +15,10 @@
 
 <task>Generate a single item that's appropriate to the current setting, location and region. Fill in any missing fields, but leave any provided fields as they are.  Return it in this format:</task>
 
+The item's rarity is {{ generatedThingRarity.label }}: {{ generatedThingRarity.description }}
+
+Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
+
 <items>
 {% include "_includes/item.njk" %}
 </items>

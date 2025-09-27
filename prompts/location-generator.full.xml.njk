@@ -25,37 +25,25 @@ You are an AI Location Generator for a fantasy RPG world. Your task is to create
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
     <races>{{ (setting.races or []) | join(', ') }}</races>
   </setting>
+  <currentRegion>
+    <name>{{ currentRegion.name }}</name>
+    <description>{{ currentRegion.description }}</description>
+    <locations>
+      {% for loc in currentRegion.locations %}<locationName>{{ loc.name }}</locationName>
+      {% endfor %}</locations>
+  </currentRegion>
 
 <existingLocations>
 {% for loc in existingLocations %}<location>{{ loc }}</location>
 {% endfor %}</existingLocations>
 </context>
 
-<instructions>Generate a unique, immersive fantasy location with the following specifications:</instructions>
-
-REQUIRED FIELDS:
-- name: A short, evocative name or title for the location (3-5 words)
-- description: A detailed, atmospheric description (1-3 paragraphs) that captures the essence, mood, and key features of the location
-- baseLevel: An integer from 1-20 representing the difficulty/danger level of the area
-
-OPTIONAL CONTEXT (if provided):
-{% if shortDescription -%}
-- Short Description: {{ shortDescription }}
-{% endif -%}
-{% if locationTheme -%}
-- Theme/Setting: {{ locationTheme }}
-{% endif -%}
-{% if playerLevel -%}
-- Appropriate for player level: {{ playerLevel }}
-{% endif -%}
-{% if locationPurpose -%}
-- Purpose in story: {{ locationPurpose }}
-{% endif -%}
+<task>Generate a unique, immersive location appropriate to the setting and region.</task>
 
 GUIDELINES:
 - Create vivid, immersive descriptions that engage the senses
 - Base level should reflect actual danger (1=safe village, 10=dangerous dungeon, 20=epic boss lair)
-- ID should be memorable and descriptive
+- Name should be memorable and descriptive, and not a duplicate of any other location in the region
 - Consider environmental storytelling and world-building details
 - Include atmospheric details like lighting, sounds, smells, or magical effects
 
@@ -64,16 +52,12 @@ Return ONLY the following fields, in this format:
 
 <location>
   <name>A short name or title for the location</name>
-  <description><p>up to 3 paragraphs of description</p><p>[...]</p></description>
-  <relativeLevel>integer_from_1_to_20</relativeLevel>
+  <description>1-2 paragraphs of description</description>
+  <relativeLevel>integer from -3 to 3, indicating the difficulty compared to the rest of the region</relativeLevel>
+  <numNpcs>Integer from 0 to 4, indicating how many NPCs typically inhabit this location</numNpcs>
+  <numItems>Integer from 0 to 4, indicating how many items typically can be found in this location</numItems>
+  <numHostiles>Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
 </location>
 
-Example output:
-
-<location>
-  <name>Whispering Pines Village</name>
-  <description><p>A quaint village nestled among towering pine trees. The air is filled with the scent of fresh pine and wood smoke from chimneys. Villagers go about their daily routines, tending to livestock and trading goods at the bustling market square.</p><p>The village is surrounded by a protective wooden palisade, with a single gate leading to a winding forest path. At night, the pines seem to whisper secrets on the breeze, hinting at ancient magic in the woods beyond.</p></description>
-  <baseLevel>2</baseLevel>
-</location>
-    </generationPrompt>
+</generationPrompt>
 </template>

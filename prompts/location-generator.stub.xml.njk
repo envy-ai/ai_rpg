@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <template>
-    <role>Location Expander</role>
-    <description>Expand an existing stubbed location into a full playable area</description>
+<role>Location Expander</role>
+<description>Expand an existing stubbed location into a full playable area</description>
     
-    <systemPrompt>
+<systemPrompt>
 You are an AI assistant that expands partially discovered locations in a fantasy RPG world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area.
-    </systemPrompt>
+</systemPrompt>
     
-    <generationPrompt>
+<generationPrompt>
 <context>
   <setting>
     <name>{{ setting.name }}</name>
@@ -24,11 +24,14 @@ You are an AI assistant that expands partially discovered locations in a fantasy
     <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
   </setting>
+  <currentRegion>
+    <name>{{ currentRegion.name }}</name>
+    <description>{{ currentRegion.description }}</description>
+  </currentRegion>
 
 {% if originLocationName or originDescription %}
 <originLocation>
   {% if originLocationName %}<name>{{ originLocationName }}</name>{% endif %}
-  {% if originDirection %}<direction>{{ originDirection }}</direction>{% endif %}
   {% if originDescription %}<description>{{ originDescription }}</description>{% endif %}
 </originLocation>
 {% endif %}
@@ -41,26 +44,7 @@ You are an AI assistant that expands partially discovered locations in a fantasy
 {% endif %}
 </context>
 
-<instructions>Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area{% if originDirection %} reached by travelling {{ originDirection }}{% endif %}. Maintain continuity with the origin's tone, scale, and environmental storytelling.</instructions>
-
-REQUIRED FIELDS:
-- name: Preserve the existing stub name if provided unless a slight refinement improves clarity.
-- description: Provide 1-3 rich paragraphs describing the area, referencing how it connects back to the origin location and suggesting onward paths for future exploration.
-- baseLevel: Integer from 1-20 reflecting the challenge of this location.
-
-OPTIONAL CONTEXT (if provided):
-{% if shortDescription -%}
-- Short Description: {{ shortDescription }}
-{% endif -%}
-{% if locationTheme -%}
-- Theme/Setting: {{ locationTheme }}
-{% endif -%}
-{% if playerLevel -%}
-- Appropriate for player level: {{ playerLevel }}
-{% endif -%}
-{% if locationPurpose -%}
-- Purpose in story: {{ locationPurpose }}
-{% endif -%}
+<task>Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
 
 GUIDELINES:
 - Reference sensory details and story hooks that bridge to and from the origin location.
@@ -71,11 +55,12 @@ OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 
 <location>
-  <name>The final name for the expanded location</name>
-  <description>
-    <p>up to 3 paragraphs of description</p>
-    <p>[...]</p>
-  </description>
+  <name>A short name or title for the location</name>
+  <description>1-2 paragraphs of description</description>
+  <relativeLevel>integer from -3 to 3, indicating the difficulty compared to the rest of the region</relativeLevel>
+  <numNpcs>Integer from 0 to 4, indicating how many NPCs typically inhabit this location</numNpcs>
+  <numItems>Integer from 0 to 4, indicating how many items typically can be found in this location</numItems>
+  <numHostiles>Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
 </location>
-    </generationPrompt>
+</generationPrompt>
 </template>

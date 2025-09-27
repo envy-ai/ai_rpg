@@ -1,5 +1,6 @@
 rarities:
   junk:
+    label: "Junk"
     damage_multiplier: 0.75
     value_multiplier: 0.75
     attribute_multiplier: 0.75
@@ -7,6 +8,7 @@ rarities:
     color: "#808080"
     description: "Items of very low quality, often broken or barely functional. These items are usually inexpensive and not very reliable."
   common:
+    label: "Common"
     damage_multiplier: 1
     value_multiplier: 1
     attribute_multiplier: 1
@@ -14,6 +16,7 @@ rarities:
     color: "#CCFFFF"
     description: "Standard items that are widely available and functional. These items are reliable and serve their purpose well, making them a staple for most adventurers."
   uncommon:
+    label: "Uncommon"
     damage_multiplier: 1.25
     value_multiplier: 1.25
     attribute_multiplier: 1.25
@@ -21,6 +24,7 @@ rarities:
     color: "#00FF00"
     description: "Items that are of better quality than common ones, often featuring improved materials or craftsmanship. These items are less frequently found and are valued for their enhanced performance."
   rare:
+    label: "Rare"
     damage_multiplier: 1.5
     value_multiplier: 1.5
     attribute_multiplier: 1.5
@@ -28,6 +32,7 @@ rarities:
     color: "#2000FF"
     description: "High-quality items that are not commonly found. These items often have unique features or superior craftsmanship, making them highly sought after by adventurers and collectors alike."
   epic:
+    label: "Epic"
     damage_multiplier: 2
     value_multiplier: 2
     attribute_multiplier: 2
@@ -35,6 +40,7 @@ rarities:
     color: "#C000C0"
     description: "Exceptional items that are rare and often possess extraordinary qualities. These items are typically associated with legendary tales and are prized possessions for those fortunate enough to acquire them."
   legendary:
+    label: "Legendary"
     damage_multiplier: 3
     value_multiplier: 3
     attribute_multiplier: 3
@@ -42,6 +48,7 @@ rarities:
     color: "#FF3000"
     description: "Mythical items of immense power and rarity. These items are often the stuff of legends, imbued with magical properties or crafted by master artisans. They are coveted by heroes and villains alike."
   artifact:
+    label: "Artifact"
     damage_multiplier: 4
     value_multiplier: 4
     attribute_multiplier: 4

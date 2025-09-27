@@ -76,6 +76,7 @@ class Thing {
       valueMultiplier: definition.valueMultiplier,
       attributeMultiplier: definition.attributeMultiplier,
       prevalence: definition.prevalence,
+      description: definition.description,
       order: definition.order
     };
   }
@@ -121,6 +122,7 @@ class Thing {
             valueMultiplier: safeNumber(rawDefinition.value_multiplier, 1),
             attributeMultiplier: safeNumber(rawDefinition.attribute_multiplier, 1),
             prevalence: safeNumber(rawDefinition.prevalence, 0),
+            description: typeof rawDefinition.description === 'string' ? rawDefinition.description.trim() : '',
             order: order++
           });
         }
@@ -141,6 +143,7 @@ class Thing {
         valueMultiplier: 1,
         attributeMultiplier: 1,
         prevalence: 0,
+        description: '',
         order: 0
       };
       this.#rarityDefinitions.set(fallback.key, fallback);
@@ -164,6 +167,41 @@ class Thing {
     return Array.from(this.#rarityDefinitions.values())
       .sort((a, b) => a.order - b.order)
       .map(entry => this.#cloneRarityDefinition(entry));
+  }
+
+  static generateRandomRarityDefinition() {
+    const definitions = this.getAllRarityDefinitions();
+    if (!definitions.length) {
+      return null;
+    }
+
+    const weighted = [];
+    let totalWeight = 0;
+    for (const entry of definitions) {
+      const prevalence = Number(entry?.prevalence);
+      const weight = Number.isFinite(prevalence) && prevalence > 0 ? prevalence : 0;
+      totalWeight += weight;
+      weighted.push({ entry, weight });
+    }
+
+    if (totalWeight <= 0) {
+      const fallback = definitions[0];
+      return fallback ? { ...fallback } : null;
+    }
+
+    let roll = Math.random() * totalWeight;
+    for (const { entry, weight } of weighted) {
+      if (weight <= 0) {
+        continue;
+      }
+      if (roll < weight) {
+        return { ...entry };
+      }
+      roll -= weight;
+    }
+
+    const last = weighted[weighted.length - 1]?.entry;
+    return last ? { ...last } : { ...definitions[0] };
   }
 
   static getRarityDefinition(rarity, { fallbackToDefault = false } = {}) {

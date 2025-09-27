@@ -27,16 +27,16 @@ dispositions:
       - endangered
       - committed serious crime they don't approve of
     min_thresholds:
-      minimum: hated
-      -30: dislike
-      -20: wary
-      -10: indifferent
+      minimum: hated (-8 to relevant circumstance modifier)
+      -30: dislike (-6 to relevant circumstance modifier)
+      -20: wary (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: casual acquaintance
-      20: acquaintance
-      40: friend
-      80: close friend
-      120: best friend
+      1: casual acquaintance (+1 to relevant circumstance modifier)
+      20: acquaintance (+2 to relevant circumstance modifier)
+      40: friend (+4 to relevant circumstance modifier)
+      80: close friend (+7 to relevant circumstance modifier)
+      120: best friend (+10 to relevant circumstance modifier)
   romantic:
     description: Represents a character's level of romantic interest or affection towards the player character.
     move_up:
@@ -61,16 +61,16 @@ dispositions:
       - endangered
       - committed serious crime they don't approve of
     min_thresholds:
-      minimum: despised
-      -30: disliked
-      -20: wary
-      -10: indifferent
+      minimum: despised (-8 to relevant circumstance modifier)
+      -30: disliked (-6 to relevant circumstance modifier)
+      -20: wary (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: casual acquaintance
-      20: acquaintance
-      40: potential romantic interest
-      80: romantic interest
-      120: romantic partner
+      1: casual acquaintance (+1 to relevant circumstance modifier)
+      20: acquaintance (+2 to relevant circumstance modifier)
+      40: potential romantic interest (+4 to relevant circumstance modifier)
+      80: romantic interest (+7 to relevant circumstance modifier)
+      120: romantic partner (+10 to relevant circumstance modifier)
   lust:
     description: Represents a character's level of sexual desire or attraction towards the player character.
     move_up:
@@ -92,16 +92,16 @@ dispositions:
       - Sexuality is incompatible (they are asexual or not attracted to your gender)
       - they find your body physically disgusting, repulsive, or fundamentally not attractive (you are swamp thing, robot, alien, a rock, etc)
     min_thresholds:
-      minimum: repulsed
-      -30: disgusted
-      -20: uninterested
-      -10: indifferent
+      minimum: repulsed (-8 to relevant circumstance modifier)
+      -30: disgusted (-6 to relevant circumstance modifier)
+      -20: uninterested (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: mildly interested
-      20: interested
-      40: aroused
-      80: horny to point of distraction
-      120: obsessive lust overriding all reason
+      1: mildly interested (+1 to relevant circumstance modifier)
+      20: interested (+2 to relevant circumstance modifier)
+      40: aroused (+4 to relevant circumstance modifier)
+      80: horny to point of distraction (+7 to relevant circumstance modifier)
+      120: obsessive lust overriding all reason (+10 to relevant circumstance modifier)
   respect:
     description: Represents a character's level of admiration or esteem for the player character.
     move_up:
@@ -122,16 +122,16 @@ dispositions:
       - endangered others
       - acted in a way that is fundamentally against their values
     min_thresholds:
-      minimum: despised
-      -30: disrespected
-      -20: wary
-      -10: indifferent
+      minimum: despised (-8 to relevant circumstance modifier)
+      -30: disrespected (-6 to relevant circumstance modifier)
+      -20: wary (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: mildly respected
-      20: respected
-      40: admired
-      80: highly admired
-      120: revered
+      1: mildly respected (+1 to relevant circumstance modifier)
+      20: respected (+2 to relevant circumstance modifier)
+      40: admired (+4 to relevant circumstance modifier)
+      80: highly admired (+7 to relevant circumstance modifier)
+      120: revered (+10 to relevant circumstance modifier)
   comfort_fear:
     description: Represents a character's level of comfort or fear around the player character.
     move_up:
@@ -151,16 +151,16 @@ dispositions:
       - endangered them or someone they care about
       - acted in a way that is fundamentally against their values
     min_thresholds:
-      minimum: terrified of you
-      -30: very uncomfortable around you
-      -20: uncomfortable around you
-      -10: indifferent
+      minimum: terrified of you (-8 to relevant circumstance modifier)
+      -30: very uncomfortable around you (-6 to relevant circumstance modifier)
+      -20: uncomfortable around you (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: mildly comfortable around you
-      20: comfortable around you
-      40: very comfortable around you
-      80: trust you deeply
-      120: feel safe with you no matter what
+      1: mildly comfortable around you (+1 to relevant circumstance modifier)
+      20: comfortable around you (+2 to relevant circumstance modifier)
+      40: very comfortable around you (+4 to relevant circumstance modifier)
+      80: trust you deeply (+7 to relevant circumstance modifier)
+      120: feel safe with you no matter what (+10 to relevant circumstance modifier)
   trust:
     description: Represents a character's level of trust or distrust towards the player character.
     move_up:
@@ -180,13 +180,13 @@ dispositions:
       - endangered them or someone they care about
       - acted in a way that is fundamentally against their values
     min_thresholds:
-      minimum: completely distrust you
-      -30: very wary of you
-      -20: somewhat wary of you
-      -10: indifferent
+      minimum: completely distrust you (-8 to relevant circumstance modifier)
+      -30: very wary of you (-6 to relevant circumstance modifier)
+      -20: somewhat wary of you (-4 to relevant circumstance modifier)
+      -10: indifferent (-2 to relevant circumstance modifier)
       0: neutral
-      1: mildly trusting of you
-      20: somewhat trusting of you
-      40: trust you
-      80: trust you deeply
-      120: would trust you with their life
+      1: mildly trusting of you (+1 to relevant circumstance modifier)
+      20: somewhat trusting of you (+2 to relevant circumstance modifier)
+      40: trust you (+4 to relevant circumstance modifier)
+      80: trust you deeply (+7 to relevant circumstance modifier)
+      120: would trust you with their life (+10 to relevant circumstance modifier)

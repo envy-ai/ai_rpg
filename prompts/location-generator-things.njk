@@ -11,10 +11,13 @@ Here is a list of all character attributes:
 {% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }} 
 {% endfor %}
 
-<equipmentSlots>
-{% for slot in equipmentSlots %}  <slot>{{ slot }}</slot>
+Item/Scenery rarity levels:{% for rarity in rarityDefinitions %}
+  {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}
-</equipmentSlots>
+
+Equipment slots: 
+{% for slot in equipmentSlots %}{{ slot }}, {% endfor %}
+
 <setting>
 {{ setting }}
 </setting>
@@ -28,7 +31,7 @@ Here is a list of all character attributes:
 </location>
 </context>
 
-I'd like you to generate a set of 1 to 5 items that would be found in the above location in the above setting. The items should be appropriate for the setting and the character's role within it. Output them in the format below:
+I'd like you to generate a set of 1 to 5 items that would be found in the above location in the above setting. The items should be appropriate for the setting. Output them in the format below:
 
 <items>
 {% include "_includes/item.njk" %}

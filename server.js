@@ -1704,6 +1704,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
     const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+    const generatedThingRarity = Thing.generateRandomRarityDefinition();
 
     const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
     const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
@@ -2216,7 +2217,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         gearSlots: gearSlotNamesForPrompt,
         equipmentSlots: equipmentSlotTypesForPrompt,
         attributes: attributeEntriesForPrompt,
-        attributeDefinitions: attributeDefinitionsForPrompt
+        attributeDefinitions: attributeDefinitionsForPrompt,
+        rarityDefinitions: Thing.getAllRarityDefinitions(),
+        generatedThingRarity
     };
 }
 
@@ -6669,6 +6672,7 @@ function renderLocationThingsPrompt(context = {}) {
         const attributeNames = Object.keys(attributeDefinitionsForPrompt || {})
             .filter(name => typeof name === 'string' && name.trim())
             .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        const generatedThingRarity = Thing.generateRandomRarityDefinition();
 
         const templatePayload = {
             setting: safeSetting,
@@ -6683,7 +6687,9 @@ function renderLocationThingsPrompt(context = {}) {
             gearSlots: gearSlotTypes,
             equipmentSlots: gearSlotTypes,
             attributeDefinitions: attributeDefinitionsForPrompt,
-            attributes: attributeNames
+            attributes: attributeNames,
+            rarityDefinitions: Thing.getAllRarityDefinitions(),
+            generatedThingRarity
         };
 
         const rendered = promptEnv.render(templateName, templatePayload);
@@ -8119,9 +8125,79 @@ function renderLocationGeneratorPrompt(options = {}) {
             ? 'location-generator.stub.xml.njk'
             : 'location-generator.full.xml.njk';
 
+        const normalizeRegionContext = (region) => {
+            const fallback = {
+                name: 'Unknown Region',
+                description: 'No region description available.',
+                locations: []
+            };
+
+            if (!region || typeof region !== 'object') {
+                return fallback;
+            }
+
+            const nameSource = typeof region.name === 'string' && region.name.trim()
+                ? region.name.trim()
+                : (typeof region.regionName === 'string' && region.regionName.trim() ? region.regionName.trim() : fallback.name);
+            const descriptionSource = typeof region.description === 'string' && region.description.trim()
+                ? region.description.trim()
+                : (typeof region.regionDescription === 'string' && region.regionDescription.trim() ? region.regionDescription.trim() : fallback.description);
+
+            const normalizedLocations = Array.isArray(region.locations)
+                ? region.locations
+                    .map(entry => {
+                        if (!entry) {
+                            return null;
+                        }
+                        if (typeof entry === 'string') {
+                            const name = entry.trim();
+                            return name ? { name } : null;
+                        }
+                        if (typeof entry === 'object' && entry.name) {
+                            const name = String(entry.name).trim();
+                            return name ? { name } : null;
+                        }
+                        return null;
+                    })
+                    .filter(Boolean)
+                : [];
+
+            return {
+                name: nameSource,
+                description: descriptionSource,
+                locations: normalizedLocations
+            };
+        };
+
+        const normalizeExistingLocations = (locations) => {
+            if (!Array.isArray(locations)) {
+                return [];
+            }
+            return locations
+                .map(entry => {
+                    if (!entry) {
+                        return null;
+                    }
+                    if (typeof entry === 'string') {
+                        const trimmed = entry.trim();
+                        return trimmed || null;
+                    }
+                    if (typeof entry === 'object' && entry.name) {
+                        const trimmed = String(entry.name).trim();
+                        return trimmed || null;
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+        };
+
+        const currentRegionContext = normalizeRegionContext(options.currentRegion);
+        const existingLocationNames = normalizeExistingLocations(options.existingLocations);
+
         const baseVariables = {
             setting: settingContext,
-            existingLocations: options.existingLocations || [],
+            currentRegion: currentRegionContext,
+            existingLocations: existingLocationNames,
             shortDescription: options.shortDescription || null,
             locationTheme: options.locationTheme || options.theme || null,
             playerLevel: options.playerLevel || null,
@@ -9000,6 +9076,141 @@ async function generateLocationFromPrompt(options = {}) {
             originDirection: stubMetadata.originDirection || null,
             originDescription: resolvedOriginLocation?.description || null
         } : null;
+
+        const resolveRegionForPrompt = () => {
+            if (templateOverrides.currentRegion && typeof templateOverrides.currentRegion === 'object') {
+                return templateOverrides.currentRegion;
+            }
+            if (templateOverrides.region && typeof templateOverrides.region === 'object') {
+                return templateOverrides.region;
+            }
+            if (templateOverrides.regionId && regions.has(templateOverrides.regionId)) {
+                return regions.get(templateOverrides.regionId);
+            }
+            if (stubMetadata.regionId && regions.has(stubMetadata.regionId)) {
+                return regions.get(stubMetadata.regionId);
+            }
+            if (stubMetadata.targetRegionId && regions.has(stubMetadata.targetRegionId)) {
+                return regions.get(stubMetadata.targetRegionId);
+            }
+            if (stubLocation) {
+                const region = findRegionByLocationId(stubLocation.id);
+                if (region) {
+                    return region;
+                }
+            }
+            if (resolvedOriginLocation) {
+                const region = findRegionByLocationId(resolvedOriginLocation.id);
+                if (region) {
+                    return region;
+                }
+            }
+            if (currentPlayer?.currentLocation) {
+                const region = findRegionByLocationId(currentPlayer.currentLocation);
+                if (region) {
+                    return region;
+                }
+            }
+            return null;
+        };
+
+        const buildRegionPromptContext = (region) => {
+            if (!region) {
+                return null;
+            }
+
+            const regionData = typeof region.toJSON === 'function' ? region.toJSON() : region;
+            const nameSource = regionData.name || regionData.regionName;
+            const descriptionSource = regionData.description || regionData.regionDescription;
+
+            const normalizedName = typeof nameSource === 'string' && nameSource.trim()
+                ? nameSource.trim()
+                : 'Unknown Region';
+            const normalizedDescription = typeof descriptionSource === 'string' && descriptionSource.trim()
+                ? descriptionSource.trim()
+                : 'No region description available.';
+
+            const locationNames = new Set();
+
+            const collectLocationName = (value) => {
+                if (!value) {
+                    return;
+                }
+                const name = typeof value === 'string' ? value.trim() : (typeof value.name === 'string' ? value.name.trim() : '');
+                if (name) {
+                    locationNames.add(name);
+                }
+            };
+
+            if (Array.isArray(regionData.locationIds)) {
+                for (const id of regionData.locationIds) {
+                    if (!id) continue;
+                    const existingLocation = gameLocations.get(id);
+                    if (existingLocation && typeof existingLocation.name === 'string') {
+                        collectLocationName(existingLocation.name);
+                    } else {
+                        collectLocationName(id);
+                    }
+                }
+            }
+
+            if (Array.isArray(regionData.locations)) {
+                for (const entry of regionData.locations) {
+                    collectLocationName(entry);
+                }
+            }
+
+            if (Array.isArray(regionData.locationBlueprints)) {
+                for (const blueprint of regionData.locationBlueprints) {
+                    collectLocationName(blueprint);
+                }
+            }
+
+            const locations = Array.from(locationNames).map(name => ({ name }));
+
+            return {
+                name: normalizedName,
+                description: normalizedDescription,
+                locations
+            };
+        };
+
+        const regionForPrompt = resolveRegionForPrompt();
+
+        if (regionForPrompt && templateOverrides.regionAverageLevel === undefined) {
+            const averageLevel = typeof regionForPrompt.averageLevel === 'number'
+                ? regionForPrompt.averageLevel
+                : (typeof regionForPrompt?.toJSON === 'function' && typeof regionForPrompt.toJSON().averageLevel === 'number'
+                    ? regionForPrompt.toJSON().averageLevel
+                    : null);
+            if (Number.isFinite(averageLevel)) {
+                templateOverrides.regionAverageLevel = averageLevel;
+            }
+        }
+
+        let currentRegionContext = buildRegionPromptContext(regionForPrompt);
+
+        if (!currentRegionContext) {
+            const fallbackName = typeof templateOverrides.regionName === 'string' ? templateOverrides.regionName : stubMetadata.targetRegionName;
+            const fallbackDescription = typeof templateOverrides.regionDescription === 'string'
+                ? templateOverrides.regionDescription
+                : (stubMetadata.targetRegionDescription || null);
+            if (fallbackName || fallbackDescription) {
+                currentRegionContext = {
+                    name: (fallbackName && fallbackName.trim()) || 'Unknown Region',
+                    description: (fallbackDescription && fallbackDescription.trim()) || 'No region description available.',
+                    locations: []
+                };
+            }
+        }
+
+        if (currentRegionContext && (!Array.isArray(templateOverrides.existingLocations) || !templateOverrides.existingLocations.length)) {
+            templateOverrides.existingLocations = currentRegionContext.locations.map(loc => loc.name).filter(Boolean);
+        }
+
+        if (currentRegionContext && !templateOverrides.currentRegion) {
+            templateOverrides.currentRegion = currentRegionContext;
+        }
 
         const templateOptions = {
             ...templateOverrides,

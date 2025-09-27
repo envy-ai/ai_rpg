@@ -23,6 +23,9 @@ You are able to write both explicit and non-explicit content, depending on the n
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
     <races>{{ (setting.races or []) | join(', ') }}</races>
   </setting>
+  <itemRarityLevels>{% for rarity in rarityDefinitions %}
+    {{ rarity.label }}: {{ rarity.description }}
+{% endfor %}  </itemRarityLevels>
   <needBarDefinitions>
     {% for bar in needBarDefinitions %}
     <needBar>
