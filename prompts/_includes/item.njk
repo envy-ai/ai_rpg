@@ -1,19 +1,19 @@
 <item>
-<name>{% if item.name %}{{ item.name }}{% else %}[Item Name]{% endif %}</name>
-<description>{% if item.description %}{{ item.description }}{% else %}[1-2 sentence description of the item]{% endif %}</description>
-<itemOrScenery>{% if item.itemOrScenery %}{{ item.itemOrScenery }}{% else %}["item" or "scenery" depending on whether it can be picked up or not]{% endif %}</itemOrScenery>
-<type>{% if item.type %}{{ item.type }}{% else %}[Type of item (e.g., weapon, armor, consumable, tool, etc.)]{% endif %}</type>
+<name>{% if thingseed.name %}{{ thingseed.name }}{% else %}[Item Name]{% endif %}</name>
+<description>{% if thingseed.description %}{{ thingseed.description }}{% else %}[1-2 sentence description of the item]{% endif %}</description>
+<itemOrScenery>{% if thingseed.itemOrScenery %}{{ thingseed.itemOrScenery }}{% else %}["item" or "scenery" depending on whether it can be picked up or not]{% endif %}</itemOrScenery>
+<type>{% if thingseed.type %}{{ thingseed.type }}{% else %}[Type of item (e.g., weapon, armor, consumable, tool, etc.)]{% endif %}</type>
 <slot>
-    {% if item.slot %}
-        {{ item.slot }}
+    {% if thingseed.slot %}
+        {{ thingseed.slot }}
     {% else %}
         [Available gear slots: {% if gearSlots %}[{% for slot in gearSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}]{% else %}N/A if not equippable{% endif %}]
     {% endif %}
 </slot>
-<rarity>{% if item.rarity %}{{ item.rarity }}{% else %}[Junk, Common, Uncommon, Rare, Epic, Legendary, Artifact]{% endif %}</rarity>
-<value>{% if item.value is defined %}{{ item.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
-<weight>{% if item.weight is defined %}{{ item.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
-<relativeLevel>{% if item.relativeLevel is defined %}{{ item.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
+<rarity>{% if thingseed.rarity %}{{ thingseed.rarity }}{% else %}[Junk, Common, Uncommon, Rare, Epic, Legendary, Artifact]{% endif %}</rarity>
+<value>{% if thingseed.value is defined %}{{ thingseed.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
+<weight>{% if thingseed.weight is defined %}{{ thingseed.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
+<relativeLevel>{% if thingseed.relativeLevel is defined %}{{ thingseed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
 <attributeBonuses>
     optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses
     <attributeBonus>

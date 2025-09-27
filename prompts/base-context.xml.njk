@@ -413,69 +413,11 @@ You are able to write both explicit and non-explicit content, depending on the n
     </sceneryItem>
     {% endif %}{% endfor %}
   </sceneryList>
-  <gearSlots>
-    {% for slot in gearSlots or [] %}<slot>{{ slot }}</slot>
-    {% endfor %}
-  </gearSlots>
-  <equipmentSlots>
-    {% for slot in equipmentSlots or [] %}<slot>{{ slot }}</slot>
-    {% endfor %}
-  </equipmentSlots>
-  <attributes>
-    {% for attributeName in attributes or [] %}<attribute>{{ attributeName }}</attribute>
-    {% endfor %}
-  </attributes>
-  <attributeDefinitions>
-    {% if attributeDefinitions %}
-      {% for attrName, attrDef in attributeDefinitions | dictsort %}
-      <attribute>
-        <name>{{ attrName }}</name>
-        <description>{{ attrDef.description }}</description>
-      </attribute>
-      {% endfor %}
-    {% endif %}
-  </attributeDefinitions>
-  {% if thingSeed %}
-  <requestedItem>
-    <name>{{ thingSeed.name }}</name>
-    {% if thingSeed.description %}<description>{{ thingSeed.description }}</description>{% endif %}
-    {% if thingSeed.itemOrScenery %}<itemOrScenery>{{ thingSeed.itemOrScenery }}</itemOrScenery>{% endif %}
-    {% if thingSeed.type %}<type>{{ thingSeed.type }}</type>{% endif %}
-    {% if thingSeed.slot %}<slot>{{ thingSeed.slot }}</slot>{% endif %}
-    {% if thingSeed.rarity %}<rarity>{{ thingSeed.rarity }}</rarity>{% endif %}
-    {% if thingSeed.relativeLevel is defined %}<relativeLevel>{{ thingSeed.relativeLevel }}</relativeLevel>{% endif %}
-    {% if thingSeed.value is defined %}<value>{{ thingSeed.value }}</value>{% endif %}
-    {% if thingSeed.weight is defined %}<weight>{{ thingSeed.weight }}</weight>{% endif %}
-    {% if thingSeed.properties %}<properties>{{ thingSeed.properties }}</properties>{% endif %}
-  </requestedItem>
-  {% endif %}
-
 </context>
 
-{% if promptType == 'thing-generator-single' %}
-  {% set seed = thingSeed if thingSeed is defined and thingSeed is not none else {} %}
-  {% include "_includes/thing-generator-single.njk" with {
-    equipmentSlots: equipmentSlots,
-    gearSlots: gearSlots,
-    attributes: attributes,
-    name: seed.name,
-    description: seed.description,
-    itemOrScenery: seed.itemOrScenery,
-    type: seed.type,
-    slot: seed.slot,
-    rarity: seed.rarity,
-    value: seed.value,
-    weight: seed.weight,
-    relativeLevel: seed.relativeLevel,
-    attributeBonuses: seed.attributeBonuses,
-    causeStatusEffect: seed.causeStatusEffect,
-    properties: seed.properties
-  } %}
-{% else %}
-  {% include "_includes/" + promptType + ".njk" %}
-{% endif %}
+{% include "_includes/" + promptType + ".njk" %}
 
 </generationPrompt>
 
 </template>
-    
+

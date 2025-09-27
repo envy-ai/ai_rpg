@@ -1,3 +1,13 @@
+<attributeDefinitions>
+{% if attributeDefinitions %}
+    {% for attrName, attrDef in attributeDefinitions | dictsort %}
+    <attribute>
+    <name>{{ attrName }}</name>
+    <description>{{ attrDef.description }}</description>
+    </attribute>
+    {% endfor %}
+{% endif %}
+</attributeDefinitions>
 <equipmentSlots>
 {% for slot in equipmentSlots %}  <slot>{{ slot }}</slot>
 {% endfor %}

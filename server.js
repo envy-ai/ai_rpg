@@ -4270,8 +4270,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                         JSON.stringify(thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name }, null, 2),
                         ''
                     ];
-                    fs.writeFileSync(logPath, logParts.join('
-'), 'utf8');
+                    fs.writeFileSync(logPath, logParts.join("\n"), 'utf8');
                 } catch (logError) {
                     console.warn('Failed to log item generation:', logError.message);
                 }
