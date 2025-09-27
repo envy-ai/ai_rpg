@@ -389,7 +389,46 @@ p:not(:last-child) {
 .location-exits-content {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+.location-exits-list {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.location-exit-add-button {
+  align-self: stretch;
+  background: rgba(129, 140, 248, 0.2);
+  border: 1px dashed rgba(129, 140, 248, 0.45);
+  border-radius: 6px;
+  color: #ede9fe;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+}
+
+.location-exit-add-button:hover,
+.location-exit-add-button:focus {
+  background: rgba(129, 140, 248, 0.32);
+  border-color: rgba(129, 140, 248, 0.65);
+  color: #ffffff;
+  outline: none;
+}
+
+.location-exit-add-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.exit-button.exit-button-pending {
+  background: rgba(148, 163, 184, 0.22);
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #e2e8f0;
+  cursor: progress;
 }
 
 .exit-button {
@@ -2995,6 +3034,129 @@ body.modal-open {
 }
 
 .npc-needs-save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.new-exit-modal .modal__dialog {
+  max-width: 480px;
+}
+
+.new-exit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.new-exit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.new-exit-field input,
+.new-exit-field textarea {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.new-exit-field input:focus,
+.new-exit-field textarea:focus {
+  border-color: rgba(129, 140, 248, 0.65);
+  outline: none;
+}
+
+.new-exit-field textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.new-exit-type {
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.new-exit-type-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-exit-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+  padding-top: 12px;
+  flex-wrap: wrap;
+}
+
+.new-exit-status {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+.new-exit-status.is-error {
+  color: #fca5a5;
+}
+
+.new-exit-status.is-success {
+  color: #bbf7d0;
+}
+
+.new-exit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.new-exit-cancel,
+.new-exit-save {
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+}
+
+.new-exit-cancel {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #cbd5f5;
+}
+
+.new-exit-cancel:hover,
+.new-exit-cancel:focus {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #ffffff;
+  outline: none;
+}
+
+.new-exit-save {
+  background: rgba(79, 70, 229, 0.25);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #ede9fe;
+}
+
+.new-exit-save:hover,
+.new-exit-save:focus {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: rgba(99, 102, 241, 0.75);
+  color: #ffffff;
+  outline: none;
+}
+
+.new-exit-save:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

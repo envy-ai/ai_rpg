@@ -3766,6 +3766,63 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
+        function buildLocationResponse(location) {
+            if (!location) {
+                return null;
+            }
+
+            const locationData = location.toJSON();
+            locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
+
+            if (locationData.exits) {
+                for (const exit of Object.values(locationData.exits)) {
+                    if (!exit) {
+                        continue;
+                    }
+
+                    const destinationLocation = gameLocations.get(exit.destination);
+                    if (destinationLocation) {
+                        exit.destinationName = destinationLocation.name
+                            || destinationLocation.stubMetadata?.blueprintDescription
+                            || exit.destination;
+                    }
+
+                    const destinationRegionId = exit.destinationRegion || null;
+                    let destinationRegionName = null;
+                    let destinationRegionExpanded = false;
+
+                    if (destinationRegionId) {
+                        if (regions.has(destinationRegionId)) {
+                            const targetRegion = regions.get(destinationRegionId);
+                            destinationRegionName = targetRegion?.name || null;
+                            destinationRegionExpanded = true;
+                        } else {
+                            const pending = pendingRegionStubs.get(destinationRegionId);
+                            if (pending) {
+                                destinationRegionName = pending.name || null;
+                            } else if (destinationLocation?.stubMetadata?.targetRegionName) {
+                                destinationRegionName = destinationLocation.stubMetadata.targetRegionName;
+                            }
+                        }
+                    }
+
+                    if (!destinationRegionName && destinationLocation) {
+                        destinationRegionName = destinationLocation.name
+                            || destinationLocation.stubMetadata?.blueprintDescription
+                            || null;
+                    }
+
+                    exit.destinationRegionName = destinationRegionName;
+                    exit.destinationRegionExpanded = destinationRegionExpanded;
+                }
+            }
+
+            locationData.npcs = buildNpcProfiles(location);
+            locationData.things = buildThingProfiles(location);
+
+            return locationData;
+        }
+
         // Update an NPC's core data (experimental editing UI)
         app.put('/api/npcs/:id', (req, res) => {
             try {
@@ -4805,46 +4862,13 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const locationData = location.toJSON();
-                locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
-                if (locationData.exits) {
-                    for (const [dir, exit] of Object.entries(locationData.exits)) {
-                        if (!exit) continue;
-                        const destLocation = gameLocations.get(exit.destination);
-                        if (destLocation) {
-                            exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
-                        }
-
-                        const destinationRegionId = exit.destinationRegion || null;
-                        let destinationRegionName = null;
-                        let destinationRegionExpanded = false;
-
-                        if (destinationRegionId) {
-                            if (regions.has(destinationRegionId)) {
-                                const targetRegion = regions.get(destinationRegionId);
-                                destinationRegionName = targetRegion?.name || null;
-                                destinationRegionExpanded = true;
-                            } else {
-                                const pending = pendingRegionStubs.get(destinationRegionId);
-                                if (pending) {
-                                    destinationRegionName = pending.name || null;
-                                } else if (destLocation?.stubMetadata?.targetRegionName) {
-                                    destinationRegionName = destLocation.stubMetadata.targetRegionName;
-                                }
-                            }
-                        }
-
-                        if (!destinationRegionName && destLocation) {
-                            destinationRegionName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || null;
-                        }
-
-                        exit.destinationRegionName = destinationRegionName;
-                        exit.destinationRegionExpanded = destinationRegionExpanded;
-                    }
+                const locationData = buildLocationResponse(location);
+                if (!locationData) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to serialize location data.'
+                    });
                 }
-
-                locationData.npcs = buildNpcProfiles(location);
-                locationData.things = buildThingProfiles(location);
 
                 res.json({
                     success: true,
@@ -4855,6 +4879,112 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error.message
+                });
+            }
+        });
+
+        app.post('/api/locations/:id/exits', async (req, res) => {
+            try {
+                const locationId = req.params.id;
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                const originLocation = Location.get(locationId);
+                if (!originLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                const { type, name, description } = req.body || {};
+                const resolvedName = typeof name === 'string' ? name.trim() : '';
+                const resolvedDescription = typeof description === 'string' ? description.trim() : '';
+                const resolvedType = typeof type === 'string' ? type.trim().toLowerCase() : 'location';
+
+                if (!resolvedName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Exit name is required'
+                    });
+                }
+
+                let createdInfo = null;
+
+                if (resolvedType === 'region') {
+                    const regionStub = createRegionStubFromEvent({
+                        name: resolvedName,
+                        description: resolvedDescription,
+                        originLocation
+                    });
+
+                    if (!regionStub) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Unable to create region exit. An exit with this destination may already exist.'
+                        });
+                    }
+
+                    createdInfo = {
+                        type: 'region',
+                        stubId: regionStub?.id || null,
+                        regionId: regionStub?.stubMetadata?.targetRegionId || regionStub?.stubMetadata?.regionId || null,
+                        name: regionStub?.name || resolvedName
+                    };
+                } else if (resolvedType === 'location') {
+                    const locationStub = await createLocationFromEvent({
+                        name: resolvedName,
+                        originLocation,
+                        descriptionHint: resolvedDescription || `Unmarked path leaving ${originLocation.name || originLocation.id}.`,
+                        directionHint: null,
+                        expandStub: false
+                    });
+
+                    if (!locationStub) {
+                        return res.status(500).json({
+                            success: false,
+                            error: 'Failed to create location exit'
+                        });
+                    }
+
+                    createdInfo = {
+                        type: 'location',
+                        destinationId: locationStub.id,
+                        name: locationStub.name || resolvedName,
+                        isStub: Boolean(locationStub.isStub)
+                    };
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Unsupported exit type. Use "location" or "region".'
+                    });
+                }
+
+                const refreshedLocation = Location.get(originLocation.id) || originLocation;
+                const locationData = buildLocationResponse(refreshedLocation);
+
+                if (!locationData) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to serialize updated location.'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: resolvedType === 'region' ? 'Region exit created.' : 'Location exit created.',
+                    location: locationData,
+                    created: createdInfo
+                });
+            } catch (error) {
+                console.error('Error creating exit:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to create exit'
                 });
             }
         });

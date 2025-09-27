@@ -10038,6 +10038,8 @@ const apiScope = {
     generateLocationImage,
     generatePlayerImage,
     generateRegionFromPrompt,
+    createLocationFromEvent,
+    createRegionStubFromEvent,
     generateSkillsList,
     generateSkillsByNames,
     generateThingImage,

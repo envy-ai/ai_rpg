@@ -1,13 +1,14 @@
 <task>You are an AI Game Master in control of potentially multiple NPCs in a scene. Your task is to determine which NPCs take action next.</task>
 
-In the above list of present NPCs (including those on location and those in the player's party), select the 1-2 NPCs that should act next, based on their personalities, the situation, and how long it's been since they last acted (pick two NPCs if in battle, including the primary opponent, and one NPC otherwise). Consider that some NPCs may be more likely to act sooner due to their traits or the current context.  If an NPC just spoke to the player or did something during the most recent turn (such as responding to spoken dialogue), they should not act again. NPCs that don't have any particular interest in the player should not act unless they have a reason to do so. Provide only the exact names of the selected NPCs, in order of who should act. Do not include any additional text or explanation, in this format:
+If the player is having a conversation with someone, respond with the following:
+<npcs>
+</npcs>
+
+Otherwise, follow the instuctions below.
+
+In the above list of present NPCs (including those on location and those in the player's party), select the 1-2 NPCs that should act next, based on their personalities, the situation, and how long it's been since they last acted (pick two NPCs if in battle, including the primary opponent, and one NPC otherwise). Consider that some NPCs may be more likely to act sooner due to their traits or the current context.  NPCs that don't have any particular interest in the player should not act unless they have a reason to do so. Provide only the exact names of the selected NPCs, in order of who should act. Do not include any additional text or explanation, in this format:
 
 <npcs>
   <npc>Exact name of the first npc. Omit if no one needs to act.</npc>
   <npc>Only if in battle, the exact name of the second npc. Omit otherwise</npc>
-</npcs>
-
-or, if no NPCs should act, such as when no NPCs are present or they have already responded during the player's most recent action:
-
-<npcs>
 </npcs>

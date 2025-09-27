@@ -47,7 +47,10 @@
                                         <details class="location-section location-exits" open>
                                             <summary>Exits</summary>
                                             <div class="location-exits-content" id="locationExits">
-                                                <div class="no-exits">No exits discovered yet.</div>
+                                                <div class="location-exits-list" id="locationExitsList">
+                                                    <div class="no-exits">No exits discovered yet.</div>
+                                                </div>
+                                                <button type="button" class="location-exit-add-button" id="newExitButton" disabled>New Exit</button>
                                             </div>
                                         </details>
                                         <details class="location-section location-npcs" open>
@@ -507,6 +510,44 @@
                     <div class="npc-needs-actions">
                         <button type="button" class="npc-needs-cancel" id="npcNeedsCancelBtn">Cancel</button>
                         <button type="submit" class="npc-needs-save-btn" id="npcNeedsSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+    <div id="newExitModal" class="modal new-exit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="newExitModalTitle">Add New Exit</h2>
+                <button type="button" class="modal__close" id="newExitCloseBtn" aria-label="Close new exit dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="newExitForm" class="modal__body new-exit-body" novalidate>
+                <div class="new-exit-field">
+                    <label for="newExitName">Exit Name</label>
+                    <input type="text" id="newExitName" name="name" maxlength="120" required>
+                </div>
+                <div class="new-exit-field">
+                    <label for="newExitDescription">Description</label>
+                    <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
+                </div>
+                <fieldset class="new-exit-field new-exit-type">
+                    <legend>Exit Type</legend>
+                    <label for="newExitTypeLocation" class="new-exit-type-option">
+                        <input type="radio" id="newExitTypeLocation" name="type" value="location" checked>
+                        Location (path within the current region)
+                    </label>
+                    <label for="newExitTypeRegion" class="new-exit-type-option">
+                        <input type="radio" id="newExitTypeRegion" name="type" value="region">
+                        Region (leads to a new or existing region)
+                    </label>
+                </fieldset>
+                <footer class="new-exit-footer">
+                    <div class="new-exit-status" id="newExitStatus" role="status" aria-live="polite"></div>
+                    <div class="new-exit-actions">
+                        <button type="button" class="new-exit-cancel" id="newExitCancelBtn">Cancel</button>
+                        <button type="submit" class="new-exit-save" id="newExitSaveBtn">Create Exit</button>
                     </div>
                 </footer>
             </form>
@@ -2027,6 +2068,17 @@
         const npcNeedsCancelBtn = document.getElementById('npcNeedsCancelBtn');
         const npcNeedsSaveBtn = document.getElementById('npcNeedsSaveBtn');
         const npcNeedsCloseBtn = document.getElementById('npcNeedsCloseBtn');
+        const newExitModal = document.getElementById('newExitModal');
+        const newExitForm = document.getElementById('newExitForm');
+        const newExitNameInput = document.getElementById('newExitName');
+        const newExitDescriptionInput = document.getElementById('newExitDescription');
+        const newExitTypeLocation = document.getElementById('newExitTypeLocation');
+        const newExitTypeRegion = document.getElementById('newExitTypeRegion');
+        const newExitStatus = document.getElementById('newExitStatus');
+        const newExitCancelBtn = document.getElementById('newExitCancelBtn');
+        const newExitSaveBtn = document.getElementById('newExitSaveBtn');
+        const newExitCloseBtn = document.getElementById('newExitCloseBtn');
+        const newExitButton = document.getElementById('newExitButton');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -2668,6 +2720,7 @@
         let currentNpcNeedsTargetId = null;
         let currentNpcNeedsTargetType = null;
         let currentNpcNeedsData = null;
+        let lastRenderedLocation = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
         let currentThingLockedMetadata = {};
@@ -3703,7 +3756,8 @@
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3730,7 +3784,8 @@
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (editHidden && viewHidden && thingHidden && dispositionHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3763,7 +3818,8 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3797,9 +3853,183 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
+            }
+        }
+
+        function setNewExitStatus(message = '', type = null) {
+            if (!newExitStatus) {
+                return;
+            }
+            newExitStatus.textContent = message || '';
+            newExitStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                newExitStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                newExitStatus.classList.add('is-success');
+            }
+        }
+
+        function openNewExitModal() {
+            if (!newExitModal || !npcModalBackdrop) {
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                alert('No active location available to add an exit.');
+                return;
+            }
+            if (newExitForm) {
+                newExitForm.reset();
+            }
+            if (newExitTypeLocation) {
+                newExitTypeLocation.checked = true;
+            }
+            setNewExitStatus('', null);
+            if (newExitSaveBtn) {
+                newExitSaveBtn.disabled = false;
+            }
+            npcModalBackdrop.removeAttribute('hidden');
+            newExitModal.removeAttribute('hidden');
+            newExitModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            setTimeout(() => {
+                newExitNameInput?.focus();
+            }, 50);
+        }
+
+        async function submitNewExit(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            if (!newExitForm || !newExitSaveBtn) {
+                return;
+            }
+
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                setNewExitStatus('No active location is available for adding exits.', 'error');
+                return;
+            }
+
+            const name = newExitNameInput?.value?.trim() || '';
+            const description = newExitDescriptionInput?.value?.trim() || '';
+            const type = newExitTypeRegion?.checked ? 'region' : 'location';
+
+            if (!name) {
+                setNewExitStatus('Please provide a name for the exit.', 'error');
+                newExitNameInput?.focus();
+                return;
+            }
+
+            let placeholderButton = null;
+            if (locationExitsList) {
+                const emptyState = locationExitsList.querySelector('.no-exits');
+                if (emptyState) {
+                    emptyState.remove();
+                }
+                placeholderButton = document.createElement('button');
+                placeholderButton.type = 'button';
+                placeholderButton.className = 'exit-button exit-button-pending';
+                placeholderButton.disabled = true;
+                placeholderButton.textContent = type === 'region'
+                    ? `${name} (region)`
+                    : name;
+                placeholderButton.dataset.pendingExit = 'true';
+                locationExitsList.appendChild(placeholderButton);
+            }
+
+            setNewExitStatus('Creating exit…', null);
+            newExitSaveBtn.disabled = true;
+
+            const payload = {
+                type,
+                name,
+                description
+            };
+
+            let overlayShown = false;
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}/exits`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                setNewExitStatus('', null);
+                closeNewExitModal();
+                showLocationOverlay('Updating exits...');
+                overlayShown = true;
+
+                if (data.location) {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    const exits = Array.isArray(data.location.exits)
+                        ? data.location.exits
+                        : Object.values(data.location.exits || {});
+                    exits.forEach(exit => {
+                        if (exit && exit.destination && exit.destinationName) {
+                            locationCache[exit.destination] = exit.destinationName;
+                        }
+                    });
+                    await window.updateLocationDisplay(data.location);
+                }
+
+                const mapTab = document.querySelector('[data-tab="map"]');
+                if (mapTab && mapTab.classList.contains('active')) {
+                    window.loadRegionMap?.();
+                }
+            } catch (error) {
+                console.warn('Failed to create exit:', error);
+                setNewExitStatus(`Failed to create exit: ${error?.message || 'Unknown error'}`, 'error');
+                if (placeholderButton && placeholderButton.isConnected) {
+                    placeholderButton.remove();
+                    if (locationExitsList && !locationExitsList.querySelector('.exit-button')) {
+                        const emptyState = document.createElement('div');
+                        emptyState.className = 'no-exits';
+                        emptyState.textContent = 'No exits discovered yet.';
+                        locationExitsList.appendChild(emptyState);
+                    }
+                }
+            } finally {
+                if (overlayShown) {
+                    hideLocationOverlay();
+                }
+                newExitSaveBtn.disabled = false;
+            }
+        }
+
+        function closeNewExitModal() {
+            if (!newExitModal) {
+                return;
+            }
+            newExitModal.setAttribute('aria-hidden', 'true');
+            newExitModal.setAttribute('hidden', '');
+            if (newExitForm) {
+                newExitForm.reset();
+            }
+            setNewExitStatus('', null);
+            if (newExitSaveBtn) {
+                newExitSaveBtn.disabled = false;
+            }
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+            if (newExitButton) {
+                newExitButton.focus();
             }
         }
 
@@ -3814,7 +4044,8 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3855,7 +4086,8 @@
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden) {
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && newExitHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3929,6 +4161,28 @@
             npcNeedsForm.addEventListener('submit', submitNpcNeeds);
         }
 
+        if (newExitButton) {
+            newExitButton.addEventListener('click', () => {
+                openNewExitModal();
+            });
+        }
+
+        if (newExitCancelBtn) {
+            newExitCancelBtn.addEventListener('click', () => {
+                closeNewExitModal();
+            });
+        }
+
+        if (newExitCloseBtn) {
+            newExitCloseBtn.addEventListener('click', () => {
+                closeNewExitModal();
+            });
+        }
+
+        if (newExitForm) {
+            newExitForm.addEventListener('submit', submitNewExit);
+        }
+
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
                 closeNpcViewModal();
@@ -3972,7 +4226,9 @@
         if (npcModalBackdrop) {
             npcModalBackdrop.addEventListener('click', (event) => {
                 if (event.target === npcModalBackdrop) {
-                    if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
+                    if (newExitModal && !newExitModal.hasAttribute('hidden')) {
+                        closeNewExitModal();
+                    } else if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
                         closeNpcNeedsModal();
                     } else if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
                         closeNpcDispositionModal();
@@ -3980,8 +4236,8 @@
                         closeThingEditModal();
                     } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
                         closeNpcViewModal();
-                        } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
-                            closeNpcInventoryModal();
+                    } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
+                        closeNpcInventoryModal();
                     } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                         closeNpcEditModal();
                     }
@@ -5280,6 +5536,12 @@
                     return;
                 }
 
+                if (newExitModal && !newExitModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNewExitModal();
+                    return;
+                }
+
                 if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeNpcNeedsModal();
@@ -5396,7 +5658,6 @@
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
             const locationThings = document.getElementById('locationThings');
-            let lastRenderedLocation = null;
             const npcDataCache = new Map();
             window.currentNpcData = npcDataCache;
             const npcMenuState = { openMenu: null, trigger: null };
@@ -5657,7 +5918,7 @@
                 const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
                 const locationImage = document.getElementById('locationImage');
-                const locationExits = document.getElementById('locationExits');
+        const locationExitsList = document.getElementById('locationExitsList');
                 const tooltipController = window.floatingTooltipController;
 
                 if (tooltipController && typeof tooltipController.hide === 'function') {
@@ -5771,12 +6032,15 @@
                         }
                     }
 
-                    if (locationExits) {
+                    if (newExitButton) {
+                        newExitButton.disabled = false;
+                    }
+                    if (locationExitsList) {
                         const exitEntries = Object.entries(location.exits || {});
                         if (exitEntries.length === 0) {
-                            locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                            locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                         } else {
-                            locationExits.innerHTML = '';
+                            locationExitsList.innerHTML = '';
                             exitEntries.forEach(([key, exit]) => {
                                 if (!exit || !exit.destination) {
                                     return;
@@ -5806,7 +6070,7 @@
 
                                 button.dataset.destinationId = exit.destination;
                                 button.addEventListener('click', () => moveToLocation(exit.destination));
-                                locationExits.appendChild(button);
+                                locationExitsList.appendChild(button);
                             });
                         }
                     }
@@ -5983,8 +6247,11 @@
                     if (locationThings) {
                         locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
                     }
-                    if (locationExits) {
-                        locationExits.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                    if (locationExitsList) {
+                        locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                    }
+                    if (newExitButton) {
+                        newExitButton.disabled = true;
                     }
                     npcDataCache.clear();
                     closeNpcContextMenu();
