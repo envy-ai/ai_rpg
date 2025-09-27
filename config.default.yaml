@@ -31,7 +31,10 @@ imagegen:
   enabled: true
   engine: comfyui
   api_template: sdxl_illustrious.json.njk
+
+  # Checkpoint is relative to the ComfyUI models/
   checkpoint: "sdxl/QuillworksIllustrious_QuillworksV15.safetensors"
+
   prompt_generator_templates:
     character: player-portrait-illustrious.xml.njk
     item: item-image-illustrious.xml.njk
@@ -54,12 +57,5 @@ imagegen:
 
 # Game Master configuration
 gamemaster:
-  # Prompt template to use (options: gamemaster.njk, fantasy-adventure.njk, mystery-investigation.njk)
+  # Fallback system prompt
   promptTemplate: "gamemaster.njk"
-
-  # Variables to pass to the prompt template (customize based on your chosen template)
-  promptVariables:
-    playerName: "" # Player's character name
-    gameStyle: "" # narrative-focused, action-packed, puzzle-heavy, etc.
-    setting: "" # fantasy, sci-fi, modern, historical, etc.
-    additionalInstructions: "" # Any custom instructions
