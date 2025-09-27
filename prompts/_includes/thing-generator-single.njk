@@ -1,0 +1,10 @@
+<equipmentSlots>
+{% for slot in equipmentSlots %}  <slot>{{ slot }}</slot>
+{% endfor %}
+</equipmentSlots>
+
+<task>Generate a single item that's appropriate to the current setting, location and region. Fill in any missing fields, but leave any provided fields as they are.  Return it in this format:</task>
+
+<items>
+{% include "_includes/item.njk" %}
+</items>

@@ -1702,6 +1702,11 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
 
     const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
+    const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
+        .filter(name => typeof name === 'string' && name.trim())
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const equipmentSlotTypesForPrompt = getGearSlotTypes();
+    const gearSlotNamesForPrompt = getGearSlotNames();
 
     let location = locationOverride;
     if (!location && currentPlayer && currentPlayer.currentLocation) {
@@ -2203,7 +2208,11 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         itemsInScene,
         dispositionTypes: dispositionTypesForPrompt,
         dispositionRange: dispositionDefinitions?.range || {},
-        needBarDefinitions
+        needBarDefinitions,
+        gearSlots: gearSlotNamesForPrompt,
+        equipmentSlots: equipmentSlotTypesForPrompt,
+        attributes: attributeEntriesForPrompt,
+        attributeDefinitions: attributeDefinitionsForPrompt
     };
 }
 
@@ -4002,272 +4011,287 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 }
 
 async function generateItemsByNames({ itemNames = [], location = null, owner = null, region = null } = {}) {
-    try {
-        const normalized = Array.from(new Set(
-            (itemNames || [])
-                .map(name => typeof name === 'string' ? name.trim() : '')
-                .filter(Boolean)
-        ));
+    const normalized = Array.from(new Set(
+        (itemNames || [])
+            .map(name => (typeof name === 'string' ? name.trim() : ''))
+            .filter(Boolean)
+    ));
 
-        if (!normalized.length) {
-            return [];
+    if (!normalized.length) {
+        return [];
+    }
+
+    const missing = normalized.filter(name => !findThingByName(name));
+    if (!missing.length) {
+        return [];
+    }
+
+    let resolvedLocation = location || null;
+    if (!resolvedLocation && owner?.currentLocation) {
+        try {
+            resolvedLocation = Location.get(owner.currentLocation);
+        } catch (_) {
+            resolvedLocation = null;
         }
+    }
 
-        const missing = normalized.filter(name => !findThingByName(name));
-        if (!missing.length) {
-            return [];
+    const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+
+    const createFallbackThing = (name) => {
+        if (!name || findThingByName(name)) {
+            return null;
         }
-
-        const settingSnapshot = getActiveSettingSnapshot();
-        const settingDescription = describeSettingForPrompt(settingSnapshot);
-        let resolvedLocation = location || null;
-        if (!resolvedLocation && owner?.currentLocation) {
-            try {
-                resolvedLocation = Location.get(owner.currentLocation);
-            } catch (_) {
-                resolvedLocation = null;
-            }
-        }
-        const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
-
-        const characterDescriptor = owner ? {
-            name: owner.name,
-            role: owner.class || owner.race || 'adventurer',
-            description: owner.description,
-            class: owner.class || owner.race || 'adventurer',
-            level: owner.level || 1,
-            race: owner.race || 'human'
-        } : {
-            name: resolvedLocation ? `${resolvedLocation.name} cache` : 'Scene cache',
-            role: 'environmental stash',
-            description: resolvedLocation?.description || 'Items discovered during the current scene.',
-            class: 'location',
-            level: currentPlayer?.level || 1,
-            race: resolvedRegion?.name || 'n/a'
-        };
-
-        const renderedTemplate = renderInventoryPrompt({
-            setting: settingDescription,
-            region: resolvedRegion ? { name: resolvedRegion.name, description: resolvedRegion.description } : null,
-            location: resolvedLocation ? { name: resolvedLocation.name, description: resolvedLocation.description || resolvedLocation.stubMetadata?.blueprintDescription } : null,
-            character: characterDescriptor
-        });
-
-        if (!renderedTemplate) {
-            throw new Error('Inventory prompt template could not be rendered');
-        }
-
-        const parsedTemplate = parseXMLTemplate(renderedTemplate);
-        const systemPrompt = parsedTemplate.systemPrompt;
-        let generationPrompt = parsedTemplate.generationPrompt;
-
-        if (!systemPrompt || !generationPrompt) {
-            throw new Error('Inventory template missing prompts');
-        }
-
-        const quotedNames = missing.map(name => `"${name}"`).join(', ');
-        generationPrompt += `\nOnly generate detailed entries for the following item names and keep the spelling exactly as provided: ${quotedNames}.`;
-        generationPrompt += `\nOutput exactly ${missing.length} <item> entries using the same XML structure and do not invent additional items.`;
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
-        ];
-
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-
-        const chatEndpoint = endpoint.endsWith('/') ?
-            `${endpoint}chat/completions` :
-            `${endpoint}/chat/completions`;
-
-        const requestData = {
-            model,
-            messages,
-            max_tokens: 900,
-            temperature: config.ai.temperature || 0.7
-        };
-
-        const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 30000
-        });
-
-        const inventoryContent = response.data?.choices?.[0]?.message?.content;
-        if (!inventoryContent || !inventoryContent.trim()) {
-            throw new Error('Empty item generation response from AI');
-        }
-
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-        const parsedItems = parseInventoryItems(inventoryContent) || [];
-        const itemsByName = new Map();
-        for (const item of parsedItems) {
-            if (!item?.name) continue;
-            itemsByName.set(item.name.trim().toLowerCase(), item);
-        }
-
-        const created = [];
-        for (const name of missing) {
-            const lookupKey = name.trim().toLowerCase();
-            const itemData = itemsByName.get(lookupKey) || parsedItems.find(it => it?.name) || null;
-            const descriptionParts = [];
-            if (itemData?.description) {
-                descriptionParts.push(itemData.description.trim());
-            }
-            const detailParts = [];
-            if (itemData?.type) detailParts.push(`Type: ${itemData.type}`);
-            if (itemData?.rarity) detailParts.push(`Rarity: ${itemData.rarity}`);
-            if (itemData?.value) detailParts.push(`Value: ${itemData.value}`);
-            if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
-            if (itemData?.slot && itemData.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${itemData.slot}`);
-            if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
-            if (itemData?.attributeBonuses?.length) {
-                const bonusSummary = itemData.attributeBonuses
-                    .map(bonus => {
-                        const attr = bonus.attribute || 'Attribute';
-                        const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
-                        const sign = value >= 0 ? `+${value}` : `${value}`;
-                        return `${attr} ${sign}`;
-                    })
-                    .join(', ');
-                if (bonusSummary) {
-                    detailParts.push(`Bonuses: ${bonusSummary}`);
-                }
-            }
-            if (itemData?.causeStatusEffect) {
-                const effectName = itemData.causeStatusEffect.name || 'Status Effect';
-                const effectDescription = itemData.causeStatusEffect.description || '';
-                const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
-                detailParts.push(`Status Effect: ${effectCombined}`);
-            }
-            if (detailParts.length) {
-                descriptionParts.push(detailParts.join(' | '));
-            }
-            const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
-
-            const relativeLevel = Number.isFinite(itemData?.relativeLevel)
-                ? Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)))
-                : 0;
-            const baseReference = owner?.level
-                ? owner.level
-                : (location?.baseLevel
-                    ? location.baseLevel
-                    : (region?.averageLevel || currentPlayer?.level || 1));
-            const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
-
-            const metadata = sanitizeMetadataObject({
-                rarity: itemData?.rarity || null,
-                itemType: itemData?.type || null,
-                value: itemData?.value || null,
-                weight: itemData?.weight || null,
-                properties: itemData?.properties || null,
-                slot: itemData?.slot || null,
-                attributeBonuses: itemData?.attributeBonuses && itemData.attributeBonuses.length ? itemData.attributeBonuses : null,
-                causeStatusEffect: itemData?.causeStatusEffect || null,
-                relativeLevel,
-                level: computedLevel
-            });
-
+        try {
             const thing = new Thing({
                 name,
-                description: composedDescription,
+                description: `An item called ${name}.`,
                 thingType: 'item',
-                rarity: itemData?.rarity || null,
-                itemTypeDetail: itemData?.type || null,
-                slot: itemData?.slot || null,
-                attributeBonuses: itemData?.attributeBonuses,
-                causeStatusEffect: itemData?.causeStatusEffect,
-                level: computedLevel,
-                relativeLevel,
-                metadata
+                metadata: {}
             });
             things.set(thing.id, thing);
-            created.push(thing);
-        }
-
-        for (const thing of created) {
-            const metadata = thing.metadata || {};
+            const fallbackMetadata = thing.metadata || {};
             if (owner && typeof owner.addInventoryItem === 'function') {
                 owner.addInventoryItem(thing);
-                metadata.ownerId = owner.id;
-                delete metadata.locationId;
-                thing.metadata = metadata;
+                fallbackMetadata.ownerId = owner.id;
+                delete fallbackMetadata.locationId;
             } else if (resolvedLocation) {
-                metadata.locationId = resolvedLocation.id;
-                delete metadata.ownerId;
-                thing.metadata = metadata;
+                fallbackMetadata.locationId = resolvedLocation.id;
+                delete fallbackMetadata.ownerId;
                 if (typeof resolvedLocation.addThingId === 'function') {
                     resolvedLocation.addThingId(thing.id);
                 }
             }
+            thing.metadata = fallbackMetadata;
+            return thing;
+        } catch (creationError) {
+            console.warn(`Failed to create fallback item for "${name}":`, creationError.message);
+            return null;
+        }
+    };
 
-            if (shouldGenerateThingImage(thing)) {
-                if (!thing.imageId || !hasExistingImage(thing.imageId)) {
-                    thing.imageId = null;
+    try {
+        const baseContext = buildBasePromptContext({ locationOverride: resolvedLocation });
+        const attributeList = (baseContext.attributes && baseContext.attributes.length)
+            ? baseContext.attributes
+            : Object.keys(attributeDefinitionsForPrompt || {})
+                .filter(name => typeof name === 'string' && name.trim())
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        const equipmentSlotTypes = (baseContext.equipmentSlots && baseContext.equipmentSlots.length)
+            ? baseContext.equipmentSlots
+            : getGearSlotTypes();
+        const gearSlotNames = (baseContext.gearSlots && baseContext.gearSlots.length)
+            ? baseContext.gearSlots
+            : getGearSlotNames();
+
+        const promptTemplateBase = {
+            ...baseContext,
+            promptType: 'thing-generator-single',
+            equipmentSlots: equipmentSlotTypes,
+            gearSlots: gearSlotNames,
+            attributes: attributeList,
+            attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt
+        };
+
+        const endpoint = config.ai.endpoint;
+        const apiKey = config.ai.apiKey;
+        const chatEndpoint = endpoint.endsWith('/')
+            ? `${endpoint}chat/completions`
+            : `${endpoint}/chat/completions`;
+        const temperature = config.ai.temperature || 0.7;
+
+        const created = [];
+
+        for (const name of missing) {
+            const thingSeed = {
+                name,
+                itemOrScenery: 'item'
+            };
+
+            try {
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...promptTemplateBase,
+                    thingSeed
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    throw new Error('Thing generation template missing prompts');
+                }
+
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || 600,
+                    temperature: typeof parsedTemplate.temperature === 'number'
+                        ? parsedTemplate.temperature
+                        : temperature
+                };
+
+                const requestStart = Date.now();
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 30000
+                });
+
+                const inventoryContent = response.data?.choices?.[0]?.message?.content;
+                if (!inventoryContent || !inventoryContent.trim()) {
+                    throw new Error('Empty item generation response from AI');
+                }
+
+                const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+                const parsedItems = parseInventoryItems(inventoryContent) || [];
+                const itemData = parsedItems.find(it => it?.name) || null;
+                if (!itemData) {
+                    throw new Error('No item data returned by AI');
+                }
+
+                const descriptionParts = [];
+                if (itemData?.description) {
+                    descriptionParts.push(itemData.description.trim());
+                }
+                const detailParts = [];
+                if (itemData?.type) detailParts.push(`Type: ${itemData.type}`);
+                if (itemData?.rarity) detailParts.push(`Rarity: ${itemData.rarity}`);
+                if (itemData?.value) detailParts.push(`Value: ${itemData.value}`);
+                if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
+                if (itemData?.slot && itemData.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${itemData.slot}`);
+                if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
+                if (itemData?.attributeBonuses?.length) {
+                    const bonusSummary = itemData.attributeBonuses
+                        .map(bonus => {
+                            const attr = bonus.attribute || 'Attribute';
+                            const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
+                            const sign = value >= 0 ? `+${value}` : `${value}`;
+                            return `${attr} ${sign}`;
+                        })
+                        .join(', ');
+                    if (bonusSummary) {
+                        detailParts.push(`Bonuses: ${bonusSummary}`);
+                    }
+                }
+                if (itemData?.causeStatusEffect) {
+                    const effectName = itemData.causeStatusEffect.name || 'Status Effect';
+                    const effectDescription = itemData.causeStatusEffect.description || '';
+                    const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
+                    detailParts.push(`Status Effect: ${effectCombined}`);
+                }
+                if (detailParts.length) {
+                    descriptionParts.push(detailParts.join(' | '));
+                }
+                const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
+
+                const relativeLevel = Number.isFinite(itemData?.relativeLevel)
+                    ? Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)))
+                    : 0;
+                const baseReference = owner?.level
+                    ? owner.level
+                    : (resolvedLocation?.baseLevel
+                        ? resolvedLocation.baseLevel
+                        : (resolvedRegion?.averageLevel || currentPlayer?.level || 1));
+                const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+
+                const metadata = sanitizeMetadataObject({
+                    rarity: itemData?.rarity || null,
+                    itemType: itemData?.type || null,
+                    value: itemData?.value || null,
+                    weight: itemData?.weight || null,
+                    properties: itemData?.properties || null,
+                    slot: itemData?.slot || null,
+                    attributeBonuses: itemData?.attributeBonuses && itemData.attributeBonuses.length ? itemData.attributeBonuses : null,
+                    causeStatusEffect: itemData?.causeStatusEffect || null,
+                    relativeLevel,
+                    level: computedLevel
+                });
+
+                const thing = new Thing({
+                    name,
+                    description: composedDescription,
+                    thingType: 'item',
+                    rarity: itemData?.rarity || null,
+                    itemTypeDetail: itemData?.type || null,
+                    slot: itemData?.slot || null,
+                    attributeBonuses: itemData?.attributeBonuses,
+                    causeStatusEffect: itemData?.causeStatusEffect,
+                    level: computedLevel,
+                    relativeLevel,
+                    metadata
+                });
+                things.set(thing.id, thing);
+
+                if (owner && typeof owner.addInventoryItem === 'function') {
+                    owner.addInventoryItem(thing);
+                    metadata.ownerId = owner.id;
+                    delete metadata.locationId;
+                    thing.metadata = metadata;
+                } else if (resolvedLocation) {
+                    metadata.locationId = resolvedLocation.id;
+                    delete metadata.ownerId;
+                    thing.metadata = metadata;
+                    if (typeof resolvedLocation.addThingId === 'function') {
+                        resolvedLocation.addThingId(thing.id);
+                    }
+                }
+
+                if (shouldGenerateThingImage(thing)) {
+                    if (!thing.imageId || !hasExistingImage(thing.imageId)) {
+                        thing.imageId = null;
+                    }
+                }
+
+                created.push(thing);
+
+                try {
+                    const logDir = path.join(__dirname, 'logs');
+                    if (!fs.existsSync(logDir)) {
+                        fs.mkdirSync(logDir, { recursive: true });
+                    }
+                    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+                    const logPath = path.join(logDir, `event_item_${Date.now()}_${safeName}.log`);
+                    const logParts = [
+                        formatDurationLine(apiDurationSeconds),
+                        '=== ITEM GENERATION SYSTEM PROMPT ===',
+                        parsedTemplate.systemPrompt,
+                        '',
+                        '=== ITEM GENERATION PROMPT ===',
+                        parsedTemplate.generationPrompt,
+                        '',
+                        '=== ITEM GENERATION RESPONSE ===',
+                        inventoryContent,
+                        '',
+                        '=== GENERATED ITEM ===',
+                        JSON.stringify(thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name }, null, 2),
+                        ''
+                    ];
+                    fs.writeFileSync(logPath, logParts.join('
+'), 'utf8');
+                } catch (logError) {
+                    console.warn('Failed to log item generation:', logError.message);
+                }
+            } catch (itemError) {
+                console.warn(`Failed to generate detailed items from event for "${name}":`, itemError.message);
+                const fallbackThing = createFallbackThing(name);
+                if (fallbackThing) {
+                    created.push(fallbackThing);
                 }
             }
-        }
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const logPath = path.join(logDir, `event_items_${Date.now()}.log`);
-            const logParts = [
-                formatDurationLine(apiDurationSeconds),
-                '=== ITEM GENERATION PROMPT ===',
-                generationPrompt,
-                '\n=== ITEM GENERATION RESPONSE ===',
-                inventoryContent,
-                '\n=== GENERATED ITEMS ===',
-                JSON.stringify(created.map(item => item.toJSON ? item.toJSON() : { id: item.id, name: item.name }), null, 2),
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log item generation:', logError.message);
         }
 
         return created;
     } catch (error) {
-        console.warn('Failed to generate detailed items from event:', error.message);
-
+        console.warn('Failed to prepare item generation context:', error.message);
         const fallbacks = [];
-        for (const name of itemNames || []) {
-            if (!name || findThingByName(name)) {
-                continue;
-            }
-            try {
-                const thing = new Thing({
-                    name,
-                    description: `An item called ${name}.`,
-                    thingType: 'item',
-                    metadata: {}
-                });
-                things.set(thing.id, thing);
-                const fallbackMetadata = thing.metadata || {};
-                if (owner && typeof owner.addInventoryItem === 'function') {
-                    owner.addInventoryItem(thing);
-                    fallbackMetadata.ownerId = owner.id;
-                    delete fallbackMetadata.locationId;
-                } else if (resolvedLocation) {
-                    fallbackMetadata.locationId = resolvedLocation.id;
-                    delete fallbackMetadata.ownerId;
-                }
-                thing.metadata = fallbackMetadata;
-                if (!fallbackMetadata.ownerId && fallbackMetadata.locationId && typeof resolvedLocation?.addThingId === 'function') {
-                    resolvedLocation.addThingId(thing.id);
-                }
-                fallbacks.push(thing);
-            } catch (creationError) {
-                console.warn(`Failed to create fallback item for "${name}":`, creationError.message);
+        for (const name of missing) {
+            const fallbackThing = createFallbackThing(name);
+            if (fallbackThing) {
+                fallbacks.push(fallbackThing);
             }
         }
         return fallbacks;
