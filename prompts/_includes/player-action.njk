@@ -19,11 +19,11 @@ Defeated: {{ attackOutcome.target.defeated }}
 % health remaining: {{ attackOutcome.target.remainingHealthPercent }}
 {% endif %}
 
-Provide a response in prose, strictly adhering to the outcome of the attack. Use the % health lost and % health remaining to describe the degree of damage. Use your judgement to determine whether "defeated" means killed, rendered unconscious, or just unable to continue fighting.  Note that the target may choose to surrender or stop fighting even if they aren't defeated.
+Provide a response in prose, strictly adhering to the outcome of the attack. Use the % health lost and % health remaining to describe the degree of damage. Use your judgement to determine whether "defeated" means killed, rendered unconscious, or just unable to continue fighting.  Note that the target may choose to surrender or stop fighting even if they aren't defeated. /nothink
 {% else %}
 <actionStatus>
 {{ success_or_failure }}
 </actionStatus> 
-The character attempted the above action. Provide a response, strictly adhering to the degree of success listed in actionStatus. In interactions between the player and NPCs, pay close attention to the NPC's personality and their disposition toward the player.
+The character attempted the above action. Provide a response, strictly adhering to the degree of success listed in actionStatus. In interactions between the player and NPCs, adhere to the NPC's personality and their disposition toward the player. /nothink
 {% endif %}
 

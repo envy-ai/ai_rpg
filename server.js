@@ -3001,6 +3001,166 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
+function createRegionStubFromEvent({ name, originLocation = null, description = null } = {}) {
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (!trimmedName || !originLocation) {
+        return null;
+    }
+
+    const normalizedTargetName = trimmedName.toLowerCase();
+
+    const ensureExistingConnection = (targetLocation, destinationRegionId) => {
+        if (!targetLocation) {
+            return null;
+        }
+
+        let directionKey = directionKeyFromName(trimmedName, `to_${destinationRegionId || targetLocation.id}`);
+        if (!directionKey) {
+            directionKey = `to_${destinationRegionId || targetLocation.id}`;
+        }
+
+        return ensureExitConnection(originLocation, directionKey, targetLocation, {
+            description: description || `Path to ${targetLocation.name || trimmedName}`,
+            bidirectional: true,
+            destinationRegion: destinationRegionId || null
+        });
+    };
+
+    const existingRegion = findRegionByNameLoose(trimmedName);
+    if (existingRegion) {
+        const entranceLocationId = existingRegion.entranceLocationId
+            || (existingRegion.locationIds || []).find(id => gameLocations.get(id));
+        const entranceLocation = entranceLocationId ? gameLocations.get(entranceLocationId) : null;
+
+        if (!entranceLocation) {
+            console.warn(`Region "${trimmedName}" exists but no entrance location was found.`);
+            return null;
+        }
+
+        ensureExistingConnection(entranceLocation, existingRegion.id);
+        return entranceLocation;
+    }
+
+    for (const pending of pendingRegionStubs.values()) {
+        if (!pending || !pending.name) {
+            continue;
+        }
+        if (pending.name.trim().toLowerCase() !== normalizedTargetName) {
+            continue;
+        }
+
+        const existingStub = pending.entranceStubId ? gameLocations.get(pending.entranceStubId) : null;
+        if (existingStub) {
+            ensureExistingConnection(existingStub, pending.id || null);
+            return existingStub;
+        }
+    }
+
+    const exits = typeof originLocation.getAvailableDirections === 'function'
+        ? originLocation.getAvailableDirections()
+        : [];
+
+    const hasExistingMatchingExit = exits.some(direction => {
+        const exit = originLocation.getExit(direction);
+        if (!exit) {
+            return false;
+        }
+
+        if (exit.destinationRegion) {
+            const pending = pendingRegionStubs.get(exit.destinationRegion);
+            if (pending?.name && pending.name.trim().toLowerCase() === normalizedTargetName) {
+                return true;
+            }
+            const destinationRegion = regions.get(exit.destinationRegion);
+            if (destinationRegion?.name?.trim().toLowerCase() === normalizedTargetName) {
+                return true;
+            }
+        }
+
+        const destinationLocation = gameLocations.get(exit.destination);
+        const stubTargetName = destinationLocation?.stubMetadata?.targetRegionName?.trim().toLowerCase() || null;
+        return Boolean(stubTargetName && stubTargetName === normalizedTargetName);
+    });
+
+    if (hasExistingMatchingExit) {
+        return null;
+    }
+
+    const newRegionId = generateRegionStubId();
+    const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
+    const currentRegion = findRegionByLocationId(originLocation.id) || null;
+    const settingSnapshot = getActiveSettingSnapshot();
+    const settingDescription = describeSettingForPrompt(settingSnapshot);
+
+    let directionKey = directionKeyFromName(trimmedName, `to_${newRegionId}`);
+    if (!directionKey) {
+        directionKey = `to_${newRegionId}`;
+    }
+
+    let stubName = trimmedName;
+    if (typeof Location.findByName === 'function') {
+        let suffix = 2;
+        let candidate = stubName;
+        while (Location.findByName(candidate)) {
+            candidate = `${stubName} ${suffix++}`;
+        }
+        stubName = candidate;
+    }
+
+    const stubMetadata = {
+        originLocationId: originLocation.id,
+        originRegionId: currentRegion?.id || null,
+        originDirection: directionKey,
+        regionId: newRegionId,
+        shortDescription: descriptionText,
+        locationPurpose: `Entrance to ${trimmedName}`,
+        allowRename: false,
+        isRegionEntryStub: true,
+        targetRegionId: newRegionId,
+        targetRegionName: trimmedName,
+        targetRegionDescription: descriptionText,
+        targetRegionRelationship: 'Adjacent',
+        targetRegionRelativeLevel: 0,
+        settingDescription
+    };
+
+    if (currentRegion && Number.isFinite(currentRegion.averageLevel)) {
+        stubMetadata.regionAverageLevel = currentRegion.averageLevel;
+    }
+
+    const regionEntryStub = new Location({
+        name: stubName,
+        description: null,
+        isStub: true,
+        stubMetadata
+    });
+
+    gameLocations.set(regionEntryStub.id, regionEntryStub);
+
+    ensureExitConnection(originLocation, directionKey, regionEntryStub, {
+        description: description || `Path to ${trimmedName}`,
+        bidirectional: false,
+        destinationRegion: newRegionId
+    });
+
+    pendingRegionStubs.set(newRegionId, {
+        id: newRegionId,
+        name: trimmedName,
+        description: descriptionText,
+        relationship: 'Adjacent',
+        relativeLevel: 0,
+        parentRegionId: null,
+        sourceRegionId: currentRegion?.id || null,
+        exitLocationId: originLocation.id,
+        entranceStubId: regionEntryStub.id,
+        createdAt: new Date().toISOString()
+    });
+
+    console.log(`🌐 Created region stub "${trimmedName}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
+
+    return regionEntryStub;
+}
+
 function pickAvailableDirections(location, exclude = []) {
     const exclusions = new Set();
     (exclude || []).map(normalizeDirection).filter(Boolean).forEach(dir => exclusions.add(dir));
@@ -9844,6 +10004,7 @@ Events.initialize({
     ensureNpcByName,
     generateThingImage,
     shouldGenerateThingImage,
+    createRegionStubFromEvent,
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseDir: __dirname

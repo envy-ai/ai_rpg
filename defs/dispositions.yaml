@@ -101,7 +101,7 @@ dispositions:
       20: interested
       40: aroused
       80: horny to point of distraction
-      120: obsessively lustful and desperate for sex
+      120: obsessive lust overriding all reason
   respect:
     description: Represents a character's level of admiration or esteem for the player character.
     move_up:

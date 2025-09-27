@@ -39,7 +39,40 @@ class Events {
             }).filter(Boolean),
             item_appear: raw => this.splitSemicolonEntries(raw),
             move_location: raw => this.splitSemicolonEntries(raw),
-            new_exit_discovered: raw => this.splitSemicolonEntries(raw),
+            new_exit_discovered: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    return null;
+                }
+
+                const [typeRaw, nameRaw, descriptionRaw] = this.extractArrowParts(trimmed, 3);
+                if (typeRaw && nameRaw && descriptionRaw) {
+                    const kind = typeRaw.trim().toLowerCase();
+                    const name = nameRaw.trim();
+                    const description = descriptionRaw.trim();
+
+                    if (['location', 'region'].includes(kind) && name && description) {
+                        return {
+                            kind,
+                            name,
+                            description,
+                            raw: trimmed
+                        };
+                    }
+                }
+
+                return {
+                    kind: 'location',
+                    name: trimmed,
+                    description: trimmed,
+                    raw: trimmed,
+                    fallback: true
+                };
+            }).filter(Boolean),
             npc_arrival_departure: raw => this.splitSemicolonEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
@@ -828,7 +861,8 @@ class Events {
             generateStubName,
             createLocationFromEvent,
             ensureExitConnection,
-            generateLocationExitImage
+            generateLocationExitImage,
+            createRegionStubFromEvent
         } = this.deps;
 
         let location = context.location || null;
@@ -847,28 +881,84 @@ class Events {
         const metadata = location.stubMetadata ? { ...location.stubMetadata } : {};
         const discovered = Array.isArray(metadata.discoveredExits) ? metadata.discoveredExits : [];
 
-        for (const rawDescription of entries) {
-            if (!rawDescription) continue;
-            const description = typeof rawDescription === 'string' ? rawDescription.trim() : '';
-
-            if (typeof location.addStatusEffect === 'function' && description) {
-                location.addStatusEffect({ description: `Exit discovered: ${description}`, duration: this.MAJOR_STATUS_DURATION });
-            }
-            if (description) {
-                discovered.push(description);
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
             }
 
-            const directionKey = directionKeyFromName(description || `${location.name || location.id} path ${Date.now()}`);
-            const cleanedName = description
-                ? description.replace(/[.,!?]+$/g, '').replace(/^the\s+/i, '').trim() || generateStubName(location, directionKey)
-                : generateStubName(location, directionKey);
+            let detail = entry;
+            if (typeof detail === 'string') {
+                const trimmed = detail.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                detail = {
+                    kind: 'location',
+                    name: trimmed,
+                    description: trimmed,
+                    raw: trimmed,
+                    fallback: true
+                };
+            }
 
-            const targetLocation = await createLocationFromEvent({
-                name: cleanedName,
-                originLocation: location,
-                descriptionHint: description || `Unmarked path leaving ${location.name || location.id}.`,
-                directionHint: directionKey
-            });
+            const kind = typeof detail.kind === 'string' ? detail.kind.trim().toLowerCase() : 'location';
+            const name = typeof detail.name === 'string' ? detail.name.trim() : '';
+            const description = typeof detail.description === 'string' ? detail.description.trim() : '';
+            const rawSummary = detail.raw || description || name;
+
+            if (rawSummary && typeof location.addStatusEffect === 'function') {
+                location.addStatusEffect({
+                    description: `Exit discovered (${kind}): ${rawSummary}`,
+                    duration: this.MAJOR_STATUS_DURATION
+                });
+            }
+
+            if (rawSummary) {
+                discovered.push(rawSummary);
+            }
+
+            if (kind === 'region') {
+                if (typeof createRegionStubFromEvent === 'function') {
+                    try {
+                        await createRegionStubFromEvent({
+                            name,
+                            description,
+                            originLocation: location
+                        });
+                    } catch (error) {
+                        console.warn('Failed to create region stub from event:', error?.message || error);
+                    }
+                }
+                continue;
+            }
+
+            const baseName = name || description;
+            let directionKey = directionKeyFromName(baseName || `${location.name || location.id} path ${Date.now()}`);
+            if (!directionKey) {
+                directionKey = `path_${Date.now()}`;
+            }
+
+            let cleanedName = baseName
+                ? baseName.replace(/[.,!?]+$/g, '').replace(/^the\s+/i, '').trim()
+                : '';
+            if (!cleanedName) {
+                cleanedName = generateStubName(location, directionKey);
+            }
+
+            const descriptionHint = description || `Unmarked path leaving ${location.name || location.id}.`;
+
+            let targetLocation = null;
+            try {
+                targetLocation = await createLocationFromEvent({
+                    name: cleanedName,
+                    originLocation: location,
+                    descriptionHint,
+                    directionHint: directionKey
+                });
+            } catch (error) {
+                console.warn('Failed to create location stub from event:', error?.message || error);
+                continue;
+            }
 
             if (targetLocation) {
                 const exit = ensureExitConnection(location, directionKey, targetLocation, {
