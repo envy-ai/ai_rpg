@@ -1428,7 +1428,14 @@ p .rarity-epic {
 .need-bar-fill {
   height: 100%;
   width: 0%;
-  background: var(--need-bar-color, #6c5ce7);
+  background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.35),
+      rgba(255, 255, 255, 0)
+    ),
+    var(--need-bar-color, #6c5ce7);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.25),
+    0 0 10px 2px var(--need-bar-color, #6c5ce7);
   transition: width 0.25s ease;
 }
 
