@@ -2,6 +2,10 @@ need_bars:
   food:
     name: Food
     description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    player_only: true
+    icon: 🍖
+    color: "#FFA500"
+    related_attribute: constitution
     min: 0
     max: 100
     initial: 100
@@ -36,16 +40,20 @@ need_bars:
         effect: No effect
       60:
         name: Satisfied
-        effect: No effect
+        effect: Good mood
       80:
         name: Full
-        effect: No effect
+        effect: Good mood, slight bonuses
       100:
         name: Stuffed
-        effect: No effect
+        effect: Good mood, slight bonuses
   rest:
     name: Rest
     description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    related_attribute: constitution
+    player_only: true
+    color: "#00BFFF"
+    icon: 🛌
     min: 0
     max: 100
     initial: 100
@@ -83,7 +91,63 @@ need_bars:
         effect: No effect
       80:
         name: Well Rested
-        effect: No effect
+        effect: Good mood, slight bonuses
       100:
         name: Fully Rested
+        effect: Good mood, slight bonuses
+  mana:
+    name: Mana
+    description: Represents the character's magical energy. Used for casting spells and magical abilities.
+    related_attribute: intelligence
+    player_only: false
+    color: "#8A2BE2"
+    icon: ✨
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: +1
+    relative_to_level: false
+    small_increase:
+      - minor magical recharge
+      - used a small mana potion
+      - light rest
+      - meditated briefly
+      - nap
+    large_increase:
+      - major magical recharge
+      - used a large mana potion
+      - meditated in a magical area
+      - napped in a magical area
+      - restless night's sleep
+    fill_completely:
+      - full magical recharge
+      - used a powerful mana potion
+      - restful night's sleep
+    small_decrease:
+      - cast minor spell
+      - used minor magical ability
+    large_decrease:
+      - cast major spell
+      - used major magical ability
+    effect_thresholds:
+      0:
+        name: Depleted
+        effect: Cannot cast spells or use magical abilities, -10% to health and attributes
+      1:
+        name: Weak
+        effect: Limited spellcasting, -5% to health and attributes
+      25:
+        name: Low
+        effect: Reduced effectiveness of spells and abilities
+      40:
+        name: Moderate
         effect: No effect
+      60:
+        name: High
+        effect: No effect
+      80:
+        name: Very High
+        effect: Slight bonuses to spell effectiveness
+      100:
+        name: Full Power
+        effect: Slight bonuses to spell effectiveness and health

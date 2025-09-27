@@ -1352,6 +1352,7 @@ function serializeNpcForClient(npc) {
         inventory,
         currency,
         experience,
+        needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars() : [],
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated
     };

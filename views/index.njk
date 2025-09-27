@@ -110,6 +110,7 @@
                                                 <div class="health-bar-fill chat-health-bar-fill" id="chatPlayerHealthBarFill"></div>
                                             </div>
                                         </div>
+                                        <div class="player-need-bars need-bars" id="chatPlayerNeedBars" hidden></div>
                                         <div class="chat-player-details">
                                             <div class="chat-player-name" id="chatPlayerName">Unnamed Adventurer</div>
                                             <div class="chat-player-meta">
@@ -899,12 +900,97 @@
             barElement.setAttribute('title', max ? `Health: ${current} / ${max}` : `Health: ${current}`);
         }
 
+        function renderNeedBars(container, bars = [], options = {}) {
+            if (!container) {
+                return;
+            }
+
+            const {
+                showIcon = false,
+                includePlayerOnly = false,
+                variant = 'default',
+                compact = false,
+                iconFallback = ''
+            } = options;
+
+            const barsArray = Array.isArray(bars) ? bars : [];
+            const filtered = includePlayerOnly ? barsArray : barsArray.filter(bar => !bar?.playerOnly);
+
+            container.innerHTML = '';
+
+            if (!filtered.length) {
+                container.setAttribute('hidden', '');
+                container.style.display = 'none';
+                return;
+            }
+
+            container.removeAttribute('hidden');
+            container.style.display = '';
+
+            filtered.forEach(bar => {
+                if (!bar) {
+                    return;
+                }
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'need-bar';
+                if (variant) {
+                    wrapper.classList.add(`need-bar--${variant}`);
+                }
+                if (compact) {
+                    wrapper.classList.add('need-bar--compact');
+                }
+                wrapper.dataset.barId = bar.id || '';
+
+                const min = Number.isFinite(Number(bar.min)) ? Number(bar.min) : 0;
+                const max = Number.isFinite(Number(bar.max)) ? Number(bar.max) : 100;
+                const value = Number.isFinite(Number(bar.value)) ? Number(bar.value) : min;
+                const clamped = Math.max(min, Math.min(max, value));
+                const denominator = max > min ? max - min : 1;
+                const ratio = denominator ? (clamped - min) / denominator : 1;
+
+                wrapper.setAttribute('role', 'progressbar');
+                wrapper.setAttribute('aria-valuemin', String(min));
+                wrapper.setAttribute('aria-valuemax', String(max));
+                wrapper.setAttribute('aria-valuenow', String(Math.round(clamped)));
+                wrapper.setAttribute('title', `${bar.name || bar.id || 'Need'}: ${Math.round(clamped)} / ${Math.round(max)}`);
+
+                if (showIcon) {
+                    const iconChar = (typeof bar.icon === 'string' && bar.icon.trim()) ? bar.icon.trim() : iconFallback;
+                    if (iconChar) {
+                        const iconSpan = document.createElement('span');
+                        iconSpan.className = 'need-bar-icon';
+                        iconSpan.textContent = iconChar;
+                        iconSpan.setAttribute('aria-hidden', 'true');
+                        wrapper.appendChild(iconSpan);
+                    }
+                }
+
+                const track = document.createElement('div');
+                track.className = 'need-bar-track';
+
+                const fill = document.createElement('div');
+                fill.className = 'need-bar-fill';
+                const color = typeof bar.color === 'string' && bar.color.trim() ? bar.color.trim() : '';
+                if (color) {
+                    fill.style.setProperty('--need-bar-color', color);
+                    fill.style.backgroundColor = color;
+                }
+                fill.style.width = `${(Math.max(0, Math.min(1, ratio)) * 100).toFixed(1)}%`;
+
+                track.appendChild(fill);
+                wrapper.appendChild(track);
+                container.appendChild(wrapper);
+            });
+        }
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
             portraitImage: document.getElementById('chatPlayerPortraitImage'),
             healthBar: document.getElementById('chatPlayerHealthBar'),
             healthBarFill: document.getElementById('chatPlayerHealthBarFill'),
+            needBars: document.getElementById('chatPlayerNeedBars'),
             name: document.getElementById('chatPlayerName'),
             level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
@@ -981,6 +1067,18 @@
                 player?.health,
                 player?.maxHealth
             );
+
+            if (chatSidebarElements.needBars) {
+                renderNeedBars(
+                    chatSidebarElements.needBars,
+                    Array.isArray(player?.needBars) ? player.needBars : [],
+                    {
+                        showIcon: true,
+                        includePlayerOnly: true,
+                        variant: 'player'
+                    }
+                );
+            }
         }
 
         function renderChatPartyPanel(members = []) {
@@ -1034,6 +1132,10 @@
                 npcHealthFill.classList.add('npc-health-bar-fill');
                 portrait.appendChild(npcHealthBar);
 
+                const npcNeedBars = document.createElement('div');
+                npcNeedBars.className = 'npc-need-bars need-bars';
+                portrait.appendChild(npcNeedBars);
+
                 renderEntityImage({
                     element: portraitImage,
                     entityType: member.isNPC ? 'npc' : 'player',
@@ -1053,6 +1155,16 @@
                 }
 
                 updateHealthBar(npcHealthBar, npcHealthFill, member?.health, member?.maxHealth);
+
+                renderNeedBars(
+                    npcNeedBars,
+                    Array.isArray(member?.needBars) ? member.needBars : [],
+                    {
+                        includePlayerOnly: false,
+                        variant: 'npc',
+                        compact: true
+                    }
+                );
 
                 const nameEl = document.createElement('div');
                 nameEl.className = 'location-entity-name';
@@ -4220,6 +4332,10 @@
                                 npcHealthFill.classList.add('npc-health-bar-fill');
                                 portrait.appendChild(npcHealthBar);
 
+                                const npcNeedBars = document.createElement('div');
+                                npcNeedBars.className = 'npc-need-bars need-bars';
+                                portrait.appendChild(npcNeedBars);
+
                                 renderEntityImage({
                                     element: portraitImage,
                                     entityType: npc.isNPC ? 'npc' : 'player',
@@ -4239,6 +4355,16 @@
                                 }
 
                                 updateHealthBar(npcHealthBar, npcHealthFill, npc?.health, npc?.maxHealth);
+
+                                renderNeedBars(
+                                    npcNeedBars,
+                                    Array.isArray(npc?.needBars) ? npc.needBars : [],
+                                    {
+                                        includePlayerOnly: false,
+                                        variant: 'npc',
+                                        compact: true
+                                    }
+                                );
 
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
@@ -4961,6 +5087,10 @@
                     portraitHealthFill.classList.add('npc-health-bar-fill');
                     portrait.appendChild(portraitHealthBar);
 
+                    const portraitNeedBars = document.createElement('div');
+                    portraitNeedBars.className = 'npc-need-bars need-bars';
+                    portrait.appendChild(portraitNeedBars);
+
                     renderEntityImage({
                         element: portraitImage,
                         entityType: member.isNPC ? 'npc' : 'player',
@@ -4980,6 +5110,15 @@
                     }
 
                     updateHealthBar(portraitHealthBar, portraitHealthFill, member?.health, member?.maxHealth);
+
+                    renderNeedBars(
+                        portraitNeedBars,
+                        Array.isArray(member?.needBars) ? member.needBars : [],
+                        {
+                            includePlayerOnly: false,
+                            variant: 'npc'
+                        }
+                    );
 
                     const name = document.createElement('div');
                     name.className = 'party-name';

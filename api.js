@@ -662,6 +662,21 @@ module.exports = function registerApiRoutes(scope) {
 
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
 
+        const ensureNeedBarsInStatus = (status, actor) => {
+            if (!status || typeof status !== 'object') {
+                return status;
+            }
+
+            if (!Array.isArray(status.needBars)) {
+                const bars = actor && typeof actor.getNeedBars === 'function'
+                    ? actor.getNeedBars()
+                    : [];
+                status.needBars = Array.isArray(bars) ? bars : [];
+            }
+
+            return status;
+        };
+
         const sanitizeNamedValue = (value) => {
             if (typeof value !== 'string') {
                 return null;
@@ -3007,7 +3022,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: player.getStatus(),
+                    player: ensureNeedBarsInStatus(player.getStatus(), player),
                     message: 'Player created successfully'
                 });
             } catch (error) {
@@ -3029,7 +3044,7 @@ module.exports = function registerApiRoutes(scope) {
 
             res.json({
                 success: true,
-                player: currentPlayer.getStatus()
+                player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer)
             });
         });
 
@@ -3046,7 +3061,7 @@ module.exports = function registerApiRoutes(scope) {
                 const members = memberIds
                     .map(id => players.get(id))
                     .filter(Boolean)
-                    .map(member => member.getStatus());
+                    .map(member => ensureNeedBarsInStatus(member.getStatus(), member));
 
                 res.json({
                     success: true,
@@ -3172,7 +3187,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: 'Attributes updated successfully'
                 });
             } catch (error) {
@@ -3204,7 +3219,7 @@ module.exports = function registerApiRoutes(scope) {
                 res.json({
                     success: true,
                     healthChange: result,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: `Health ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}`
                 });
             } catch (error) {
@@ -3230,7 +3245,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: `Player leveled up from ${oldLevel} to ${currentPlayer.level}!`
                 });
             } catch (error) {
@@ -3395,7 +3410,9 @@ module.exports = function registerApiRoutes(scope) {
 
         // Get all players (for future multi-player support)
         app.get('/api/players', (req, res) => {
-            const playerList = Array.from(players.values()).map(player => player.getStatus());
+            const playerList = Array.from(players.values()).map(player => (
+                ensureNeedBarsInStatus(player.getStatus(), player)
+            ));
 
             res.json({
                 success: true,
@@ -3429,7 +3446,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    currentPlayer: currentPlayer.getStatus(),
+                    currentPlayer: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: `Current player set to: ${currentPlayer.name}`
                 });
             } catch (error) {
@@ -3487,7 +3504,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     generatedAttributes: newAttributes,
                     method: method || 'standard',
                     message: `Attributes generated using ${method || 'standard'} method`
@@ -3566,7 +3583,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: 'Equipment updated successfully'
                 });
             } catch (error) {
@@ -3584,7 +3601,7 @@ module.exports = function registerApiRoutes(scope) {
         app.get('/player-stats', (req, res) => {
             res.render('player-stats.njk', {
                 title: 'Player Stats Configuration',
-                player: currentPlayer ? currentPlayer.getStatus() : null,
+                player: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
                 currentPage: 'player-stats',
                 availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
             });
@@ -3628,8 +3645,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const debugData = {
                 title: 'Debug: Player Information',
-                player: currentPlayer ? currentPlayer.getStatus() : null,
-                playerStatus: currentPlayer ? currentPlayer.getStatus() : null,
+                player: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
+                playerStatus: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
                 playerJson: currentPlayer ? currentPlayer.toJSON() : null,
                 totalPlayers: players.size,
                 currentPlayerId: currentPlayer ? currentPlayer.toJSON().id : null,
@@ -3729,7 +3746,7 @@ module.exports = function registerApiRoutes(scope) {
                 const imageNeedsUpdate = descriptionChanged || nameChanged;
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     message: 'Player stats updated successfully',
                     imageNeedsUpdate
                 });
@@ -3811,7 +3828,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: player.getStatus(),
+                    player: ensureNeedBarsInStatus(player.getStatus(), player),
                     message: 'Player created successfully from stats'
                 });
 
@@ -3841,7 +3858,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: currentPlayer.getStatus(),
+                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
                     skill: {
                         name: skillName,
                         rank: newRank
@@ -6512,7 +6529,7 @@ module.exports = function registerApiRoutes(scope) {
                     saveName: saveName,
                     metadata: metadata,
                     loadedData: {
-                        currentPlayer: currentPlayer ? currentPlayer.getStatus() : null,
+                        currentPlayer: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
                         totalPlayers: players.size,
                         totalThings: things.size,
                         totalLocations: gameLocations.size,

@@ -1315,6 +1315,8 @@ p .rarity-epic {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
+  gap: 0;
   border: 1px solid rgba(148, 163, 184, 0.18);
 
   img {
@@ -1331,6 +1333,7 @@ p .rarity-epic {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1 1 auto;
 }
 
 .health-bar {
@@ -1382,7 +1385,7 @@ p .rarity-epic {
 .npc-health-bar {
   left: 6px;
   right: 6px;
-  bottom: 6px;
+  bottom: 18px;
   height: 0.45rem;
 }
 
@@ -1394,6 +1397,80 @@ p .rarity-epic {
     #ef4444 85%,
     #b91c1c 100%
   );
+}
+
+.need-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.need-bars[hidden] {
+  display: none !important;
+}
+
+.need-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.need-bar-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.need-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--need-bar-color, #6c5ce7);
+  transition: width 0.25s ease;
+}
+
+.need-bar--player .need-bar-track {
+  height: 8px;
+}
+
+.need-bar--npc .need-bar-track {
+  height: 4px;
+}
+
+.need-bar--compact .need-bar-track {
+  height: 3px;
+}
+
+.need-bar-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+.need-bar-icon--health {
+  font-size: 1rem;
+}
+
+.player-need-bars {
+  width: 100%;
+}
+
+.npc-need-bars {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.npc-need-bars[hidden] {
+  display: none !important;
 }
 
 .chat-player-placeholder {

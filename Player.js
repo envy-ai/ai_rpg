@@ -34,6 +34,7 @@ class Player {
     #gearSlotsByType;
     #gearSlotNameIndex;
     #abilities;
+    #needBars;
     #experience;
     #currency;
     #personalityType;
@@ -41,6 +42,7 @@ class Player {
     #personalityNotes;
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
+    static #needBarDefinitions = null;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -139,6 +141,37 @@ class Player {
             throw new Error('Level-up handler must be a function');
         }
         this.#levelUpHandler = handler || null;
+    }
+
+    static get needBarDefinitions() {
+        if (!this.#needBarDefinitions) {
+            try {
+                const needBarsPath = path.join(__dirname, 'defs', 'need_bars.yaml');
+                const raw = fs.readFileSync(needBarsPath, 'utf8');
+                const data = yaml.load(raw) || {};
+                const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
+                const normalized = {};
+                for (const [id, config] of Object.entries(source)) {
+                    if (!id || typeof config !== 'object' || config === null) {
+                        continue;
+                    }
+                    const trimmedId = id.trim();
+                    if (!trimmedId) {
+                        continue;
+                    }
+                    normalized[trimmedId] = { ...config };
+                }
+                this.#needBarDefinitions = normalized;
+            } catch (error) {
+                console.warn('Failed to load need bar definitions:', error?.message || error);
+                this.#needBarDefinitions = {};
+            }
+        }
+        return this.#needBarDefinitions;
+    }
+
+    static get needBars() {
+        return this.needBarDefinitions;
     }
 
     static getAll() {
@@ -445,6 +478,8 @@ class Player {
             : 0;
         this.#currency = initialCurrency;
         this.#processExperienceOverflow();
+
+        this.#initializeNeedBars(options.needBars);
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -1572,6 +1607,113 @@ class Player {
         }
     }
 
+    getNeedBars() {
+        if (!this.#needBars || !(this.#needBars instanceof Map)) {
+            return [];
+        }
+        return Array.from(this.#needBars.values()).map(bar => ({ ...bar }));
+    }
+
+    setNeedBars(needBars = []) {
+        this.#initializeNeedBars(needBars);
+        return this.getNeedBars();
+    }
+
+    #initializeNeedBars(initialData = null) {
+        const definitions = Player.needBarDefinitions || {};
+        this.#needBars = new Map();
+
+        const initialLookup = new Map();
+        if (Array.isArray(initialData)) {
+            for (const entry of initialData) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+                if (!id) {
+                    continue;
+                }
+                initialLookup.set(id, entry);
+            }
+        } else if (initialData && typeof initialData === 'object') {
+            for (const [id, value] of Object.entries(initialData)) {
+                if (!id) {
+                    continue;
+                }
+                initialLookup.set(id, value);
+            }
+        }
+
+        for (const [rawId, config] of Object.entries(definitions)) {
+            if (!rawId || typeof config !== 'object' || config === null) {
+                continue;
+            }
+            const id = rawId.trim();
+            if (!id) {
+                continue;
+            }
+
+            const isPlayerOnly = Boolean(config.player_only);
+            if (isPlayerOnly && this.#isNPC) {
+                continue;
+            }
+
+            const minValue = Number(config.min);
+            const maxValue = Number(config.max);
+            const min = Number.isFinite(minValue) ? minValue : 0;
+            const max = Number.isFinite(maxValue) ? maxValue : 100;
+
+            let resolved = initialLookup.has(id) ? initialLookup.get(id) : undefined;
+            let candidateValue = null;
+            if (resolved !== undefined && resolved !== null) {
+                if (typeof resolved === 'object') {
+                    const { value, current, amount } = resolved;
+                    const attempt = value ?? current ?? amount;
+                    if (Number.isFinite(Number(attempt))) {
+                        candidateValue = Number(attempt);
+                    }
+                } else if (Number.isFinite(Number(resolved))) {
+                    candidateValue = Number(resolved);
+                }
+            }
+
+            if (!Number.isFinite(candidateValue)) {
+                const initialConfig = Number(config.initial);
+                if (Number.isFinite(initialConfig)) {
+                    candidateValue = initialConfig;
+                } else if (Number.isFinite(max)) {
+                    candidateValue = max;
+                } else {
+                    candidateValue = min;
+                }
+            }
+
+            const clampedValue = Math.max(min, Math.min(Number.isFinite(max) ? max : candidateValue, candidateValue));
+
+            const effectThresholds = typeof config.effect_thresholds === 'object' && config.effect_thresholds !== null
+                ? { ...config.effect_thresholds }
+                : {};
+
+            const bar = {
+                id,
+                name: typeof config.name === 'string' ? config.name : id,
+                description: typeof config.description === 'string' ? config.description : '',
+                icon: typeof config.icon === 'string' ? config.icon : '',
+                color: typeof config.color === 'string' ? config.color : '',
+                min,
+                max,
+                value: clampedValue,
+                changePerTurn: Number.isFinite(Number(config.change_per_turn)) ? Number(config.change_per_turn) : 0,
+                relativeToLevel: Boolean(config.relative_to_level),
+                playerOnly: isPlayerOnly,
+                relatedAttribute: typeof config.related_attribute === 'string' ? config.related_attribute : null,
+                effectThresholds
+            };
+
+            this.#needBars.set(id, bar);
+        }
+    }
+
     /**
      * Check if player is alive
      */
@@ -1899,7 +2041,8 @@ class Player {
             gearSlotDefinitions: Player.gearSlotDefinitions,
             currency: this.#currency,
             createdAt: this.#createdAt,
-            lastUpdated: this.#lastUpdated
+            lastUpdated: this.#lastUpdated,
+            needBars: this.getNeedBars()
         };
 
         status.personality = {
@@ -1951,7 +2094,8 @@ class Player {
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
             experience: this.#experience,
-            currency: this.#currency
+            currency: this.#currency,
+            needBars: this.getNeedBars()
         };
     }
 
@@ -1987,7 +2131,8 @@ class Player {
             experience: data.experience,
             currency: data.currency,
             createdAt: data.createdAt,
-            lastUpdated: data.lastUpdated
+            lastUpdated: data.lastUpdated,
+            needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null
         });
         player.#maxHealth = player.#calculateBaseHealth();
         player.#health = Math.min(player.#health, player.#maxHealth);
