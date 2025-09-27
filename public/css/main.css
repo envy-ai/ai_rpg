@@ -2123,12 +2123,15 @@ p .rarity-epic {
   outline: none;
 }
 
-.npc-card-menu-item--danger {
+.npc-card-menu-item--danger,
+.thing-card-menu-item--danger {
   color: #fca5a5;
 }
 
 .npc-card-menu-item--danger:hover,
-.npc-card-menu-item--danger:focus {
+.npc-card-menu-item--danger:focus,
+.thing-card-menu-item--danger:hover,
+.thing-card-menu-item--danger:focus {
   background: rgba(248, 113, 113, 0.2);
   color: #ffe4e6;
 }

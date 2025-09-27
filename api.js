@@ -5167,27 +5167,82 @@ module.exports = function registerApiRoutes(scope) {
         app.delete('/api/things/:id', (req, res) => {
             try {
                 const { id } = req.params;
-                const thing = things.get(id);
-
-                if (!thing) {
-                    return res.status(404).json({
+                if (!id || typeof id !== 'string') {
+                    return res.status(400).json({
                         success: false,
-                        error: 'Thing not found'
+                        error: 'Thing ID is required'
                     });
                 }
 
-                // Remove from storage and Thing's static indexes
+                const thing = things.get(id) || Thing.getById(id);
+                if (!thing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Thing with ID '${id}' not found`
+                    });
+                }
+
+                const affectedLocationIds = new Set();
+                const affectedPlayerIds = new Set();
+                const affectedNpcIds = new Set();
+
+                for (const location of gameLocations.values()) {
+                    if (!location) {
+                        continue;
+                    }
+
+                    let changed = false;
+                    if (typeof location.removeThingId === 'function') {
+                        changed = location.removeThingId(id) || changed;
+                    }
+
+                    if (!changed && Array.isArray(location.thingIds) && location.thingIds.includes(id)) {
+                        location.thingIds = location.thingIds.filter(thingId => thingId !== id);
+                        changed = true;
+                    }
+
+                    if (changed) {
+                        affectedLocationIds.add(location.id);
+                    }
+                }
+
+                for (const actor of players.values()) {
+                    if (!actor || typeof actor.removeInventoryItem !== 'function') {
+                        continue;
+                    }
+
+                    let actorChanged = false;
+                    if (actor.removeInventoryItem(id, { suppressNpcEquip: Boolean(actor.isNPC) })) {
+                        actorChanged = true;
+                    }
+                    if (typeof actor.unequipItemId === 'function' && actor.unequipItemId(id, { suppressTimestamp: true })) {
+                        actorChanged = true;
+                    }
+
+                    if (actorChanged) {
+                        if (actor.isNPC) {
+                            affectedNpcIds.add(actor.id);
+                        } else {
+                            affectedPlayerIds.add(actor.id);
+                        }
+                    }
+                }
+
                 things.delete(id);
                 thing.delete();
 
                 res.json({
                     success: true,
-                    message: 'Thing deleted successfully'
+                    message: 'Thing deleted successfully',
+                    locationIds: Array.from(affectedLocationIds),
+                    playerIds: Array.from(affectedPlayerIds),
+                    npcIds: Array.from(affectedNpcIds)
                 });
             } catch (error) {
+                console.error('Failed to delete thing:', error);
                 res.status(500).json({
                     success: false,
-                    error: error.message
+                    error: error.message || 'Failed to delete thing'
                 });
             }
         });

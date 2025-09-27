@@ -1661,7 +1661,18 @@
             attachThingMenuListeners();
             cacheThingData(thing);
 
-            card.dataset.thingId = thing.id;
+            const thingIdString = String(thing.id);
+            if (card.dataset.thingMenuAttached === 'true' && card.dataset.thingId === thingIdString) {
+                return;
+            }
+
+            const existingButton = card.querySelector('.thing-card-menu-button');
+            const existingMenu = card.querySelector('.thing-card-menu');
+            existingButton?.remove();
+            existingMenu?.remove();
+
+            card.dataset.thingId = thingIdString;
+            card.dataset.thingMenuAttached = 'true';
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -1683,6 +1694,16 @@
             editButton.className = 'thing-card-menu-item';
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
+
+            const allowDeletion = Boolean(options.allowDelete ?? true);
+            let deleteButton = null;
+            if (allowDeletion) {
+                deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.className = 'thing-card-menu-item thing-card-menu-item--danger';
+                deleteButton.textContent = 'Delete';
+                menu.appendChild(deleteButton);
+            }
 
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -1706,6 +1727,135 @@
                     console.warn('Failed to open thing editor:', error);
                 }
             });
+
+            if (deleteButton) {
+                deleteButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+
+                    const cachedThing = thingDataCache.get(thing.id) || thing;
+                    const thingName = cachedThing?.name || 'this item';
+                    const confirmed = window.confirm(`Delete ${thingName}? This cannot be undone.`);
+                    if (!confirmed) {
+                        return;
+                    }
+
+                    const context = options.context || 'general';
+                    const locationHintId = options.locationId || null;
+                    const npcHintId = options.npcId || null;
+
+                    try {
+                        const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}`, {
+                            method: 'DELETE'
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result?.success) {
+                            throw new Error(result?.error || `HTTP ${response.status}`);
+                        }
+
+                        thingDataCache.delete(thing.id);
+
+                        const locationIds = Array.isArray(result.locationIds) ? result.locationIds : [];
+                        const playerIds = Array.isArray(result.playerIds) ? result.playerIds : [];
+                        const npcIds = Array.isArray(result.npcIds) ? result.npcIds : [];
+
+                        const refreshLocationsByIds = async (ids = []) => {
+                            if (typeof window.updateLocationDisplay !== 'function' || !Array.isArray(ids) || !ids.length) {
+                                return false;
+                            }
+                            for (const locId of ids) {
+                                if (!locId) {
+                                    continue;
+                                }
+                                try {
+                                    const resp = await fetch(`/api/locations/${encodeURIComponent(locId)}`, { cache: 'no-store' });
+                                    const data = await resp.json().catch(() => ({}));
+                                    if (resp.ok && data?.success && data.location) {
+                                        await window.updateLocationDisplay(data.location);
+                                        return true;
+                                    }
+                                } catch (refreshError) {
+                                    console.warn('Failed to refresh location details:', refreshError);
+                                }
+                            }
+                            return false;
+                        };
+
+                        try {
+                            if (context === 'player-inventory') {
+                                await window.refreshInventory?.();
+                                await refreshLocationsByIds(locationIds);
+                            } else if (context === 'npc-inventory') {
+                                if (Array.isArray(currentNpcInventory)) {
+                                    currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
+                                    renderNpcInventory(currentNpcInventory);
+                                }
+                                let refreshed = await refreshLocationsByIds(locationIds.length ? locationIds : (locationHintId ? [locationHintId] : []));
+                                if (!refreshed) {
+                                    await window.loadCurrentLocation?.();
+                                }
+                                if (npcHintId && currentNpcViewId === npcHintId) {
+                                    const updatedNpc = window.currentNpcData?.get(npcHintId);
+                                    if (updatedNpc) {
+                                        showNpcViewModal(updatedNpc);
+                                    }
+                                }
+                            } else if (context === 'npc-equipment') {
+                                if (card && card.parentElement) {
+                                    card.remove();
+                                }
+                                let refreshed = await refreshLocationsByIds(locationIds.length ? locationIds : (locationHintId ? [locationHintId] : []));
+                                if (!refreshed) {
+                                    await window.loadCurrentLocation?.();
+                                }
+                                if (npcHintId && currentNpcViewId === npcHintId) {
+                                    const updatedNpc = window.currentNpcData?.get(npcHintId);
+                                    if (updatedNpc) {
+                                        showNpcViewModal(updatedNpc);
+                                    }
+                                }
+                            } else if (context === 'location') {
+                                let refreshed = await refreshLocationsByIds(locationIds.length ? locationIds : (locationHintId ? [locationHintId] : []));
+                                if (!refreshed) {
+                                    await window.loadCurrentLocation?.();
+                                    refreshed = true;
+                                }
+                                if (!refreshed && card && card.parentElement) {
+                                    card.remove();
+                                }
+                            } else {
+                                await window.refreshInventory?.();
+                                let refreshed = await refreshLocationsByIds(locationIds);
+                                if (!refreshed) {
+                                    await window.loadCurrentLocation?.();
+                                }
+                            }
+
+                            const currentPlayerId = window.currentPlayerData?.id;
+                            if (currentPlayerId && playerIds.includes(currentPlayerId)) {
+                                await window.refreshInventory?.();
+                            }
+
+                            if (npcHintId && context !== 'npc-inventory' && npcIds.includes(npcHintId) && currentNpcViewId === npcHintId) {
+                                const updatedNpc = window.currentNpcData?.get(npcHintId);
+                                if (updatedNpc) {
+                                    showNpcViewModal(updatedNpc);
+                                }
+                            }
+                        } catch (refreshError) {
+                            console.warn('Failed to refresh after deleting thing:', refreshError);
+                            if (card && card.parentElement) {
+                                card.remove();
+                            }
+                        }
+
+                        window.refreshParty?.();
+                    } catch (error) {
+                        console.warn('Failed to delete item:', error);
+                        alert(`Failed to delete item: ${error?.message || 'Unknown error'}`);
+                    }
+                });
+            }
 
             menu.addEventListener('click', (event) => event.stopPropagation());
             card.addEventListener('click', () => {
@@ -2443,6 +2593,7 @@
         let currentNpcEditId = null;
         let currentNpcOriginalHealthAttribute = '';
         let currentNpcInventory = [];
+        let currentNpcInventoryNpcId = null;
         let currentNpcViewId = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
@@ -2864,6 +3015,7 @@
             npcInventoryEmpty.style.display = 'block';
             npcInventoryCount.textContent = '0 items';
             currentNpcInventory = [];
+            currentNpcInventoryNpcId = null;
             try {
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
@@ -3407,7 +3559,7 @@
                 card.appendChild(icon);
                 card.appendChild(name);
 
-                registerThingContextMenu(card, item, { context: 'npc-inventory' });
+                registerThingContextMenu(card, item, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
 
                 bindThingTooltip(card, item);
 
@@ -3432,6 +3584,7 @@
             npcInventoryName.textContent = npc.name || 'Character';
             const items = Array.isArray(npc.inventory) ? npc.inventory : [];
             currentNpcInventory = items;
+            currentNpcInventoryNpcId = npc.id || null;
             renderNpcInventory(items);
         }
 
@@ -3539,7 +3692,7 @@
                     card.appendChild(textWrapper);
 
                     if (entry.item && entry.item.id) {
-                        registerThingContextMenu(card, entry.item, { context: 'npc-equipment' });
+                        registerThingContextMenu(card, entry.item, { context: 'npc-equipment', npcId: currentNpcViewId });
                     }
 
                     bindThingTooltip(card, entry.item);
@@ -4527,7 +4680,7 @@
                                 card.appendChild(icon);
                                 card.appendChild(nameEl);
 
-                                registerThingContextMenu(card, thing, { context: 'location' });
+                                registerThingContextMenu(card, thing, { context: 'location', locationId: location.id });
 
                                 if (tooltipController && typeof tooltipController.show === 'function') {
                                     card.addEventListener('mouseenter', (event) => {
