@@ -4316,7 +4316,54 @@ function renderRegionNpcPrompt(region, options = {}) {
     }
 }
 
-function renderSingleNpcPrompt({ npcName, settingDescription, location = null, region = null, existingNpcSummaries = [] } = {}) {
+function normalizeNpcPromptSeed(seed = {}) {
+    const normalized = {};
+    if (!seed || typeof seed !== 'object') {
+        return normalized;
+    }
+
+    const copyTrimmed = (key, options = {}) => {
+        const value = seed[key];
+        if (value === undefined || value === null) {
+            return;
+        }
+        const asString = String(value);
+        const trimmed = options.allowEmpty ? asString.trim() : asString.trim();
+        if (trimmed || options.allowEmpty) {
+            normalized[key] = trimmed;
+        }
+    };
+
+    const name = typeof seed.name === 'string' ? seed.name.trim() : '';
+    if (name) {
+        normalized.name = name;
+    }
+
+    copyTrimmed('description');
+    copyTrimmed('shortDescription');
+    copyTrimmed('role');
+    copyTrimmed('class');
+    copyTrimmed('race');
+
+    if (Object.prototype.hasOwnProperty.call(seed, 'relativeLevel')) {
+        const relative = Number(seed.relativeLevel);
+        if (Number.isFinite(relative)) {
+            const clamped = Math.max(-10, Math.min(10, Math.round(relative)));
+            normalized.relativeLevel = clamped;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(seed, 'currency')) {
+        const currencyValue = Number(seed.currency);
+        if (Number.isFinite(currencyValue)) {
+            normalized.currency = Math.max(0, Math.round(currencyValue));
+        }
+    }
+
+    return normalized;
+}
+
+function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [] } = {}) {
     try {
         const safeRegion = region ? {
             name: region.name || 'Unknown Region',
@@ -4328,12 +4375,18 @@ function renderSingleNpcPrompt({ npcName, settingDescription, location = null, r
             description: location.description || location.stubMetadata?.blueprintDescription || 'No description provided.'
         } : { name: 'Unknown Location', description: 'No description provided.' };
 
+        const activeSetting = settingSnapshot || getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+
+        const npcSeed = normalizeNpcPromptSeed(npc || {});
+
         return promptEnv.render('npc-generator-single.xml.njk', {
-            npcName,
-            settingDescription: settingDescription || describeSettingForPrompt(getActiveSettingSnapshot()),
+            setting: settingContext,
             region: safeRegion,
             location: safeLocation,
             existingNpcSummaries: existingNpcSummaries || [],
+            npc: npcSeed,
             attributeDefinitions: attributeDefinitionsForPrompt
         });
     } catch (error) {
@@ -4355,10 +4408,11 @@ function summarizeNpcForPrompt(npc) {
     };
 }
 
-async function generateNpcFromEvent({ name, location = null, region = null } = {}) {
-    const trimmedName = typeof name === 'string' ? name.trim() : '';
-    if (!trimmedName) {
-        return null;
+async function generateNpcFromEvent({ name, npc = null, location = null, region = null } = {}) {
+    const seedSource = (npc && typeof npc === 'object') ? { ...npc } : {};
+    let trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (!trimmedName && typeof seedSource.name === 'string') {
+        trimmedName = seedSource.name.trim();
     }
 
     const normalizedKey = trimmedName.toLowerCase();
@@ -4414,9 +4468,11 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
             }
         }
 
+        const npcSeed = normalizeNpcPromptSeed({ ...seedSource, name: trimmedName });
+
         const renderedTemplate = renderSingleNpcPrompt({
-            npcName: trimmedName,
-            settingDescription,
+            npc: npcSeed,
+            settingSnapshot,
             location: resolvedLocation,
             region: resolvedRegion,
             existingNpcSummaries: existingNpcSummaries.slice(0, 25)
@@ -4489,11 +4545,19 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
         }
 
         const parsedNpcs = parseLocationNpcs(npcResponse);
-        const npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : {
-            description: `${trimmedName} steps into the scene with purpose.`,
-            shortDescription: '',
-            role: 'mysterious figure'
-        };
+        let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
+        if (npcData) {
+            npcData = { ...normalizeNpcPromptSeed(npcSeed), ...npcData };
+            npcData.name = npcData.name || trimmedName;
+        } else {
+            npcData = {
+                ...normalizeNpcPromptSeed(npcSeed),
+                name: trimmedName,
+                description: npcSeed.description || `${trimmedName} steps into the scene with purpose.`,
+                shortDescription: npcSeed.shortDescription || '',
+                role: npcSeed.role || 'mysterious figure'
+            };
+        }
 
         const attributes = {};
         const attrSource = npcData?.attributes || {};
@@ -4504,7 +4568,7 @@ async function generateNpcFromEvent({ name, location = null, region = null } = {
         }
 
         const npc = new Player({
-            name: trimmedName,
+            name: npcData?.name || trimmedName,
             description: npcData?.description || `${trimmedName} is drawn into the story.`,
             shortDescription: npcData?.shortDescription || '',
             class: npcData?.class || npcData?.role || 'citizen',
@@ -10069,6 +10133,7 @@ const apiScope = {
     describeSettingForPrompt,
     findActorByName,
     findRegionByLocationId,
+    generateNpcFromEvent,
     generateImageId,
     processJobQueue,
     runPlausibilityCheck,

@@ -4811,6 +4811,97 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/npcs/:id/portrait', async (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                if (!config.imagegen || !config.imagegen.enabled) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Image generation is not enabled'
+                    });
+                }
+
+                if (!comfyUIClient) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'ComfyUI client not initialized or unavailable'
+                    });
+                }
+
+                const rawClientId = req.body?.clientId;
+                const clientId = typeof rawClientId === 'string' && rawClientId.trim()
+                    ? rawClientId.trim()
+                    : null;
+
+                const imageResult = await generatePlayerImage(npc, { force: true, clientId });
+
+                if (imageResult.success) {
+                    return res.json({
+                        success: true,
+                        npc: {
+                            id: npc.id,
+                            name: npc.name,
+                            imageId: npc.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: `Portrait regeneration initiated for ${npc.name}`
+                    });
+                }
+
+                if (imageResult.existingJob) {
+                    return res.status(202).json({
+                        success: false,
+                        npc: {
+                            id: npc.id,
+                            name: npc.name,
+                            imageId: npc.imageId
+                        },
+                        imageGeneration: imageResult,
+                        message: 'Portrait job already in progress'
+                    });
+                }
+
+                if (imageResult.skipped) {
+                    return res.status(409).json({
+                        success: false,
+                        error: 'Portrait generation is only available for companions in your party or at your current location.',
+                        reason: imageResult.reason,
+                        npc: {
+                            id: npc.id,
+                            name: npc.name,
+                            imageId: npc.imageId
+                        }
+                    });
+                }
+
+                return res.status(500).json({
+                    success: false,
+                    error: imageResult.message || 'Failed to queue portrait generation'
+                });
+            } catch (error) {
+                console.error('Error generating NPC portrait:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // ==================== PLAYER AND LOCATION QUERY ENDPOINTS ====================
 
         // Get location by ID
@@ -4985,6 +5076,110 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error.message || 'Failed to create exit'
+                });
+            }
+        });
+
+        app.post('/api/locations/:id/npcs', async (req, res) => {
+            try {
+                const locationId = req.params.id;
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                const location = Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                const payload = req.body || {};
+                const nameValue = typeof payload.name === 'string' ? payload.name.trim() : '';
+                const region = findRegionByLocationId(location.id) || null;
+                const trimText = (value) => {
+                    if (typeof value !== 'string') {
+                        return '';
+                    }
+                    const trimmed = value.trim();
+                    return trimmed.length ? trimmed : '';
+                };
+
+                const npcSeed = { name: nameValue };
+
+                const description = trimText(payload.description);
+                if (description) {
+                    npcSeed.description = description;
+                }
+
+                const shortDescription = trimText(payload.shortDescription);
+                if (shortDescription) {
+                    npcSeed.shortDescription = shortDescription;
+                }
+
+                const role = trimText(payload.role);
+                if (role) {
+                    npcSeed.role = role;
+                }
+
+                const className = trimText(payload.class);
+                if (className) {
+                    npcSeed.class = className;
+                }
+
+                const race = trimText(payload.race);
+                if (race) {
+                    npcSeed.race = race;
+                }
+
+                if (payload.currency !== undefined && payload.currency !== null && payload.currency !== '') {
+                    const currencyValue = Number(payload.currency);
+                    if (Number.isFinite(currencyValue) && currencyValue >= 0) {
+                        npcSeed.currency = Math.max(0, Math.round(currencyValue));
+                    }
+                }
+
+                if (payload.level !== undefined && payload.level !== null && payload.level !== '') {
+                    const absoluteLevel = Number(payload.level);
+                    if (Number.isFinite(absoluteLevel)) {
+                        const locationBaseLevel = Number.isFinite(Number(location.baseLevel))
+                            ? Number(location.baseLevel)
+                            : (Number.isFinite(region?.averageLevel) ? Number(region.averageLevel) : (currentPlayer?.level || 1));
+                        npcSeed.relativeLevel = absoluteLevel - locationBaseLevel;
+                    }
+                }
+
+                const generatedNpc = await generateNpcFromEvent({
+                    name: nameValue,
+                    npc: npcSeed,
+                    location,
+                    region
+                });
+
+                if (!generatedNpc) {
+                    throw new Error('Failed to generate NPC');
+                }
+
+                const locationData = buildLocationResponse(location);
+                const npcStatus = typeof generatedNpc.getStatus === 'function'
+                    ? ensureNeedBarsInStatus(generatedNpc.getStatus(), generatedNpc)
+                    : null;
+
+                res.json({
+                    success: true,
+                    npc: npcStatus,
+                    location: locationData,
+                    message: `${generatedNpc.name || nameValue} has been created.`
+                });
+            } catch (error) {
+                console.error('Error generating NPC:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to generate NPC'
                 });
             }
         });

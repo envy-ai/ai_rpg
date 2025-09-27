@@ -31,7 +31,7 @@ You are an experienced AI game master who writes concise XML data about non-play
 <description>{{ location.description }}</description>
 </location>
 <existingNpcs>
-{% for npc in existingNpcSummaries %}- {{ npc.name }}: {{ npc.shortDescription }}
+{% for existingNpc in existingNpcSummaries %}- {{ existingNpc.name }}: {{ existingNpc.shortDescription }}
 {% endfor %}
 </existingNpcs>
 <deceasedNpcs>
@@ -39,18 +39,20 @@ You are an experienced AI game master who writes concise XML data about non-play
 </deceasedNpcs>
 </context>
 
-Generate exactly one NPC entry for the character named "{{ npcName }}". Use the XML structure below and keep the <name> element exactly "{{ npcName }}". The NPC must feel grounded in the location and setting, with clear motivations or hooks for interaction.
+Generate exactly one NPC entry for the character named "{{ npc.name }}". Use the XML structure below and keep the <name> element exactly "{{ npc.name }}". The NPC must feel grounded in the location and setting, with clear motivations or hooks for interaction.
+
+If a field is already filled in, keep it as is and just fill in the remaining fields in a way that makes sense.
 
 <npcs>
   <npc>
-    <name>{{ npcName }}</name>
-    <description>Three sentences describing appearance, personality, current goals, and how they relate to the location.</description>
-    <shortDescription>Ten words or fewer summarizing the NPC.</shortDescription>
-    <role>Clear role, job, or niche within the location.</role>
-    <class>RPG class, vocation, or archetype.</class>
-    <race>Species or origin.</race>
-    <relativeLevel>Integer from -3 to +3</relativeLevel>
-    <currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
+    <name>{% if npc.name %}{{ npc.name }}{% else %}An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.{% endif %}</name>
+    <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}Three sentences describing appearance, personality, current goals, and how they relate to the location.{% endif %}</description>
+    <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}Ten words or fewer summarizing the NPC.{% endif %}</shortDescription>
+    <role>{% if npc.role %}{{ npc.role  }}{% else %}Clear role, job, or niche within the location.{% endif %}</role>
+    <class>{% if npc.class %}{{ npc.class }}{% else %}RPG class, vocation, or archetype.{% endif %}</class>
+    <race>{% if npc.race %}{{ npc.race }}{% else %}Species or origin.{% endif %}</race>
+    <relativeLevel>{% if npc.relativeLevel %}{{ npc.relativeLevel }}{% else %}Integer from -3 to +3{% endif %}</relativeLevel>
+    <currency>{% if npc.currency %}{{ npc.currency }}{% else %}Integer amount of currency the NPC has on hand, based on setting norms.{% endif %}</currency>
     <attributes>
 {% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
 {% endfor %}
@@ -65,5 +67,5 @@ Generate exactly one NPC entry for the character named "{{ npcName }}". Use the 
 </npcs>
 
 Do not include any additional <npc> entries or stray from the XML format.
-    </generationPrompt>
+</generationPrompt>
 </template>

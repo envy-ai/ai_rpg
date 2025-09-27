@@ -423,12 +423,49 @@ p:not(:last-child) {
   cursor: not-allowed;
 }
 
+.location-npc-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.location-npc-add-button {
+  align-self: stretch;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px dashed rgba(16, 185, 129, 0.45);
+  border-radius: 6px;
+  color: #bbf7d0;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+}
+
+.location-npc-add-button:hover,
+.location-npc-add-button:focus {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.65);
+  color: #ecfdf5;
+  outline: none;
+}
+
+.location-npc-add-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .exit-button.exit-button-pending {
   background: rgba(148, 163, 184, 0.22);
   border-style: dashed;
   border-color: rgba(148, 163, 184, 0.45);
   color: #e2e8f0;
   cursor: progress;
+}
+
+.add-npc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .exit-button {
@@ -1368,7 +1405,7 @@ p .rarity-epic {
   display: none;
 }
 
-.health-bar-fill {
+It .health-bar-fill {
   width: 0%;
   height: 100%;
   background: linear-gradient(90deg, #fecaca 0%, #fca5a5 25%, #f87171 60%, #ef4444 100%);

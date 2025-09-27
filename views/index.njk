@@ -55,8 +55,11 @@
                                         </details>
                                         <details class="location-section location-npcs" open>
                                             <summary>NPCs</summary>
-                                            <div class="location-entity-grid" id="locationNPCs">
-                                                <div class="location-npc-empty">No notable NPCs present.</div>
+                                            <div class="location-npc-content">
+                                                <div class="location-entity-grid" id="locationNPCs">
+                                                    <div class="location-npc-empty">No notable NPCs present.</div>
+                                                </div>
+                                                <button type="button" class="location-npc-add-button" id="addNpcButton" disabled>Add NPC</button>
                                             </div>
                                         </details>
                                         <details class="location-section location-things" open>
@@ -515,6 +518,59 @@
             </form>
         </div>
     </div>
+    <div id="addNpcModal" class="modal add-npc-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="addNpcModalTitle">Add NPC</h2>
+                <button type="button" class="modal__close" id="addNpcCloseBtn" aria-label="Close new NPC dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="addNpcForm" class="modal__body npc-edit-form add-npc-body" novalidate>
+                <div class="npc-edit-grid">
+                    <div class="npc-edit-field npc-edit-field--wide">
+                        <label for="addNpcName">Name</label>
+                        <input type="text" id="addNpcName" name="name" maxlength="120" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field npc-edit-field--wide">
+                        <label for="addNpcShortDescription">Short Description</label>
+                        <input type="text" id="addNpcShortDescription" name="shortDescription" maxlength="140" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="addNpcRole">Role</label>
+                        <input type="text" id="addNpcRole" name="role" maxlength="80" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="addNpcClass">Class</label>
+                        <input type="text" id="addNpcClass" name="class" maxlength="80" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="addNpcRace">Race</label>
+                        <input type="text" id="addNpcRace" name="race" maxlength="80" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="addNpcLevel">Level</label>
+                        <input type="number" id="addNpcLevel" name="level" min="1" max="100" step="1" autocomplete="off">
+                    </div>
+                    <div class="npc-edit-field">
+                        <label for="addNpcCurrency">Currency</label>
+                        <input type="number" id="addNpcCurrency" name="currency" min="0" step="1" autocomplete="off">
+                    </div>
+                </div>
+                <div class="npc-edit-section">
+                    <label for="addNpcDescription">Description</label>
+                    <textarea id="addNpcDescription" name="description" rows="4" placeholder="Optional: Describe appearance, personality, goals..."></textarea>
+                </div>
+                <footer class="npc-edit-footer">
+                    <div class="npc-edit-status" id="addNpcStatus" role="status" aria-live="polite"></div>
+                    <div class="npc-edit-actions">
+                        <button type="button" class="npc-edit-cancel" id="addNpcCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-edit-save-btn" id="addNpcSaveBtn">Generate NPC</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
     <div id="newExitModal" class="modal new-exit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -819,6 +875,22 @@
                 .replace(/'/g, '&#39;');
         };
 
+        const runtimeConfig = (() => {
+            if (window.__AIRPG_CONFIG__ && typeof window.__AIRPG_CONFIG__ === 'object') {
+                return window.__AIRPG_CONFIG__;
+            }
+            if (window.AIRPG_CONFIG && typeof window.AIRPG_CONFIG === 'object') {
+                return window.AIRPG_CONFIG;
+            }
+            if (window.AIRPG && typeof window.AIRPG.config === 'object') {
+                return window.AIRPG.config;
+            }
+            if (window.config && typeof window.config === 'object') {
+                return window.config;
+            }
+            return {};
+        })();
+
         function renderEntityImage({
             element,
             entityType,
@@ -925,6 +997,73 @@
         }
 
         window.renderEntityImage = renderEntityImage;
+
+        function getEntityImageElements(entityType, entityId) {
+            const targetType = typeof entityType === 'string' ? entityType.trim() : '';
+            const targetId = typeof entityId === 'string' ? entityId.trim() : '';
+            if (!targetType || !targetId) {
+                return [];
+            }
+            const all = Array.from(document.querySelectorAll('[data-image-entity-type]'));
+            return all.filter(element => {
+                const dataset = element?.dataset || {};
+                return dataset.imageEntityType === targetType && dataset.imageEntityId === targetId;
+            });
+        }
+
+        function setEntityImagePlaceholder(element) {
+            if (!element) {
+                return;
+            }
+            const dataset = element.dataset || {};
+            const placeholderMarkup = dataset.imagePlaceholderMarkup;
+            if (placeholderMarkup) {
+                element.innerHTML = placeholderMarkup;
+            } else {
+                const placeholderIcon = dataset.imagePlaceholder || '🖼️';
+                const placeholderClass = dataset.imagePlaceholderClass || 'image-placeholder';
+                element.innerHTML = `<div class="${placeholderClass}">${placeholderIcon}</div>`;
+            }
+            element.dataset.imageId = '';
+            element.dataset.imageProcessing = 'true';
+        }
+
+        function applyEntityImagePlaceholder(entityType, entityId) {
+            const elements = getEntityImageElements(entityType, String(entityId || ''));
+            elements.forEach(setEntityImagePlaceholder);
+            return elements;
+        }
+
+        function renderEntityImages(entityType, entityId, options = {}) {
+            const elements = getEntityImageElements(entityType, String(entityId || ''));
+            return elements.map(element => {
+                const dataset = element.dataset || {};
+                const altText = options.altText ?? dataset.imageAlt ?? '';
+                const placeholderIcon = options.placeholderIcon ?? dataset.imagePlaceholder ?? '🖼️';
+                const placeholderClass = options.placeholderClass ?? dataset.imagePlaceholderClass ?? 'image-placeholder';
+                const hasPlaceholderOption = Object.prototype.hasOwnProperty.call(options, 'placeholderMarkup');
+                const placeholderMarkup = hasPlaceholderOption
+                    ? options.placeholderMarkup
+                    : (dataset.imagePlaceholderMarkup ? dataset.imagePlaceholderMarkup : null);
+                const enableLightbox = options.enableLightbox ?? (dataset.imageLightbox !== 'false');
+                const force = options.force ?? false;
+                const hasImageIdOption = Object.prototype.hasOwnProperty.call(options, 'imageId');
+                const imageId = hasImageIdOption ? options.imageId : (dataset.imageId || null);
+
+                return renderEntityImage({
+                    element,
+                    entityType,
+                    entityId,
+                    imageId: imageId || null,
+                    altText,
+                    placeholderIcon,
+                    placeholderClass,
+                    placeholderMarkup,
+                    enableLightbox,
+                    force
+                });
+            });
+        }
 
         const adventureBackgroundElement = document.getElementById('adventureBackground');
         function updateAdventureBackground(imageUrl) {
@@ -1784,6 +1923,16 @@
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
+            let regenerateImageButton = null;
+            const canRegenerateThingImage = thing && (thing.imageId || thing.imageJobId);
+            if (canRegenerateThingImage && runtimeConfig?.imagegen?.enabled) {
+                regenerateImageButton = document.createElement('button');
+                regenerateImageButton.type = 'button';
+                regenerateImageButton.className = 'thing-card-menu-item';
+                regenerateImageButton.textContent = 'Regenerate Image';
+                menu.appendChild(regenerateImageButton);
+            }
+
             const allowDeletion = Boolean(options.allowDelete ?? true);
             let deleteButton = null;
             if (allowDeletion) {
@@ -1816,6 +1965,102 @@
                     console.warn('Failed to open thing editor:', error);
                 }
             });
+
+            if (regenerateImageButton) {
+                regenerateImageButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+
+                    const cachedThing = { ...(thingDataCache.get(thing.id) || thing) };
+                    const entityId = String(cachedThing?.id || '');
+                    if (!entityId) {
+                        console.warn('Unable to regenerate image: missing thing identifier.');
+                        return;
+                    }
+
+                    const context = options.context || 'general';
+                    const locationId = options.locationId || null;
+                    const npcId = options.npcId || null;
+                    const previousImageId = cachedThing.imageId || null;
+                    const placeholderAlt = cachedThing.name || 'Location item';
+
+                    applyEntityImagePlaceholder('thing', entityId);
+
+                    const updatedThing = {
+                        ...cachedThing,
+                        imageId: null,
+                        imageJobId: null,
+                        pendingImageJobId: null
+                    };
+                    thingDataCache.set(thing.id, updatedThing);
+
+                    const payload = {
+                        entityType: 'thing',
+                        entityId: entityId,
+                        force: true
+                    };
+                    if (context) {
+                        payload.context = context;
+                    }
+                    if (locationId) {
+                        payload.locationId = locationId;
+                    }
+                    if (npcId) {
+                        payload.npcId = npcId;
+                    }
+                    const clientId = window.AIRPG_CLIENT_ID || null;
+                    if (clientId) {
+                        payload.clientId = clientId;
+                    }
+
+                    try {
+                        const response = await fetch('/api/images/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await response.json().catch(() => ({}));
+
+                        if (!response.ok) {
+                            throw new Error(data?.error || `HTTP ${response.status}`);
+                        }
+
+                        if (data?.skipped) {
+                            thingDataCache.set(thing.id, { ...cachedThing });
+                            renderEntityImages('thing', entityId, {
+                                imageId: previousImageId,
+                                force: false,
+                                altText: placeholderAlt
+                            });
+                            return;
+                        }
+
+                        if (!data?.success && !data?.existingJob) {
+                            throw new Error(data?.error || 'Image request was not accepted');
+                        }
+
+                        const nextThing = {
+                            ...updatedThing,
+                            pendingImageJobId: data?.jobId || null
+                        };
+                        thingDataCache.set(thing.id, nextThing);
+
+                        renderEntityImages('thing', entityId, {
+                            imageId: null,
+                            force: true,
+                            altText: placeholderAlt
+                        });
+                    } catch (error) {
+                        console.warn('Failed to regenerate image for thing:', error);
+                        thingDataCache.set(thing.id, { ...cachedThing });
+                        renderEntityImages('thing', entityId, {
+                            imageId: previousImageId,
+                            force: false,
+                            altText: placeholderAlt
+                        });
+                    }
+                });
+            }
 
             if (deleteButton) {
                 deleteButton.addEventListener('click', async (event) => {
@@ -2079,6 +2324,21 @@
         const newExitSaveBtn = document.getElementById('newExitSaveBtn');
         const newExitCloseBtn = document.getElementById('newExitCloseBtn');
         const newExitButton = document.getElementById('newExitButton');
+        const addNpcModal = document.getElementById('addNpcModal');
+        const addNpcForm = document.getElementById('addNpcForm');
+        const addNpcNameInput = document.getElementById('addNpcName');
+        const addNpcShortDescriptionInput = document.getElementById('addNpcShortDescription');
+        const addNpcDescriptionInput = document.getElementById('addNpcDescription');
+        const addNpcRoleInput = document.getElementById('addNpcRole');
+        const addNpcClassInput = document.getElementById('addNpcClass');
+        const addNpcRaceInput = document.getElementById('addNpcRace');
+        const addNpcLevelInput = document.getElementById('addNpcLevel');
+        const addNpcCurrencyInput = document.getElementById('addNpcCurrency');
+        const addNpcStatus = document.getElementById('addNpcStatus');
+        const addNpcCancelBtn = document.getElementById('addNpcCancelBtn');
+        const addNpcSaveBtn = document.getElementById('addNpcSaveBtn');
+        const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
+        const addNpcButton = document.getElementById('addNpcButton');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -3756,8 +4016,10 @@
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3784,8 +4046,10 @@
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3819,7 +4083,8 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3854,9 +4119,182 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
+            }
+        }
+
+        function setAddNpcStatus(message = '', type = null) {
+            if (!addNpcStatus) {
+                return;
+            }
+            addNpcStatus.textContent = message || '';
+            addNpcStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                addNpcStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                addNpcStatus.classList.add('is-success');
+            }
+        }
+
+        function openAddNpcModal() {
+            if (!addNpcModal || !npcModalBackdrop) {
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                alert('No active location available to add NPCs.');
+                return;
+            }
+
+            if (addNpcForm) {
+                addNpcForm.reset();
+            }
+            const baseLevel = Number.isFinite(Number(lastRenderedLocation.baseLevel))
+                ? Number(lastRenderedLocation.baseLevel)
+                : (Number.isFinite(Number(lastRenderedLocation.level)) ? Number(lastRenderedLocation.level) : '');
+            if (addNpcLevelInput) {
+                addNpcLevelInput.value = Number.isFinite(baseLevel) ? baseLevel : '';
+            }
+            setAddNpcStatus('', null);
+            if (addNpcSaveBtn) {
+                addNpcSaveBtn.disabled = false;
+            }
+
+            npcModalBackdrop.removeAttribute('hidden');
+            addNpcModal.removeAttribute('hidden');
+            addNpcModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+
+            setTimeout(() => {
+                addNpcNameInput?.focus();
+            }, 50);
+        }
+
+        function closeAddNpcModal({ focusTrigger = false } = {}) {
+            if (!addNpcModal) {
+                return;
+            }
+
+            addNpcModal.setAttribute('aria-hidden', 'true');
+            addNpcModal.setAttribute('hidden', '');
+
+            if (addNpcForm) {
+                addNpcForm.reset();
+            }
+            if (addNpcSaveBtn) {
+                addNpcSaveBtn.disabled = false;
+            }
+            setAddNpcStatus('', null);
+
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+
+            if (focusTrigger && addNpcButton) {
+                addNpcButton.focus();
+            }
+        }
+
+        async function submitAddNpc(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            if (!addNpcForm || !addNpcSaveBtn) {
+                return;
+            }
+
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                setAddNpcStatus('No active location is available for adding NPCs.', 'error');
+                return;
+            }
+
+            const name = addNpcNameInput?.value?.trim();
+
+            const payload = {};
+            if (name) {
+                payload.name = name;
+            }
+            const shortDescription = addNpcShortDescriptionInput?.value?.trim();
+            if (shortDescription) {
+                payload.shortDescription = shortDescription;
+            }
+            const description = addNpcDescriptionInput?.value?.trim();
+            if (description) {
+                payload.description = description;
+            }
+            const role = addNpcRoleInput?.value?.trim();
+            if (role) {
+                payload.role = role;
+            }
+            const className = addNpcClassInput?.value?.trim();
+            if (className) {
+                payload.class = className;
+            }
+            const race = addNpcRaceInput?.value?.trim();
+            if (race) {
+                payload.race = race;
+            }
+
+            const levelValueRaw = addNpcLevelInput?.value;
+            if (levelValueRaw !== undefined && levelValueRaw !== null && String(levelValueRaw).trim() !== '') {
+                const levelNumber = Number(levelValueRaw);
+                if (Number.isFinite(levelNumber)) {
+                    payload.level = Math.max(1, Math.round(levelNumber));
+                }
+            }
+
+            const currencyValueRaw = addNpcCurrencyInput?.value;
+            if (currencyValueRaw !== undefined && currencyValueRaw !== null && String(currencyValueRaw).trim() !== '') {
+                const currencyNumber = Number(currencyValueRaw);
+                if (Number.isFinite(currencyNumber) && currencyNumber >= 0) {
+                    payload.currency = Math.round(currencyNumber);
+                }
+            }
+
+            setAddNpcStatus('Creating NPC…', null);
+            addNpcSaveBtn.disabled = true;
+
+            let overlayShown = false;
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}/npcs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                closeAddNpcModal({ focusTrigger: false });
+                showLocationOverlay('Refreshing characters...');
+                overlayShown = true;
+
+                if (data.location) {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    await window.updateLocationDisplay(data.location);
+                }
+            } catch (error) {
+                console.warn('Failed to create NPC:', error);
+                setAddNpcStatus(`Failed to create NPC: ${error?.message || 'Unknown error'}`, 'error');
+                addNpcSaveBtn.disabled = false;
+            } finally {
+                if (overlayShown) {
+                    hideLocationOverlay();
+                }
             }
         }
 
@@ -4024,7 +4462,8 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4045,7 +4484,8 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4086,8 +4526,10 @@
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && newExitHidden) {
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4161,6 +4603,28 @@
             npcNeedsForm.addEventListener('submit', submitNpcNeeds);
         }
 
+        if (addNpcButton) {
+            addNpcButton.addEventListener('click', () => {
+                openAddNpcModal();
+            });
+        }
+
+        if (addNpcCancelBtn) {
+            addNpcCancelBtn.addEventListener('click', () => {
+                closeAddNpcModal({ focusTrigger: true });
+            });
+        }
+
+        if (addNpcCloseBtn) {
+            addNpcCloseBtn.addEventListener('click', () => {
+                closeAddNpcModal({ focusTrigger: true });
+            });
+        }
+
+        if (addNpcForm) {
+            addNpcForm.addEventListener('submit', submitAddNpc);
+        }
+
         if (newExitButton) {
             newExitButton.addEventListener('click', () => {
                 openNewExitModal();
@@ -4226,7 +4690,9 @@
         if (npcModalBackdrop) {
             npcModalBackdrop.addEventListener('click', (event) => {
                 if (event.target === npcModalBackdrop) {
-                    if (newExitModal && !newExitModal.hasAttribute('hidden')) {
+                    if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
+                        closeAddNpcModal({ focusTrigger: true });
+                    } else if (newExitModal && !newExitModal.hasAttribute('hidden')) {
                         closeNewExitModal();
                     } else if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
                         closeNpcNeedsModal();
@@ -5536,6 +6002,12 @@
                     return;
                 }
 
+                if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeAddNpcModal({ focusTrigger: true });
+                    return;
+                }
+
                 if (newExitModal && !newExitModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeNewExitModal();
@@ -5713,6 +6185,16 @@
                 viewButton.textContent = 'View';
                 menu.appendChild(viewButton);
 
+                let regenerateImageButton = null;
+                const canRegeneratePortrait = npc && npc.imageId;
+                if (canRegeneratePortrait) {
+                    regenerateImageButton = document.createElement('button');
+                    regenerateImageButton.type = 'button';
+                    regenerateImageButton.className = 'npc-card-menu-item';
+                    regenerateImageButton.textContent = 'Regenerate Image';
+                    menu.appendChild(regenerateImageButton);
+                }
+
                 const editButton = document.createElement('button');
                 editButton.type = 'button';
                 editButton.className = 'npc-card-menu-item';
@@ -5772,6 +6254,100 @@
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcEditModal(latestNpc);
                 });
+
+                if (regenerateImageButton) {
+                    regenerateImageButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const latestNpc = { ...(npcDataCache.get(npc.id) || npc) };
+                        const npcId = String(latestNpc?.id || '');
+                        if (!npcId) {
+                            console.warn('Unable to regenerate portrait: NPC identifier missing.');
+                            return;
+                        }
+
+                        const entityType = latestNpc.isNPC ? 'npc' : 'player';
+                        const previousImageId = latestNpc.imageId || null;
+                        const placeholderAlt = latestNpc.name || 'Character portrait';
+
+                        applyEntityImagePlaceholder(entityType, npcId);
+
+                        const baseNpcRecord = {
+                            ...latestNpc,
+                            imageId: null,
+                            pendingImageJobId: null
+                        };
+                        npcDataCache.set(npc.id, baseNpcRecord);
+                        if (!latestNpc.isNPC) {
+                            window.currentPlayerData = {
+                                ...(window.currentPlayerData || {}),
+                                imageId: null
+                            };
+                        }
+
+                        const clientId = window.AIRPG_CLIENT_ID || null;
+                        const requestBody = clientId ? { clientId } : {};
+
+                        try {
+                            const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/portrait`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(requestBody)
+                            });
+                            const data = await response.json().catch(() => ({}));
+
+                            if (!response.ok) {
+                                throw new Error(data?.error || `HTTP ${response.status}`);
+                            }
+
+                            if (data?.skipped) {
+                                npcDataCache.set(npc.id, { ...latestNpc });
+                                if (!latestNpc.isNPC) {
+                                    window.currentPlayerData = {
+                                        ...(window.currentPlayerData || {}),
+                                        imageId: previousImageId || null
+                                    };
+                                }
+                                renderEntityImages(entityType, npcId, {
+                                    imageId: previousImageId,
+                                    force: false,
+                                    altText: placeholderAlt
+                                });
+                                return;
+                            }
+
+                            if (!data?.success && !data?.existingJob) {
+                                throw new Error(data?.error || 'Portrait request was not accepted');
+                            }
+
+                            const pendingJobId = data?.imageGeneration?.jobId || data?.jobId || null;
+                            npcDataCache.set(npc.id, {
+                                ...baseNpcRecord,
+                                pendingImageJobId: pendingJobId
+                            });
+
+                            renderEntityImages(entityType, npcId, {
+                                imageId: null,
+                                force: true,
+                                altText: placeholderAlt
+                            });
+                        } catch (error) {
+                            console.warn('Failed to regenerate NPC portrait:', error);
+                            npcDataCache.set(npc.id, { ...latestNpc });
+                            if (!latestNpc.isNPC) {
+                                window.currentPlayerData = {
+                                    ...(window.currentPlayerData || {}),
+                                    imageId: previousImageId || null
+                                };
+                            }
+                            renderEntityImages(entityType, npcId, {
+                                imageId: previousImageId,
+                                force: false,
+                                altText: placeholderAlt
+                            });
+                        }
+                    });
+                }
 
                 inventoryButton.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -5912,6 +6488,11 @@
                 }
             }
 
+            if (typeof window !== 'undefined') {
+                window.showLocationOverlay = showLocationOverlay;
+                window.hideLocationOverlay = hideLocationOverlay;
+            }
+
             window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationTooltip = document.getElementById('locationTooltip');
@@ -6034,6 +6615,9 @@
 
                     if (newExitButton) {
                         newExitButton.disabled = false;
+                    }
+                    if (addNpcButton) {
+                        addNpcButton.disabled = false;
                     }
                     if (locationExitsList) {
                         const exitEntries = Object.entries(location.exits || {});
@@ -6252,6 +6836,9 @@
                     }
                     if (newExitButton) {
                         newExitButton.disabled = true;
+                    }
+                    if (addNpcButton) {
+                        addNpcButton.disabled = true;
                     }
                     npcDataCache.clear();
                     closeNpcContextMenu();
@@ -6633,7 +7220,7 @@
                     if (equippedSet.has(item.id)) {
                         card.classList.add('is-equipped');
                     }
-                    registerThingContextMenu(card, item, { context: 'player-inventory' });
+                        registerThingContextMenu(card, item, { context: 'player-inventory' });
                     inventoryGrid.appendChild(card);
 
                     card.addEventListener('mouseenter', (event) => {
