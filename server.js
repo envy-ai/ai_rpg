@@ -4234,6 +4234,12 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 itemOrScenery: normalizedSeedType
             };
 
+            const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: normalizedSeedType === 'item' });
+            if (rarityDefinitionForSeed) {
+                thingSeed.rarity = rarityDefinitionForSeed.label;
+                thingSeed.rarityDescription = rarityDefinitionForSeed.description || `A ${rarityDefinitionForSeed.label} item.`;
+            }
+
             try {
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...promptTemplateBase,

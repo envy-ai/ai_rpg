@@ -13,12 +13,13 @@
 {% endfor %}
 </equipmentSlots>
 
-<task>Generate a single item that's appropriate to the current setting, location and region. Fill in any missing fields, but leave any provided fields as they are.  Return it in this format:</task>
-
-The item's rarity is {{ generatedThingRarity.label }}: {{ generatedThingRarity.description }}
-
-Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
+<task>Generate a single item that's appropriate to the current setting, location and region. Strictly keep already filled in fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones.  Return it in this format:</task>
 
 <items>
 {% include "_includes/item.njk" %}
 </items>
+
+The item's rarity is {{ thingSeed.rarity }}: {{ thingSeed.rarityDescription }}
+
+Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
+

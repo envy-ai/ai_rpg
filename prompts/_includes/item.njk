@@ -3,28 +3,9 @@
 <description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}[1-2 sentence description of the item]{% endif %}</description>
 <itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}["item" or "scenery" depending on whether it can be picked up or not]{% endif %}</itemOrScenery>
 <type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}[Type of item (e.g., weapon, armor, consumable, tool, etc.)]{% endif %}</type>
-<slot>
-    {% if thingSeed.slot %}
-        {{ thingSeed.slot }}
-    {% else %}
-        [Available gear slots: {% if gearSlots %}[{% for slot in gearSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}]{% else %}N/A if not equippable{% endif %}]
-    {% endif %}
-</slot>
-<rarity>
-    {% if thingSeed.rarity %}
-        {{ thingSeed.rarity }}
-    {% else %}
-        [
-        {%- if rarityDefinitions and rarityDefinitions | length > 0 -%}
-            {%- for rarity in rarityDefinitions -%}
-                {{ rarity.label or rarity.key | title }}{%- if not loop.last -%}, {% endif %}
-            {%- endfor -%}
-        {%- else -%}
-            {{ 'Common' }}
-        {%- endif -%}
-        ]
-    {% endif %}
-</rarity>
+<slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}[Available gear slots: {% if equipmentSlots %}[{% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}]{% else %}N/A if not equippable{% endif %}]{% endif %}</slot>
+<rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}[{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
+{% endif %}</rarity>
 <value>{% if thingSeed.value is defined %}{{ thingSeed.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
 <weight>{% if thingSeed.weight is defined %}{{ thingSeed.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
 <relativeLevel>{% if thingSeed.relativeLevel is defined %}{{ thingSeed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
