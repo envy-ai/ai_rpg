@@ -1319,7 +1319,7 @@ p:not(:last-child) {
   display: none;
 }
 
-It .health-bar-fill {
+.health-bar-fill {
   width: 0%;
   height: 100%;
   background: linear-gradient(90deg, #fecaca 0%, #fca5a5 25%, #f87171 60%, #ef4444 100%);

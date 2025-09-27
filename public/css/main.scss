@@ -1357,7 +1357,7 @@ p:not(:last-child) {
 .health-bar[aria-hidden="true"] {
   display: none;
 }
-It .health-bar-fill {
+.health-bar-fill {
   width: 0%;
   height: 100%;
   background: linear-gradient(

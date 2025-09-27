@@ -1446,7 +1446,7 @@ class Events {
                 if (typeof player.getCurrency === 'function') {
                     return player.getCurrency();
                 }
-            } catch (_) {}
+            } catch (_) { }
             const fallback = Number(player.currency);
             return Number.isFinite(fallback) ? fallback : 0;
         };
@@ -1886,7 +1886,7 @@ class Events {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 60000
+                timeout: config.baseTimeoutSeconds
             });
 
             const eventResponse = response.data?.choices?.[0]?.message?.content || '';

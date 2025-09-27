@@ -1542,10 +1542,8 @@ class Player {
     /**
      * Calculate attribute modifier using formula from definitions
      */
-    getAttributeModifier(attributeName) {
-        const attributeValue = this.#attributes[attributeName];
-        if (attributeValue === undefined) {
-            console.warn(`Unknown attribute: ${attributeName}`);
+    #calculateAttributeModifier(attributeValue) {
+        if (!Number.isFinite(attributeValue)) {
             return 0;
         }
 
@@ -1561,13 +1559,45 @@ class Player {
         return Math.floor((attributeValue - 10) / 2);
     }
 
+    getAttributeModifier(attributeName, options = {}) {
+        if (typeof attributeName !== 'string' || !attributeName) {
+            return 0;
+        }
+
+        const { useModified = false, value } = options ?? {};
+        const normalizedName = attributeName.trim();
+        const hasBaseValue = Object.prototype.hasOwnProperty.call(this.#attributes, normalizedName);
+        const baseValue = hasBaseValue ? this.#attributes[normalizedName] : undefined;
+
+        if (!hasBaseValue && !Number.isFinite(value) && !useModified) {
+            console.warn(`Unknown attribute: ${attributeName}`);
+        }
+
+        let resolvedValue;
+        if (Number.isFinite(value)) {
+            resolvedValue = value;
+        } else if (useModified) {
+            const modifiedValue = this.getModifiedAttribute(normalizedName);
+            resolvedValue = Number.isFinite(modifiedValue) ? modifiedValue : baseValue;
+        } else {
+            resolvedValue = baseValue;
+        }
+
+        if (!Number.isFinite(resolvedValue)) {
+            return 0;
+        }
+
+        return this.#calculateAttributeModifier(resolvedValue);
+    }
+
     /**
      * Get a formatted object of all attribute modifiers
      */
-    getAttributeModifiers() {
+    getAttributeModifiers(options = {}) {
+        const { useModified = false } = options ?? {};
         const modifiers = {};
         for (const attrName of this.getAttributeNames()) {
-            modifiers[attrName] = this.getAttributeModifier(attrName);
+            modifiers[attrName] = this.getAttributeModifier(attrName, { useModified });
         }
         return modifiers;
     }
@@ -2519,10 +2549,20 @@ class Player {
     getAttributeInfo() {
         const info = {};
         for (const [attrName, definition] of Object.entries(this.attributeDefinitions)) {
+            const baseValue = this.#attributes[attrName];
+            const modifiedValue = this.getModifiedAttribute(attrName);
+            const resolvedModifiedValue = Number.isFinite(modifiedValue) ? modifiedValue : baseValue;
+            const baseModifier = this.getAttributeModifier(attrName);
+            const modifiedModifier = this.#calculateAttributeModifier(resolvedModifiedValue);
+
             info[attrName] = {
                 ...definition,
-                value: this.#attributes[attrName],
-                modifier: this.getAttributeModifier(attrName)
+                value: baseValue,
+                modifier: baseModifier,
+                baseValue,
+                baseModifier,
+                modifiedValue: resolvedModifiedValue,
+                modifiedModifier
             };
         }
         return info;

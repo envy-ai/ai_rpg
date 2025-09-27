@@ -15,7 +15,7 @@ let client = createClient(activePort);
 function createClient(port) {
     return axios.create({
         baseURL: `http://localhost:${port}`,
-        timeout: 300000
+        timeout: config.baseTimeoutSeconds
     });
 }
 
@@ -28,7 +28,7 @@ async function waitForServer() {
     while (Date.now() - start < SERVER_START_TIMEOUT_MS) {
         for (const port of FALLBACK_PORTS) {
             try {
-                const response = await axios.get(`http://localhost:${port}/api/hello`, { timeout: 2000 });
+                const response = await axios.get(`http://localhost:${port}/api/hello`, { timeout: config.baseTimeoutSeconds });
                 if (response.status === 200) {
                     if (activePort !== port) {
                         activePort = port;

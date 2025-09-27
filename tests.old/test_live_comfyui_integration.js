@@ -24,7 +24,7 @@ async function testComfyUIConnection() {
 
   try {
     const response = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
-      timeout: 5000
+      timeout: config.baseTimeoutSeconds
     });
 
     if (response.status === 200) {

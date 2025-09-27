@@ -6070,8 +6070,10 @@
             if (latestNpc?.attributeInfo && typeof latestNpc.attributeInfo === 'object') {
                 for (const [key, info] of Object.entries(latestNpc.attributeInfo)) {
                     const label = info?.label || formatAttributeName(key);
-                    const value = Number.isFinite(Number(info?.value)) ? Number(info.value) : info?.value;
-                    const modifier = Number.isFinite(Number(info?.modifier)) ? Number(info.modifier) : null;
+                    const rawValue = info?.modifiedValue !== undefined ? info.modifiedValue : info?.value;
+                    const value = Number.isFinite(Number(rawValue)) ? Number(rawValue) : rawValue;
+                    const rawModifier = info?.modifiedModifier !== undefined ? info.modifiedModifier : info?.modifier;
+                    const modifier = Number.isFinite(Number(rawModifier)) ? Number(rawModifier) : null;
                     const parts = [];
                     if (value !== undefined && value !== null) {
                         parts.push(value);

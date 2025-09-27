@@ -269,7 +269,7 @@ function createImageJob(jobId, payload = {}) {
         completedAt: null,
         result: null,
         error: null,
-        timeout: 120000, // 2 minutes timeout
+        timeout: config.baseTimeoutSeconds, // 2 minutes timeout
         subscribers: new Set()
     };
 
@@ -833,7 +833,7 @@ async function initializeComfyUI() {
         // Test connectivity to ComfyUI server
         console.log('🔌 Testing ComfyUI server connectivity...');
         const testResponse = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
-            timeout: 15000 // 15 second timeout
+            timeout: config.baseTimeoutSeconds // 15 second timeout
         });
 
         if (testResponse.status === 200) {
@@ -2723,7 +2723,7 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 45000
+            timeout: config.baseTimeoutSeconds
         });
 
         const plausibilityResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -3367,7 +3367,7 @@ async function expandRegionEntryStub(stubLocation) {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 90000
+                timeout: config.baseTimeoutSeconds
             });
 
             stubResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -3872,7 +3872,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000
+            timeout: config.baseTimeoutSeconds
         });
 
         const inventoryContent = response.data?.choices?.[0]?.message?.content;
@@ -4028,6 +4028,24 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
     } catch (error) {
         console.warn(`Inventory generation failed for character ${character?.name || 'unknown'}:`, error);
         return [];
+    }
+}
+
+function restoreCharacterHealthToMaximum(character) {
+    if (!character || typeof character.setHealth !== 'function') {
+        return;
+    }
+
+    const maxHealth = Number(character?.maxHealth);
+    if (!Number.isFinite(maxHealth) || maxHealth <= 0) {
+        return;
+    }
+
+    try {
+        character.setHealth(Math.round(maxHealth));
+    } catch (error) {
+        const characterName = character?.name || character?.id || 'character';
+        console.warn(`Failed to restore health for ${characterName}:`, error?.message || error);
     }
 }
 
@@ -4271,7 +4289,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const inventoryContent = response.data?.choices?.[0]?.message?.content;
@@ -4689,7 +4707,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 35000
+            timeout: config.baseTimeoutSeconds
         });
 
         const npcResponse = response.data?.choices?.[0]?.message?.content;
@@ -4793,6 +4811,8 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
         } catch (inventoryError) {
             console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
         }
+
+        restoreCharacterHealthToMaximum(npc);
 
         if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
             npc.imageId = null;
@@ -5132,7 +5152,7 @@ async function equipBestGearForCharacter({
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000
+            timeout: config.baseTimeoutSeconds
         });
         equipResponse = response.data?.choices?.[0]?.message?.content || '';
     } catch (error) {
@@ -5582,7 +5602,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 45000
+            timeout: config.baseTimeoutSeconds
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -5818,7 +5838,7 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000
+            timeout: config.baseTimeoutSeconds
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -6150,7 +6170,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 60000
+                timeout: config.baseTimeoutSeconds
             });
             if (!response.data?.choices?.length) {
                 console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
@@ -6653,7 +6673,7 @@ async function enforceBannedNpcNames({
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 60000
+                timeout: config.baseTimeoutSeconds
             });
             regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -6991,7 +7011,7 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
             'Authorization': `Bearer ${resolvedApiKey}`,
             'Content-Type': 'application/json'
         },
-        timeout: 45000
+        timeout: config.baseTimeoutSeconds
     });
 
     const aiResponse = response.data?.choices?.[0]?.message?.content;
@@ -7349,7 +7369,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000
+            timeout: config.baseTimeoutSeconds
         });
 
         const skillResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -7456,7 +7476,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 45000
+            timeout: config.baseTimeoutSeconds
         });
 
         const skillResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -7564,7 +7584,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000
+            timeout: config.baseTimeoutSeconds
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -7724,6 +7744,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 apiKey
             });
 
+            restoreCharacterHealthToMaximum(npc);
+
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             } else {
@@ -7831,7 +7853,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 80000
+            timeout: config.baseTimeoutSeconds
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -8018,6 +8040,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 model,
                 apiKey
             });
+
+            restoreCharacterHealthToMaximum(npc);
 
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
@@ -8682,7 +8706,7 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000 // 60 second timeout
+            timeout: config.baseTimeoutSeconds // 60 second timeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -9412,7 +9436,7 @@ async function generateLocationFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000 // 60 second timeout
+            timeout: config.baseTimeoutSeconds // 60 second timeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -9829,7 +9853,7 @@ async function generateRegionExitStubs({
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 60000
+            timeout: config.baseTimeoutSeconds
         });
 
         aiResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -10241,7 +10265,7 @@ async function chooseRegionEntrance({
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 30000
+            timeout: config.baseTimeoutSeconds
         });
 
         const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
@@ -10335,7 +10359,7 @@ async function generateRegionFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 120000
+            timeout: config.baseTimeoutSeconds
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -10609,6 +10633,7 @@ const apiScope = {
     viewsEnv,
     createImageJob,
     generateInventoryForCharacter,
+    restoreCharacterHealthToMaximum,
     generateLocationFromPrompt,
     generateLocationImage,
     generatePlayerImage,
@@ -10719,9 +10744,13 @@ function createDefaultPlayer() {
         generateInventoryForCharacter({
             character: defaultPlayer,
             characterDescriptor: { role: 'adventurer', class: defaultPlayer.class, race: defaultPlayer.race }
-        }).catch(error => {
-            console.warn('Failed to generate default player inventory:', error.message);
-        });
+        })
+            .catch(error => {
+                console.warn('Failed to generate default player inventory:', error.message);
+            })
+            .finally(() => {
+                restoreCharacterHealthToMaximum(defaultPlayer);
+            });
 
         console.log('🎲 Created default player "Adventurer" with default stats');
     } catch (error) {

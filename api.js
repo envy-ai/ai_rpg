@@ -718,7 +718,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 45000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const attackResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -1630,7 +1630,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 45000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -1850,7 +1850,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 45000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -2070,7 +2070,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 45000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -2172,7 +2172,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 60000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -2918,7 +2918,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 60000 // 60 second timeout
+                    timeout: config.baseTimeoutSeconds // 60 second timeout
                 });
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
@@ -3223,6 +3223,7 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location
                     });
+                    restoreCharacterHealthToMaximum(player);
                 } catch (inventoryError) {
                     console.warn('Failed to generate player inventory:', inventoryError);
                 }
@@ -4664,6 +4665,7 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location
                     });
+                    restoreCharacterHealthToMaximum(player);
                 } catch (inventoryError) {
                     console.warn('Failed to generate player inventory (stats):', inventoryError);
                 }
@@ -6663,7 +6665,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 60000
+                    timeout: config.baseTimeoutSeconds
                 });
 
                 const aiMessage = aiResponse?.data?.choices?.[0]?.message?.content;
@@ -7300,6 +7302,7 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location: entranceLocation
                     });
+                    restoreCharacterHealthToMaximum(newPlayer);
                 } catch (inventoryError) {
                     console.warn('Failed to generate inventory for new-game player:', inventoryError);
                 }
@@ -7986,7 +7989,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000 // 30 second timeout for test
+                    timeout: config.baseTimeoutSeconds // 30 second timeout for test
                 });
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
