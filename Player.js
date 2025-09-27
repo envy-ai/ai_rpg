@@ -40,6 +40,7 @@ class Player {
     #personalityTraits;
     #personalityNotes;
     static #npcInventoryChangeHandler = null;
+    static #levelUpHandler = null;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -131,6 +132,13 @@ class Player {
             throw new Error('NPC inventory change handler must be a function');
         }
         this.#npcInventoryChangeHandler = handler || null;
+    }
+
+    static setLevelUpHandler(handler) {
+        if (handler && typeof handler !== 'function') {
+            throw new Error('Level-up handler must be a function');
+        }
+        this.#levelUpHandler = handler || null;
     }
 
     static getAll() {
@@ -1281,6 +1289,7 @@ class Player {
      * Level up the player
      */
     levelUp() {
+        const previousLevel = this.#level;
         this.#level += 1;
         const oldMaxHealth = this.maxHealth;
         const newMaxHealth = this.#calculateBaseHealth();
@@ -1291,6 +1300,23 @@ class Player {
             this.#unspentSkillPoints += pointsPerLevel;
         }
         this.#lastUpdated = new Date().toISOString();
+
+        if (Player.#levelUpHandler) {
+            try {
+                const result = Player.#levelUpHandler({
+                    character: this,
+                    previousLevel,
+                    newLevel: this.#level
+                });
+                if (result && typeof result.then === 'function') {
+                    result.catch(error => {
+                        console.warn('Level-up handler failed:', error?.message || error);
+                    });
+                }
+            } catch (handlerError) {
+                console.warn('Level-up handler errored:', handlerError?.message || handlerError);
+            }
+        }
     }
 
     addExperience(amount) {

@@ -54,7 +54,9 @@ imagegen:
     image:
       width: 1280
       height: 720
-
+random_event_frequency:
+  common: 0.04
+  rare: 0.01
 # Game Master configuration
 gamemaster:
   # Fallback system prompt

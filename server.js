@@ -1082,6 +1082,7 @@ const regions = new Map(); // Store Region instances by ID
 const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized name
+const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -4644,6 +4645,13 @@ async function equipBestGearForCharacter({
     });
 }
 
+Player.setLevelUpHandler(({ character, previousLevel, newLevel }) => {
+    if (!character) {
+        return null;
+    }
+    return generateLevelUpAbilitiesForCharacter(character, { previousLevel, newLevel });
+});
+
 Player.setNpcInventoryChangeHandler(async ({ character }) => {
     if (!character) {
         return;
@@ -5327,6 +5335,399 @@ function applyNpcAbilities(npc, abilityList) {
     }
 
     npc.setAbilities(abilityList);
+}
+
+function buildLevelUpSummaryForCharacter(character, { previousLevel = null } = {}) {
+    if (!character || typeof character.name !== 'string') {
+        return null;
+    }
+
+    const name = character.name.trim();
+    if (!name) {
+        return null;
+    }
+
+    const currentLevel = Number(character.level);
+    const race = typeof character.race === 'string' ? character.race.trim() : '';
+    const className = typeof character.class === 'string' ? character.class.trim() : '';
+
+    const descriptorParts = [];
+    if (Number.isFinite(currentLevel)) {
+        if (Number.isFinite(previousLevel) && previousLevel !== currentLevel) {
+            descriptorParts.push(`Level ${currentLevel} (was ${previousLevel})`);
+        } else {
+            descriptorParts.push(`Level ${currentLevel}`);
+        }
+    }
+    if (race) {
+        descriptorParts.push(race);
+    }
+    if (className) {
+        descriptorParts.push(className);
+    }
+
+    const descriptor = descriptorParts.join(' ');
+
+    let description = '';
+    if (typeof character.shortDescription === 'string' && character.shortDescription.trim()) {
+        description = character.shortDescription.trim();
+    } else if (typeof character.description === 'string' && character.description.trim()) {
+        description = character.description.trim();
+    }
+
+    const summaryParts = [];
+    if (descriptor) {
+        summaryParts.push(descriptor);
+    }
+    if (description) {
+        summaryParts.push(description);
+    }
+
+    let shortDescription = summaryParts.length ? summaryParts.join(' - ') : 'No description provided.';
+    if (shortDescription.length > 280) {
+        shortDescription = `${shortDescription.slice(0, 277)}...`;
+    }
+
+    return {
+        name,
+        shortDescription
+    };
+}
+
+function collectNpcSummariesForLevelUp({ character, locationObj, regionObj, previousLevel = null } = {}) {
+    const summaries = new Map();
+
+    const addSummary = (npc, opts = {}) => {
+        if (!npc) {
+            return;
+        }
+        const summary = buildLevelUpSummaryForCharacter(npc, opts);
+        if (!summary || !summary.name) {
+            return;
+        }
+        const key = summary.name.toLowerCase();
+        if (!summaries.has(key)) {
+            summaries.set(key, summary);
+        }
+    };
+
+    if (character) {
+        addSummary(character, { previousLevel });
+    }
+
+    if (locationObj && Array.isArray(locationObj.npcIds)) {
+        for (const npcId of locationObj.npcIds) {
+            if (!npcId || (character && npcId === character.id)) {
+                continue;
+            }
+            const npc = players.get(npcId);
+            addSummary(npc);
+        }
+    }
+
+    if (regionObj && Array.isArray(regionObj.locationIds)) {
+        for (const locId of regionObj.locationIds) {
+            if (!locId) {
+                continue;
+            }
+            if (locationObj && locId === locationObj.id) {
+                continue;
+            }
+            const otherLocation = gameLocations.get(locId);
+            if (!otherLocation || !Array.isArray(otherLocation.npcIds)) {
+                continue;
+            }
+            for (const npcId of otherLocation.npcIds) {
+                if (!npcId || (character && npcId === character.id)) {
+                    continue;
+                }
+                const npc = players.get(npcId);
+                addSummary(npc);
+            }
+        }
+    }
+
+    return Array.from(summaries.values()).slice(0, 30);
+}
+
+async function generateLevelUpAbilitiesForCharacter(character, { previousLevel = null, newLevel = null } = {}) {
+    if (!character || typeof character.name !== 'string') {
+        return null;
+    }
+
+    const trimmedName = character.name.trim();
+    if (!trimmedName) {
+        return null;
+    }
+
+    const characterKey = (typeof character.id === 'string' && character.id.trim())
+        ? character.id.trim()
+        : trimmedName.toLowerCase();
+
+    if (levelUpAbilityPromises.has(characterKey)) {
+        return levelUpAbilityPromises.get(characterKey);
+    }
+
+    const abilityPromise = (async () => {
+        const settingSnapshot = getActiveSettingSnapshot();
+        const settingContext = {
+            name: settingSnapshot?.name || '',
+            description: settingSnapshot?.description || '',
+            theme: settingSnapshot?.theme || '',
+            genre: settingSnapshot?.genre || '',
+            startingLocationType: settingSnapshot?.startingLocationType || '',
+            magicLevel: settingSnapshot?.magicLevel || '',
+            techLevel: settingSnapshot?.techLevel || '',
+            tone: settingSnapshot?.tone || '',
+            difficulty: settingSnapshot?.difficulty || '',
+            currencyName: settingSnapshot?.currencyName || '',
+            currencyNamePlural: settingSnapshot?.currencyNamePlural || '',
+            currencyValueNotes: settingSnapshot?.currencyValueNotes || '',
+            writingStyleNotes: settingSnapshot?.writingStyleNotes || ''
+        };
+
+        const locationId = typeof character.currentLocation === 'string'
+            ? character.currentLocation
+            : null;
+
+        let locationObj = null;
+        if (locationId) {
+            locationObj = gameLocations.get(locationId) || null;
+            if (!locationObj) {
+                try {
+                    locationObj = Location.get(locationId);
+                } catch (_) {
+                    locationObj = null;
+                }
+            }
+        }
+
+        const locationContext = {
+            name: locationObj?.name || 'Unknown Location',
+            description: (locationObj?.description && typeof locationObj.description === 'string'
+                ? locationObj.description.trim()
+                : locationObj?.stubMetadata?.blueprintDescription || 'No description provided.')
+        };
+
+        const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
+        const regionContext = {
+            name: regionObj?.name || 'Unknown Region',
+            description: regionObj?.description || 'No description provided.'
+        };
+
+        const currentLevel = Number.isFinite(newLevel)
+            ? newLevel
+            : (Number(character.level) || null);
+        const priorLevel = Number.isFinite(previousLevel)
+            ? previousLevel
+            : (Number.isFinite(currentLevel) ? currentLevel - 1 : null);
+
+        const historyEntries = chatHistory.slice(-10);
+        const historyText = historyEntries.length
+            ? historyEntries.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
+            : '';
+        const levelUpLine = `[system] ${trimmedName} advanced ${Number.isFinite(priorLevel) ? `from level ${priorLevel} ` : ''}to level ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}.`;
+        const gameHistory = historyText ? `${historyText}\n${levelUpLine}` : levelUpLine;
+
+        const existingNpcSummaries = collectNpcSummariesForLevelUp({
+            character,
+            locationObj,
+            regionObj,
+            previousLevel: priorLevel
+        });
+
+        const templateVars = {
+            setting: settingContext,
+            gameHistory,
+            region: regionContext,
+            location: locationContext,
+            existingNpcSummaries
+        };
+
+        let renderedTemplate;
+        try {
+            renderedTemplate = promptEnv.render('npc-generate-abilities-levelup.xml.njk', templateVars);
+        } catch (error) {
+            console.warn(`Failed to render level-up ability template for ${trimmedName}:`, error?.message || error);
+            return;
+        }
+
+        let parsedTemplate;
+        try {
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            console.warn(`Failed to parse level-up ability template for ${trimmedName}:`, error?.message || error);
+            return;
+        }
+
+        const systemPrompt = parsedTemplate.systemPrompt;
+        const generationPrompt = parsedTemplate.generationPrompt;
+        if (!systemPrompt || !generationPrompt) {
+            console.warn(`Level-up ability template missing prompts for ${trimmedName}.`);
+            return;
+        }
+
+        const endpoint = config?.ai?.endpoint;
+        const apiKey = config?.ai?.apiKey;
+        const model = config?.ai?.model;
+        if (!endpoint || !apiKey || !model) {
+            console.warn('AI configuration missing; skipping level-up ability generation.');
+            return;
+        }
+
+        const chatEndpoint = endpoint.endsWith('/')
+            ? `${endpoint}chat/completions`
+            : `${endpoint}/chat/completions`;
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 1600,
+            temperature: config.ai.temperature || 0.7
+        };
+
+        const requestStart = Date.now();
+        let abilityResponse = '';
+        try {
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 60000
+            });
+            if (!response.data?.choices?.length) {
+                console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
+                return;
+            }
+            abilityResponse = response.data.choices[0]?.message?.content || '';
+        } catch (error) {
+            console.warn(`Level-up ability generation request failed for ${trimmedName}:`, error?.message || error);
+            return;
+        }
+        const durationSeconds = (Date.now() - requestStart) / 1000;
+
+        try {
+            const logsDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+            }
+            const timestamp = Date.now();
+            const safeId = typeof character.id === 'string' ? character.id.replace(/[^a-zA-Z0-9_-]/g, '_') : 'unknown';
+            const safeName = trimmedName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
+            const logFilename = `levelup_abilities_${timestamp}_${safeId}_${safeName}.log`;
+            const logPath = path.join(logsDir, logFilename);
+            const logLines = [
+                formatDurationLine(durationSeconds),
+                `Character: ${trimmedName}`,
+                `Previous Level: ${Number.isFinite(priorLevel) ? priorLevel : 'unknown'}`,
+                `New Level: ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}`,
+                '=== LEVEL-UP ABILITIES SYSTEM PROMPT ===',
+                systemPrompt,
+                '',
+                '=== LEVEL-UP ABILITIES GENERATION PROMPT ===',
+                generationPrompt,
+                '',
+                '=== LEVEL-UP ABILITIES RESPONSE ===',
+                abilityResponse,
+                ''
+            ];
+            fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+        } catch (logError) {
+            console.warn(`Failed to log level-up abilities prompt for ${trimmedName}:`, logError?.message || logError);
+        }
+
+        const assignments = parseNpcAbilityAssignments(abilityResponse);
+        if (!assignments || !(assignments instanceof Map)) {
+            console.warn(`Unable to parse level-up abilities for ${trimmedName}.`);
+            return;
+        }
+
+        const normalizedName = trimmedName.toLowerCase();
+        const assignmentEntry = assignments.get(normalizedName);
+        if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || assignmentEntry.abilities.length === 0) {
+            console.warn(`No ability assignments found for ${trimmedName} in level-up response.`);
+            return;
+        }
+
+        const currentAbilities = typeof character.getAbilities === 'function'
+            ? character.getAbilities()
+            : [];
+        const existingNames = new Set(
+            currentAbilities
+                .map(ability => typeof ability.name === 'string' ? ability.name.trim().toLowerCase() : null)
+                .filter(Boolean)
+        );
+
+        const filteredAbilities = assignmentEntry.abilities.filter(ability => {
+            if (!ability || typeof ability.name !== 'string') {
+                return false;
+            }
+            const abilityName = ability.name.trim();
+            if (!abilityName) {
+                return false;
+            }
+            const abilityLevel = Number(ability.level);
+            if (Number.isFinite(currentLevel) && Number.isFinite(abilityLevel) && abilityLevel > currentLevel) {
+                return false;
+            }
+            return true;
+        });
+
+        const additions = [];
+        for (const ability of filteredAbilities) {
+            const abilityName = ability.name.trim();
+            const nameKey = abilityName.toLowerCase();
+            if (existingNames.has(nameKey)) {
+                continue;
+            }
+            const abilityLevel = Number(ability.level);
+            if (!Number.isFinite(abilityLevel) || abilityLevel <= 0) {
+                ability.level = Number.isFinite(currentLevel) ? currentLevel : 1;
+            }
+            additions.push({ ...ability, name: abilityName });
+            existingNames.add(nameKey);
+        }
+
+        if (!additions.length) {
+            console.log(`Level-up abilities for ${trimmedName} produced no new entries.`);
+            return;
+        }
+
+        const mergedAbilities = [...currentAbilities, ...additions];
+        mergedAbilities.sort((a, b) => {
+            const levelA = Number(a.level) || 0;
+            const levelB = Number(b.level) || 0;
+            if (levelA !== levelB) {
+                return levelA - levelB;
+            }
+            const nameA = typeof a.name === 'string' ? a.name.toLowerCase() : '';
+            const nameB = typeof b.name === 'string' ? b.name.toLowerCase() : '';
+            return nameA.localeCompare(nameB);
+        });
+
+        if (typeof character.setAbilities === 'function') {
+            character.setAbilities(mergedAbilities);
+            const addedCount = additions.length;
+            const levelLabel = Number.isFinite(currentLevel) ? currentLevel : character.level;
+            console.log(`🎓 Added ${addedCount} new ability${addedCount === 1 ? '' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
+        }
+    })();
+
+    levelUpAbilityPromises.set(characterKey, abilityPromise);
+
+    try {
+        await abilityPromise;
+    } finally {
+        levelUpAbilityPromises.delete(characterKey);
+    }
+
+    return abilityPromise;
 }
 
 function parseInventoryItems(xmlContent) {
@@ -9248,6 +9649,7 @@ const apiScope = {
     queueLocationThingImages,
     requestNpcAbilityAssignments,
     applyNpcAbilities,
+    generateLevelUpAbilitiesForCharacter,
     getActiveSettingSnapshot,
     buildNewGameDefaults,
     getSuggestedPlayerLevel,
@@ -9281,6 +9683,7 @@ const apiScope = {
     pendingRegionStubs,
     pendingLocationImages,
     npcGenerationPromises,
+    levelUpAbilityPromises,
     stubExpansionPromises,
     imageJobs,
     jobQueue,
@@ -9323,8 +9726,7 @@ function createDefaultPlayer() {
             name: 'Adventurer',
             description: 'A mysterious adventurer.',
             level: 1,
-            health: 25,
-            maxHealth: 25,
+            health: -1,
             attributes: {
                 strength: 10,
                 dexterity: 10,

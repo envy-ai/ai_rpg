@@ -94,6 +94,309 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         }
 
+        const randomEventCache = {
+            common: null,
+            rare: null
+        };
+
+        function formatDurationLabel(durationSeconds) {
+            if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds)) {
+                return `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`;
+            }
+            return '=== API CALL DURATION: N/A ===';
+        }
+
+        function loadRandomEventLines(type) {
+            const normalized = type === 'rare' ? 'rare' : 'common';
+            if (Array.isArray(randomEventCache[normalized])) {
+                return randomEventCache[normalized];
+            }
+
+            try {
+                const baseDir = path.resolve(__dirname);
+                const filePath = path.join(baseDir, 'random_events', `${normalized}.txt`);
+                if (!fs.existsSync(filePath)) {
+                    console.warn(`Random event list not found for type "${normalized}": ${filePath}`);
+                    randomEventCache[normalized] = [];
+                    return randomEventCache[normalized];
+                }
+
+                const contents = fs.readFileSync(filePath, 'utf8');
+                const lines = contents
+                    .split(/\r?\n/)
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0 && !line.startsWith('#'));
+
+                randomEventCache[normalized] = lines;
+                return lines;
+            } catch (error) {
+                console.warn(`Failed to load random event list for type "${normalized}":`, error.message);
+                randomEventCache[normalized] = [];
+                return randomEventCache[normalized];
+            }
+        }
+
+        function pickRandomEventSeed(type) {
+            const lines = loadRandomEventLines(type);
+            if (!lines.length) {
+                return null;
+            }
+            const index = Math.floor(Math.random() * lines.length);
+            return lines[index];
+        }
+
+        function parseRandomEventResponse(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return null;
+            }
+
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+            } catch (error) {
+                console.warn('Failed to parse random event response XML:', error.message);
+                return null;
+            }
+
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return null;
+            }
+
+            const root = doc.getElementsByTagName('eventResponse')[0] || doc.documentElement;
+            if (!root) {
+                return null;
+            }
+
+            const textNode = root.getElementsByTagName('eventText')[0];
+            const attackNode = root.getElementsByTagName('isAttack')[0];
+
+            const eventText = textNode && typeof textNode.textContent === 'string'
+                ? textNode.textContent.trim()
+                : '';
+            const isAttack = attackNode && typeof attackNode.textContent === 'string'
+                ? /^true$/i.test(attackNode.textContent.trim())
+                : false;
+
+            return {
+                eventText,
+                isAttack
+            };
+        }
+
+        function logRandomEventPrompt({ rarity, eventText, systemPrompt, generationPrompt, responseText, durationSeconds }) {
+            try {
+                const logsDir = path.join(baseDir, 'logs');
+                if (!fs.existsSync(logsDir)) {
+                    fs.mkdirSync(logsDir, { recursive: true });
+                }
+
+                const timestamp = Date.now();
+                const safeSeed = (eventText || '')
+                    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                    .replace(/_{2,}/g, '_')
+                    .replace(/^_+|_+$/g, '')
+                    .slice(0, 40);
+                const filename = `random_event_${rarity || 'common'}_${timestamp}${safeSeed ? `_${safeSeed}` : ''}.log`;
+                const logPath = path.join(logsDir, filename);
+
+                const parts = [
+                    formatDurationLabel(durationSeconds),
+                    `Rarity: ${rarity || 'common'}`,
+                    `Seed Event: ${eventText || '(unknown)'}`,
+                    '=== RANDOM EVENT SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== RANDOM EVENT GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== RANDOM EVENT RESPONSE ===',
+                    responseText || '(none)',
+                    ''
+                ];
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log random event prompt:', error.message);
+            }
+        }
+
+        async function generateRandomEventNarrative({ eventText, rarity, locationOverride = null, stream = null } = {}) {
+            if (!eventText || !eventText.trim()) {
+                return null;
+            }
+
+            const trimmedEventText = eventText.trim();
+
+            if (stream && stream.isEnabled) {
+                stream.status('random_event:processing', {
+                    rarity: rarity || 'common',
+                    seed: trimmedEventText
+                });
+            }
+
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'random-event',
+                    eventText: trimmedEventText
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Random event template missing prompts; skipping.');
+                    return null;
+                }
+
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+
+                const endpoint = config?.ai?.endpoint;
+                const apiKey = config?.ai?.apiKey;
+                const model = config?.ai?.model;
+
+                if (!endpoint || !apiKey || !model) {
+                    console.warn('AI configuration missing; unable to run random event prompt.');
+                    return null;
+                }
+
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`;
+
+                const requestData = {
+                    model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 400,
+                    temperature: typeof parsedTemplate.temperature === 'number'
+                        ? parsedTemplate.temperature
+                        : (config.ai.temperature || 0.7)
+                };
+
+                const start = Date.now();
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: (config.ai.baseTimeoutSeconds ? config.ai.baseTimeoutSeconds * 1000 : 60000)
+                });
+                const durationSeconds = (Date.now() - start) / 1000;
+
+                const rawResponse = response.data?.choices?.[0]?.message?.content || '';
+                logRandomEventPrompt({
+                    rarity,
+                    eventText: trimmedEventText,
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: rawResponse,
+                    durationSeconds
+                });
+
+                const parsedResponse = parseRandomEventResponse(rawResponse);
+                const narrativeText = (parsedResponse?.eventText || rawResponse || '').trim();
+                const isAttack = Boolean(parsedResponse?.isAttack);
+
+                if (!narrativeText) {
+                    return null;
+                }
+
+                if (Array.isArray(chatHistory)) {
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: narrativeText,
+                        timestamp: new Date().toISOString(),
+                        actor: 'Random Event',
+                        randomEvent: true,
+                        rarity: rarity || 'common'
+                    });
+                }
+
+                let eventChecks = null;
+                try {
+                    eventChecks = await Events.runEventChecks({ textToCheck: narrativeText, stream });
+                } catch (eventCheckError) {
+                    console.warn('Failed to apply random event checks:', eventCheckError.message);
+                }
+
+                const summary = {
+                    type: 'random-event',
+                    randomEvent: true,
+                    rarity: rarity || 'common',
+                    seedText: trimmedEventText,
+                    response: narrativeText,
+                    rawResponse,
+                    isAttack,
+                    timestamp: new Date().toISOString(),
+                    eventChecks: eventChecks?.html || null,
+                    events: eventChecks?.structured || null
+                };
+
+                if (Array.isArray(eventChecks?.experienceAwards) && eventChecks.experienceAwards.length) {
+                    summary.experienceAwards = eventChecks.experienceAwards;
+                }
+                if (Array.isArray(eventChecks?.currencyChanges) && eventChecks.currencyChanges.length) {
+                    summary.currencyChanges = eventChecks.currencyChanges;
+                }
+                if (Array.isArray(eventChecks?.environmentalDamageEvents) && eventChecks.environmentalDamageEvents.length) {
+                    summary.environmentalDamageEvents = eventChecks.environmentalDamageEvents;
+                }
+
+                return summary;
+            } finally {
+                if (stream && stream.isEnabled) {
+                    stream.status('random_event:complete', {
+                        rarity: rarity || 'common',
+                        seed: eventText || ''
+                    });
+                }
+            }
+        }
+
+        async function maybeTriggerRandomEvent({ stream = null, locationOverride = null } = {}) {
+            const frequencyConfig = config?.random_event_frequency || {};
+            const commonChance = Number(frequencyConfig.common);
+            const rareChance = Number(frequencyConfig.rare);
+
+            let rarity = null;
+            if (Number.isFinite(commonChance) && commonChance > 0 && Math.random() < commonChance) {
+                rarity = 'common';
+            } else if (Number.isFinite(rareChance) && rareChance > 0 && Math.random() < rareChance) {
+                rarity = 'rare';
+            }
+
+            if (!rarity) {
+                return null;
+            }
+
+            const seedText = pickRandomEventSeed(rarity);
+            if (!seedText) {
+                console.warn(`Random event triggered, but no ${rarity} entries were available.`);
+                return null;
+            }
+
+            return generateRandomEventNarrative({
+                eventText: seedText,
+                rarity,
+                locationOverride,
+                stream
+            });
+        }
+
         function parseAttackCheckResponse(responseText) {
             if (!responseText || typeof responseText !== 'string') {
                 return null;
@@ -1923,6 +2226,15 @@ module.exports = function registerApiRoutes(scope) {
                         count: results.length
                     });
                 }
+
+                try {
+                    const randomEventResult = await maybeTriggerRandomEvent({ stream, locationOverride: location });
+                    if (randomEventResult) {
+                        results.push(randomEventResult);
+                    }
+                } catch (randomEventError) {
+                    console.warn('Failed to process random event:', randomEventError.message);
+                }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
                 if (stream && stream.isEnabled) {
@@ -3449,8 +3761,7 @@ module.exports = function registerApiRoutes(scope) {
                     name: name.trim(),
                     description: description ? description.trim() : '',
                     level: level && !isNaN(level) ? Math.max(1, Math.min(20, parseInt(level))) : 1,
-                    health: health && !isNaN(health) ? Math.max(1, parseInt(health)) : 25,
-                    maxHealth: maxHealth && !isNaN(maxHealth) ? Math.max(1, parseInt(maxHealth)) : 25,
+                    health: -1,
                     attributes: {}
                 };
 
@@ -5554,8 +5865,7 @@ module.exports = function registerApiRoutes(scope) {
                     class: resolvedPlayerClass,
                     race: resolvedPlayerRace,
                     level: startingPlayerLevel,
-                    health: 25,
-                    maxHealth: 25,
+                    health: -1,
                     currency: resolvedStartingCurrency,
                     attributes: {
                         strength: 10,

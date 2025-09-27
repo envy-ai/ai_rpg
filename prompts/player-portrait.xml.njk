@@ -14,7 +14,11 @@ You are an AI Player Portrait Generator image prompt for a fantasy RPG world. Yo
 
 Generate a prompt for a detailed player portrait image based on the following character description:
 
+Class: {{ characterClass }}
+Race: {{ characterRace }}
 {{ characterDescription | replace('\n', '\n    ') }}
+
+Do not specify an art style.
 
 </generationPrompt>
 </template>

@@ -1,0 +1,21 @@
+An NPC does something clumsy.
+Two NPCs banter.
+Two NPCs get into an argument.
+An NPC grumbles to themselves about having a bad day.
+An NPC approaches the player to make friends.
+A new NPC arrives.
+Two NPCs have a conversation.
+An NPC complains about something unimportant.
+An NPC picks up an object from the scene.
+An NPC sets down an object.
+An NPC accidentally drops an object and doesn't realize it.
+The lights flicker, or, if outside, a storm approaches.
+An NPC bumps into the player.
+A courier appears with a message for the player.
+A courier appears with a random item for the player.
+An NPC is distracted by something.
+The player notices something interesting.
+The player notices an exit they hadn't seen before.
+The player finds a valuable item that's not already listed in the scene.
+A harmless random event happens, at the AI GM's discretion.
+Someone arrives and tells everyone about something important or interesting that just happened.

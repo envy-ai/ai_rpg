@@ -1,0 +1,9 @@
+An NPC (a guard or security person if possible) gets shot in the knee.
+A hostile NPC appears and threatens the player.
+Several hostile NPCs appear and start raiding.
+An NPC picks another NPC's pocket.
+An object is destroyed (come up with a reason for this).
+Something happens that causes a small amount of damage to the player.
+A hostile NPC appears and attacks another NPC.
+A monster appears and attacks.
+Something supernatural happens.
