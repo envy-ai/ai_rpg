@@ -43,6 +43,8 @@ class Player {
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
     static #needBarDefinitions = null;
+    static #NEED_BAR_SMALL_FRACTION = 0.1;
+    static #NEED_BAR_LARGE_FRACTION = 0.25;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -52,6 +54,263 @@ class Player {
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
+
+    static #normalizeNeedBarChangeList(source) {
+        if (!source) {
+            return [];
+        }
+
+        const items = [];
+        const pushItem = (value) => {
+            if (typeof value !== 'string') {
+                return;
+            }
+            const trimmed = value.trim();
+            if (trimmed) {
+                items.push(trimmed);
+            }
+        };
+
+        if (Array.isArray(source)) {
+            source.forEach(pushItem);
+        } else if (typeof source === 'string') {
+            source.split(/[,\n;]/).forEach(pushItem);
+        } else if (typeof source === 'object' && source !== null) {
+            Object.values(source).forEach(pushItem);
+        }
+
+        return items;
+    }
+
+    static #buildNeedBarDefinition(id, config = {}) {
+        if (!id) {
+            return null;
+        }
+
+        const name = typeof config.name === 'string' ? config.name : id;
+        const description = typeof config.description === 'string' ? config.description : '';
+        const icon = typeof config.icon === 'string' ? config.icon : '';
+        const color = typeof config.color === 'string' ? config.color : '';
+        const min = Number.isFinite(Number(config.min)) ? Number(config.min) : 0;
+        const max = Number.isFinite(Number(config.max)) ? Number(config.max) : 100;
+        const changePerTurn = Number.isFinite(Number(config.change_per_turn)) ? Number(config.change_per_turn) : 0;
+        const relativeToLevel = Boolean(config.relative_to_level);
+        const playerOnly = Boolean(config.player_only);
+        const relatedAttribute = typeof config.related_attribute === 'string' ? config.related_attribute : null;
+        const initialValue = Number.isFinite(Number(config.initial)) ? Number(config.initial) : null;
+
+        const effectThresholds = [];
+        if (config.effect_thresholds && typeof config.effect_thresholds === 'object') {
+            for (const [thresholdKey, thresholdConfig] of Object.entries(config.effect_thresholds)) {
+                const threshold = Number(thresholdKey);
+                if (!Number.isFinite(threshold)) {
+                    continue;
+                }
+                const thresholdName = typeof thresholdConfig?.name === 'string' ? thresholdConfig.name : '';
+                const thresholdEffect = typeof thresholdConfig?.effect === 'string' ? thresholdConfig.effect : '';
+                effectThresholds.push({
+                    threshold,
+                    name: thresholdName,
+                    effect: thresholdEffect
+                });
+            }
+        }
+        effectThresholds.sort((a, b) => a.threshold - b.threshold);
+
+        return {
+            id,
+            name,
+            description,
+            icon,
+            color,
+            min,
+            max,
+            changePerTurn,
+            relativeToLevel,
+            playerOnly,
+            relatedAttribute,
+            initialValue,
+            effectThresholds,
+            increases: {
+                small: this.#normalizeNeedBarChangeList(config.small_increase),
+                large: this.#normalizeNeedBarChangeList(config.large_increase),
+                fill: this.#normalizeNeedBarChangeList(config.fill_completely)
+            },
+            decreases: {
+                small: this.#normalizeNeedBarChangeList(config.small_decrease),
+                large: this.#normalizeNeedBarChangeList(config.large_decrease)
+            }
+        };
+    }
+
+    static #cloneNeedBarDefinition(definition) {
+        if (!definition) {
+            return null;
+        }
+
+        return {
+            ...definition,
+            effectThresholds: Array.isArray(definition.effectThresholds)
+                ? definition.effectThresholds.map(entry => ({ ...entry }))
+                : [],
+            increases: {
+                small: Array.isArray(definition.increases?.small) ? [...definition.increases.small] : [],
+                large: Array.isArray(definition.increases?.large) ? [...definition.increases.large] : [],
+                fill: Array.isArray(definition.increases?.fill) ? [...definition.increases.fill] : []
+            },
+            decreases: {
+                small: Array.isArray(definition.decreases?.small) ? [...definition.decreases.small] : [],
+                large: Array.isArray(definition.decreases?.large) ? [...definition.decreases.large] : []
+            },
+            currentThreshold: definition.currentThreshold
+                ? { ...definition.currentThreshold }
+                : null
+        };
+    }
+
+    static #formatNeedBarForContext(definition, { includeValue = true } = {}) {
+        if (!definition) {
+            return null;
+        }
+
+        const ensureList = (input) => {
+            if (!input) {
+                return [];
+            }
+            if (Array.isArray(input)) {
+                return input
+                    .map(item => {
+                        const asString = typeof item === 'string' ? item : String(item ?? '');
+                        return asString.trim();
+                    })
+                    .filter(Boolean);
+            }
+            if (typeof input === 'string') {
+                return input
+                    .split(/[\r\n,;]/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean);
+            }
+            if (typeof input === 'object') {
+                return Object.values(input)
+                    .map(item => {
+                        const asString = typeof item === 'string' ? item : String(item ?? '');
+                        return asString.trim();
+                    })
+                    .filter(Boolean);
+            }
+            return [];
+        };
+
+        const effectThresholds = Array.isArray(definition.effectThresholds)
+            ? definition.effectThresholds.map(entry => ({
+                threshold: Number.isFinite(entry?.threshold) ? Number(entry.threshold) : null,
+                name: typeof entry?.name === 'string' ? entry.name : '',
+                effect: typeof entry?.effect === 'string' ? entry.effect : ''
+            })).filter(entry => entry.threshold !== null || entry.name || entry.effect)
+            : [];
+
+        const currentThreshold = includeValue && definition.currentThreshold
+            ? {
+                threshold: Number.isFinite(definition.currentThreshold.threshold)
+                    ? Number(definition.currentThreshold.threshold)
+                    : null,
+                name: typeof definition.currentThreshold.name === 'string'
+                    ? definition.currentThreshold.name
+                    : '',
+                effect: typeof definition.currentThreshold.effect === 'string'
+                    ? definition.currentThreshold.effect
+                    : ''
+            }
+            : null;
+
+        const normalizeNumber = (value) => {
+            if (Number.isFinite(value)) {
+                return Number(value);
+            }
+            if (Number.isFinite(Number(value))) {
+                return Number(value);
+            }
+            return null;
+        };
+
+        const formatValue = includeValue ? normalizeNumber(definition.value) : null;
+
+        return {
+            id: typeof definition.id === 'string' ? definition.id : null,
+            name: typeof definition.name === 'string' ? definition.name : (definition.id || 'Unknown'),
+            description: typeof definition.description === 'string' ? definition.description : '',
+            playerOnly: Boolean(definition.playerOnly),
+            relatedAttribute: typeof definition.relatedAttribute === 'string'
+                ? definition.relatedAttribute
+                : null,
+            changePerTurn: Number.isFinite(definition.changePerTurn)
+                ? Number(definition.changePerTurn)
+                : 0,
+            relativeToLevel: Boolean(definition.relativeToLevel),
+            min: normalizeNumber(definition.min),
+            max: normalizeNumber(definition.max),
+            initialValue: normalizeNumber(definition.initialValue),
+            value: formatValue,
+            currentThreshold,
+            effectThresholds,
+            increases: {
+                small: ensureList(definition.increases?.small),
+                large: ensureList(definition.increases?.large),
+                fill: ensureList(definition.increases?.fill)
+            },
+            decreases: {
+                small: ensureList(definition.decreases?.small),
+                large: ensureList(definition.decreases?.large)
+            }
+        };
+    }
+
+    static #resolveNeedBarThreshold(effectThresholds, value) {
+        if (!Array.isArray(effectThresholds) || effectThresholds.length === 0) {
+            return null;
+        }
+
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+
+        let resolved = null;
+        for (const entry of effectThresholds) {
+            if (!entry || !Number.isFinite(entry.threshold)) {
+                continue;
+            }
+            if (value >= entry.threshold && (!resolved || entry.threshold >= resolved.threshold)) {
+                resolved = entry;
+            }
+        }
+
+        return resolved ? { ...resolved } : null;
+    }
+
+    static #applyNeedBarValue(bar, candidateValue) {
+        if (!bar) {
+            return null;
+        }
+
+        const min = Number.isFinite(bar.min) ? bar.min : 0;
+        const max = Number.isFinite(bar.max) ? bar.max : null;
+        let resolvedValue = Number.isFinite(candidateValue) ? candidateValue : bar.value;
+        if (!Number.isFinite(resolvedValue)) {
+            resolvedValue = Number.isFinite(max) ? max : min;
+        }
+
+        if (Number.isFinite(min)) {
+            resolvedValue = Math.max(min, resolvedValue);
+        }
+        if (Number.isFinite(max)) {
+            resolvedValue = Math.min(max, resolvedValue);
+        }
+
+        bar.value = resolvedValue;
+        bar.currentThreshold = this.#resolveNeedBarThreshold(bar.effectThresholds, resolvedValue);
+        return resolvedValue;
+    }
 
     static get gearSlotDefinitions() {
         if (!this.#gearSlotDefinitions) {
@@ -152,14 +411,18 @@ class Player {
                 const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
                 const normalized = {};
                 for (const [id, config] of Object.entries(source)) {
-                    if (!id || typeof config !== 'object' || config === null) {
+                    if (!id) {
                         continue;
                     }
                     const trimmedId = id.trim();
-                    if (!trimmedId) {
+                    if (!trimmedId || typeof config !== 'object' || config === null) {
                         continue;
                     }
-                    normalized[trimmedId] = { ...config };
+                    const definition = this.#buildNeedBarDefinition(trimmedId, config);
+                    if (!definition) {
+                        continue;
+                    }
+                    normalized[trimmedId] = Object.freeze(this.#cloneNeedBarDefinition(definition));
                 }
                 this.#needBarDefinitions = normalized;
             } catch (error) {
@@ -172,6 +435,20 @@ class Player {
 
     static get needBars() {
         return this.needBarDefinitions;
+    }
+
+    static getNeedBarDefinitionsForContext() {
+        const definitions = this.needBarDefinitions || {};
+        const list = [];
+        for (const definition of Object.values(definitions)) {
+            const cloned = this.#cloneNeedBarDefinition(definition);
+            const formatted = this.#formatNeedBarForContext(cloned, { includeValue: false });
+            if (formatted) {
+                list.push(formatted);
+            }
+        }
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        return list;
     }
 
     static getAll() {
@@ -428,8 +705,8 @@ class Player {
 
         const initialMaxHealth = this.#calculateBaseHealth();
         this.#maxHealth = initialMaxHealth;
-        const providedHealth = Number.isFinite(options.health) ? Math.max(0, Math.floor(options.health)) : initialMaxHealth;
-        this.#health = Math.min(providedHealth, initialMaxHealth);
+        //const providedHealth = Number.isFinite(options.health) ? Math.max(0, Math.floor(options.health)) : initialMaxHealth;
+        this.#health = initialMaxHealth;
 
         // Player identification
         this.#name = options.name ?? "Unnamed Player";
@@ -1607,16 +1884,259 @@ class Player {
         }
     }
 
-    getNeedBars() {
+    getNeedBars(options = {}) {
+        const { includePlayerOnly = true } = options;
         if (!this.#needBars || !(this.#needBars instanceof Map)) {
             return [];
         }
-        return Array.from(this.#needBars.values()).map(bar => ({ ...bar }));
+
+        const results = [];
+        for (const bar of this.#needBars.values()) {
+            if (!includePlayerOnly && bar.playerOnly) {
+                continue;
+            }
+            results.push(Player.#cloneNeedBarDefinition({
+                ...bar,
+                currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
+            }));
+        }
+        return results;
     }
 
     setNeedBars(needBars = []) {
         this.#initializeNeedBars(needBars);
         return this.getNeedBars();
+    }
+
+    applyNeedBarTurnChange(multiplier = 1) {
+        if (!this.#needBars || !(this.#needBars instanceof Map) || !Number.isFinite(multiplier)) {
+            return [];
+        }
+
+        const adjustments = [];
+        for (const [id, bar] of this.#needBars.entries()) {
+            if (!bar) {
+                continue;
+            }
+            const rate = Number.isFinite(bar.changePerTurn) ? bar.changePerTurn : 0;
+            if (rate === 0) {
+                continue;
+            }
+
+            const delta = rate * multiplier;
+            const previousValue = bar.value;
+            Player.#applyNeedBarValue(bar, previousValue + delta);
+
+            if (bar.value !== previousValue) {
+                adjustments.push({
+                    id,
+                    name: typeof bar.name === 'string' ? bar.name : id,
+                    previousValue,
+                    newValue: bar.value,
+                    delta,
+                    min: Number.isFinite(bar.min) ? bar.min : null,
+                    max: Number.isFinite(bar.max) ? bar.max : null,
+                    changePerTurn: rate,
+                    playerOnly: Boolean(bar.playerOnly),
+                    currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
+                });
+            }
+        }
+
+        if (adjustments.length) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return adjustments;
+    }
+
+    getNeedBarsForContext(options = {}) {
+        const includePlayerOnly = options.includePlayerOnly !== undefined
+            ? Boolean(options.includePlayerOnly)
+            : !this.#isNPC;
+        return this.getNeedBars({ includePlayerOnly });
+    }
+
+    getNeedBarPromptContext(options = {}) {
+        const includePlayerOnly = options.includePlayerOnly !== undefined
+            ? Boolean(options.includePlayerOnly)
+            : !this.#isNPC;
+        const bars = this.getNeedBars({ includePlayerOnly }) || [];
+        const formatted = [];
+        for (const bar of bars) {
+            const snapshot = Player.#cloneNeedBarDefinition(bar);
+            const mapped = Player.#formatNeedBarForContext(snapshot, { includeValue: true });
+            if (mapped) {
+                formatted.push(mapped);
+            }
+        }
+        formatted.sort((a, b) => a.name.localeCompare(b.name));
+        return formatted;
+    }
+
+    #resolveNeedBarByIdentifier(identifier) {
+        if (!this.#needBars || !(this.#needBars instanceof Map)) {
+            return null;
+        }
+        if (typeof identifier !== 'string') {
+            return null;
+        }
+
+        const trimmed = identifier.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        if (this.#needBars.has(trimmed)) {
+            return this.#needBars.get(trimmed);
+        }
+
+        const lowered = trimmed.toLowerCase();
+        for (const [id, bar] of this.#needBars.entries()) {
+            if (id.toLowerCase() === lowered) {
+                return bar;
+            }
+            if (bar && typeof bar.name === 'string' && bar.name.trim().toLowerCase() === lowered) {
+                return bar;
+            }
+        }
+
+        return null;
+    }
+
+    static #resolveNeedBarMagnitudeDelta(bar, magnitude) {
+        if (!bar) {
+            return 0;
+        }
+
+        const magnitudeNormalized = typeof magnitude === 'string' ? magnitude.trim().toLowerCase() : '';
+        if (!magnitudeNormalized) {
+            return 0;
+        }
+
+        const range = (Number.isFinite(bar.max) && Number.isFinite(bar.min))
+            ? Math.max(1, bar.max - bar.min)
+            : 100;
+
+        const resolveAmount = (fraction) => {
+            if (!Number.isFinite(fraction) || fraction <= 0) {
+                return 0;
+            }
+            return Math.max(1, Math.round(range * fraction));
+        };
+
+        switch (magnitudeNormalized) {
+            case 'small':
+            case 'minor':
+            case 'light':
+                return resolveAmount(this.#NEED_BAR_SMALL_FRACTION);
+            case 'large':
+            case 'major':
+            case 'big':
+            case 'heavy':
+                return resolveAmount(this.#NEED_BAR_LARGE_FRACTION);
+            default:
+                return 0;
+        }
+    }
+
+    applyNeedBarChange(identifier, options = {}) {
+        if (!identifier) {
+            return null;
+        }
+
+        const bar = this.#resolveNeedBarByIdentifier(identifier);
+        if (!bar) {
+            return null;
+        }
+
+        const directionRaw = typeof options.direction === 'string' ? options.direction.trim().toLowerCase() : '';
+        let direction = null;
+        if (['increase', 'gain', 'raise', 'restore', 'boost', 'refill'].includes(directionRaw)) {
+            direction = 'increase';
+        } else if (['decrease', 'reduce', 'lower', 'drain', 'drop', 'deplete'].includes(directionRaw)) {
+            direction = 'decrease';
+        }
+
+        if (!direction) {
+            direction = 'increase';
+        }
+
+        const magnitudeRaw = typeof options.magnitude === 'string' ? options.magnitude.trim().toLowerCase() : '';
+        let magnitude = null;
+        if (['small', 'minor', 'light'].includes(magnitudeRaw)) {
+            magnitude = 'small';
+        } else if (['large', 'major', 'big', 'heavy'].includes(magnitudeRaw)) {
+            magnitude = 'large';
+        } else if (['fill', 'full', 'max', 'maximum'].includes(magnitudeRaw)) {
+            magnitude = 'fill';
+        } else if (magnitudeRaw) {
+            magnitude = magnitudeRaw;
+        } else {
+            magnitude = 'small';
+        }
+
+        const sanitizeReason = (reason) => {
+            if (!reason || typeof reason !== 'string') {
+                return null;
+            }
+            const trimmed = reason.trim();
+            if (!trimmed || trimmed.toLowerCase() === 'n/a') {
+                return null;
+            }
+            return trimmed;
+        };
+
+        const reason = sanitizeReason(options.reason);
+
+        const previousValue = bar.value;
+        const previousThreshold = bar.currentThreshold ? { ...bar.currentThreshold } : null;
+
+        let newValue = previousValue;
+
+        if (magnitude === 'fill') {
+            if (direction === 'increase') {
+                if (Number.isFinite(bar.max)) {
+                    newValue = bar.max;
+                }
+            } else if (direction === 'decrease') {
+                if (Number.isFinite(bar.min)) {
+                    newValue = bar.min;
+                }
+            }
+        } else {
+            const deltaAmount = Player.#resolveNeedBarMagnitudeDelta(bar, magnitude);
+            if (deltaAmount > 0) {
+                const signedDelta = direction === 'decrease' ? -deltaAmount : deltaAmount;
+                newValue = previousValue + signedDelta;
+            }
+        }
+
+        Player.#applyNeedBarValue(bar, newValue);
+
+        const delta = Number.isFinite(previousValue) && Number.isFinite(bar.value)
+            ? bar.value - previousValue
+            : null;
+
+        if (bar.value !== previousValue) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+
+        return {
+            id: bar.id,
+            name: bar.name,
+            direction,
+            magnitude,
+            reason,
+            previousValue,
+            newValue: bar.value,
+            delta,
+            min: Number.isFinite(bar.min) ? bar.min : null,
+            max: Number.isFinite(bar.max) ? bar.max : null,
+            playerOnly: Boolean(bar.playerOnly),
+            previousThreshold,
+            currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
+        };
     }
 
     #initializeNeedBars(initialData = null) {
@@ -1640,30 +2160,31 @@ class Player {
                 if (!id) {
                     continue;
                 }
-                initialLookup.set(id, value);
+                initialLookup.set(id.trim(), value);
             }
         }
 
-        for (const [rawId, config] of Object.entries(definitions)) {
-            if (!rawId || typeof config !== 'object' || config === null) {
-                continue;
-            }
-            const id = rawId.trim();
+        for (const [id, definition] of Object.entries(definitions)) {
             if (!id) {
                 continue;
             }
 
-            const isPlayerOnly = Boolean(config.player_only);
+            const normalizedId = id.trim();
+            if (!normalizedId) {
+                continue;
+            }
+
+            const isPlayerOnly = Boolean(definition.playerOnly);
             if (isPlayerOnly && this.#isNPC) {
                 continue;
             }
 
-            const minValue = Number(config.min);
-            const maxValue = Number(config.max);
-            const min = Number.isFinite(minValue) ? minValue : 0;
-            const max = Number.isFinite(maxValue) ? maxValue : 100;
+            const barDefinition = Player.#cloneNeedBarDefinition(definition);
+            if (!barDefinition) {
+                continue;
+            }
 
-            let resolved = initialLookup.has(id) ? initialLookup.get(id) : undefined;
+            let resolved = initialLookup.has(normalizedId) ? initialLookup.get(normalizedId) : undefined;
             let candidateValue = null;
             if (resolved !== undefined && resolved !== null) {
                 if (typeof resolved === 'object') {
@@ -1678,39 +2199,19 @@ class Player {
             }
 
             if (!Number.isFinite(candidateValue)) {
-                const initialConfig = Number(config.initial);
-                if (Number.isFinite(initialConfig)) {
-                    candidateValue = initialConfig;
-                } else if (Number.isFinite(max)) {
-                    candidateValue = max;
+                if (Number.isFinite(barDefinition.initialValue)) {
+                    candidateValue = barDefinition.initialValue;
+                } else if (Number.isFinite(barDefinition.max)) {
+                    candidateValue = barDefinition.max;
                 } else {
-                    candidateValue = min;
+                    candidateValue = barDefinition.min;
                 }
             }
 
-            const clampedValue = Math.max(min, Math.min(Number.isFinite(max) ? max : candidateValue, candidateValue));
+            Player.#applyNeedBarValue(barDefinition, candidateValue);
+            barDefinition.initialValue = Number.isFinite(candidateValue) ? candidateValue : barDefinition.initialValue;
 
-            const effectThresholds = typeof config.effect_thresholds === 'object' && config.effect_thresholds !== null
-                ? { ...config.effect_thresholds }
-                : {};
-
-            const bar = {
-                id,
-                name: typeof config.name === 'string' ? config.name : id,
-                description: typeof config.description === 'string' ? config.description : '',
-                icon: typeof config.icon === 'string' ? config.icon : '',
-                color: typeof config.color === 'string' ? config.color : '',
-                min,
-                max,
-                value: clampedValue,
-                changePerTurn: Number.isFinite(Number(config.change_per_turn)) ? Number(config.change_per_turn) : 0,
-                relativeToLevel: Boolean(config.relative_to_level),
-                playerOnly: isPlayerOnly,
-                relatedAttribute: typeof config.related_attribute === 'string' ? config.related_attribute : null,
-                effectThresholds
-            };
-
-            this.#needBars.set(id, bar);
+            this.#needBars.set(normalizedId, barDefinition);
         }
     }
 

@@ -226,7 +226,53 @@ class Events {
                     reason
                 };
             }).filter(Boolean),
-            defeated_enemy: raw => this.splitSemicolonEntries(raw)
+            defeated_enemy: raw => this.splitSemicolonEntries(raw),
+            needbar_change: raw => this.splitSemicolonEntries(raw).map(entry => {
+                const parts = this.extractArrowParts(entry, 4);
+                if (parts.length < 4) {
+                    return null;
+                }
+
+                const [characterRaw, barRaw, directionRaw, magnitudeRaw, ...rest] = parts;
+                const character = characterRaw ? String(characterRaw).trim() : '';
+                const needBar = barRaw ? String(barRaw).trim() : '';
+                if (!character || !needBar) {
+                    return null;
+                }
+
+                const directionCandidate = directionRaw ? String(directionRaw).trim().toLowerCase() : '';
+                let direction = null;
+                if (['increase', 'gain', 'raise', 'restore', 'boost', 'refill'].includes(directionCandidate)) {
+                    direction = 'increase';
+                } else if (['decrease', 'reduce', 'lower', 'drain', 'drop', 'deplete'].includes(directionCandidate)) {
+                    direction = 'decrease';
+                }
+                if (!direction) {
+                    direction = 'increase';
+                }
+
+                const magnitudeCandidate = magnitudeRaw ? String(magnitudeRaw).trim().toLowerCase() : '';
+                let magnitude = null;
+                if (['small', 'minor', 'light'].includes(magnitudeCandidate)) {
+                    magnitude = 'small';
+                } else if (['large', 'major', 'big', 'heavy'].includes(magnitudeCandidate)) {
+                    magnitude = 'large';
+                } else if (['fill', 'full', 'max', 'maximum'].includes(magnitudeCandidate)) {
+                    magnitude = 'fill';
+                } else {
+                    magnitude = magnitudeCandidate || 'small';
+                }
+
+                const reason = rest.length ? rest.join(' -> ').trim() : null;
+
+                return {
+                    character,
+                    needBar,
+                    direction,
+                    magnitude,
+                    reason: reason && reason.toLowerCase() !== 'n/a' ? reason : null
+                };
+            }).filter(Boolean)
         };
 
         this._handlers = {
@@ -246,7 +292,8 @@ class Events {
             currency: (entries, context) => this.handleCurrencyEvents(entries, context),
             experience_check: (entries, context) => this.handleExperienceCheckEvents(entries, context),
             environmental_status_damage: (entries, context) => this.handleEnvironmentalStatusDamageEvents(entries, context),
-            defeated_enemy: (entries, context) => this.handleDefeatedEnemyEvents(entries, context)
+            defeated_enemy: (entries, context) => this.handleDefeatedEnemyEvents(entries, context),
+            needbar_change: (entries, context) => this.handleNeedBarChangeEvents(entries, context)
         };
     }
 
@@ -1329,6 +1376,75 @@ class Events {
         }
     }
 
+    static handleNeedBarChangeEvents(entries, context = {}) {
+        const updates = Array.isArray(entries)
+            ? entries
+            : (entries === null || entries === undefined ? [] : [entries]);
+
+        if (!updates.length) {
+            return;
+        }
+
+        const { findActorByName } = this.deps;
+
+        if (!Array.isArray(context.needBarChanges)) {
+            context.needBarChanges = [];
+        }
+
+        const resolveActor = (name) => {
+            if (!name || typeof name !== 'string') {
+                return null;
+            }
+            let actor = findActorByName ? findActorByName(name) : null;
+            if (!actor && this.currentPlayer) {
+                const normalized = name.trim().toLowerCase();
+                if (['player', 'the player', 'you', 'self'].includes(normalized)) {
+                    actor = this.currentPlayer;
+                }
+            }
+            return actor;
+        };
+
+        for (const entry of updates) {
+            if (!entry || !entry.character || !entry.needBar) {
+                continue;
+            }
+
+            const actor = resolveActor(entry.character);
+            if (!actor || typeof actor.applyNeedBarChange !== 'function') {
+                continue;
+            }
+
+            const adjustment = actor.applyNeedBarChange(entry.needBar, {
+                direction: entry.direction,
+                magnitude: entry.magnitude,
+                reason: entry.reason
+            });
+
+            if (!adjustment) {
+                continue;
+            }
+
+            context.needBarChanges.push({
+                actorId: actor.id || null,
+                actorName: actor.name || entry.character,
+                needBarId: adjustment.id || entry.needBar,
+                needBarName: adjustment.name || entry.needBar,
+                direction: adjustment.direction,
+                magnitude: adjustment.magnitude,
+                previousValue: adjustment.previousValue,
+                newValue: adjustment.newValue,
+                delta: adjustment.delta,
+                reason: adjustment.reason || entry.reason || null,
+                playerOnly: adjustment.playerOnly,
+                min: adjustment.min,
+                max: adjustment.max,
+                previousThreshold: adjustment.previousThreshold,
+                currentThreshold: adjustment.currentThreshold
+            });
+        }
+    }
+
     static handleExperienceCheckEvents(entries, context = {}) {
         const items = Array.isArray(entries)
             ? entries
@@ -1699,6 +1815,7 @@ class Events {
             let experienceAwards = [];
             let currencyChanges = [];
             let environmentalDamageEvents = [];
+            let needBarChanges = [];
             if (structured) {
                 if (allowEnvironmentalEffects === false) {
                     if (structured.parsed && Array.isArray(structured.parsed.environmental_status_damage)) {
@@ -1728,6 +1845,9 @@ class Events {
                     if (Array.isArray(outcomeContext?.environmentalDamageEvents) && outcomeContext.environmentalDamageEvents.length) {
                         environmentalDamageEvents = outcomeContext.environmentalDamageEvents;
                     }
+                    if (Array.isArray(outcomeContext?.needBarChanges) && outcomeContext.needBarChanges.length) {
+                        needBarChanges = outcomeContext.needBarChanges;
+                    }
                 } catch (applyError) {
                     console.warn('Failed to apply event outcomes:', applyError.message);
                 }
@@ -1740,7 +1860,8 @@ class Events {
                 structured,
                 experienceAwards,
                 currencyChanges,
-                environmentalDamageEvents
+                environmentalDamageEvents,
+                needBarChanges
             };
         } catch (error) {
             console.warn('Event check execution failed:', error.message);

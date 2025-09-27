@@ -8,7 +8,11 @@ Character acting:
 {{ actionText }}
 </playerAction>
 
-<task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability?</task>
+<task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability?
+
+Note: For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors.
+
+</task>
 
 Format your answer as follows:
 
@@ -31,4 +35,6 @@ or
   </defenderInfo>
   <ability>N/A or name of the ability used</ability>
   <weapon>N/A or name of the weapon used (barehanded if none equipped or specified in the playerAction)</weapon>
+  <circumstanceModifier>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</circumstanceModifier>
+  <circumstanceModifierReason>Brief explanation of the circumstance modifier, N/A if 0</circumstanceModifierReason>
 </attack>

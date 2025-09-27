@@ -645,6 +645,113 @@ class AIRPGChat {
         });
     }
 
+    addNeedBarChanges(changes) {
+        if (!Array.isArray(changes) || !changes.length) {
+            return;
+        }
+
+        const items = changes.filter(Boolean);
+        if (!items.length) {
+            return;
+        }
+
+        const capitalize = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return '';
+            }
+            return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+        };
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary needbar-change';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🧪 Need Bar Update';
+
+        const contentDiv = document.createElement('div');
+        const list = document.createElement('ul');
+
+        items.forEach(change => {
+            const actorName = change.actorName || change.actorId || 'Unknown';
+            const barName = change.needBarName || change.needBarId || 'Need Bar';
+            const delta = Number(change.delta);
+            const newValue = Number(change.newValue);
+            const maxValue = Number(change.max);
+            const magnitudeLabel = capitalize(change.magnitude || '');
+            const directionLabel = capitalize(change.direction || '');
+            const reason = typeof change.reason === 'string' ? change.reason.trim() : '';
+
+            const segments = [];
+            segments.push(`<strong>${this.escapeHtml(String(actorName))}</strong> – ${this.escapeHtml(String(barName))}`);
+
+            if (Number.isFinite(delta) && delta !== 0) {
+                segments.push(`${delta > 0 ? '+' : ''}${delta}`);
+            } else if (change.magnitude === 'fill') {
+                segments.push('Adjusted to limit');
+            }
+
+            if (Number.isFinite(newValue)) {
+                const capText = Number.isFinite(maxValue) && maxValue !== newValue
+                    ? `/${maxValue}`
+                    : (Number.isFinite(maxValue) ? `/${maxValue}` : '');
+                segments.push(`now ${newValue}${capText}`);
+            }
+
+            const labelParts = [];
+            if (directionLabel) {
+                labelParts.push(directionLabel);
+            }
+            if (magnitudeLabel) {
+                labelParts.push(magnitudeLabel);
+            }
+            if (labelParts.length) {
+                segments.push(`(${labelParts.join(' ')})`);
+            }
+
+            if (reason) {
+                segments.push(`– ${this.escapeHtml(reason)}`);
+            }
+
+            const threshold = change.currentThreshold;
+            if (threshold && threshold.name) {
+                const thresholdParts = [this.escapeHtml(String(threshold.name))];
+                if (threshold.effect) {
+                    thresholdParts.push(this.escapeHtml(String(threshold.effect)));
+                }
+                segments.push(`→ ${thresholdParts.join(' – ')}`);
+            }
+
+            const item = document.createElement('li');
+            item.innerHTML = segments.join(' ');
+            list.appendChild(item);
+        });
+
+        if (!list.childElementCount) {
+            return;
+        }
+
+        contentDiv.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+
+        this.scheduleLocationRefresh();
+    }
+
     addEnvironmentalDamageEvent(event) {
         if (!event) {
             return;
@@ -755,7 +862,8 @@ class AIRPGChat {
             'transfer_item',
             'consume_item',
             'move_location',
-            'npc_arrival_departure'
+            'npc_arrival_departure',
+            'needbar_change'
         ]);
         let shouldRefreshLocation = false;
 
@@ -874,6 +982,37 @@ class AIRPGChat {
                     const item = safeItem(entry?.item);
                     const receiver = safeName(entry?.receiver);
                     this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`);
+                });
+            },
+            needbar_change: (entries) => {
+                const formatLabel = (value) => {
+                    if (!value || typeof value !== 'string') {
+                        return '';
+                    }
+                    const trimmed = value.trim();
+                    if (!trimmed) {
+                        return '';
+                    }
+                    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+                };
+
+                entries.forEach((entry) => {
+                    const actor = safeName(entry?.character || entry?.name);
+                    const barName = safeItem(entry?.needBar, 'a need bar');
+                    const direction = formatLabel(entry?.direction || '');
+                    const magnitude = formatLabel(entry?.magnitude || '');
+                    const detailParts = [];
+                    if (magnitude) {
+                        detailParts.push(magnitude.toLowerCase());
+                    }
+                    if (direction) {
+                        detailParts.push(direction.toLowerCase());
+                    }
+                    const detailText = detailParts.length ? detailParts.join(' ') : '';
+                    const text = detailText
+                        ? `${actor}'s ${barName} had a ${detailText}.`
+                        : `${actor}'s ${barName} changed.`;
+                    this.addEventSummary('🧪', text);
                 });
             }
         };
@@ -1038,6 +1177,16 @@ class AIRPGChat {
             }
         }
 
+        if (typeof roll.circumstanceModifier === 'number' && roll.circumstanceModifier !== 0) {
+            const modifier = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
+            const reasonText = roll.circumstanceReason
+                ? ` – ${this.escapeHtml(String(roll.circumstanceReason))}`
+                : '';
+            lines.push(`<li><strong>Circumstances:</strong> ${modifier}${reasonText}</li>`);
+        } else if (roll.circumstanceReason) {
+            lines.push(`<li><strong>Circumstances:</strong> ${this.escapeHtml(String(roll.circumstanceReason))}</li>`);
+        }
+
         if (roll && (typeof roll.die === 'number' || typeof roll.total === 'number')) {
             const segments = [];
             if (typeof roll.die === 'number') {
@@ -1050,6 +1199,10 @@ class AIRPGChat {
             if (typeof roll.attributeBonus === 'number') {
                 const modifier = formatSigned(roll.attributeBonus);
                 segments.push(`Attribute ${modifier !== null ? modifier : roll.attributeBonus}`);
+            }
+            if (typeof roll.circumstanceModifier === 'number' && roll.circumstanceModifier !== 0) {
+                const modifier = formatSigned(roll.circumstanceModifier);
+                segments.push(`Circumstances ${modifier !== null ? modifier : roll.circumstanceModifier}`);
             }
             if (typeof roll.total === 'number') {
                 segments.push(`Total ${roll.total}`);
@@ -1516,6 +1669,11 @@ class AIRPGChat {
             this.addEnvironmentalDamageEvents(payload.environmentalDamageEvents);
         }
 
+        if (Array.isArray(payload.needBarChanges) && payload.needBarChanges.length) {
+            this.addNeedBarChanges(payload.needBarChanges);
+            shouldRefreshLocation = true;
+        }
+
         if (payload.plausibility) {
             this.addPlausibilityMessage(payload.plausibility);
         }
@@ -1566,6 +1724,9 @@ class AIRPGChat {
         }
         if (Array.isArray(turn.environmentalDamageEvents) && turn.environmentalDamageEvents.length) {
             this.addEnvironmentalDamageEvents(turn.environmentalDamageEvents);
+        }
+        if (Array.isArray(turn.needBarChanges) && turn.needBarChanges.length) {
+            this.addNeedBarChanges(turn.needBarChanges);
         }
         if (turn.attackSummary) {
             this.addAttackCheckMessage(turn.attackSummary);

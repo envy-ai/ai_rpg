@@ -1683,6 +1683,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         writingStyleNotes: normalizeSettingValue(activeSetting?.writingStyleNotes, '')
     };
 
+    const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
+
     let location = locationOverride;
     if (!location && currentPlayer && currentPlayer.currentLocation) {
         try {
@@ -1943,6 +1945,22 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
     const currentPlayerSkills = collectActorSkills(playerStatus, currentPlayer);
 
+    const collectNeedBarsForPrompt = (actor, status, options = {}) => {
+        if (actor && typeof actor.getNeedBarPromptContext === 'function') {
+            return actor.getNeedBarPromptContext(options);
+        }
+
+        if (Array.isArray(status?.needBars)) {
+            return status.needBars.map(bar => ({
+                ...bar
+            }));
+        }
+
+        return [];
+    };
+
+    const currentPlayerNeedBars = collectNeedBarsForPrompt(currentPlayer, playerStatus, { includePlayerOnly: true });
+
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
             slot: slotName,
@@ -1962,7 +1980,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         inventory: currentPlayerInventory,
         skills: currentPlayerSkills,
         gear: gearSnapshot,
-        personality: extractPersonality(playerStatus, currentPlayer)
+        personality: extractPersonality(playerStatus, currentPlayer),
+        currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
+        needBars: currentPlayerNeedBars
     };
 
     function sanitizePersonalityValue(value) {
@@ -2081,6 +2101,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(npc);
             const skills = collectActorSkills(npcStatus, npc);
             const personality = extractPersonality(npcStatus, npc);
+            const needBars = collectNeedBarsForPrompt(npc, npcStatus, { includePlayerOnly: false });
 
             npcs.push({
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
@@ -2094,7 +2115,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 inventory: npcInventory,
                 dispositionsTowardsPlayer,
                 skills,
-                personality
+                personality,
+                needBars
             });
         }
     }
@@ -2114,6 +2136,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const personality = extractPersonality(memberStatus, member);
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(member);
             const skills = collectActorSkills(memberStatus, member);
+            const needBars = collectNeedBarsForPrompt(member, memberStatus, { includePlayerOnly: !member.isNPC });
 
             party.push({
                 name: memberStatus?.name || member.name || 'Unknown Ally',
@@ -2127,7 +2150,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 inventory: memberInventory,
                 personality,
                 skills,
-                dispositionsTowardsPlayer
+                dispositionsTowardsPlayer,
+                needBars
             });
         }
     }
@@ -2160,7 +2184,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         party,
         itemsInScene,
         dispositionTypes: dispositionTypesForPrompt,
-        dispositionRange: dispositionDefinitions?.range || {}
+        dispositionRange: dispositionDefinitions?.range || {},
+        needBarDefinitions
     };
 }
 
@@ -2202,6 +2227,9 @@ function parsePlausibilityOutcome(xmlSnippet) {
             const attribute = getText(skillCheckNode, 'attribute');
             const difficulty = getText(skillCheckNode, 'difficulty');
             const skillReason = getText(skillCheckNode, 'reason');
+            const circumstanceModifierRaw = getText(skillCheckNode, 'circumstanceModifier');
+            const circumstanceModifier = circumstanceModifierRaw !== null ? Number(circumstanceModifierRaw) : null;
+            const circumstanceModifierReason = getText(skillCheckNode, 'circumstanceModifierReason');
 
             if (skill || attribute || difficulty || skillReason) {
                 skillCheck = {
@@ -2210,6 +2238,14 @@ function parsePlausibilityOutcome(xmlSnippet) {
                     difficulty: difficulty && difficulty.toLowerCase() !== 'n/a' ? difficulty : null,
                     reason: skillReason
                 };
+
+                if (Number.isFinite(circumstanceModifier)) {
+                    skillCheck.circumstanceModifier = circumstanceModifier;
+                }
+
+                if (circumstanceModifierReason && circumstanceModifierReason.toLowerCase() !== 'n/a') {
+                    skillCheck.circumstanceModifierReason = circumstanceModifierReason;
+                }
             }
         }
 
@@ -2396,6 +2432,14 @@ function resolveActionOutcome({ plausibility, player }) {
     const resolvedSkill = skillCheck.skill || null;
     const resolvedAttributeName = skillCheck.attribute || null;
     const resolvedDifficulty = skillCheck.difficulty || null;
+    const circumstanceModifierRaw = Number(skillCheck.circumstanceModifier);
+    const circumstanceModifier = Number.isFinite(circumstanceModifierRaw) ? circumstanceModifierRaw : 0;
+    const circumstanceModifierReasonRaw = typeof skillCheck.circumstanceModifierReason === 'string'
+        ? skillCheck.circumstanceModifierReason.trim()
+        : null;
+    const circumstanceModifierReason = circumstanceModifierReasonRaw && circumstanceModifierReasonRaw.toLowerCase() !== 'n/a'
+        ? circumstanceModifierReasonRaw
+        : null;
 
     const dc = difficultyToDC(resolvedDifficulty);
     if (!dc) {
@@ -2424,11 +2468,11 @@ function resolveActionOutcome({ plausibility, player }) {
 
     const rollResult = diceModule.rollDice('1d20');
     const dieRoll = rollResult.total;
-    const total = dieRoll + skillValue + attributeBonus;
+    const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
     const margin = total - dc;
     const outcome = classifyOutcomeMargin(margin);
 
-    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
+    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
 
     return {
         label: outcome.label,
@@ -2440,6 +2484,8 @@ function resolveActionOutcome({ plausibility, player }) {
             detail: rollResult.detail,
             skillValue,
             attributeBonus,
+            circumstanceModifier,
+            circumstanceReason: circumstanceModifierReason,
             total
         },
         difficulty: {
@@ -2448,7 +2494,9 @@ function resolveActionOutcome({ plausibility, player }) {
         },
         skill: skillValueInfo.key,
         attribute: attributeKey,
-        margin
+        margin,
+        circumstanceModifier,
+        circumstanceReason: circumstanceModifierReason
     };
 }
 

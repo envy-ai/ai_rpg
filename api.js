@@ -355,6 +355,9 @@ module.exports = function registerApiRoutes(scope) {
                 if (Array.isArray(eventChecks?.environmentalDamageEvents) && eventChecks.environmentalDamageEvents.length) {
                     summary.environmentalDamageEvents = eventChecks.environmentalDamageEvents;
                 }
+                if (Array.isArray(eventChecks?.needBarChanges) && eventChecks.needBarChanges.length) {
+                    summary.needBarChanges = eventChecks.needBarChanges;
+                }
 
                 return summary;
             } finally {
@@ -467,6 +470,15 @@ module.exports = function registerApiRoutes(scope) {
                 return normalizeValue(childNode.textContent);
             };
 
+            const getNumericTagValue = (node, tag) => {
+                const raw = getTagValue(node, tag);
+                if (raw === null || raw === undefined) {
+                    return null;
+                }
+                const numeric = Number(raw);
+                return Number.isFinite(numeric) ? numeric : null;
+            };
+
             const attacks = [];
             for (const attackNode of attackNodes) {
                 const attacker = getTagValue(attackNode, 'attacker');
@@ -511,6 +523,15 @@ module.exports = function registerApiRoutes(scope) {
                         defenderInfo.toughnessAttribute = toughnessAttribute;
                     }
                     attackEntry.defenderInfo = defenderInfo;
+                }
+
+                const circumstanceModifier = getNumericTagValue(attackNode, 'circumstanceModifier');
+                if (Number.isFinite(circumstanceModifier)) {
+                    attackEntry.circumstanceModifier = circumstanceModifier;
+                }
+                const circumstanceReason = getTagValue(attackNode, 'circumstanceModifierReason');
+                if (circumstanceReason) {
+                    attackEntry.circumstanceModifierReason = circumstanceReason;
                 }
 
                 attacks.push(attackEntry);
@@ -675,6 +696,24 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return status;
+        };
+
+        const applyNeedBarTurnTick = () => {
+            const summaries = [];
+            for (const actor of players.values()) {
+                if (!actor || typeof actor.applyNeedBarTurnChange !== 'function') {
+                    continue;
+                }
+                const adjustments = actor.applyNeedBarTurnChange();
+                if (adjustments && adjustments.length) {
+                    summaries.push({
+                        actorId: actor.id,
+                        actorName: actor.name || null,
+                        adjustments
+                    });
+                }
+            }
+            return summaries;
         };
 
         const sanitizeNamedValue = (value) => {
@@ -862,6 +901,11 @@ module.exports = function registerApiRoutes(scope) {
 
             const attackerInfo = attackEntry.attackerInfo || {};
             const defenderInfo = attackEntry.defenderInfo || {};
+            const circumstanceModifierRaw = Number(attackEntry.circumstanceModifier);
+            const circumstanceModifier = Number.isFinite(circumstanceModifierRaw) ? circumstanceModifierRaw : 0;
+            const circumstanceReason = typeof attackEntry.circumstanceModifierReason === 'string'
+                ? attackEntry.circumstanceModifierReason.trim()
+                : null;
 
             const attackSkillName = sanitizeNamedValue(attackerInfo.attackSkill);
             const damageAttributeName = sanitizeNamedValue(attackerInfo.damageAttribute);
@@ -927,7 +971,7 @@ module.exports = function registerApiRoutes(scope) {
             const defenderLevel = Number.isFinite(defender?.level) ? defender.level : 0;
             const hitDifficulty = 10 + defenderLevel + (Number.isFinite(bestDefense.value) ? bestDefense.value : 0);
 
-            const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier;
+            const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier + circumstanceModifier;
             const hitDegreeRaw = (hitRollTotal - hitDifficulty) / 5;
             const hitDegree = Number.isFinite(hitDegreeRaw) ? Math.round(hitDegreeRaw * 100) / 100 : 0;
             const hit = hitRollTotal >= hitDifficulty;
@@ -971,7 +1015,11 @@ module.exports = function registerApiRoutes(scope) {
                     attackAttribute: {
                         name: attackAttributeInfo.key,
                         modifier: attackAttributeInfo.modifier
-                    }
+                    },
+                    circumstanceModifier,
+                    circumstanceReason: circumstanceReason && circumstanceReason.toLowerCase() !== 'n/a'
+                        ? circumstanceReason
+                        : null
                 },
                 difficulty: {
                     value: hitDifficulty,
@@ -1047,7 +1095,9 @@ module.exports = function registerApiRoutes(scope) {
                     total: Number.isFinite(roll.total) ? roll.total : null,
                     detail: typeof roll.detail === 'string' ? roll.detail : null,
                     attackSkill: roll.attackSkill || null,
-                    attackAttribute: roll.attackAttribute || null
+                    attackAttribute: roll.attackAttribute || null,
+                    circumstanceModifier: Number.isFinite(roll.circumstanceModifier) ? roll.circumstanceModifier : null,
+                    circumstanceReason: roll.circumstanceReason || null
                 },
                 difficulty: {
                     value: Number.isFinite(difficulty.value) ? difficulty.value : null,
@@ -2205,6 +2255,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.environmentalDamageEvents) && npcEventResult.environmentalDamageEvents.length) {
                         npcTurnResult.environmentalDamageEvents = npcEventResult.environmentalDamageEvents;
                     }
+                    if (Array.isArray(npcEventResult?.needBarChanges) && npcEventResult.needBarChanges.length) {
+                        npcTurnResult.needBarChanges = npcEventResult.needBarChanges;
+                    }
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -2289,6 +2342,7 @@ module.exports = function registerApiRoutes(scope) {
                 delete payload.experienceAwards;
                 delete payload.currencyChanges;
                 delete payload.environmentalDamageEvents;
+                delete payload.needBarChanges;
 
                 if (Array.isArray(payload.npcTurns)) {
                     payload.npcTurns.forEach(turn => stripStreamedEventArtifacts(turn));
@@ -2692,6 +2746,9 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(forcedEventResult.environmentalDamageEvents) && forcedEventResult.environmentalDamageEvents.length) {
                             responseData.environmentalDamageEvents = forcedEventResult.environmentalDamageEvents;
                         }
+                        if (Array.isArray(forcedEventResult.needBarChanges) && forcedEventResult.needBarChanges.length) {
+                            responseData.needBarChanges = forcedEventResult.needBarChanges;
+                        }
                     }
 
                     if (debugInfo) {
@@ -2866,6 +2923,60 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (Array.isArray(eventResult.environmentalDamageEvents) && eventResult.environmentalDamageEvents.length) {
                             responseData.environmentalDamageEvents = eventResult.environmentalDamageEvents;
+                        }
+                        if (Array.isArray(eventResult.needBarChanges) && eventResult.needBarChanges.length) {
+                            responseData.needBarChanges = eventResult.needBarChanges;
+                        }
+                    }
+
+                    const needBarAdjustments = applyNeedBarTurnTick();
+                    if (needBarAdjustments.length) {
+                        if (debugInfo) {
+                            debugInfo.needBarAdjustments = needBarAdjustments;
+                        }
+
+                        const passiveNeedBarChanges = [];
+                        for (const summary of needBarAdjustments) {
+                            if (!summary || !Array.isArray(summary.adjustments)) {
+                                continue;
+                            }
+
+                            for (const adjustment of summary.adjustments) {
+                                if (!adjustment) {
+                                    continue;
+                                }
+
+                                const delta = Number(adjustment.delta);
+                                if (!Number.isFinite(delta) || delta === 0) {
+                                    continue;
+                                }
+
+                                passiveNeedBarChanges.push({
+                                    actorId: summary.actorId || null,
+                                    actorName: summary.actorName || null,
+                                    needBarId: adjustment.id || null,
+                                    needBarName: adjustment.name || adjustment.id || null,
+                                    direction: delta > 0 ? 'increase' : 'decrease',
+                                    magnitude: 'perTurn',
+                                    reason: 'Passive per-turn adjustment',
+                                    previousValue: Number.isFinite(adjustment.previousValue) ? adjustment.previousValue : null,
+                                    newValue: Number.isFinite(adjustment.newValue) ? adjustment.newValue : null,
+                                    delta,
+                                    min: Number.isFinite(adjustment.min) ? adjustment.min : null,
+                                    max: Number.isFinite(adjustment.max) ? adjustment.max : null,
+                                    changePerTurn: Number.isFinite(adjustment.changePerTurn) ? adjustment.changePerTurn : null,
+                                    currentThreshold: adjustment.currentThreshold ? { ...adjustment.currentThreshold } : null,
+                                    playerOnly: typeof adjustment.playerOnly === 'boolean' ? adjustment.playerOnly : null
+                                });
+                            }
+                        }
+
+                        if (passiveNeedBarChanges.length) {
+                            if (Array.isArray(responseData.needBarChanges)) {
+                                responseData.needBarChanges.push(...passiveNeedBarChanges);
+                            } else {
+                                responseData.needBarChanges = passiveNeedBarChanges;
+                            }
                         }
                     }
 
