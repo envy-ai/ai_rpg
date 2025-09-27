@@ -3734,6 +3734,78 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Delete an NPC entirely
+        app.delete('/api/npcs/:id', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                const locationId = npc.currentLocation || null;
+                let regionId = null;
+
+                if (locationId) {
+                    const location = gameLocations.get(locationId);
+                    if (location) {
+                        if (typeof location.removeNpcId === 'function') {
+                            location.removeNpcId(npcId);
+                        } else if (Array.isArray(location.npcIds)) {
+                            location.npcIds = location.npcIds.filter(id => id !== npcId);
+                        }
+
+                        regionId = location.regionId || location.stubMetadata?.regionId || null;
+                    }
+                }
+
+                if (!regionId) {
+                    for (const region of regions.values()) {
+                        if (region && Array.isArray(region.npcIds) && region.npcIds.includes(npcId)) {
+                            region.npcIds = region.npcIds.filter(id => id !== npcId);
+                            regionId = region.id || region.regionId || region.stubMetadata?.regionId || null;
+                        }
+                    }
+                } else {
+                    const region = regions.get(regionId);
+                    if (region && Array.isArray(region.npcIds)) {
+                        region.npcIds = region.npcIds.filter(id => id !== npcId);
+                    }
+                }
+
+                for (const actor of players.values()) {
+                    if (actor && typeof actor.removePartyMember === 'function') {
+                        actor.removePartyMember(npcId);
+                    }
+                }
+
+                players.delete(npcId);
+
+                res.json({
+                    success: true,
+                    message: 'NPC deleted successfully',
+                    locationId,
+                    regionId
+                });
+            } catch (error) {
+                console.error('Failed to delete NPC:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to delete NPC'
+                });
+            }
+        });
+
         app.post('/api/player/equip', (req, res) => {
             try {
                 if (!currentPlayer) {

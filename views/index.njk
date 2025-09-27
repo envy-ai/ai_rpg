@@ -4094,6 +4094,15 @@
                 inventoryButton.textContent = 'Inventory';
                 menu.appendChild(inventoryButton);
 
+                let deleteButton = null;
+                if (npc && npc.isNPC) {
+                    deleteButton = document.createElement('button');
+                    deleteButton.type = 'button';
+                    deleteButton.className = 'npc-card-menu-item npc-card-menu-item--danger';
+                    deleteButton.textContent = 'Delete';
+                    menu.appendChild(deleteButton);
+                }
+
                 button.addEventListener('click', (event) => {
                     event.stopPropagation();
                     const wasOpen = npcMenuState.openMenu === menu;
@@ -4126,6 +4135,70 @@
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcInventoryModal(latestNpc);
                 });
+
+                if (deleteButton) {
+                    deleteButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+
+                        const cachedNpc = npcDataCache.get(npc.id) || npc;
+                        const npcName = cachedNpc?.name || 'this NPC';
+                        const confirmation = window.confirm(`Delete ${npcName}? This cannot be undone.`);
+                        if (!confirmation) {
+                            return;
+                        }
+
+                        const fallbackLocationId = cachedNpc?.locationId || cachedNpc?.currentLocation || npc.currentLocation || lastRenderedLocation?.id || null;
+
+                        showLocationOverlay('Removing character...');
+                        try {
+                            const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}`, {
+                                method: 'DELETE'
+                            });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok || !result?.success) {
+                                throw new Error(result?.error || `HTTP ${response.status}`);
+                            }
+
+                            npcDataCache.delete(npc.id);
+
+                            const targetLocationId = result?.locationId || fallbackLocationId;
+                            let refreshed = false;
+
+                            if (targetLocationId) {
+                                try {
+                                    const refreshedResp = await fetch(`/api/locations/${encodeURIComponent(targetLocationId)}`);
+                                    const refreshedData = await refreshedResp.json().catch(() => ({}));
+                                    if (refreshedResp.ok && refreshedData?.success && refreshedData.location) {
+                                        await window.updateLocationDisplay(refreshedData.location);
+                                        refreshed = true;
+                                    }
+                                } catch (refreshError) {
+                                    console.warn('Failed to refresh location after NPC deletion:', refreshError);
+                                }
+                            }
+
+                            if (!refreshed && lastRenderedLocation) {
+                                if (Array.isArray(lastRenderedLocation.npcs)) {
+                                    lastRenderedLocation.npcs = lastRenderedLocation.npcs.filter(entry => entry.id !== npc.id);
+                                }
+                                if (Array.isArray(lastRenderedLocation.npcIds)) {
+                                    lastRenderedLocation.npcIds = lastRenderedLocation.npcIds.filter(id => id !== npc.id);
+                                }
+                                await window.updateLocationDisplay(lastRenderedLocation);
+                            } else if (!refreshed && card && card.parentElement) {
+                                card.remove();
+                            }
+
+                            window.refreshParty?.();
+                        } catch (error) {
+                            console.warn('Failed to delete NPC:', error);
+                            alert(`Failed to delete NPC: ${error?.message || 'Unknown error'}`);
+                        } finally {
+                            hideLocationOverlay();
+                        }
+                    });
+                }
 
                 menu.addEventListener('click', (event) => event.stopPropagation());
                 card.addEventListener('click', () => {
