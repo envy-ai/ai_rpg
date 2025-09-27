@@ -464,6 +464,30 @@
             </div>
         </div>
     </div>
+    <div id="npcDispositionModal" class="modal npc-disposition-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcDispositionModalTitle">Adjust Dispositions</h2>
+                <button type="button" class="modal__close" id="npcDispositionCloseBtn" aria-label="Close disposition editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="npcDispositionForm" class="modal__body npc-disposition-body" novalidate>
+                <div class="npc-disposition-summary" id="npcDispositionSummary"></div>
+                <div class="npc-disposition-loading" id="npcDispositionLoading" hidden>Loading dispositions…</div>
+                <div class="npc-disposition-list" id="npcDispositionList">
+                    <div class="npc-disposition-empty" id="npcDispositionEmpty">No disposition data available.</div>
+                </div>
+                <footer class="npc-disposition-footer">
+                    <div class="npc-disposition-status" id="npcDispositionStatus" role="status" aria-live="polite"></div>
+                    <div class="npc-disposition-actions">
+                        <button type="button" class="npc-disposition-cancel" id="npcDispositionCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-disposition-save-btn" id="npcDispositionSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
     <div id="npcEditModal" class="modal npc-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1959,6 +1983,16 @@
         const npcInventoryModal = document.getElementById('npcInventoryModal');
         const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
+        const npcDispositionModal = document.getElementById('npcDispositionModal');
+        const npcDispositionForm = document.getElementById('npcDispositionForm');
+        const npcDispositionSummary = document.getElementById('npcDispositionSummary');
+        const npcDispositionList = document.getElementById('npcDispositionList');
+        const npcDispositionEmpty = document.getElementById('npcDispositionEmpty');
+        const npcDispositionStatus = document.getElementById('npcDispositionStatus');
+        const npcDispositionLoading = document.getElementById('npcDispositionLoading');
+        const npcDispositionCancelBtn = document.getElementById('npcDispositionCancelBtn');
+        const npcDispositionSaveBtn = document.getElementById('npcDispositionSaveBtn');
+        const npcDispositionCloseBtn = document.getElementById('npcDispositionCloseBtn');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -2595,6 +2629,8 @@
         let currentNpcInventory = [];
         let currentNpcInventoryNpcId = null;
         let currentNpcViewId = null;
+        let currentNpcDispositionId = null;
+        let currentNpcDispositionData = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
         let currentThingLockedMetadata = {};
@@ -2623,6 +2659,320 @@
             } else if (type === 'success') {
                 npcEditStatus.classList.add('is-success');
             }
+        }
+
+        function clampDispositionValue(value, range = {}) {
+            const numeric = Number(value);
+            let resolved = Number.isFinite(numeric) ? numeric : 0;
+            const min = Number.isFinite(range?.min) ? range.min : null;
+            const max = Number.isFinite(range?.max) ? range.max : null;
+            if (Number.isFinite(min) && resolved < min) {
+                resolved = min;
+            }
+            if (Number.isFinite(max) && resolved > max) {
+                resolved = max;
+            }
+            return Math.round(resolved);
+        }
+
+        function formatSignedValue(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric === 0) {
+                return '0';
+            }
+            return numeric > 0 ? `+${numeric}` : `${numeric}`;
+        }
+
+        function resolveDispositionIntensityLabel(thresholds, value, fallback = 'neutral') {
+            if (!Array.isArray(thresholds) || thresholds.length === 0) {
+                return fallback;
+            }
+            const sorted = thresholds
+                .map(entry => ({
+                    threshold: Number(entry?.threshold),
+                    name: entry?.name || ''
+                }))
+                .filter(entry => Number.isFinite(entry.threshold) && entry.name)
+                .sort((a, b) => a.threshold - b.threshold);
+
+            if (!sorted.length) {
+                return fallback;
+            }
+
+            let label = fallback;
+            for (const entry of sorted) {
+                if (value >= entry.threshold) {
+                    label = entry.name;
+                }
+            }
+            return label || fallback;
+        }
+
+        function formatDispositionThresholds(thresholds) {
+            if (!Array.isArray(thresholds) || !thresholds.length) {
+                return '';
+            }
+            const parts = thresholds
+                .map(entry => {
+                    const thresholdValue = Number(entry?.threshold);
+                    const name = entry?.name || '';
+                    if (!Number.isFinite(thresholdValue) || !name) {
+                        return null;
+                    }
+                    return `${formatSignedValue(thresholdValue)} → ${name}`;
+                })
+                .filter(Boolean);
+            return parts.length ? `Thresholds: ${parts.join(' · ')}` : '';
+        }
+
+        function setNpcDispositionStatus(message = '', type = null) {
+            if (!npcDispositionStatus) {
+                return;
+            }
+            npcDispositionStatus.textContent = message || '';
+            npcDispositionStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                npcDispositionStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                npcDispositionStatus.classList.add('is-success');
+            }
+        }
+
+        function setNpcDispositionDirty() {
+            if (!npcDispositionSaveBtn) {
+                return;
+            }
+            if (!currentNpcDispositionData || !Array.isArray(currentNpcDispositionData.dispositions)) {
+                npcDispositionSaveBtn.disabled = true;
+                return;
+            }
+            const hasChanges = currentNpcDispositionData.dispositions.some(entry => entry.value !== entry.originalValue);
+            npcDispositionSaveBtn.disabled = !hasChanges;
+        }
+
+        function updateNpcDispositionSummary(payload) {
+            if (!npcDispositionSummary) {
+                return;
+            }
+            if (!payload || !payload.npc) {
+                npcDispositionSummary.textContent = '';
+                return;
+            }
+
+            const npcName = payload.npc?.name || 'NPC';
+            const playerName = payload.player?.name || 'the player';
+            const min = Number.isFinite(payload.range?.min) ? payload.range.min : null;
+            const max = Number.isFinite(payload.range?.max) ? payload.range.max : null;
+            const step = Number.isFinite(payload.range?.typicalStep) ? payload.range.typicalStep : null;
+            const bigStep = Number.isFinite(payload.range?.typicalBigStep) ? payload.range.typicalBigStep : null;
+
+            const parts = [`Adjust ${npcName}'s dispositions toward ${playerName}.`];
+            if (Number.isFinite(min) && Number.isFinite(max)) {
+                parts.push(`Range ${formatSignedValue(min)} to ${formatSignedValue(max)}.`);
+            }
+            const stepParts = [];
+            if (Number.isFinite(step)) {
+                stepParts.push(`${step}`);
+            }
+            if (Number.isFinite(bigStep)) {
+                stepParts.push(`${bigStep}`);
+            }
+            if (stepParts.length) {
+                const descriptor = stepParts.length === 1 ? stepParts[0] : stepParts.join(' / ');
+                parts.push(`Use quick adjust buttons for ${descriptor} changes.`);
+            }
+            npcDispositionSummary.textContent = parts.join(' ');
+        }
+
+        function updateCachedNpcDispositions(npcId, payload) {
+            const cache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            if (!cache || !npcId) {
+                return null;
+            }
+            const baseNpc = cache.get(npcId) || { id: npcId, isNPC: true };
+            const dispositionsTowardsPlayer = Array.isArray(payload?.dispositions)
+                ? payload.dispositions.map(entry => ({
+                    type: entry.label || entry.key || 'Disposition',
+                    intensityName: entry.intensity || resolveDispositionIntensityLabel(entry.thresholds, entry.value, 'neutral'),
+                    value: entry.value
+                }))
+                : [];
+            const updatedNpc = {
+                ...baseNpc,
+                dispositionsTowardsPlayer
+            };
+            cache.set(npcId, updatedNpc);
+            return updatedNpc;
+        }
+
+        function renderNpcDispositionEntries(data) {
+            if (!npcDispositionList || !npcDispositionEmpty) {
+                return;
+            }
+
+            npcDispositionList.innerHTML = '';
+
+            if (!data || !Array.isArray(data.dispositions) || data.dispositions.length === 0) {
+                npcDispositionEmpty.removeAttribute('hidden');
+                setNpcDispositionDirty();
+                return;
+            }
+
+            npcDispositionEmpty.setAttribute('hidden', '');
+
+            const range = data.range || {};
+            const min = Number.isFinite(range.min) ? range.min : -200;
+            const max = Number.isFinite(range.max) ? range.max : 200;
+            const step = Number.isFinite(range.typicalStep) ? range.typicalStep : null;
+            const bigStep = Number.isFinite(range.typicalBigStep) ? range.typicalBigStep : null;
+
+            data.dispositions.forEach(entry => {
+                const normalizedValue = clampDispositionValue(entry.value, range);
+                entry.value = normalizedValue;
+                if (entry.originalValue === undefined || entry.originalValue === null) {
+                    entry.originalValue = normalizedValue;
+                }
+                const intensityLabel = resolveDispositionIntensityLabel(entry.thresholds, normalizedValue, entry.intensity || 'neutral');
+                entry.intensity = intensityLabel;
+
+                const card = document.createElement('div');
+                card.className = 'npc-disposition-entry';
+                card.dataset.key = entry.key || '';
+
+                const heading = document.createElement('div');
+                heading.className = 'npc-disposition-heading';
+
+                const labelEl = document.createElement('div');
+                labelEl.className = 'npc-disposition-label';
+                labelEl.textContent = entry.label || entry.key || 'Disposition';
+                heading.appendChild(labelEl);
+
+                const intensityEl = document.createElement('div');
+                intensityEl.className = 'npc-disposition-intensity';
+                intensityEl.textContent = `Intensity: ${intensityLabel} (${formatSignedValue(normalizedValue)})`;
+                heading.appendChild(intensityEl);
+
+                card.appendChild(heading);
+
+                if (entry.description) {
+                    const descriptionEl = document.createElement('p');
+                    descriptionEl.className = 'npc-disposition-description';
+                    descriptionEl.textContent = entry.description;
+                    card.appendChild(descriptionEl);
+                }
+
+                const sliderRow = document.createElement('div');
+                sliderRow.className = 'npc-disposition-slider-row';
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.className = 'npc-disposition-slider';
+                slider.min = String(min);
+                slider.max = String(max);
+                slider.step = '1';
+                slider.value = String(normalizedValue);
+                sliderRow.appendChild(slider);
+                card.appendChild(sliderRow);
+
+                const controlRow = document.createElement('div');
+                controlRow.className = 'npc-disposition-control-row';
+
+                const valueWrapper = document.createElement('label');
+                valueWrapper.className = 'npc-disposition-value-input';
+                valueWrapper.textContent = 'Value';
+
+                const numberInput = document.createElement('input');
+                numberInput.type = 'number';
+                numberInput.value = String(normalizedValue);
+                numberInput.step = '1';
+                numberInput.min = String(min);
+                numberInput.max = String(max);
+                valueWrapper.appendChild(numberInput);
+                controlRow.appendChild(valueWrapper);
+
+                const buttonsWrapper = document.createElement('div');
+                buttonsWrapper.className = 'npc-disposition-buttons';
+
+                const seenAdjustments = new Set();
+                const addAdjustmentButton = (delta, label) => {
+                    if (!Number.isFinite(delta) || seenAdjustments.has(delta)) {
+                        return;
+                    }
+                    seenAdjustments.add(delta);
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.dataset.delta = String(delta);
+                    button.textContent = label;
+                    buttonsWrapper.appendChild(button);
+                };
+
+                if (Number.isFinite(bigStep) && bigStep > 0) {
+                    addAdjustmentButton(-bigStep, `-${bigStep}`);
+                }
+                if (Number.isFinite(step) && step > 0) {
+                    addAdjustmentButton(-step, `-${step}`);
+                    addAdjustmentButton(step, `+${step}`);
+                }
+                if (Number.isFinite(bigStep) && bigStep > 0) {
+                    addAdjustmentButton(bigStep, `+${bigStep}`);
+                }
+                if (!buttonsWrapper.childElementCount) {
+                    addAdjustmentButton(-1, '-1');
+                    addAdjustmentButton(1, '+1');
+                }
+
+                controlRow.appendChild(buttonsWrapper);
+                card.appendChild(controlRow);
+
+                const thresholdsLabel = formatDispositionThresholds(entry.thresholds);
+                if (thresholdsLabel) {
+                    const thresholdsEl = document.createElement('div');
+                    thresholdsEl.className = 'npc-disposition-thresholds';
+                    thresholdsEl.textContent = thresholdsLabel;
+                    card.appendChild(thresholdsEl);
+                }
+
+                const applyValue = (nextValue) => {
+                    const clampedValue = clampDispositionValue(nextValue, range);
+                    slider.value = String(clampedValue);
+                    numberInput.value = String(clampedValue);
+                    const label = resolveDispositionIntensityLabel(entry.thresholds, clampedValue, entry.intensity || 'neutral');
+                    intensityEl.textContent = `Intensity: ${label} (${formatSignedValue(clampedValue)})`;
+                    entry.value = clampedValue;
+                    entry.intensity = label;
+                    setNpcDispositionDirty();
+                };
+
+                slider.addEventListener('input', () => {
+                    applyValue(Number(slider.value));
+                });
+
+                numberInput.addEventListener('input', () => {
+                    const parsed = Number(numberInput.value);
+                    if (Number.isFinite(parsed)) {
+                        applyValue(parsed);
+                    }
+                });
+
+                numberInput.addEventListener('blur', () => {
+                    applyValue(Number(numberInput.value));
+                });
+
+                buttonsWrapper.querySelectorAll('button').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        const delta = Number(button.dataset.delta);
+                        if (!Number.isFinite(delta)) {
+                            return;
+                        }
+                        applyValue(entry.value + delta);
+                    });
+                });
+
+                npcDispositionList.appendChild(card);
+            });
+
+            setNpcDispositionDirty();
         }
 
         function updateThingEditStatus(message = '', type = null) {
@@ -2996,7 +3346,8 @@
             const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden) {
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3022,7 +3373,40 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden) {
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            if (editHidden && viewHidden && thingHidden && dispositionHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function closeNpcDispositionModal() {
+            if (!npcDispositionModal) {
+                return;
+            }
+            npcDispositionModal.setAttribute('aria-hidden', 'true');
+            npcDispositionModal.setAttribute('hidden', '');
+            currentNpcDispositionId = null;
+            currentNpcDispositionData = null;
+            if (npcDispositionList) {
+                npcDispositionList.innerHTML = '';
+                npcDispositionList.removeAttribute('aria-busy');
+            }
+            if (npcDispositionSummary) {
+                npcDispositionSummary.textContent = '';
+            }
+            if (npcDispositionLoading) {
+                npcDispositionLoading.setAttribute('hidden', '');
+            }
+            setNpcDispositionStatus('', null);
+            if (npcDispositionSaveBtn) {
+                npcDispositionSaveBtn.disabled = true;
+            }
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3038,7 +3422,8 @@
             const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden) {
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3078,7 +3463,8 @@
             const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden) {
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -3118,6 +3504,22 @@
             npcInventoryCloseBtn.addEventListener('click', () => {
                 closeNpcInventoryModal();
             });
+        }
+
+        if (npcDispositionCancelBtn) {
+            npcDispositionCancelBtn.addEventListener('click', () => {
+                closeNpcDispositionModal();
+            });
+        }
+
+        if (npcDispositionCloseBtn) {
+            npcDispositionCloseBtn.addEventListener('click', () => {
+                closeNpcDispositionModal();
+            });
+        }
+
+        if (npcDispositionForm) {
+            npcDispositionForm.addEventListener('submit', submitNpcDispositions);
         }
 
         if (npcViewCloseBtn) {
@@ -3160,15 +3562,17 @@
             });
         }
 
-        if (npcModalBackdrop) {
-            npcModalBackdrop.addEventListener('click', (event) => {
-                if (event.target === npcModalBackdrop) {
-                    if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
-                        closeThingEditModal();
-                    } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
-                        closeNpcViewModal();
-                    } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
-                        closeNpcInventoryModal();
+            if (npcModalBackdrop) {
+                npcModalBackdrop.addEventListener('click', (event) => {
+                    if (event.target === npcModalBackdrop) {
+                        if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
+                            closeNpcDispositionModal();
+                        } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
+                            closeThingEditModal();
+                        } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
+                            closeNpcViewModal();
+                        } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
+                            closeNpcInventoryModal();
                     } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                         closeNpcEditModal();
                     }
@@ -3565,6 +3969,171 @@
 
                 npcInventoryGrid.appendChild(card);
             });
+        }
+
+        async function showNpcDispositionModal(npc) {
+            if (!npc || !npcDispositionModal || !npcModalBackdrop) {
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            currentNpcDispositionId = npc.id || null;
+            currentNpcDispositionData = null;
+            updateNpcDispositionSummary(null);
+            setNpcDispositionStatus('', null);
+            if (npcDispositionLoading) {
+                npcDispositionLoading.removeAttribute('hidden');
+            }
+            if (npcDispositionList) {
+                npcDispositionList.innerHTML = '';
+                npcDispositionList.setAttribute('aria-busy', 'true');
+            }
+            if (npcDispositionEmpty) {
+                npcDispositionEmpty.setAttribute('hidden', '');
+            }
+            if (npcDispositionSaveBtn) {
+                npcDispositionSaveBtn.disabled = true;
+            }
+
+            npcModalBackdrop.removeAttribute('hidden');
+            npcDispositionModal.removeAttribute('hidden');
+            npcDispositionModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/dispositions`, {
+                    cache: 'no-store'
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const payload = {
+                    npc: data.npc || { id: npc.id, name: npc.name || 'NPC' },
+                    player: data.player || null,
+                    range: {
+                        min: Number.isFinite(data.range?.min) ? data.range.min : null,
+                        max: Number.isFinite(data.range?.max) ? data.range.max : null,
+                        typicalStep: Number.isFinite(data.range?.typicalStep) ? data.range.typicalStep : null,
+                        typicalBigStep: Number.isFinite(data.range?.typicalBigStep) ? data.range.typicalBigStep : null
+                    },
+                    dispositions: Array.isArray(data.dispositions)
+                        ? data.dispositions.map(entry => ({
+                            ...entry,
+                            value: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0,
+                            originalValue: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0
+                        }))
+                        : []
+                };
+
+                currentNpcDispositionData = payload;
+                updateNpcDispositionSummary(payload);
+                renderNpcDispositionEntries(payload);
+                setNpcDispositionStatus('', null);
+                updateCachedNpcDispositions(npc.id, payload);
+            } catch (error) {
+                console.warn('Failed to load NPC dispositions:', error);
+                currentNpcDispositionData = null;
+                updateNpcDispositionSummary({
+                    npc: { name: npc.name || 'NPC' },
+                    player: null,
+                    range: {}
+                });
+                if (npcDispositionList) {
+                    npcDispositionList.innerHTML = '';
+                }
+                if (npcDispositionEmpty) {
+                    npcDispositionEmpty.removeAttribute('hidden');
+                }
+                setNpcDispositionStatus(`Failed to load dispositions: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (npcDispositionList) {
+                    npcDispositionList.removeAttribute('aria-busy');
+                }
+                if (npcDispositionLoading) {
+                    npcDispositionLoading.setAttribute('hidden', '');
+                }
+                setNpcDispositionDirty();
+            }
+        }
+
+        async function submitNpcDispositions(event) {
+            if (event) {
+                event.preventDefault();
+            }
+
+            if (!currentNpcDispositionData || !currentNpcDispositionId) {
+                setNpcDispositionStatus('No disposition changes to save.', null);
+                setNpcDispositionDirty();
+                return;
+            }
+
+            const updates = currentNpcDispositionData.dispositions
+                .filter(entry => entry.value !== entry.originalValue)
+                .map(entry => ({ key: entry.key, value: entry.value }));
+
+            if (!updates.length) {
+                setNpcDispositionStatus('No changes to save.', null);
+                setNpcDispositionDirty();
+                return;
+            }
+
+            setNpcDispositionStatus('Saving disposition changes…', null);
+            if (npcDispositionSaveBtn) {
+                npcDispositionSaveBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(currentNpcDispositionId)}/dispositions`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dispositions: updates })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const payload = {
+                    npc: data.npc || currentNpcDispositionData.npc,
+                    player: data.player || currentNpcDispositionData.player,
+                    range: {
+                        min: Number.isFinite(data.range?.min) ? data.range.min : currentNpcDispositionData.range?.min ?? null,
+                        max: Number.isFinite(data.range?.max) ? data.range.max : currentNpcDispositionData.range?.max ?? null,
+                        typicalStep: Number.isFinite(data.range?.typicalStep) ? data.range.typicalStep : currentNpcDispositionData.range?.typicalStep ?? null,
+                        typicalBigStep: Number.isFinite(data.range?.typicalBigStep) ? data.range.typicalBigStep : currentNpcDispositionData.range?.typicalBigStep ?? null
+                    },
+                    dispositions: Array.isArray(data.dispositions)
+                        ? data.dispositions.map(entry => ({
+                            ...entry,
+                            value: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0,
+                            originalValue: Number.isFinite(Number(entry.value)) ? Math.round(Number(entry.value)) : 0
+                        }))
+                        : []
+                };
+
+                currentNpcDispositionData = payload;
+                updateNpcDispositionSummary(payload);
+                renderNpcDispositionEntries(payload);
+                setNpcDispositionStatus(data.message || 'Dispositions updated successfully.', 'success');
+
+                const updatedNpc = updateCachedNpcDispositions(currentNpcDispositionId, payload);
+                if (updatedNpc && currentNpcViewId === currentNpcDispositionId) {
+                    showNpcViewModal(updatedNpc);
+                }
+            } catch (error) {
+                console.warn('Failed to update NPC dispositions:', error);
+                setNpcDispositionStatus(`Failed to update dispositions: ${error?.message || 'Unknown error'}`, 'error');
+                if (npcDispositionSaveBtn) {
+                    npcDispositionSaveBtn.disabled = false;
+                }
+            } finally {
+                setNpcDispositionDirty();
+            }
         }
 
         function showNpcInventoryModal(npc) {
@@ -4070,8 +4639,14 @@
             renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries);
         }
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key !== 'Escape') {
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') {
+                    return;
+                }
+
+            if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeNpcDispositionModal();
                 return;
             }
 
@@ -4247,8 +4822,15 @@
                 inventoryButton.textContent = 'Inventory';
                 menu.appendChild(inventoryButton);
 
+                let dispositionButton = null;
                 let deleteButton = null;
                 if (npc && npc.isNPC) {
+                    dispositionButton = document.createElement('button');
+                    dispositionButton.type = 'button';
+                    dispositionButton.className = 'npc-card-menu-item';
+                    dispositionButton.textContent = 'Dispositions';
+                    menu.appendChild(dispositionButton);
+
                     deleteButton = document.createElement('button');
                     deleteButton.type = 'button';
                     deleteButton.className = 'npc-card-menu-item npc-card-menu-item--danger';
@@ -4288,6 +4870,15 @@
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcInventoryModal(latestNpc);
                 });
+
+                if (dispositionButton) {
+                    dispositionButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const latestNpc = npcDataCache.get(npc.id) || npc;
+                        await showNpcDispositionModal(latestNpc);
+                    });
+                }
 
                 if (deleteButton) {
                     deleteButton.addEventListener('click', async (event) => {

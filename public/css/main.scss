@@ -2616,6 +2616,227 @@ body.modal-open {
   color: rgba(209, 250, 229, 0.95);
 }
 
+.npc-disposition-modal .modal__dialog {
+  max-width: 720px;
+}
+
+.npc-disposition-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.npc-disposition-summary {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #cbd5f5;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.npc-disposition-loading {
+  font-size: 0.95rem;
+  color: #cbd5f5;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.npc-disposition-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.npc-disposition-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  padding: 20px 0;
+}
+
+.npc-disposition-entry {
+  background: rgba(15, 23, 42, 0.68);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.npc-disposition-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.npc-disposition-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.npc-disposition-intensity {
+  font-size: 0.85rem;
+  color: #93c5fd;
+}
+
+.npc-disposition-description {
+  font-size: 0.85rem;
+  color: #cbd5f5;
+  line-height: 1.5;
+}
+
+.npc-disposition-slider-row {
+  display: flex;
+  align-items: center;
+}
+
+.npc-disposition-slider {
+  width: 100%;
+}
+
+.npc-disposition-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.npc-disposition-value-input {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  color: #cbd5f5;
+  font-size: 0.85rem;
+}
+
+.npc-disposition-value-input input {
+  margin-top: 4px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.npc-disposition-value-input input:focus {
+  border-color: rgba(96, 165, 250, 0.65);
+  outline: none;
+}
+
+.npc-disposition-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.npc-disposition-buttons button {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: #dbeafe;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+}
+
+.npc-disposition-buttons button:hover,
+.npc-disposition-buttons button:focus {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #ffffff;
+  outline: none;
+}
+
+.npc-disposition-thresholds {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.npc-disposition-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.npc-disposition-status {
+  font-size: 0.85rem;
+  color: #e2e8f0;
+}
+
+.npc-disposition-status.is-error {
+  color: #fca5a5;
+}
+
+.npc-disposition-status.is-success {
+  color: #bbf7d0;
+}
+
+.npc-disposition-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.npc-disposition-cancel,
+.npc-disposition-save-btn {
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+}
+
+.npc-disposition-cancel {
+  background: transparent;
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #cbd5f5;
+}
+
+.npc-disposition-cancel:hover,
+.npc-disposition-cancel:focus {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #ffffff;
+  outline: none;
+}
+
+.npc-disposition-save-btn {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #e0f2fe;
+}
+
+.npc-disposition-save-btn:hover,
+.npc-disposition-save-btn:focus {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.75);
+  color: #ffffff;
+  outline: none;
+}
+
+.npc-disposition-save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .npc-view-sections {
   display: grid;
   gap: 20px;

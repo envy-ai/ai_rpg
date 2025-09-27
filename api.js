@@ -3473,6 +3473,94 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function buildNpcDispositionSnapshot(npc) {
+            if (!npc) {
+                return {
+                    npc: null,
+                    player: null,
+                    range: {
+                        min: null,
+                        max: null,
+                        typicalStep: null,
+                        typicalBigStep: null
+                    },
+                    dispositions: []
+                };
+            }
+
+            const dispositionDefinitions = Player.getDispositionDefinitions() || {};
+            const rangeConfig = dispositionDefinitions.range || {};
+            const typeMap = dispositionDefinitions.types || {};
+            const currentPlayerId = currentPlayer && currentPlayer.id ? currentPlayer.id : null;
+
+            const normalizedRange = {
+                min: Number.isFinite(rangeConfig.min) ? rangeConfig.min : null,
+                max: Number.isFinite(rangeConfig.max) ? rangeConfig.max : null,
+                typicalStep: Number.isFinite(rangeConfig.typicalStep) ? rangeConfig.typicalStep : null,
+                typicalBigStep: Number.isFinite(rangeConfig.typicalBigStep) ? rangeConfig.typicalBigStep : null
+            };
+
+            const dispositions = [];
+            for (const typeDef of Object.values(typeMap)) {
+                if (!typeDef || !typeDef.key) {
+                    continue;
+                }
+
+                const rawValue = currentPlayerId && typeof npc.getDisposition === 'function'
+                    ? npc.getDisposition(currentPlayerId, typeDef.key)
+                    : 0;
+                const numericValue = Number(rawValue);
+                const value = Number.isFinite(numericValue) ? numericValue : 0;
+                const intensity = Player.resolveDispositionIntensity(typeDef.key, value);
+
+                dispositions.push({
+                    key: typeDef.key,
+                    label: typeDef.label || typeDef.key,
+                    description: typeDef.description || '',
+                    value,
+                    intensity,
+                    thresholds: Array.isArray(typeDef.thresholds) ? typeDef.thresholds : [],
+                    moveUp: Array.isArray(typeDef.moveUp) ? typeDef.moveUp : [],
+                    moveDown: Array.isArray(typeDef.moveDown) ? typeDef.moveDown : [],
+                    moveWayDown: Array.isArray(typeDef.moveWayDown) ? typeDef.moveWayDown : []
+                });
+            }
+
+            return {
+                npc: {
+                    id: npc.id,
+                    name: npc.name || 'Unknown NPC'
+                },
+                player: currentPlayerId && currentPlayer
+                    ? {
+                        id: currentPlayer.id,
+                        name: currentPlayer.name || 'Player'
+                    }
+                    : null,
+                range: normalizedRange,
+                dispositions
+            };
+        }
+
+        function clampDispositionValue(value, rangeConfig = {}) {
+            let resolved = Number(value);
+            if (!Number.isFinite(resolved)) {
+                resolved = 0;
+            }
+
+            const min = Number.isFinite(rangeConfig.min) ? rangeConfig.min : null;
+            const max = Number.isFinite(rangeConfig.max) ? rangeConfig.max : null;
+
+            if (Number.isFinite(min) && resolved < min) {
+                resolved = min;
+            }
+            if (Number.isFinite(max) && resolved > max) {
+                resolved = max;
+            }
+
+            return resolved;
+        }
+
         // Update an NPC's core data (experimental editing UI)
         app.put('/api/npcs/:id', (req, res) => {
             try {
@@ -3622,6 +3710,115 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Error updating NPC:', error);
                 res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        app.get('/api/npcs/:id/dispositions', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                const payload = buildNpcDispositionSnapshot(npc);
+                res.json({
+                    success: true,
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to load NPC dispositions:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to load dispositions'
+                });
+            }
+        });
+
+        app.put('/api/npcs/:id/dispositions', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                if (!currentPlayer || !currentPlayer.id) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No current player found to compare dispositions against'
+                    });
+                }
+
+                const { dispositions: dispositionUpdates } = req.body || {};
+                if (dispositionUpdates !== undefined && !Array.isArray(dispositionUpdates)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'dispositions must be an array'
+                    });
+                }
+
+                const definitions = Player.getDispositionDefinitions() || {};
+                const rangeConfig = definitions.range || {};
+                const applied = [];
+
+                if (Array.isArray(dispositionUpdates)) {
+                    for (const entry of dispositionUpdates) {
+                        if (!entry) {
+                            continue;
+                        }
+                        const definition = Player.getDispositionDefinition(entry.key || entry.type);
+                        if (!definition || !definition.key) {
+                            continue;
+                        }
+
+                        const clampedValue = clampDispositionValue(entry.value, rangeConfig);
+                        npc.setDisposition(currentPlayer.id, definition.key, clampedValue);
+                        const intensity = Player.resolveDispositionIntensity(definition.key, clampedValue);
+
+                        applied.push({
+                            key: definition.key,
+                            label: definition.label || definition.key,
+                            value: clampedValue,
+                            intensity
+                        });
+                    }
+                }
+
+                const payload = buildNpcDispositionSnapshot(npc);
+                payload.applied = applied;
+
+                res.json({
+                    success: true,
+                    message: applied.length ? 'Dispositions updated successfully' : 'No disposition changes applied',
+                    ...payload
+                });
+            } catch (error) {
+                console.error('Failed to update NPC dispositions:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to update dispositions'
+                });
             }
         });
 
