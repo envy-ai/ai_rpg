@@ -5184,6 +5184,151 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/locations/:id/things', async (req, res) => {
+            try {
+                const locationId = req.params.id;
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                let location = null;
+                try {
+                    location = Location.get(locationId);
+                } catch (_) {
+                    location = null;
+                }
+
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                const payload = req.body || {};
+                const rawSeed = payload.seed || {};
+                const rawName = typeof rawSeed.name === 'string' ? rawSeed.name.trim() : '';
+                if (!rawName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Item name is required to generate a new item.'
+                    });
+                }
+
+                if (findThingByName(rawName)) {
+                    return res.status(409).json({
+                        success: false,
+                        error: `An item named "${rawName}" already exists.`
+                    });
+                }
+
+                const region = findRegionByLocationId(location.id) || null;
+
+                const normalizeSeedString = (value) => {
+                    if (typeof value !== 'string') {
+                        return '';
+                    }
+                    const trimmed = value.trim();
+                    return trimmed.length ? trimmed : '';
+                };
+
+                const seed = {
+                    name: rawName,
+                    description: normalizeSeedString(rawSeed.description),
+                    type: normalizeSeedString(rawSeed.type),
+                    slot: normalizeSeedString(rawSeed.slot),
+                    rarity: normalizeSeedString(rawSeed.rarity)
+                };
+
+                const rawItemOrScenery = normalizeSeedString(rawSeed.itemOrScenery);
+                seed.itemOrScenery = rawItemOrScenery && rawItemOrScenery.toLowerCase() === 'scenery'
+                    ? 'scenery'
+                    : 'item';
+
+                if (rawSeed.value !== undefined && rawSeed.value !== null && rawSeed.value !== '') {
+                    const numericValue = Number(rawSeed.value);
+                    seed.value = Number.isFinite(numericValue) ? numericValue : rawSeed.value;
+                }
+
+                if (rawSeed.weight !== undefined && rawSeed.weight !== null && rawSeed.weight !== '') {
+                    const numericWeight = Number(rawSeed.weight);
+                    seed.weight = Number.isFinite(numericWeight) ? numericWeight : rawSeed.weight;
+                }
+
+                let absoluteLevel = null;
+                if (payload.level !== undefined && payload.level !== null && payload.level !== '') {
+                    const levelValue = Number(payload.level);
+                    if (Number.isFinite(levelValue)) {
+                        absoluteLevel = Math.max(1, Math.round(levelValue));
+                    }
+                } else if (rawSeed.level !== undefined && rawSeed.level !== null && rawSeed.level !== '') {
+                    const levelValue = Number(rawSeed.level);
+                    if (Number.isFinite(levelValue)) {
+                        absoluteLevel = Math.max(1, Math.round(levelValue));
+                    }
+                }
+
+                if (Number.isFinite(absoluteLevel)) {
+                    const baseReference = Number.isFinite(Number(location.baseLevel))
+                        ? Number(location.baseLevel)
+                        : (Number.isFinite(Number(location.level))
+                            ? Number(location.level)
+                            : (Number.isFinite(Number(region?.averageLevel))
+                                ? Number(region.averageLevel)
+                                : (Number.isFinite(Number(currentPlayer?.level))
+                                    ? Number(currentPlayer.level)
+                                    : 1)));
+
+                    const relativeLevel = absoluteLevel - baseReference;
+                    seed.relativeLevel = Math.max(-10, Math.min(10, Math.round(relativeLevel)));
+                } else if (rawSeed.relativeLevel !== undefined && rawSeed.relativeLevel !== null && rawSeed.relativeLevel !== '') {
+                    const relativeCandidate = Number(rawSeed.relativeLevel);
+                    if (Number.isFinite(relativeCandidate)) {
+                        seed.relativeLevel = Math.max(-10, Math.min(10, Math.round(relativeCandidate)));
+                    }
+                }
+
+                const createdItems = await generateItemsByNames({
+                    itemNames: [rawName],
+                    location,
+                    region,
+                    seeds: [seed]
+                });
+
+                let generatedThing = null;
+                if (Array.isArray(createdItems) && createdItems.length) {
+                    generatedThing = createdItems[0];
+                }
+                if (!generatedThing) {
+                    generatedThing = findThingByName(rawName);
+                }
+                if (!generatedThing) {
+                    throw new Error('Failed to generate item.');
+                }
+
+                const locationData = buildLocationResponse(location);
+                const thingJson = typeof generatedThing.toJSON === 'function'
+                    ? generatedThing.toJSON()
+                    : generatedThing;
+
+                res.json({
+                    success: true,
+                    thing: thingJson,
+                    location: locationData,
+                    message: `${thingJson.name || rawName} has been created.`
+                });
+            } catch (error) {
+                console.error('Error generating item:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to generate item'
+                });
+            }
+        });
+
         // Move player to a connected location
         app.post('/api/player/move', async (req, res) => {
             try {

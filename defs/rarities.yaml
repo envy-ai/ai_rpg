@@ -1,10 +1,43 @@
 rarities:
-  junk: 0.75
-  common: 1
-  fine: 1.25
-  superior: 1.5
-  masterwork: 2
-  rare: 2.5
-  epic: 3
-  legendary: 4
-  artifact: 5
+  junk:
+    damage_multiplier: 0.75
+    value_multiplier: 0.75
+    attribute_multiplier: 0.75
+    prevalence: 50
+    color: "#808080"
+  common:
+    damage_multiplier: 1
+    value_multiplier: 1
+    attribute_multiplier: 1
+    prevalence: 100
+    color: "#00FF00"
+  uncommon:
+    damage_multiplier: 1.25
+    value_multiplier: 1.25
+    attribute_multiplier: 1.25
+    prevalence: 75
+    color: "#0000FF"
+  rare:
+    damage_multiplier: 1.5
+    value_multiplier: 1.5
+    attribute_multiplier: 1.5
+    prevalence: 25
+    color: "#800080"
+  epic:
+    damage_multiplier: 2
+    value_multiplier: 2
+    attribute_multiplier: 2
+    prevalence: 5
+    color: "#FFA500"
+  legendary:
+    damage_multiplier: 3
+    value_multiplier: 3
+    attribute_multiplier: 3
+    prevalence: 2
+    color: "#FFD700"
+  artifact:
+    damage_multiplier: 4
+    value_multiplier: 4
+    attribute_multiplier: 4
+    prevalence: 1
+    color: "#FFD700"

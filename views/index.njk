@@ -64,8 +64,11 @@
                                         </details>
                                         <details class="location-section location-things" open>
                                             <summary>Items &amp; Scenery</summary>
-                                            <div class="location-entity-grid" id="locationThings">
-                                                <div class="location-thing-empty">No notable items or scenery present.</div>
+                                            <div class="location-thing-content">
+                                                <div class="location-entity-grid" id="locationThings">
+                                                    <div class="location-thing-empty">No notable items or scenery present.</div>
+                                                </div>
+                                                <button type="button" class="location-npc-add-button location-thing-add-button" id="addThingButton" disabled>New Item</button>
                                             </div>
                                         </details>
                                     </div>
@@ -2339,6 +2342,7 @@
         const addNpcSaveBtn = document.getElementById('addNpcSaveBtn');
         const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
         const addNpcButton = document.getElementById('addNpcButton');
+        const addThingButton = document.getElementById('addThingButton');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -2841,15 +2845,22 @@
             }
         }
 
-        function populateThingEditForm(thing) {
+        function populateThingEditForm(thing, options = {}) {
             if (!thingEditForm) {
                 return;
             }
 
             thingEditForm.reset();
 
+            const mode = options.mode === 'create' ? 'create' : 'edit';
+
             if (thingEditModalTitle) {
-                thingEditModalTitle.textContent = thing?.name ? `Edit ${thing.name}` : 'Edit Item';
+                if (mode === 'create') {
+                    const defaultTitle = options.itemOrScenery === 'scenery' ? 'Create Scenery' : 'Create Item';
+                    thingEditModalTitle.textContent = options.title || defaultTitle;
+                } else {
+                    thingEditModalTitle.textContent = thing?.name ? `Edit ${thing.name}` : 'Edit Item';
+                }
             }
 
             if (thingEditIdInput) {
@@ -2861,7 +2872,9 @@
             }
 
             if (thingEditTypeSelect) {
-                const typeValue = (thing?.thingType || thing?.type || 'item').toString().toLowerCase();
+                const explicitType = options.itemOrScenery ? String(options.itemOrScenery).toLowerCase() : null;
+                const typeValue = explicitType
+                    || (thing?.thingType || thing?.type || thing?.itemOrScenery || 'item').toString().toLowerCase();
                 thingEditTypeSelect.value = typeValue === 'scenery' ? 'scenery' : 'item';
             }
 
@@ -2921,29 +2934,36 @@
             updateThingEditStatus('');
         }
 
-        async function showThingEditModal(thing, context = 'general') {
-            if (!thing || !thing.id || !thingEditModal || !thingEditForm || !npcModalBackdrop) {
+        async function showThingEditModal(thing, context = 'general', options = {}) {
+            if (!thingEditModal || !thingEditForm || !npcModalBackdrop) {
                 return;
             }
 
-            let resolvedThing = { ...thing };
+            const mode = options.mode === 'create' ? 'create' : 'edit';
+            let resolvedThing = thing ? { ...thing } : {};
 
-            const needsDetails = resolvedThing.level === undefined
-                || (resolvedThing.metadata && typeof resolvedThing.metadata === 'object'
-                    && ('level' in resolvedThing.metadata));
+            if (mode === 'edit') {
+                if (!thing || !thing.id) {
+                    return;
+                }
 
-            if (needsDetails) {
-                try {
-                    const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data?.thing) {
-                            resolvedThing = { ...data.thing };
-                            cacheThingData(resolvedThing);
+                const needsDetails = resolvedThing.level === undefined
+                    || (resolvedThing.metadata && typeof resolvedThing.metadata === 'object'
+                        && ('level' in resolvedThing.metadata));
+
+                if (needsDetails) {
+                    try {
+                        const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data?.thing) {
+                                resolvedThing = { ...data.thing };
+                                cacheThingData(resolvedThing);
+                            }
                         }
+                    } catch (error) {
+                        console.warn('Failed to fetch full item details:', error);
                     }
-                } catch (error) {
-                    console.warn('Failed to fetch full item details:', error);
                 }
             }
 
@@ -2953,12 +2973,31 @@
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
 
-            populateThingEditForm(resolvedThing);
+            populateThingEditForm(resolvedThing, {
+                mode,
+                itemOrScenery: options.itemOrScenery,
+                title: options.title
+            });
 
-            currentThingEditId = resolvedThing.id;
             currentThingEditContext = context;
-            thingEditForm.dataset.thingId = resolvedThing.id;
+            currentThingEditMode = mode;
             thingEditForm.dataset.thingContext = context;
+            thingEditForm.dataset.thingMode = mode;
+
+            if (mode === 'edit') {
+                currentThingEditId = resolvedThing.id;
+                currentThingCreationLocation = null;
+                thingEditForm.dataset.thingId = resolvedThing.id;
+            } else {
+                currentThingEditId = null;
+                currentThingCreationLocation = options.location || lastRenderedLocation || null;
+                delete thingEditForm.dataset.thingId;
+
+                if (thingEditTypeSelect) {
+                    const defaultType = options.itemOrScenery === 'scenery' ? 'scenery' : 'item';
+                    thingEditTypeSelect.value = defaultType;
+                }
+            }
 
             thingEditModal.removeAttribute('hidden');
             thingEditModal.setAttribute('aria-hidden', 'false');
@@ -2983,6 +3022,8 @@
         let lastRenderedLocation = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
+        let currentThingEditMode = 'edit';
+        let currentThingCreationLocation = null;
         let currentThingLockedMetadata = {};
 
         function isNpcEditorAvailable() {
@@ -4172,6 +4213,45 @@
             }, 50);
         }
 
+        async function openAddThingModal({ itemOrScenery = 'item' } = {}) {
+            if (!thingEditModal || !npcModalBackdrop) {
+                return;
+            }
+
+            const activeLocation = (lastRenderedLocation && lastRenderedLocation.id)
+                ? lastRenderedLocation
+                : null;
+            if (!activeLocation) {
+                alert('No active location available to add items.');
+                return;
+            }
+
+            const baseLevel = Number.isFinite(Number(activeLocation.baseLevel))
+                ? Number(activeLocation.baseLevel)
+                : (Number.isFinite(Number(activeLocation.level)) ? Number(activeLocation.level) : null);
+
+            try {
+                await showThingEditModal({}, 'location', {
+                    mode: 'create',
+                    itemOrScenery,
+                    location: activeLocation
+                });
+            } catch (error) {
+                console.warn('Failed to open item creation modal:', error);
+                return;
+            }
+
+            if (thingEditLevelInput) {
+                if (Number.isFinite(baseLevel)) {
+                    thingEditLevelInput.value = baseLevel;
+                } else {
+                    thingEditLevelInput.value = '';
+                }
+            }
+
+            updateThingEditStatus('');
+        }
+
         function closeAddNpcModal({ focusTrigger = false } = {}) {
             if (!addNpcModal) {
                 return;
@@ -4500,10 +4580,13 @@
             updateThingEditStatus('');
             currentThingEditId = null;
             currentThingEditContext = null;
+            currentThingEditMode = 'edit';
+            currentThingCreationLocation = null;
             if (thingEditForm) {
                 thingEditForm.reset();
                 delete thingEditForm.dataset.thingId;
                 delete thingEditForm.dataset.thingContext;
+                delete thingEditForm.dataset.thingMode;
             }
             if (thingMetadataList) {
                 thingMetadataList.innerHTML = '';
@@ -4606,6 +4689,12 @@
         if (addNpcButton) {
             addNpcButton.addEventListener('click', () => {
                 openAddNpcModal();
+            });
+        }
+
+        if (addThingButton) {
+            addThingButton.addEventListener('click', () => {
+                openAddThingModal();
             });
         }
 
@@ -4886,6 +4975,109 @@
         if (thingEditForm) {
             thingEditForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
+
+                const mode = (thingEditForm.dataset.thingMode === 'create' || currentThingEditMode === 'create')
+                    ? 'create'
+                    : 'edit';
+
+                if (mode === 'create') {
+                    if (!currentThingCreationLocation || !currentThingCreationLocation.id) {
+                        updateThingEditStatus('No active location is available for adding items.', 'error');
+                        return;
+                    }
+
+                    const trimmedName = thingEditNameInput?.value?.trim();
+                    if (!trimmedName) {
+                        updateThingEditStatus('Please provide a name for the item.', 'error');
+                        thingEditNameInput?.focus();
+                        return;
+                    }
+
+                    updateThingEditStatus('Generating item...');
+                    if (thingEditSaveBtn) {
+                        thingEditSaveBtn.disabled = true;
+                    }
+
+                    const typeSelection = (thingEditTypeSelect?.value || '').toLowerCase() === 'scenery'
+                        ? 'scenery'
+                        : 'item';
+                    const seed = {
+                        name: trimmedName,
+                        itemOrScenery: typeSelection
+                    };
+
+                    const descriptionValue = thingEditDescriptionInput?.value?.trim();
+                    if (descriptionValue) {
+                        seed.description = descriptionValue;
+                    }
+
+                    const detailValue = thingEditItemDetailInput?.value?.trim();
+                    if (detailValue) {
+                        seed.type = detailValue;
+                    }
+
+                    const slotValue = normalizeSlotType(thingEditSlotSelect?.value || '');
+                    if (slotValue) {
+                        addAvailableSlotType(slotValue);
+                        seed.slot = slotValue;
+                    }
+
+                    const rarityKey = thingEditRarityInput?.value?.trim();
+                    if (rarityKey) {
+                        seed.rarity = getRarityLabel(rarityKey);
+                    }
+
+                    const payload = { seed };
+
+                    const levelRaw = thingEditLevelInput?.value;
+                    if (levelRaw !== undefined && levelRaw !== null && String(levelRaw).trim() !== '') {
+                        const numericLevel = Number(levelRaw);
+                        if (Number.isFinite(numericLevel)) {
+                            payload.level = Math.max(1, Math.round(numericLevel));
+                        }
+                    }
+
+                    let overlayShown = false;
+                    try {
+                        showLocationOverlay('Forging a new item...');
+                        overlayShown = true;
+
+                        const response = await fetch(`/api/locations/${encodeURIComponent(currentThingCreationLocation.id)}/things`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result?.success) {
+                            throw new Error(result?.error || `Request failed with status ${response.status}`);
+                        }
+
+                        closeThingEditModal();
+
+                        if (result.location) {
+                            lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                            await window.updateLocationDisplay(result.location);
+                        } else if (typeof window.loadCurrentLocation === 'function') {
+                            await window.loadCurrentLocation();
+                        }
+
+                        window.refreshInventory?.();
+                        window.refreshParty?.();
+                    } catch (error) {
+                        console.warn('Failed to create item:', error);
+                        updateThingEditStatus(error?.message || 'Failed to create item.', 'error');
+                    } finally {
+                        if (overlayShown) {
+                            hideLocationOverlay();
+                        }
+                        if (thingEditSaveBtn) {
+                            thingEditSaveBtn.disabled = false;
+                        }
+                    }
+
+                    return;
+                }
 
                 if (!currentThingEditId) {
                     updateThingEditStatus('No item selected.', 'error');
@@ -6619,6 +6811,9 @@
                     if (addNpcButton) {
                         addNpcButton.disabled = false;
                     }
+                    if (addThingButton) {
+                        addThingButton.disabled = false;
+                    }
                     if (locationExitsList) {
                         const exitEntries = Object.entries(location.exits || {});
                         if (exitEntries.length === 0) {
@@ -6839,6 +7034,9 @@
                     }
                     if (addNpcButton) {
                         addNpcButton.disabled = true;
+                    }
+                    if (addThingButton) {
+                        addThingButton.disabled = true;
                     }
                     npcDataCache.clear();
                     closeNpcContextMenu();

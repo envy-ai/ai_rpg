@@ -429,6 +429,16 @@ p:not(:last-child) {
   gap: 12px;
 }
 
+.location-thing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.location-thing-add-button {
+  align-self: stretch;
+}
+
 .location-npc-add-button {
   align-self: stretch;
   background: rgba(16, 185, 129, 0.18);

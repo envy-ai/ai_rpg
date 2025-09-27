@@ -4010,7 +4010,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
     }
 }
 
-async function generateItemsByNames({ itemNames = [], location = null, owner = null, region = null } = {}) {
+async function generateItemsByNames({ itemNames = [], location = null, owner = null, region = null, seeds = [] } = {}) {
     const normalized = Array.from(new Set(
         (itemNames || [])
             .map(name => (typeof name === 'string' ? name.trim() : ''))
@@ -4024,6 +4024,88 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     const missing = normalized.filter(name => !findThingByName(name));
     if (!missing.length) {
         return [];
+    }
+
+    const normalizeThingSeed = (seed = {}) => {
+        if (!seed || typeof seed !== 'object') {
+            return null;
+        }
+
+        const normalizedSeed = {};
+
+        if (typeof seed.name === 'string') {
+            const trimmedName = seed.name.trim();
+            if (trimmedName) {
+                normalizedSeed.name = trimmedName;
+            }
+        }
+
+        if (typeof seed.description === 'string') {
+            const trimmedDescription = seed.description.trim();
+            if (trimmedDescription) {
+                normalizedSeed.description = trimmedDescription;
+            }
+        }
+
+        if (typeof seed.type === 'string') {
+            const trimmedType = seed.type.trim();
+            if (trimmedType) {
+                normalizedSeed.type = trimmedType;
+            }
+        }
+
+        if (typeof seed.slot === 'string') {
+            const trimmedSlot = seed.slot.trim();
+            if (trimmedSlot) {
+                normalizedSeed.slot = trimmedSlot;
+            }
+        }
+
+        if (typeof seed.rarity === 'string') {
+            const trimmedRarity = seed.rarity.trim();
+            if (trimmedRarity) {
+                normalizedSeed.rarity = trimmedRarity;
+            }
+        }
+
+        if (seed.value !== undefined && seed.value !== null && seed.value !== '') {
+            const numericValue = Number(seed.value);
+            normalizedSeed.value = Number.isFinite(numericValue) ? numericValue : seed.value;
+        }
+
+        if (seed.weight !== undefined && seed.weight !== null && seed.weight !== '') {
+            const numericWeight = Number(seed.weight);
+            normalizedSeed.weight = Number.isFinite(numericWeight) ? numericWeight : seed.weight;
+        }
+
+        if (seed.relativeLevel !== undefined && seed.relativeLevel !== null && seed.relativeLevel !== '') {
+            const numericRelative = Number(seed.relativeLevel);
+            if (Number.isFinite(numericRelative)) {
+                const clampedRelative = Math.max(-10, Math.min(10, Math.round(numericRelative)));
+                normalizedSeed.relativeLevel = clampedRelative;
+            }
+        }
+
+        if (typeof seed.itemOrScenery === 'string') {
+            const normalizedType = seed.itemOrScenery.trim().toLowerCase();
+            normalizedSeed.itemOrScenery = normalizedType === 'scenery' ? 'scenery' : 'item';
+        }
+
+        return normalizedSeed;
+    };
+
+    const seedLookup = new Map();
+    if (Array.isArray(seeds)) {
+        seeds.forEach(seed => {
+            const normalizedSeed = normalizeThingSeed(seed);
+            if (!normalizedSeed || !normalizedSeed.name) {
+                return;
+            }
+            const key = normalizedSeed.name.toLowerCase();
+            if (!seedLookup.has(key)) {
+                seedLookup.set(key, normalizedSeed);
+            }
+        });
     }
 
     let resolvedLocation = location || null;
@@ -4042,14 +4124,31 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             return null;
         }
         try {
+            const seed = seedLookup.get(name.toLowerCase()) || {};
+            const fallbackType = typeof seed.itemOrScenery === 'string' && seed.itemOrScenery.toLowerCase() === 'scenery'
+                ? 'scenery'
+                : 'item';
             const thing = new Thing({
                 name,
-                description: `An item called ${name}.`,
-                thingType: 'item',
+                description: seed.description || `An item called ${name}.`,
+                thingType: fallbackType,
                 metadata: {}
             });
             things.set(thing.id, thing);
             const fallbackMetadata = thing.metadata || {};
+            if (Number.isFinite(seed.relativeLevel)) {
+                fallbackMetadata.relativeLevel = seed.relativeLevel;
+            }
+            if (seed.slot) {
+                fallbackMetadata.slot = seed.slot;
+                thing.slot = seed.slot;
+            }
+            if (seed.rarity) {
+                thing.rarity = seed.rarity;
+            }
+            if (seed.type) {
+                thing.itemTypeDetail = seed.type;
+            }
             if (owner && typeof owner.addInventoryItem === 'function') {
                 owner.addInventoryItem(thing);
                 fallbackMetadata.ownerId = owner.id;
@@ -4102,9 +4201,16 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
         const created = [];
 
         for (const name of missing) {
+            const seed = seedLookup.get(name.toLowerCase()) || {};
+            const requestedThingType = typeof seed.itemOrScenery === 'string'
+                ? seed.itemOrScenery.trim().toLowerCase()
+                : null;
+            const normalizedSeedType = requestedThingType === 'scenery' ? 'scenery' : 'item';
+
             const thingSeed = {
+                ...seed,
                 name,
-                itemOrScenery: 'item'
+                itemOrScenery: normalizedSeedType
             };
 
             try {
@@ -4188,15 +4294,25 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 }
                 const composedDescription = descriptionParts.join(' ') || `An item named ${name}.`;
 
-                const relativeLevel = Number.isFinite(itemData?.relativeLevel)
-                    ? Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)))
-                    : 0;
+                let relativeLevel = null;
+                if (Number.isFinite(itemData?.relativeLevel)) {
+                    relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
+                } else if (Number.isFinite(seed?.relativeLevel)) {
+                    relativeLevel = Math.max(-10, Math.min(10, Math.round(seed.relativeLevel)));
+                } else {
+                    relativeLevel = 0;
+                }
                 const baseReference = owner?.level
                     ? owner.level
                     : (resolvedLocation?.baseLevel
                         ? resolvedLocation.baseLevel
                         : (resolvedRegion?.averageLevel || currentPlayer?.level || 1));
                 const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+
+                const responseThingType = typeof itemData?.itemOrScenery === 'string'
+                    ? itemData.itemOrScenery.trim().toLowerCase()
+                    : null;
+                const finalThingType = responseThingType === 'scenery' ? 'scenery' : normalizedSeedType;
 
                 const metadata = sanitizeMetadataObject({
                     rarity: itemData?.rarity || null,
@@ -4214,7 +4330,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const thing = new Thing({
                     name,
                     description: composedDescription,
-                    thingType: 'item',
+                    thingType: finalThingType,
                     rarity: itemData?.rarity || null,
                     itemTypeDetail: itemData?.type || null,
                     slot: itemData?.slot || null,
@@ -10130,6 +10246,7 @@ const apiScope = {
     generateSkillsList,
     generateSkillsByNames,
     generateThingImage,
+    generateItemsByNames,
     expandRegionEntryStub,
     queueLocationThingImages,
     requestNpcAbilityAssignments,
@@ -10155,6 +10272,7 @@ const apiScope = {
     buildThingProfiles,
     describeSettingForPrompt,
     findActorByName,
+    findThingByName,
     findRegionByLocationId,
     generateNpcFromEvent,
     generateImageId,
