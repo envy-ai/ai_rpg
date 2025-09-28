@@ -13,6 +13,17 @@ body {
   overflow: hidden;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 p:not(:last-child) {
   margin-bottom: 1em;
 }
@@ -1754,6 +1765,10 @@ p:not(:last-child) {
   transition: background 0.3s ease;
   align-self: flex-end;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 .send-button:hover:not(:disabled) {
   background: #5a6fd8;
@@ -1761,6 +1776,17 @@ p:not(:last-child) {
 .send-button:disabled {
   background: rgba(255, 255, 255, 0.3);
   cursor: not-allowed;
+}
+.send-button.is-loading {
+  cursor: progress;
+}
+.send-button .send-button-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  animation: spin 0.8s linear infinite;
 }
 
 @media (max-width: 768px) {

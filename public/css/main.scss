@@ -16,6 +16,17 @@ body {
   overflow: hidden;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 p:not(:last-child) {
   margin-bottom: 1em;
 }
@@ -1827,6 +1838,10 @@ p:not(:last-child) {
   @include transition(background);
   align-self: flex-end;
   font-family: $font-family;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 
   &:hover:not(:disabled) {
     background: $primary-blue-hover;
@@ -1835,6 +1850,19 @@ p:not(:last-child) {
   &:disabled {
     background: $white-30;
     cursor: not-allowed;
+  }
+
+  &.is-loading {
+    cursor: progress;
+  }
+
+  .send-button-spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-color: $white;
+    animation: spin 0.8s linear infinite;
   }
 }
 

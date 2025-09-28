@@ -894,6 +894,7 @@
     <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
+    <script src="/js/currency-utils.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/player-stats.js"></script>
@@ -2025,6 +2026,23 @@
             thingMenuState.trigger = null;
         }
 
+        function updateLocationThingReference(thingId, updater) {
+            if (!lastRenderedLocation || typeof updater !== 'function') {
+                return;
+            }
+            const collection = Array.isArray(lastRenderedLocation.things)
+                ? lastRenderedLocation.things
+                : [];
+            const target = collection.find(entry => entry && entry.id === thingId);
+            if (target) {
+                try {
+                    updater(target);
+                } catch (error) {
+                    console.warn('Failed to update location thing reference:', error);
+                }
+            }
+        }
+
         function registerThingContextMenu(card, thing, options = {}) {
             if (!card || !thing || !thing.id) {
                 return;
@@ -2068,8 +2086,8 @@
             menu.appendChild(editButton);
 
             let regenerateImageButton = null;
-            const canRegenerateThingImage = thing && (thing.imageId || thing.imageJobId);
-            if (canRegenerateThingImage && runtimeConfig?.imagegen?.enabled) {
+            const imageGenerationEnabled = runtimeConfig?.imagegen?.enabled !== false;
+            if (imageGenerationEnabled) {
                 regenerateImageButton = document.createElement('button');
                 regenerateImageButton.type = 'button';
                 regenerateImageButton.className = 'thing-card-menu-item';
@@ -2137,6 +2155,14 @@
                         pendingImageJobId: null
                     };
                     thingDataCache.set(thing.id, updatedThing);
+                    thing.imageId = null;
+                    thing.imageJobId = null;
+                    thing.pendingImageJobId = null;
+                    updateLocationThingReference(entityId, (entry) => {
+                        entry.imageId = null;
+                        entry.imageJobId = null;
+                        entry.pendingImageJobId = null;
+                    });
 
                     const payload = {
                         entityType: 'thing',
@@ -2171,6 +2197,18 @@
 
                         if (data?.skipped) {
                             thingDataCache.set(thing.id, { ...cachedThing });
+                            thing.imageId = cachedThing?.imageId || thing.imageId || null;
+                            thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
+                            thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
+                            updateLocationThingReference(entityId, (entry) => {
+                                entry.imageId = cachedThing?.imageId || null;
+                                if ('imageJobId' in cachedThing) {
+                                    entry.imageJobId = cachedThing.imageJobId;
+                                }
+                                if ('pendingImageJobId' in cachedThing) {
+                                    entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
+                                }
+                            });
                             renderEntityImages('thing', entityId, {
                                 imageId: previousImageId,
                                 force: false,
@@ -2188,6 +2226,13 @@
                             pendingImageJobId: data?.jobId || null
                         };
                         thingDataCache.set(thing.id, nextThing);
+                        thing.pendingImageJobId = data?.jobId || null;
+                        if (data?.imageId) {
+                            thing.imageId = data.imageId;
+                        }
+                        updateLocationThingReference(entityId, (entry) => {
+                            entry.pendingImageJobId = data?.jobId || null;
+                        });
 
                         renderEntityImages('thing', entityId, {
                             imageId: null,
@@ -2197,6 +2242,18 @@
                     } catch (error) {
                         console.warn('Failed to regenerate image for thing:', error);
                         thingDataCache.set(thing.id, { ...cachedThing });
+                        thing.imageId = cachedThing?.imageId || thing.imageId || null;
+                        thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
+                        thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
+                        updateLocationThingReference(entityId, (entry) => {
+                            entry.imageId = cachedThing?.imageId || null;
+                            if ('imageJobId' in cachedThing) {
+                                entry.imageJobId = cachedThing.imageJobId;
+                            }
+                            if ('pendingImageJobId' in cachedThing) {
+                                entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
+                            }
+                        });
                         renderEntityImages('thing', entityId, {
                             imageId: previousImageId,
                             force: false,

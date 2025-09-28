@@ -1,6 +1,7 @@
 const { DOMParser } = require('xmldom');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
+const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -436,7 +437,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     const sign = amount > 0 ? '+' : '-';
                     const absolute = Math.abs(Math.round(amount));
-                    const label = getCurrencyLabel(absolute);
+                    const label = getCurrencyLabel(absolute, { setting: currentSetting || null });
                     add('💰', `${sign}${absolute} ${label}`);
                 });
             }

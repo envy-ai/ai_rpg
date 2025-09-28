@@ -3,6 +3,7 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
 
@@ -585,6 +586,10 @@ class AIRPGChat {
 
     getCurrencyLabel(amount) {
         const setting = window.currentSetting || {};
+        if (window.CurrencyUtils && typeof window.CurrencyUtils.getCurrencyLabel === 'function') {
+            return window.CurrencyUtils.getCurrencyLabel(amount, { setting });
+        }
+
         const singular = typeof setting.currencyName === 'string' && setting.currencyName.trim()
             ? setting.currencyName.trim()
             : 'coin';
@@ -1939,6 +1944,24 @@ class AIRPGChat {
         this.removeStatusMessage(requestId);
     }
 
+    setSendButtonLoading(isLoading) {
+        if (!this.sendButton) {
+            return;
+        }
+
+        if (isLoading) {
+            this.sendButton.classList.add('is-loading');
+            this.sendButton.disabled = true;
+            this.sendButton.setAttribute('aria-busy', 'true');
+            this.sendButton.innerHTML = '<span class="send-button-spinner" aria-hidden="true"></span><span class="sr-only">Sending…</span>';
+        } else {
+            this.sendButton.classList.remove('is-loading');
+            this.sendButton.disabled = false;
+            this.sendButton.removeAttribute('aria-busy');
+            this.sendButton.innerHTML = this.sendButtonDefaultHtml || 'Send';
+        }
+    }
+
     scrollToBottom() {
         this.chatLog.scrollTop = this.chatLog.scrollHeight;
     }
@@ -2249,6 +2272,10 @@ class AIRPGChat {
         }
         this.removeStatusMessage(requestId);
         this.pendingRequests.delete(requestId);
+        if (this.pendingRequests.size === 0) {
+            this.setSendButtonLoading(false);
+            this.messageInput?.focus();
+        }
     }
 
     async sendMessage() {
@@ -2260,7 +2287,7 @@ class AIRPGChat {
         this.chatHistory.push({ role: 'user', content: rawInput });
 
         this.messageInput.value = '';
-        this.sendButton.disabled = true;
+        this.setSendButtonLoading(true);
         const requestId = this.generateRequestId();
         const context = this.ensureRequestContext(requestId);
         this.showLoading(requestId);
@@ -2287,11 +2314,12 @@ class AIRPGChat {
             if (data.error) {
                 this.hideLoading(requestId);
                 this.addMessage('system', `Error: ${data.error}`, true);
+                this.finalizeChatRequest(requestId);
             } else {
                 const result = this.processChatPayload(requestId, data, { fromStream: false });
                 shouldRefreshLocation = result.shouldRefreshLocation || shouldRefreshLocation;
 
-                if (context.streamMeta && context.streamMeta.enabled === false) {
+                if (!context.streamMeta || context.streamMeta.enabled === false) {
                     this.finalizeChatRequest(requestId);
                 } else if (context.streamComplete) {
                     this.finalizeChatRequest(requestId);
@@ -2311,9 +2339,6 @@ class AIRPGChat {
                 console.warn('Failed to refresh location after chat response:', refreshError);
             }
         }
-
-        this.sendButton.disabled = false;
-        this.messageInput.focus();
     }
 
     async checkLocationUpdate() {
