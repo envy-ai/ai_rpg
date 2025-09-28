@@ -70,6 +70,24 @@ try {
     process.exit(1);
 }
 
+const resolveBaseTimeoutSeconds = () => {
+    const candidates = [
+        config?.baseTimeoutSeconds,
+        config?.ai?.baseTimeoutSeconds,
+        120
+    ];
+    for (const value of candidates) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric) && numeric > 0) {
+            return numeric;
+        }
+    }
+    return 120;
+};
+
+const baseTimeoutSeconds = resolveBaseTimeoutSeconds();
+config.baseTimeoutSeconds = Math.max(1, baseTimeoutSeconds) * 1000;
+
 const app = express();
 const server = http.createServer(app);
 const realtimeHub = new RealtimeHub({ logger: console });

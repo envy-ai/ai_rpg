@@ -1,3 +1,6 @@
+const { DOMParser } = require('xmldom');
+const Thing = require('./Thing.js');
+
 class Events {
     static initialize(deps = {}) {
         this.deps = { ...deps };
@@ -38,6 +41,34 @@ class Events {
                 return { healer, recipient, effect };
             }).filter(Boolean),
             item_appear: raw => this.splitSemicolonEntries(raw),
+            alter_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+
+                const segments = entry
+                    .split(/->/)
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!segments.length) {
+                    return null;
+                }
+
+                const originalName = segments[0] || null;
+                const newName = segments.length > 1 ? segments[1] : segments[0];
+                const changeDescription = segments.length > 2 ? segments.slice(2).join(' -> ') : '';
+
+                if (!originalName && !newName) {
+                    return null;
+                }
+
+                return {
+                    originalName: originalName ? originalName.trim() : null,
+                    newName: newName ? newName.trim() : null,
+                    changeDescription: changeDescription ? changeDescription.trim() : ''
+                };
+            }).filter(Boolean),
             move_location: raw => this.splitSemicolonEntries(raw),
             new_exit_discovered: raw => this.splitSemicolonEntries(raw).map(entry => {
                 if (!entry) {
@@ -315,6 +346,7 @@ class Events {
             drop_item: (entries, context) => this.handleDropItemEvents(entries, context),
             heal_recover: (entries, context) => this.handleHealEvents(entries, context),
             item_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
+            alter_item: (entries, context) => this.handleAlterItemEvents(entries, context),
             move_location: (entries, context) => this.handleMoveLocationEvents(entries, context),
             new_exit_discovered: (entries, context) => this.handleNewExitEvents(entries, context),
             npc_arrival_departure: (entries, context) => this.handleNpcArrivalDepartureEvents(entries, context),
@@ -382,6 +414,300 @@ class Events {
             .split(/;/)
             .map(entry => entry.trim())
             .filter(entry => entry.length > 0 && !this.isNoEventAnswer(entry));
+    }
+
+    static sanitizeMetadataObject(meta) {
+        if (!meta || typeof meta !== 'object') {
+            return {};
+        }
+        const cleaned = { ...meta };
+        for (const key of Object.keys(cleaned)) {
+            const value = cleaned[key];
+            if (
+                value === undefined ||
+                value === null ||
+                (typeof value === 'string' && !value.trim())
+            ) {
+                delete cleaned[key];
+            }
+        }
+        return cleaned;
+    }
+
+    static roundAwayFromZero(value) {
+        if (!Number.isFinite(value) || value === 0) {
+            return 0;
+        }
+        return value > 0 ? Math.ceil(value) : Math.floor(value);
+    }
+
+    static clampLevel(value, fallback = 1) {
+        const base = Number.isFinite(value) ? value : (Number.isFinite(fallback) ? fallback : 1);
+        return Math.max(1, Math.min(20, Math.round(base)));
+    }
+
+    static normalizeThingType(raw, fallback = 'item') {
+        const normalized = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+        if (normalized === 'scenery') {
+            return 'scenery';
+        }
+        if (normalized === 'item') {
+            return 'item';
+        }
+        return fallback || 'item';
+    }
+
+    static scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } = {}) {
+        if (!Array.isArray(rawBonuses) || !rawBonuses.length) {
+            return [];
+        }
+
+        const normalized = [];
+        for (const entry of rawBonuses) {
+            if (!entry) {
+                continue;
+            }
+
+            let attribute = null;
+            let bonusValue = null;
+
+            if (typeof entry === 'string') {
+                attribute = entry.trim();
+            } else if (typeof entry === 'object') {
+                if (typeof entry.attribute === 'string') {
+                    attribute = entry.attribute.trim();
+                } else if (typeof entry.name === 'string') {
+                    attribute = entry.name.trim();
+                }
+
+                const bonusRaw = entry.bonus ?? entry.value;
+                const parsed = Number(bonusRaw);
+                if (Number.isFinite(parsed)) {
+                    bonusValue = parsed;
+                }
+            }
+
+            if (!attribute) {
+                continue;
+            }
+
+            if (!Number.isFinite(bonusValue)) {
+                const fallbackBonus = Number(entry?.bonus ?? entry?.value);
+                if (Number.isFinite(fallbackBonus)) {
+                    bonusValue = fallbackBonus;
+                } else {
+                    bonusValue = 0;
+                }
+            }
+
+            normalized.push({
+                attribute,
+                bonus: bonusValue
+            });
+        }
+
+        if (!normalized.length) {
+            return [];
+        }
+
+        const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
+        const rarityMultiplier = Thing.getRarityAttributeMultiplier(rarity);
+        const effectiveMultiplier = Number.isFinite(rarityMultiplier) && rarityMultiplier > 0 ? rarityMultiplier : 1;
+        const factor = 0.5 * effectiveLevel * effectiveMultiplier;
+
+        return normalized.map(({ attribute, bonus }) => {
+            const scaled = bonus * factor;
+            const rounded = this.roundAwayFromZero(scaled);
+            const clamped = Math.max(-20, Math.min(20, rounded));
+            return { attribute, bonus: clamped };
+        });
+    }
+
+    static buildThingPromptSnapshot(thing, { fallbackName = 'Unknown Item' } = {}) {
+        if (!thing) {
+            return {
+                name: fallbackName,
+                description: 'No description available.',
+                itemOrScenery: 'item',
+                type: 'item',
+                slot: [],
+                rarity: Thing.getDefaultRarityLabel(),
+                value: '',
+                weight: '',
+                relativeLevel: 0,
+                attributeBonuses: [],
+                causeStatusEffect: null,
+                properties: ''
+            };
+        }
+
+        const metadata = thing.metadata || {};
+        const slotSource = typeof thing.slot === 'string' && thing.slot
+            ? thing.slot
+            : (typeof metadata.slot === 'string' ? metadata.slot : null);
+        const slotList = slotSource
+            ? slotSource.split(/[,/]/).map(part => part.trim()).filter(Boolean)
+            : [];
+
+        const bonusesSource = Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
+            ? thing.attributeBonuses
+            : (Array.isArray(metadata.attributeBonuses) ? metadata.attributeBonuses : []);
+        const attributeBonuses = bonusesSource.map(entry => ({
+            attribute: typeof entry.attribute === 'string' ? entry.attribute : '',
+            bonus: Number.isFinite(entry.bonus) ? entry.bonus : Number(entry.value) || 0
+        })).filter(bonus => bonus.attribute);
+
+        const rawEffect = thing.causeStatusEffect || metadata.causeStatusEffect || null;
+        const causeStatusEffect = rawEffect && typeof rawEffect === 'object'
+            ? {
+                name: typeof rawEffect.name === 'string' ? rawEffect.name : '',
+                description: typeof rawEffect.description === 'string' ? rawEffect.description : '',
+                duration: rawEffect.duration ?? ''
+            }
+            : null;
+
+        return {
+            name: thing.name || fallbackName,
+            description: thing.description || 'No description available.',
+            itemOrScenery: thing.isScenery() ? 'scenery' : 'item',
+            type: thing.itemTypeDetail
+                || metadata.itemTypeDetail
+                || metadata.itemType
+                || (thing.isScenery() ? 'scenery' : 'item'),
+            slot: slotList,
+            rarity: thing.rarity || metadata.rarity || Thing.getDefaultRarityLabel(),
+            value: metadata.value ?? '',
+            weight: metadata.weight ?? '',
+            relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
+            attributeBonuses,
+            causeStatusEffect,
+            properties: metadata.properties || ''
+        };
+    }
+
+    static parseThingAlterXml(xmlContent) {
+        if (!xmlContent || typeof xmlContent !== 'string') {
+            return null;
+        }
+
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent);
+            }
+
+            const itemNodes = Array.from(doc.getElementsByTagName('item'));
+            if (!itemNodes.length) {
+                return null;
+            }
+
+            const itemNode = itemNodes[itemNodes.length - 1];
+            const getText = (tag) => itemNode.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+
+            const attributeBonusesNode = itemNode.getElementsByTagName('attributeBonuses')[0];
+            const attributeBonuses = attributeBonusesNode
+                ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
+                    .map(bonusNode => {
+                        const attribute = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
+                        const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
+                        if (!attribute) {
+                            return null;
+                        }
+                        const bonus = Number(bonusRaw);
+                        return {
+                            attribute,
+                            bonus: Number.isFinite(bonus) ? bonus : 0
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            const statusEffectNode = itemNode.getElementsByTagName('causeStatusEffect')[0];
+            let causeStatusEffect = null;
+            if (statusEffectNode) {
+                const effectName = statusEffectNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                const effectDescription = statusEffectNode.getElementsByTagName('description')[0]?.textContent?.trim();
+                const effectDuration = statusEffectNode.getElementsByTagName('duration')[0]?.textContent?.trim();
+                const payload = {};
+                if (effectName) payload.name = effectName;
+                if (effectDescription) payload.description = effectDescription;
+                if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
+                    payload.duration = effectDuration;
+                }
+                if (Object.keys(payload).length) {
+                    causeStatusEffect = payload;
+                }
+            }
+
+            const relativeLevelRaw = getText('relativeLevel');
+            const relativeLevel = Number(relativeLevelRaw);
+
+            const slotRaw = getText('slot');
+            const normalizedSlot = slotRaw && slotRaw.toLowerCase() !== 'n/a' ? slotRaw : '';
+
+            return {
+                name: getText('name') || null,
+                description: getText('description') || '',
+                itemOrScenery: getText('itemOrScenery') || '',
+                type: getText('type') || '',
+                slot: normalizedSlot,
+                rarity: getText('rarity') || '',
+                value: getText('value') || '',
+                weight: getText('weight') || '',
+                relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                attributeBonuses,
+                causeStatusEffect,
+                properties: getText('properties') || ''
+            };
+        } catch (error) {
+            console.warn('Failed to parse altered item XML:', error.message);
+            return null;
+        }
+    }
+
+    static resolveBaseLevelReference({ context = {}, owner = null, location = null, existingThing = null } = {}) {
+        if (owner && Number.isFinite(owner.level)) {
+            return owner.level;
+        }
+
+        if (location && Number.isFinite(location.baseLevel)) {
+            return location.baseLevel;
+        }
+
+        if (location && location.stubMetadata) {
+            const { stubMetadata } = location;
+            if (Number.isFinite(stubMetadata?.computedBaseLevel)) {
+                return stubMetadata.computedBaseLevel;
+            }
+            if (Number.isFinite(stubMetadata?.regionAverageLevel)) {
+                return stubMetadata.regionAverageLevel;
+            }
+        }
+
+        const region = context.region || null;
+        if (region && Number.isFinite(region.averageLevel)) {
+            return region.averageLevel;
+        }
+
+        if (existingThing) {
+            const metadata = existingThing.metadata || {};
+            if (Number.isFinite(metadata.level)) {
+                return metadata.level;
+            }
+            if (Number.isFinite(existingThing.level)) {
+                return existingThing.level;
+            }
+        }
+
+        const playerCandidate = context.player || this.currentPlayer;
+        if (playerCandidate && Number.isFinite(playerCandidate.level)) {
+            return playerCandidate.level;
+        }
+
+        return 1;
     }
 
     static resolveLocationCandidate(candidate) {
@@ -662,6 +988,414 @@ class Events {
                 target.addStatusEffect({ description: `Bolstered: ${effect}`, duration: this.DEFAULT_STATUS_DURATION });
             }
         }
+    }
+
+    static async handleAlterItemEvents(entries = [], context = {}) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return;
+        }
+
+        const {
+            findThingByName,
+            buildBasePromptContext,
+            promptEnv,
+            parseXMLTemplate,
+            axios,
+            Location,
+            fs,
+            path,
+            shouldGenerateThingImage,
+            generateThingImage,
+            players,
+            things,
+            baseDir
+        } = this.deps;
+
+        if (typeof buildBasePromptContext !== 'function' || !promptEnv || typeof parseXMLTemplate !== 'function' || !axios) {
+            console.warn('Alter item handler missing prompt dependencies.');
+            return;
+        }
+
+        const config = this.config;
+        if (!config?.ai?.endpoint || !config?.ai?.apiKey || !config?.ai?.model) {
+            console.warn('AI configuration incomplete; cannot process alter_item events.');
+            return;
+        }
+
+        let location = context.location || null;
+        if (!location && context.player?.currentLocation && Location && typeof Location.get === 'function') {
+            try {
+                location = Location.get(context.player.currentLocation);
+            } catch (_) {
+                location = null;
+            }
+        }
+
+        const baseContext = buildBasePromptContext({ locationOverride: location });
+
+        const endpoint = config.ai.endpoint;
+        const chatEndpoint = endpoint.endsWith('/')
+            ? `${endpoint}chat/completions`
+            : `${endpoint}/chat/completions`;
+        const defaultTemperature = typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.5;
+
+        const alteredSummaries = [];
+
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
+            }
+
+            let targetThing = null;
+            if (entry.originalName) {
+                targetThing = findThingByName(entry.originalName);
+            }
+            if (!targetThing && entry.newName) {
+                targetThing = findThingByName(entry.newName);
+            }
+
+            const fallbackName = entry.originalName || entry.newName || 'Unknown Item';
+            const promptThing = this.buildThingPromptSnapshot(targetThing, { fallbackName });
+            const seedName = entry.newName && entry.newName.trim()
+                ? entry.newName.trim()
+                : (promptThing.name || fallbackName);
+
+            const promptPayload = {
+                ...baseContext,
+                promptType: 'thing-alter',
+                changeDescription: entry.changeDescription || '',
+                thingSeed: { name: seedName },
+                alteredItem: promptThing,
+                item: promptThing
+            };
+
+            let renderedTemplate;
+            try {
+                renderedTemplate = promptEnv.render('base-context.xml.njk', promptPayload);
+            } catch (renderError) {
+                console.warn(`Failed to render thing alteration prompt for ${seedName}:`, renderError.message);
+                continue;
+            }
+
+            let parsedTemplate;
+            try {
+                parsedTemplate = parseXMLTemplate(renderedTemplate);
+            } catch (templateError) {
+                console.warn(`Failed to parse thing alteration template for ${seedName}:`, templateError.message);
+                continue;
+            }
+
+            if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                console.warn(`Alteration template missing prompts for ${seedName}.`);
+                continue;
+            }
+
+            const messages = [
+                { role: 'system', content: parsedTemplate.systemPrompt },
+                { role: 'user', content: parsedTemplate.generationPrompt }
+            ];
+
+            const requestData = {
+                model: config.ai.model,
+                messages,
+                max_tokens: parsedTemplate.maxTokens || 600,
+                temperature: typeof parsedTemplate.temperature === 'number'
+                    ? parsedTemplate.temperature
+                    : defaultTemperature
+            };
+
+            let response;
+            const requestStart = Date.now();
+            try {
+                response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${config.ai.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: config.baseTimeoutSeconds
+                });
+            } catch (requestError) {
+                console.warn(`Alter item request failed for ${seedName}:`, requestError.message);
+                continue;
+            }
+
+            const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+            const aiContent = response?.data?.choices?.[0]?.message?.content || '';
+            if (!aiContent.trim()) {
+                console.warn(`Alter item response empty for ${seedName}.`);
+                continue;
+            }
+
+            const parsedItem = this.parseThingAlterXml(aiContent);
+            if (!parsedItem || !parsedItem.name) {
+                console.warn(`Failed to parse alteration response for ${seedName}.`);
+                continue;
+            }
+
+            const summary = await this.applyAlterationResult({
+                entry,
+                context,
+                initialLocation: location,
+                targetThing,
+                parsedItem,
+                players,
+                things,
+                shouldGenerateThingImage,
+                generateThingImage
+            });
+
+            if (summary) {
+                alteredSummaries.push(summary);
+            }
+
+            if (fs && path) {
+                try {
+                    const logsDir = path.join(baseDir || process.cwd(), 'logs');
+                    if (!fs.existsSync(logsDir)) {
+                        fs.mkdirSync(logsDir, { recursive: true });
+                    }
+                    const safeNameSource = seedName || 'item';
+                    const safeName = safeNameSource.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+                    const logPath = path.join(logsDir, `alter_item_${Date.now()}_${safeName}.log`);
+                    const logLines = [
+                        `=== API CALL DURATION: ${apiDurationSeconds.toFixed(3)}s ===`,
+                        '=== ALTER ITEM SYSTEM PROMPT ===',
+                        parsedTemplate.systemPrompt,
+                        '',
+                        '=== ALTER ITEM GENERATION PROMPT ===',
+                        parsedTemplate.generationPrompt,
+                        '',
+                        '=== ALTER ITEM RESPONSE ===',
+                        aiContent,
+                        ''
+                    ];
+                    fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+                } catch (logError) {
+                    console.warn('Failed to log item alteration prompt:', logError.message);
+                }
+            }
+        }
+
+        if (alteredSummaries.length) {
+            if (!Array.isArray(context.alteredItems)) {
+                context.alteredItems = [];
+            }
+            context.alteredItems.push(...alteredSummaries);
+        }
+    }
+
+    static async applyAlterationResult({
+        entry,
+        context,
+        initialLocation,
+        targetThing,
+        parsedItem,
+        players,
+        things,
+        shouldGenerateThingImage,
+        generateThingImage
+    }) {
+        const normalizedType = this.normalizeThingType(
+            parsedItem.itemOrScenery,
+            targetThing ? targetThing.thingType : 'item'
+        );
+
+        const newName = parsedItem.name.trim();
+        const description = parsedItem.description || (targetThing ? targetThing.description : `An item named ${newName}.`);
+        const rarity = parsedItem.rarity || (targetThing ? targetThing.rarity : Thing.getDefaultRarityLabel());
+
+        const metadataBefore = targetThing ? targetThing.metadata || {} : {};
+        const previousOwnerId = metadataBefore.ownerId || null;
+        const previousLocationId = metadataBefore.locationId || null;
+        const owner = previousOwnerId && players instanceof Map ? players.get(previousOwnerId) : null;
+
+        let resolvedLocation = initialLocation || null;
+        if (!resolvedLocation && previousLocationId) {
+            resolvedLocation = this.resolveLocationCandidate(previousLocationId);
+        }
+        if (!resolvedLocation && owner?.currentLocation) {
+            resolvedLocation = this.resolveLocationCandidate(owner.currentLocation);
+        }
+        if (!resolvedLocation && context.player?.currentLocation) {
+            resolvedLocation = this.resolveLocationCandidate(context.player.currentLocation);
+        }
+
+        const relativeLevel = Number.isFinite(parsedItem.relativeLevel)
+            ? parsedItem.relativeLevel
+            : (metadataBefore.relativeLevel ?? targetThing?.relativeLevel ?? 0);
+
+        const baseLevelReference = this.resolveBaseLevelReference({
+            context,
+            owner,
+            location: resolvedLocation,
+            existingThing: targetThing
+        });
+
+        const computedLevel = this.clampLevel(
+            (Number.isFinite(baseLevelReference) ? baseLevelReference : 1)
+                + (Number.isFinite(relativeLevel) ? relativeLevel : 0),
+            baseLevelReference
+        );
+
+        const scaledBonuses = normalizedType === 'item'
+            ? this.scaleAttributeBonusesForItem(parsedItem.attributeBonuses, {
+                level: computedLevel,
+                rarity: parsedItem.rarity
+            })
+            : [];
+
+        const updatedMetadata = { ...metadataBefore };
+        if (rarity) {
+            updatedMetadata.rarity = rarity;
+        } else {
+            delete updatedMetadata.rarity;
+        }
+        if (parsedItem.type) {
+            updatedMetadata.itemType = parsedItem.type;
+            updatedMetadata.itemTypeDetail = parsedItem.type;
+        }
+
+        if (parsedItem.value) {
+            updatedMetadata.value = parsedItem.value;
+        } else {
+            delete updatedMetadata.value;
+        }
+
+        if (parsedItem.weight) {
+            updatedMetadata.weight = parsedItem.weight;
+        } else {
+            delete updatedMetadata.weight;
+        }
+
+        if (parsedItem.properties) {
+            updatedMetadata.properties = parsedItem.properties;
+        } else {
+            delete updatedMetadata.properties;
+        }
+
+        if (normalizedType === 'item' && scaledBonuses.length) {
+            updatedMetadata.attributeBonuses = scaledBonuses;
+        } else {
+            delete updatedMetadata.attributeBonuses;
+        }
+
+        if (normalizedType === 'item' && parsedItem.causeStatusEffect) {
+            updatedMetadata.causeStatusEffect = parsedItem.causeStatusEffect;
+        } else {
+            delete updatedMetadata.causeStatusEffect;
+        }
+
+        if (Number.isFinite(relativeLevel)) {
+            updatedMetadata.relativeLevel = relativeLevel;
+        } else {
+            delete updatedMetadata.relativeLevel;
+        }
+        updatedMetadata.level = computedLevel;
+
+        if (normalizedType === 'scenery') {
+            updatedMetadata.isScenery = true;
+        } else {
+            delete updatedMetadata.isScenery;
+        }
+
+        if (normalizedType === 'scenery') {
+            if (owner && typeof owner.removeInventoryItem === 'function' && targetThing) {
+                try {
+                    owner.removeInventoryItem(targetThing);
+                } catch (error) {
+                    console.warn(`Failed to remove ${targetThing.name || 'item'} from ${owner.name || owner.id}:`, error.message);
+                }
+            }
+            delete updatedMetadata.ownerId;
+
+            if (resolvedLocation) {
+                updatedMetadata.locationId = resolvedLocation.id || updatedMetadata.locationId;
+                updatedMetadata.locationName = resolvedLocation.name || updatedMetadata.locationName;
+            }
+        } else if (previousOwnerId) {
+            updatedMetadata.ownerId = previousOwnerId;
+            delete updatedMetadata.locationId;
+            delete updatedMetadata.locationName;
+        } else if (resolvedLocation) {
+            updatedMetadata.locationId = resolvedLocation.id || updatedMetadata.locationId;
+            updatedMetadata.locationName = resolvedLocation.name || updatedMetadata.locationName;
+        }
+
+        const sanitizedMetadata = this.sanitizeMetadataObject(updatedMetadata);
+
+        if (targetThing) {
+            const priorLocationId = metadataBefore.locationId || null;
+
+            targetThing.thingType = normalizedType;
+            targetThing.name = newName;
+            targetThing.description = description;
+            targetThing.itemTypeDetail = parsedItem.type || null;
+            targetThing.rarity = rarity;
+            targetThing.slot = parsedItem.slot || null;
+            targetThing.attributeBonuses = normalizedType === 'item' ? scaledBonuses : [];
+            targetThing.causeStatusEffect = normalizedType === 'item' ? parsedItem.causeStatusEffect : null;
+            targetThing.level = computedLevel;
+            if (Number.isFinite(relativeLevel)) {
+                targetThing.relativeLevel = relativeLevel;
+            } else if (targetThing.relativeLevel !== null) {
+                targetThing.relativeLevel = null;
+            }
+            targetThing.metadata = sanitizedMetadata;
+
+            if (priorLocationId && (!sanitizedMetadata.locationId || sanitizedMetadata.locationId !== priorLocationId)) {
+                this.removeThingFromLocation(targetThing, priorLocationId);
+            }
+            if (sanitizedMetadata.locationId) {
+                this.addThingToLocation(targetThing, sanitizedMetadata.locationId);
+            }
+
+            if (typeof generateThingImage === 'function') {
+                generateThingImage(targetThing, { force: true }).catch(err => console.warn('Failed to queue image for altered item:', err.message));
+            }
+
+            return {
+                id: targetThing.id,
+                name: targetThing.name,
+                thingType: targetThing.thingType,
+                originalName: entry.originalName || null,
+                newName: targetThing.name
+            };
+        }
+
+        const creationMetadata = sanitizedMetadata;
+        const newThing = new Thing({
+            name: newName,
+            description,
+            thingType: normalizedType,
+            rarity,
+            itemTypeDetail: parsedItem.type || null,
+            slot: parsedItem.slot || null,
+            attributeBonuses: normalizedType === 'item' ? scaledBonuses : [],
+            causeStatusEffect: normalizedType === 'item' ? parsedItem.causeStatusEffect : null,
+            level: computedLevel,
+            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+            metadata: creationMetadata
+        });
+
+        if (things instanceof Map) {
+            things.set(newThing.id, newThing);
+        }
+
+        if (creationMetadata.locationId) {
+            this.addThingToLocation(newThing, creationMetadata.locationId);
+        }
+
+        if (typeof generateThingImage === 'function') {
+            generateThingImage(newThing, { force: true }).catch(err => console.warn('Failed to queue image for altered item:', err.message));
+        }
+
+        return {
+            id: newThing.id,
+            name: newThing.name,
+            thingType: newThing.thingType,
+            originalName: entry.originalName || null,
+            newName: newThing.name
+        };
     }
 
     static async handleItemAppearEvents(entries = [], context = {}) {
