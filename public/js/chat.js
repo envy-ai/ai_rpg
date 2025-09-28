@@ -267,6 +267,9 @@ class AIRPGChat {
             case 'location_generated':
                 this.handleLocationGenerated(payload);
                 break;
+            case 'location_exit_created':
+                this.handleLocationExitCreated(payload);
+                break;
             case 'image_job_update':
                 this.handleImageJobUpdate(payload);
                 break;
@@ -2180,6 +2183,51 @@ class AIRPGChat {
             return;
         }
         this.addMessage('ai', `📍 Location generated: ${name}`, false);
+    }
+
+    handleLocationExitCreated(payload) {
+        if (!payload || !payload.location || !payload.originLocationId) {
+            return;
+        }
+
+        const isSelfEvent = payload.initiatedBy && payload.initiatedBy === this.clientId;
+        const currentLocationId = window.AIRPG_LAST_LOCATION_ID || null;
+        const targetLocationId = payload.location?.id || payload.originLocationId;
+        const shouldRefreshLocation = targetLocationId
+            && (!currentLocationId || currentLocationId === payload.originLocationId || currentLocationId === targetLocationId);
+
+        if (shouldRefreshLocation && typeof window.updateLocationDisplay === 'function') {
+            try {
+                window.updateLocationDisplay(payload.location);
+            } catch (error) {
+                console.warn('Failed to refresh location after exit creation:', error);
+            }
+        }
+
+        const mapTab = document.querySelector('[data-tab="map"]');
+        if (mapTab && mapTab.classList.contains('active')) {
+            const mapContainer = document.getElementById('mapContainer');
+            const activeRegionId = mapContainer?.dataset?.regionId || null;
+            if (!activeRegionId || (payload.originRegionId && payload.originRegionId === activeRegionId)) {
+                try {
+                    window.loadRegionMap?.(activeRegionId || payload.originRegionId || null);
+                } catch (error) {
+                    console.warn('Failed to refresh region map after exit creation:', error);
+                }
+            }
+        }
+
+        if (!isSelfEvent) {
+            const exitName = (payload.created && payload.created.name)
+                || payload.location?.name
+                || 'a new exit';
+            const summary = payload.created?.type === 'region'
+                ? `New region pathway discovered: ${exitName}`
+                : `New exit discovered: ${exitName}`;
+            if (!this.pushEventBundleItem('🚪', summary)) {
+                this.addMessage('ai', `🚪 ${summary}`, false);
+            }
+        }
     }
 
     handleImageJobUpdate(payload) {

@@ -4736,6 +4736,11 @@
                 description
             };
 
+            const clientId = window.AIRPG_CLIENT_ID || null;
+            if (clientId) {
+                payload.clientId = clientId;
+            }
+
             let overlayShown = false;
             try {
                 const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}/exits`, {
@@ -7371,7 +7376,16 @@
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
 
                     hideLocationOverlay();
-                    lastRenderedLocation = location ? JSON.parse(JSON.stringify(location)) : null;
+                    const locationSnapshot = location ? JSON.parse(JSON.stringify(location)) : null;
+                    lastRenderedLocation = locationSnapshot;
+                    try {
+                        window.AIRPG_LAST_LOCATION_ID = locationSnapshot?.id || null;
+                        window.AIRPG_LAST_LOCATION = locationSnapshot
+                            ? JSON.parse(JSON.stringify(locationSnapshot))
+                            : null;
+                    } catch (_) {
+                        // Ignore failures to persist location snapshot globally
+                    }
                 } else {
                     locationName.textContent = 'Unknown Location';
                     if (locationTooltip) {
@@ -7420,6 +7434,12 @@
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
                     hideLocationOverlay();
                     lastRenderedLocation = null;
+                    try {
+                        window.AIRPG_LAST_LOCATION_ID = null;
+                        window.AIRPG_LAST_LOCATION = null;
+                    } catch (_) {
+                        // Ignore failures to clear location snapshot
+                    }
                     updateAdventureBackground(null);
                 }
             };

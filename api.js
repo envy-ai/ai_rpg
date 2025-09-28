@@ -958,7 +958,18 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const attacks = [];
+            let rejectionReason = null;
             for (const attackNode of attackNodes) {
+                const rejectedNode = attackNode.getElementsByTagName('rejected')?.[0] || null;
+                if (rejectedNode) {
+                    const rejectionText = getNestedTagValue(attackNode, 'rejected', 'reason')
+                        || getTagValue(rejectedNode, 'reason');
+                    if (rejectionText) {
+                        rejectionReason = rejectionReason || rejectionText;
+                    }
+                    continue;
+                }
+
                 const attacker = getTagValue(attackNode, 'attacker');
                 const defender = getTagValue(attackNode, 'defender');
                 const ability = getTagValue(attackNode, 'ability');
@@ -1089,14 +1100,19 @@ module.exports = function registerApiRoutes(scope) {
                 attacks.push(attackEntry);
             }
 
-            if (!attacks.length) {
-                return { attacks: [], hasAttack: false };
+            const hasAttack = attacks.length > 0;
+            const result = {
+                attacks,
+                hasAttack
+            };
+
+            if (!hasAttack && rejectionReason) {
+                result.isRejected = true;
+                result.rejection = { reason: rejectionReason };
+                result.rejectionReason = rejectionReason;
             }
 
-            return {
-                attacks,
-                hasAttack: true
-            };
+            return result;
         }
 
         function logAttackCheck({ systemPrompt, generationPrompt, responseText }) {
@@ -3030,6 +3046,46 @@ module.exports = function registerApiRoutes(scope) {
                                 locationOverride: location || null,
                                 characterName: 'The player'
                             });
+
+                            const attackRejectionReasonRaw = attackCheckInfo?.structured?.rejectionReason
+                                || attackCheckInfo?.structured?.rejection?.reason
+                                || attackCheckInfo?.structured?.rejected?.reason
+                                || null;
+                            const attackRejectionReason = (typeof attackRejectionReasonRaw === 'string'
+                                && attackRejectionReasonRaw.trim().length)
+                                ? attackRejectionReasonRaw.trim()
+                                : null;
+
+                            if (attackRejectionReason) {
+                                const responseData = {
+                                    response: attackRejectionReason
+                                };
+
+                                if (attackCheckInfo) {
+                                    responseData.attackCheck = attackCheckInfo;
+                                }
+
+                                const rejectionDebug = {
+                                    ...baseDebugInfo,
+                                    attackCheck: attackCheckInfo?.structured || null,
+                                    attackRejectionReason,
+                                    usedPlayerTemplate: false,
+                                    usedCreativeTemplate: false,
+                                    rejectionSource: 'attack_check'
+                                };
+
+                                responseData.debug = rejectionDebug;
+
+                                chatHistory.push({
+                                    role: 'assistant',
+                                    content: attackRejectionReason,
+                                    timestamp: new Date().toISOString()
+                                });
+
+                                res.json(responseData);
+                                return;
+                            }
+
                             attackContextForPlausibility = buildAttackContextForActor({
                                 attackCheckInfo,
                                 actor: currentPlayer,
@@ -5438,10 +5494,13 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const { type, name, description } = req.body || {};
+                const { type, name, description, clientId: initiatorClientIdRaw } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
                 const resolvedDescription = typeof description === 'string' ? description.trim() : '';
                 const resolvedType = typeof type === 'string' ? type.trim().toLowerCase() : 'location';
+                const initiatorClientId = (typeof initiatorClientIdRaw === 'string' && initiatorClientIdRaw.trim())
+                    ? initiatorClientIdRaw.trim()
+                    : null;
 
                 if (!resolvedName) {
                     return res.status(400).json({
@@ -5509,6 +5568,26 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: 'Failed to serialize updated location.'
                     });
+                }
+
+                const originRegion = findRegionByLocationId(refreshedLocation.id) || null;
+                const eventPayload = {
+                    originLocationId: refreshedLocation.id,
+                    originLocationName: locationData.name || null,
+                    originRegionId: originRegion?.id || null,
+                    originRegionName: originRegion?.name || null,
+                    created: createdInfo,
+                    location: locationData,
+                    initiatedBy: initiatorClientId || null,
+                    timestamp: new Date().toISOString()
+                };
+
+                if (realtimeHub && typeof realtimeHub.emit === 'function') {
+                    try {
+                        realtimeHub.emit(null, 'location_exit_created', eventPayload);
+                    } catch (broadcastError) {
+                        console.warn('Failed to broadcast exit creation:', broadcastError.message);
+                    }
                 }
 
                 res.json({

@@ -8,7 +8,9 @@ Character acting:
 {{ actionText }}
 </playerAction>
 
-<task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability? For something to be an attack, it must have a reasonable potential to cause injury. Pushing, shoving, or similar actions are not attacks. 
+<task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability? For something to be an attack, it must have a reasonable potential to cause injury. Pushing, shoving, or similar actions are not attacks. In this case, respond with the N/A response below.
+
+If a character is making a non-barehanded attack, it must be with a weapon/item or ability that the character has in their possession. Be somewhat strict about this requirement. If the character doesn't have a weapon or item in their inventory that is reasonably suitable for the attack, or if the ability they are using is not one they have, then the action is an attempted attack that fails automatically, and you should respond with a rejection.
 
 Note: For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors.</task>
 
@@ -18,6 +20,13 @@ Format your answer as follows:
   <attacker>N/A</attacker>
 </attack>
 
+or
+
+<attack>
+  <rejected>
+    <reason>Brief explanation of why the action is rejected (e.g., "The NPC is not present in the scene", "The character is not in a position to attack", etc.)</reason>
+  </rejected>
+</attack>
 or
 
 <attack>
@@ -32,7 +41,7 @@ or
     <deflectSkill>N/A or name of the skill used to parry, deflect, or block</deflectSkill>
   </defenderInfo>
   <ability>N/A or name of the ability used</ability>
-  <weapon>N/A or name of the weapon used (barehanded if none equipped or specified in the playerAction)</weapon>
+  <weapon>N/A or name of the weapon used (barehanded if none equipped or specified in the playerAction, or if using an ability)</weapon>
   <curcumstanceModifiers>
     <circumstanceModifier>
       <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
