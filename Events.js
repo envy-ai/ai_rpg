@@ -2482,7 +2482,32 @@ class Events {
             return context;
         }
 
-        for (const [eventKey, entries] of Object.entries(parsedEvents.parsed)) {
+        const eventMap = parsedEvents.parsed;
+        const prioritizedOrder = [
+            'pick_up_item',
+            'transfer_item',
+            'drop_item',
+            'alter_item'
+        ];
+
+        const seen = new Set();
+        const orderedKeys = [];
+
+        prioritizedOrder.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(eventMap, key)) {
+                orderedKeys.push(key);
+                seen.add(key);
+            }
+        });
+
+        Object.keys(eventMap).forEach(key => {
+            if (!seen.has(key)) {
+                orderedKeys.push(key);
+            }
+        });
+
+        for (const eventKey of orderedKeys) {
+            const entries = eventMap[eventKey];
             const handler = this._handlers[eventKey];
             if (!handler) {
                 continue;
