@@ -1004,8 +1004,6 @@ class Events {
             Location,
             fs,
             path,
-            shouldGenerateThingImage,
-            generateThingImage,
             players,
             things,
             baseDir
@@ -1139,9 +1137,7 @@ class Events {
                 targetThing,
                 parsedItem,
                 players,
-                things,
-                shouldGenerateThingImage,
-                generateThingImage
+                things
             });
 
             if (summary) {
@@ -1191,9 +1187,7 @@ class Events {
         targetThing,
         parsedItem,
         players,
-        things,
-        shouldGenerateThingImage,
-        generateThingImage
+        things
     }) {
         const normalizedType = this.normalizeThingType(
             parsedItem.itemOrScenery,
@@ -1349,8 +1343,8 @@ class Events {
                 this.addThingToLocation(targetThing, sanitizedMetadata.locationId);
             }
 
-            if (typeof generateThingImage === 'function') {
-                generateThingImage(targetThing, { force: true }).catch(err => console.warn('Failed to queue image for altered item:', err.message));
+            if (targetThing.imageId) {
+                targetThing.imageId = null;
             }
 
             return {
@@ -1385,9 +1379,7 @@ class Events {
             this.addThingToLocation(newThing, creationMetadata.locationId);
         }
 
-        if (typeof generateThingImage === 'function') {
-            generateThingImage(newThing, { force: true }).catch(err => console.warn('Failed to queue image for altered item:', err.message));
-        }
+        newThing.imageId = null;
 
         return {
             id: newThing.id,

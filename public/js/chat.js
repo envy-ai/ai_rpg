@@ -33,6 +33,7 @@ class AIRPGChat {
 
         this.locationRefreshTimers = [];
         this.locationRefreshPending = false;
+        this.activeEventBundle = null;
     }
 
     async loadExistingHistory() {
@@ -522,32 +523,23 @@ class AIRPGChat {
             return;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary';
+        if (this.pushEventBundleItem(icon || '📣', summaryText)) {
+            return;
+        }
 
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = `${icon || '📣'} Event`;
-
-        const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryText;
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.renderStandaloneEventSummary(icon, summaryText);
     }
 
     addExperienceAward(amount, reason = '') {
         const numeric = Number(amount);
         if (!Number.isFinite(numeric) || numeric <= 0) {
+            return;
+        }
+
+        const reasonText = reason && String(reason).trim();
+        const summaryText = `+${numeric} XP${reasonText ? ` (${reasonText})` : ''}`;
+
+        if (this.pushEventBundleItem('✨', summaryText)) {
             return;
         }
 
@@ -559,8 +551,7 @@ class AIRPGChat {
         senderDiv.textContent = '✨ Experience Gained';
 
         const contentDiv = document.createElement('div');
-        const reasonText = reason && String(reason).trim();
-        contentDiv.textContent = `+${numeric} XP${reasonText ? ` (${reasonText})` : ''}`;
+        contentDiv.textContent = summaryText;
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -606,6 +597,15 @@ class AIRPGChat {
             return;
         }
 
+        const sign = numeric > 0 ? '+' : '-';
+        const absolute = Math.abs(numeric);
+        const label = this.getCurrencyLabel(absolute);
+        const summaryText = `${sign}${absolute} ${label}`;
+
+        if (this.pushEventBundleItem('💰', summaryText)) {
+            return;
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message event-summary currency-change';
 
@@ -614,10 +614,7 @@ class AIRPGChat {
         senderDiv.textContent = '💰 Currency Update';
 
         const contentDiv = document.createElement('div');
-        const sign = numeric > 0 ? '+' : '-';
-        const absolute = Math.abs(numeric);
-        const label = this.getCurrencyLabel(absolute);
-        contentDiv.textContent = `${sign}${absolute} ${label}`;
+        contentDiv.textContent = summaryText;
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -652,6 +649,50 @@ class AIRPGChat {
 
         const items = changes.filter(Boolean);
         if (!items.length) {
+            return;
+        }
+
+        if (this.activeEventBundle) {
+            items.forEach(change => {
+                if (!change) {
+                    return;
+                }
+                const actorName = change.actorName || change.actorId || 'Unknown';
+                const barName = change.needBarName || change.needBar || 'Need Bar';
+                const direction = typeof change.direction === 'string' ? change.direction.trim().toLowerCase() : '';
+                const magnitude = typeof change.magnitude === 'string' ? change.magnitude.trim().toLowerCase() : '';
+                const parts = [];
+                if (magnitude) {
+                    parts.push(magnitude);
+                }
+                if (direction) {
+                    parts.push(direction);
+                }
+                const detail = parts.length ? parts.join(' ') : 'changed';
+
+                const baseline = `${actorName}'s ${barName} ${detail}`.trim();
+                const segments = [baseline];
+
+                const delta = Number(change.delta);
+                if (Number.isFinite(delta) && delta !== 0) {
+                    segments.push(`Δ ${delta > 0 ? '+' : ''}${Math.round(delta)}`);
+                }
+
+                const reason = change.reason && String(change.reason).trim();
+                if (reason) {
+                    segments.push(`– ${reason}`);
+                }
+
+                const threshold = change.currentThreshold;
+                if (threshold && threshold.name) {
+                    const effect = threshold.effect ? ` – ${threshold.effect}` : '';
+                    segments.push(`→ ${threshold.name}${effect}`);
+                }
+
+                this.addEventSummary('🧪', segments.join(' '));
+            });
+
+            this.markEventBundleRefresh();
             return;
         }
 
@@ -764,43 +805,28 @@ class AIRPGChat {
             return;
         }
 
+        const effectTypeRaw = event && typeof event === 'object' && event.type
+            ? String(event.type).trim().toLowerCase()
+            : 'damage';
+        const isHealing = effectTypeRaw === 'healing' || effectTypeRaw === 'heal';
+        const name = event && typeof event === 'object' && event.name ? String(event.name).trim() : '';
+        const severityRaw = event && typeof event === 'object' && event.severity ? String(event.severity).trim() : '';
+        const reason = event && typeof event === 'object' && event.reason ? String(event.reason).trim() : '';
+        const summaryMessage = this.buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing });
+
+        if (this.pushEventBundleItem(isHealing ? '🌿' : '☠️', summaryMessage)) {
+            return;
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message event-summary environmental-damage';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
-        const effectTypeRaw = event && typeof event === 'object' && event.type
-            ? String(event.type).trim().toLowerCase()
-            : 'damage';
-        const isHealing = effectTypeRaw === 'healing' || effectTypeRaw === 'heal';
         senderDiv.textContent = isHealing ? '🌿 Environmental Healing' : '☠️ Environmental Damage';
 
         const contentDiv = document.createElement('div');
-        const name = event && typeof event === 'object' && event.name ? String(event.name).trim() : '';
-        const severityRaw = event && typeof event === 'object' && event.severity ? String(event.severity).trim() : '';
-        const reason = event && typeof event === 'object' && event.reason ? String(event.reason).trim() : '';
-        const severityLabel = severityRaw ? severityRaw.charAt(0).toUpperCase() + severityRaw.slice(1) : '';
-
-        let description;
-        if (name) {
-            description = isHealing
-                ? `${name} regained ${damageAmount} HP`
-                : `${name} took ${damageAmount} damage`;
-        } else {
-            description = isHealing
-                ? `Regained ${damageAmount} HP`
-                : `Took ${damageAmount} damage`;
-        }
-
-        if (severityLabel) {
-            description += ` (${severityLabel})`;
-        }
-
-        if (reason) {
-            description += ` - ${reason}`;
-        }
-
-        contentDiv.textContent = description;
+        contentDiv.textContent = summaryMessage;
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1036,8 +1062,148 @@ class AIRPGChat {
         });
 
         if (shouldRefreshLocation) {
+            if (this.activeEventBundle) {
+                this.markEventBundleRefresh();
+            } else {
+                this.scheduleLocationRefresh();
+            }
+        }
+    }
+
+    renderStandaloneEventSummary(icon, summaryText) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = `${icon || '📣'} Event`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.textContent = summaryText;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    pushEventBundleItem(icon, text) {
+        if (!this.activeEventBundle) {
+            return false;
+        }
+        if (!text) {
+            return true;
+        }
+        this.activeEventBundle.items.push({
+            icon: icon || '•',
+            text: text
+        });
+        return true;
+    }
+
+    markEventBundleRefresh() {
+        if (this.activeEventBundle) {
+            this.activeEventBundle.refresh = true;
+        } else {
             this.scheduleLocationRefresh();
         }
+    }
+
+    startEventBundle() {
+        if (this.activeEventBundle) {
+            return this.activeEventBundle;
+        }
+        this.activeEventBundle = {
+            items: [],
+            refresh: false,
+            timestamp: new Date().toISOString()
+        };
+        return this.activeEventBundle;
+    }
+
+    flushEventBundle() {
+        const bundle = this.activeEventBundle;
+        this.activeEventBundle = null;
+        if (!bundle) {
+            return { shouldRefresh: false };
+        }
+
+        if (!bundle.items.length) {
+            if (bundle.refresh) {
+                this.scheduleLocationRefresh();
+            }
+            return { shouldRefresh: bundle.refresh };
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message event-summary-batch';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '📋 Events';
+
+        const contentDiv = document.createElement('div');
+        const list = document.createElement('ul');
+        list.className = 'event-summary-list';
+
+        bundle.items.forEach(item => {
+            const li = document.createElement('li');
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'event-summary-icon';
+            iconSpan.textContent = item.icon || '•';
+            li.appendChild(iconSpan);
+            li.appendChild(document.createTextNode(' ' + item.text));
+            list.appendChild(li);
+        });
+
+        contentDiv.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = bundle.timestamp || new Date().toISOString();
+        timestampDiv.textContent = timestamp.replace('T', ' ').replace('Z', '');
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+
+        if (bundle.refresh) {
+            this.scheduleLocationRefresh();
+        }
+
+        return { shouldRefresh: bundle.refresh };
+    }
+
+    buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing }) {
+        const severityLabel = severityRaw ? severityRaw.charAt(0).toUpperCase() + severityRaw.slice(1) : '';
+        let description;
+        if (name) {
+            description = isHealing
+                ? `${name} regained ${damageAmount} HP`
+                : `${name} took ${damageAmount} damage`;
+        } else {
+            description = isHealing
+                ? `Regained ${damageAmount} HP`
+                : `Took ${damageAmount} damage`;
+        }
+
+        if (severityLabel) {
+            description += ` (${severityLabel})`;
+        }
+        if (reason) {
+            description += ` - ${reason}`;
+        }
+        return description;
     }
 
     scheduleLocationRefresh(delays = [0, 400, 1200]) {
@@ -1722,6 +1888,9 @@ class AIRPGChat {
             return { shouldRefreshLocation: false };
         }
 
+        this.flushEventBundle();
+        this.startEventBundle();
+
         if (payload.streamMeta && context) {
             context.streamMeta = payload.streamMeta;
         }
@@ -1776,6 +1945,11 @@ class AIRPGChat {
             shouldRefreshLocation = true;
         }
 
+        const bundleResult = this.flushEventBundle();
+        if (bundleResult.shouldRefresh) {
+            shouldRefreshLocation = true;
+        }
+
         if (payload.plausibility) {
             this.addPlausibilityMessage(payload.plausibility);
         }
@@ -1787,6 +1961,11 @@ class AIRPGChat {
             shouldRefreshLocation = true;
         }
 
+        const finalBundleResult = this.flushEventBundle();
+        if (finalBundleResult.shouldRefresh) {
+            shouldRefreshLocation = true;
+        }
+
         return { shouldRefreshLocation };
     }
 
@@ -1794,6 +1973,9 @@ class AIRPGChat {
         if (!turn || !turn.response) {
             return;
         }
+
+        this.flushEventBundle();
+        this.startEventBundle();
 
         const context = this.getRequestContext(requestId);
         const keyBase = turn.npcId || turn.name || `npc-${index}`;
@@ -1838,6 +2020,8 @@ class AIRPGChat {
         if (turn.actionResolution && turn.actionResolution.roll !== null && turn.actionResolution.roll !== undefined) {
             this.addSkillCheckMessage(turn.actionResolution);
         }
+
+        this.flushEventBundle();
     }
 
     handleChatStatus(payload) {

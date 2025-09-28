@@ -1,0 +1,34 @@
+<attributeDefinitions>
+{% if attributeDefinitions %}
+    {% for attrName, attrDef in attributeDefinitions | dictsort %}
+    <attribute>
+    <name>{{ attrName }}</name>
+    <description>{{ attrDef.description }}</description>
+    </attribute>
+    {% endfor %}
+{% endif %}
+</attributeDefinitions>
+<equipmentSlots>
+{% for slot in equipmentSlots %}  <slot>{{ slot }}</slot>
+{% endfor %}
+</equipmentSlots>
+
+{% include "_includes/item-output.njk" %}
+
+An item or piece of scenery (see alteredItem above) was permanently altered in the following way(s): 
+<alteration>{{ changeDescription }}</alteration>
+<newName>{{ thingSeed.name }}</newName>
+
+<task>Consider how the item was changed and return the updated item definition.</task>
+
+Guidelines: 
+- Consider whether the alteration should change the item's name, description, type, rarity, value, weight, relative level, attribute bonuses, status effects caused, or properties.
+- Ensure the item's attributes and properties are consistent with its new state (upgrading or improving could increase rarity level, value, and other attributes; damaging or breaking could decrease them).
+- Edit any fields that you deem appropriate based on the alteration. In rare cases, an item may even become scenery, or vice versa.
+- If the alteration doesn't logically affect certain fields, you can leave them unchanged.
+
+Return the item in the following format:
+{% include "_includes/item.njk" %}
+
+Note that bonuses will be normalized to the rarity after alteration, so use the full range of bonuses (-4 to +4) as needed.
+

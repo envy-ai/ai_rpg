@@ -534,15 +534,15 @@ p:not(:last-child) {
   color: rgba(226, 232, 240, 0.8);
 }
 
-.load-game-status[data-variant='error'] {
+.load-game-status[data-variant=error] {
   color: #fca5a5;
 }
 
-.load-game-status[data-variant='success'] {
+.load-game-status[data-variant=success] {
   color: #bbf7d0;
 }
 
-.load-game-status[data-variant='info'] {
+.load-game-status[data-variant=info] {
   color: #bae6fd;
 }
 
@@ -3665,4 +3665,33 @@ body.modal-open {
 .adventure-content {
   position: relative;
   z-index: 1;
+}
+
+.message.event-summary-batch {
+  background: rgba(0, 0, 0, 0.6);
+  border-left: 4px solid #6cb2eb;
+}
+
+.event-summary-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.event-summary-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.event-summary-list li:last-child {
+  margin-bottom: 0;
+}
+
+.event-summary-icon {
+  display: inline-block;
+  width: 1.5rem;
+  flex-shrink: 0;
+  text-align: center;
 }/*# sourceMappingURL=main.css.map */

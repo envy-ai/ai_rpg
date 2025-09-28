@@ -908,6 +908,18 @@
                 .replace(/'/g, '&#39;');
         };
 
+        const tokenizeForMatch = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            const normalized = String(value)
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, ' ')
+                .replace(/\s+/g, ' ');
+            return normalized ? ` ${normalized} ` : '';
+        };
+
         const runtimeConfig = (() => {
             if (window.__AIRPG_CONFIG__ && typeof window.__AIRPG_CONFIG__ === 'object') {
                 return window.__AIRPG_CONFIG__;
@@ -1868,7 +1880,22 @@
                 return '';
             }
             for (const entry of rarityClassLookup) {
-                if (normalized === entry.key || normalized.includes(entry.key)) {
+                if (normalized === entry.key) {
+                    return entry.className;
+                }
+            }
+
+            const normalizedTokens = tokenizeForMatch(normalized);
+            if (!normalizedTokens) {
+                return '';
+            }
+
+            for (const entry of rarityClassLookup) {
+                if (!entry.key) {
+                    continue;
+                }
+                const entryTokens = tokenizeForMatch(entry.key);
+                if (entryTokens && normalizedTokens.includes(entryTokens)) {
                     return entry.className;
                 }
             }
