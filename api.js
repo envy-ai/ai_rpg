@@ -107,6 +107,396 @@ module.exports = function registerApiRoutes(scope) {
             return '=== API CALL DURATION: N/A ===';
         }
 
+        const EVENT_LOCATION_REFRESH_TYPES = new Set([
+            'item_appear',
+            'drop_item',
+            'pick_up_item',
+            'transfer_item',
+            'consume_item',
+            'move_location',
+            'npc_arrival_departure',
+            'needbar_change'
+        ]);
+
+        const normalizeSummaryText = (value, fallback) => {
+            if (value === null || value === undefined) {
+                return fallback;
+            }
+            const text = String(value).trim();
+            return text || fallback;
+        };
+
+        const safeSummaryName = (value) => {
+            const text = normalizeSummaryText(value, 'Someone');
+            if (!text) {
+                return 'Someone';
+            }
+            const lower = text.toLowerCase();
+            if (lower === 'player' || lower === 'the player') {
+                return 'You';
+            }
+            return text;
+        };
+
+        const safeSummaryItem = (value, fallback = 'an item') => {
+            return normalizeSummaryText(value, fallback) || fallback;
+        };
+
+        const formatLabel = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return '';
+            }
+            return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+        };
+
+        const buildEnvironmentalSummaryText = ({ name, amount, severity, reason, isHealing }) => {
+            const baseName = name ? String(name).trim() : '';
+            const severityLabel = severity ? severity.charAt(0).toUpperCase() + severity.slice(1) : '';
+            let description = baseName
+                ? (isHealing ? `${baseName} regained ${amount} HP` : `${baseName} took ${amount} damage`)
+                : (isHealing ? `Regained ${amount} HP` : `Took ${amount} damage`);
+            if (severityLabel) {
+                description += ` (${severityLabel})`;
+            }
+            if (reason) {
+                description += ` - ${reason}`;
+            }
+            return description;
+        };
+
+        function buildEventSummaryBundle({
+            events = null,
+            experienceAwards = [],
+            currencyChanges = [],
+            environmentalDamageEvents = [],
+            needBarChanges = []
+        } = {}) {
+            const bundle = [];
+            let shouldRefresh = false;
+
+            const add = (icon, text) => {
+                const normalizedText = text && String(text).trim();
+                if (!normalizedText) {
+                    return;
+                }
+                bundle.push({ icon: icon || '•', text: normalizedText });
+            };
+
+            const parsed = events && typeof events === 'object'
+                ? (events.parsed && typeof events.parsed === 'object' ? events.parsed : events)
+                : null;
+
+            if (parsed) {
+                Object.entries(parsed).forEach(([eventType, payload]) => {
+                    if (!payload || (Array.isArray(payload) && payload.length === 0)) {
+                        return;
+                    }
+
+                    const entries = Array.isArray(payload) ? payload : [payload];
+                    switch (eventType) {
+                        case 'attack_damage':
+                            entries.forEach(entry => {
+                                const attacker = safeSummaryName(entry?.attacker);
+                                const target = safeSummaryName(entry?.target || 'their target');
+                                add('⚔️', `${attacker} attacked ${target}.`);
+                            });
+                            break;
+                        case 'consume_item':
+                            entries.forEach(entry => {
+                                const user = safeSummaryName(entry?.user);
+                                const item = safeSummaryItem(entry?.item);
+                                add('🧪', `${user} consumed ${item}.`);
+                            });
+                            break;
+                        case 'death_incapacitation':
+                            entries.forEach(name => {
+                                add('☠️', `${safeSummaryName(name)} was incapacitated.`);
+                            });
+                            break;
+                        case 'drop_item':
+                            entries.forEach(entry => {
+                                const character = safeSummaryName(entry?.character);
+                                const item = safeSummaryItem(entry?.item);
+                                add('📦', `${character} dropped ${item}.`);
+                            });
+                            break;
+                        case 'heal_recover':
+                            entries.forEach(entry => {
+                                const healer = entry?.healer ? safeSummaryName(entry.healer) : null;
+                                const recipient = safeSummaryName(entry?.recipient);
+                                const effect = entry?.effect && String(entry.effect).trim();
+                                const detail = effect ? ` (${effect})` : '';
+                                add('💖', healer
+                                    ? `${healer} healed ${recipient}${detail}.`
+                                    : `${recipient} recovered${detail}.`);
+                            });
+                            break;
+                        case 'item_appear':
+                            entries.forEach(item => {
+                                add('✨', `${safeSummaryItem(item)} appeared in the scene.`);
+                            });
+                            break;
+                        case 'move_location':
+                            entries.forEach(location => {
+                                add('🚶', `Travelled to ${safeSummaryItem(location, 'a new location')}.`);
+                            });
+                            break;
+                        case 'new_exit_discovered':
+                            entries.forEach(description => {
+                                add('🚪', `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`);
+                            });
+                            break;
+                        case 'npc_arrival_departure':
+                            entries.forEach(entry => {
+                                const name = safeSummaryName(entry?.name);
+                                const action = (entry?.action || '').trim().toLowerCase();
+                                const destination = entry?.destination || entry?.location;
+                                const destinationText = destination
+                                    ? safeSummaryItem(destination, 'another location')
+                                    : null;
+                                if (action === 'arrived') {
+                                    add('🙋', `${name} arrived at the location.`);
+                                } else if (action === 'left') {
+                                    const detail = destinationText ? ` for ${destinationText}` : '';
+                                    add('🏃', `${name} left the area${detail}.`);
+                                } else {
+                                    add('📍', `${name} ${entry?.action || 'moved'}.`);
+                                }
+                            });
+                            break;
+                        case 'party_change':
+                            entries.forEach(entry => {
+                                const name = safeSummaryName(entry?.name);
+                                const action = (entry?.action || '').trim().toLowerCase();
+                                if (action === 'joined') {
+                                    add('🤝', `${name} joined the party.`);
+                                } else if (action === 'left') {
+                                    add('👋', `${name} left the party.`);
+                                } else {
+                                    add('📣', `${name} ${entry?.action || 'changed party status'}.`);
+                                }
+                            });
+                            break;
+                        case 'pick_up_item':
+                            entries.forEach(entry => {
+                                const actor = safeSummaryName(entry?.name);
+                                const itemName = safeSummaryItem(entry?.item);
+                                add('🎒', `${actor} picked up ${itemName}.`);
+                            });
+                            break;
+                        case 'status_effect_change':
+                            entries.forEach(entry => {
+                                const entity = safeSummaryName(entry?.entity);
+                                const description = entry?.description ? String(entry.description).trim() : 'a status effect';
+                                const action = (entry?.action || '').trim().toLowerCase();
+                                if (action === 'gained' || action === 'added' || action === 'applied') {
+                                    add('🌀', `${entity} gained ${description}.`);
+                                } else if (action === 'lost' || action === 'removed') {
+                                    add('🌀', `${entity} lost ${description}.`);
+                                } else {
+                                    add('🌀', `${entity} changed status: ${description}.`);
+                                }
+                            });
+                            break;
+                        case 'transfer_item':
+                            entries.forEach(entry => {
+                                const giver = safeSummaryName(entry?.giver);
+                                const receiver = safeSummaryName(entry?.receiver || 'someone');
+                                const item = safeSummaryItem(entry?.item);
+                                add('🔄', `${giver} gave ${item} to ${receiver}.`);
+                            });
+                            break;
+                        case 'needbar_change':
+                            entries.forEach(entry => {
+                                const actor = safeSummaryName(entry?.character || entry?.name);
+                                const barName = safeSummaryItem(entry?.needBar, 'a Need Bar');
+                                const direction = formatLabel(entry?.direction || '');
+                                const magnitude = formatLabel(entry?.magnitude || '');
+                                const detailParts = [];
+                                if (magnitude) {
+                                    detailParts.push(magnitude.toLowerCase());
+                                }
+                                if (direction) {
+                                    detailParts.push(direction.toLowerCase());
+                                }
+                                const detail = detailParts.length ? detailParts.join(' ') : 'changed';
+                                add('🧪', `${actor}'s ${barName} ${detail}.`);
+                            });
+                            shouldRefresh = true;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if (!shouldRefresh && EVENT_LOCATION_REFRESH_TYPES.has(eventType)) {
+                        shouldRefresh = true;
+                    }
+                });
+            }
+
+            if (Array.isArray(experienceAwards)) {
+                experienceAwards.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const amount = Number(entry.amount ?? entry);
+                    if (!Number.isFinite(amount) || amount <= 0) {
+                        return;
+                    }
+                    const reason = entry.reason && String(entry.reason).trim();
+                    const text = `+${Math.round(amount)} XP${reason ? ` (${reason})` : ''}`;
+                    add('✨', text);
+                });
+            }
+
+            if (Array.isArray(currencyChanges)) {
+                currencyChanges.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const amount = Number(entry.amount ?? entry);
+                    if (!Number.isFinite(amount) || amount === 0) {
+                        return;
+                    }
+                    const sign = amount > 0 ? '+' : '-';
+                    const absolute = Math.abs(Math.round(amount));
+                    const label = getCurrencyLabel(absolute);
+                    add('💰', `${sign}${absolute} ${label}`);
+                });
+            }
+
+            if (Array.isArray(environmentalDamageEvents)) {
+                environmentalDamageEvents.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const amount = Number(entry.amount ?? entry.damage ?? entry.value);
+                    if (!Number.isFinite(amount) || amount === 0) {
+                        return;
+                    }
+                    const severity = entry.severity ? String(entry.severity).trim() : '';
+                    const reason = entry.reason ? String(entry.reason).trim() : '';
+                    const effectType = entry.type ? String(entry.type).trim().toLowerCase() : 'damage';
+                    const isHealing = effectType === 'healing' || effectType === 'heal';
+                    add(
+                        isHealing ? '🌿' : '☠️',
+                        buildEnvironmentalSummaryText({
+                            name: entry.name ? String(entry.name).trim() : '',
+                            amount: Math.abs(Math.round(amount)),
+                            severity,
+                            reason,
+                            isHealing
+                        })
+                    );
+                });
+            }
+
+            if (Array.isArray(needBarChanges)) {
+                needBarChanges.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    const actorName = safeSummaryName(entry.actorName || entry.actorId || 'Unknown');
+                    const barName = safeSummaryItem(entry.needBarName || entry.needBar || 'Need Bar');
+                    const directionLabel = formatLabel(entry.direction || '');
+                    const magnitudeLabel = formatLabel(entry.magnitude || '');
+                    const parts = [];
+                    if (magnitudeLabel) {
+                        parts.push(magnitudeLabel.toLowerCase());
+                    }
+                    if (directionLabel) {
+                        parts.push(directionLabel.toLowerCase());
+                    }
+                    const detail = parts.length ? parts.join(' ') : 'changed';
+                    const segments = [`${actorName}'s ${barName} ${detail}`];
+                    const delta = Number(entry.delta);
+                    if (Number.isFinite(delta) && delta !== 0) {
+                        segments.push(`Δ ${delta > 0 ? '+' : ''}${Math.round(delta)}`);
+                    }
+                    const reason = entry.reason && String(entry.reason).trim();
+                    if (reason) {
+                        segments.push(`– ${reason}`);
+                    }
+                    const threshold = entry.currentThreshold;
+                    if (threshold && threshold.name) {
+                        const effect = threshold.effect ? ` – ${threshold.effect}` : '';
+                        segments.push(`→ ${threshold.name}${effect}`);
+                    }
+                    add('🧪', segments.join(' '));
+                });
+                shouldRefresh = true;
+            }
+
+            return {
+                items: bundle,
+                shouldRefresh
+            };
+        }
+
+        function formatEventSummaryText(bundle, title = '📋 Events') {
+            if (!Array.isArray(bundle) || !bundle.length) {
+                return '';
+            }
+            const lines = [title];
+            bundle.forEach(item => {
+                if (!item) {
+                    return;
+                }
+                const icon = item.icon || '•';
+                const text = item.text || '';
+                lines.push(`• ${icon} ${text}`.trim());
+            });
+            return lines.join('\n');
+        }
+
+        function recordEventSummaryEntry({
+            label = '📋 Events',
+            events = null,
+            experienceAwards = null,
+            currencyChanges = null,
+            environmentalDamageEvents = null,
+            needBarChanges = null,
+            timestamp = null
+        } = {}) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+
+            const bundle = buildEventSummaryBundle({
+                events,
+                experienceAwards,
+                currencyChanges,
+                environmentalDamageEvents,
+                needBarChanges
+            });
+
+            if (!bundle.items.length) {
+                return null;
+            }
+
+            const summaryText = formatEventSummaryText(bundle.items, label);
+            if (!summaryText) {
+                return null;
+            }
+
+            const entry = {
+                role: 'assistant',
+                content: summaryText,
+                timestamp: timestamp || new Date().toISOString(),
+                type: 'event-summary'
+            };
+
+            chatHistory.push(entry);
+            return {
+                summaryText,
+                shouldRefresh: bundle.shouldRefresh
+            };
+        }
+
         function loadRandomEventLines(type) {
             const normalized = type === 'rare' ? 'rare' : 'common';
             if (Array.isArray(randomEventCache[normalized])) {
@@ -359,6 +749,16 @@ module.exports = function registerApiRoutes(scope) {
                 if (Array.isArray(eventChecks?.needBarChanges) && eventChecks.needBarChanges.length) {
                     summary.needBarChanges = eventChecks.needBarChanges;
                 }
+
+                recordEventSummaryEntry({
+                    label: '📋 Events – Random Event',
+                    events: summary.events,
+                    experienceAwards: summary.experienceAwards,
+                    currencyChanges: summary.currencyChanges,
+                    environmentalDamageEvents: summary.environmentalDamageEvents,
+                    needBarChanges: summary.needBarChanges,
+                    timestamp: summary.timestamp
+                });
 
                 return summary;
             } finally {
@@ -2323,10 +2723,11 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
 
+                    const npcTurnTimestamp = new Date().toISOString();
                     chatHistory.push({
                         role: 'assistant',
                         content: npcResponse,
-                        timestamp: new Date().toISOString(),
+                        timestamp: npcTurnTimestamp,
                         actor: npc.name || null,
                         isNpcTurn: true
                     });
@@ -2339,7 +2740,8 @@ module.exports = function registerApiRoutes(scope) {
                         response: npcResponse,
                         events: npcEventResult?.structured || null,
                         eventChecks: npcEventResult?.html || null,
-                        debug: narrativeResult.debug
+                        debug: narrativeResult.debug,
+                        timestamp: npcTurnTimestamp
                     };
 
                     if (Array.isArray(npcEventResult?.experienceAwards) && npcEventResult.experienceAwards.length) {
@@ -2354,6 +2756,17 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.needBarChanges) && npcEventResult.needBarChanges.length) {
                         npcTurnResult.needBarChanges = npcEventResult.needBarChanges;
                     }
+
+                    const npcNameLabel = safeSummaryName(npc?.name || npcName || 'NPC');
+                    recordEventSummaryEntry({
+                        label: `📋 Events – NPC Turn (${npcNameLabel})`,
+                        events: npcTurnResult.events,
+                        experienceAwards: npcTurnResult.experienceAwards,
+                        currencyChanges: npcTurnResult.currencyChanges,
+                        environmentalDamageEvents: npcTurnResult.environmentalDamageEvents,
+                        needBarChanges: npcTurnResult.needBarChanges,
+                        timestamp: npcTurnTimestamp
+                    });
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -3067,20 +3480,30 @@ module.exports = function registerApiRoutes(scope) {
                             }
                         }
 
-                        if (passiveNeedBarChanges.length) {
-                            if (Array.isArray(responseData.needBarChanges)) {
-                                responseData.needBarChanges.push(...passiveNeedBarChanges);
-                            } else {
-                                responseData.needBarChanges = passiveNeedBarChanges;
-                            }
+                    if (passiveNeedBarChanges.length) {
+                        if (Array.isArray(responseData.needBarChanges)) {
+                            responseData.needBarChanges.push(...passiveNeedBarChanges);
+                        } else {
+                            responseData.needBarChanges = passiveNeedBarChanges;
                         }
                     }
+                }
 
-                    if (stream.isEnabled && !playerActionStreamSent) {
-                        const playerActionPreview = { ...responseData };
-                        delete playerActionPreview.npcTurns;
-                        playerActionPreview.streamMeta = {
-                            ...streamState,
+                recordEventSummaryEntry({
+                    label: '📋 Events – Player Turn',
+                    events: responseData.events,
+                    experienceAwards: responseData.experienceAwards,
+                    currencyChanges: responseData.currencyChanges,
+                    environmentalDamageEvents: responseData.environmentalDamageEvents,
+                    needBarChanges: responseData.needBarChanges,
+                    timestamp: new Date().toISOString()
+                });
+
+                if (stream.isEnabled && !playerActionStreamSent) {
+                    const playerActionPreview = { ...responseData };
+                    delete playerActionPreview.npcTurns;
+                    playerActionPreview.streamMeta = {
+                        ...streamState,
                             playerAction: true,
                             enabled: true,
                             phase: 'player'
