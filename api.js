@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const { DOMParser } = require('xmldom');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
@@ -100,6 +101,53 @@ module.exports = function registerApiRoutes(scope) {
             common: null,
             rare: null
         };
+
+        const generateMessageId = () => {
+            if (typeof randomUUID === 'function') {
+                try {
+                    return randomUUID();
+                } catch (_) {
+                    // fall through to fallback
+                }
+            }
+            return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        };
+
+        const normalizeChatEntry = (entry) => {
+            if (!entry || typeof entry !== 'object') {
+                return null;
+            }
+            if (!entry.id) {
+                entry.id = generateMessageId();
+            }
+            if (!entry.timestamp) {
+                entry.timestamp = new Date().toISOString();
+            }
+            return entry;
+        };
+
+        const pushChatEntry = (entry, collector = null) => {
+            const normalized = normalizeChatEntry(entry);
+            if (!normalized) {
+                return null;
+            }
+            chatHistory.push(normalized);
+            if (Array.isArray(collector)) {
+                collector.push(normalized);
+            }
+            return normalized;
+        };
+
+        const findChatEntryIndexByTimestamp = (timestamp) => {
+            if (!timestamp) {
+                return -1;
+            }
+            return chatHistory.findIndex(entry => entry && entry.timestamp === timestamp);
+        };
+
+        if (Array.isArray(chatHistory)) {
+            chatHistory.forEach(normalizeChatEntry);
+        }
 
         function formatDurationLabel(durationSeconds) {
             if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds)) {
@@ -534,7 +582,7 @@ module.exports = function registerApiRoutes(scope) {
             environmentalDamageEvents = null,
             needBarChanges = null,
             timestamp = null
-        } = {}) {
+        } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
             }
@@ -568,10 +616,11 @@ module.exports = function registerApiRoutes(scope) {
                 }))
             };
 
-            chatHistory.push(entry);
+            const storedEntry = pushChatEntry(entry, collector);
             return {
                 summaryText,
-                shouldRefresh: bundle.shouldRefresh
+                shouldRefresh: bundle.shouldRefresh,
+                entry: storedEntry
             };
         }
 
@@ -784,16 +833,13 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
-                if (Array.isArray(chatHistory)) {
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: narrativeText,
-                        timestamp: new Date().toISOString(),
-                        actor: 'Random Event',
-                        randomEvent: true,
-                        rarity: rarity || 'common'
-                    });
-                }
+                pushChatEntry({
+                    role: 'assistant',
+                    content: narrativeText,
+                    actor: 'Random Event',
+                    randomEvent: true,
+                    rarity: rarity || 'common'
+                });
 
                 let eventChecks = null;
                 try {
@@ -2817,14 +2863,13 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
 
-                    const npcTurnTimestamp = new Date().toISOString();
-                    chatHistory.push({
+                    const npcTurnEntry = pushChatEntry({
                         role: 'assistant',
                         content: npcResponse,
-                        timestamp: npcTurnTimestamp,
                         actor: npc.name || null,
                         isNpcTurn: true
                     });
+                    const npcTurnTimestamp = npcTurnEntry?.timestamp || new Date().toISOString();
 
                     const npcTurnResult = {
                         name: npc.name,
@@ -2860,7 +2905,7 @@ module.exports = function registerApiRoutes(scope) {
                         environmentalDamageEvents: npcTurnResult.environmentalDamageEvents,
                         needBarChanges: npcTurnResult.needBarChanges,
                         timestamp: npcTurnTimestamp
-                    });
+                    }, newChatEntries);
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -2934,6 +2979,7 @@ module.exports = function registerApiRoutes(scope) {
                 forcedEvent: false
             };
             let playerActionStreamSent = false;
+            const newChatEntries = [];
 
             const stripStreamedEventArtifacts = (payload) => {
                 if (!payload || typeof payload !== 'object') {
@@ -2964,11 +3010,10 @@ module.exports = function registerApiRoutes(scope) {
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
                 if (userMessage && userMessage.role === 'user') {
-                    chatHistory.push({
+                    pushChatEntry({
                         role: 'user',
-                        content: userMessage.content,
-                        timestamp: new Date().toISOString()
-                    });
+                        content: userMessage.content
+                    }, newChatEntries);
                 }
 
                 stream.status('player_action:context', 'Preparing game state for action.');
@@ -3077,12 +3122,12 @@ module.exports = function registerApiRoutes(scope) {
 
                                 responseData.debug = rejectionDebug;
 
-                                chatHistory.push({
+                                pushChatEntry({
                                     role: 'assistant',
-                                    content: attackRejectionReason,
-                                    timestamp: new Date().toISOString()
-                                });
+                                    content: attackRejectionReason
+                                }, newChatEntries);
 
+                                responseData.messages = newChatEntries;
                                 res.json(responseData);
                                 return;
                             }
@@ -3164,12 +3209,12 @@ module.exports = function registerApiRoutes(scope) {
 
                     responseData.debug = rejectionDebug;
 
-                    chatHistory.push({
+                    pushChatEntry({
                         role: 'assistant',
-                        content: rejectionReason,
-                        timestamp: new Date().toISOString()
-                    });
+                        content: rejectionReason
+                    }, newChatEntries);
 
+                    responseData.messages = newChatEntries;
                     res.json(responseData);
                     return;
                 }
@@ -3439,6 +3484,7 @@ module.exports = function registerApiRoutes(scope) {
                         stripStreamedEventArtifacts(responseData);
                     }
 
+                    responseData.messages = newChatEntries;
                     res.json(responseData);
                     return;
                 }
@@ -3474,11 +3520,10 @@ module.exports = function registerApiRoutes(scope) {
                     stream.status('player_action:llm_complete', 'AI response received.');
 
                     // Store AI response in history
-                    chatHistory.push({
+                    const aiResponseEntry = pushChatEntry({
                         role: 'assistant',
-                        content: aiResponse,
-                        timestamp: new Date().toISOString()
-                    });
+                        content: aiResponse
+                    }, newChatEntries);
 
                     let dispositionPromptResult = null;
                     let dispositionChanges = [];
@@ -3585,7 +3630,7 @@ module.exports = function registerApiRoutes(scope) {
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
                         timestamp: new Date().toISOString()
-                    });
+                    }, newChatEntries);
 
                     if (stream.isEnabled && !playerActionStreamSent) {
                         const playerActionPreview = { ...responseData };
@@ -3651,6 +3696,7 @@ module.exports = function registerApiRoutes(scope) {
                         stripStreamedEventArtifacts(responseData);
                     }
 
+                    responseData.messages = newChatEntries;
                     res.json(responseData);
                 } else {
                     res.status(500).json({ error: 'Invalid response from AI API' });
@@ -3706,6 +3752,71 @@ module.exports = function registerApiRoutes(scope) {
             res.json({
                 message: 'Chat history cleared',
                 count: chatHistory.length
+            });
+        });
+
+        app.put('/api/chat/message', (req, res) => {
+            const { timestamp, content } = req.body || {};
+
+            if (typeof timestamp !== 'string' || !timestamp.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'timestamp is required'
+                });
+            }
+
+            if (typeof content !== 'string') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'content must be a string'
+                });
+            }
+
+            const index = findChatEntryIndexByTimestamp(timestamp.trim());
+            if (index === -1) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Message not found'
+                });
+            }
+
+            const entry = chatHistory[index];
+            entry.content = content;
+            entry.lastEditedAt = new Date().toISOString();
+
+            if (entry.type === 'event-summary') {
+                entry.summaryItems = [];
+                entry.summaryTitle = entry.summaryTitle || 'Event Summary';
+            }
+
+            res.json({
+                success: true,
+                entry
+            });
+        });
+
+        app.delete('/api/chat/message', (req, res) => {
+            const { timestamp } = req.body || {};
+
+            if (typeof timestamp !== 'string' || !timestamp.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'timestamp is required'
+                });
+            }
+
+            const index = findChatEntryIndexByTimestamp(timestamp.trim());
+            if (index === -1) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Message not found'
+                });
+            }
+
+            const [removed] = chatHistory.splice(index, 1);
+            res.json({
+                success: true,
+                removed
             });
         });
 

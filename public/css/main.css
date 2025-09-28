@@ -1679,6 +1679,7 @@ p:not(:last-child) {
   border-radius: 8px;
   max-width: 85%;
   word-wrap: break-word;
+  position: relative;
 }
 .message.user-message {
   background: rgba(100, 200, 255, 0.3);
@@ -1699,6 +1700,45 @@ p:not(:last-child) {
 .message.loading {
   opacity: 0.7;
   font-style: italic;
+}
+
+.message-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.message:hover .message-actions, .event-summary-batch:hover .message-actions {
+  opacity: 1;
+}
+.message-actions:focus-within {
+  opacity: 1;
+}
+
+.message-action {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.message-action:hover {
+  background: rgba(59, 130, 246, 0.6);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.message-action--delete:hover {
+  background: rgba(239, 68, 68, 0.65);
 }
 
 .message-sender {
@@ -1787,6 +1827,90 @@ p:not(:last-child) {
   border: 2px solid rgba(255, 255, 255, 0.45);
   border-top-color: #ffffff;
   animation: spin 0.8s linear infinite;
+}
+
+.chat-edit-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+}
+.chat-edit-modal.is-open {
+  display: flex;
+}
+.chat-edit-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  -webkit-backdrop-filter: blur(2px);
+          backdrop-filter: blur(2px);
+}
+.chat-edit-modal__dialog {
+  position: relative;
+  width: min(600px, 90vw);
+  background: rgba(15, 23, 42, 0.95);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-edit-modal__header {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(59, 130, 246, 0.2);
+}
+.chat-edit-modal__header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #ffffff;
+}
+.chat-edit-modal__close {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 22px;
+  cursor: pointer;
+}
+.chat-edit-modal__body {
+  padding: 20px;
+}
+.chat-edit-modal__textarea {
+  width: 100%;
+  min-height: 180px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 12px;
+  border-radius: 8px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  resize: vertical;
+}
+.chat-edit-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px 20px;
+}
+.chat-edit-modal__cancel, .chat-edit-modal__save {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+.chat-edit-modal__cancel {
+  background: rgba(148, 163, 184, 0.2);
+  color: #ffffff;
+}
+.chat-edit-modal__save {
+  background: #667eea;
+  color: #ffffff;
 }
 
 @media (max-width: 768px) {

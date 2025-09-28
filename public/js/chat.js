@@ -14,9 +14,9 @@ class AIRPGChat {
                 content: window.systemPrompt || "You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise."
             }
         ];
-
-        // Load any existing chat history for AI context
-        this.loadExistingHistory();
+        this.systemMessage = this.chatHistory[0];
+        this.serverHistory = [];
+        this.messageRegistry = new Map();
 
         this.clientId = this.loadClientId();
         this.pendingRequests = new Map();
@@ -35,6 +35,9 @@ class AIRPGChat {
         this.locationRefreshTimers = [];
         this.locationRefreshPending = false;
         this.activeEventBundle = null;
+
+        this.setupEditModal();
+        this.loadExistingHistory();
     }
 
     async loadExistingHistory() {
@@ -42,16 +45,7 @@ class AIRPGChat {
             const response = await fetch('/api/chat/history');
             const data = await response.json();
 
-            if (data.history && data.history.length > 0) {
-                // Add existing messages to chat history for AI context
-                // Convert server format to AI API format
-                data.history.forEach(msg => {
-                    this.chatHistory.push({
-                        role: msg.role === 'assistant' ? 'assistant' : 'user',
-                        content: msg.content
-                    });
-                });
-            }
+            this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
         } catch (error) {
             console.log('No existing history to load:', error.message);
         }
@@ -76,6 +70,334 @@ class AIRPGChat {
             // Ignore storage write errors
         }
         return generated;
+    }
+
+    normalizeLocalEntry(entry) {
+        if (!entry || typeof entry !== 'object') {
+            return null;
+        }
+        const normalized = { ...entry };
+        if (!normalized.timestamp) {
+            normalized.timestamp = new Date().toISOString();
+        }
+        return normalized;
+    }
+
+    updateServerHistory(history) {
+        this.serverHistory = Array.isArray(history)
+            ? history.map(entry => this.normalizeLocalEntry(entry))
+            : [];
+        this.chatHistory = [this.systemMessage, ...this.serverHistory];
+        this.renderChatHistory();
+    }
+
+    renderChatHistory() {
+        if (!this.chatLog) {
+            return;
+        }
+
+        this.messageRegistry.clear();
+        const fragment = document.createDocumentFragment();
+
+        this.serverHistory.forEach(entry => {
+            const element = this.createChatMessageElement(entry);
+            if (element) {
+                fragment.appendChild(element);
+                if (entry.timestamp) {
+                    this.messageRegistry.set(entry.timestamp, { entry, element });
+                }
+            }
+        });
+
+        this.chatLog.innerHTML = '';
+        if (fragment.childNodes.length === 0) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'message ai-message';
+            placeholder.innerHTML = `
+                <div class="message-sender">🤖 AI Game Master</div>\                
+                <div class="message-actions" hidden></div>
+                <div>Welcome to the AI RPG! I\'m your Game Master. Configure your AI settings above and then describe what kind of adventure you\'d like to embark on.</div>
+            `;
+            this.chatLog.appendChild(placeholder);
+        } else {
+            this.chatLog.appendChild(fragment);
+        }
+        this.scrollToBottom();
+    }
+
+    createChatMessageElement(entry) {
+        if (!entry) {
+            return null;
+        }
+
+        if (entry.type === 'event-summary') {
+            return this.createEventSummaryElement(entry);
+        }
+
+        const messageDiv = document.createElement('div');
+        const role = entry.role === 'user' ? 'user-message' : 'ai-message';
+        messageDiv.className = `message ${role}`;
+        messageDiv.dataset.timestamp = entry.timestamp || '';
+
+
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        if (entry.role === 'user') {
+            senderDiv.textContent = '👤 You';
+        } else if (entry.role === 'assistant') {
+            senderDiv.textContent = '🤖 AI Game Master';
+        } else {
+            senderDiv.textContent = '📝 System';
+        }
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.textContent = entry.content || '';
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
+
+        return messageDiv;
+    }
+
+    createEventSummaryElement(entry) {
+        const container = document.createElement('div');
+        container.className = 'message event-summary-batch';
+        container.dataset.timestamp = entry.timestamp || '';
+
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            container.appendChild(actions);
+        }
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = entry.summaryTitle || '📋 Events';
+
+        const listWrapper = document.createElement('div');
+        const list = document.createElement('ul');
+        list.className = 'event-summary-list';
+
+        if (Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
+            entry.summaryItems.forEach(item => {
+                if (!item || !item.text) {
+                    return;
+                }
+                const listItem = document.createElement('li');
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'event-summary-icon';
+                iconSpan.textContent = item.icon || '•';
+                listItem.appendChild(iconSpan);
+                listItem.appendChild(document.createTextNode(` ${item.text}`));
+                list.appendChild(listItem);
+            });
+        } else if (typeof entry.content === 'string') {
+            entry.content.split('\n').forEach((line, idx) => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    return;
+                }
+                if (idx === 0 && !entry.summaryTitle) {
+                    senderDiv.textContent = trimmed;
+                    return;
+                }
+                const listItem = document.createElement('li');
+                listItem.textContent = trimmed;
+                list.appendChild(listItem);
+            });
+        }
+
+        listWrapper.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+
+        container.appendChild(senderDiv);
+        container.appendChild(listWrapper);
+        container.appendChild(timestampDiv);
+
+        return container;
+    }
+
+    createMessageActions(entry) {
+        if (!entry || (entry.role === 'system')) {
+            return null;
+        }
+        if (!entry.timestamp) {
+            return null;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-actions';
+
+        const editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'message-action message-action--edit';
+        editButton.title = 'Edit message';
+        editButton.setAttribute('aria-label', 'Edit message');
+        editButton.textContent = '✏️';
+        editButton.addEventListener('click', () => {
+            this.openEditModal(entry);
+        });
+
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'message-action message-action--delete';
+        deleteButton.title = 'Delete message';
+        deleteButton.setAttribute('aria-label', 'Delete message');
+        deleteButton.textContent = '🗑️';
+        deleteButton.addEventListener('click', () => {
+            this.handleDeleteMessage(entry);
+        });
+
+        wrapper.appendChild(editButton);
+        wrapper.appendChild(deleteButton);
+        return wrapper;
+    }
+
+    formatTimestamp(timestamp) {
+        if (!timestamp) {
+            return '';
+        }
+        return String(timestamp).replace('T', ' ').replace('Z', '');
+    }
+
+    setupEditModal() {
+        this.editModal = document.createElement('div');
+        this.editModal.className = 'chat-edit-modal';
+        this.editModal.setAttribute('hidden', '');
+
+        this.editModal.innerHTML = `
+            <div class="chat-edit-modal__backdrop" role="presentation"></div>
+            <div class="chat-edit-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="chatEditModalTitle">
+                <header class="chat-edit-modal__header">
+                    <h2 id="chatEditModalTitle">Edit Message</h2>
+                    <button type="button" class="chat-edit-modal__close" aria-label="Close edit dialog">×</button>
+                </header>
+                <div class="chat-edit-modal__body">
+                    <textarea class="chat-edit-modal__textarea" rows="8"></textarea>
+                </div>
+                <footer class="chat-edit-modal__footer">
+                    <button type="button" class="chat-edit-modal__cancel">Cancel</button>
+                    <button type="button" class="chat-edit-modal__save">Save</button>
+                </footer>
+            </div>
+        `;
+
+        document.body.appendChild(this.editModal);
+
+        this.editTextarea = this.editModal.querySelector('.chat-edit-modal__textarea');
+        this.editCancelButton = this.editModal.querySelector('.chat-edit-modal__cancel');
+        this.editSaveButton = this.editModal.querySelector('.chat-edit-modal__save');
+        this.editCloseButton = this.editModal.querySelector('.chat-edit-modal__close');
+        this.editBackdrop = this.editModal.querySelector('.chat-edit-modal__backdrop');
+        this.editCurrentEntry = null;
+
+        const closeHandler = () => this.closeEditModal();
+        this.editCancelButton.addEventListener('click', closeHandler);
+        this.editCloseButton.addEventListener('click', closeHandler);
+        this.editBackdrop.addEventListener('click', closeHandler);
+        this.editSaveButton.addEventListener('click', () => this.submitEdit());
+        document.addEventListener('keydown', (event) => {
+            if (!this.editModal.hasAttribute('hidden') && event.key === 'Escape') {
+                this.closeEditModal();
+            }
+        });
+    }
+
+    openEditModal(entry) {
+        if (!entry || !this.editModal) {
+            return;
+        }
+        this.editCurrentEntry = entry;
+        this.editTextarea.value = entry.content || '';
+        this.editModal.removeAttribute('hidden');
+        this.editModal.classList.add('is-open');
+        setTimeout(() => {
+            this.editTextarea.focus();
+        }, 50);
+    }
+
+    closeEditModal() {
+        if (!this.editModal) {
+            return;
+        }
+        this.editModal.setAttribute('hidden', '');
+        this.editModal.classList.remove('is-open');
+        this.editCurrentEntry = null;
+    }
+
+    async submitEdit() {
+        if (!this.editCurrentEntry) {
+            return;
+        }
+        const timestamp = this.editCurrentEntry.timestamp;
+        const content = this.editTextarea.value;
+
+        try {
+            const response = await fetch('/api/chat/message', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timestamp, content })
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            this.closeEditModal();
+            await this.refreshChatHistory();
+        } catch (error) {
+            console.warn('Failed to edit message:', error);
+            alert(`Failed to edit message: ${error.message || error}`);
+        }
+    }
+
+    async handleDeleteMessage(entry) {
+        if (!entry || !entry.timestamp) {
+            return;
+        }
+        const confirmed = window.confirm('Delete this message? This action cannot be undone.');
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/chat/message', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timestamp: entry.timestamp })
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            await this.refreshChatHistory();
+        } catch (error) {
+            console.warn('Failed to delete message:', error);
+            alert(`Failed to delete message: ${error.message || error}`);
+        }
+    }
+
+    async refreshChatHistory() {
+        try {
+            const response = await fetch('/api/chat/history', { cache: 'no-store' });
+            const data = await response.json();
+            this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+        } catch (error) {
+            console.warn('Failed to refresh chat history:', error);
+        }
     }
 
     generateRequestId() {
@@ -1984,7 +2306,6 @@ class AIRPGChat {
         if (payload.response && (!context || !context.playerActionRendered)) {
             this.hideLoading(requestId);
             this.addMessage('ai', payload.response, false, payload.debug);
-            this.chatHistory.push({ role: 'assistant', content: payload.response });
             shouldRefreshLocation = true;
             if (context) {
                 context.playerActionRendered = true;
@@ -2076,7 +2397,6 @@ class AIRPGChat {
         }
 
         this.addNpcMessage(turn.name || 'NPC', turn.response);
-        this.chatHistory.push({ role: 'assistant', content: turn.response });
 
         if (turn.eventChecks) {
             this.addEventMessage(turn.eventChecks);
@@ -2283,8 +2603,10 @@ class AIRPGChat {
         const message = rawInput.trim();
         if (!message) return;
 
-        this.addMessage('user', message);
-        this.chatHistory.push({ role: 'user', content: rawInput });
+        const userEntry = this.normalizeLocalEntry({ role: 'user', content: rawInput });
+        this.serverHistory.push(userEntry);
+        this.chatHistory = [this.systemMessage, ...this.serverHistory];
+        this.renderChatHistory();
 
         this.messageInput.value = '';
         this.setSendButtonLoading(true);
@@ -2339,6 +2661,8 @@ class AIRPGChat {
                 console.warn('Failed to refresh location after chat response:', refreshError);
             }
         }
+
+        await this.refreshChatHistory();
     }
 
     async checkLocationUpdate() {
