@@ -288,6 +288,30 @@ module.exports = function registerApiRoutes(scope) {
                                 add('🎒', `${actor} picked up ${itemName}.`);
                             });
                             break;
+                        case 'alter_item':
+                            entries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                const original = safeSummaryItem(entry.originalName || entry.newName || 'an item');
+                                const renamed = entry.newName && entry.originalName && entry.newName !== entry.originalName
+                                    ? safeSummaryItem(entry.newName)
+                                    : null;
+                                const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                                let text;
+                                if (renamed) {
+                                    text = `${original} changed to ${renamed}`;
+                                } else {
+                                    text = `${original} was altered permanently`;
+                                }
+                                if (changeDescription) {
+                                    text += ` (${changeDescription})`;
+                                }
+                                text += '.';
+                                add('🛠️', text);
+                            });
+                            shouldRefresh = true;
+                            break;
                         case 'status_effect_change':
                             entries.forEach(entry => {
                                 const entity = safeSummaryName(entry?.entity);
@@ -311,22 +335,36 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             break;
                         case 'needbar_change':
-                            entries.forEach(entry => {
-                                const actor = safeSummaryName(entry?.character || entry?.name);
-                                const barName = safeSummaryItem(entry?.needBar, 'a Need Bar');
-                                const direction = formatLabel(entry?.direction || '');
-                                const magnitude = formatLabel(entry?.magnitude || '');
-                                const detailParts = [];
-                                if (magnitude) {
-                                    detailParts.push(magnitude.toLowerCase());
+                            {
+                                let emitted = false;
+                                entries.forEach(entry => {
+                                    const isPassiveAdjustment = (() => {
+                                        const magnitudeRaw = entry?.magnitude ? String(entry.magnitude).trim().toLowerCase() : '';
+                                        const reasonRaw = entry?.reason ? String(entry.reason).trim().toLowerCase() : '';
+                                        return magnitudeRaw === 'perturn' || reasonRaw.includes('passive per-turn adjustment');
+                                    })();
+                                    if (isPassiveAdjustment) {
+                                        return;
+                                    }
+                                    const actor = safeSummaryName(entry?.character || entry?.name);
+                                    const barName = safeSummaryItem(entry?.needBar, 'a Need Bar');
+                                    const direction = formatLabel(entry?.direction || '');
+                                    const magnitude = formatLabel(entry?.magnitude || '');
+                                    const detailParts = [];
+                                    if (magnitude) {
+                                        detailParts.push(magnitude.toLowerCase());
+                                    }
+                                    if (direction) {
+                                        detailParts.push(direction.toLowerCase());
+                                    }
+                                    const detail = detailParts.length ? detailParts.join(' ') : 'changed';
+                                    add('🧪', `${actor}'s ${barName} ${detail}.`);
+                                    emitted = true;
+                                });
+                                if (emitted) {
+                                    shouldRefresh = true;
                                 }
-                                if (direction) {
-                                    detailParts.push(direction.toLowerCase());
-                                }
-                                const detail = detailParts.length ? detailParts.join(' ') : 'changed';
-                                add('🧪', `${actor}'s ${barName} ${detail}.`);
-                            });
-                            shouldRefresh = true;
+                            }
                             break;
                         default:
                             break;
@@ -487,7 +525,12 @@ module.exports = function registerApiRoutes(scope) {
                 role: 'assistant',
                 content: summaryText,
                 timestamp: timestamp || new Date().toISOString(),
-                type: 'event-summary'
+                type: 'event-summary',
+                summaryTitle: label,
+                summaryItems: bundle.items.map(item => ({
+                    icon: item?.icon || '•',
+                    text: item?.text || ''
+                }))
             };
 
             chatHistory.push(entry);
@@ -3439,71 +3482,25 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const needBarAdjustments = applyNeedBarTurnTick();
-                    if (needBarAdjustments.length) {
-                        if (debugInfo) {
-                            debugInfo.needBarAdjustments = needBarAdjustments;
-                        }
-
-                        const passiveNeedBarChanges = [];
-                        for (const summary of needBarAdjustments) {
-                            if (!summary || !Array.isArray(summary.adjustments)) {
-                                continue;
-                            }
-
-                            for (const adjustment of summary.adjustments) {
-                                if (!adjustment) {
-                                    continue;
-                                }
-
-                                const delta = Number(adjustment.delta);
-                                if (!Number.isFinite(delta) || delta === 0) {
-                                    continue;
-                                }
-
-                                passiveNeedBarChanges.push({
-                                    actorId: summary.actorId || null,
-                                    actorName: summary.actorName || null,
-                                    needBarId: adjustment.id || null,
-                                    needBarName: adjustment.name || adjustment.id || null,
-                                    direction: delta > 0 ? 'increase' : 'decrease',
-                                    magnitude: 'perTurn',
-                                    reason: 'Passive per-turn adjustment',
-                                    previousValue: Number.isFinite(adjustment.previousValue) ? adjustment.previousValue : null,
-                                    newValue: Number.isFinite(adjustment.newValue) ? adjustment.newValue : null,
-                                    delta,
-                                    min: Number.isFinite(adjustment.min) ? adjustment.min : null,
-                                    max: Number.isFinite(adjustment.max) ? adjustment.max : null,
-                                    changePerTurn: Number.isFinite(adjustment.changePerTurn) ? adjustment.changePerTurn : null,
-                                    currentThreshold: adjustment.currentThreshold ? { ...adjustment.currentThreshold } : null,
-                                    playerOnly: typeof adjustment.playerOnly === 'boolean' ? adjustment.playerOnly : null
-                                });
-                            }
-                        }
-
-                    if (passiveNeedBarChanges.length) {
-                        if (Array.isArray(responseData.needBarChanges)) {
-                            responseData.needBarChanges.push(...passiveNeedBarChanges);
-                        } else {
-                            responseData.needBarChanges = passiveNeedBarChanges;
-                        }
+                    if (needBarAdjustments.length && debugInfo) {
+                        debugInfo.needBarAdjustments = needBarAdjustments;
                     }
-                }
 
-                recordEventSummaryEntry({
-                    label: '📋 Events – Player Turn',
-                    events: responseData.events,
-                    experienceAwards: responseData.experienceAwards,
-                    currencyChanges: responseData.currencyChanges,
-                    environmentalDamageEvents: responseData.environmentalDamageEvents,
-                    needBarChanges: responseData.needBarChanges,
-                    timestamp: new Date().toISOString()
-                });
+                    recordEventSummaryEntry({
+                        label: '📋 Events – Player Turn',
+                        events: responseData.events,
+                        experienceAwards: responseData.experienceAwards,
+                        currencyChanges: responseData.currencyChanges,
+                        environmentalDamageEvents: responseData.environmentalDamageEvents,
+                        needBarChanges: responseData.needBarChanges,
+                        timestamp: new Date().toISOString()
+                    });
 
-                if (stream.isEnabled && !playerActionStreamSent) {
-                    const playerActionPreview = { ...responseData };
-                    delete playerActionPreview.npcTurns;
-                    playerActionPreview.streamMeta = {
-                        ...streamState,
+                    if (stream.isEnabled && !playerActionStreamSent) {
+                        const playerActionPreview = { ...responseData };
+                        delete playerActionPreview.npcTurns;
+                        playerActionPreview.streamMeta = {
+                            ...streamState,
                             playerAction: true,
                             enabled: true,
                             phase: 'player'
