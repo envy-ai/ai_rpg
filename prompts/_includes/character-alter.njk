@@ -1,0 +1,149 @@
+<attributeDefinitions>
+{% if attributeDefinitions %}
+    {% for attrName, attrDef in attributeDefinitions | dictsort %}
+    <attribute>
+        <name>{{ attrName }}</name>
+        <description>{{ attrDef.description }}</description>
+    </attribute>
+    {% endfor %}
+{% endif %}
+</attributeDefinitions>
+
+<existingCharacter>
+  <name>{{ alteredCharacter.name }}</name>
+  <description>{{ alteredCharacter.description }}</description>
+  <shortDescription>{{ alteredCharacter.shortDescription }}</shortDescription>
+  <role>{{ alteredCharacter.role }}</role>
+  <class>{{ alteredCharacter.class }}</class>
+  <race>{{ alteredCharacter.race }}</race>
+  <relativeLevel>{{ alteredCharacter.relativeLevel | default('unknown') }}</relativeLevel>
+  <currency>{{ alteredCharacter.currency | default('unknown') }}</currency>
+  <attributes>
+    {% if alteredCharacter.attributes %}
+      {% for key, value in alteredCharacter.attributes %}
+      {% set attrName = value.name or key %}
+      {% set attrValue = value.value or value.score or value.rating or value %}
+      {% if attrName %}
+      <attribute>
+        <name>{{ attrName }}</name>
+        <value>{{ attrValue }}</value>
+      </attribute>
+      {% endif %}
+      {% endfor %}
+    {% endif %}
+  </attributes>
+  <personality>
+    <type>{{ alteredCharacter.personality.type or alteredCharacter.personality }}</type>
+    <traits>{{ alteredCharacter.personality.traits }}</traits>
+    <notes>{{ alteredCharacter.personality.notes }}</notes>
+  </personality>
+  <statusEffects>
+    {% if alteredCharacter.statusEffects %}
+      {% for effect in alteredCharacter.statusEffects %}
+      <effect>
+        <description>{{ effect.description or effect }}</description>
+        <duration>{{ effect.duration | default('unknown') }}</duration>
+      </effect>
+      {% endfor %}
+    {% endif %}
+  </statusEffects>
+  <abilities>
+    {% if alteredCharacter.abilities %}
+      {% for ability in alteredCharacter.abilities %}
+      <ability>
+        <name>{{ ability.name }}</name>
+        <description>{{ ability.description }}</description>
+        <type>{{ ability.type }}</type>
+        <level>{{ ability.level }}</level>
+      </ability>
+      {% endfor %}
+    {% endif %}
+  </abilities>
+  <inventory>
+    {% if alteredCharacter.inventory %}
+      {% for item in alteredCharacter.inventory %}
+      <item>{{ item.name or item }}</item>
+      {% endfor %}
+    {% endif %}
+  </inventory>
+</existingCharacter>
+
+A character (see existingCharacter above) was permanently altered in the following way(s):
+<alteration>{{ changeDescription }}</alteration>
+<newName>{{ characterSeed.name }}</newName>
+
+<task>Consider how the character changed and return the updated character definition.</task>
+
+Guidelines:
+- Update the description and shortDescription to reflect any lasting physical, psychological, or social changes.
+- Adjust role, class, race, relative level, abilities, status effects, inventory, or currency if the alteration logically impacts them.
+- Refresh personality details to match the new mindset or outlook while preserving continuity with prior lore when appropriate.
+- Rename the character only when the alteration necessitates it; otherwise keep the existing name.
+- Ensure the revised character still fits the location, setting, and campaign tone, and keep banned names in mind.
+
+Return the character in the following format:
+<npc>
+  <name>{% if characterSeed.name %}{{ characterSeed.name }}{% else %}[Character Name]{% endif %}</name>
+  <description>{% if characterSeed.description %}{{ characterSeed.description }}{% else %}[Two to three sentences capturing the new appearance, demeanor, and current goals]{% endif %}</description>
+  <shortDescription>{% if characterSeed.shortDescription %}{{ characterSeed.shortDescription }}{% else %}[Ten words or fewer summarizing the character]{% endif %}</shortDescription>
+  <role>{% if characterSeed.role %}{{ characterSeed.role }}{% else %}[Updated role, job, or niche]{% endif %}</role>
+  <class>{% if characterSeed.class %}{{ characterSeed.class }}{% else %}[Class, vocation, or archetype]{% endif %}</class>
+  <race>{% if characterSeed.race %}{{ characterSeed.race }}{% else %}[Species or origin]{% endif %}</race>
+  <relativeLevel>{% if characterSeed.relativeLevel is not none %}{{ characterSeed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
+  <currency>{% if characterSeed.currency is not none %}{{ characterSeed.currency }}{% else %}[Integer amount of currency on hand]{% endif %}</currency>
+  <attributes>
+{% for attrName, attrDef in attributeDefinitions | dictsort %}    <attribute name="{{ attrName }}">[Rating using: poor, below average, average, above average, excellent, or legendary.]</attribute>
+{% endfor %}  </attributes>
+  <personality>
+    <type>{% if characterSeed.personality and characterSeed.personality.type %}{{ characterSeed.personality.type }}{% else %}[Updated alignment, archetype, or mindset descriptor]{% endif %}</type>
+    <traits>{% if characterSeed.personality and characterSeed.personality.traits %}{{ characterSeed.personality.traits }}{% else %}[Optional comma-separated quirks, neurodivergences, or notable traits]
+    {% endif %}</traits>
+    <notes>{% if characterSeed.personality and characterSeed.personality.notes %}{{ characterSeed.personality.notes }}{% else %}[0-2 sentences with extra context or hooks]{% endif %}</notes>
+  </personality>
+  <statusEffects>
+    <effect>
+      <description>Description of the status effect</description>
+      <duration>Remaining duration in turns</duration>
+    </effect>
+    ... more status effects as needed ...
+  </statusEffects>
+  <lostStatusEffects>
+    <effect>
+      <description>Description of the status effect that has been permanently removed</description>
+      <reason>Brief explanation of why the status effect was removed</reason>
+    </effect>
+    ... more lost status effects as needed ...
+  </lostStatusEffects>
+  <abilities>
+    <ability>
+      <name>The exact name of an ability the character has permanently lost due to the alteration</name>
+      <level>The level of the ability (maximum of their level after being altered)</level>
+      <description>Brief description of the ability</description>
+      <type>active, passive, or triggered</type>
+      <reason>Brief explanation of why the ability was lost</reason>
+    </ability>
+    ... more abilities as needed, 1 to 4 per level. Magical or psionic characters tend to have more, while "skill monkeys" tend to have fewer ...
+  </abilities>
+  <lostAbilities>
+    <ability>
+      <name>The exact name of an ability the character has permanently lost due to the alteration</name>
+      <reason>Brief explanation of why the ability was lost</reason>
+    </ability>
+    ... more lost abilities as needed ...
+  </lostAbilities>
+  <inventory>
+    <item>
+      <name>The exact name of an item the character has permanently gained due to the alteration</name>
+      <description>Brief description of the item's appearance, properties, and any relevant lore</description>
+      <reason>Brief explanation of why the item was gained</reason>
+    </item>
+    ... more gained items as needed, up to 6 ...
+  </inventory>
+  <droppedItems>
+    <item>
+      <name>The exact name of an item the character has permanently lost or dropped due to the alteration</name>
+      <reason>Brief explanation of why the item was lost or dropped</reason>
+    </item>
+    ... more dropped items as needed ...
+  </droppedItems>
+</npc>

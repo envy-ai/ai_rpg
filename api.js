@@ -115,7 +115,9 @@ module.exports = function registerApiRoutes(scope) {
             'consume_item',
             'move_location',
             'npc_arrival_departure',
-            'needbar_change'
+            'needbar_change',
+            'alter_location',
+            'alter_npc'
         ]);
 
         const normalizeSummaryText = (value, fallback) => {
@@ -309,6 +311,38 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                                 text += '.';
                                 add('🛠️', text);
+                            });
+                            shouldRefresh = true;
+                            break;
+                        case 'alter_location':
+                            entries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                const locationName = safeSummaryItem(entry.name || 'The location', 'the location');
+                                const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                                const text = changeDescription
+                                    ? `${locationName} changed: ${changeDescription}.`
+                                    : `${locationName} was altered.`;
+                                add('🏙️', text);
+                            });
+                            shouldRefresh = true;
+                            break;
+                        case 'alter_npc':
+                            entries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                const npcName = safeSummaryName(entry.name || entry.originalName || 'An NPC');
+                                const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                                let text = changeDescription
+                                    ? `${npcName}: ${changeDescription}`
+                                    : `${npcName} was altered.`;
+                                if (Array.isArray(entry.droppedItems) && entry.droppedItems.length) {
+                                    const droppedList = entry.droppedItems.map(item => safeSummaryItem(item, 'an item')).join(', ');
+                                    text += ` Dropped ${droppedList}.`;
+                                }
+                                add('🧬', text.endsWith('.') ? text : `${text}.`);
                             });
                             shouldRefresh = true;
                             break;

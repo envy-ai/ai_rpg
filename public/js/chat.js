@@ -890,7 +890,8 @@ class AIRPGChat {
             'move_location',
             'npc_arrival_departure',
             'needbar_change',
-            'alter_item'
+            'alter_item',
+            'alter_location'
         ]);
         let shouldRefreshLocation = false;
 
@@ -1023,7 +1024,7 @@ class AIRPGChat {
                     const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
                     let text;
                     if (renamed) {
-                        text = `${original}changed to ${renamed}`;
+                        text = `${original} upgraded to ${renamed}`;
                     } else {
                         text = `${original} was altered permanently`;
                     }
@@ -1032,6 +1033,39 @@ class AIRPGChat {
                     }
                     text += '.';
                     this.addEventSummary('🛠️', text);
+                });
+            },
+            alter_location: (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry) {
+                        return;
+                    }
+                    const locationName = safeItem(entry.name || 'The location', 'The location');
+                    const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                    const summaryText = changeDescription
+                        ? `${locationName} changed: ${changeDescription}.`
+                        : `${locationName} was altered.`;
+                    this.addEventSummary('🏙️', summaryText);
+                });
+            },
+            alter_npc: (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry) {
+                        return;
+                    }
+                    const npcName = safeName(entry.name || entry.originalName || 'An NPC');
+                    const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                    let text = changeDescription
+                        ? `${npcName}: ${changeDescription}`
+                        : `${npcName} was altered.`;
+                    if (Array.isArray(entry.droppedItems) && entry.droppedItems.length) {
+                        const dropped = entry.droppedItems.map(item => safeItem(item, 'an item')).join(', ');
+                        text += ` Dropped ${dropped}.`;
+                    }
+                    if (!text.endsWith('.')) {
+                        text += '.';
+                    }
+                    this.addEventSummary('🧬', text);
                 });
             },
             needbar_change: (entries) => {

@@ -10622,6 +10622,7 @@ Events.initialize({
     generateThingImage,
     shouldGenerateThingImage,
     createRegionStubFromEvent,
+    generatedImages,
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseDir: __dirname

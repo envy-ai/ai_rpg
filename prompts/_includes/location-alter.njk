@@ -1,0 +1,39 @@
+<existingLocation>
+  <name>{{ alteredLocation.name }}</name>
+  <description>{{ alteredLocation.description }}</description>
+  <baseLevel>{{ alteredLocation.baseLevel | default('unknown') }}</baseLevel>
+  <relativeLevel>{{ alteredLocation.relativeLevel | default('unknown') }}</relativeLevel>
+  <numNpcs>{{ alteredLocation.numNpcs | default('unknown') }}</numNpcs>
+  <numItems>{{ alteredLocation.numItems | default('unknown') }}</numItems>
+  <numScenery>{{ alteredLocation.numScenery | default('unknown') }}</numScenery>
+  <numHostiles>{{ alteredLocation.numHostiles | default('unknown') }}</numHostiles>
+  <statusEffects>
+  {% if alteredLocation.statusEffects %}
+    {% for effect in alteredLocation.statusEffects %}
+    <effect>
+      <description>{{ effect.description }}</description>
+      <duration>{{ effect.duration | default('unknown') }}</duration>
+    </effect>
+    {% endfor %}
+  {% endif %}
+  </statusEffects>
+</existingLocation>
+
+A location (see existingLocation above) was permanently altered in the following way(s):
+<alteration>{{ changeDescription }}</alteration>
+<newName>{{ locationSeed.name }}</newName>
+
+<task>Consider how the location changed and return the updated location definition.</task>
+
+Guidelines:
+- Update the description to reflect environmental, structural, or narrative changes resulting from the alteration.
+- Adjust the location's base level (1-20) if the danger, difficulty, or tone shifted.
+- Rename the location only when the alteration meaningfully changes its identity; otherwise keep the original name.
+- Preserve continuity with the surrounding region, existing lore, and prior player knowledge while making the change feel significant.
+
+Return the location in the following format:
+<location>
+  <name>{% if locationSeed.name %}{{ locationSeed.name }}{% else %}[Location Name]{% endif %}</name>
+  <description>{% if locationSeed.description %}{{ locationSeed.description }}{% else %}[1-2 paragraph description capturing the new state]{% endif %}</description>
+  <baseLevel>{% if locationSeed.baseLevel is defined %}{{ locationSeed.baseLevel }}{% else %}[Integer 1-20 reflecting absolute difficulty]{% endif %}</baseLevel>
+</location>

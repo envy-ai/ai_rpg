@@ -41,6 +41,28 @@ class Events {
                 return { healer, recipient, effect };
             }).filter(Boolean),
             item_appear: raw => this.splitSemicolonEntries(raw),
+            alter_location: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+
+                const segments = entry
+                    .split(/->/)
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!segments.length) {
+                    return null;
+                }
+
+                const name = segments[0] || null;
+                const changeDescription = segments.length > 1 ? segments.slice(1).join(' -> ') : '';
+
+                return {
+                    name: name ? name.trim() : null,
+                    changeDescription: changeDescription ? changeDescription.trim() : ''
+                };
+            }).filter(Boolean),
             alter_item: raw => this.splitSemicolonEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
@@ -66,6 +88,28 @@ class Events {
                 return {
                     originalName: originalName ? originalName.trim() : null,
                     newName: newName ? newName.trim() : null,
+                    changeDescription: changeDescription ? changeDescription.trim() : ''
+                };
+            }).filter(Boolean),
+            alter_npc: raw => this.splitSemicolonEntries(raw).map(entry => {
+                if (!entry) {
+                    return null;
+                }
+
+                const segments = entry
+                    .split(/->/)
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!segments.length) {
+                    return null;
+                }
+
+                const name = segments[0] || null;
+                const changeDescription = segments.length > 1 ? segments.slice(1).join(' -> ') : '';
+
+                return {
+                    name: name ? name.trim() : null,
                     changeDescription: changeDescription ? changeDescription.trim() : ''
                 };
             }).filter(Boolean),
@@ -346,7 +390,9 @@ class Events {
             drop_item: (entries, context) => this.handleDropItemEvents(entries, context),
             heal_recover: (entries, context) => this.handleHealEvents(entries, context),
             item_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
+            alter_location: (entries, context) => this.handleAlterLocationEvents(entries, context),
             alter_item: (entries, context) => this.handleAlterItemEvents(entries, context),
+            alter_npc: (entries, context) => this.handleAlterNpcEvents(entries, context),
             move_location: (entries, context) => this.handleMoveLocationEvents(entries, context),
             new_exit_discovered: (entries, context) => this.handleNewExitEvents(entries, context),
             npc_arrival_departure: (entries, context) => this.handleNpcArrivalDepartureEvents(entries, context),
@@ -665,6 +711,236 @@ class Events {
         } catch (error) {
             console.warn('Failed to parse altered item XML:', error.message);
             return null;
+        }
+    }
+
+    static parseLocationAlterXml(xmlContent) {
+        if (!xmlContent || typeof xmlContent !== 'string') {
+            return null;
+        }
+
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent);
+            }
+
+            const locationNode = doc.getElementsByTagName('location')[0];
+            if (!locationNode) {
+                return null;
+            }
+
+            const getText = (tag) => locationNode.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+
+            const baseLevelRaw = getText('baseLevel');
+            const baseLevel = Number(baseLevelRaw);
+
+            return {
+                name: getText('name') || null,
+                description: getText('description') || '',
+                baseLevel: Number.isFinite(baseLevel) ? baseLevel : null
+            };
+        } catch (error) {
+            console.warn('Failed to parse altered location XML:', error.message);
+            return null;
+        }
+    }
+
+    static parseCharacterAlterXml(xmlContent) {
+        if (!xmlContent || typeof xmlContent !== 'string') {
+            return null;
+        }
+
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent);
+            }
+
+            const npcNode = doc.getElementsByTagName('npc')[0];
+            if (!npcNode) {
+                return null;
+            }
+
+            const getText = (tag) => npcNode.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+
+            const relativeLevelRaw = getText('relativeLevel');
+            const relativeLevel = Number(relativeLevelRaw);
+            const currencyRaw = getText('currency');
+            const currency = Number(currencyRaw);
+
+            const attributes = {};
+            const attributeNodes = Array.from(npcNode.getElementsByTagName('attribute'));
+            for (const node of attributeNodes) {
+                const name = node.getAttribute('name') || node.getElementsByTagName('name')[0]?.textContent?.trim();
+                if (!name) {
+                    continue;
+                }
+                const valueNode = node.getElementsByTagName('value')[0];
+                const textContent = valueNode ? valueNode.textContent : node.textContent;
+                const value = textContent ? textContent.trim() : '';
+                attributes[name] = value;
+            }
+
+            const personalityNode = npcNode.getElementsByTagName('personality')[0];
+            const personality = personalityNode ? {
+                type: personalityNode.getElementsByTagName('type')[0]?.textContent?.trim() || '',
+                traits: personalityNode.getElementsByTagName('traits')[0]?.textContent?.trim() || '',
+                notes: personalityNode.getElementsByTagName('notes')[0]?.textContent?.trim() || ''
+            } : null;
+
+            const statusEffects = [];
+            const statusParent = npcNode.getElementsByTagName('statusEffects')[0];
+            if (statusParent) {
+                const effectNodes = Array.from(statusParent.getElementsByTagName('effect'));
+                for (const effectNode of effectNodes) {
+                    const description = effectNode.getElementsByTagName('description')[0]?.textContent?.trim()
+                        || effectNode.textContent?.trim()
+                        || '';
+                    if (!description) {
+                        continue;
+                    }
+                    const durationText = effectNode.getElementsByTagName('duration')[0]?.textContent?.trim() || '';
+                    const duration = Number(durationText);
+                    statusEffects.push({
+                        description,
+                        duration: Number.isFinite(duration) ? duration : (durationText.toLowerCase() === 'permanent' ? null : durationText || null)
+                    });
+                }
+            }
+
+            const abilities = [];
+            const abilitiesParent = npcNode.getElementsByTagName('abilities')[0];
+            if (abilitiesParent) {
+                const abilityNodes = Array.from(abilitiesParent.getElementsByTagName('ability'));
+                for (const abilityNode of abilityNodes) {
+                    const name = abilityNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                    if (!name) {
+                        continue;
+                    }
+                    const description = abilityNode.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+                    const type = abilityNode.getElementsByTagName('type')[0]?.textContent?.trim() || '';
+                    const levelRaw = abilityNode.getElementsByTagName('level')[0]?.textContent?.trim() || '';
+                    const level = Number(levelRaw);
+                    abilities.push({
+                        name,
+                        description,
+                        type,
+                        level: Number.isFinite(level) ? level : null
+                    });
+                }
+            }
+
+            const inventory = [];
+            const inventoryParent = npcNode.getElementsByTagName('inventory')[0];
+            if (inventoryParent) {
+                const itemNodes = Array.from(inventoryParent.getElementsByTagName('item'));
+                for (const itemNode of itemNodes) {
+                    const itemName = itemNode.textContent?.trim();
+                    if (itemName) {
+                        inventory.push(itemName);
+                    }
+                }
+            }
+
+            return {
+                name: getText('name') || null,
+                description: getText('description') || '',
+                shortDescription: getText('shortDescription') || '',
+                role: getText('role') || '',
+                class: getText('class') || '',
+                race: getText('race') || '',
+                relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                currency: Number.isFinite(currency) ? currency : null,
+                personality,
+                attributes,
+                statusEffects,
+                abilities,
+                inventory
+            };
+        } catch (error) {
+            console.warn('Failed to parse altered character XML:', error.message);
+            return null;
+        }
+    }
+
+    static mapAttributeRatingToValue(raw) {
+        if (raw === null || raw === undefined) {
+            return null;
+        }
+
+        if (Number.isFinite(raw)) {
+            return this.clampAttributeValue(raw);
+        }
+
+        const text = String(raw).trim();
+        if (!text) {
+            return null;
+        }
+
+        const normalized = text.toLowerCase();
+        const mapping = [
+            ['terrible', 2],
+            ['awful', 2],
+            ['poor', 4],
+            ['weak', 4],
+            ['frail', 4],
+            ['below average', 7],
+            ['average', 10],
+            ['mediocre', 10],
+            ['above average', 13],
+            ['strong', 13],
+            ['tough', 13],
+            ['excellent', 16],
+            ['mighty', 16],
+            ['heroic', 16],
+            ['legendary', 19],
+            ['mythic', 19]
+        ];
+
+        for (const [keyword, value] of mapping) {
+            if (normalized.includes(keyword)) {
+                return this.clampAttributeValue(value);
+            }
+        }
+
+        const numeric = Number(text);
+        if (Number.isFinite(numeric)) {
+            return this.clampAttributeValue(numeric);
+        }
+
+        return null;
+    }
+
+    static clampAttributeValue(value) {
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        return Math.max(1, Math.min(20, Math.round(value)));
+    }
+
+    static clearLocationImage(location, generatedImages) {
+        if (!location) {
+            return;
+        }
+        const previousId = typeof location.imageId === 'string' ? location.imageId : null;
+        if (previousId) {
+            if (generatedImages instanceof Map) {
+                generatedImages.delete(previousId);
+            } else if (generatedImages && typeof generatedImages === 'object') {
+                delete generatedImages[previousId];
+            }
+        }
+        try {
+            location.imageId = null;
+        } catch (error) {
+            // Ignore setter validation errors and leave as-is
         }
     }
 
@@ -1029,8 +1305,6 @@ class Events {
             }
         }
 
-        const baseContext = buildBasePromptContext({ locationOverride: location });
-
         const endpoint = config.ai.endpoint;
         const chatEndpoint = endpoint.endsWith('/')
             ? `${endpoint}chat/completions`
@@ -1227,7 +1501,7 @@ class Events {
 
         const computedLevel = this.clampLevel(
             (Number.isFinite(baseLevelReference) ? baseLevelReference : 1)
-                + (Number.isFinite(relativeLevel) ? relativeLevel : 0),
+            + (Number.isFinite(relativeLevel) ? relativeLevel : 0),
             baseLevelReference
         );
 
@@ -1433,6 +1707,779 @@ class Events {
                 this.addThingToLocation(thing, location);
             }
         }
+    }
+
+    static async handleAlterLocationEvents(entries = [], context = {}) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return;
+        }
+
+        const {
+            Location,
+            buildBasePromptContext,
+            promptEnv,
+            parseXMLTemplate,
+            axios,
+            fs,
+            path,
+            baseDir,
+            generatedImages
+        } = this.deps;
+
+        if (
+            typeof buildBasePromptContext !== 'function' ||
+            !promptEnv ||
+            typeof parseXMLTemplate !== 'function' ||
+            !axios
+        ) {
+            console.warn('Alter location handler missing prompt dependencies.');
+            return;
+        }
+
+        const config = this.config;
+        if (!config?.ai?.endpoint || !config?.ai?.apiKey || !config?.ai?.model) {
+            console.warn('AI configuration incomplete; cannot process alter_location events.');
+            return;
+        }
+
+        let location = context.location || null;
+        if (!location && context.player?.currentLocation && Location && typeof Location.get === 'function') {
+            try {
+                location = Location.get(context.player.currentLocation);
+            } catch (_) {
+                location = null;
+            }
+        }
+        if (!location && this.currentPlayer?.currentLocation && Location && typeof Location.get === 'function') {
+            try {
+                location = Location.get(this.currentPlayer.currentLocation);
+            } catch (_) {
+                location = null;
+            }
+        }
+
+        if (!location) {
+            console.warn('No active location available for alter_location event.');
+            return;
+        }
+
+        const endpoint = config.ai.endpoint;
+        const chatEndpoint = endpoint.endsWith('/')
+            ? `${endpoint}chat/completions`
+            : `${endpoint}/chat/completions`;
+        const defaultTemperature = typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.5;
+
+        const alteredSummaries = [];
+
+        const locationDetails = typeof location.getDetails === 'function' ? location.getDetails() : null;
+        const baseSnapshot = {
+            name: locationDetails?.name || location.name || 'Unknown Location',
+            description: locationDetails?.description || location.description || 'No description available.',
+            baseLevel: Number.isFinite(locationDetails?.baseLevel) ? locationDetails.baseLevel : location.baseLevel,
+            relativeLevel: locationDetails?.generationHints?.relativeLevel ?? null,
+            numNpcs: locationDetails?.generationHints?.numNpcs ?? null,
+            numItems: locationDetails?.generationHints?.numItems ?? null,
+            numScenery: locationDetails?.generationHints?.numScenery ?? null,
+            numHostiles: locationDetails?.generationHints?.numHostiles ?? null,
+            statusEffects: typeof location.getStatusEffects === 'function' ? location.getStatusEffects() : []
+        };
+
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
+            }
+
+            const baseContext = buildBasePromptContext({ locationOverride: location });
+            const changeDescription = entry.changeDescription || '';
+            const desiredName = entry.name && entry.name.trim()
+                ? entry.name.trim()
+                : (location.name || baseSnapshot.name);
+
+            const locationSeed = {
+                name: desiredName,
+                description: location.description,
+                baseLevel: location.baseLevel
+            };
+
+            const promptPayload = {
+                ...baseContext,
+                promptType: 'location-alter',
+                changeDescription,
+                alteredLocation: baseSnapshot,
+                locationSeed
+            };
+
+            let renderedTemplate;
+            try {
+                renderedTemplate = promptEnv.render('base-context.xml.njk', promptPayload);
+            } catch (renderError) {
+                console.warn('Failed to render location alteration prompt:', renderError.message);
+                continue;
+            }
+
+            let parsedTemplate;
+            try {
+                parsedTemplate = parseXMLTemplate(renderedTemplate);
+            } catch (templateError) {
+                console.warn('Failed to parse location alteration template:', templateError.message);
+                continue;
+            }
+
+            if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                console.warn('Alter location template missing prompts.');
+                continue;
+            }
+
+            const messages = [
+                { role: 'system', content: parsedTemplate.systemPrompt },
+                { role: 'user', content: parsedTemplate.generationPrompt }
+            ];
+
+            const requestData = {
+                model: config.ai.model,
+                messages,
+                max_tokens: parsedTemplate.maxTokens || 400,
+                temperature: typeof parsedTemplate.temperature === 'number'
+                    ? parsedTemplate.temperature
+                    : defaultTemperature
+            };
+
+            let response;
+            const requestStart = Date.now();
+            try {
+                response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${config.ai.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: config.baseTimeoutSeconds
+                });
+            } catch (requestError) {
+                console.warn('Alter location request failed:', requestError.message);
+                continue;
+            }
+
+            const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+            const aiContent = response?.data?.choices?.[0]?.message?.content || '';
+            if (!aiContent.trim()) {
+                console.warn('Alter location response empty.');
+                continue;
+            }
+
+            const parsedLocation = this.parseLocationAlterXml(aiContent);
+            if (!parsedLocation || !parsedLocation.name || !parsedLocation.description) {
+                console.warn('Failed to parse alteration response for location.');
+                continue;
+            }
+
+            const summary = this.applyLocationAlteration({
+                location,
+                entry,
+                parsedLocation,
+                generatedImages
+            });
+
+            if (summary) {
+                alteredSummaries.push(summary);
+                baseSnapshot.name = location.name || baseSnapshot.name;
+                baseSnapshot.description = location.description || baseSnapshot.description;
+                baseSnapshot.baseLevel = location.baseLevel;
+                baseSnapshot.statusEffects = typeof location.getStatusEffects === 'function'
+                    ? location.getStatusEffects()
+                    : baseSnapshot.statusEffects;
+            }
+
+            if (fs && path) {
+                try {
+                    const logsDir = path.join(baseDir || process.cwd(), 'logs');
+                    if (!fs.existsSync(logsDir)) {
+                        fs.mkdirSync(logsDir, { recursive: true });
+                    }
+                    const safeNameSource = desiredName || location.name || 'location';
+                    const safeName = safeNameSource.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'location';
+                    const logPath = path.join(logsDir, `alter_location_${Date.now()}_${safeName}.log`);
+                    const logLines = [
+                        `=== API CALL DURATION: ${apiDurationSeconds.toFixed(3)}s ===`,
+                        '=== ALTER LOCATION SYSTEM PROMPT ===',
+                        parsedTemplate.systemPrompt,
+                        '',
+                        '=== ALTER LOCATION GENERATION PROMPT ===',
+                        parsedTemplate.generationPrompt,
+                        '',
+                        '=== ALTER LOCATION RESPONSE ===',
+                        aiContent,
+                        ''
+                    ];
+                    fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+                } catch (logError) {
+                    console.warn('Failed to log location alteration prompt:', logError.message);
+                }
+            }
+        }
+
+        if (alteredSummaries.length) {
+            if (!Array.isArray(context.alteredLocations)) {
+                context.alteredLocations = [];
+            }
+            context.alteredLocations.push(...alteredSummaries);
+        }
+    }
+
+    static applyLocationAlteration({ location, entry, parsedLocation, generatedImages }) {
+        if (!location || !parsedLocation) {
+            return null;
+        }
+
+        const originalName = location.name || location.id;
+        const originalBaseLevel = location.baseLevel;
+        const originalImageId = location.imageId || null;
+
+        let changed = false;
+
+        const normalizedName = parsedLocation.name && parsedLocation.name.trim();
+        if (normalizedName && normalizedName !== location.name) {
+            location.name = normalizedName;
+            changed = true;
+        }
+
+        const trimmedDescription = parsedLocation.description && parsedLocation.description.trim();
+        if (trimmedDescription && trimmedDescription !== location.description) {
+            location.description = trimmedDescription;
+            changed = true;
+        }
+
+        if (Number.isFinite(parsedLocation.baseLevel)) {
+            const clampedLevel = this.clampLevel(parsedLocation.baseLevel, location.baseLevel);
+            if (clampedLevel !== location.baseLevel) {
+                location.baseLevel = clampedLevel;
+                changed = true;
+            }
+        }
+
+        this.clearLocationImage(location, generatedImages);
+
+        if (!changed) {
+            return {
+                locationId: location.id,
+                originalName,
+                newName: location.name,
+                name: location.name,
+                changeDescription: entry?.changeDescription || ''
+            };
+        }
+
+        return {
+            locationId: location.id,
+            originalName,
+            newName: location.name,
+            baseLevelBefore: originalBaseLevel,
+            baseLevelAfter: location.baseLevel,
+            changeDescription: entry?.changeDescription || '',
+            name: location.name
+        };
+    }
+
+    static async handleAlterNpcEvents(entries = [], context = {}) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return;
+        }
+
+        const {
+            Location,
+            buildBasePromptContext,
+            promptEnv,
+            parseXMLTemplate,
+            axios,
+            findActorByName,
+            findThingByName,
+            fs,
+            path,
+            baseDir,
+            generatedImages
+        } = this.deps;
+
+        if (
+            typeof buildBasePromptContext !== 'function' ||
+            !promptEnv ||
+            typeof parseXMLTemplate !== 'function' ||
+            !axios
+        ) {
+            console.warn('Alter NPC handler missing prompt dependencies.');
+            return;
+        }
+
+        if (typeof findActorByName !== 'function') {
+            console.warn('Alter NPC handler missing findActorByName dependency.');
+            return;
+        }
+
+        const config = this.config;
+        if (!config?.ai?.endpoint || !config?.ai?.apiKey || !config?.ai?.model) {
+            console.warn('AI configuration incomplete; cannot process alter_npc events.');
+            return;
+        }
+
+        const endpoint = config.ai.endpoint;
+        const chatEndpoint = endpoint.endsWith('/')
+            ? `${endpoint}chat/completions`
+            : `${endpoint}/chat/completions`;
+        const defaultTemperature = typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.6;
+
+        const alteredSummaries = [];
+
+        for (const entry of entries) {
+            if (!entry || !entry.name) {
+                continue;
+            }
+
+            const npc = findActorByName(entry.name);
+            if (!npc || typeof npc !== 'object' || !npc.isNPC) {
+                console.warn(`Alter NPC event could not resolve NPC "${entry.name}".`);
+                continue;
+            }
+
+            let location = context.location || null;
+            const { Location: LocationClass } = this.deps;
+
+            if (!location && npc.currentLocation && LocationClass && typeof LocationClass.get === 'function') {
+                try {
+                    location = LocationClass.get(npc.currentLocation) || null;
+                } catch (_) {
+                    location = null;
+                }
+            }
+
+            if (!location && context.player?.currentLocation && LocationClass && typeof LocationClass.get === 'function') {
+                try {
+                    location = LocationClass.get(context.player.currentLocation) || location;
+                } catch (_) {
+                    // ignore
+                }
+            }
+
+            if (!context.location && location) {
+                context.location = location;
+            }
+
+            let region = context.region || null;
+            if (!region && location) {
+                try {
+                    region = this.deps.findRegionByLocationId?.(location.id) || null;
+                } catch (_) {
+                    region = null;
+                }
+                if (!context.region && region) {
+                    context.region = region;
+                }
+            }
+
+            const baseContext = buildBasePromptContext({ locationOverride: location });
+            const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : (typeof npc.toJSON === 'function' ? npc.toJSON() : {});
+
+            const attributeSnapshot = {};
+            const attributeDefinitions = npc.attributeDefinitions || {};
+            for (const attrName of Object.keys(attributeDefinitions)) {
+                if (typeof npc.getAttributeTextValue === 'function') {
+                    attributeSnapshot[attrName] = npc.getAttributeTextValue(attrName);
+                } else {
+                    const info = npcStatus?.attributeInfo?.[attrName];
+                    attributeSnapshot[attrName] = info?.modifiedValue ?? info?.value ?? '';
+                }
+            }
+
+            const existingAbilities = Array.isArray(npcStatus?.abilities) ? npcStatus.abilities : (typeof npc.getAbilities === 'function' ? npc.getAbilities() : []);
+            const existingStatusEffects = Array.isArray(npcStatus?.statusEffects) ? npcStatus.statusEffects : (typeof npc.getStatusEffects === 'function' ? npc.getStatusEffects() : []);
+            const existingInventory = Array.isArray(npcStatus?.inventory)
+                ? npcStatus.inventory.map(item => item?.name || item)
+                : (typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems().map(item => item?.name || item?.id) : []);
+
+            const alteredCharacter = {
+                name: npc.name,
+                description: npc.description,
+                shortDescription: npc.shortDescription,
+                role: npcStatus?.role || npcStatus?.class || '',
+                class: npcStatus?.class || npc.class,
+                race: npcStatus?.race || npc.race,
+                relativeLevel: npcStatus?.relativeLevel ?? null,
+                currency: typeof npc.getCurrency === 'function' ? npc.getCurrency() : npcStatus?.currency ?? null,
+                attributes: attributeSnapshot,
+                personality: {
+                    type: npc.personalityType,
+                    traits: npc.personalityTraits,
+                    notes: npc.personalityNotes
+                },
+                statusEffects: existingStatusEffects,
+                abilities: existingAbilities,
+                inventory: existingInventory
+            };
+
+            const characterSeed = {
+                name: npc.name,
+                description: npc.description,
+                shortDescription: npc.shortDescription,
+                role: alteredCharacter.role,
+                class: npc.class,
+                race: npc.race,
+                relativeLevel: alteredCharacter.relativeLevel,
+                currency: alteredCharacter.currency,
+                personality: {
+                    type: npc.personalityType,
+                    traits: npc.personalityTraits,
+                    notes: npc.personalityNotes
+                }
+            };
+
+            const promptPayload = {
+                ...baseContext,
+                promptType: 'character-alter',
+                changeDescription: entry.changeDescription || '',
+                alteredCharacter,
+                characterSeed
+            };
+
+            let parsedCharacter = null;
+            let promptData = null;
+
+            try {
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', promptPayload);
+                promptData = parseXMLTemplate(renderedTemplate);
+            } catch (templateError) {
+                console.warn(`Failed to render or parse character alteration template for ${npc.name}:`, templateError.message);
+            }
+
+            if (promptData?.systemPrompt && promptData?.generationPrompt) {
+                const messages = [
+                    { role: 'system', content: promptData.systemPrompt },
+                    { role: 'user', content: promptData.generationPrompt }
+                ];
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages,
+                    max_tokens: promptData.maxTokens || config.ai.maxTokens || 700,
+                    temperature: typeof promptData.temperature === 'number' ? promptData.temperature : defaultTemperature
+                };
+
+                let response = null;
+                const requestStart = Date.now();
+                try {
+                    response = await axios.post(chatEndpoint, requestData, {
+                        headers: {
+                            'Authorization': `Bearer ${config.ai.apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: config.baseTimeoutSeconds
+                    });
+                } catch (requestError) {
+                    console.warn(`Alter NPC request failed for ${npc.name}:`, requestError.message);
+                }
+
+                if (response?.data?.choices?.length) {
+                    const aiContent = response.data.choices[0]?.message?.content || '';
+                    if (aiContent.trim()) {
+                        parsedCharacter = this.parseCharacterAlterXml(aiContent);
+                    }
+
+                    if (fs && path) {
+                        try {
+                            const logsDir = path.join(baseDir || process.cwd(), 'logs');
+                            if (!fs.existsSync(logsDir)) {
+                                fs.mkdirSync(logsDir, { recursive: true });
+                            }
+                            const safeNameSource = npc.name || 'npc';
+                            const safeName = safeNameSource.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'npc';
+                            const durationSeconds = (Date.now() - requestStart) / 1000;
+                            const logPath = path.join(logsDir, `alter_npc_${Date.now()}_${safeName}.log`);
+                            const logLines = [
+                                `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`,
+                                '=== ALTER NPC SYSTEM PROMPT ===',
+                                promptData.systemPrompt,
+                                '',
+                                '=== ALTER NPC GENERATION PROMPT ===',
+                                promptData.generationPrompt,
+                                '',
+                                '=== ALTER NPC RESPONSE ===',
+                                aiContent.trim() ? aiContent : '(empty response)',
+                                ''
+                            ];
+                            fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+                        } catch (logError) {
+                            console.warn('Failed to log NPC alteration prompt:', logError.message);
+                        }
+                    }
+                }
+            }
+
+            let summary = null;
+            if (parsedCharacter) {
+                summary = this.applyCharacterAlteration({
+                    npc,
+                    entry,
+                    parsedCharacter,
+                    location,
+                    region,
+                    generatedImages,
+                    findThingByName
+                });
+            }
+
+            if (!summary) {
+                const fallbackSummary = {
+                    npcId: npc.id,
+                    name: npc.name,
+                    originalName: npc.name,
+                    changeDescription: entry.changeDescription || ''
+                };
+                if (location) {
+                    this.clearLocationImage(location, generatedImages);
+                    fallbackSummary.locationId = location.id;
+                    fallbackSummary.locationName = location.name;
+                }
+                summary = fallbackSummary;
+            }
+
+            alteredSummaries.push(summary);
+        }
+
+        if (alteredSummaries.length) {
+            if (!Array.isArray(context.alteredCharacters)) {
+                context.alteredCharacters = [];
+            }
+            context.alteredCharacters.push(...alteredSummaries);
+        }
+    }
+
+    static applyCharacterAlteration({
+        npc,
+        entry,
+        parsedCharacter,
+        location,
+        region,
+        generatedImages,
+        findThingByName
+    }) {
+        if (!npc || !parsedCharacter) {
+            return null;
+        }
+
+        const summary = {
+            npcId: npc.id,
+            originalName: npc.name,
+            name: npc.name,
+            changeDescription: entry?.changeDescription || ''
+        };
+
+        let activeLocation = location;
+        if (!activeLocation) {
+            const { Location: LocationClass } = this.deps;
+            if (LocationClass && typeof LocationClass.get === 'function') {
+                try {
+                    activeLocation = npc.currentLocation ? LocationClass.get(npc.currentLocation) || null : null;
+                } catch (_) {
+                    activeLocation = null;
+                }
+            }
+        }
+
+        if (activeLocation) {
+            this.clearLocationImage(activeLocation, generatedImages);
+        }
+
+        if (npc.imageId) {
+            if (generatedImages instanceof Map) {
+                generatedImages.delete(npc.imageId);
+            } else if (generatedImages && typeof generatedImages === 'object') {
+                delete generatedImages[npc.imageId];
+            }
+            npc.imageId = null;
+        }
+
+        const originalName = npc.name;
+        if (parsedCharacter.name && parsedCharacter.name.trim() && parsedCharacter.name.trim() !== npc.name) {
+            try {
+                npc.setName(parsedCharacter.name.trim());
+                summary.name = npc.name;
+            } catch (error) {
+                console.warn('Failed to rename NPC during alteration:', error.message);
+            }
+        }
+
+        if (parsedCharacter.description && parsedCharacter.description.trim()) {
+            npc.description = parsedCharacter.description.trim();
+        }
+
+        if (parsedCharacter.shortDescription && parsedCharacter.shortDescription.trim()) {
+            npc.shortDescription = parsedCharacter.shortDescription.trim();
+        }
+
+        if (parsedCharacter.class && parsedCharacter.class.trim()) {
+            npc.class = parsedCharacter.class.trim();
+        } else if (parsedCharacter.role && parsedCharacter.role.trim()) {
+            npc.class = parsedCharacter.role.trim();
+        }
+
+        if (parsedCharacter.race && parsedCharacter.race.trim()) {
+            npc.race = parsedCharacter.race.trim();
+        }
+
+        if (parsedCharacter.personality) {
+            if (parsedCharacter.personality.type && parsedCharacter.personality.type.trim()) {
+                npc.personalityType = parsedCharacter.personality.type.trim();
+            }
+            if (typeof parsedCharacter.personality.traits === 'string') {
+                npc.personalityTraits = parsedCharacter.personality.traits.trim();
+            }
+            if (typeof parsedCharacter.personality.notes === 'string') {
+                npc.personalityNotes = parsedCharacter.personality.notes.trim();
+            }
+        }
+
+        if (Number.isFinite(parsedCharacter.currency)) {
+            try {
+                npc.setCurrency(parsedCharacter.currency);
+            } catch (error) {
+                console.warn('Failed to update NPC currency:', error.message);
+            }
+        }
+
+        if (parsedCharacter.attributes && typeof parsedCharacter.attributes === 'object') {
+            for (const [attrName, rawValue] of Object.entries(parsedCharacter.attributes)) {
+                if (!attrName) {
+                    continue;
+                }
+                const numeric = this.mapAttributeRatingToValue(rawValue);
+                if (!Number.isFinite(numeric)) {
+                    continue;
+                }
+                try {
+                    npc.setAttribute(attrName, numeric);
+                } catch (error) {
+                    console.warn(`Failed to set attribute ${attrName} for NPC ${npc.name}:`, error.message);
+                }
+            }
+        }
+
+        if (Array.isArray(parsedCharacter.statusEffects)) {
+            const normalizedEffects = parsedCharacter.statusEffects
+                .filter(effect => effect && (effect.description || typeof effect === 'string'))
+                .map(effect => {
+                    if (typeof effect === 'string') {
+                        return { description: effect, duration: null };
+                    }
+                    const duration = Number(effect.duration);
+                    return {
+                        description: effect.description || String(effect).trim(),
+                        duration: Number.isFinite(duration) ? duration : (effect.duration === null || effect.duration === undefined ? null : effect.duration)
+                    };
+                });
+            npc.setStatusEffects(normalizedEffects);
+        }
+
+        if (Array.isArray(parsedCharacter.abilities)) {
+            const abilities = parsedCharacter.abilities
+                .filter(ability => ability && ability.name)
+                .map(ability => ({
+                    name: ability.name,
+                    description: ability.description || '',
+                    type: ability.type || '',
+                    level: Number.isFinite(Number(ability.level)) ? Number(ability.level) : undefined
+                }));
+            npc.setAbilities(abilities);
+        }
+
+        const desiredInventory = Array.isArray(parsedCharacter.inventory)
+            ? parsedCharacter.inventory.map(item => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+            : null;
+
+        const droppedItems = [];
+        if (desiredInventory && typeof npc.getInventoryItems === 'function') {
+            const beforeItems = npc.getInventoryItems();
+            const beforeById = new Map(beforeItems.map(item => [item.id, item]));
+            const desiredById = new Map();
+
+            for (const itemName of desiredInventory) {
+                if (typeof findThingByName === 'function') {
+                    const thing = findThingByName(itemName);
+                    if (thing) {
+                        desiredById.set(thing.id, thing);
+                        if (!beforeById.has(thing.id)) {
+                            npc.addInventoryItem(thing);
+                            const metadata = thing.metadata || {};
+                            if (metadata.locationId) {
+                                this.removeThingFromLocation(thing, metadata.locationId);
+                            }
+                            metadata.ownerId = npc.id;
+                            delete metadata.locationId;
+                            thing.metadata = metadata;
+                        }
+                    }
+                }
+            }
+
+            const shouldDrop = desiredInventory.length === 0 || desiredById.size > 0;
+
+            if (shouldDrop) {
+                for (const [id, thing] of beforeById) {
+                    if (desiredById.has(id)) {
+                        continue;
+                    }
+                    npc.removeInventoryItem(thing);
+                    const metadata = thing.metadata || {};
+                    delete metadata.ownerId;
+                    if (activeLocation) {
+                        metadata.locationId = activeLocation.id;
+                        thing.metadata = metadata;
+                        this.addThingToLocation(thing, activeLocation);
+                        droppedItems.push(thing.name || thing.id);
+                    } else {
+                        thing.metadata = metadata;
+                    }
+                }
+            }
+        }
+
+        if (Number.isFinite(parsedCharacter.relativeLevel)) {
+            const baseReference = this.resolveNpcBaseLevelReference({ npc, location: activeLocation, region });
+            const targetLevel = this.clampLevel(baseReference + parsedCharacter.relativeLevel, baseReference);
+            try {
+                npc.setLevel(targetLevel);
+                summary.relativeLevelAfter = parsedCharacter.relativeLevel;
+                summary.levelAfter = targetLevel;
+            } catch (error) {
+                console.warn('Failed to adjust NPC level during alteration:', error.message);
+            }
+        }
+
+        if (droppedItems.length) {
+            summary.droppedItems = droppedItems;
+        }
+
+        summary.name = npc.name;
+        if (originalName && originalName !== npc.name) {
+            summary.originalName = originalName;
+        }
+        if (activeLocation) {
+            summary.locationId = activeLocation.id;
+            summary.locationName = activeLocation.name;
+        }
+
+        return summary;
+    }
+
+    static resolveNpcBaseLevelReference({ npc, location = null, region = null }) {
+        if (location && Number.isFinite(location.baseLevel)) {
+            return location.baseLevel;
+        }
+        if (region && Number.isFinite(region.averageLevel)) {
+            return region.averageLevel;
+        }
+        if (Number.isFinite(npc.level)) {
+            return npc.level;
+        }
+        if (Number.isFinite(this.currentPlayer?.level)) {
+            return this.currentPlayer.level;
+        }
+        return 1;
     }
 
     static async handleMoveLocationEvents(entries = [], context = {}) {
