@@ -65,8 +65,17 @@
                                         <details class="location-section location-things" open>
                                             <summary>Items &amp; Scenery</summary>
                                             <div class="location-thing-content">
-                                                <div class="location-entity-grid" id="locationThings">
-                                                    <div class="location-thing-empty">No notable items or scenery present.</div>
+                                                <div class="location-thing-category">
+                                                    <h5 class="location-thing-heading">Scenery</h5>
+                                                    <div class="location-entity-grid" id="locationScenery">
+                                                        <div class="location-thing-empty">No notable scenery present.</div>
+                                                    </div>
+                                                </div>
+                                                <div class="location-thing-category">
+                                                    <h5 class="location-thing-heading">Items</h5>
+                                                    <div class="location-entity-grid" id="locationItems">
+                                                        <div class="location-thing-empty">No notable items present.</div>
+                                                    </div>
                                                 </div>
                                                 <button type="button" class="location-npc-add-button location-thing-add-button" id="addThingButton" disabled>New Item</button>
                                             </div>
@@ -572,6 +581,26 @@
                     </div>
                 </footer>
             </form>
+        </div>
+    </div>
+
+    <div id="loadGameModal" class="modal load-game-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="loadGameModalTitle">Load Game</h2>
+                <button type="button" class="modal__close" id="loadGameCloseBtn" aria-label="Close load game dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body load-game-body">
+                <label for="loadGameSelect" class="load-game-label">Choose a saved game</label>
+                <select id="loadGameSelect" class="load-game-select" size="6" aria-describedby="loadGameStatus"></select>
+                <div id="loadGameStatus" class="load-game-status" role="status" aria-live="polite"></div>
+            </div>
+            <div class="modal__actions load-game-actions">
+                <button type="button" class="button button-secondary" id="loadGameCancelBtn">Cancel</button>
+                <button type="button" class="button button-primary" id="loadGameConfirmBtn">Load Game</button>
+            </div>
         </div>
     </div>
     <div id="newExitModal" class="modal new-exit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
@@ -1790,6 +1819,8 @@
 
         let gearSlotTypesLoaded = availableSlotTypes.size > 0;
         let gearSlotTypesPromise = null;
+        let loadGameSaves = [];
+        let loadGameTriggerButton = null;
 
         function ensureGearSlotTypes() {
             if (gearSlotTypesLoaded) {
@@ -2393,6 +2424,12 @@
         const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
         const addNpcButton = document.getElementById('addNpcButton');
         const addThingButton = document.getElementById('addThingButton');
+        const loadGameModal = document.getElementById('loadGameModal');
+        const loadGameSelect = document.getElementById('loadGameSelect');
+        const loadGameStatus = document.getElementById('loadGameStatus');
+        const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
+        const loadGameConfirmBtn = document.getElementById('loadGameConfirmBtn');
+        const loadGameCloseBtn = document.getElementById('loadGameCloseBtn');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
         const npcEditIdInput = document.getElementById('npcEditId');
@@ -4110,7 +4147,8 @@
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4140,7 +4178,8 @@
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4175,7 +4214,8 @@
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4211,7 +4251,8 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4228,6 +4269,122 @@
             } else if (type === 'success') {
                 addNpcStatus.classList.add('is-success');
             }
+        }
+
+        function setLoadGameStatus(message, variant = null) {
+            if (!loadGameStatus) {
+                return;
+            }
+            loadGameStatus.textContent = message || '';
+            if (variant) {
+                loadGameStatus.dataset.variant = variant;
+            } else {
+                delete loadGameStatus.dataset.variant;
+            }
+        }
+
+        function populateLoadGameOptions(saves = []) {
+            if (!loadGameSelect) {
+                return;
+            }
+
+            loadGameSelect.innerHTML = '';
+
+            if (!Array.isArray(saves) || saves.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No saves available';
+                option.disabled = true;
+                loadGameSelect.appendChild(option);
+                loadGameSelect.disabled = true;
+                if (loadGameConfirmBtn) {
+                    loadGameConfirmBtn.disabled = true;
+                }
+                return;
+            }
+
+            loadGameSelect.disabled = false;
+            saves.forEach((save, index) => {
+                const option = document.createElement('option');
+                option.value = save.saveName;
+                const timestamp = new Date(save.timestamp);
+                option.textContent = `${save.playerName} (Level ${save.playerLevel ?? '?'} · ${timestamp.toLocaleString()})`;
+                if (index === 0) {
+                    option.selected = true;
+                }
+                loadGameSelect.appendChild(option);
+            });
+
+            if (loadGameConfirmBtn) {
+                loadGameConfirmBtn.disabled = false;
+            }
+        }
+
+        function openLoadGameModal(saves = []) {
+            if (!loadGameModal || !npcModalBackdrop) {
+                return;
+            }
+
+            loadGameSaves = Array.isArray(saves)
+                ? [...saves].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                : [];
+
+            populateLoadGameOptions(loadGameSaves);
+            setLoadGameStatus(loadGameSaves.length ? '' : 'No saved games available.', loadGameSaves.length ? null : 'info');
+
+            npcModalBackdrop.removeAttribute('hidden');
+            loadGameModal.removeAttribute('hidden');
+            loadGameModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+
+            setTimeout(() => {
+                if (loadGameSelect && !loadGameSelect.disabled) {
+                    loadGameSelect.focus();
+                } else if (loadGameCancelBtn) {
+                    loadGameCancelBtn.focus();
+                }
+            }, 50);
+        }
+
+        function closeLoadGameModal({ focusTrigger = false } = {}) {
+            if (!loadGameModal) {
+                return;
+            }
+
+            loadGameModal.setAttribute('aria-hidden', 'true');
+            loadGameModal.setAttribute('hidden', '');
+            setLoadGameStatus('');
+            loadGameSaves = [];
+            if (loadGameSelect) {
+                loadGameSelect.innerHTML = '';
+                loadGameSelect.disabled = false;
+            }
+            if (loadGameConfirmBtn) {
+                loadGameConfirmBtn.disabled = false;
+                loadGameConfirmBtn.textContent = 'Load Game';
+            }
+            if (loadGameCancelBtn) {
+                loadGameCancelBtn.disabled = false;
+            }
+
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+
+            if (focusTrigger && loadGameTriggerButton) {
+                loadGameTriggerButton.focus();
+            }
+            loadGameTriggerButton = null;
         }
 
         function openAddNpcModal() {
@@ -4326,7 +4483,8 @@
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4593,7 +4751,8 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4615,7 +4774,8 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -4662,10 +4822,99 @@
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden) {
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
+        }
+
+        if (loadGameCancelBtn) {
+            loadGameCancelBtn.addEventListener('click', () => {
+                closeLoadGameModal({ focusTrigger: true });
+            });
+        }
+
+        if (loadGameCloseBtn) {
+            loadGameCloseBtn.addEventListener('click', () => {
+                closeLoadGameModal({ focusTrigger: true });
+            });
+        }
+
+        if (loadGameSelect && loadGameConfirmBtn) {
+            loadGameSelect.addEventListener('dblclick', () => {
+                if (!loadGameConfirmBtn.disabled) {
+                    loadGameConfirmBtn.click();
+                }
+            });
+            loadGameSelect.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (!loadGameConfirmBtn.disabled) {
+                        loadGameConfirmBtn.click();
+                    }
+                }
+            });
+        }
+
+        if (loadGameConfirmBtn) {
+            loadGameConfirmBtn.addEventListener('click', async () => {
+                if (!loadGameSelect || loadGameSelect.disabled) {
+                    setLoadGameStatus('No saved games available.', 'error');
+                    return;
+                }
+
+                const saveName = loadGameSelect.value;
+                if (!saveName) {
+                    setLoadGameStatus('Select a saved game to load.', 'error');
+                    loadGameSelect.focus();
+                    return;
+                }
+
+                const selectedSave = loadGameSaves.find(save => save.saveName === saveName);
+                if (!selectedSave) {
+                    setLoadGameStatus('Selected save could not be found.', 'error');
+                    return;
+                }
+
+                const originalLabel = loadGameConfirmBtn.textContent;
+                try {
+                    loadGameConfirmBtn.disabled = true;
+                    loadGameConfirmBtn.textContent = 'Loading...';
+                    if (loadGameCancelBtn) {
+                        loadGameCancelBtn.disabled = true;
+                    }
+                    setLoadGameStatus('Loading save…', 'info');
+
+                    const loadResponse = await fetch('/api/load', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ saveName })
+                    });
+
+                    const loadResult = await loadResponse.json().catch(() => ({}));
+
+                    if (loadResponse.ok && loadResult?.success) {
+                        closeLoadGameModal();
+                        window.location.reload();
+                    } else {
+                        const errorMessage = loadResult?.error || `HTTP ${loadResponse.status}`;
+                        setLoadGameStatus(errorMessage, 'error');
+                        loadGameConfirmBtn.disabled = false;
+                        loadGameConfirmBtn.textContent = originalLabel;
+                        if (loadGameCancelBtn) {
+                            loadGameCancelBtn.disabled = false;
+                        }
+                    }
+                } catch (error) {
+                    setLoadGameStatus(error.message, 'error');
+                    loadGameConfirmBtn.disabled = false;
+                    loadGameConfirmBtn.textContent = originalLabel;
+                    if (loadGameCancelBtn) {
+                        loadGameCancelBtn.disabled = false;
+                    }
+                }
+            });
         }
 
         if (npcAddSkillBtn) {
@@ -6373,7 +6622,8 @@
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
-            const locationThings = document.getElementById('locationThings');
+            const locationScenery = document.getElementById('locationScenery');
+            const locationItems = document.getElementById('locationItems');
             const npcDataCache = new Map();
             window.currentNpcData = npcDataCache;
             const npcMenuState = { openMenu: null, trigger: null };
@@ -6995,13 +7245,22 @@
                         }
                     }
 
-                    if (locationThings) {
+                    if (locationScenery || locationItems) {
                         const things = await maybeLoadThingDetails(location);
-                        if (things.length === 0) {
-                            locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
-                        } else {
-                            locationThings.innerHTML = '';
-                            things.forEach(thing => {
+                        const sceneryThings = things.filter(thing => thing.thingType === 'scenery');
+                        const itemThings = things.filter(thing => thing.thingType !== 'scenery');
+
+                        const renderThingCollection = (container, collection, emptyMessage) => {
+                            if (!container) {
+                                return;
+                            }
+                            if (!collection.length) {
+                                container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
+                                return;
+                            }
+
+                            container.innerHTML = '';
+                            collection.forEach(thing => {
                                 const card = document.createElement('div');
                                 card.className = `location-entity-card ${thing.thingType === 'scenery' ? 'is-scenery' : 'is-item'}`;
 
@@ -7041,9 +7300,12 @@
                                     });
                                 }
 
-                                locationThings.appendChild(card);
+                                container.appendChild(card);
                             });
-                        }
+                        };
+
+                        renderThingCollection(locationScenery, sceneryThings, 'No notable scenery present.');
+                        renderThingCollection(locationItems, itemThings, 'No notable items present.');
                     }
 
                     try { document.dispatchEvent(new Event('location:updated')); } catch (_) {}
@@ -7075,8 +7337,11 @@
                     if (locationNPCs) {
                         locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                     }
-                    if (locationThings) {
-                        locationThings.innerHTML = '<div class="location-thing-empty">No notable items or scenery present.</div>';
+                    if (locationScenery) {
+                        locationScenery.innerHTML = '<div class="location-thing-empty">No notable scenery present.</div>';
+                    }
+                    if (locationItems) {
+                        locationItems.innerHTML = '<div class="location-thing-empty">No notable items present.</div>';
                     }
                     if (locationExitsList) {
                         locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
@@ -7891,47 +8156,22 @@
 
             loadGameBtn.addEventListener('click', async function() {
                 try {
+                    this.disabled = true;
+                    this.innerHTML = '<span>⏳</span> Loading...';
+
                     const response = await fetch('/api/saves');
-                    const result = await response.json();
-                    
-                    if (!result.success || result.saves.length === 0) {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const result = await response.json().catch(() => ({}));
+
+                    if (!result?.success || !Array.isArray(result.saves) || result.saves.length === 0) {
                         alert('No saves found!');
                         return;
                     }
-                    
-                    // Create a selection dialog
-                    let saveOptions = 'Select a save to load:\n\n';
-                    result.saves.forEach((save, index) => {
-                        const timestamp = new Date(save.timestamp).toLocaleString();
-                        saveOptions += `${index + 1}. ${save.playerName} (Level ${save.playerLevel}) - ${timestamp}\n`;
-                    });
-                    
-                    const selection = prompt(saveOptions + '\nEnter the number of the save to load (or 0 to cancel):');
-                    const saveIndex = parseInt(selection) - 1;
-                    
-                    if (saveIndex >= 0 && saveIndex < result.saves.length) {
-                        const selectedSave = result.saves[saveIndex];
-                        
-                        if (confirm(`Load save: ${selectedSave.playerName} (${new Date(selectedSave.timestamp).toLocaleString()})?`)) {
-                            this.disabled = true;
-                            this.innerHTML = '<span>⏳</span> Loading...';
-                            
-                            const loadResponse = await fetch('/api/load', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ saveName: selectedSave.saveName })
-                            });
-                            
-                            const loadResult = await loadResponse.json();
-                            
-                            if (loadResult.success) {
-                                alert(`Game loaded successfully!\n\n${loadResult.message}`);
-                                window.location.reload();
-                            } else {
-                                alert(`Load failed: ${loadResult.error}`);
-                            }
-                        }
-                    }
+
+                    loadGameTriggerButton = this;
+                    openLoadGameModal(result.saves);
                 } catch (error) {
                     alert(`Load failed: ${error.message}`);
                 } finally {

@@ -435,6 +435,124 @@ p:not(:last-child) {
   gap: 12px;
 }
 
+.location-thing-category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.location-thing-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  background: rgba(148, 163, 184, 0.15);
+  color: #e2e8f0;
+}
+
+.button:hover,
+.button:focus {
+  background: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+  outline: none;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.85), rgba(37, 99, 235, 0.85));
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #eff6ff;
+}
+
+.button-primary:hover,
+.button-primary:focus {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95));
+  border-color: rgba(147, 197, 253, 0.7);
+}
+
+.button-secondary {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(148, 163, 184, 0.45);
+  color: #e2e8f0;
+}
+
+.button-secondary:hover,
+.button-secondary:focus {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(203, 213, 225, 0.55);
+}
+
+.load-game-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.load-game-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.load-game-select {
+  width: 100%;
+  min-height: 10rem;
+  background: rgba(15, 23, 42, 0.65);
+  color: #f1f5f9;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.95rem;
+}
+
+.load-game-select option {
+  padding: 6px 4px;
+}
+
+.load-game-status {
+  min-height: 1.25rem;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.load-game-status[data-variant='error'] {
+  color: #fca5a5;
+}
+
+.load-game-status[data-variant='success'] {
+  color: #bbf7d0;
+}
+
+.load-game-status[data-variant='info'] {
+  color: #bae6fd;
+}
+
+.load-game-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+}
+
 .location-thing-add-button {
   align-self: stretch;
 }
