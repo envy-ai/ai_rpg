@@ -90,17 +90,50 @@
                                 <div class="chat-log" id="chatLog">
                                     {% if chatHistory and chatHistory.length > 0 %}
                                         {% for message in chatHistory %}
-                                            <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
-                                                <div class="message-sender">
-                                                    {% if message.role == 'user' %}
-                                                        👤 You
-                                                    {% else %}
-                                                        🤖 AI Game Master
-                                                    {% endif %}
+                                            {% if message.type == 'event-summary' %}
+                                                {% set summaryTitle = message.summaryTitle or (message.content.split('\n')[0]) %}
+                                                {% set summaryItems = message.summaryItems or [] %}
+                                                <div class="message event-summary-batch">
+                                                    <div class="message-sender">{{ summaryTitle }}</div>
+                                                    <div>
+                                                        <ul class="event-summary-list">
+                                                            {% if summaryItems | length %}
+                                                                {% for item in summaryItems %}
+                                                                    {% if item.text %}
+                                                                        <li>
+                                                                            <span class="event-summary-icon">{{ item.icon or '•' }}</span>
+                                                                            {{ item.text }}
+                                                                        </li>
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            {% else %}
+                                                                {% set lines = message.content.split('\n') %}
+                                                                {% for line in lines %}
+                                                                    {% if not loop.first %}
+                                                                        {% set trimmed = line | trim %}
+                                                                        {% if trimmed %}
+                                                                            <li>{{ trimmed }}</li>
+                                                                        {% endif %}
+                                                                    {% endif %}
+                                                                {% endfor %}
+                                                            {% endif %}
+                                                        </ul>
+                                                    </div>
+                                                    <div class="message-timestamp">{{ (message.timestamp or '') | replace('T', ' ') | replace('Z', '') }}</div>
                                                 </div>
-                                                <div>{{ message.content }}</div>
-                                                <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
-                                            </div>
+                                            {% else %}
+                                                <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                                                    <div class="message-sender">
+                                                        {% if message.role == 'user' %}
+                                                            👤 You
+                                                        {% else %}
+                                                            🤖 AI Game Master
+                                                        {% endif %}
+                                                    </div>
+                                                    <div>{{ message.content }}</div>
+                                                    <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
+                                                </div>
+                                            {% endif %}
                                         {% endfor %}
                                     {% else %}
                                         <div class="message ai-message">

@@ -889,7 +889,8 @@ class AIRPGChat {
             'consume_item',
             'move_location',
             'npc_arrival_departure',
-            'needbar_change'
+            'needbar_change',
+            'alter_item'
         ]);
         let shouldRefreshLocation = false;
 
@@ -1008,6 +1009,29 @@ class AIRPGChat {
                     const item = safeItem(entry?.item);
                     const receiver = safeName(entry?.receiver);
                     this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`);
+                });
+            },
+            alter_item: (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry) {
+                        return;
+                    }
+                    const original = safeItem(entry.originalName || entry.newName || 'an item');
+                    const renamed = entry.newName && entry.originalName && entry.newName !== entry.originalName
+                        ? safeItem(entry.newName)
+                        : null;
+                    const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                    let text;
+                    if (renamed) {
+                        text = `${original}changed to ${renamed}`;
+                    } else {
+                        text = `${original} was altered permanently`;
+                    }
+                    if (changeDescription) {
+                        text += ` (${changeDescription})`;
+                    }
+                    text += '.';
+                    this.addEventSummary('🛠️', text);
                 });
             },
             needbar_change: (entries) => {
