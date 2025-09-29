@@ -4594,11 +4594,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
                 }
 
-                const { itemId, action, slotName } = req.body || {};
+                const { itemId, action, slotName, slotType } = req.body || {};
                 if (!itemId || typeof itemId !== 'string' || !itemId.trim()) {
                     return res.status(400).json({ success: false, error: 'Item ID is required' });
                 }
@@ -4622,8 +4622,35 @@ module.exports = function registerApiRoutes(scope) {
                     message = `${targetItem.name || 'Item'} unequipped.`;
                 } else {
                     let result;
-                    if (slotName && typeof slotName === 'string' && slotName.trim()) {
-                        result = npc.equipItemInSlot(targetItem, slotName.trim());
+                    const normalizedSlotName = typeof slotName === 'string' ? slotName.trim() : '';
+                    const normalizedSlotTypeRaw = typeof slotType === 'string' ? slotType.trim() : '';
+
+                    if (normalizedSlotName) {
+                        result = npc.equipItemInSlot(targetItem, normalizedSlotName);
+                    } else if (normalizedSlotTypeRaw && typeof npc.getGearSlotsByType === 'function') {
+                        const slotTypeLower = normalizedSlotTypeRaw.toLowerCase();
+                        const gearByType = npc.getGearSlotsByType() || {};
+                        const candidateSlots = [];
+                        for (const [typeKey, slotNames] of Object.entries(gearByType)) {
+                            if (!typeKey || !Array.isArray(slotNames)) {
+                                continue;
+                            }
+                            if (typeKey === normalizedSlotTypeRaw || typeKey.toLowerCase() === slotTypeLower) {
+                                candidateSlots.push(...slotNames);
+                            }
+                        }
+
+                        result = false;
+                        for (const candidate of candidateSlots) {
+                            result = npc.equipItemInSlot(targetItem, candidate);
+                            if (result === true) {
+                                break;
+                            }
+                        }
+
+                        if (result !== true) {
+                            result = npc.equipItem(targetItem);
+                        }
                     } else {
                         result = npc.equipItem(targetItem);
                     }

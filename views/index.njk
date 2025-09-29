@@ -441,7 +441,7 @@
     <div id="npcInventoryModal" class="modal npc-inventory-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
-                <h2 id="npcInventoryModalTitle">NPC Inventory</h2>
+                <h2 id="npcInventoryModalTitle">Character Inventory</h2>
                 <button type="button" class="modal__close" id="npcInventoryCloseBtn" aria-label="Close NPC inventory">
                     <span aria-hidden="true">X</span>
                 </button>
@@ -2526,9 +2526,11 @@
 
         const npcEditModal = document.getElementById('npcEditModal');
         const npcInventoryModal = document.getElementById('npcInventoryModal');
+        const npcInventoryModalTitle = document.getElementById('npcInventoryModalTitle');
         const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcDispositionModal = document.getElementById('npcDispositionModal');
+        const npcDispositionModalTitle = document.getElementById('npcDispositionModalTitle');
         const npcDispositionForm = document.getElementById('npcDispositionForm');
         const npcDispositionSummary = document.getElementById('npcDispositionSummary');
         const npcDispositionList = document.getElementById('npcDispositionList');
@@ -2539,6 +2541,7 @@
         const npcDispositionSaveBtn = document.getElementById('npcDispositionSaveBtn');
         const npcDispositionCloseBtn = document.getElementById('npcDispositionCloseBtn');
         const npcNeedsModal = document.getElementById('npcNeedsModal');
+        const npcNeedsModalTitle = document.getElementById('npcNeedsModalTitle');
         const npcNeedsForm = document.getElementById('npcNeedsForm');
         const npcNeedsSummary = document.getElementById('npcNeedsSummary');
         const npcNeedsList = document.getElementById('npcNeedsList');
@@ -3235,6 +3238,40 @@
             updateThingEditStatus('');
         }
 
+        function formatPossessiveName(name, fallback = 'Character') {
+            const base = typeof name === 'string' && name.trim() ? name.trim() : fallback;
+            if (!base) {
+                return fallback;
+            }
+            const lastChar = base.charAt(base.length - 1);
+            return lastChar.toLowerCase() === 's' ? `${base}'` : `${base}'s`;
+        }
+
+        function scrollModalToTop(modal) {
+            if (!modal) {
+                return;
+            }
+
+            const safeScrollTo = (element) => {
+                if (!element) {
+                    return;
+                }
+                try {
+                    if (typeof element.scrollTo === 'function') {
+                        element.scrollTo(0, 0);
+                        return;
+                    }
+                } catch (_) {
+                    // fallback to scrollTop assignment below
+                }
+                element.scrollTop = 0;
+            };
+
+            safeScrollTo(modal);
+            safeScrollTo(modal.querySelector('.modal__dialog'));
+            safeScrollTo(modal.querySelector('.modal__body'));
+        }
+
         async function showThingEditModal(thing, context = 'general', options = {}) {
             if (!thingEditModal || !thingEditForm || !npcModalBackdrop) {
                 return;
@@ -3304,6 +3341,7 @@
             thingEditModal.setAttribute('aria-hidden', 'false');
             npcModalBackdrop.removeAttribute('hidden');
             document.body.classList.add('modal-open');
+            scrollModalToTop(thingEditModal);
 
             setTimeout(() => {
                 thingEditNameInput?.focus();
@@ -4339,15 +4377,16 @@
             updateNpcEditStatus('');
 
             npcEditForm.dataset.npcId = currentNpcEditId || '';
-            npcEditModal.removeAttribute('hidden');
-            npcEditModal.setAttribute('aria-hidden', 'false');
-            npcEditBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+        npcEditModal.removeAttribute('hidden');
+        npcEditModal.setAttribute('aria-hidden', 'false');
+        npcEditBackdrop.removeAttribute('hidden');
+        document.body.classList.add('modal-open');
+        scrollModalToTop(npcEditModal);
 
-            setTimeout(() => {
-                npcEditNameInput?.focus();
-            }, 50);
-        }
+        setTimeout(() => {
+            npcEditNameInput?.focus();
+        }, 50);
+    }
 
         function closeNpcEditModal() {
             if (!isNpcEditorAvailable()) {
@@ -4551,6 +4590,7 @@
             loadGameModal.removeAttribute('hidden');
             loadGameModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            scrollModalToTop(loadGameModal);
 
             setTimeout(() => {
                 if (loadGameSelect && !loadGameSelect.disabled) {
@@ -4629,6 +4669,7 @@
             addNpcModal.removeAttribute('hidden');
             addNpcModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            scrollModalToTop(addNpcModal);
 
             setTimeout(() => {
                 addNpcNameInput?.focus();
@@ -4836,6 +4877,7 @@
             newExitModal.removeAttribute('hidden');
             newExitModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            scrollModalToTop(newExitModal);
             setTimeout(() => {
                 newExitNameInput?.focus();
             }, 50);
@@ -5770,7 +5812,7 @@
             });
         }
 
-        async function setNpcItemEquipped(npcId, item, shouldEquip, { slotName = null } = {}) {
+        async function setNpcItemEquipped(npcId, item, shouldEquip, { slotName = null, slotType = null } = {}) {
             if (!npcId || !item || !item.id) {
                 return;
             }
@@ -5782,7 +5824,8 @@
                     body: JSON.stringify({
                         itemId: item.id,
                         action: shouldEquip ? 'equip' : 'unequip',
-                        slotName: slotName || item.equippedSlot || null
+                        slotName: slotName || null,
+                        slotType: slotType || null
                     })
                 });
 
@@ -5812,6 +5855,17 @@
             npcInventoryEmpty.style.display = safeItems.length ? 'none' : 'block';
             npcInventoryGrid.style.display = safeItems.length ? 'flex' : 'none';
 
+            const normalizeSlotLabel = (value) => {
+                if (value === undefined || value === null) {
+                    return null;
+                }
+                const text = typeof value === 'string' ? value.trim() : String(value).trim();
+                if (!text || text.toLowerCase() === 'n/a') {
+                    return null;
+                }
+                return text;
+            };
+
             safeItems.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'location-entity-card inventory-card';
@@ -5838,37 +5892,54 @@
                 name.textContent = item.name || 'Unknown Item';
                 applyRarityClass(name, item.rarity);
 
+                const equippedSlot = normalizeSlotLabel(item.equippedSlot);
+                const slotTypeValueRaw = typeof item.slot === 'string' && item.slot.trim()
+                    ? item.slot.trim()
+                    : (typeof item.metadata?.slot === 'string' && item.metadata.slot.trim()
+                        ? item.metadata.slot.trim()
+                        : null);
+                const rawSlot = normalizeSlotLabel(slotTypeValueRaw);
+                const slotLabel = equippedSlot || rawSlot || null;
+                const canModifyEquipment = Boolean(slotTypeValueRaw || equippedSlot);
+
                 const slotBadge = document.createElement('div');
                 slotBadge.className = 'inventory-slot-tag';
-                const slotLabel = item.equippedSlot || item.slot || item.metadata?.slot || null;
                 if (slotLabel) {
                     slotBadge.textContent = slotLabel;
                 }
 
-                const equipToggle = document.createElement('button');
-                equipToggle.type = 'button';
-                equipToggle.className = 'inventory-equip-toggle';
-                equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
+                let equipToggle = null;
+                if (canModifyEquipment) {
+                    equipToggle = document.createElement('button');
+                    equipToggle.type = 'button';
+                    equipToggle.className = 'inventory-equip-toggle';
+                    equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
 
-                equipToggle.addEventListener('click', (event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    if (!currentNpcInventoryNpcId) {
-                        return;
-                    }
-                    equipToggle.disabled = true;
-                    setNpcItemEquipped(currentNpcInventoryNpcId, item, !equipped, { slotName: item.equippedSlot || null })
-                        .finally(() => {
-                            equipToggle.disabled = false;
-                        });
-                });
+                    equipToggle.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        event.preventDefault();
+                        if (!currentNpcInventoryNpcId) {
+                            return;
+                        }
+                        equipToggle.disabled = true;
+                        setNpcItemEquipped(currentNpcInventoryNpcId, item, !equipped, {
+                            slotName: equippedSlot || null,
+                            slotType: slotTypeValueRaw || null
+                        })
+                            .finally(() => {
+                                equipToggle.disabled = false;
+                            });
+                    });
+                }
 
                 card.appendChild(icon);
                 card.appendChild(name);
                 if (slotLabel) {
                     card.appendChild(slotBadge);
                 }
-                card.appendChild(equipToggle);
+                if (equipToggle) {
+                    card.appendChild(equipToggle);
+                }
 
                 registerThingContextMenu(card, item, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
 
@@ -5909,6 +5980,11 @@
             npcDispositionModal.removeAttribute('hidden');
             npcDispositionModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            if (npcDispositionModalTitle) {
+                const titleName = npc.name || 'NPC';
+                npcDispositionModalTitle.textContent = `${formatPossessiveName(titleName, 'NPC')} Dispositions`;
+            }
+            scrollModalToTop(npcDispositionModal);
 
             try {
                 const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/dispositions`, {
@@ -5938,6 +6014,10 @@
                 };
 
                 currentNpcDispositionData = payload;
+                if (npcDispositionModalTitle) {
+                    const resolvedName = payload.npc?.name || npc.name || 'NPC';
+                    npcDispositionModalTitle.textContent = `${formatPossessiveName(resolvedName, 'NPC')} Dispositions`;
+                }
                 updateNpcDispositionSummary(payload);
                 renderNpcDispositionEntries(payload);
                 setNpcDispositionStatus('', null);
@@ -5950,6 +6030,10 @@
                     player: null,
                     range: {}
                 });
+                if (npcDispositionModalTitle) {
+                    const resolvedName = npc.name || 'NPC';
+                    npcDispositionModalTitle.textContent = `${formatPossessiveName(resolvedName, 'NPC')} Dispositions`;
+                }
                 if (npcDispositionList) {
                     npcDispositionList.innerHTML = '';
                 }
@@ -6088,6 +6172,12 @@
             npcNeedsModal.removeAttribute('hidden');
             npcNeedsModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            if (npcNeedsModalTitle) {
+                const fallbackLabel = type === 'player' ? 'Player' : 'Character';
+                const displayName = target?.name || (type === 'player' && window.currentPlayerData?.name ? window.currentPlayerData.name : '') || fallbackLabel;
+                npcNeedsModalTitle.textContent = `${formatPossessiveName(displayName, fallbackLabel)} Needs`;
+            }
+            scrollModalToTop(npcNeedsModal);
 
             const endpoint = type === 'player'
                 ? '/api/player/needs'
@@ -6119,6 +6209,11 @@
 
                 currentNpcNeedsData = payload;
                 currentNpcNeedsTargetId = payload.npc?.id || payload.player?.id || targetId || null;
+                if (npcNeedsModalTitle) {
+                    const resolvedName = payload.npc?.name || payload.player?.name || target.name || (type === 'player' ? 'Player' : 'Character');
+                    const fallbackLabel = type === 'player' ? 'Player' : 'Character';
+                    npcNeedsModalTitle.textContent = `${formatPossessiveName(resolvedName, fallbackLabel)} Needs`;
+                }
                 updateNpcNeedsSummary(payload);
                 renderNpcNeedsEntries(payload);
                 setNpcNeedsStatus('', null);
@@ -6148,6 +6243,11 @@
                     player: type === 'player' ? { name: target.name || 'Player' } : null,
                     npc: type === 'npc' ? { name: target.name || 'NPC' } : null
                 });
+                if (npcNeedsModalTitle) {
+                    const fallbackLabel = type === 'player' ? 'Player' : 'Character';
+                    const resolvedName = target.name || fallbackLabel;
+                    npcNeedsModalTitle.textContent = `${formatPossessiveName(resolvedName, fallbackLabel)} Needs`;
+                }
                 if (npcNeedsList) {
                     npcNeedsList.innerHTML = '';
                 }
@@ -6283,6 +6383,11 @@
             npcInventoryModal.removeAttribute('hidden');
             npcModalBackdrop.removeAttribute('hidden');
             document.body.classList.add('modal-open');
+            if (npcInventoryModalTitle) {
+                const titleName = npc.name || 'Character';
+                npcInventoryModalTitle.textContent = `${formatPossessiveName(titleName, 'Character')} Inventory`;
+            }
+            scrollModalToTop(npcInventoryModal);
 
             npcInventoryName.textContent = npc.name || 'Character';
             const items = Array.isArray(npc.inventory) ? npc.inventory : [];
@@ -6463,6 +6568,7 @@
             npcViewModal.removeAttribute('hidden');
             npcViewModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
+            scrollModalToTop(npcViewModal);
 
             const name = latestNpc?.name || 'Unknown Character';
             const description = latestNpc?.description || latestNpc?.shortDescription || 'No description available.';
