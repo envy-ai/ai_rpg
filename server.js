@@ -1447,8 +1447,10 @@ function serializeNpcForClient(npc) {
         imageId: npc.imageId,
         isNPC: Boolean(npc.isNPC),
         isHostile: Boolean(npc.isHostile),
+        isDead: Boolean(npc.isDead),
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
+        corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
         attributes,
         skills,
         abilities,
@@ -7845,6 +7847,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 continue;
             }
             players.delete(npcId);
+            Player.unregister(npc);
         }
         if (typeof location.setNpcIds === 'function') {
             location.setNpcIds(survivingNpcIds);
@@ -8122,6 +8125,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     npcLocation.setNpcIds(remaining);
                 }
                 players.delete(npcId);
+                Player.unregister(existingNpc);
             }
         }
         region.npcIds = [];

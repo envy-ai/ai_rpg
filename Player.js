@@ -40,6 +40,9 @@ class Player {
     #personalityTraits;
     #personalityNotes;
     #isHostile;
+    #isDead;
+    #corpseCountdown;
+
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
     static #needBarDefinitions = null;
@@ -455,6 +458,23 @@ class Player {
         return Array.from(this.#instances);
     }
 
+    static unregister(target) {
+        if (!target) {
+            return false;
+        }
+        if (target instanceof Player) {
+            return this.#instances.delete(target);
+        }
+        if (typeof target === 'string') {
+            for (const instance of this.#instances) {
+                if (instance?.id === target) {
+                    return this.#instances.delete(instance);
+                }
+            }
+        }
+        return false;
+    }
+
     static getByName(name) {
         for (const player of this.#instances) {
             if (player.name && player.name.toLowerCase() === name.toLowerCase()) {
@@ -726,6 +746,8 @@ class Player {
         this.#id = options.id ?? Player.#generateUniqueId();
         this.#class = options.class ?? "person";
         this.#race = options.race ?? "human";
+        this.#isDead = options.isDead ?? false;
+        this.#corpseCountdown = Number.isFinite(options.corpseCountdown) ? options.corpseCountdown : null;
 
         // Location (can be Location ID string or Location object)
         this.#currentLocation = options.location ?? null;
@@ -1234,6 +1256,35 @@ class Player {
         return Player.#experienceRolloverMultiplier;
     }
 
+    get isDead() {
+        return this.#isDead;
+    }
+
+    get isDisabled() {
+        return this.#isDead || (this.#health <= 0);
+    }
+
+    set isDead(value) {
+        const next = Boolean(value);
+        const wasDead = this.#isDead;
+        if (this.#isDead === next) {
+            return;
+        }
+        this.#isDead = next;
+        if (next) {
+            this.#health = 0;
+            if (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown <= 0) {
+                this.corpseCountdown = 5; // Set default countdown to 5 turns
+            }
+        } else {
+            this.corpseCountdown = null;
+            if (this.#health <= 0 && wasDead) {
+                this.#health = 1;
+            }
+        }
+        this.#lastUpdated = new Date().toISOString();
+    }
+
     get health() {
         return this.#health;
     }
@@ -1280,6 +1331,29 @@ class Player {
             this.#applyHostileDispositionsToCurrentPlayer();
         }
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    get corpseCountdown() {
+        return this.#corpseCountdown;
+    }
+
+    set corpseCountdown(value) {
+        if (value === null || value === undefined) {
+            if (this.#corpseCountdown !== null) {
+                this.#corpseCountdown = null;
+                this.#lastUpdated = new Date().toISOString();
+            }
+            return;
+        }
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
+            throw new Error('Corpse countdown must be a non-negative number or null');
+        }
+        const rounded = Math.floor(numericValue);
+        if (this.#corpseCountdown !== rounded) {
+            this.#corpseCountdown = rounded;
+            this.#lastUpdated = new Date().toISOString();
+        }
     }
 
     get personalityType() {
@@ -2323,9 +2397,16 @@ class Player {
      * Check if player is alive
      */
     isAlive() {
-        return this.#health > 0;
+        return !this.#isDead && this.#health > 0;
     }
 
+    updateCorpseCountdown() {
+        if (this.isDead && this.#corpseCountdown > 0) {
+            this.#corpseCountdown -= 1;
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return this.#corpseCountdown
+    }
     /**
      * Set player name
      */
@@ -2662,6 +2743,7 @@ class Player {
             maxHealth: this.maxHealth,
             healthAttribute: this.#healthAttribute,
             alive: this.isAlive(),
+            isDead: this.#isDead,
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
@@ -2690,7 +2772,8 @@ class Player {
             currency: this.#currency,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
-            needBars: this.getNeedBars()
+            needBars: this.getNeedBars(),
+            corpseCountdown: this.#corpseCountdown
         };
 
         status.personality = {
@@ -2722,6 +2805,8 @@ class Player {
             attributes: this.#attributes,
             isNPC: this.#isNPC,
             isHostile: this.#isHostile,
+            isDead: this.#isDead,
+            corpseCountdown: this.#corpseCountdown,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
@@ -2782,7 +2867,9 @@ class Player {
             currency: data.currency,
             createdAt: data.createdAt,
             lastUpdated: data.lastUpdated,
-            needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null
+            needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
+            isDead: data.isDead,
+            corpseCountdown: data.corpseCountdown
         });
 
         player.#createdAt = data.createdAt;

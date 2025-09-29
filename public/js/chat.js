@@ -2350,6 +2350,16 @@ class AIRPGChat {
             shouldRefreshLocation = true;
         }
 
+        if (Array.isArray(payload.corpseCountdownUpdates) && payload.corpseCountdownUpdates.length) {
+            window.updateNpcCorpseVisuals?.(payload.corpseCountdownUpdates);
+            shouldRefreshLocation = true;
+        }
+
+        if (Array.isArray(payload.corpseRemovals) && payload.corpseRemovals.length) {
+            window.removeNpcCards?.(payload.corpseRemovals);
+            shouldRefreshLocation = true;
+        }
+
         const bundleResult = this.flushEventBundle();
         if (bundleResult.shouldRefresh) {
             shouldRefreshLocation = true;
@@ -2415,6 +2425,12 @@ class AIRPGChat {
         }
         if (Array.isArray(turn.needBarChanges) && turn.needBarChanges.length) {
             this.addNeedBarChanges(turn.needBarChanges);
+        }
+        if (Array.isArray(turn.corpseCountdownUpdates) && turn.corpseCountdownUpdates.length) {
+            window.updateNpcCorpseVisuals?.(turn.corpseCountdownUpdates);
+        }
+        if (Array.isArray(turn.corpseRemovals) && turn.corpseRemovals.length) {
+            window.removeNpcCards?.(turn.corpseRemovals);
         }
         if (turn.attackSummary) {
             this.addAttackCheckMessage(turn.attackSummary);

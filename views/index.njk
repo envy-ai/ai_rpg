@@ -20,7 +20,6 @@
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
-                <button class="tab-button" id="tab-inventory-tab" data-tab="inventory" role="tab" aria-selected="false" aria-controls="tab-inventory">Inventory</button>
             </div>
 
             <div class="tab-panels">
@@ -404,27 +403,6 @@
                         </div>
                         <div class="party-grid" id="partyMembers"></div>
                         <div class="party-empty" id="partyEmpty">No companions are currently travelling with you.</div>
-                    </div>
-                </section>
-                <section class="tab-panel" id="tab-inventory" role="tabpanel" aria-labelledby="tab-inventory-tab" hidden>
-                    <div class="inventory-layout">
-                        <div class="equipment-panel">
-                            <div class="equipment-header">
-                                <h2>Equipment</h2>
-                            </div>
-                            <div class="equipment-slots" id="equipmentSlots"></div>
-                            <div class="equipment-empty" id="equipmentEmpty">No equipment slots available.</div>
-                        </div>
-                        <div class="inventory-panel">
-                            <div class="inventory-header">
-                                <h2>Inventory</h2>
-                                <span class="inventory-count" id="inventoryCount">0 items</span>
-                            </div>
-                            <div class="inventory-scroll">
-                                <div class="inventory-grid" id="inventoryItems"></div>
-                            </div>
-                            <div class="inventory-empty" id="inventoryEmpty">Inventory is empty.</div>
-                        </div>
                     </div>
                 </section>
             </div>
@@ -947,9 +925,10 @@
             // Initialize tabs
             initTabs();
 
+            initFloatingTooltipController();
             // Initialize location display
             initLocationDisplay();
-            initInventoryDisplay();
+            initPlayerOverviewSync();
             initPartyDisplay();
         });
 
@@ -1203,6 +1182,106 @@
             bar.appendChild(fill);
 
             return { bar, fill };
+        }
+
+        function applyNpcDeathStyling(card, portrait, npc) {
+            if (!card || !portrait) {
+                return;
+            }
+
+            const existingIndicator = portrait.querySelector('.npc-death-indicator');
+            existingIndicator?.remove();
+
+            const isDead = Boolean(npc?.isDead);
+            card.classList.toggle('is-dead', isDead);
+
+            if (!isDead) {
+                return;
+            }
+
+            const indicator = document.createElement('div');
+            indicator.className = 'npc-death-indicator';
+
+            const icon = document.createElement('span');
+            icon.className = 'npc-death-indicator__icon';
+            icon.textContent = '💀';
+            indicator.appendChild(icon);
+
+            if (Number.isFinite(npc?.corpseCountdown)) {
+                const countdown = document.createElement('span');
+                countdown.className = 'npc-death-indicator__countdown';
+                countdown.textContent = String(Math.max(0, npc.corpseCountdown));
+                indicator.appendChild(countdown);
+            }
+
+            portrait.appendChild(indicator);
+        }
+
+        function escapeForSelector(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return window.CSS.escape(String(value));
+            }
+            return String(value).replace(/(["'\\])/g, '\\$1');
+        }
+
+        function updateNpcCorpseVisuals(updates = []) {
+            if (!Array.isArray(updates) || !updates.length) {
+                return;
+            }
+
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
+
+            updates.forEach(entry => {
+                if (!entry || !entry.npcId) {
+                    return;
+                }
+                const npcId = entry.npcId;
+                const countdown = Number.isFinite(entry.corpseCountdown) ? entry.corpseCountdown : entry.corpseCountdown ?? null;
+
+                const cached = npcDataCache.get(npcId) || { id: npcId };
+                cached.corpseCountdown = countdown;
+                if (countdown !== null) {
+                    cached.isDead = true;
+                }
+                npcDataCache.set(npcId, cached);
+
+                const selector = `[data-npc-id="${escapeForSelector(npcId)}"]`;
+                document.querySelectorAll(`.location-entity-card.is-npc${selector}`).forEach(card => {
+                    const portrait = card.querySelector('.location-entity-icon');
+                    applyNpcDeathStyling(card, portrait, cached);
+                });
+                document.querySelectorAll(`.party-card${selector}`).forEach(card => {
+                    const portrait = card.querySelector('.location-entity-icon');
+                    applyNpcDeathStyling(card, portrait, cached);
+                });
+            });
+        }
+
+        function removeNpcCards(removals = []) {
+            if (!Array.isArray(removals) || !removals.length) {
+                return;
+            }
+
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
+
+            removals.forEach(entry => {
+                if (!entry || !entry.npcId) {
+                    return;
+                }
+                const npcId = entry.npcId;
+                npcDataCache.delete(npcId);
+
+                const selector = `[data-npc-id="${escapeForSelector(npcId)}"]`;
+                document.querySelectorAll(`.location-entity-card.is-npc${selector}`).forEach(card => card.remove());
+                document.querySelectorAll(`.party-card${selector}`).forEach(card => card.remove());
+            });
         }
 
         function updateHealthBar(barElement, fillElement, currentValue, maxValue) {
@@ -1482,10 +1561,15 @@
 
                 const card = document.createElement('div');
                 card.className = 'location-entity-card is-npc';
+                                if (npc?.id) {
+                                    card.dataset.npcId = npc.id;
+                                }
+                if (member?.id) {
+                    card.dataset.npcId = member.id;
+                }
 
                 const portrait = document.createElement('div');
                 portrait.className = 'location-entity-icon';
-
                 const portraitImage = document.createElement('div');
                 portraitImage.className = 'location-entity-image';
                 portrait.appendChild(portraitImage);
@@ -1528,10 +1612,11 @@
                     }
                 );
 
+                applyNpcDeathStyling(card, portrait, member);
+
                 const nameEl = document.createElement('div');
                 nameEl.className = 'location-entity-name';
                 nameEl.textContent = member.name || 'Unknown';
-
                 card.appendChild(portrait);
                 card.appendChild(nameEl);
 
@@ -1551,9 +1636,7 @@
                         tooltipController.show(tooltipText, event);
                     });
                     card.addEventListener('mousemove', (event) => {
-                        if (typeof tooltipController.move === 'function') {
-                            tooltipController.move(event);
-                        }
+                        tooltipController.move?.(event);
                     });
                     card.addEventListener('mouseleave', () => {
                         tooltipController.hide?.();
@@ -1568,6 +1651,7 @@
                 container.appendChild(card);
             });
         }
+
 
         window.updateChatPlayerPanel = updateChatPlayerPanel;
         window.renderChatPartyPanel = renderChatPartyPanel;
@@ -2360,10 +2444,7 @@
                         };
 
                         try {
-                            if (context === 'player-inventory') {
-                                await window.refreshInventory?.();
-                                await refreshLocationsByIds(locationIds);
-                            } else if (context === 'npc-inventory') {
+                            if (context === 'npc-inventory') {
                                 if (Array.isArray(currentNpcInventory)) {
                                     currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
                                     renderNpcInventory(currentNpcInventory);
@@ -5758,11 +5839,7 @@
                     updateThingEditStatus('Changes saved.', 'success');
 
                     try {
-                        if (currentThingEditContext === 'player-inventory') {
-                            if (typeof window.refreshInventory === 'function') {
-                                await window.refreshInventory();
-                            }
-                        } else if (currentThingEditContext === 'location') {
+                        if (currentThingEditContext === 'location') {
                             if (typeof window.loadCurrentLocation === 'function') {
                                 await window.loadCurrentLocation();
                             }
@@ -5956,6 +6033,10 @@
 
                 npcInventoryGrid.appendChild(card);
             });
+
+            try {
+                document.dispatchEvent(new Event('inventory:updated'));
+            } catch (_) {}
         }
 
         async function showNpcDispositionModal(npc) {
@@ -6405,11 +6486,44 @@
             }
             scrollModalToTop(npcInventoryModal);
 
+            const npcDataCache = window.currentNpcData instanceof Map
+                ? window.currentNpcData
+                : (window.currentNpcData = new Map());
+            const npcId = npc.id || null;
             npcInventoryName.textContent = npc.name || 'Character';
             const items = Array.isArray(npc.inventory) ? npc.inventory : [];
             currentNpcInventory = items;
-            currentNpcInventoryNpcId = npc.id || null;
+            currentNpcInventoryNpcId = npcId;
             renderNpcInventory(items);
+
+            if (npcId) {
+                (async () => {
+                    try {
+                        const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({})
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok || !data?.success || !data.npc) {
+                            return;
+                        }
+
+                        npcDataCache.set(npcId, data.npc);
+                        const freshItems = Array.isArray(data.npc.inventory) ? data.npc.inventory : [];
+                        currentNpcInventory = freshItems;
+                        currentNpcInventoryNpcId = npcId;
+                        npcInventoryName.textContent = data.npc.name || npcInventoryName.textContent;
+                        if (npcInventoryModalTitle) {
+                            const titleName = data.npc.name || 'Character';
+                            npcInventoryModalTitle.textContent = `${formatPossessiveName(titleName, 'Character')} Inventory`;
+                        }
+                        renderNpcInventory(freshItems);
+                    } catch (error) {
+                        console.warn('Failed to refresh NPC inventory before opening modal:', error);
+                    }
+                })();
+            }
         }
 
         function formatTagValue(label, value) {
@@ -6979,9 +7093,6 @@
                 }
                 if (tabName === 'party') {
                     window.refreshParty?.();
-                }
-                if (tabName === 'inventory') {
-                    window.refreshInventory?.();
                 }
             };
 
@@ -7863,6 +7974,8 @@
                                     }
                                 );
 
+                                applyNpcDeathStyling(card, portrait, npc);
+
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
                                 nameEl.textContent = npc.name || 'Unknown NPC';
@@ -8088,387 +8201,20 @@
             loadCurrentLocation().finally(() => hideLocationOverlay());
         }
 
-        function initInventoryDisplay() {
-            const inventoryGrid = document.getElementById('inventoryItems');
-            const emptyState = document.getElementById('inventoryEmpty');
-            const countLabel = document.getElementById('inventoryCount');
+        function initFloatingTooltipController() {
             const floatingTooltip = document.getElementById('inventoryTooltip');
-            const inventoryScroll = document.querySelector('.inventory-scroll');
-            const equipmentSlotsContainer = document.getElementById('equipmentSlots');
-            const equipmentEmpty = document.getElementById('equipmentEmpty');
-            const imageMetadataCache = new Map();
-            let tooltipController = null;
 
-            function hideTooltip() {
-                if (!floatingTooltip) return;
+            if (!floatingTooltip) {
+                window.floatingTooltipController = null;
+                return;
+            }
+
+            const hideTooltip = () => {
                 floatingTooltip.classList.remove('visible');
                 floatingTooltip.setAttribute('hidden', '');
-            }
-
-            const getItemSlotTags = (item = {}) => {
-                const slots = new Set();
-                const addSlot = (value) => {
-                    if (!value && value !== 0) {
-                        return;
-                    }
-                    if (Array.isArray(value)) {
-                        value.forEach(addSlot);
-                        return;
-                    }
-                    const text = String(value).trim();
-                    if (text && text.toLowerCase() !== 'n/a') {
-                        slots.add(text.toLowerCase());
-                    }
-                };
-
-                addSlot(item.slot);
-                if (item.metadata && Object.prototype.hasOwnProperty.call(item.metadata, 'slot')) {
-                    addSlot(item.metadata.slot);
-                }
-
-                return Array.from(slots);
             };
 
-            async function updateEquipmentSlot(slotName, itemId, selectElement) {
-                if (!slotName) {
-                    return;
-                }
-
-                const previousValue = selectElement ? (selectElement.dataset.previousValue || '') : '';
-
-                try {
-                    if (selectElement) {
-                        selectElement.disabled = true;
-                    }
-
-                    const response = await fetch('/api/player/equip', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            slotName,
-                            itemId: itemId || null
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (!response.ok || !data.success) {
-                        const errorMessage = data?.error || `Request failed with status ${response.status}`;
-                        throw new Error(errorMessage);
-                    }
-
-                    if (selectElement) {
-                        const updatedItemId = data.player?.gear?.[slotName]?.itemId || '';
-                        selectElement.dataset.previousValue = updatedItemId;
-                    }
-
-                    renderInventoryState(data.player || {});
-                } catch (error) {
-                    console.warn('Failed to update equipment slot:', error);
-                    if (selectElement) {
-                        selectElement.value = previousValue;
-                    }
-                    alert(`Failed to update equipment: ${error.message || error}`);
-                } finally {
-                    if (selectElement) {
-                        selectElement.disabled = false;
-                    }
-                }
-            }
-
-            const resetIconToPlaceholder = (iconElement, item, fallbackSymbol = null) => {
-                if (!iconElement) return;
-                iconElement.classList.remove('has-image');
-                iconElement.classList.remove('loading');
-                iconElement.style.removeProperty('background-image');
-                iconElement.classList.add('inventory-icon-placeholder');
-                iconElement.textContent = fallbackSymbol || selectInventoryIcon(item);
-                delete iconElement.dataset.lightboxImage;
-                delete iconElement.dataset.lightboxAlt;
-                delete iconElement.dataset.lightboxCaption;
-            };
-
-            const applyImageToIcon = (iconElement, imageUrl, item) => {
-                if (!iconElement || !imageUrl) return;
-                iconElement.classList.remove('loading');
-                iconElement.classList.remove('inventory-icon-placeholder');
-                iconElement.classList.add('has-image');
-                iconElement.style.backgroundImage = `url('${imageUrl}')`;
-                iconElement.textContent = '';
-
-                iconElement.dataset.lightboxImage = imageUrl;
-                iconElement.dataset.lightboxAlt = item?.name || 'Inventory item';
-                iconElement.dataset.lightboxCaption = item?.name || '';
-                bindLightboxElement(iconElement, () => ({
-                    src: iconElement.dataset.lightboxImage,
-                    alt: iconElement.dataset.lightboxAlt,
-                    caption: iconElement.dataset.lightboxCaption
-                }));
-            };
-
-            function renderEquipment(player = {}, inventoryItems = [], equippedItemIds = new Set()) {
-                if (!equipmentSlotsContainer) {
-                    return;
-                }
-
-                const gear = player && typeof player.gear === 'object' ? player.gear : {};
-                const gearEntries = Object.entries(gear);
-
-                equipmentSlotsContainer.innerHTML = '';
-
-                if (!gearEntries.length) {
-                    if (equipmentEmpty) {
-                        equipmentEmpty.style.display = 'block';
-                    }
-                    equipmentSlotsContainer.style.display = 'none';
-                    return;
-                }
-
-                equipmentSlotsContainer.style.display = 'flex';
-                if (equipmentEmpty) {
-                    equipmentEmpty.style.display = 'none';
-                }
-
-                const inventoryById = new Map();
-                inventoryItems.forEach(item => {
-                    if (item && item.id) {
-                        inventoryById.set(item.id, item);
-                    }
-                });
-
-                gearEntries
-                    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
-                    .forEach(([slotName, slotData]) => {
-                        const slotType = (slotData?.slotType || '').toString().toLowerCase();
-                        const normalizedSlotName = (slotName || '').toLowerCase();
-
-                        addAvailableSlotType(slotType);
-
-                        const wrapper = document.createElement('div');
-                        wrapper.className = 'equipment-slot';
-
-                        const selectId = `equipment-select-${slotName.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}`;
-
-                        const label = document.createElement('label');
-                        label.className = 'equipment-slot-label';
-                        label.setAttribute('for', selectId);
-                        label.textContent = slotName || (slotType ? capitalize(slotType) : 'Slot');
-
-                        const select = document.createElement('select');
-                        select.className = 'equipment-select';
-                        select.id = selectId;
-                        select.dataset.slotName = slotName;
-                        select.dataset.previousValue = slotData?.itemId || '';
-
-                        const emptyOption = document.createElement('option');
-                        emptyOption.value = '';
-                        emptyOption.textContent = 'Empty';
-                        select.appendChild(emptyOption);
-
-                        const validItems = inventoryItems.filter(item => {
-                            const slots = getItemSlotTags(item);
-                            if (!slots.length) {
-                                return false;
-                            }
-                            return slots.includes(slotType) || slots.includes(normalizedSlotName);
-                        });
-
-                        const optionItems = [];
-                        if (slotData?.itemId) {
-                            const equippedItem = inventoryById.get(slotData.itemId);
-                            if (equippedItem) {
-                                optionItems.push(equippedItem);
-                            } else {
-                                optionItems.push({ id: slotData.itemId, name: `Equipped (${slotData.itemId})` });
-                            }
-                        }
-
-                        validItems.forEach(item => {
-                            if (!optionItems.some(optionItem => optionItem.id === item.id)) {
-                                optionItems.push(item);
-                            }
-                        });
-
-                        optionItems.forEach(item => {
-                            if (!item) {
-                                return;
-                            }
-                            const option = document.createElement('option');
-                            option.value = item.id || '';
-                            option.textContent = item.name || 'Unknown Item';
-                            if (slotData?.itemId && item.id === slotData.itemId) {
-                                option.selected = true;
-                            }
-                            select.appendChild(option);
-                        });
-
-                        if (!slotData?.itemId) {
-                            select.value = '';
-                        }
-
-                        select.addEventListener('change', (event) => {
-                            const newValue = event.target.value || '';
-                            if (newValue === (slotData?.itemId || '')) {
-                                return;
-                            }
-                            updateEquipmentSlot(slotName, newValue || null, event.target);
-                        });
-
-                        wrapper.appendChild(label);
-                        wrapper.appendChild(select);
-                        equipmentSlotsContainer.appendChild(wrapper);
-                    });
-            }
-
-            const loadInventoryImage = async (item, iconElement) => {
-                if (!iconElement || !item) {
-                    return;
-                }
-
-                const existingImageId = item.imageId || null;
-
-                if (existingImageId && imageMetadataCache.has(existingImageId)) {
-                    applyImageToIcon(iconElement, imageMetadataCache.get(existingImageId), item);
-                } else if (existingImageId) {
-                    applyImageToIcon(iconElement, `/generated-images/${existingImageId}.png`, item);
-                } else {
-                    resetIconToPlaceholder(iconElement, item);
-                }
-
-                const manager = window.AIRPG?.imageManager;
-                if (!manager || !item.id) {
-                    return;
-                }
-
-                iconElement.classList.add('loading');
-
-                try {
-                    const result = await manager.ensureImage({
-                        entityType: 'thing',
-                        entityId: item.id,
-                        existingImageId: existingImageId
-                    });
-
-                    const resolvedImageId = result?.imageId || existingImageId;
-                    const imageUrl = result?.imageUrl || (resolvedImageId ? `/generated-images/${resolvedImageId}.png` : null);
-
-                    if (resolvedImageId && imageUrl) {
-                        imageMetadataCache.set(resolvedImageId, imageUrl);
-                        applyImageToIcon(iconElement, imageUrl, item);
-                    } else {
-                        resetIconToPlaceholder(iconElement, item);
-                    }
-                } catch (error) {
-                    console.warn(`Unable to load inventory image for ${item?.name || item.id}:`, error);
-                    resetIconToPlaceholder(iconElement, item);
-                } finally {
-                    iconElement.classList.remove('loading');
-                }
-            };
-
-            function renderInventory(items = [], equippedItemIds = new Set()) {
-                if (!inventoryGrid || !emptyState || !countLabel) {
-                    return;
-                }
-
-                if (tooltipController && typeof tooltipController.hide === 'function') {
-                    tooltipController.hide();
-                } else {
-                    hideTooltip();
-                }
-
-                const safeItems = Array.isArray(items) ? items : [];
-                safeItems.forEach(trackSlotTypeFromThing);
-                const equippedSet = equippedItemIds instanceof Set ? equippedItemIds : new Set();
-                inventoryGrid.innerHTML = '';
-
-                countLabel.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
-                emptyState.style.display = safeItems.length ? 'none' : 'block';
-                inventoryGrid.style.display = safeItems.length ? 'flex' : 'none';
-
-                safeItems.forEach(item => {
-                    const card = document.createElement('div');
-                    card.className = 'location-entity-card inventory-card';
-                    card.dataset.itemId = item.id || '';
-
-                    const icon = document.createElement('div');
-                    icon.className = 'inventory-icon';
-                    loadInventoryImage(item, icon);
-
-                    const name = document.createElement('div');
-                    name.className = 'inventory-name';
-                    name.textContent = item.name || 'Unknown Item';
-                    applyRarityClass(name, item.rarity);
-
-                    card.appendChild(icon);
-                    card.appendChild(name);
-                    if (equippedSet.has(item.id)) {
-                        card.classList.add('is-equipped');
-                    }
-                        registerThingContextMenu(card, item, { context: 'player-inventory' });
-                    inventoryGrid.appendChild(card);
-
-                    card.addEventListener('mouseenter', (event) => {
-                        if (tooltipController && typeof tooltipController.show === 'function') {
-                            const description = item.description || 'No description provided.';
-                            const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
-                            const tooltipContent = formatThingTooltip(item) || fallbackTooltip;
-                            tooltipController.show(tooltipContent, event, { allowHTML: true });
-                        }
-                    });
-
-                    card.addEventListener('mousemove', (event) => {
-                        if (tooltipController && typeof tooltipController.move === 'function') {
-                            tooltipController.move(event);
-                        }
-                    });
-
-                    card.addEventListener('mouseleave', () => {
-                        if (tooltipController && typeof tooltipController.hide === 'function') {
-                            tooltipController.hide();
-                        }
-                    });
-                });
-
-                try { document.dispatchEvent(new Event('inventory:updated')); } catch (_) {}
-            }
-
-            function renderInventoryState(player = {}) {
-                updateChatPlayerPanel(player);
-                if (Array.isArray(player?.partyMembers)) {
-                    renderChatPartyPanel(player.partyMembers);
-                }
-
-                ensureGearSlotTypes();
-                const inventoryItems = Array.isArray(player.inventory) ? player.inventory : [];
-                const gear = player && typeof player.gear === 'object' ? player.gear : {};
-                const equippedItemIds = new Set();
-
-                updateAvailableSlotTypesFromPlayer(player);
-
-                Object.values(gear).forEach(slot => {
-                    if (slot && slot.itemId) {
-                        equippedItemIds.add(slot.itemId);
-                    }
-                });
-
-                renderEquipment(player, inventoryItems, equippedItemIds);
-                renderInventory(inventoryItems, equippedItemIds);
-            }
-
-            function selectInventoryIcon(item = {}) {
-                const type = (item.thingType || item.type || '').toLowerCase();
-                if (type.includes('weapon')) return '⚔️';
-                if (type.includes('armor')) return '🛡️';
-                if (type.includes('potion')) return '🧪';
-                if (type.includes('tool')) return '🛠️';
-                if (type.includes('trinket')) return '🧿';
-                if (type.includes('container')) return '🎒';
-                return '📦';
-            }
-
-            function positionTooltip(event) {
-                if (!floatingTooltip) return;
+            const positionTooltip = (event) => {
                 const padding = 16;
                 const tooltipRect = floatingTooltip.getBoundingClientRect();
                 let x = event.clientX + padding;
@@ -8487,11 +8233,11 @@
 
                 floatingTooltip.style.left = `${x}px`;
                 floatingTooltip.style.top = `${y}px`;
-            }
+            };
 
-            tooltipController = {
+            const controller = {
                 show(content, event, options = {}) {
-                    if (!floatingTooltip || !content || !event) {
+                    if (!content || !event) {
                         return;
                     }
                     const { allowHTML = false } = options;
@@ -8505,7 +8251,7 @@
                     positionTooltip(event);
                 },
                 move(event) {
-                    if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) {
+                    if (floatingTooltip.hasAttribute('hidden')) {
                         return;
                     }
                     positionTooltip(event);
@@ -8515,34 +8261,37 @@
                 }
             };
 
-            window.floatingTooltipController = tooltipController;
+            window.floatingTooltipController = controller;
+
+            floatingTooltip.addEventListener('mouseleave', hideTooltip);
+            window.addEventListener('scroll', hideTooltip, { passive: true });
+
             try {
                 document.dispatchEvent(new CustomEvent('floatingTooltip:ready'));
             } catch (_) {
-                // Ignore environments without CustomEvent support.
+                // CustomEvent may not be available in older environments; ignore.
             }
+        }
 
-            window.updateInventoryDisplay = renderInventoryState;
-
-            async function refreshInventory() {
+        function initPlayerOverviewSync() {
+            async function refreshPlayerOverview() {
                 try {
                     const response = await fetch('/api/player');
                     const data = await response.json();
                     if (data.success && data.player) {
-                        renderInventoryState(data.player || {});
+                        updateChatPlayerPanel(data.player);
+                        if (Array.isArray(data.player.partyMembers)) {
+                            renderChatPartyPanel(data.player.partyMembers);
+                        }
                     }
                 } catch (error) {
-                    console.warn('Failed to refresh inventory:', error);
+                    console.warn('Failed to refresh player overview:', error);
                 }
             }
 
-            window.refreshInventory = refreshInventory;
-            refreshInventory();
-
-            if (inventoryScroll) {
-                inventoryScroll.addEventListener('scroll', hideTooltip);
-            }
-            window.addEventListener('scroll', hideTooltip, { passive: true });
+            window.refreshInventory = refreshPlayerOverview;
+            window.updateInventoryDisplay = refreshPlayerOverview;
+            refreshPlayerOverview();
         }
 
         function initPartyDisplay() {
@@ -8612,11 +8361,14 @@
                 renderChatPartyPanel(safeMembers);
 
                 safeMembers.forEach(member => {
-                    const card = document.createElement('div');
-                    card.className = 'party-card';
+                const card = document.createElement('div');
+                card.className = 'party-card';
+                if (member?.id) {
+                    card.dataset.npcId = member.id;
+                }
 
-                    const portrait = document.createElement('div');
-                    portrait.className = 'party-portrait';
+                const portrait = document.createElement('div');
+                portrait.className = 'party-portrait';
 
                     const portraitImage = document.createElement('div');
                     portraitImage.className = 'party-portrait-image';
@@ -8650,18 +8402,20 @@
 
                     updateHealthBar(portraitHealthBar, portraitHealthFill, member?.health, member?.maxHealth);
 
-                    renderNeedBars(
-                        portraitNeedBars,
-                        Array.isArray(member?.needBars) ? member.needBars : [],
-                        {
-                            includePlayerOnly: false,
-                            variant: 'npc'
-                        }
-                    );
+                renderNeedBars(
+                    portraitNeedBars,
+                    Array.isArray(member?.needBars) ? member.needBars : [],
+                    {
+                        includePlayerOnly: false,
+                        variant: 'npc'
+                    }
+                );
 
-                    const name = document.createElement('div');
-                    name.className = 'party-name';
-                    name.textContent = member.name || 'Unknown';
+                applyNpcDeathStyling(card, portrait, member);
+
+                const name = document.createElement('div');
+                name.className = 'party-name';
+                name.textContent = member.name || 'Unknown';
 
                     const role = document.createElement('div');
                     role.className = 'party-role';

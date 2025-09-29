@@ -1195,23 +1195,71 @@ class Events {
         if (!Array.isArray(entries) || !entries.length) {
             return;
         }
+
         const { findActorByName } = this.deps;
-        for (const entityName of entries) {
-            const actor = findActorByName(entityName);
+
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
+            }
+
+            let targetName = null;
+            let statusText = null;
+
+            if (typeof entry === 'string') {
+                const trimmed = entry.trim();
+                if (!trimmed || /^N\/?A$/i.test(trimmed)) {
+                    continue;
+                }
+
+                const arrowParts = this.extractArrowParts(trimmed, 2);
+                if (arrowParts.length === 2) {
+                    [targetName, statusText] = arrowParts;
+                } else {
+                    targetName = trimmed;
+                }
+            } else if (typeof entry === 'object') {
+                targetName = entry.name || entry.character || entry.entity || entry.target || null;
+                statusText = entry.status || entry.state || entry.result || null;
+            }
+
+            if (!targetName) {
+                continue;
+            }
+
+            const actor = findActorByName(targetName);
             if (!actor) {
                 continue;
             }
+
+            const normalizedStatus = typeof statusText === 'string'
+                ? statusText.trim().toLowerCase().split(/\s+/)[0]
+                : '';
+
+            const isDead = normalizedStatus === 'dead';
+            const reasonLabel = isDead ? 'Killed' : 'Incapacitated';
+
             if (typeof actor.modifyHealth === 'function') {
                 const status = actor.getStatus ? actor.getStatus() : null;
                 const currentHealth = status?.health ?? null;
-                if (Number.isFinite(currentHealth)) {
-                    actor.modifyHealth(-currentHealth, 'Incapacitated');
-                } else {
-                    actor.modifyHealth(-(actor.health || 0), 'Incapacitated');
+                if (Number.isFinite(currentHealth) && currentHealth !== 0) {
+                    actor.modifyHealth(-currentHealth, reasonLabel);
+                } else if (Number.isFinite(actor.health) && actor.health !== 0) {
+                    actor.modifyHealth(-actor.health, reasonLabel);
                 }
             }
+
+            if (isDead) {
+                try {
+                    actor.isDead = true;
+                } catch (_) {
+                    // Ignore if the target does not expose an isDead setter
+                }
+            }
+
             if (typeof actor.addStatusEffect === 'function') {
-                actor.addStatusEffect({ description: 'Incapacitated', duration: null });
+                const description = isDead ? 'Deceased' : 'Incapacitated';
+                actor.addStatusEffect({ description, duration: null });
             }
         }
     }

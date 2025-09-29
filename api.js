@@ -102,6 +102,126 @@ module.exports = function registerApiRoutes(scope) {
             rare: null
         };
 
+        function deleteNpcById(npcId, { skipNotFound = false, reason = null } = {}) {
+            if (!npcId || typeof npcId !== 'string') {
+                return { success: false, error: 'NPC ID is required', status: 400 };
+            }
+
+            const npc = players.get(npcId);
+            if (!npc || !npc.isNPC) {
+                const result = {
+                    success: false,
+                    error: `NPC with ID '${npcId}' not found`,
+                    status: 404
+                };
+                if (skipNotFound) {
+                    result.skipped = true;
+                }
+                return result;
+            }
+
+            const locationId = npc.currentLocation || null;
+            let regionId = null;
+
+            if (locationId) {
+                const location = gameLocations.get(locationId);
+                if (location) {
+                    if (typeof location.removeNpcId === 'function') {
+                        location.removeNpcId(npcId);
+                    } else if (Array.isArray(location.npcIds)) {
+                        location.npcIds = location.npcIds.filter(id => id !== npcId);
+                    }
+                    regionId = location.regionId || location.stubMetadata?.regionId || regionId;
+                }
+            }
+
+            if (!regionId) {
+                for (const region of regions.values()) {
+                    if (region && Array.isArray(region.npcIds) && region.npcIds.includes(npcId)) {
+                        region.npcIds = region.npcIds.filter(id => id !== npcId);
+                        regionId = region.id || region.regionId || region.stubMetadata?.regionId || regionId;
+                    }
+                }
+            } else {
+                const regionRecord = regions.get(regionId);
+                if (regionRecord && Array.isArray(regionRecord.npcIds)) {
+                    regionRecord.npcIds = regionRecord.npcIds.filter(id => id !== npcId);
+                }
+            }
+
+            for (const actor of players.values()) {
+                if (actor && typeof actor.removePartyMember === 'function') {
+                    actor.removePartyMember(npcId);
+                }
+            }
+
+            players.delete(npcId);
+            Player.unregister?.(npc);
+
+            if (reason) {
+                try {
+                    const label = npc.name || npcId;
+                    console.log(`💀 Removed NPC ${label} (${npcId}) – reason: ${reason}`);
+                } catch (_) {
+                    // ignore logging issues
+                }
+            }
+
+            return {
+                success: true,
+                npc,
+                locationId,
+                regionId
+            };
+        }
+
+        function processNpcCorpses({ reason = 'unspecified' } = {}) {
+            const removed = [];
+            const countdownUpdates = [];
+            const allPlayers = Player.getAll ? Player.getAll() : [];
+
+            for (const npc of allPlayers) {
+                if (!npc?.isNPC) {
+                    continue;
+                }
+
+                const previousCountdown = Number.isFinite(npc?.corpseCountdown)
+                    ? npc.corpseCountdown
+                    : null;
+
+                if (typeof npc.updateCorpseCountdown === 'function') {
+                    npc.updateCorpseCountdown();
+                }
+
+                const currentCountdown = Number.isFinite(npc?.corpseCountdown)
+                    ? npc.corpseCountdown
+                    : null;
+
+                if (npc.isDead && currentCountdown !== null && currentCountdown > 0 && currentCountdown !== previousCountdown) {
+                    countdownUpdates.push({
+                        npcId: npc.id,
+                        corpseCountdown: currentCountdown
+                    });
+                }
+
+                if (!npc.isDead || currentCountdown !== 0) {
+                    continue;
+                }
+
+                const result = deleteNpcById(npc.id, { skipNotFound: true, reason });
+                if (result.success) {
+                    removed.push({
+                        npcId: npc.id,
+                        name: npc.name || null,
+                        locationId: result.locationId || null,
+                        regionId: result.regionId || null
+                    });
+                }
+            }
+
+            return { removed, countdownUpdates };
+        }
+
         const generateMessageId = () => {
             if (typeof randomUUID === 'function') {
                 try {
@@ -2736,7 +2856,7 @@ module.exports = function registerApiRoutes(scope) {
                 let npcTurnIndex = 0;
                 for (const npcName of npcNames) {
                     const npc = typeof findActorByName === 'function' ? findActorByName(npcName) : null;
-                    if (!npc || !npc.isNPC) {
+                    if (!npc || !npc.isNPC || npc.isDead) {
                         continue;
                     }
 
@@ -2910,6 +3030,14 @@ module.exports = function registerApiRoutes(scope) {
 
                     results.push(npcTurnResult);
 
+                    const { removed: corpseRemovals, countdownUpdates } = processNpcCorpses({ reason: 'npc-turn' });
+                    if (countdownUpdates.length) {
+                        npcTurnResult.corpseCountdownUpdates = countdownUpdates;
+                    }
+                    if (corpseRemovals.length) {
+                        npcTurnResult.corpseRemovals = corpseRemovals;
+                    }
+
                     if (stream && stream.isEnabled) {
                         stream.npcTurn({
                             index: npcTurnIndex,
@@ -2958,6 +3086,18 @@ module.exports = function registerApiRoutes(scope) {
                 requestId: rawRequestId
             } = requestBody;
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
+            let corpseProcessingRan = false;
+
+            res.on('finish', () => {
+                if (corpseProcessingRan) {
+                    return;
+                }
+                try {
+                    processNpcCorpses({ reason: 'player-action:finish' });
+                } catch (error) {
+                    console.warn('Failed to process NPC corpses after response:', error?.message || error);
+                }
+            });
             const streamState = {
                 playerAction: false,
                 npcTurns: 0,
@@ -3467,6 +3607,15 @@ module.exports = function registerApiRoutes(scope) {
                         stripStreamedEventArtifacts(responseData);
                     }
 
+                    const { removed: corpseRemovals, countdownUpdates } = processNpcCorpses({ reason: 'player-action' });
+                    corpseProcessingRan = true;
+                    if (countdownUpdates.length) {
+                        responseData.corpseCountdownUpdates = countdownUpdates;
+                    }
+                    if (corpseRemovals.length) {
+                        responseData.corpseRemovals = corpseRemovals;
+                    }
+
                     responseData.messages = newChatEntries;
                     res.json(responseData);
                     return;
@@ -3500,7 +3649,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
                     const aiResponse = response.data.choices[0].message.content;
 
-                    stream.status('player_action:llm_complete', 'AI response received.');
+                    stream.status('player_action:llm_complete', 'Checking for disposition changes.');
 
                     // Store AI response in history
                     const aiResponseEntry = pushChatEntry({
@@ -3636,6 +3785,27 @@ module.exports = function registerApiRoutes(scope) {
                         if (npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
                             streamState.npcTurns = npcTurns.length;
+
+                            const aggregatedCountdowns = [];
+                            const aggregatedRemovals = [];
+                            for (const turn of npcTurns) {
+                                if (Array.isArray(turn?.corpseCountdownUpdates)) {
+                                    aggregatedCountdowns.push(...turn.corpseCountdownUpdates);
+                                }
+                                if (Array.isArray(turn?.corpseRemovals)) {
+                                    aggregatedRemovals.push(...turn.corpseRemovals);
+                                }
+                            }
+                            if (aggregatedCountdowns.length) {
+                                responseData.corpseCountdownUpdates = Array.isArray(responseData.corpseCountdownUpdates)
+                                    ? responseData.corpseCountdownUpdates.concat(aggregatedCountdowns)
+                                    : aggregatedCountdowns;
+                            }
+                            if (aggregatedRemovals.length) {
+                                responseData.corpseRemovals = Array.isArray(responseData.corpseRemovals)
+                                    ? responseData.corpseRemovals.concat(aggregatedRemovals)
+                                    : aggregatedRemovals;
+                            }
                         }
                     } catch (npcTurnError) {
                         console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
@@ -4999,58 +5169,20 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const npc = players.get(npcId);
-                // Filter out the player character just in case.
-                if (!npc || !npc.isNPC) {
-                    return res.status(404).json({
+                const result = deleteNpcById(npcId, { reason: 'api-request' });
+                if (!result.success) {
+                    const statusCode = result.status || (result.error === 'NPC ID is required' ? 400 : 404);
+                    return res.status(statusCode).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: result.error || 'Failed to delete NPC'
                     });
                 }
-
-                const locationId = npc.currentLocation || null;
-                let regionId = null;
-
-                if (locationId) {
-                    const location = gameLocations.get(locationId);
-                    if (location) {
-                        if (typeof location.removeNpcId === 'function') {
-                            location.removeNpcId(npcId);
-                        } else if (Array.isArray(location.npcIds)) {
-                            location.npcIds = location.npcIds.filter(id => id !== npcId);
-                        }
-
-                        regionId = location.regionId || location.stubMetadata?.regionId || null;
-                    }
-                }
-
-                if (!regionId) {
-                    for (const region of regions.values()) {
-                        if (region && Array.isArray(region.npcIds) && region.npcIds.includes(npcId)) {
-                            region.npcIds = region.npcIds.filter(id => id !== npcId);
-                            regionId = region.id || region.regionId || region.stubMetadata?.regionId || null;
-                        }
-                    }
-                } else {
-                    const region = regions.get(regionId);
-                    if (region && Array.isArray(region.npcIds)) {
-                        region.npcIds = region.npcIds.filter(id => id !== npcId);
-                    }
-                }
-
-                for (const actor of players.values()) {
-                    if (actor && typeof actor.removePartyMember === 'function') {
-                        actor.removePartyMember(npcId);
-                    }
-                }
-
-                players.delete(npcId);
 
                 res.json({
                     success: true,
                     message: 'NPC deleted successfully',
-                    locationId,
-                    regionId
+                    locationId: result.locationId,
+                    regionId: result.regionId
                 });
             } catch (error) {
                 console.error('Failed to delete NPC:', error);
