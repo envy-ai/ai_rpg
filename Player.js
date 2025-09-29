@@ -2640,9 +2640,43 @@ class Player {
         const inventoryIds = Array.isArray(baseSnapshot.inventory) ? [...baseSnapshot.inventory] : [];
         const partyMemberIds = Array.isArray(baseSnapshot.partyMembers) ? [...baseSnapshot.partyMembers] : [];
 
-        const inventoryDetails = this.getInventoryItems().map(item => (
-            typeof item?.toJSON === 'function' ? item.toJSON() : item
-        ));
+        const gearSnapshot = this.getGear();
+        const equippedByItemId = new Map();
+        if (gearSnapshot && typeof gearSnapshot === 'object') {
+            for (const [slotName, slotData] of Object.entries(gearSnapshot)) {
+                if (!slotData || !slotData.itemId) {
+                    continue;
+                }
+                equippedByItemId.set(slotData.itemId, {
+                    slotName,
+                    slotType: slotData.slotType || null
+                });
+            }
+        }
+
+        const inventoryDetails = this.getInventoryItems().map(item => {
+            let serialized = null;
+            if (item && typeof item.toJSON === 'function') {
+                serialized = item.toJSON();
+            } else if (item && typeof item === 'object') {
+                serialized = { ...item };
+            } else {
+                serialized = item;
+            }
+
+            if (serialized && typeof serialized === 'object' && serialized.id) {
+                const equippedInfo = equippedByItemId.get(serialized.id);
+                if (equippedInfo) {
+                    serialized.isEquipped = true;
+                    serialized.equippedSlot = equippedInfo.slotName;
+                    if (equippedInfo.slotType) {
+                        serialized.equippedSlotType = equippedInfo.slotType;
+                    }
+                }
+            }
+
+            return serialized;
+        });
 
         const status = {
             ...baseSnapshot,

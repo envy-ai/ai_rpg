@@ -2681,10 +2681,11 @@ class AIRPGChat {
 
                 this.refreshSkillState(result.player);
 
-                if (result.player.currentLocation) {
+                const locationId = result.player?.locationId || result.player?.currentLocation || null;
+                if (locationId) {
                     // Fetch location details
                     const cacheBuster = Date.now();
-                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}?_=${cacheBuster}`, {
+                    const locationResponse = await fetch(`/api/locations/${locationId}?_=${cacheBuster}`, {
                         cache: 'no-store'
                     });
                     const locationResult = await locationResponse.json();

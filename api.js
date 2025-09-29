@@ -1287,21 +1287,6 @@ module.exports = function registerApiRoutes(scope) {
 
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
 
-        const ensureNeedBarsInStatus = (status, actor) => {
-            if (!status || typeof status !== 'object') {
-                return status;
-            }
-
-            if (!Array.isArray(status.needBars)) {
-                const bars = actor && typeof actor.getNeedBars === 'function'
-                    ? actor.getNeedBars()
-                    : [];
-                status.needBars = Array.isArray(bars) ? bars : [];
-            }
-
-            return status;
-        };
-
         const applyNeedBarTurnTick = () => {
             const summaries = [];
             for (const actor of players.values()) {
@@ -3850,7 +3835,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(player.getStatus(), player),
+                    player: serializeNpcForClient(player),
                     message: 'Player created successfully'
                 });
             } catch (error) {
@@ -3872,7 +3857,7 @@ module.exports = function registerApiRoutes(scope) {
 
             res.json({
                 success: true,
-                player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer)
+                player: serializeNpcForClient(currentPlayer)
             });
         });
 
@@ -3889,7 +3874,7 @@ module.exports = function registerApiRoutes(scope) {
                 const members = memberIds
                     .map(id => players.get(id))
                     .filter(Boolean)
-                    .map(member => ensureNeedBarsInStatus(member.getStatus(), member));
+                    .map(member => serializeNpcForClient(member));
 
                 res.json({
                     success: true,
@@ -4015,7 +4000,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     message: 'Attributes updated successfully'
                 });
             } catch (error) {
@@ -4047,7 +4032,7 @@ module.exports = function registerApiRoutes(scope) {
                 res.json({
                     success: true,
                     healthChange: result,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     message: `Health ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}`
                 });
             } catch (error) {
@@ -4073,7 +4058,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     message: `Player leveled up from ${oldLevel} to ${currentPlayer.level}!`
                 });
             } catch (error) {
@@ -4170,8 +4155,8 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        function buildNpcDispositionSnapshot(npc) {
-            if (!npc) {
+        function buildNpcDispositionSnapshot(actor) {
+            if (!actor) {
                 return {
                     npc: null,
                     player: null,
@@ -4189,6 +4174,7 @@ module.exports = function registerApiRoutes(scope) {
             const rangeConfig = dispositionDefinitions.range || {};
             const typeMap = dispositionDefinitions.types || {};
             const currentPlayerId = currentPlayer && currentPlayer.id ? currentPlayer.id : null;
+            const isNPC = Boolean(actor.isNPC);
 
             const normalizedRange = {
                 min: Number.isFinite(rangeConfig.min) ? rangeConfig.min : null,
@@ -4203,8 +4189,8 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                const rawValue = currentPlayerId && typeof npc.getDisposition === 'function'
-                    ? npc.getDisposition(currentPlayerId, typeDef.key)
+                const rawValue = currentPlayerId && typeof actor.getDisposition === 'function'
+                    ? actor.getDisposition(currentPlayerId, typeDef.key)
                     : 0;
                 const numericValue = Number(rawValue);
                 const value = Number.isFinite(numericValue) ? numericValue : 0;
@@ -4223,11 +4209,14 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
+            const identity = {
+                id: actor.id,
+                name: actor.name || (isNPC ? 'Unknown NPC' : 'Player'),
+                isNPC
+            };
+
             return {
-                npc: {
-                    id: npc.id,
-                    name: npc.name || 'Unknown NPC'
-                },
+                npc: identity,
                 player: currentPlayerId && currentPlayer
                     ? {
                         id: currentPlayer.id,
@@ -4439,12 +4428,12 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 const npcId = req.params.id;
                 if (!npcId || typeof npcId !== 'string') {
-                    return res.status(400).json({ success: false, error: 'NPC ID is required' });
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
                 }
 
                 const npc = players.get(npcId);
                 if (!npc) {
-                    return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
                 }
 
                 const {
@@ -4578,7 +4567,7 @@ module.exports = function registerApiRoutes(scope) {
                 res.json({
                     success: true,
                     npc: npcProfile,
-                    message: `NPC '${npc.name}' updated`
+                    message: `Character '${npc.name}' updated`
                 });
             } catch (error) {
                 console.error('Error updating NPC:', error);
@@ -4590,12 +4579,12 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 const npcId = req.params.id;
                 if (!npcId || typeof npcId !== 'string') {
-                    return res.status(400).json({ success: false, error: 'NPC ID is required' });
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
                 }
 
                 const npc = players.get(npcId);
                 if (!npc) {
-                    return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
                 }
 
                 const { itemId, action, slotName, slotType } = req.body || {};
@@ -4608,7 +4597,7 @@ module.exports = function registerApiRoutes(scope) {
                 const targetItem = inventoryItems.find(entry => entry && entry.id === trimmedItemId);
 
                 if (!targetItem) {
-                    return res.status(404).json({ success: false, error: 'Item not found in NPC inventory' });
+                    return res.status(404).json({ success: false, error: 'Item not found in character inventory' });
                 }
 
                 const desiredAction = (typeof action === 'string' ? action.toLowerCase() : action) || 'equip';
@@ -4630,6 +4619,7 @@ module.exports = function registerApiRoutes(scope) {
                     } else if (normalizedSlotTypeRaw && typeof npc.getGearSlotsByType === 'function') {
                         const slotTypeLower = normalizedSlotTypeRaw.toLowerCase();
                         const gearByType = npc.getGearSlotsByType() || {};
+                        const gearSnapshot = typeof npc.getGear === 'function' ? npc.getGear() : {};
                         const candidateSlots = [];
                         for (const [typeKey, slotNames] of Object.entries(gearByType)) {
                             if (!typeKey || !Array.isArray(slotNames)) {
@@ -4642,6 +4632,10 @@ module.exports = function registerApiRoutes(scope) {
 
                         result = false;
                         for (const candidate of candidateSlots) {
+                            const slotInfo = gearSnapshot?.[candidate];
+                            if (slotInfo && slotInfo.itemId) {
+                                continue; // slot already occupied, try next
+                            }
                             result = npc.equipItemInSlot(targetItem, candidate);
                             if (result === true) {
                                 break;
@@ -4665,8 +4659,8 @@ module.exports = function registerApiRoutes(scope) {
                 const npcProfile = serializeNpcForClient(npc);
                 res.json({ success: true, npc: npcProfile, message });
             } catch (error) {
-                console.error('Error updating NPC equipment:', error);
-                res.status(500).json({ success: false, error: error.message || 'Failed to update NPC equipment' });
+                console.error('Error updating character equipment:', error);
+                res.status(500).json({ success: false, error: error.message || 'Failed to update character equipment' });
             }
         });
 
@@ -4676,7 +4670,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npcId || typeof npcId !== 'string') {
                     return res.status(400).json({
                         success: false,
-                        error: 'NPC ID is required'
+                        error: 'Character ID is required'
                     });
                 }
 
@@ -4684,13 +4678,14 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
 
+                const includePlayerOnly = !npc.isNPC;
                 const payload = buildNeedBarSnapshot(npc, {
-                    includePlayerOnly: false,
-                    type: 'npc'
+                    includePlayerOnly,
+                    type: npc.isNPC ? 'npc' : 'player'
                 });
 
                 res.json({
@@ -4698,10 +4693,10 @@ module.exports = function registerApiRoutes(scope) {
                     ...payload
                 });
             } catch (error) {
-                console.error('Failed to load NPC needs:', error);
+                console.error('Failed to load character needs:', error);
                 res.status(500).json({
                     success: false,
-                    error: error.message || 'Failed to load NPC needs'
+                    error: error.message || 'Failed to load character needs'
                 });
             }
         });
@@ -4712,7 +4707,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npcId || typeof npcId !== 'string') {
                     return res.status(400).json({
                         success: false,
-                        error: 'NPC ID is required'
+                        error: 'Character ID is required'
                     });
                 }
 
@@ -4720,7 +4715,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
 
@@ -4732,6 +4727,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const includePlayerOnly = !npc.isNPC;
                 const applied = [];
                 for (const entry of needUpdates) {
                     if (!entry || typeof entry !== 'object') {
@@ -4750,13 +4746,13 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    const updatedBar = npc.setNeedBarValue(rawId, numericValue, { allowPlayerOnly: false });
+                    const updatedBar = npc.setNeedBarValue(rawId, numericValue, { allowPlayerOnly: includePlayerOnly });
                     applied.push(normalizeNeedBarResponse(updatedBar));
                 }
 
                 const payload = buildNeedBarSnapshot(npc, {
-                    includePlayerOnly: false,
-                    type: 'npc'
+                    includePlayerOnly,
+                    type: npc.isNPC ? 'npc' : 'player'
                 });
                 payload.applied = applied;
 
@@ -4766,10 +4762,10 @@ module.exports = function registerApiRoutes(scope) {
                     ...payload
                 });
             } catch (error) {
-                console.error('Failed to update NPC needs:', error);
+                console.error('Failed to update character needs:', error);
                 res.status(400).json({
                     success: false,
-                    error: error.message || 'Failed to update NPC needs'
+                    error: error.message || 'Failed to update character needs'
                 });
             }
         });
@@ -4780,15 +4776,15 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npcId || typeof npcId !== 'string') {
                     return res.status(400).json({
                         success: false,
-                        error: 'NPC ID is required'
+                        error: 'Character ID is required'
                     });
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
 
@@ -4798,7 +4794,7 @@ module.exports = function registerApiRoutes(scope) {
                     ...payload
                 });
             } catch (error) {
-                console.error('Failed to load NPC dispositions:', error);
+                console.error('Failed to load character dispositions:', error);
                 res.status(500).json({
                     success: false,
                     error: error.message || 'Failed to load dispositions'
@@ -4812,15 +4808,15 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npcId || typeof npcId !== 'string') {
                     return res.status(400).json({
                         success: false,
-                        error: 'NPC ID is required'
+                        error: 'Character ID is required'
                     });
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
 
@@ -4875,7 +4871,7 @@ module.exports = function registerApiRoutes(scope) {
                     ...payload
                 });
             } catch (error) {
-                console.error('Failed to update NPC dispositions:', error);
+                console.error('Failed to update character dispositions:', error);
                 res.status(500).json({
                     success: false,
                     error: error.message || 'Failed to update dispositions'
@@ -4886,7 +4882,7 @@ module.exports = function registerApiRoutes(scope) {
         // Get all players (for future multi-player support)
         app.get('/api/players', (req, res) => {
             const playerList = Array.from(players.values()).map(player => (
-                ensureNeedBarsInStatus(player.getStatus(), player)
+                serializeNpcForClient(player)
             ));
 
             res.json({
@@ -4921,7 +4917,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    currentPlayer: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    currentPlayer: serializeNpcForClient(currentPlayer),
                     message: `Current player set to: ${currentPlayer.name}`
                 });
             } catch (error) {
@@ -4979,7 +4975,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     generatedAttributes: newAttributes,
                     method: method || 'standard',
                     message: `Attributes generated using ${method || 'standard'} method`
@@ -5131,7 +5127,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     message: 'Equipment updated successfully'
                 });
             } catch (error) {
@@ -5149,7 +5145,7 @@ module.exports = function registerApiRoutes(scope) {
         app.get('/player-stats', (req, res) => {
             res.render('player-stats.njk', {
                 title: 'Player Stats Configuration',
-                player: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
+                player: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
                 currentPage: 'player-stats',
                 availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
             });
@@ -5193,8 +5189,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const debugData = {
                 title: 'Debug: Player Information',
-                player: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
-                playerStatus: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
+                player: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
+                playerStatus: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
                 playerJson: currentPlayer ? currentPlayer.toJSON() : null,
                 totalPlayers: players.size,
                 currentPlayerId: currentPlayer ? currentPlayer.toJSON().id : null,
@@ -5291,7 +5287,7 @@ module.exports = function registerApiRoutes(scope) {
                 const imageNeedsUpdate = descriptionChanged || nameChanged;
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     message: 'Player stats updated successfully',
                     imageNeedsUpdate
                 });
@@ -5374,7 +5370,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(player.getStatus(), player),
+                    player: serializeNpcForClient(player),
                     message: 'Player created successfully from stats'
                 });
 
@@ -5404,7 +5400,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 res.json({
                     success: true,
-                    player: ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer),
+                    player: serializeNpcForClient(currentPlayer),
                     skill: {
                         name: skillName,
                         rank: newRank
@@ -5511,7 +5507,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npcId) {
                     return res.status(400).json({
                         success: false,
-                        error: 'NPC ID is required'
+                        error: 'Character ID is required'
                     });
                 }
 
@@ -5519,7 +5515,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
 
@@ -5990,7 +5986,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const locationData = buildLocationResponse(location);
                 const npcStatus = typeof generatedNpc.getStatus === 'function'
-                    ? ensureNeedBarsInStatus(generatedNpc.getStatus(), generatedNpc)
+                    ? serializeNpcForClient(generatedNpc)
                     : null;
 
                 res.json({
@@ -8676,7 +8672,7 @@ module.exports = function registerApiRoutes(scope) {
                     saveName: saveName,
                     metadata: metadata,
                     loadedData: {
-                        currentPlayer: currentPlayer ? ensureNeedBarsInStatus(currentPlayer.getStatus(), currentPlayer) : null,
+                        currentPlayer: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
                         totalPlayers: players.size,
                         totalThings: things.size,
                         totalLocations: gameLocations.size,

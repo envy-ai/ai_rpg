@@ -371,10 +371,11 @@
                                         {{ 'Yes' if player.alive else 'No' }}
                                     </span>
                                 </div>
-                                {% if player.currentLocation %}
+                                {% set playerLocationId = player.locationId or player.currentLocation %}
+                                {% if playerLocationId %}
                                 <div class="status-item">
                                     <span class="status-label">Location:</span>
-                                    <span class="status-value">{{ player.currentLocation }}</span>
+                                    <span class="status-value">{{ playerLocationId }}</span>
                                 </div>
                                 {% endif %}
                             </div>
@@ -1349,6 +1350,14 @@
 
             const data = (player && typeof player === 'object') ? player : {};
             window.currentPlayerData = data;
+
+            const resolvedLocationId = data?.locationId || data?.currentLocation || null;
+            if (resolvedLocationId) {
+                data.locationId = resolvedLocationId;
+                if (!data.currentLocation) {
+                    data.currentLocation = resolvedLocationId;
+                }
+            }
 
             const name = data?.name || 'Unnamed Adventurer';
             if (chatSidebarElements.name) {
@@ -8746,11 +8755,12 @@
                     }
                 }
 
-                if (result.success && result.player && result.player.currentLocation) {
+                const locationId = result.player?.locationId || result.player?.currentLocation || null;
+                if (result.success && result.player && locationId) {
                     // Fetch location details
-                    console.log("Fetching location details for ID:", result.player.currentLocation);
+                    console.log("Fetching location details for ID:", locationId);
                     const cacheBuster = Date.now();
-                    const locationResponse = await fetch(`/api/locations/${result.player.currentLocation}?_=${cacheBuster}`, {
+                    const locationResponse = await fetch(`/api/locations/${locationId}?_=${cacheBuster}`, {
                         cache: 'no-store'
                     });
                     const locationResult = await locationResponse.json();

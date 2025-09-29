@@ -190,10 +190,11 @@
                             {{ 'Yes' if player.alive else 'No' }}
                         </span>
                     </div>
-                    {% if player.currentLocation %}
+                    {% set playerLocationId = player.locationId or player.currentLocation %}
+                    {% if playerLocationId %}
                     <div class="status-item">
                         <span class="status-label">Location:</span>
-                        <span class="status-value">{{ player.currentLocation }}</span>
+                        <span class="status-value">{{ playerLocationId }}</span>
                     </div>
                     {% endif %}
                 </div>
