@@ -3041,8 +3041,6 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
 }
 
 async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true } = {}) {
-    //trace to console
-    console.trace('createLocationFromEvent called with:', { name, originLocation: originLocation ? originLocation.id : null, descriptionHint, directionHint, expandStub });
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
