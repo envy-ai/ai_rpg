@@ -322,6 +322,15 @@ class Region {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  addLocation(locationId) {
+    if (!locationId || typeof locationId !== 'string') {
+      return;
+    }
+    if (!this.#locationIds.includes(locationId)) {
+      this.#locationIds.push(locationId);
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
 
   toJSON() {
     return {

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { DOMParser, XMLSerializer } = require('xmldom');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
+const Region = require('./Region.js');
 
 
 /**
@@ -27,6 +28,7 @@ class Location {
   #statusEffects;
   #thingIds;
   #generationHints;
+  #regionId;
   static #indexByID = new Map();
   static #indexByName = new Map();
 
@@ -45,7 +47,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, regionId = null, checkRegionId = true } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -55,6 +57,19 @@ class Location {
 
       if (typeof baseLevel !== 'number' || baseLevel < 1) {
         throw new Error('Base level must be a positive number');
+      }
+    }
+
+    if (!regionId || typeof regionId !== 'string') {
+      throw new Error('Location initialized without regionId');
+    }
+
+    // Verify region exists
+    if (checkRegionId) {
+      const region = Region.get(regionId);
+      if (!region) {
+        console.trace();
+        throw new Error('Location initialized with invalid regionId: ' + regionId);
       }
     }
 
@@ -68,6 +83,7 @@ class Location {
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
     this.#isStub = creatingStub;
+    this.#regionId = regionId;
     this.#visited = false;
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
@@ -85,6 +101,10 @@ class Location {
     if (this.#name) {
       Location.#indexByName.set(this.#name.toLowerCase(), this);
     }
+
+    if (checkRegionId) {
+      this.region.addLocation(this.#id);
+    }
   }
 
   static fromXMLSnippet(xmlSnippet, options = {}) {
@@ -92,7 +112,8 @@ class Location {
       existingLocation = null,
       allowRename = true,
       baseLevelFallback = null,
-      relativeLevelBase = null
+      relativeLevelBase = null,
+      regionId = null
     } = options || {};
 
     //console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
@@ -244,6 +265,7 @@ class Location {
       description: locationData.description,
       baseLevel,
       name: locationData.name,
+      regionId: regionId,
       generationHints: {
         numItems: locationData.numItems,
         numScenery: locationData.numScenery,
@@ -251,6 +273,26 @@ class Location {
         numHostiles: locationData.numHostiles
       }
     });
+  }
+
+  get regionId() {
+    return this.#regionId;
+  }
+
+  set regionId(newRegionId) {
+    if (!newRegionId || typeof newRegionId !== 'string') {
+      throw new Error('Region ID must be a non-empty string');
+    }
+    const region = Region.get(newRegionId);
+    if (!region) {
+      throw new Error('Invalid region ID: ' + newRegionId);
+    }
+    this.#regionId = newRegionId;
+    this.#lastUpdated = new Date();
+  }
+
+  get region() {
+    return Region.get(this.#regionId) || null;
   }
 
   static get(locationId) {
@@ -511,6 +553,7 @@ class Location {
       baseLevel: this.#baseLevel,
       visited: this.#visited,
       imageId: this.#imageId,
+      regionId: this.#regionId,
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
       createdAt: this.#createdAt.toISOString(),
@@ -548,6 +591,7 @@ class Location {
       imageId: this.#imageId,
       visited: this.#visited,
       exits: exits,
+      regionId: this.#regionId,
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString(),
       isStub: this.#isStub,

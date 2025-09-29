@@ -3304,8 +3304,6 @@ module.exports = function registerApiRoutes(scope) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';
                         }
 
-                        console.log("Action prompt variables:")
-                        console.log(promptVariables);
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
 
                         const promptData = parseXMLTemplate(renderedPrompt);
@@ -4445,7 +4443,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
                 }
 
@@ -4599,7 +4597,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
                         error: `NPC with ID '${npcId}' not found`
@@ -4635,7 +4633,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
                         error: `NPC with ID '${npcId}' not found`
@@ -4922,6 +4920,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
+                // Filter out the player character just in case.
                 if (!npc || !npc.isNPC) {
                     return res.status(404).json({
                         success: false,
@@ -5436,7 +5435,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
                         error: `NPC with ID '${npcId}' not found`
@@ -8395,6 +8394,8 @@ module.exports = function registerApiRoutes(scope) {
                             description: locationData.description ?? null,
                             baseLevel: locationData.baseLevel ?? null,
                             id: locationData.id,
+                            regionId: locationData.regionId ?? null,
+                            checkRegionId: false,
                             name: locationData.name ?? null,
                             imageId: locationData.imageId ?? null,
                             isStub: locationData.isStub ?? false,

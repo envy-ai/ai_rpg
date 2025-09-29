@@ -46,7 +46,7 @@ GUIDELINES:
 - Name should be memorable and descriptive, and not a duplicate of any other location in the region
 - Consider environmental storytelling and world-building details
 - Include atmospheric details like lighting, sounds, smells, or magical effects
-- For the number of npcs, items, scenbery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. 1 to 3 is usually normal (except for hostiles, which are often 0 in safe territory).
+{% if config.location.maxNpcs > 1 %}- For the number of npcs, items, scenbery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. Fewer than that is usually normal (except for hostiles, which are often 0 in safe territory).{% endif %}
 
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
@@ -54,11 +54,11 @@ Return ONLY the following fields, in this format:
 <location>
   <name>A short name or title for the location</name>
   <description>1-2 paragraphs of description</description>
-  <relativeLevel>integer from -3 to 3, indicating the difficulty compared to the rest of the region</relativeLevel>
-  <numNpcs>Integer from 0 to 4, indicating how many NPCs typically inhabit this location</numNpcs>
-  <numItems>Integer from 0 to 4, indicating how many items typically can be found in this location</numItems>
-  <numScenery>Integer from 0 to 4, indicating how many notable scenery features typically can be found in this location</numScenery>
-  <numHostiles>Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
+  <relativeLevel>integer from -{{ config.location.levelVariation }} to {{ config.location.levelVariation }}, indicating the difficulty compared to the rest of the region</relativeLevel>
+  <numNpcs>Integer from 0 to {{ config.location.maxNpcs }}, indicating how many NPCs typically inhabit this location</numNpcs>
+  <numItems>Integer from 0 to {{ config.location.maxItems }}, indicating how many items typically can be found in this location</numItems>
+  <numScenery>Integer from 0 to {{ config.location.maxScenery }}, indicating how many notable scenery features typically can be found in this location</numScenery>
+  <numHostiles>Integer from 0 to {{ config.location.maxHostiles }}, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
 </location>
 
 </generationPrompt>

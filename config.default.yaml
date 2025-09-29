@@ -62,3 +62,12 @@ random_event_frequency:
 gamemaster:
   # Fallback system prompt
   promptTemplate: "gamemaster.njk"
+regions:
+  minLocations: 2
+  maxLocations: 3
+locations:
+  maxNpcs: 4
+  maxHostiles: 4
+  maxItems: 4
+  maxScenery: 4
+  levelVariation: 3

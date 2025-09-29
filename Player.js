@@ -719,8 +719,7 @@ class Player {
 
         const initialMaxHealth = this.#calculateBaseHealth();
         this.#maxHealth = initialMaxHealth;
-        //const providedHealth = Number.isFinite(options.health) ? Math.max(0, Math.floor(options.health)) : initialMaxHealth;
-        this.#health = initialMaxHealth;
+        this.#health = options.health ?? initialMaxHealth;
 
         // Player identification
         this.#name = options.name ?? "Unnamed Player";
@@ -2782,7 +2781,7 @@ class Player {
             needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null
         });
         player.#maxHealth = player.#calculateBaseHealth();
-        player.#health = Math.min(player.#health, player.#maxHealth);
+        //player.#health = Math.min(player.#health, player.#maxHealth);
         player.#createdAt = data.createdAt;
         player.#lastUpdated = data.lastUpdated;
         return player;

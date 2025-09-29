@@ -2874,7 +2874,20 @@ function getOppositeDirection(direction) {
     if (!normalized) {
         return null;
     }
-    return OPPOSITE_DIRECTION_MAP[normalized] || null;
+    if (OPPOSITE_DIRECTION_MAP[normalized]) {
+        return OPPOSITE_DIRECTION_MAP[normalized];
+    }
+
+    if (normalized.startsWith('return_')) {
+        const original = normalized.slice('return_'.length);
+        return original || null;
+    }
+
+    if (/^[a-z0-9_]+$/.test(normalized)) {
+        return `return_${normalized}`;
+    }
+
+    return null;
 }
 
 function randomIntInclusive(min, max) {
@@ -2944,7 +2957,12 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
             }
         }
         if (bidirectional) {
-            const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+            const fallbackReverse = normalizedDirection && !normalizedDirection.startsWith('return_')
+                ? `return_${normalizedDirection}`
+                : null;
+            const reverseKey = getOppositeDirection(normalizedDirection)
+                || fallbackReverse
+                || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
             let reverseDestinationRegion = null;
             const reverseRegion = findRegionByLocationId(fromLocation.id);
             if (reverseRegion) {
@@ -2981,7 +2999,12 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
     gameLocationExits.set(newExit.id, newExit);
 
     if (bidirectional) {
-        const reverseKey = getOppositeDirection(normalizedDirection) || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
+        const fallbackReverse = normalizedDirection && !normalizedDirection.startsWith('return_')
+            ? `return_${normalizedDirection}`
+            : null;
+        const reverseKey = getOppositeDirection(normalizedDirection)
+            || fallbackReverse
+            || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
         let reverseDestinationRegion = null;
         const reverseRegion = findRegionByLocationId(fromLocation.id);
         if (reverseRegion) {
@@ -3005,10 +3028,15 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
 }
 
 async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true } = {}) {
+    //trace to console
+    console.trace('createLocationFromEvent called with:', { name, originLocation: originLocation ? originLocation.id : null, descriptionHint, directionHint, expandStub });
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
     }
+
+    const regionForOrigin = originLocation ? findRegionByLocationId(originLocation.id) : null;
+    console.log(regionForOrigin);
 
     let existing = findLocationByNameLoose(trimmedName);
     if (existing) {
@@ -3018,20 +3046,30 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
                 bidirectional: false
             });
         }
+
+        if (regionForOrigin && Array.isArray(regionForOrigin.locationIds) && !regionForOrigin.locationIds.includes(existing.id)) {
+            regionForOrigin.locationIds.push(existing.id);
+        }
         return existing;
     }
 
     const settingSnapshot = getActiveSettingSnapshot();
+    const normalizedDirectionHint = normalizeDirection(directionHint);
+    const resolvedDirection = normalizedDirectionHint || directionKeyFromName(trimmedName);
+
     const stub = new Location({
         name: trimmedName,
         description: null,
+        regionId: regionForOrigin?.id || originLocation?.stubMetadata?.regionId || null,
         isStub: true,
         stubMetadata: {
             originLocationId: originLocation?.id || null,
-            originDirection: directionHint || null,
+            originDirection: resolvedDirection,
             shortDescription: descriptionHint || `An unexplored area referred to as ${trimmedName}.`,
             locationPurpose: 'Area referenced during event-driven travel.',
             settingDescription: describeSettingForPrompt(settingSnapshot),
+            regionId: regionForOrigin?.id || originLocation?.stubMetadata?.regionId || null,
+            regionName: regionForOrigin?.name || originLocation?.stubMetadata?.regionName || null,
             allowRename: false
         }
     });
@@ -3039,16 +3077,29 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     gameLocations.set(stub.id, stub);
 
     if (originLocation) {
-        const inferredDirection = normalizeDirection(directionHint) || directionKeyFromName(trimmedName);
-        ensureExitConnection(originLocation, inferredDirection, stub, {
+        ensureExitConnection(originLocation, resolvedDirection, stub, {
             description: descriptionHint || `Path to ${trimmedName}`,
             bidirectional: false
         });
     }
 
-    const region = originLocation ? findRegionByLocationId(originLocation.id) : null;
-    if (region && Array.isArray(region.locationIds) && !region.locationIds.includes(stub.id)) {
-        region.locationIds.push(stub.id);
+    if (regionForOrigin) {
+        if (!Array.isArray(regionForOrigin.locationIds)) {
+            regionForOrigin.locationIds = [];
+        }
+        if (!regionForOrigin.locationIds.includes(stub.id)) {
+            regionForOrigin.locationIds.push(stub.id);
+        }
+    } else if (originLocation?.stubMetadata?.regionId) {
+        const fallbackRegion = regions.get(originLocation.stubMetadata.regionId);
+        if (fallbackRegion) {
+            if (!Array.isArray(fallbackRegion.locationIds)) {
+                fallbackRegion.locationIds = [];
+            }
+            if (!fallbackRegion.locationIds.includes(stub.id)) {
+                fallbackRegion.locationIds.push(stub.id);
+            }
+        }
     }
 
     if (expandStub) {
@@ -3195,6 +3246,8 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
     const regionEntryStub = new Location({
         name: stubName,
         description: null,
+        regionId: newRegionId,
+        checkRegionId: false,
         isStub: true,
         stubMetadata
     });
@@ -3278,6 +3331,7 @@ function createStubNeighbors(location, context = {}) {
             description: null,
             baseLevel: null,
             isStub: true,
+            regionId: location.stubMetadata?.regionId || null,
             stubMetadata: {
                 originLocationId: location.id,
                 originDirection: direction,
@@ -8485,7 +8539,8 @@ function renderLocationGeneratorPrompt(options = {}) {
             playerLevel: options.playerLevel || null,
             locationPurpose: options.locationPurpose || null,
             relativeLevel: options.relativeLevel ?? null,
-            regionAverageLevel: options.regionAverageLevel ?? null
+            regionAverageLevel: options.regionAverageLevel ?? null,
+            config: config
         };
 
         const variables = isStubExpansion
@@ -8574,7 +8629,9 @@ function renderRegionGeneratorPrompt(options = {}) {
             setting: settingContext,
             regionName: options.regionName || null,
             regionDescription: options.regionDescription || null,
-            regionNotes: options.regionNotes || null
+            regionNotes: options.regionNotes || null,
+            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -9579,11 +9636,13 @@ async function generateLocationFromPrompt(options = {}) {
                 existingLocation: stubLocation,
                 allowRename: Boolean(stubMetadata.allowRename),
                 baseLevelFallback: Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
-                relativeLevelBase
+                relativeLevelBase,
+                regionId: currentRegionContext?.id
             })
             : Location.fromXMLSnippet(aiResponse, {
                 baseLevelFallback,
-                relativeLevelBase
+                relativeLevelBase,
+                regionId: currentRegionContext?.id
             });
 
         if (!location) {
@@ -9833,7 +9892,9 @@ function renderRegionStubPrompt({ settingDescription, region }) {
             currentRegion: {
                 name: region.name,
                 description: region.description
-            }
+            },
+            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -10106,6 +10167,8 @@ async function generateRegionExitStubs({
         const regionEntryStub = new Location({
             name: stubName,
             description: null,
+            regionId: newRegionId,
+            checkRegionId: false,
             baseLevel: computedBaseLevel,
             isStub: true,
             stubMetadata
@@ -10188,6 +10251,8 @@ async function instantiateRegionLocations({
             description: null,
             baseLevel: computedBaseLevel,
             isStub: true,
+            regionId: region.id,
+            checkRegionId: false,
             stubMetadata: {
                 regionId: region.id,
                 regionName: region.name,
