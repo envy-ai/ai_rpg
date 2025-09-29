@@ -51,7 +51,6 @@ The `Player.js` class uses modern JavaScript patterns:
 class Player {
     #attributes = {};  // Private fields with #
     #health;
-    #maxHealth;
 
     static #generateUniqueId() { ... }  // Static private methods
 }

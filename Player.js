@@ -11,7 +11,6 @@ class Player {
     #attributes = {};
     #level;
     #health;
-    #maxHealth;
     #healthAttribute;
     #name;
     #description;
@@ -718,7 +717,6 @@ class Player {
         this.#level = options.level ?? 1;
 
         const initialMaxHealth = this.#calculateBaseHealth();
-        this.#maxHealth = initialMaxHealth;
         this.#health = options.health ?? initialMaxHealth;
 
         // Player identification
@@ -1168,22 +1166,6 @@ class Player {
         return true;
     }
 
-    /**
-     * Recalculate max health and adjust current health proportionally (private method)
-     */
-    #recalculateHealth() {
-        const oldMaxHealth = this.#maxHealth ?? this.#calculateBaseHealth();
-        const newMaxHealth = this.#calculateBaseHealth();
-        this.#maxHealth = newMaxHealth;
-
-        if (oldMaxHealth > 0) {
-            const healthRatio = this.#health / oldMaxHealth;
-            this.#health = Math.max(0, Math.min(newMaxHealth, Math.ceil(newMaxHealth * healthRatio)));
-        } else {
-            this.#health = Math.min(this.#health, newMaxHealth);
-        }
-    }
-
     getModifiedAttribute(attributeName) {
         // Return attribute plus values for equipped items
         const baseValue = this.#attributes[attributeName];
@@ -1257,14 +1239,7 @@ class Player {
     }
 
     get maxHealth() {
-        const computed = this.#calculateBaseHealth();
-        if (this.#maxHealth !== computed) {
-            this.#maxHealth = computed;
-            if (this.#health > this.#maxHealth) {
-                this.#health = this.#maxHealth;
-            }
-        }
-        return this.#maxHealth;
+        return this.#calculateBaseHealth();
     }
 
     get healthAttribute() {
@@ -1368,8 +1343,6 @@ class Player {
         }
 
         this.#healthAttribute = resolved;
-        const newMaxHealth = this.#calculateBaseHealth();
-        this.#maxHealth = newMaxHealth;
 
         if (oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
@@ -1680,7 +1653,9 @@ class Player {
         // Check if this attribute affects health (specifically constitution)
         const definition = this.getAttributeDefinition(attributeName);
         if (definition?.affects?.includes('health') || attributeName === this.#healthAttribute) {
-            this.#recalculateHealth();
+            if (this.#health > this.maxHealth) {
+                this.#health = this.maxHealth;
+            }
         }
 
         return {
@@ -1697,10 +1672,8 @@ class Player {
     levelUp() {
         const previousLevel = this.#level;
         this.#level += 1;
-        const oldMaxHealth = this.maxHealth;
-        const newMaxHealth = this.#calculateBaseHealth();
-        this.#maxHealth = newMaxHealth;
-        this.#health = this.#maxHealth;
+
+        this.#health = this.#calculateBaseHealth();
         const pointsPerLevel = this.#skillPointsPerLevel();
         if (pointsPerLevel > 0) {
             this.#unspentSkillPoints += pointsPerLevel;
@@ -1754,7 +1727,6 @@ class Player {
         const maxHealth = this.maxHealth;
         const oldHealth = this.#health;
         this.#health = Math.max(0, Math.min(maxHealth, this.#health + amount));
-        this.#maxHealth = maxHealth;
         this.#lastUpdated = new Date().toISOString();
 
         return {
@@ -2388,7 +2360,6 @@ class Player {
 
         // Recalculate max health based on new level
         const newMaxHealth = this.#calculateBaseHealth();
-        this.#maxHealth = newMaxHealth;
 
         // Adjust current health proportionally
         if (oldMaxHealth > 0) {
@@ -2421,7 +2392,6 @@ class Player {
         }
         const maxHealth = this.maxHealth;
         this.#health = Math.min(health, maxHealth);
-        this.#maxHealth = maxHealth;
         this.#lastUpdated = new Date().toISOString();
         return this.#health;
     }
@@ -2814,8 +2784,7 @@ class Player {
             lastUpdated: data.lastUpdated,
             needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null
         });
-        player.#maxHealth = player.#calculateBaseHealth();
-        //player.#health = Math.min(player.#health, player.#maxHealth);
+
         player.#createdAt = data.createdAt;
         player.#lastUpdated = data.lastUpdated;
         return player;
@@ -3355,7 +3324,7 @@ class Player {
             })
             .join(' ');
 
-        return `${statusEmoji} ${this.#name} (Lvl ${this.#level}) HP:${this.#health}/${this.#maxHealth} [${attrs}]`;
+        return `${statusEmoji} ${this.#name} (Lvl ${this.#level}) HP:${this.#health}/${this.maxHealth} [${attrs}]`;
     }
 }
 

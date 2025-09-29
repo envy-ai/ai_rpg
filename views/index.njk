@@ -6125,6 +6125,9 @@
                 if (updatedNpc && currentNpcViewId === currentNpcDispositionId) {
                     showNpcViewModal(updatedNpc);
                 }
+
+                closeNpcDispositionModal();
+                document.body.classList.remove('modal-open');
             } catch (error) {
                 console.warn('Failed to update NPC dispositions:', error);
                 setNpcDispositionStatus(`Failed to update dispositions: ${error?.message || 'Unknown error'}`, 'error');
@@ -6324,11 +6327,11 @@
                     }))
                     : [];
 
-                const payload = {
-                    type: currentNpcNeedsTargetType,
-                    targetId: currentNpcNeedsTargetId,
-                    player: data.player || currentNpcNeedsData.player || null,
-                    npc: data.npc || currentNpcNeedsData.npc || null,
+            const payload = {
+                type: currentNpcNeedsTargetType,
+                targetId: currentNpcNeedsTargetId,
+                player: data.player || currentNpcNeedsData.player || null,
+                npc: data.npc || currentNpcNeedsData.npc || null,
                     includePlayerOnly: data.includePlayerOnly !== undefined
                         ? Boolean(data.includePlayerOnly)
                         : currentNpcNeedsData.includePlayerOnly,
@@ -6351,6 +6354,8 @@
                         window.refreshParty?.();
                         window.loadCurrentLocation?.();
                     }
+                    closeNpcNeedsModal();
+                    document.body.classList.remove('modal-open');
                 } else {
                     const playerId = payload.player?.id || currentNpcNeedsTargetId;
                     if (window.currentPlayerData && window.currentPlayerData.id === playerId) {
@@ -6367,6 +6372,8 @@
                     if (window.currentNpcData instanceof Map && playerId) {
                         updateCachedNpcNeeds(playerId, normalizedNeeds);
                     }
+                    closeNpcNeedsModal();
+                    document.body.classList.remove('modal-open');
                 }
             } catch (error) {
                 console.warn('Failed to update needs:', error);
