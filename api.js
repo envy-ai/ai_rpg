@@ -5588,6 +5588,113 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/locations/:id', (req, res) => {
+            try {
+                const locationId = req.params.id;
+                if (!locationId || typeof locationId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Location ID is required' });
+                }
+
+                const location = gameLocations.get(locationId) || Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({ success: false, error: `Location with ID '${locationId}' not found` });
+                }
+
+                const body = req.body || {};
+                const hasOwn = Object.prototype.hasOwnProperty;
+                const hasName = hasOwn.call(body, 'name');
+                const hasDescription = hasOwn.call(body, 'description');
+                const hasLevel = hasOwn.call(body, 'level');
+
+                if (!hasDescription) {
+                    return res.status(400).json({ success: false, error: 'Description is required' });
+                }
+
+                if (!hasLevel) {
+                    return res.status(400).json({ success: false, error: 'Level is required' });
+                }
+
+                let resolvedName = location.name;
+                if (hasName) {
+                    if (typeof body.name === 'string') {
+                        resolvedName = body.name.trim() || null;
+                    } else if (body.name === null) {
+                        resolvedName = null;
+                    } else if (body.name === undefined) {
+                        resolvedName = location.name;
+                    } else {
+                        return res.status(400).json({ success: false, error: 'Name must be a string or null' });
+                    }
+                }
+
+                if (typeof body.description !== 'string' || !body.description.trim()) {
+                    return res.status(400).json({ success: false, error: 'Description must be a non-empty string' });
+                }
+                const resolvedDescription = body.description.trim();
+
+                const numericLevel = Number(body.level);
+                if (!Number.isFinite(numericLevel)) {
+                    return res.status(400).json({ success: false, error: 'Level must be a number' });
+                }
+                const resolvedLevel = Math.max(1, Math.round(numericLevel));
+
+                const previousName = location.name;
+                const previousDescription = location.description;
+                const previousLevel = location.baseLevel;
+                const previousImageId = location.imageId;
+
+                let nameChanged = false;
+                if (hasName && resolvedName !== previousName) {
+                    location.name = resolvedName;
+                    nameChanged = true;
+                }
+
+                let descriptionChanged = false;
+                if (resolvedDescription !== previousDescription) {
+                    location.description = resolvedDescription;
+                    descriptionChanged = true;
+                }
+
+                let levelChanged = false;
+                if (hasLevel && previousLevel !== resolvedLevel) {
+                    location.baseLevel = resolvedLevel;
+                    levelChanged = true;
+                }
+
+                const shouldClearImage = (nameChanged || descriptionChanged) && previousImageId;
+                if (shouldClearImage) {
+                    location.imageId = null;
+
+                    if (pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+                        pendingLocationImages.delete(location.id);
+                    }
+                    if (generatedImages && typeof generatedImages.delete === 'function') {
+                        generatedImages.delete(previousImageId);
+                    }
+                }
+
+                const locationPayload = buildLocationResponse(location);
+                if (!locationPayload) {
+                    return res.status(500).json({ success: false, error: 'Failed to serialize location after update.' });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Location updated successfully',
+                    location: locationPayload,
+                    imageCleared: Boolean(shouldClearImage),
+                    changes: {
+                        name: nameChanged,
+                        description: descriptionChanged,
+                        level: levelChanged
+                    }
+                });
+            } catch (error) {
+                console.error('Error updating location:', error);
+                res.status(500).json({ success: false, error: error.message || 'Unknown error updating location' });
+            }
+        });
+
         app.post('/api/locations/:id/exits', async (req, res) => {
             try {
                 const locationId = req.params.id;

@@ -27,13 +27,14 @@ Here's a list of existing NPCs in this location:
 {% endfor %}
 </context>
 
-Generate 0 to 3 NPCs for the location above. Use your judgment about how many, based on whether it makes sense for the location to be empty, have one or two NPCs, or be a bustling hub of activity. Do not reuse NPC names. Output the NPCs in this format:
+Generate {{ numNpcs }} NPCs and {{ numHostiles }} hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) for the location above. Do not reuse NPC names. Output the NPCs in this format:
 
 <npcs>
 <npc>
-<name>Full name of the NPC</name>7
+<name>Full name of the NPC</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
 <shortDescription>10 words or less description of the NPC</shortDescription>
+<isHostile>true or false</isHostile>
 <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
 <race>human, elf, android, etc</race>
 <relativeLevel>Integer from -3 to +3</relativeLevel>
@@ -49,7 +50,6 @@ Generate 0 to 3 NPCs for the location above. Use your judgment about how many, b
 </personality>
 <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
 </npc>
-
 [… more NPCs …]
 
 </npcs>

@@ -1395,6 +1395,33 @@ function serializeNpcForClient(npc) {
         experience = null;
     }
 
+    const playerId = Player.getCurrentPlayerId ? Player.getCurrentPlayerId() : null;
+    const dispositionDefinitions = Player.dispositionDefinitions || {};
+    const dispositionTypes = dispositionDefinitions.types || {};
+    const dispositionsTowardPlayer = {};
+    let hostileToPlayer = false;
+    if (playerId && playerId !== npc.id) {
+        for (const def of Object.values(dispositionTypes)) {
+            if (!def) {
+                continue;
+            }
+            const key = def.key || def.label;
+            if (!key || typeof npc.getDisposition !== 'function') {
+                continue;
+            }
+            const value = npc.getDisposition(playerId, key);
+            if (Number.isFinite(value)) {
+                dispositionsTowardPlayer[key] = value;
+                if (def.hostileThreshold !== null && def.hostileThreshold !== undefined) {
+                    const threshold = Number(def.hostileThreshold);
+                    if (Number.isFinite(threshold) && value <= threshold) {
+                        hostileToPlayer = true;
+                    }
+                }
+            }
+        }
+    }
+
     return {
         id: npc.id,
         name: npc.name,
@@ -1408,6 +1435,8 @@ function serializeNpcForClient(npc) {
         healthAttribute: npc.healthAttribute,
         imageId: npc.imageId,
         isNPC: Boolean(npc.isNPC),
+        isHostile: Boolean(npc.isHostile),
+        isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
         attributes,
         skills,
@@ -1419,7 +1448,8 @@ function serializeNpcForClient(npc) {
         experience,
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars() : [],
         createdAt: npc.createdAt,
-        lastUpdated: npc.lastUpdated
+        lastUpdated: npc.lastUpdated,
+        dispositionsTowardPlayer
     };
 }
 
@@ -4487,11 +4517,39 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
+        const generationHints = location && typeof location === 'object' && typeof location.generationHints === 'object'
+            ? location.generationHints
+            : {};
+
+        const normalizeCount = (value, fallback) => {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric) && numeric >= 0) {
+                return Math.max(0, Math.round(numeric));
+            }
+            const fallbackNumeric = Number(fallback);
+            if (Number.isFinite(fallbackNumeric) && fallbackNumeric >= 0) {
+                return Math.max(0, Math.round(fallbackNumeric));
+            }
+            return 0;
+        };
+
+        const resolvedNumNpcs = normalizeCount(
+            options.numNpcs ?? generationHints.numNpcs,
+            options.desiredCount ?? 3
+        );
+
+        const resolvedNumHostiles = normalizeCount(
+            options.numHostiles ?? generationHints.numHostiles,
+            Math.max(0, Math.round(resolvedNumNpcs / 2))
+        );
+
         return promptEnv.render(templateName, {
             locationName: location.name || 'Unknown Location',
             locationDescription: location.description || 'No description provided.',
             regionTheme: options.regionTheme || null,
             desiredCount: options.desiredCount || 3,
+            numNpcs: resolvedNumNpcs,
+            numHostiles: resolvedNumHostiles,
             existingNpcsInThisLocation: options.existingNpcsInThisLocation || [],
             existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
@@ -4787,6 +4845,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             location: resolvedLocation?.id || null,
             attributes,
             isNPC: true,
+            isHostile: Boolean(npcData?.isHostile),
             healthAttribute: npcData?.healthAttribute,
             personalityType: npcData?.personalityType || null,
             personalityTraits: npcData?.personalityTraits || null,
@@ -5319,6 +5378,10 @@ function parseLocationNpcs(xmlContent) {
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
+            const isHostileNode = node.getElementsByTagName('isHostile')[0];
+            const isHostile = isHostileNode
+                ? /^\s*(true|1|yes|hostile)\s*$/i.test(isHostileNode.textContent)
+                : false;
 
             const className = classNode ? classNode.textContent.trim() : null;
             const race = raceNode ? raceNode.textContent.trim() : null;
@@ -5383,7 +5446,8 @@ function parseLocationNpcs(xmlContent) {
                     currency: Number.isFinite(currencyValue) && currencyValue >= 0 ? currencyValue : null,
                     personalityType,
                     personalityTraits,
-                    personalityNotes
+                    personalityNotes,
+                    isHostile
                 });
             }
         }
@@ -5421,6 +5485,10 @@ function parseRegionNpcs(xmlContent) {
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
             const currencyNode = node.getElementsByTagName('currency')[0];
+            const isHostileNode = node.getElementsByTagName('isHostile')[0];
+            const isHostile = isHostileNode
+                ? /^\s*(true|1|yes|hostile)\s*$/i.test(isHostileNode.textContent)
+                : false;
 
             const name = nameNode ? nameNode.textContent.trim() : null;
             if (!name) {
@@ -5492,7 +5560,8 @@ function parseRegionNpcs(xmlContent) {
                 currency: Number.isFinite(currencyValue) && currencyValue >= 0 ? currencyValue : null,
                 personalityType,
                 personalityTraits,
-                personalityNotes
+                personalityNotes,
+                isHostile
             });
         }
 
@@ -7553,13 +7622,34 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             ...existingNpcsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
         ];
 
+        const generationHints = location?.generationHints || {};
+        const resolveCount = (value, fallback) => {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric) && numeric >= 0) {
+                return Math.max(0, Math.round(numeric));
+            }
+            const fallbackNumeric = Number(fallback);
+            if (Number.isFinite(fallbackNumeric) && fallbackNumeric >= 0) {
+                return Math.max(0, Math.round(fallbackNumeric));
+            }
+            return 0;
+        };
+        const hintedNumNpcs = resolveCount(generationHints.numNpcs, 3);
+        const hintedNumHostiles = resolveCount(
+            generationHints.numHostiles,
+            Math.max(0, Math.round(hintedNumNpcs / 2))
+        );
+
 
         const npcPrompt = renderLocationNpcPrompt(location, {
             regionTheme,
             attributeDefinitions: attributeDefinitionsForPrompt,
             existingNpcsInThisLocation,
             existingNpcsInOtherLocations,
-            existingNpcsInOtherRegions
+            existingNpcsInOtherRegions,
+            desiredCount: hintedNumNpcs,
+            numNpcs: hintedNumNpcs,
+            numHostiles: hintedNumHostiles
         });
         if (!npcPrompt) {
             return [];
@@ -7713,6 +7803,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 class: npcData.class || null,
                 race: npcData.race,
                 isNPC: true,
+                isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
@@ -8001,6 +8092,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 location: targetLocation ? targetLocation.id : null,
                 attributes,
                 isNPC: true,
+                isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,

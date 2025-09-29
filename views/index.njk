@@ -33,11 +33,18 @@
                                     <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
                                 </div>
                                 <div class="location-content" id="locationContent">
-                                    <div class="location-image" id="locationImage">
-                                        <div class="location-placeholder">
-                                            <!-- Nothing in here on initial load -->
+                                    <div class="location-image-wrapper" id="locationImageWrapper">
+                                        <div class="location-image" id="locationImage">
+                                            <div class="location-placeholder">
+                                                <!-- Nothing in here on initial load -->
+                                            </div>
+                                            <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
                                         </div>
-                                        <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
+                                        <button type="button" class="location-image-menu-button" id="locationImageMenuButton" aria-haspopup="true" aria-expanded="false" aria-label="Location options">•••</button>
+                                        <div class="location-image-menu" id="locationImageMenu" hidden>
+                                            <button type="button" class="location-image-menu-item" id="locationImageEditButton">Edit Location</button>
+                                            <button type="button" class="location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
+                                        </div>
                                     </div>
                                     <div class="location-info" id="locationInfo">
                                         <div class="location-details" id="locationDetails">
@@ -878,6 +885,38 @@
 
     <div id="inventoryTooltip" class="inventory-floating-tooltip" hidden></div>
     <div id="partyTooltip" class="inventory-floating-tooltip party-floating-tooltip" hidden></div>
+
+    <div id="locationEditModal" class="modal location-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="locationEditModalTitle">Edit Location</h2>
+                <button type="button" class="modal__close" id="locationEditCloseBtn" aria-label="Close location editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="locationEditForm" class="modal__body location-edit-form" novalidate>
+                <div class="location-edit-field">
+                    <label for="locationEditName">Location Name</label>
+                    <input type="text" id="locationEditName" name="name" maxlength="160" autocomplete="off">
+                </div>
+                <div class="location-edit-field">
+                    <label for="locationEditDescription">Description</label>
+                    <textarea id="locationEditDescription" name="description" rows="6" required></textarea>
+                </div>
+                <div class="location-edit-field">
+                    <label for="locationEditLevel">Level</label>
+                    <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
+                </div>
+                <footer class="location-edit-footer">
+                    <div class="location-edit-status" id="locationEditStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions">
+                        <button type="button" class="location-edit-cancel" id="locationEditCancelBtn">Cancel</button>
+                        <button type="submit" class="location-edit-save" id="locationEditSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
 
     <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true" tabindex="-1">
         <div class="image-lightbox__inner" role="dialog" aria-modal="true" aria-labelledby="imageLightboxCaption">
@@ -2579,6 +2618,20 @@
         const npcViewModalTitle = document.getElementById('npcViewModalTitle');
         const npcViewCloseBtn = document.getElementById('npcViewCloseBtn');
         const npcViewImage = document.getElementById('npcViewImage');
+        const locationImageWrapper = document.getElementById('locationImageWrapper');
+        const locationImageMenuButton = document.getElementById('locationImageMenuButton');
+        const locationImageMenu = document.getElementById('locationImageMenu');
+        const locationImageEditButton = document.getElementById('locationImageEditButton');
+        const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
+        const locationEditModal = document.getElementById('locationEditModal');
+        const locationEditForm = document.getElementById('locationEditForm');
+        const locationEditNameInput = document.getElementById('locationEditName');
+        const locationEditDescriptionInput = document.getElementById('locationEditDescription');
+        const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditStatus = document.getElementById('locationEditStatus');
+        const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
+        const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
+        const locationEditSaveBtn = document.getElementById('locationEditSaveBtn');
         const npcViewName = document.getElementById('npcViewName');
         const npcViewDescription = document.getElementById('npcViewDescription');
         const npcViewClass = document.getElementById('npcViewClass');
@@ -2624,6 +2677,55 @@
         const thingEditCloseBtn = document.getElementById('thingEditCloseBtn');
         const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
         const thingEditStatus = document.getElementById('thingEditStatus');
+
+        let locationImageMenuOpen = false;
+
+        function openLocationImageMenu() {
+            if (!locationImageMenu || !locationImageMenuButton) {
+                return;
+            }
+            locationImageMenu.hidden = false;
+            locationImageMenu.classList.add('is-open');
+            locationImageMenuButton.setAttribute('aria-expanded', 'true');
+            locationImageMenuOpen = true;
+
+            const firstItem = locationImageMenu.querySelector('.location-image-menu-item');
+            if (firstItem) {
+                requestAnimationFrame(() => {
+                    if (locationImageMenuOpen) {
+                        firstItem.focus();
+                    }
+                });
+            }
+        }
+
+        function closeLocationImageMenu() {
+            if (!locationImageMenu || !locationImageMenuButton) {
+                return;
+            }
+            if (!locationImageMenuOpen) {
+                return;
+            }
+
+            locationImageMenu.hidden = true;
+            locationImageMenu.classList.remove('is-open');
+            locationImageMenuButton.setAttribute('aria-expanded', 'false');
+            locationImageMenuOpen = false;
+
+            requestAnimationFrame(() => {
+                if (document.activeElement && locationImageMenu?.contains(document.activeElement)) {
+                    locationImageMenuButton.focus();
+                }
+            });
+        }
+
+        function toggleLocationImageMenu() {
+            if (locationImageMenuOpen) {
+                closeLocationImageMenu();
+            } else {
+                openLocationImageMenu();
+            }
+        }
 
         function safeJsonStringify(value, fallback = '') {
             try {
@@ -7109,7 +7211,252 @@
                 window.hideLocationOverlay = hideLocationOverlay;
             }
 
-            window.updateLocationDisplay = async function(location) {
+        function setLocationEditStatus(message = '', type = null) {
+            if (!locationEditStatus) {
+                return;
+            }
+            locationEditStatus.textContent = message || '';
+            locationEditStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                locationEditStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                locationEditStatus.classList.add('is-success');
+            }
+        }
+
+        function openLocationEditModal() {
+            if (!locationEditModal || !lastRenderedLocation) {
+                return;
+            }
+            const name = lastRenderedLocation.name || '';
+            const description = lastRenderedLocation.description || '';
+            const level = Number.isFinite(lastRenderedLocation.baseLevel)
+                ? lastRenderedLocation.baseLevel
+                : '';
+
+            if (locationEditNameInput) {
+                locationEditNameInput.value = name;
+            }
+            if (locationEditDescriptionInput) {
+                locationEditDescriptionInput.value = description;
+            }
+            if (locationEditLevelInput) {
+                locationEditLevelInput.value = level;
+            }
+
+            setLocationEditStatus('', null);
+            locationEditModal.removeAttribute('hidden');
+            locationEditModal.setAttribute('aria-hidden', 'false');
+            locationEditModal.classList.add('is-open');
+            setTimeout(() => {
+                locationEditNameInput?.focus();
+            }, 50);
+        }
+
+        function closeLocationEditModal() {
+            if (!locationEditModal) {
+                return;
+            }
+            locationEditModal.setAttribute('hidden', '');
+            locationEditModal.setAttribute('aria-hidden', 'true');
+            locationEditModal.classList.remove('is-open');
+            setLocationEditStatus('', null);
+        }
+
+        async function submitLocationEditForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (!locationEditForm || !lastRenderedLocation || !lastRenderedLocation.id) {
+                setLocationEditStatus('No active location to edit.', 'error');
+                return;
+            }
+
+            const payload = {};
+            const nameValue = locationEditNameInput?.value ?? '';
+            payload.name = nameValue.trim() || null;
+
+            const descriptionValue = locationEditDescriptionInput?.value ?? '';
+            if (!descriptionValue.trim()) {
+                setLocationEditStatus('Description cannot be empty.', 'error');
+                locationEditDescriptionInput?.focus();
+                return;
+            }
+            payload.description = descriptionValue.trim();
+
+            const levelValue = Number(locationEditLevelInput?.value ?? NaN);
+            if (!Number.isFinite(levelValue) || levelValue < 1) {
+                setLocationEditStatus('Level must be a positive number.', 'error');
+                locationEditLevelInput?.focus();
+                return;
+            }
+            payload.level = Math.max(1, Math.round(levelValue));
+
+            setLocationEditStatus('Saving changes...', null);
+            if (locationEditSaveBtn) {
+                locationEditSaveBtn.disabled = true;
+            }
+            showLocationOverlay('Updating location...');
+
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                setLocationEditStatus('Location updated.', 'success');
+                closeLocationEditModal();
+
+                if (data.location) {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    await window.updateLocationDisplay(data.location);
+                } else {
+                    await window.loadCurrentLocation?.();
+                }
+            } catch (error) {
+                console.warn('Failed to update location:', error);
+                setLocationEditStatus(`Failed to update location: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (locationEditSaveBtn) {
+                    locationEditSaveBtn.disabled = false;
+                }
+                hideLocationOverlay();
+            }
+        }
+
+        async function regenerateLocationImage() {
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                alert('No location is currently loaded.');
+                return;
+            }
+            if (locationImageRegenerateButton && locationImageRegenerateButton.disabled) {
+                alert('Image generation is disabled.');
+                return;
+            }
+
+            const locationId = String(lastRenderedLocation.id);
+            const placeholderAlt = lastRenderedLocation.name || 'Location image';
+
+            applyEntityImagePlaceholder('location', locationId);
+            lastRenderedLocation.imageId = null;
+            lastRenderedLocation.pendingImageJobId = null;
+
+            const payload = {
+                entityType: 'location',
+                entityId: locationId,
+                force: true
+            };
+
+            const clientId = window.AIRPG_CLIENT_ID || null;
+            if (clientId) {
+                payload.clientId = clientId;
+            }
+
+            try {
+                const response = await fetch('/api/images/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (data?.skipped) {
+                    renderEntityImages('location', locationId, {
+                        imageId: lastRenderedLocation.imageId || null,
+                        force: false,
+                        altText: placeholderAlt
+                    });
+                    alert('Image regeneration was skipped.');
+                    return;
+                }
+
+                if (data?.imageId) {
+                    lastRenderedLocation.imageId = data.imageId;
+                }
+                if (data?.jobId) {
+                    lastRenderedLocation.pendingImageJobId = data.jobId;
+                }
+
+                renderEntityImages('location', locationId, {
+                    imageId: null,
+                    force: true,
+                    altText: placeholderAlt
+                });
+            } catch (error) {
+                console.warn('Failed to regenerate location image:', error);
+                alert(`Failed to regenerate image: ${error?.message || 'Unknown error'}`);
+                renderEntityImages('location', locationId, {
+                    imageId: lastRenderedLocation.imageId || null,
+                    force: false,
+                    altText: placeholderAlt
+                });
+            }
+        }
+
+        if (locationImageMenuButton) {
+            locationImageMenuButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleLocationImageMenu();
+            });
+        }
+
+        if (locationImageEditButton) {
+            locationImageEditButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu();
+                openLocationEditModal();
+            });
+        }
+
+        if (locationImageRegenerateButton) {
+            locationImageRegenerateButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu();
+                await regenerateLocationImage();
+            });
+        }
+
+        document.addEventListener('click', (event) => {
+            if (!locationImageMenuOpen) {
+                return;
+            }
+            if (locationImageWrapper && locationImageWrapper.contains(event.target)) {
+                return;
+            }
+            closeLocationImageMenu();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && locationImageMenuOpen) {
+                closeLocationImageMenu();
+            }
+        });
+
+        if (locationEditCancelBtn) {
+            locationEditCancelBtn.addEventListener('click', () => closeLocationEditModal());
+        }
+        if (locationEditCloseBtn) {
+            locationEditCloseBtn.addEventListener('click', () => closeLocationEditModal());
+        }
+        if (locationEditForm) {
+            locationEditForm.addEventListener('submit', submitLocationEditForm);
+        }
+
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeLocationEditModal();
+            }
+        });
+
+        window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationTooltip = document.getElementById('locationTooltip');
                 const locationHint = document.getElementById('locationHint');
@@ -7336,6 +7683,9 @@
                                 const nameEl = document.createElement('div');
                                 nameEl.className = 'location-entity-name';
                                 nameEl.textContent = npc.name || 'Unknown NPC';
+                                if (npc.isHostileToPlayer) {
+                                    nameEl.classList.add('is-hostile');
+                                }
 
                                 card.appendChild(portrait);
                                 card.appendChild(nameEl);

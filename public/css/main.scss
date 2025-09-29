@@ -1084,6 +1084,10 @@ p:not(:last-child) {
   max-height: 80px;
 }
 
+.location-entity-name.is-hostile {
+  color: #f87171;
+}
+
 #thingEditRarity {
   text-transform: capitalize;
 }
@@ -2431,8 +2435,13 @@ p:not(:last-child) {
   }
 }
 
+.location-image-wrapper {
+  position: relative;
+}
+
 .npc-card-menu-button,
-.thing-card-menu-button {
+.thing-card-menu-button,
+.location-image-menu-button {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -2454,7 +2463,9 @@ p:not(:last-child) {
 .npc-card-menu-button:hover,
 .npc-card-menu-button:focus,
 .thing-card-menu-button:hover,
-.thing-card-menu-button:focus {
+.thing-card-menu-button:focus,
+.location-image-menu-button:hover,
+.location-image-menu-button:focus {
   background: rgba(30, 41, 59, 0.9);
   border-color: rgba(148, 163, 184, 0.6);
   color: #ffffff;
@@ -2462,7 +2473,8 @@ p:not(:last-child) {
 }
 
 .npc-card-menu,
-.thing-card-menu {
+.thing-card-menu,
+.location-image-menu {
   position: absolute;
   top: 42px;
   right: 8px;
@@ -2480,14 +2492,16 @@ p:not(:last-child) {
 }
 
 .npc-card-menu.is-open,
-.thing-card-menu.is-open {
+.thing-card-menu.is-open,
+.location-image-menu.is-open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
 }
 
 .npc-card-menu-item,
-.thing-card-menu-item {
+.thing-card-menu-item,
+.location-image-menu-item {
   width: 100%;
   border: none;
   background: transparent;
@@ -2501,21 +2515,28 @@ p:not(:last-child) {
 }
 
 .npc-card-menu-item:hover,
-.npc-card-menu-item:focus {
+.npc-card-menu-item:focus,
+.thing-card-menu-item:hover,
+.thing-card-menu-item:focus,
+.location-image-menu-item:hover,
+.location-image-menu-item:focus {
   background: rgba(59, 130, 246, 0.18);
   color: #ffffff;
   outline: none;
 }
 
 .npc-card-menu-item--danger,
-.thing-card-menu-item--danger {
+.thing-card-menu-item--danger,
+.location-image-menu-item--danger {
   color: #fca5a5;
 }
 
 .npc-card-menu-item--danger:hover,
 .npc-card-menu-item--danger:focus,
 .thing-card-menu-item--danger:hover,
-.thing-card-menu-item--danger:focus {
+.thing-card-menu-item--danger:focus,
+.location-image-menu-item--danger:hover,
+.location-image-menu-item--danger:focus {
   background: rgba(248, 113, 113, 0.2);
   color: #ffe4e6;
 }

@@ -1,3 +1,4 @@
+first_impression_multiplier: 3.0
 range:
   min: -200
   max: 200
@@ -6,6 +7,8 @@ range:
 dispositions:
   platonic:
     description: Represents a character's level of friendship or camaraderie with the player character.
+    hostile_value: -40
+    hostile_threshold: -31
     move_up:
       - friendly conversation
       - helped by character
@@ -39,6 +42,7 @@ dispositions:
       120: best friend (+10 to relevant circumstance modifier)
   romantic:
     description: Represents a character's level of romantic interest or affection towards the player character.
+    hostile_value: -15
     move_up:
       - romantic gesture
       - flirted
@@ -73,6 +77,7 @@ dispositions:
       120: romantic partner (+10 to relevant circumstance modifier)
   lust:
     description: Represents a character's level of sexual desire or attraction towards the player character.
+    hostile_value: 0
     move_up:
       - flirted
       - made a seductive comment
@@ -134,6 +139,7 @@ dispositions:
       120: revered (+10 to relevant circumstance modifier)
   comfort_fear:
     description: Represents a character's level of comfort or fear around the player character.
+    hostile_value: -20
     move_up:
       - provided comfort during a difficult time
       - helped them face a fear
@@ -163,6 +169,7 @@ dispositions:
       120: feel safe with you no matter what (+10 to relevant circumstance modifier)
   trust:
     description: Represents a character's level of trust or distrust towards the player character.
+    hostile_value: -35
     move_up:
       - kept a secret
       - acted honestly

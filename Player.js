@@ -40,6 +40,7 @@ class Player {
     #personalityType;
     #personalityTraits;
     #personalityNotes;
+    #isHostile;
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
     static #needBarDefinitions = null;
@@ -630,6 +631,17 @@ class Player {
                     ? config.move_way_down.filter(entry => typeof entry === 'string' && entry.trim()).map(entry => entry.trim())
                     : [];
 
+                const hostileValueRaw = config.hostile_value;
+                const hostileThresholdRaw = config.hostile_threshold;
+                const hostileValue = Number.isFinite(Number(hostileValueRaw)) ? Number(hostileValueRaw) : null;
+                let hostileThreshold = null;
+                if (hostileThresholdRaw === null) {
+                    hostileThreshold = null;
+                } else if (hostileThresholdRaw !== undefined) {
+                    const numericThreshold = Number(hostileThresholdRaw);
+                    hostileThreshold = Number.isFinite(numericThreshold) ? numericThreshold : null;
+                }
+
                 const thresholdsSource = typeof config.min_thresholds === 'object' && config.min_thresholds !== null
                     ? config.min_thresholds
                     : {};
@@ -661,7 +673,9 @@ class Player {
                     moveUp,
                     moveDown,
                     moveWayDown,
-                    thresholds
+                    thresholds,
+                    hostileValue,
+                    hostileThreshold
                 };
             }
 
@@ -722,6 +736,7 @@ class Player {
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
+        this.#isHostile = this.#isNPC && Boolean(options.isHostile);
 
         const personalityOption = options.personality && typeof options.personality === 'object'
             ? options.personality
@@ -732,6 +747,9 @@ class Player {
 
         this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
         this.#dispositions = this.#initializeDispositions(options.dispositions);
+        if (this.#isHostile) {
+            this.#applyHostileDispositionsToCurrentPlayer();
+        }
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
@@ -950,6 +968,37 @@ class Player {
             }
         }
         return dispositionMap;
+    }
+
+    #applyHostileDispositionsToCurrentPlayer() {
+        if (!this.#isNPC || !this.#isHostile) {
+            return;
+        }
+        const targetPlayerId = Player.getCurrentPlayerId();
+        if (!targetPlayerId || targetPlayerId === this.#id) {
+            return;
+        }
+        const definitions = Player.dispositionDefinitions;
+        const types = definitions?.types || {};
+        for (const def of Object.values(types)) {
+            if (!def) {
+                continue;
+            }
+            const targetValue = Number(def.hostileValue);
+            if (!Number.isFinite(targetValue)) {
+                continue;
+            }
+            const dispositionKey = def.key || def.label;
+            if (!dispositionKey) {
+                continue;
+            }
+            const normalizedKey = Player.#normalizeDispositionType(dispositionKey);
+            const existingMap = this.#dispositions.get(targetPlayerId);
+            if (existingMap && (existingMap.has(normalizedKey) || existingMap.has(dispositionKey))) {
+                continue;
+            }
+            this.setDisposition(targetPlayerId, dispositionKey, targetValue);
+        }
     }
 
     #initializeSkills(skillValues = {}) {
@@ -1241,6 +1290,22 @@ class Player {
 
     get race() {
         return this.#race;
+    }
+
+    get isHostile() {
+        return Boolean(this.#isHostile);
+    }
+
+    set isHostile(value) {
+        const next = Boolean(value) && this.#isNPC;
+        if (this.#isHostile === next) {
+            return;
+        }
+        this.#isHostile = next;
+        if (next) {
+            this.#applyHostileDispositionsToCurrentPlayer();
+        }
+        this.#lastUpdated = new Date().toISOString();
     }
 
     get personalityType() {
@@ -2597,6 +2662,7 @@ class Player {
             currentLocation: this.#currentLocation,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
+            isHostile: this.#isHostile,
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
@@ -2652,6 +2718,7 @@ class Player {
             imageId: this.#imageId,
             attributes: this.#attributes,
             isNPC: this.#isNPC,
+            isHostile: this.#isHostile,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
             partyMembers: Array.from(this.#partyMembers),
             dispositions: this.#serializeDispositions(),
@@ -2692,6 +2759,7 @@ class Player {
             description: data.description,
             location: data.currentLocation,
             isNPC: data.isNPC,
+            isHostile: data.isHostile,
             shortDescription: data.shortDescription,
             class: data.class,
             race: data.race,
