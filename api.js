@@ -4586,6 +4586,63 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/npcs/:id/equipment', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'NPC ID is required' });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found` });
+                }
+
+                const { itemId, action, slotName } = req.body || {};
+                if (!itemId || typeof itemId !== 'string' || !itemId.trim()) {
+                    return res.status(400).json({ success: false, error: 'Item ID is required' });
+                }
+
+                const trimmedItemId = itemId.trim();
+                const inventoryItems = typeof npc.getInventoryItems === 'function' ? npc.getInventoryItems() : [];
+                const targetItem = inventoryItems.find(entry => entry && entry.id === trimmedItemId);
+
+                if (!targetItem) {
+                    return res.status(404).json({ success: false, error: 'Item not found in NPC inventory' });
+                }
+
+                const desiredAction = (typeof action === 'string' ? action.toLowerCase() : action) || 'equip';
+                let message = '';
+
+                if (desiredAction === 'unequip' || desiredAction === false) {
+                    const changed = npc.unequipItemId(trimmedItemId);
+                    if (!changed) {
+                        return res.status(400).json({ success: false, error: 'Item is not currently equipped.' });
+                    }
+                    message = `${targetItem.name || 'Item'} unequipped.`;
+                } else {
+                    let result;
+                    if (slotName && typeof slotName === 'string' && slotName.trim()) {
+                        result = npc.equipItemInSlot(targetItem, slotName.trim());
+                    } else {
+                        result = npc.equipItem(targetItem);
+                    }
+
+                    if (result !== true) {
+                        const errorMessage = typeof result === 'string' && result.trim() ? result : 'Unable to equip item.';
+                        return res.status(400).json({ success: false, error: errorMessage });
+                    }
+                    message = `${targetItem.name || 'Item'} equipped.`;
+                }
+
+                const npcProfile = serializeNpcForClient(npc);
+                res.json({ success: true, npc: npcProfile, message });
+            } catch (error) {
+                console.error('Error updating NPC equipment:', error);
+                res.status(500).json({ success: false, error: error.message || 'Failed to update NPC equipment' });
+            }
+        });
+
         app.get('/api/npcs/:id/needs', (req, res) => {
             try {
                 const npcId = req.params.id;
@@ -5133,7 +5190,7 @@ module.exports = function registerApiRoutes(scope) {
         // Update player stats
         app.post('/api/player/update-stats', (req, res) => {
             try {
-                const { name, description, level, health, maxHealth, attributes, skills: skillValues, unspentSkillPoints } = req.body;
+                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints } = req.body;
 
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -5173,9 +5230,6 @@ module.exports = function registerApiRoutes(scope) {
                     currentPlayer.setHealth(parseInt(health));
                 }
 
-                if (maxHealth && !isNaN(maxHealth) && maxHealth >= 1) {
-                    currentPlayer.setMaxHealth(parseInt(maxHealth));
-                }
 
                 // Update attributes
                 if (attributes && typeof attributes === 'object') {
@@ -5227,7 +5281,7 @@ module.exports = function registerApiRoutes(scope) {
         // Create new player from stats form
         app.post('/api/player/create-from-stats', async (req, res) => {
             try {
-                const { name, description, level, health, maxHealth, attributes, skills: skillValues, unspentSkillPoints } = req.body;
+                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints } = req.body;
 
                 // Validate required fields
                 if (!name || !name.trim()) {

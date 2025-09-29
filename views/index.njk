@@ -259,15 +259,9 @@
                                 </div>
 
                                 <div class="form-group">
-                                    <label for="player-max-health">Maximum Health</label>
-                                    <input type="number"
-                                           id="player-max-health"
-                                           name="maxHealth"
-                                           value="{{ player.maxHealth if player else 25 }}"
-                                           min="1"
-                                           max="999"
-                                           form="player-stats-form">
-                                    <span class="help-text">Maximum hit points</span>
+                                    <label>Maximum Health</label>
+                                    <div id="player-max-health-display" class="form-static-value">{{ player.maxHealth if player else 'Automatically calculated' }}</div>
+                                    <span class="help-text">Calculated automatically from level and health attribute.</span>
                                 </div>
                             </div>
                         </div>
@@ -723,9 +717,10 @@
                         <label for="npcEditHealthAttribute">Health Bonus Attribute</label>
                         <select id="npcEditHealthAttribute"></select>
                     </div>
-                    <div class="npc-edit-field">
+                    <div class="npc-edit-field npc-edit-field--readonly">
                         <label for="npcEditMaxHealth">Max Health</label>
-                        <input id="npcEditMaxHealth" type="number" readonly>
+                        <div id="npcEditMaxHealth" class="npc-edit-readonly-value">—</div>
+                        <span class="npc-edit-help-text">Calculated automatically</span>
                     </div>
                     <div class="npc-edit-field">
                         <label for="npcEditUnspent">Unspent Skill Points</label>
@@ -2595,7 +2590,7 @@
         const npcEditClassInput = document.getElementById('npcEditClass');
         const npcEditLevelInput = document.getElementById('npcEditLevel');
         const npcEditHealthInput = document.getElementById('npcEditHealth');
-        const npcEditMaxHealthInput = document.getElementById('npcEditMaxHealth');
+        const npcEditMaxHealthDisplay = document.getElementById('npcEditMaxHealth');
         const npcEditHealthAttributeSelect = document.getElementById('npcEditHealthAttribute');
         const npcEditUnspentInput = document.getElementById('npcEditUnspent');
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
@@ -4086,7 +4081,7 @@
         }
 
         function updateNpcMaxHealth() {
-            if (!npcEditMaxHealthInput) {
+            if (!npcEditMaxHealthDisplay) {
                 return;
             }
 
@@ -4104,7 +4099,8 @@
             const level = Number.isFinite(levelValue) && levelValue >= 1 ? levelValue : 1;
 
             const computed = Math.floor(10 + (attributeValue / 2) * (level + 1));
-            npcEditMaxHealthInput.value = Math.max(1, computed);
+            const resolvedValue = Math.max(1, computed);
+            npcEditMaxHealthDisplay.textContent = Number.isFinite(resolvedValue) ? resolvedValue : '—';
         }
 
         function populateNpcAttributes(attributes = {}) {
@@ -4314,9 +4310,9 @@
                 const numericHealth = Number.parseInt(npc.health, 10);
                 npcEditHealthInput.value = Number.isFinite(numericHealth) ? numericHealth : '';
             }
-            if (npcEditMaxHealthInput) {
+            if (npcEditMaxHealthDisplay) {
                 const numericMax = Number.parseInt(npc.maxHealth, 10);
-                npcEditMaxHealthInput.value = Number.isFinite(numericMax) ? numericMax : '';
+                npcEditMaxHealthDisplay.textContent = Number.isFinite(numericMax) ? numericMax : '—';
             }
             if (npcEditUnspentInput) {
                 const numericUnspent = Number.parseInt(npc.unspentSkillPoints, 10);
@@ -5774,6 +5770,37 @@
             });
         }
 
+        async function setNpcItemEquipped(npcId, item, shouldEquip, { slotName = null } = {}) {
+            if (!npcId || !item || !item.id) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/equipment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        itemId: item.id,
+                        action: shouldEquip ? 'equip' : 'unequip',
+                        slotName: slotName || item.equippedSlot || null
+                    })
+                });
+
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    throw new Error(result?.error || `Request failed with status ${response.status}`);
+                }
+
+                const updatedInventory = Array.isArray(result.npc?.inventory) ? result.npc.inventory : [];
+                currentNpcInventory = updatedInventory;
+                renderNpcInventory(updatedInventory);
+                window.refreshParty?.();
+            } catch (error) {
+                console.warn('Failed to update NPC equipment:', error);
+                alert(`Failed to update equipment: ${error.message || error}`);
+            }
+        }
+
         function renderNpcInventory(items = []) {
             if (!npcInventoryGrid || !npcInventoryEmpty || !npcInventoryCount) {
                 return;
@@ -5788,6 +5815,11 @@
             safeItems.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'location-entity-card inventory-card';
+
+                const equipped = Boolean(item?.isEquipped || item?.equippedSlot);
+                if (equipped) {
+                    card.classList.add('is-equipped');
+                }
 
                 const icon = document.createElement('div');
                 icon.className = 'inventory-icon';
@@ -5806,8 +5838,37 @@
                 name.textContent = item.name || 'Unknown Item';
                 applyRarityClass(name, item.rarity);
 
+                const slotBadge = document.createElement('div');
+                slotBadge.className = 'inventory-slot-tag';
+                const slotLabel = item.equippedSlot || item.slot || item.metadata?.slot || null;
+                if (slotLabel) {
+                    slotBadge.textContent = slotLabel;
+                }
+
+                const equipToggle = document.createElement('button');
+                equipToggle.type = 'button';
+                equipToggle.className = 'inventory-equip-toggle';
+                equipToggle.textContent = equipped ? 'Unequip' : 'Equip';
+
+                equipToggle.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    if (!currentNpcInventoryNpcId) {
+                        return;
+                    }
+                    equipToggle.disabled = true;
+                    setNpcItemEquipped(currentNpcInventoryNpcId, item, !equipped, { slotName: item.equippedSlot || null })
+                        .finally(() => {
+                            equipToggle.disabled = false;
+                        });
+                });
+
                 card.appendChild(icon);
                 card.appendChild(name);
+                if (slotLabel) {
+                    card.appendChild(slotBadge);
+                }
+                card.appendChild(equipToggle);
 
                 registerThingContextMenu(card, item, { context: 'npc-inventory', npcId: currentNpcInventoryNpcId });
 

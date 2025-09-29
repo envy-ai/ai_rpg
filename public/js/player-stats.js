@@ -7,6 +7,79 @@ document.addEventListener('DOMContentLoaded', function () {
   const abilitiesSection = document.getElementById('abilitiesSection');
   const abilitiesList = document.getElementById('abilitiesList');
   const abilitiesEmpty = document.getElementById('abilitiesEmpty');
+  const MAX_HEALTH_DISPLAY_ID = 'player-max-health-display';
+  const DEFAULT_HEALTH_ATTRIBUTE = 'constitution';
+  let playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
+
+  function resolveAttributeKey(attributes = {}, key = '') {
+    if (!key) {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(attributes, key)) {
+      return key;
+    }
+    const lowered = key.toLowerCase();
+    for (const candidate of Object.keys(attributes)) {
+      if (candidate && candidate.toLowerCase() === lowered) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  function calculateMaxHealthValue(levelInput, attributes = {}, healthAttribute = DEFAULT_HEALTH_ATTRIBUTE) {
+    const levelNumeric = Number(levelInput);
+    const level = Number.isFinite(levelNumeric) && levelNumeric >= 1 ? Math.round(levelNumeric) : 1;
+    const attributeKey = typeof healthAttribute === 'string' && healthAttribute.trim()
+      ? healthAttribute.trim()
+      : DEFAULT_HEALTH_ATTRIBUTE;
+    const resolvedKey = resolveAttributeKey(attributes, attributeKey) || resolveAttributeKey(attributes, DEFAULT_HEALTH_ATTRIBUTE);
+    const attributeValueRaw = resolvedKey ? attributes[resolvedKey] : undefined;
+    const attributeNumeric = Number(attributeValueRaw);
+    const attributeValue = Number.isFinite(attributeNumeric) ? attributeNumeric : 10;
+    const computed = Math.floor(10 + (attributeValue / 2) * (level + 1));
+    return Number.isFinite(computed) ? Math.max(1, computed) : null;
+  }
+
+  function getFormAttributeValues() {
+    const attributes = {};
+    const attributeInputs = document.querySelectorAll('.attribute-input');
+    attributeInputs.forEach(input => {
+      if (!input || !input.name) {
+        return;
+      }
+      const rawName = input.name.replace('attributes.', '').trim();
+      if (!rawName) {
+        return;
+      }
+      const numeric = Number.parseInt(input.value ?? '', 10);
+      if (Number.isFinite(numeric)) {
+        attributes[rawName] = numeric;
+      }
+    });
+    return attributes;
+  }
+
+  function updateMaxHealthDisplayFromForm() {
+    const display = document.getElementById(MAX_HEALTH_DISPLAY_ID);
+    if (!display) {
+      return;
+    }
+    const levelField = document.getElementById('player-level');
+    const levelValue = levelField ? Number.parseInt(levelField.value ?? '', 10) : null;
+    const attributes = getFormAttributeValues();
+    const computed = calculateMaxHealthValue(levelValue, attributes, playerHealthAttributeKey);
+    display.textContent = Number.isFinite(computed) ? computed : '—';
+  }
+
+  function updateMaxHealthDisplayFromData(playerData = {}) {
+    const display = document.getElementById(MAX_HEALTH_DISPLAY_ID);
+    if (!display) {
+      return;
+    }
+    const numeric = Number.parseInt(playerData.maxHealth ?? '', 10);
+    display.textContent = Number.isFinite(numeric) ? numeric : '—';
+  }
 
   // Initialize attribute modifier calculations
   initializeAttributeModifiers();
@@ -17,6 +90,14 @@ document.addEventListener('DOMContentLoaded', function () {
   if (resetButton) {
     setupResetButton();
   }
+
+  const levelInput = document.getElementById('player-level');
+  if (levelInput) {
+    levelInput.addEventListener('input', updateMaxHealthDisplayFromForm);
+    levelInput.addEventListener('change', updateMaxHealthDisplayFromForm);
+  }
+
+  updateMaxHealthDisplayFromForm();
 
   /**
    * Setup form submission handler
@@ -33,6 +114,8 @@ document.addEventListener('DOMContentLoaded', function () {
     attributeInputs.forEach(input => {
       input.addEventListener('input', updateAttributeModifier);
       input.addEventListener('change', updateAttributeModifier);
+      input.addEventListener('input', updateMaxHealthDisplayFromForm);
+      input.addEventListener('change', updateMaxHealthDisplayFromForm);
     });
   }
 
@@ -61,7 +144,9 @@ document.addEventListener('DOMContentLoaded', function () {
     playerData.description = formData.get('description');
     playerData.level = parseInt(formData.get('level'));
     playerData.health = parseInt(formData.get('health'));
-    playerData.maxHealth = parseInt(formData.get('maxHealth'));
+    if (playerHealthAttributeKey) {
+      playerData.healthAttribute = playerHealthAttributeKey;
+    }
 
     // Extract attributes
     playerData.attributes = {};
@@ -92,6 +177,8 @@ document.addEventListener('DOMContentLoaded', function () {
         playerData.unspentSkillPoints = points;
       }
     }
+
+    playerData.calculatedMaxHealth = calculateMaxHealthValue(playerData.level, playerData.attributes, playerHealthAttributeKey);
 
     // Validate form data
     const validation = validatePlayerData(playerData);
@@ -204,14 +291,6 @@ document.addEventListener('DOMContentLoaded', function () {
       return { valid: false, message: 'Current health must be 0 or greater' };
     }
 
-    if (isNaN(data.maxHealth) || data.maxHealth < 1) {
-      return { valid: false, message: 'Maximum health must be 1 or greater' };
-    }
-
-    if (data.health > data.maxHealth) {
-      return { valid: false, message: 'Current health cannot exceed maximum health' };
-    }
-
     // Validate attributes
     for (const [name, value] of Object.entries(data.attributes)) {
       if (isNaN(value) || value < 3 || value > 18) {
@@ -264,13 +343,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const descField = document.getElementById('player-description');
     const levelField = document.getElementById('player-level');
     const healthField = document.getElementById('player-health');
-    const maxHealthField = document.getElementById('player-max-health');
 
     if (nameField) nameField.value = playerData.name || '';
     if (descField) descField.value = playerData.description || '';
     if (levelField) levelField.value = playerData.level || 1;
     if (healthField) healthField.value = playerData.health || 25;
-    if (maxHealthField) maxHealthField.value = playerData.maxHealth || 25;
+
+    if (playerData.healthAttribute) {
+      playerHealthAttributeKey = playerData.healthAttribute.toString().trim().toLowerCase() || DEFAULT_HEALTH_ATTRIBUTE;
+    } else {
+      playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
+    }
+
+    updateMaxHealthDisplayFromData(playerData);
 
     // Update attribute fields
     if (playerData.attributes) {
@@ -300,6 +385,8 @@ document.addEventListener('DOMContentLoaded', function () {
       unspentField.value = nextValue;
       unspentField.dataset.default = nextValue;
     }
+
+    updateMaxHealthDisplayFromForm();
   }
 
   /**
@@ -311,7 +398,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('player-description').value = '';
     document.getElementById('player-level').value = '1';
     document.getElementById('player-health').value = '25';
-    document.getElementById('player-max-health').value = '25';
+    playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
 
     // Reset all attributes to 10
     const attributeInputs = document.querySelectorAll('.attribute-input');
@@ -333,6 +420,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     renderAbilities([]);
     showStatusMessage('Stats reset to default values', 'info');
+    updateMaxHealthDisplayFromForm();
   }
 
   /**

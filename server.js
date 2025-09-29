@@ -1364,7 +1364,18 @@ function serializeNpcForClient(npc) {
     let inventory = [];
     try {
         if (typeof npc.getInventoryItems === 'function') {
-            inventory = npc.getInventoryItems().map(item => typeof item.toJSON === 'function' ? item.toJSON() : item);
+            const equippedResolver = typeof npc.getEquippedSlotForThing === 'function'
+                ? (itemLike) => npc.getEquippedSlotForThing(itemLike)
+                : () => null;
+            inventory = npc.getInventoryItems().map(item => {
+                const serialized = typeof item.toJSON === 'function' ? item.toJSON() : { ...item };
+                const equippedSlot = equippedResolver(item);
+                serialized.isEquipped = Boolean(equippedSlot);
+                if (equippedSlot) {
+                    serialized.equippedSlot = equippedSlot;
+                }
+                return serialized;
+            });
         }
     } catch (_) {
         inventory = [];
