@@ -102,6 +102,30 @@ module.exports = function registerApiRoutes(scope) {
             rare: null
         };
 
+        function playerActionIncludedMovement(eventsPayload) {
+            if (!eventsPayload || typeof eventsPayload !== 'object') {
+                return false;
+            }
+
+            const parsed = eventsPayload.parsed && typeof eventsPayload.parsed === 'object'
+                ? eventsPayload.parsed
+                : eventsPayload;
+
+            const moveEntriesRaw = parsed.move_location;
+            if (!moveEntriesRaw) {
+                return false;
+            }
+
+            const entries = Array.isArray(moveEntriesRaw) ? moveEntriesRaw : [moveEntriesRaw];
+            return entries.some(entry => {
+                if (!entry) {
+                    return false;
+                }
+                const text = String(entry).trim();
+                return text.length > 0 && !/^N\/?A$/i.test(text);
+            });
+        }
+
         function deleteNpcById(npcId, { skipNotFound = false, reason = null } = {}) {
             if (!npcId || typeof npcId !== 'string') {
                 return { success: false, error: 'NPC ID is required', status: 400 };
@@ -2839,8 +2863,17 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcTurns = false }) {
             const results = [];
+
+            if (skipNpcTurns) {
+                if (stream && stream.isEnabled) {
+                    stream.status('npc_turns:skipped', {
+                        message: 'Skipping NPC turns after player movement.'
+                    });
+                }
+                return results;
+            }
 
             try {
                 const npcQueue = await runNextNpcListPrompt({ locationOverride: location });
@@ -3610,10 +3643,14 @@ module.exports = function registerApiRoutes(scope) {
                     const { removed: corpseRemovals, countdownUpdates } = processNpcCorpses({ reason: 'player-action' });
                     corpseProcessingRan = true;
                     if (countdownUpdates.length) {
-                        responseData.corpseCountdownUpdates = countdownUpdates;
+                        responseData.corpseCountdownUpdates = Array.isArray(responseData.corpseCountdownUpdates)
+                            ? responseData.corpseCountdownUpdates.concat(countdownUpdates)
+                            : countdownUpdates;
                     }
                     if (corpseRemovals.length) {
-                        responseData.corpseRemovals = corpseRemovals;
+                        responseData.corpseRemovals = Array.isArray(responseData.corpseRemovals)
+                            ? responseData.corpseRemovals.concat(corpseRemovals)
+                            : corpseRemovals;
                     }
 
                     responseData.messages = newChatEntries;
@@ -3779,9 +3816,13 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    const playerMoved = playerActionIncludedMovement(responseData.events);
+
                     try {
-                        stream.status('npc_turns:pending', 'Resolving NPC turns.');
-                        const npcTurns = await executeNpcTurnsAfterPlayer({ location, stream });
+                        if (!playerMoved) {
+                            stream.status('npc_turns:pending', 'Resolving NPC turns.');
+                        }
+                        const npcTurns = await executeNpcTurnsAfterPlayer({ location, stream, skipNpcTurns: playerMoved });
                         if (npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
                             streamState.npcTurns = npcTurns.length;

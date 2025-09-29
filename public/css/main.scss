@@ -1058,6 +1058,10 @@ p:not(:last-child) {
   opacity: 0.5;
 }
 
+.party-card.is-dead {
+  opacity: 0.5;
+}
+
 .location-entity-icon,
 .inventory-icon {
   width: 94px;

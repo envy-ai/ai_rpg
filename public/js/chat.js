@@ -2681,6 +2681,32 @@ class AIRPGChat {
         await this.refreshChatHistory();
     }
 
+    async submitAction(actionText, { preserveInput = false } = {}) {
+        const text = typeof actionText === 'string' ? actionText.trim() : '';
+        if (!text) {
+            return false;
+        }
+
+        if (!this.messageInput) {
+            return false;
+        }
+
+        const previousValue = this.messageInput.value;
+        this.messageInput.value = actionText;
+        try {
+            await this.sendMessage();
+            if (preserveInput) {
+                this.messageInput.value = previousValue;
+            }
+            return true;
+        } catch (error) {
+            if (preserveInput) {
+                this.messageInput.value = previousValue;
+            }
+            throw error;
+        }
+    }
+
     async checkLocationUpdate() {
         console.log('Checking for location update...');
         try {

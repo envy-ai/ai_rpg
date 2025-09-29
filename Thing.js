@@ -26,6 +26,7 @@ class Thing {
   #causeStatusEffect;
   #level;
   #relativeLevel;
+  #isVehicle;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -37,6 +38,32 @@ class Thing {
 
   // Valid thing types
   static #validTypes = ['scenery', 'item'];
+
+  static #normalizeBoolean(value) {
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) {
+        return false;
+      }
+      if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+        return false;
+      }
+      return Boolean(normalized);
+    }
+    return Boolean(value);
+  }
 
   static #normalizeRarityKey(value) {
     if (value === null || value === undefined) {
@@ -288,7 +315,8 @@ class Thing {
     attributeBonuses = null,
     causeStatusEffect = null,
     level = null,
-    relativeLevel = null
+    relativeLevel = null,
+    isVehicle = false
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -324,6 +352,7 @@ class Thing {
     this.#causeStatusEffect = null;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
+    this.#isVehicle = Thing.#normalizeBoolean(isVehicle);
 
     this.#applyMetadataFieldsFromMetadata();
 
@@ -521,6 +550,19 @@ class Thing {
     }
   }
 
+  get isVehicle() {
+    return this.#isVehicle === true;
+  }
+
+  set isVehicle(value) {
+    const normalized = Thing.#normalizeBoolean(value);
+    if (normalized !== this.#isVehicle) {
+      this.#isVehicle = normalized;
+      this.#syncFieldsToMetadata();
+      this.#lastUpdated = new Date().toISOString();
+    }
+  }
+
   // Setter methods with validation
   set name(newName) {
     if (!newName || typeof newName !== 'string') {
@@ -616,6 +658,7 @@ class Thing {
       lastUpdated: this.#lastUpdated,
       rarity: this.#rarity,
       itemTypeDetail: this.#itemTypeDetail,
+      isVehicle: this.#isVehicle === true,
       slot: this.#slot || undefined,
       attributeBonuses: this.#attributeBonuses.length ? this.attributeBonuses : undefined,
       causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
@@ -645,7 +688,8 @@ class Thing {
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
       causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null,
       level: data.level ?? data.metadata?.level ?? null,
-      relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null
+      relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
+      isVehicle: data.isVehicle ?? data.metadata?.isVehicle ?? false
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {
@@ -757,6 +801,10 @@ class Thing {
       this.#relativeLevel = null;
     }
 
+    if (Object.prototype.hasOwnProperty.call(meta, 'isVehicle')) {
+      this.#isVehicle = Thing.#normalizeBoolean(meta.isVehicle);
+    }
+
     this.#syncFieldsToMetadata();
   }
 
@@ -789,6 +837,12 @@ class Thing {
       this.#metadata.relativeLevel = this.#relativeLevel;
     } else {
       delete this.#metadata.relativeLevel;
+    }
+
+    if (this.#isVehicle) {
+      this.#metadata.isVehicle = true;
+    } else {
+      delete this.#metadata.isVehicle;
     }
   }
 

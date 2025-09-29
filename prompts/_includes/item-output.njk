@@ -8,6 +8,7 @@
   <value>{{ item.value }}</value>
   <weight>{{ item.weight }}</weight>
   <relativeLevel>{{ item.relativeLevel }}</relativeLevel>
+  <isVehicle>{% if item.isVehicle is defined %}{{ item.isVehicle }}{% else %}[true or false]{% endif %}</isVehicle>
   <attributeBonuses>
     {% if item.attributeBonuses %}{% for bonus in item.attributeBonuses %}<attributeBonus>
       <attribute>{{ bonus.attribute }}</attribute>

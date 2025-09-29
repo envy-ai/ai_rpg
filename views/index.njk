@@ -917,7 +917,7 @@
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
             //window.systemPrompt = {{ systemPrompt | dump | safe }};
-            new AIRPGChat();
+            window.AIRPG_CHAT = new AIRPGChat();
             
             // Add save/load functionality
             initSaveLoadButtons();
@@ -1561,9 +1561,6 @@
 
                 const card = document.createElement('div');
                 card.className = 'location-entity-card is-npc';
-                                if (npc?.id) {
-                                    card.dataset.npcId = npc.id;
-                                }
                 if (member?.id) {
                     card.dataset.npcId = member.id;
                 }
@@ -7913,7 +7910,13 @@
                                 }
 
                                 button.dataset.destinationId = exit.destination;
-                                button.addEventListener('click', () => moveToLocation(exit.destination));
+                                button.addEventListener('click', () => {
+                                    const destinationName = exit.destinationName || targetName || exit.destination;
+                                    moveToLocation({
+                                        destinationId: exit.destination,
+                                        destinationName
+                                    });
+                                });
                                 locationExitsList.appendChild(button);
                             });
                         }
@@ -7928,6 +7931,9 @@
                             npcs.forEach(npc => {
                                 const card = document.createElement('div');
                                 card.className = 'location-entity-card is-npc';
+                                if (npc?.id) {
+                                    card.dataset.npcId = npc.id;
+                                }
 
                                 const portrait = document.createElement('div');
                                 portrait.className = 'location-entity-icon';
@@ -8153,8 +8159,36 @@
                 }
             });
 
-            async function moveToLocation(destinationId) {
-                if (!destinationId) return;
+            async function moveToLocation({ destinationId = null, destinationName = null } = {}) {
+                if (!destinationId && !destinationName) {
+                    return;
+                }
+
+                const chatApp = window.AIRPG_CHAT;
+                const fallbackName = destinationId && locationCache[destinationId]
+                    ? locationCache[destinationId]
+                    : destinationId;
+                const actionTarget = (destinationName || fallbackName || 'the destination').toString().trim();
+
+                if (chatApp && typeof chatApp.submitAction === 'function') {
+                    showLocationOverlay('Exploring new location...');
+                    try {
+                        await chatApp.submitAction(`I go to ${actionTarget}`);
+                        hideLocationOverlay();
+                        return;
+                    } catch (error) {
+                        console.warn('Failed to submit travel action via chat. Falling back to direct move.', error);
+                        hideLocationOverlay();
+                    }
+                }
+
+                await legacyMoveToLocation(destinationId);
+            }
+
+            async function legacyMoveToLocation(destinationId) {
+                if (!destinationId) {
+                    return;
+                }
                 try {
                     showLocationOverlay('Exploring new location...');
                     const response = await fetch('/api/player/move', {

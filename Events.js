@@ -2832,12 +2832,29 @@ class Events {
         };
         const location = context.location;
 
-        for (const entry of entries) {
-            if (!entry || !entry.name) continue;
+        const locationNpcIds = Array.isArray(location.npcIds) ? [...location.npcIds] : [];
+        const destinationCache = new Map();
+
+        for (let index = entries.length - 1; index >= 0; index--) {
+            const entry = entries[index];
+            if (!entry || !entry.name) {
+                entries.splice(index, 1);
+                continue;
+            }
+
             const npc = await ensureNpcByName(entry.name, context);
-            if (!npc) continue;
+            if (!npc) {
+                entries.splice(index, 1);
+                continue;
+            }
 
             if (entry.action === 'arrived') {
+                const alreadyHere = locationNpcIds.includes(npc.id);
+                if (alreadyHere) {
+                    entries.splice(index, 1);
+                    continue;
+                }
+
                 removeNpcFromOtherLocations(npc.id, location.id);
                 try {
                     npc.setLocation(location.id);
@@ -2845,60 +2862,89 @@ class Events {
                     // Ignore
                 }
                 location.addNpcId(npc.id);
+                locationNpcIds.push(npc.id);
                 if (gameLocations instanceof Map) {
                     gameLocations.set(location.id, location);
                 }
             } else if (entry.action === 'left') {
+                const currentlyHere = locationNpcIds.includes(npc.id);
+                if (!currentlyHere) {
+                    entries.splice(index, 1);
+                    continue;
+                }
+
                 location.removeNpcId(npc.id);
+                const cleanupIndex = locationNpcIds.indexOf(npc.id);
+                if (cleanupIndex !== -1) {
+                    locationNpcIds.splice(cleanupIndex, 1);
+                }
                 if (gameLocations instanceof Map) {
                     gameLocations.set(location.id, location);
                 }
+
                 const destinationName = typeof entry.destination === 'string' ? entry.destination.trim() : '';
                 let destinationLocation = null;
 
-                if (destinationName && typeof findLocationByNameLoose === 'function') {
-                    destinationLocation = findLocationByNameLoose(destinationName);
-                }
+                if (destinationName) {
+                    if (destinationCache.has(destinationName)) {
+                        destinationLocation = destinationCache.get(destinationName);
+                    } else {
+                        if (typeof findLocationByNameLoose === 'function') {
+                            destinationLocation = findLocationByNameLoose(destinationName);
+                        }
 
-                if (!destinationLocation && destinationName && typeof createLocationFromEvent === 'function') {
-                    try {
-                        destinationLocation = await createLocationFromEvent({
-                            name: destinationName,
-                            originLocation: location,
-                            descriptionHint: `Path leading from ${location.name || location.id} toward ${destinationName}.`,
-                            directionHint: null,
-                            expandStub: false
-                        });
-                    } catch (error) {
-                        console.warn('Failed to create destination from NPC departure event:', error.message);
+                        if (!destinationLocation && typeof createLocationFromEvent === 'function') {
+                            try {
+                                destinationLocation = await createLocationFromEvent({
+                                    name: destinationName,
+                                    originLocation: location,
+                                    descriptionHint: `Path leading from ${location.name || location.id} toward ${destinationName}.`,
+                                    directionHint: null,
+                                    expandStub: false
+                                });
+                            } catch (error) {
+                                console.warn('Failed to create destination from NPC departure event:', error.message);
+                            }
+                        }
+
+                        destinationCache.set(destinationName, destinationLocation || null);
                     }
                 }
 
                 const destinationId = destinationLocation?.id || null;
                 removeNpcFromOtherLocations(npc.id, destinationId);
 
-                if (destinationLocation && typeof destinationLocation.addNpcId === 'function') {
-                    destinationLocation.addNpcId(npc.id);
-                    if (gameLocations instanceof Map) {
-                        gameLocations.set(destinationLocation.id, destinationLocation);
-                    }
-                }
+                if (destinationLocation) {
+                    const destinationNpcIds = Array.isArray(destinationLocation.npcIds) ? destinationLocation.npcIds : [];
+                    const alreadyPresent = destinationNpcIds.includes(npc.id);
 
-                if (destinationLocation && destinationLocation.id) {
-                    try {
-                        npc.setLocation(destinationLocation.id);
-                    } catch (_) {
-                        // ignore
-                    }
-
-                    if (typeof queueNpcAssetsForLocation === 'function') {
-                        try {
-                            queueNpcAssetsForLocation(destinationLocation);
-                        } catch (error) {
-                            console.warn('Failed to queue NPC assets for destination:', error.message);
+                    if (!alreadyPresent && typeof destinationLocation.addNpcId === 'function') {
+                        destinationLocation.addNpcId(npc.id);
+                        if (gameLocations instanceof Map) {
+                            gameLocations.set(destinationLocation.id, destinationLocation);
                         }
                     }
 
+                    if (destinationLocation.id) {
+                        try {
+                            npc.setLocation(destinationLocation.id);
+                        } catch (_) {
+                            // ignore
+                        }
+
+                        if (typeof queueNpcAssetsForLocation === 'function') {
+                            try {
+                                queueNpcAssetsForLocation(destinationLocation);
+                            } catch (error) {
+                                console.warn('Failed to queue NPC assets for destination:', error.message);
+                            }
+                        }
+                    }
+
+                    if (alreadyPresent) {
+                        entries.splice(index, 1);
+                        continue;
+                    }
                 } else {
                     try {
                         npc.setLocation(null);
@@ -3693,107 +3739,213 @@ class Events {
                 }
             }
 
-            const baseContext = buildBasePromptContext({ locationOverride: location });
-            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
-                ...baseContext,
-                promptType: 'event-checks',
-                textToCheck,
-                eventPrompts: eventPromptTemplates
-            });
-
-            const parsedTemplate = parseXMLTemplate(renderedTemplate);
-
-            if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
-                console.warn('Event check template missing prompts, skipping event analysis.');
-                return null;
-            }
-
-            const messages = [
-                { role: 'system', content: parsedTemplate.systemPrompt },
-                { role: 'user', content: parsedTemplate.generationPrompt }
-            ];
-
-            const config = this.config;
-            const endpoint = config.ai.endpoint;
-            const apiKey = config.ai.apiKey;
-            const chatEndpoint = endpoint.endsWith('/') ?
-                endpoint + 'chat/completions' :
-                endpoint + '/chat/completions';
-
-            const requestData = {
-                model: config.ai.model,
-                messages,
-                max_tokens: parsedTemplate.maxTokens || 400,
-                temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
-            };
-
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: config.baseTimeoutSeconds
-            });
-
-            const eventResponse = response.data?.choices?.[0]?.message?.content || '';
-
-            this.logEventCheck({
-                systemPrompt: parsedTemplate.systemPrompt,
-                generationPrompt: parsedTemplate.generationPrompt,
-                responseText: eventResponse
-            });
-
-            if (!eventResponse.trim()) {
-                return null;
-            }
-
-            const structured = this.parseEventCheckResponse(eventPromptTemplates, eventResponse);
-            let experienceAwards = [];
-            let currencyChanges = [];
-            let environmentalDamageEvents = [];
-            let needBarChanges = [];
-            if (structured) {
-                if (allowEnvironmentalEffects === false) {
-                    if (structured.parsed && Array.isArray(structured.parsed.environmental_status_damage)) {
-                        structured.parsed.environmental_status_damage = [];
-                    }
-                    if (structured.rawEntries && Object.prototype.hasOwnProperty.call(structured.rawEntries, 'environmental_status_damage')) {
-                        structured.rawEntries.environmental_status_damage = '';
-                    }
+            const runBatch = async (templatesSubset) => {
+                if (!templatesSubset || !templatesSubset.length) {
+                    return null;
                 }
-                try {
-                    const outcomeContext = await this.applyEventOutcomes(structured, {
-                        player: currentPlayer,
-                        location,
-                        region,
+
+                const baseContext = buildBasePromptContext({ locationOverride: location });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'event-checks',
+                    textToCheck,
+                    eventPrompts: templatesSubset
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+                if (!parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
+                    console.warn('Event check template missing prompts, skipping event analysis.');
+                    return null;
+                }
+
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+
+                const config = this.config;
+                const endpoint = config.ai.endpoint;
+                const apiKey = config.ai.apiKey;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`;
+
+                const requestData = {
+                    model: config.ai.model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || 400,
+                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: config.baseTimeoutSeconds
+                });
+
+                const eventResponse = response.data?.choices?.[0]?.message?.content || '';
+
+                this.logEventCheck({
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: eventResponse
+                });
+
+                if (!eventResponse.trim()) {
+                    return {
+                        raw: eventResponse,
+                        html: '',
+                        structured: this.parseEventCheckResponse(templatesSubset, ''),
                         experienceAwards: [],
                         currencyChanges: [],
                         environmentalDamageEvents: [],
-                        allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
-                        stream
-                    });
-                    if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
-                        experienceAwards = outcomeContext.experienceAwards;
+                        needBarChanges: []
+                    };
+                }
+
+                const structured = this.parseEventCheckResponse(templatesSubset, eventResponse);
+                let experienceAwards = [];
+                let currencyChanges = [];
+                let environmentalDamageEvents = [];
+                let needBarChanges = [];
+                if (structured) {
+                    if (allowEnvironmentalEffects === false) {
+                        if (structured.parsed && Array.isArray(structured.parsed.environmental_status_damage)) {
+                            structured.parsed.environmental_status_damage = [];
+                        }
+                        if (structured.rawEntries && Object.prototype.hasOwnProperty.call(structured.rawEntries, 'environmental_status_damage')) {
+                            structured.rawEntries.environmental_status_damage = '';
+                        }
                     }
-                    if (Array.isArray(outcomeContext?.currencyChanges) && outcomeContext.currencyChanges.length) {
-                        currencyChanges = outcomeContext.currencyChanges;
+                    try {
+                        const outcomeContext = await this.applyEventOutcomes(structured, {
+                            player: currentPlayer,
+                            location,
+                            region,
+                            experienceAwards: [],
+                            currencyChanges: [],
+                            environmentalDamageEvents: [],
+                            allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
+                            stream
+                        });
+                        if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
+                            experienceAwards = outcomeContext.experienceAwards;
+                        }
+                        if (Array.isArray(outcomeContext?.currencyChanges) && outcomeContext.currencyChanges.length) {
+                            currencyChanges = outcomeContext.currencyChanges;
+                        }
+                        if (Array.isArray(outcomeContext?.environmentalDamageEvents) && outcomeContext.environmentalDamageEvents.length) {
+                            environmentalDamageEvents = outcomeContext.environmentalDamageEvents;
+                        }
+                        if (Array.isArray(outcomeContext?.needBarChanges) && outcomeContext.needBarChanges.length) {
+                            needBarChanges = outcomeContext.needBarChanges;
+                        }
+                    } catch (applyError) {
+                        console.warn('Failed to apply event outcomes:', applyError.message);
                     }
-                    if (Array.isArray(outcomeContext?.environmentalDamageEvents) && outcomeContext.environmentalDamageEvents.length) {
-                        environmentalDamageEvents = outcomeContext.environmentalDamageEvents;
-                    }
-                    if (Array.isArray(outcomeContext?.needBarChanges) && outcomeContext.needBarChanges.length) {
-                        needBarChanges = outcomeContext.needBarChanges;
-                    }
-                } catch (applyError) {
-                    console.warn('Failed to apply event outcomes:', applyError.message);
+                }
+
+                const safeResponse = this.escapeHtml(this.cleanEventResponseText(eventResponse));
+                return {
+                    raw: eventResponse,
+                    html: safeResponse.replace(/\n/g, '<br>'),
+                    structured,
+                    experienceAwards,
+                    currencyChanges,
+                    environmentalDamageEvents,
+                    needBarChanges
+                };
+            };
+
+            const config = this.config || {};
+            const concurrencyLimitRaw = Number(config.events_to_check_concurrently);
+            const eventTemplateChunks = [];
+
+            if (Number.isFinite(concurrencyLimitRaw) && concurrencyLimitRaw > 0 && concurrencyLimitRaw < eventPromptTemplates.length) {
+                const total = eventPromptTemplates.length;
+                const batchCount = Math.ceil(total / concurrencyLimitRaw);
+                const baseSize = Math.floor(total / batchCount);
+                const remainder = total - (baseSize * batchCount);
+
+                let index = 0;
+                for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+                    const extra = batchIndex < remainder ? 1 : 0;
+                    const size = Math.max(1, baseSize + extra);
+                    const chunk = eventPromptTemplates.slice(index, index + size);
+                    eventTemplateChunks.push(chunk);
+                    index += size;
+                }
+            } else {
+                eventTemplateChunks.push(eventPromptTemplates);
+            }
+
+            const aggregatedRawEntries = {};
+            const aggregatedParsedEntries = {};
+            const rawSegments = [];
+            const htmlSegments = [];
+            const experienceAwards = [];
+            const currencyChanges = [];
+            const environmentalDamageEvents = [];
+            const needBarChanges = [];
+            let hasStructuredData = false;
+
+            for (const templatesSubset of eventTemplateChunks) {
+                const batchResult = await runBatch(templatesSubset);
+                if (!batchResult) {
+                    continue;
+                }
+
+                if (batchResult.raw) {
+                    rawSegments.push(batchResult.raw);
+                }
+                if (batchResult.html) {
+                    htmlSegments.push(batchResult.html);
+                }
+
+                if (batchResult.structured) {
+                    hasStructuredData = true;
+                    Object.assign(aggregatedRawEntries, batchResult.structured.rawEntries);
+                    Object.assign(aggregatedParsedEntries, batchResult.structured.parsed);
+                }
+
+                if (Array.isArray(batchResult.experienceAwards) && batchResult.experienceAwards.length) {
+                    experienceAwards.push(...batchResult.experienceAwards);
+                }
+                if (Array.isArray(batchResult.currencyChanges) && batchResult.currencyChanges.length) {
+                    currencyChanges.push(...batchResult.currencyChanges);
+                }
+                if (Array.isArray(batchResult.environmentalDamageEvents) && batchResult.environmentalDamageEvents.length) {
+                    environmentalDamageEvents.push(...batchResult.environmentalDamageEvents);
+                }
+                if (Array.isArray(batchResult.needBarChanges) && batchResult.needBarChanges.length) {
+                    needBarChanges.push(...batchResult.needBarChanges);
                 }
             }
 
-            const safeResponse = this.escapeHtml(this.cleanEventResponseText(eventResponse));
+            if (!rawSegments.length && !hasStructuredData && !experienceAwards.length && !currencyChanges.length && !environmentalDamageEvents.length && !needBarChanges.length) {
+                return null;
+            }
+
+            if (hasStructuredData) {
+                const path = this.deps.path;
+                eventPromptTemplates.forEach(templatePath => {
+                    const key = path.posix.basename(templatePath, '.njk');
+                    if (!Object.prototype.hasOwnProperty.call(aggregatedRawEntries, key)) {
+                        aggregatedRawEntries[key] = '';
+                    }
+                    if (!Object.prototype.hasOwnProperty.call(aggregatedParsedEntries, key)) {
+                        aggregatedParsedEntries[key] = [];
+                    }
+                });
+            }
+
             return {
-                raw: eventResponse,
-                html: safeResponse.replace(/\n/g, '<br>'),
-                structured,
+                raw: rawSegments.join('\n\n'),
+                html: htmlSegments.join('<br><br>'),
+                structured: hasStructuredData ? { rawEntries: aggregatedRawEntries, parsed: aggregatedParsedEntries } : null,
                 experienceAwards,
                 currencyChanges,
                 environmentalDamageEvents,
