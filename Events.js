@@ -11,37 +11,37 @@ class Events {
         this.MAJOR_STATUS_DURATION = deps.majorStatusDuration ?? 5;
 
         this._entryParsers = {
-            attack_damage: raw => this.splitSemicolonEntries(raw).map(entry => {
+            attack_damage: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [attacker, target] = this.extractArrowParts(entry, 2);
                 if (!attacker || !target) {
                     return null;
                 }
                 return { attacker, target };
             }).filter(Boolean),
-            consume_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+            consume_item: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [user, item] = this.extractArrowParts(entry, 2);
                 if (!user || !item) {
                     return null;
                 }
                 return { user, item };
             }).filter(Boolean),
-            death_incapacitation: raw => this.splitSemicolonEntries(raw),
-            drop_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+            death_incapacitation: raw => this.splitVerticalBarEntries(raw),
+            drop_item: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [character, item] = this.extractArrowParts(entry, 2);
                 if (!character || !item) {
                     return null;
                 }
                 return { character, item };
             }).filter(Boolean),
-            heal_recover: raw => this.splitSemicolonEntries(raw).map(entry => {
+            heal_recover: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [healer, recipient, effect] = this.extractArrowParts(entry, 3);
                 if (!recipient) {
                     return null;
                 }
                 return { healer, recipient, effect };
             }).filter(Boolean),
-            item_appear: raw => this.splitSemicolonEntries(raw),
-            alter_location: raw => this.splitSemicolonEntries(raw).map(entry => {
+            item_appear: raw => this.splitVerticalBarEntries(raw),
+            alter_location: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -63,7 +63,7 @@ class Events {
                     changeDescription: changeDescription ? changeDescription.trim() : ''
                 };
             }).filter(Boolean),
-            alter_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+            alter_item: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -91,7 +91,7 @@ class Events {
                     changeDescription: changeDescription ? changeDescription.trim() : ''
                 };
             }).filter(Boolean),
-            alter_npc: raw => this.splitSemicolonEntries(raw).map(entry => {
+            alter_npc: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -113,8 +113,8 @@ class Events {
                     changeDescription: changeDescription ? changeDescription.trim() : ''
                 };
             }).filter(Boolean),
-            move_location: raw => this.splitSemicolonEntries(raw),
-            new_exit_discovered: raw => this.splitSemicolonEntries(raw).map(entry => {
+            move_location: raw => this.splitVerticalBarEntries(raw),
+            new_exit_discovered: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -148,7 +148,7 @@ class Events {
                     fallback: true
                 };
             }).filter(Boolean),
-            npc_arrival_departure: raw => this.splitSemicolonEntries(raw).map(entry => {
+            npc_arrival_departure: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -213,7 +213,7 @@ class Events {
                     destination: destination || null
                 };
             }).filter(Boolean),
-            party_change: raw => this.splitSemicolonEntries(raw).map(entry => {
+            party_change: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -241,7 +241,7 @@ class Events {
                     action: action.trim().toLowerCase()
                 };
             }).filter(Boolean),
-            pick_up_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+            pick_up_item: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [name, item] = this.extractArrowParts(entry, 2);
                 if (!name || !item) {
                     return null;
@@ -251,14 +251,14 @@ class Events {
                     item: item.trim()
                 };
             }).filter(Boolean),
-            status_effect_change: raw => this.splitSemicolonEntries(raw).map(entry => {
+            status_effect_change: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [entity, description, action] = this.extractArrowParts(entry, 3);
                 if (!entity || !description || !action) {
                     return null;
                 }
                 return { entity, description, action: action.trim().toLowerCase() };
             }).filter(Boolean),
-            transfer_item: raw => this.splitSemicolonEntries(raw).map(entry => {
+            transfer_item: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [giver, item, receiver] = this.extractArrowParts(entry, 3);
                 if (!item) {
                     return null;
@@ -272,7 +272,7 @@ class Events {
                 const value = this.extractNumericValue(raw);
                 return Number.isFinite(value) ? value : null;
             },
-            experience_check: raw => this.splitSemicolonEntries(raw).map(entry => {
+            experience_check: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -288,7 +288,7 @@ class Events {
                     reason: reasonPart
                 };
             }).filter(Boolean),
-            environmental_status_damage: raw => this.splitSemicolonEntries(raw).map(entry => {
+            environmental_status_damage: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
                     return null;
                 }
@@ -334,8 +334,8 @@ class Events {
                     reason
                 };
             }).filter(Boolean),
-            defeated_enemy: raw => this.splitSemicolonEntries(raw),
-            needbar_change: raw => this.splitSemicolonEntries(raw).map(entry => {
+            defeated_enemy: raw => this.splitVerticalBarEntries(raw),
+            needbar_change: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const parts = this.extractArrowParts(entry, 4);
                 if (parts.length < 4) {
                     return null;
@@ -452,12 +452,12 @@ class Events {
         return normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'nothing';
     }
 
-    static splitSemicolonEntries(raw) {
+    static splitVerticalBarEntries(raw) {
         if (!raw || this.isNoEventAnswer(raw)) {
             return [];
         }
         return raw
-            .split(/;/)
+            .split(/[|]/)
             .map(entry => entry.trim())
             .filter(entry => entry.length > 0 && !this.isNoEventAnswer(entry));
     }
