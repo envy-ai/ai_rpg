@@ -1856,10 +1856,27 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         return normalized;
     };
 
+    const exitSummaries = [];
+    if (locationDetails && typeof locationDetails.exits === 'object' && locationDetails.exits !== null) {
+        for (const [directionKey, exitInfo] of Object.entries(locationDetails.exits)) {
+            if (!exitInfo) {
+                continue;
+            }
+            const label = exitInfo.description
+                || (typeof directionKey === 'string' && directionKey.trim() ? directionKey.trim() : 'Unknown Exit');
+            exitSummaries.push({
+                name: label,
+                isVehicle: Boolean(exitInfo.isVehicle),
+                vehicleType: typeof exitInfo.vehicleType === 'string' ? exitInfo.vehicleType : null
+            });
+        }
+    }
+
     const currentLocationContext = {
         name: locationDetails?.name || location?.name || 'Unknown Location',
         description: locationDetails?.description || location?.description || 'No description available.',
-        statusEffects: normalizeStatusEffects(location || locationDetails)
+        statusEffects: normalizeStatusEffects(location || locationDetails),
+        exits: exitSummaries
     };
 
     const regionStatus = region && typeof region.toJSON === 'function' ? region.toJSON() : null;
@@ -2935,20 +2952,68 @@ function normalizeRegionLocationName(name) {
     return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
-function ensureExitConnection(fromLocation, direction, toLocation, { description, bidirectional = false, destinationRegion } = {}) {
+function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, isVehicle = undefined, vehicleType = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         return null;
     }
 
-    const normalizedDirection = normalizeDirection(direction) || directionKeyFromName(toLocation.name) || `path_${randomIntInclusive(100, 999)}`;
-    let exit = typeof fromLocation.getExit === 'function' ? fromLocation.getExit(normalizedDirection) : null;
+    const { getAvailableDirections, getExit, addExit } = fromLocation || {};
 
-    if (exit) {
+    let directionKey = null;
+    if (typeof getAvailableDirections === 'function' && typeof getExit === 'function') {
+        directionKey = getAvailableDirections.call(fromLocation).find(dir => {
+            const candidate = getExit.call(fromLocation, dir);
+            return candidate && candidate.destination === toLocation.id;
+        }) || null;
+    }
+
+    if (!directionKey) {
+        const baseKey = directionKeyFromName(toLocation.name || toLocation.id) || `path_${randomIntInclusive(100, 999)}`;
+        directionKey = baseKey;
+        if (typeof getExit === 'function') {
+            let attempt = directionKey;
+            let suffix = 2;
+            while (getExit.call(fromLocation, attempt)) {
+                attempt = `${directionKey}_${suffix++}`;
+            }
+            directionKey = attempt;
+        }
+    }
+
+    let exit = typeof getExit === 'function' ? getExit.call(fromLocation, directionKey) : null;
+
+    if (!exit && typeof getAvailableDirections === 'function' && typeof getExit === 'function') {
+        // Double-check for any existing exit pointing to the target by iterating again in case the computed key conflicts.
+        const existingKey = getAvailableDirections.call(fromLocation).find(dir => {
+            const candidate = getExit.call(fromLocation, dir);
+            return candidate && candidate.destination === toLocation.id;
+        });
+        if (existingKey) {
+            directionKey = existingKey;
+            exit = getExit.call(fromLocation, directionKey);
+        }
+    }
+
+    if (!exit) {
+        const exitDescription = description || `Path to ${toLocation.name || 'an unknown location'}`;
+        exit = new LocationExit({
+            description: exitDescription,
+            destination: toLocation.id,
+            destinationRegion: destinationRegion !== undefined ? destinationRegion : null,
+            bidirectional: Boolean(bidirectional),
+            isVehicle: typeof isVehicle === 'boolean' ? isVehicle : false,
+            vehicleType: vehicleType !== undefined ? vehicleType : null
+        });
+
+        if (typeof addExit === 'function') {
+            addExit.call(fromLocation, directionKey, exit);
+        }
+        gameLocationExits.set(exit.id, exit);
+    } else {
         if (description) {
             try {
                 exit.description = description;
             } catch (_) {
-                // Fallback for immutable description errors
                 exit.update({ description });
             }
         }
@@ -2969,55 +3034,22 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
                 exit.destinationRegion = destinationRegion;
             }
         }
-        if (bidirectional) {
-            const fallbackReverse = normalizedDirection && !normalizedDirection.startsWith('return_')
-                ? `return_${normalizedDirection}`
-                : null;
-            const reverseKey = getOppositeDirection(normalizedDirection)
-                || fallbackReverse
-                || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
-            let reverseDestinationRegion = null;
-            const reverseRegion = findRegionByLocationId(fromLocation.id);
-            if (reverseRegion) {
-                reverseDestinationRegion = reverseRegion.id;
-            } else if (fromLocation.stubMetadata?.regionId) {
-                reverseDestinationRegion = fromLocation.stubMetadata.regionId;
-            }
-
-            ensureExitConnection(
-                toLocation,
-                reverseKey,
-                fromLocation,
-                {
-                    description: `Path back to ${fromLocation.name || fromLocation.id}`,
-                    bidirectional: false,
-                    destinationRegion: reverseDestinationRegion
-                }
-            );
-        }
-        return exit;
     }
 
-    const exitDescription = description || `Path to ${toLocation.name || 'an unknown location'}`;
-    const newExit = new LocationExit({
-        description: exitDescription,
-        destination: toLocation.id,
-        destinationRegion: destinationRegion !== undefined ? destinationRegion : null,
-        bidirectional: Boolean(bidirectional)
-    });
-
-    if (typeof fromLocation.addExit === 'function') {
-        fromLocation.addExit(normalizedDirection, newExit);
+    if (isVehicle !== undefined) {
+        exit.isVehicle = Boolean(isVehicle);
     }
-    gameLocationExits.set(newExit.id, newExit);
+
+    if (vehicleType !== undefined) {
+        exit.vehicleType = vehicleType;
+    }
+
+    const resolvedIsVehicle = isVehicle !== undefined ? Boolean(isVehicle) : Boolean(exit?.isVehicle);
+    const resolvedVehicleType = vehicleType !== undefined
+        ? (vehicleType || null)
+        : (exit?.vehicleType || null);
 
     if (bidirectional) {
-        const fallbackReverse = normalizedDirection && !normalizedDirection.startsWith('return_')
-            ? `return_${normalizedDirection}`
-            : null;
-        const reverseKey = getOppositeDirection(normalizedDirection)
-            || fallbackReverse
-            || `return_${directionKeyFromName(fromLocation.name || fromLocation.id)}`;
         let reverseDestinationRegion = null;
         const reverseRegion = findRegionByLocationId(fromLocation.id);
         if (reverseRegion) {
@@ -3028,16 +3060,18 @@ function ensureExitConnection(fromLocation, direction, toLocation, { description
 
         ensureExitConnection(
             toLocation,
-            reverseKey,
             fromLocation,
             {
                 description: `Path back to ${fromLocation.name || fromLocation.id}`,
                 bidirectional: false,
-                destinationRegion: reverseDestinationRegion
+                destinationRegion: reverseDestinationRegion,
+                isVehicle: resolvedIsVehicle,
+                vehicleType: resolvedVehicleType
             }
         );
     }
-    return newExit;
+
+    return exit;
 }
 
 async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true } = {}) {
@@ -3052,7 +3086,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     let existing = findLocationByNameLoose(trimmedName);
     if (existing) {
         if (originLocation && directionHint) {
-            ensureExitConnection(originLocation, directionHint, existing, {
+            ensureExitConnection(originLocation, existing, {
                 description: descriptionHint || `Path to ${existing.name || trimmedName}`,
                 bidirectional: false
             });
@@ -3088,7 +3122,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     gameLocations.set(stub.id, stub);
 
     if (originLocation) {
-        ensureExitConnection(originLocation, resolvedDirection, stub, {
+        ensureExitConnection(originLocation, stub, {
             description: descriptionHint || `Path to ${trimmedName}`,
             bidirectional: false
         });
@@ -3140,12 +3174,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
             return null;
         }
 
-        let directionKey = directionKeyFromName(trimmedName, `to_${destinationRegionId || targetLocation.id}`);
-        if (!directionKey) {
-            directionKey = `to_${destinationRegionId || targetLocation.id}`;
-        }
-
-        return ensureExitConnection(originLocation, directionKey, targetLocation, {
+        return ensureExitConnection(originLocation, targetLocation, {
             description: description || `Path to ${targetLocation.name || trimmedName}`,
             bidirectional: true,
             destinationRegion: destinationRegionId || null
@@ -3265,7 +3294,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     gameLocations.set(regionEntryStub.id, regionEntryStub);
 
-    ensureExitConnection(originLocation, directionKey, regionEntryStub, {
+    ensureExitConnection(originLocation, regionEntryStub, {
         description: description || `Path to ${trimmedName}`,
         bidirectional: false,
         destinationRegion: newRegionId
@@ -3356,7 +3385,7 @@ function createStubNeighbors(location, context = {}) {
 
         gameLocations.set(stub.id, stub);
         const exitDescription = `Unexplored path leading ${direction} toward ${stub.name}`;
-        ensureExitConnection(location, direction, stub, { description: exitDescription, bidirectional: false });
+        ensureExitConnection(location, stub, { description: exitDescription, bidirectional: false });
 
         console.log(`🌱 Created stub location ${stub.name} (${stub.id}) to the ${direction} of ${location.name || location.id}`);
         created.push({
@@ -3617,10 +3646,14 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     const originDirection = metadata.originDirection || null;
 
     if (originLocation) {
-        ensureExitConnection(originLocation, originDirection || directionKeyFromName(entranceLocation.name), entranceLocation, {
+        const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
+        const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
+        ensureExitConnection(originLocation, entranceLocation, {
             description: originDescription,
             bidirectional: true,
-            destinationRegion: region.id
+            destinationRegion: region.id,
+            isVehicle: originIsVehicle,
+            vehicleType: originVehicleType
         });
     }
 
@@ -3660,10 +3693,12 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         }
 
         const description = exit.description || `Path to ${targetLocation.name || exit.destination}`;
-        ensureExitConnection(entranceLocation, direction, targetLocation, {
+        ensureExitConnection(entranceLocation, targetLocation, {
             description,
             bidirectional: exit.bidirectional !== false,
-            destinationRegion: exit.destinationRegion || null
+            destinationRegion: exit.destinationRegion || null,
+            isVehicle: Boolean(exit.isVehicle),
+            vehicleType: exit.vehicleType || null
         });
     }
 
@@ -9706,11 +9741,23 @@ async function generateLocationFromPrompt(options = {}) {
         if (isStubExpansion && resolvedOriginLocation) {
             const travelDirection = stubMetadata.originDirection || 'forward';
             const cleanedDescription = `Path to ${location.name || 'an adjacent area'}`;
-            ensureExitConnection(resolvedOriginLocation, travelDirection, location, { description: cleanedDescription, bidirectional: false });
+            const stubVehicleType = typeof stubMetadata?.vehicleType === 'string' ? stubMetadata.vehicleType : null;
+            const stubIsVehicle = Boolean(stubMetadata?.isVehicleExit || stubVehicleType);
+            ensureExitConnection(resolvedOriginLocation, location, {
+                description: cleanedDescription,
+                bidirectional: false,
+                isVehicle: stubIsVehicle,
+                vehicleType: stubVehicleType
+            });
 
             const reverseDirection = getOppositeDirection(travelDirection) || 'back';
             const returnDescription = `Path back to ${resolvedOriginLocation.name || 'the previous area'}`;
-            ensureExitConnection(location, reverseDirection, resolvedOriginLocation, { description: returnDescription, bidirectional: false });
+            ensureExitConnection(location, resolvedOriginLocation, {
+                description: returnDescription,
+                bidirectional: false,
+                isVehicle: stubIsVehicle,
+                vehicleType: stubVehicleType
+            });
         }
 
         if (createStubs) {
@@ -9878,6 +9925,7 @@ function parseRegionExitsResponse(xmlSnippet) {
         const relativeLevelValue = getTagValue(node, 'relativeLevel');
         const relationship = getTagValue(node, 'relationshipToCurrentRegion') || 'Adjacent';
         const exitLocation = getTagValue(node, 'exitLocation');
+        const exitVehicle = getTagValue(node, 'exitVehicle');
 
         if (!name || !exitLocation) {
             continue;
@@ -9890,7 +9938,8 @@ function parseRegionExitsResponse(xmlSnippet) {
             description,
             relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
             relationship,
-            exitLocation
+            exitLocation,
+            exitVehicle: exitVehicle || null
         });
     }
 
@@ -10113,6 +10162,7 @@ async function generateRegionExitStubs({
         }
 
         const newRegionId = generateRegionStubId();
+        const vehicleLabel = definition.exitVehicle || null;
         const relationshipNormalized = (definition.relationship || 'Adjacent').trim().toLowerCase();
         const existingParent = region.parentRegionId || null;
         let newRegionParentId = null;
@@ -10176,6 +10226,10 @@ async function generateRegionExitStubs({
         if (baseLevel !== null) {
             stubMetadata.regionAverageLevel = baseLevel;
         }
+        if (vehicleLabel) {
+            stubMetadata.vehicleType = vehicleLabel;
+            stubMetadata.isVehicleExit = true;
+        }
 
         const regionEntryStub = new Location({
             name: stubName,
@@ -10191,10 +10245,12 @@ async function generateRegionExitStubs({
         stubMap.set(normalizeRegionLocationName(regionEntryStub.name), regionEntryStub);
 
         const exitDescription = `Path to ${definition.name}`;
-        ensureExitConnection(sourceLocation, normalizedDirection, regionEntryStub, {
+        ensureExitConnection(sourceLocation, regionEntryStub, {
             description: exitDescription,
             bidirectional: false,
-            destinationRegion: newRegionId
+            destinationRegion: newRegionId,
+            isVehicle: Boolean(vehicleLabel),
+            vehicleType: vehicleLabel
         });
 
         pendingRegionStubs.set(newRegionId, {
@@ -10270,7 +10326,18 @@ async function instantiateRegionLocations({
                 regionId: region.id,
                 regionName: region.name,
                 blueprintDescription: blueprint.description,
-                suggestedRegionExits: (blueprint.exits || []).map(exit => exit.target ?? exit),
+                suggestedRegionExits: (blueprint.exits || []).map(exit => {
+                    if (!exit) {
+                        return null;
+                    }
+                    if (typeof exit === 'string') {
+                        return exit;
+                    }
+                    if (typeof exit === 'object' && typeof exit.target === 'string') {
+                        return exit.target;
+                    }
+                    return null;
+                }).filter(Boolean),
                 themeHint,
                 shortDescription: blueprint.description,
                 locationPurpose: `Part of the ${region.name} region`,
@@ -10346,12 +10413,13 @@ async function instantiateRegionLocations({
             .map(alias => stubMap.get(alias))
             .find(Boolean);
         if (!sourceStub) continue;
-        const exits = blueprint.exits || [];
+        const exits = Array.isArray(blueprint.exits) ? blueprint.exits : [];
 
         exits.forEach(exitInfo => {
-            const targetLabel = typeof exitInfo === 'string' ? exitInfo : exitInfo?.target;
+            const targetLabel = typeof exitInfo === 'string'
+                ? exitInfo
+                : (exitInfo && typeof exitInfo.target === 'string' ? exitInfo.target : null);
             if (!targetLabel) return;
-            const directionHint = typeof exitInfo === 'object' ? exitInfo.direction : null;
 
             const candidateAliases = [normalizeRegionLocationName(targetLabel)];
             const directStub = candidateAliases
@@ -10362,7 +10430,7 @@ async function instantiateRegionLocations({
                 return;
             }
 
-            const forwardDirection = directionHint || targetLabel;
+            const forwardDirection = targetLabel;
             addStubExit(sourceStub, targetStub, forwardDirection);
         });
     }
