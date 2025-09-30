@@ -390,7 +390,12 @@ class Events {
             drop_item: (entries, context) => this.handleDropItemEvents(entries, context),
             heal_recover: (entries, context) => this.handleHealEvents(entries, context),
             item_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
-            alter_location: (entries, context) => this.handleAlterLocationEvents(entries, context),
+            alter_location: (entries, context) => {
+                if (context?.suppressAlterLocationHandling) {
+                    return;
+                }
+                return this.handleAlterLocationEvents(entries, context);
+            },
             alter_item: (entries, context) => this.handleAlterItemEvents(entries, context),
             alter_npc: (entries, context) => this.handleAlterNpcEvents(entries, context),
             move_location: (entries, context) => this.handleMoveLocationEvents(entries, context),
@@ -2735,6 +2740,8 @@ class Events {
         if (destination?.stubMetadata?.isRegionEntryStub && !context.skipNpcTurns) {
             context.skipNpcTurns = true;
         }
+
+        context.suppressAlterLocationHandling = true;
     }
 
     static async handleNewExitEvents(entries = [], context = {}) {
@@ -3649,6 +3656,8 @@ class Events {
 
         const eventMap = parsedEvents.parsed;
         const prioritizedOrder = [
+            'move_location',
+            'alter_location',
             'pick_up_item',
             'transfer_item',
             'drop_item',

@@ -7784,7 +7784,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
 
 // Function to render location NPC prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey, existingLocationsInRegion = [] }) {
-    if (config.omitNpcGeneration) {
+    if (config.omit_npc_generation) {
         return;
     }
     try {
@@ -8059,7 +8059,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
     if (!region) {
         throw new Error('Region is required for generating region NPCs');
     }
-    if (config.omitNpcGeneration) {
+    if (config.omit_npc_generation) {
         return [];
     }
 

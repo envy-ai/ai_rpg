@@ -40,6 +40,8 @@ class AIRPGChat {
 
         this.setupEditModal();
         this.loadExistingHistory();
+
+        window.AIRPG_CHAT = this;
     }
 
     async loadExistingHistory() {
@@ -2627,20 +2629,25 @@ class AIRPGChat {
         }
     }
 
-    async sendMessage() {
-        const rawInput = this.messageInput.value;
-        const message = rawInput.trim();
-        if (!message) return;
+    async submitChatMessage(rawContent, { setButtonLoading = false } = {}) {
+        const content = typeof rawContent === 'string' ? rawContent : '';
+        const trimmed = content.trim();
+        if (!trimmed) {
+            return;
+        }
 
-        const userEntry = this.normalizeLocalEntry({ role: 'user', content: rawInput });
+        const userEntry = this.normalizeLocalEntry({ role: 'user', content });
         this.serverHistory.push(userEntry);
         this.chatHistory = [this.systemMessage, ...this.serverHistory];
         this.renderChatHistory();
 
-        this.messageInput.value = '';
-        this.setSendButtonLoading(true);
         const requestId = this.generateRequestId();
         const context = this.ensureRequestContext(requestId);
+
+        if (setButtonLoading) {
+            this.setSendButtonLoading(true);
+        }
+
         this.showLoading(requestId);
 
         let shouldRefreshLocation = false;
@@ -2692,6 +2699,20 @@ class AIRPGChat {
         }
 
         await this.refreshChatHistory();
+    }
+
+    async sendMessage() {
+        const rawInput = this.messageInput.value;
+        if (!rawInput || !rawInput.trim()) {
+            return;
+        }
+
+        this.messageInput.value = '';
+        await this.submitChatMessage(rawInput, { setButtonLoading: true });
+    }
+
+    async dispatchAutomatedMessage(message) {
+        await this.submitChatMessage(message, { setButtonLoading: false });
     }
 
     async checkLocationUpdate() {

@@ -7918,7 +7918,7 @@
                                 }
 
                                 button.dataset.destinationId = exit.destination;
-                                button.addEventListener('click', () => moveToLocation(exit.destination));
+                                button.addEventListener('click', () => moveToLocation(exit));
                                 locationExitsList.appendChild(button);
                             });
                         }
@@ -8158,47 +8158,20 @@
                 }
             });
 
-            async function moveToLocation(destinationId) {
-                if (!destinationId) return;
-                try {
-                    showLocationOverlay('Exploring new location...');
-                    const response = await fetch('/api/player/move', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ destinationId })
-                    });
-
-                    const result = await response.json();
-                    if (result.success && result.location) {
-                        if (result.location.name) {
-                            locationCache[result.location.id] = result.location.name;
-                        }
-                        if (Array.isArray(result.location.exits)) {
-                            result.location.exits.forEach(exit => {
-                                if (exit.destination && exit.destinationName) {
-                                    locationCache[exit.destination] = exit.destinationName;
-                                }
-                            });
-                        } else if (result.location.exits) {
-                            Object.values(result.location.exits).forEach(exit => {
-                                if (exit?.destination && exit.destinationName) {
-                                    locationCache[exit.destination] = exit.destinationName;
-                                }
-                            });
-                        }
-                        await window.updateLocationDisplay(result.location);
-                        if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
-                            window.loadRegionMap?.();
-                        }
-                    } else if (result.error) {
-                        hideLocationOverlay();
-                        alert(`Move failed: ${result.error}`);
-                    }
-                } catch (error) {
-                    console.error('Move failed:', error);
-                    hideLocationOverlay();
-                    alert(`Move failed: ${error.message}`);
+            async function moveToLocation(exit) {
+                if (!exit || !exit.destination) {
+                    return;
                 }
+
+                const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                const regionName = exit.destinationRegion ? (exit.destinationRegionName || baseName) : null;
+                const targetName = (regionName || baseName || 'the destination').toString().trim() || 'the destination';
+                const vehicleType = typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : '';
+                const message = vehicleType
+                    ? `I take the ${vehicleType} to ${targetName}.`
+                    : `I move to ${targetName}.`;
+
+                await window.AIRPG_CHAT.dispatchAutomatedMessage(message);
             }
 
             // Load current player location on page load
