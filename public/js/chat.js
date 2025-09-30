@@ -138,6 +138,14 @@ class AIRPGChat {
             return this.createEventSummaryElement(entry);
         }
 
+        if (entry.type === 'plausibility') {
+            return this.createPlausibilityEntryElement(entry);
+        }
+
+        if (entry.type === 'skill-check') {
+            return this.createSkillCheckEntryElement(entry);
+        }
+
         const messageDiv = document.createElement('div');
         const role = entry.role === 'user' ? 'user-message' : 'ai-message';
         messageDiv.className = `message ${role}`;
@@ -1645,12 +1653,34 @@ class AIRPGChat {
     }
 
     addPlausibilityMessage(contentHtml) {
-        if (!contentHtml) {
+        const timestamp = new Date().toISOString();
+        const messageDiv = this.buildPlausibilityMessageElement({ html: contentHtml, timestamp });
+        if (!messageDiv) {
             return;
+        }
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    addSkillCheckMessage(resolution) {
+        const timestamp = new Date().toISOString();
+        const messageDiv = this.buildSkillCheckMessageElement({ resolution, timestamp });
+        if (!messageDiv) {
+            return;
+        }
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    buildPlausibilityMessageElement({ html, timestamp }) {
+        if (!html) {
+            return null;
         }
 
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message plausibility-message';
+        messageDiv.dataset.type = 'plausibility';
+        messageDiv.dataset.timestamp = timestamp || '';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -1663,31 +1693,31 @@ class AIRPGChat {
         details.appendChild(summaryEl);
 
         const body = document.createElement('div');
-        body.innerHTML = contentHtml;
+        body.innerHTML = html;
         details.appendChild(body);
 
         contentDiv.appendChild(details);
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
+        timestampDiv.textContent = this.formatTimestamp(timestamp);
 
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        return messageDiv;
     }
 
-    addSkillCheckMessage(resolution) {
+    buildSkillCheckMessageElement({ resolution, timestamp }) {
         if (!resolution || typeof resolution !== 'object') {
-            return;
+            return null;
         }
 
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message skill-check-message';
+        messageDiv.dataset.type = 'skill-check';
+        messageDiv.dataset.timestamp = timestamp || '';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -1696,7 +1726,11 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
 
         const lines = [];
-        const { roll = {}, difficulty = {}, skill, attribute, label, reason, margin, type } = resolution;
+        const rawRoll = resolution.roll;
+        const roll = rawRoll && typeof rawRoll === 'object' ? rawRoll : {};
+        const rawDifficulty = resolution.difficulty;
+        const difficulty = rawDifficulty && typeof rawDifficulty === 'object' ? rawDifficulty : {};
+        const { skill, attribute, label, reason, margin, type } = resolution;
 
         const formatSigned = (value) => {
             if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -1771,7 +1805,7 @@ class AIRPGChat {
                 return null;
             }
 
-            return this.escapeHtml(parts.join(' '));
+            return `${parts.join(' ')}`;
         };
 
         const formattedCircumstances = circumstanceEntries
@@ -1792,7 +1826,7 @@ class AIRPGChat {
                 parts.push(`Total ${totalText}`);
             }
             if (formattedCircumstances.length) {
-                parts.push(`<small>${formattedCircumstances.join('<br>')}</small>`);
+                parts.push(`<small>${formattedCircumstances.map(item => this.escapeHtml(item)).join('<br>')}</small>`);
             } else if (hasCircumstanceReason) {
                 parts.push(this.escapeHtml(String(roll.circumstanceReason)));
             }
@@ -1849,7 +1883,7 @@ class AIRPGChat {
         }
 
         if (!lines.length) {
-            return;
+            return null;
         }
 
         const details = document.createElement('details');
@@ -1866,15 +1900,43 @@ class AIRPGChat {
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
+        timestampDiv.textContent = this.formatTimestamp(timestamp);
 
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        return messageDiv;
+    }
+
+    createPlausibilityEntryElement(entry) {
+        const messageDiv = this.buildPlausibilityMessageElement({
+            html: entry.plausibilityHtml || entry.plausibility || entry.content || '',
+            timestamp: entry.timestamp
+        });
+        if (!messageDiv) {
+            return null;
+        }
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
+        return messageDiv;
+    }
+
+    createSkillCheckEntryElement(entry) {
+        const messageDiv = this.buildSkillCheckMessageElement({
+            resolution: entry.skillCheck || entry.resolution || null,
+            timestamp: entry.timestamp
+        });
+        if (!messageDiv) {
+            return null;
+        }
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
+        return messageDiv;
     }
 
     addAttackCheckMessage(summary) {

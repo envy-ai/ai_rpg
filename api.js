@@ -749,6 +749,51 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function recordPlausibilityEntry({ html, timestamp = null, parentId = null } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+            if (!html || typeof html !== 'string') {
+                return null;
+            }
+
+            const entry = {
+                role: 'assistant',
+                type: 'plausibility',
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                plausibilityHtml: html
+            };
+
+            return pushChatEntry(entry, collector);
+        }
+
+        function recordSkillCheckEntry({ resolution, timestamp = null, parentId = null } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+            if (!resolution || typeof resolution !== 'object') {
+                return null;
+            }
+
+            let serializedResolution = null;
+            try {
+                serializedResolution = JSON.parse(JSON.stringify(resolution));
+            } catch (_) {
+                serializedResolution = { ...resolution };
+            }
+
+            const entry = {
+                role: 'assistant',
+                type: 'skill-check',
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                skillCheck: serializedResolution
+            };
+
+            return pushChatEntry(entry, collector);
+        }
+
         function loadRandomEventLines(type) {
             const normalized = type === 'rare' ? 'rare' : 'common';
             if (Array.isArray(randomEventCache[normalized])) {
@@ -3030,6 +3075,14 @@ module.exports = function registerApiRoutes(scope) {
                         npcTurnResult.actionResolution = actionResolution;
                     }
 
+                    if (npcTurnResult.actionResolution) {
+                        recordSkillCheckEntry({
+                            resolution: npcTurnResult.actionResolution,
+                            timestamp: npcTurnTimestamp,
+                            parentId: npcTurnEntry?.id || null
+                        }, newChatEntries);
+                    }
+
                     if (isAttack) {
                         if (attackSummaryValue) {
                             npcTurnResult.attackSummary = attackSummaryValue;
@@ -3400,10 +3453,18 @@ module.exports = function registerApiRoutes(scope) {
 
                     responseData.debug = rejectionDebug;
 
-                    pushChatEntry({
+                    const rejectionMessageEntry = pushChatEntry({
                         role: 'assistant',
                         content: rejectionReason
                     }, newChatEntries);
+
+                    if (plausibilityInfo?.html) {
+                        recordPlausibilityEntry({
+                            html: plausibilityInfo.html,
+                            timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
+                            parentId: rejectionMessageEntry?.id || null
+                        }, newChatEntries);
+                    }
 
                     responseData.messages = newChatEntries;
                     res.json(responseData);
@@ -3852,6 +3913,22 @@ module.exports = function registerApiRoutes(scope) {
                         timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                         parentId: aiResponseEntry?.id || null
                     }, newChatEntries);
+
+                    if (responseData.plausibility) {
+                        recordPlausibilityEntry({
+                            html: responseData.plausibility,
+                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                            parentId: aiResponseEntry?.id || null
+                        }, newChatEntries);
+                    }
+
+                    if (responseData.actionResolution) {
+                        recordSkillCheckEntry({
+                            resolution: responseData.actionResolution,
+                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                            parentId: aiResponseEntry?.id || null
+                        }, newChatEntries);
+                    }
 
                     if (stream.isEnabled && !playerActionStreamSent) {
                         const playerActionPreview = { ...responseData };
