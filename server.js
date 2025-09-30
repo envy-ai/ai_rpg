@@ -3087,14 +3087,30 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
     }
 
-    const regionForOrigin = originLocation ? findRegionByLocationId(originLocation.id) : null;
-    console.log(regionForOrigin);
+    const originRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
+    const targetRegion = targetRegionId ? regions.get(targetRegionId) || null : null;
+    const pendingTargetRegion = (!targetRegion && targetRegionId) ? pendingRegionStubs.get(targetRegionId) || null : null;
+    const effectiveRegion = targetRegion || originRegion;
+    const effectiveRegionId = targetRegion?.id
+        || pendingTargetRegion?.id
+        || originRegion?.id
+        || originLocation?.stubMetadata?.regionId
+        || null;
+    const effectiveRegionName = targetRegion?.name
+        || pendingTargetRegion?.name
+        || originRegion?.name
+        || originLocation?.stubMetadata?.regionName
+        || null;
+
+    if (!effectiveRegionId) {
+        throw new Error('Unable to determine region for new location.');
+    }
 
     let existing = findLocationByNameLoose(trimmedName);
     if (existing) {
@@ -3105,8 +3121,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             });
         }
 
-        if (regionForOrigin && Array.isArray(regionForOrigin.locationIds) && !regionForOrigin.locationIds.includes(existing.id)) {
-            regionForOrigin.locationIds.push(existing.id);
+        if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {
+            effectiveRegion.addLocationId(existing.id);
         }
         return existing;
     }
@@ -3118,7 +3134,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const stub = new Location({
         name: trimmedName,
         description: null,
-        regionId: regionForOrigin?.id || originLocation?.stubMetadata?.regionId || null,
+        regionId: effectiveRegionId,
         isStub: true,
         stubMetadata: {
             originLocationId: originLocation?.id || null,
@@ -3126,37 +3142,39 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             shortDescription: descriptionHint || `An unexplored area referred to as ${trimmedName}.`,
             locationPurpose: 'Area referenced during event-driven travel.',
             settingDescription: describeSettingForPrompt(settingSnapshot),
-            regionId: regionForOrigin?.id || originLocation?.stubMetadata?.regionId || null,
-            regionName: regionForOrigin?.name || originLocation?.stubMetadata?.regionName || null,
+            regionId: effectiveRegionId,
+            regionName: effectiveRegionName,
             allowRename: false
-        }
+        },
+        checkRegionId: !pendingTargetRegion
     });
 
     gameLocations.set(stub.id, stub);
 
     if (originLocation) {
+        const destinationRegionForExit = effectiveRegionId && originRegion?.id !== effectiveRegionId
+            ? effectiveRegionId
+            : null;
         ensureExitConnection(originLocation, stub, {
             description: descriptionHint || `${trimmedName}`,
-            bidirectional: false
+            bidirectional: false,
+            destinationRegion: destinationRegionForExit
         });
     }
 
-    if (regionForOrigin) {
-        if (!Array.isArray(regionForOrigin.locationIds)) {
-            regionForOrigin.locationIds = [];
+    if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {
+        effectiveRegion.addLocationId(stub.id);
+    } else if (pendingTargetRegion) {
+        if (!Array.isArray(pendingTargetRegion.locationIds)) {
+            pendingTargetRegion.locationIds = [];
         }
-        if (!regionForOrigin.locationIds.includes(stub.id)) {
-            regionForOrigin.locationIds.push(stub.id);
+        if (!pendingTargetRegion.locationIds.includes(stub.id)) {
+            pendingTargetRegion.locationIds.push(stub.id);
         }
     } else if (originLocation?.stubMetadata?.regionId) {
         const fallbackRegion = regions.get(originLocation.stubMetadata.regionId);
-        if (fallbackRegion) {
-            if (!Array.isArray(fallbackRegion.locationIds)) {
-                fallbackRegion.locationIds = [];
-            }
-            if (!fallbackRegion.locationIds.includes(stub.id)) {
-                fallbackRegion.locationIds.push(stub.id);
-            }
+        if (fallbackRegion && typeof fallbackRegion.addLocationId === 'function') {
+            fallbackRegion.addLocationId(stub.id);
         }
     }
 
@@ -11019,6 +11037,7 @@ const apiScope = {
     resolveActionOutcome,
     resolveLocationStyle,
     scheduleStubExpansion,
+    ensureExitConnection,
     shouldGenerateNpcImage,
     shouldGenerateThingImage,
     getJobSnapshot,

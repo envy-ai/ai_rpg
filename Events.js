@@ -2840,19 +2840,20 @@ class Events {
                 directionKey = `path_${Date.now()}`;
             }
 
-            let cleanedName = baseName
-                ? baseName.replace(/[.,!?]+$/g, '').replace(/^the\s+/i, '').trim()
-                : '';
-            if (!cleanedName) {
-                cleanedName = generateStubName(location, directionKey);
+            let newName = baseName;
+            if (!newName) {
+                newName = generateStubName(location, directionKey);
             }
 
-            const descriptionHint = description || `Unmarked path leaving ${location.name || location.id}.`;
+            const descriptionHint = description || baseName || null;
+            if (!descriptionHint) {
+                throw new Error('Insufficient information to create exit location from event.');
+            }
 
             let targetLocation = null;
             try {
                 targetLocation = await createLocationFromEvent({
-                    name: cleanedName,
+                    name: newName,
                     originLocation: location,
                     descriptionHint,
                     directionHint: directionKey

@@ -243,6 +243,9 @@ module.exports = function registerApiRoutes(scope) {
             if (!entry.timestamp) {
                 entry.timestamp = new Date().toISOString();
             }
+            if (!Object.prototype.hasOwnProperty.call(entry, 'parentId')) {
+                entry.parentId = null;
+            }
             return entry;
         };
 
@@ -701,7 +704,8 @@ module.exports = function registerApiRoutes(scope) {
             currencyChanges = null,
             environmentalDamageEvents = null,
             needBarChanges = null,
-            timestamp = null
+            timestamp = null,
+            parentId = null
         } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -728,6 +732,7 @@ module.exports = function registerApiRoutes(scope) {
                 role: 'assistant',
                 content: summaryText,
                 timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
                 type: 'event-summary',
                 summaryTitle: label,
                 summaryItems: bundle.items.map(item => ({
@@ -953,13 +958,14 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
-                pushChatEntry({
+                const randomEventEntry = pushChatEntry({
                     role: 'assistant',
                     content: narrativeText,
                     actor: 'Random Event',
                     randomEvent: true,
                     rarity: rarity || 'common'
                 });
+                const randomEventTimestamp = randomEventEntry?.timestamp || new Date().toISOString();
 
                 let eventChecks = null;
                 try {
@@ -976,7 +982,7 @@ module.exports = function registerApiRoutes(scope) {
                     response: narrativeText,
                     rawResponse,
                     isAttack,
-                    timestamp: new Date().toISOString(),
+                    timestamp: randomEventTimestamp,
                     eventChecks: eventChecks?.html || null,
                     events: eventChecks?.structured || null
                 };
@@ -1001,7 +1007,8 @@ module.exports = function registerApiRoutes(scope) {
                     currencyChanges: summary.currencyChanges,
                     environmentalDamageEvents: summary.environmentalDamageEvents,
                     needBarChanges: summary.needBarChanges,
-                    timestamp: summary.timestamp
+                    timestamp: summary.timestamp,
+                    parentId: randomEventEntry?.id || null
                 });
 
                 return summary;
@@ -3015,7 +3022,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: npcTurnResult.currencyChanges,
                         environmentalDamageEvents: npcTurnResult.environmentalDamageEvents,
                         needBarChanges: npcTurnResult.needBarChanges,
-                        timestamp: npcTurnTimestamp
+                        timestamp: npcTurnTimestamp,
+                        parentId: npcTurnEntry?.id || null
                     }, newChatEntries);
 
                     if (!isAttack && actionResolution) {
@@ -3620,7 +3628,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    pushChatEntry({
+                    const forcedEventEntry = pushChatEntry({
                         role: 'assistant',
                         content: responseData.response
                     }, newChatEntries);
@@ -3632,7 +3640,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: responseData.currencyChanges,
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
-                        timestamp: new Date().toISOString()
+                        timestamp: forcedEventEntry?.timestamp || new Date().toISOString(),
+                        parentId: forcedEventEntry?.id || null
                     }, newChatEntries);
 
                     if (debugInfo) {
@@ -3840,7 +3849,8 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: responseData.currencyChanges,
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
-                        timestamp: new Date().toISOString()
+                        timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                        parentId: aiResponseEntry?.id || null
                     }, newChatEntries);
 
                     if (stream.isEnabled && !playerActionStreamSent) {
@@ -5993,6 +6003,125 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/exits/options', (req, res) => {
+            try {
+                const originLocationIdRaw = typeof req.query.originLocationId === 'string' ? req.query.originLocationId.trim() : '';
+                const originLocationId = originLocationIdRaw || null;
+                const originRegion = originLocationId ? findRegionByLocationId(originLocationId) : null;
+
+                const regionEntries = new Map();
+
+                const ensureRegionEntry = (regionId, { name, isStub = false }) => {
+                    if (!regionId) {
+                        return null;
+                    }
+                    if (!regionEntries.has(regionId)) {
+                        regionEntries.set(regionId, {
+                            id: regionId,
+                            name: name || regionId,
+                            isStub: Boolean(isStub),
+                            locations: [],
+                            sortKey: (name || regionId).toLowerCase()
+                        });
+                    } else if (name && !regionEntries.get(regionId).name) {
+                        regionEntries.get(regionId).name = name;
+                        regionEntries.get(regionId).sortKey = name.toLowerCase();
+                    }
+                    if (isStub) {
+                        regionEntries.get(regionId).isStub = true;
+                    }
+                    return regionEntries.get(regionId);
+                };
+
+                const summarizeLocation = (location) => {
+                    if (!location) {
+                        return null;
+                    }
+                    const primaryName = location.name
+                        || location.stubMetadata?.shortDescription
+                        || location.stubMetadata?.targetRegionName
+                        || location.description
+                        || location.id;
+                    return {
+                        id: location.id,
+                        name: primaryName,
+                        isStub: Boolean(location.isStub),
+                        regionId: location.regionId || location.stubMetadata?.regionId || null,
+                        isRegionEntryStub: Boolean(location.stubMetadata?.isRegionEntryStub),
+                        sortKey: primaryName.toLowerCase()
+                    };
+                };
+
+                for (const region of regions.values()) {
+                    ensureRegionEntry(region.id, { name: region.name, isStub: false });
+                }
+
+                for (const pending of pendingRegionStubs.values()) {
+                    ensureRegionEntry(pending.id, { name: pending.name || pending.id, isStub: true });
+                }
+
+                for (const location of gameLocations.values()) {
+                    const summary = summarizeLocation(location);
+                    if (!summary || !summary.regionId) {
+                        continue;
+                    }
+                    const entry = ensureRegionEntry(summary.regionId, {
+                        name: regions.get(summary.regionId)?.name || pendingRegionStubs.get(summary.regionId)?.name || summary.regionId,
+                        isStub: Boolean(pendingRegionStubs.has(summary.regionId))
+                    });
+                    if (!entry) {
+                        continue;
+                    }
+                    if (!entry.locations.some(loc => loc.id === summary.id)) {
+                        entry.locations.push(summary);
+                    }
+                }
+
+                for (const pending of pendingRegionStubs.values()) {
+                    if (!pending?.entranceStubId) {
+                        continue;
+                    }
+                    const stubLocation = gameLocations.get(pending.entranceStubId);
+                    if (!stubLocation) {
+                        continue;
+                    }
+                    const summary = summarizeLocation(stubLocation);
+                    if (!summary) {
+                        continue;
+                    }
+                    const entry = ensureRegionEntry(pending.id, { name: pending.name || pending.id, isStub: true });
+                    if (!entry) {
+                        continue;
+                    }
+                    if (!entry.locations.some(loc => loc.id === summary.id)) {
+                        entry.locations.push(summary);
+                    }
+                }
+
+                const regionsList = Array.from(regionEntries.values())
+                    .map(entry => {
+                        entry.locations.sort((a, b) => a.sortKey.localeCompare(b.sortKey, undefined, { sensitivity: 'base' }));
+                        entry.locations.forEach(loc => { delete loc.sortKey; });
+                        return entry;
+                    })
+                    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, undefined, { sensitivity: 'base' }));
+
+                regionsList.forEach(entry => { delete entry.sortKey; });
+
+                res.json({
+                    success: true,
+                    regions: regionsList,
+                    originRegionId: originRegion?.id || null
+                });
+            } catch (error) {
+                console.error('Failed to load exit options:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load exit options'
+                });
+            }
+        });
+
         app.post('/api/locations/:id/exits', async (req, res) => {
             try {
                 const locationId = req.params.id;
@@ -6011,24 +6140,46 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const { type, name, description, clientId: initiatorClientIdRaw } = req.body || {};
+                const {
+                    type,
+                    name,
+                    description,
+                    regionId: targetRegionIdRaw,
+                    locationId: targetLocationIdRaw,
+                    clientId: initiatorClientIdRaw
+                } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
                 const resolvedDescription = typeof description === 'string' ? description.trim() : '';
                 const resolvedType = typeof type === 'string' ? type.trim().toLowerCase() : 'location';
                 const initiatorClientId = (typeof initiatorClientIdRaw === 'string' && initiatorClientIdRaw.trim())
                     ? initiatorClientIdRaw.trim()
                     : null;
+                const targetRegionId = typeof targetRegionIdRaw === 'string' && targetRegionIdRaw.trim()
+                    ? targetRegionIdRaw.trim()
+                    : null;
+                const targetLocationId = typeof targetLocationIdRaw === 'string' && targetLocationIdRaw.trim()
+                    ? targetLocationIdRaw.trim()
+                    : null;
 
-                if (!resolvedName) {
+                const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
+
+                if (targetRegionId && !regions.has(targetRegionId) && !pendingRegionStubs.has(targetRegionId)) {
                     return res.status(400).json({
                         success: false,
-                        error: 'Exit name is required'
+                        error: `Region '${targetRegionId}' was not found.`
                     });
                 }
 
                 let createdInfo = null;
 
-                if (resolvedType === 'region') {
+                if (normalizedType === 'region') {
+                    if (!resolvedName) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Exit name is required'
+                        });
+                    }
+
                     const regionStub = createRegionStubFromEvent({
                         name: resolvedName,
                         description: resolvedDescription,
@@ -6048,13 +6199,61 @@ module.exports = function registerApiRoutes(scope) {
                         regionId: regionStub?.stubMetadata?.targetRegionId || regionStub?.stubMetadata?.regionId || null,
                         name: regionStub?.name || resolvedName
                     };
-                } else if (resolvedType === 'location') {
+                } else if (normalizedType === 'location' && targetLocationId) {
+                    const destinationLocation = gameLocations.get(targetLocationId) || Location.get(targetLocationId);
+                    if (!destinationLocation) {
+                        return res.status(404).json({
+                            success: false,
+                            error: `Destination location '${targetLocationId}' not found`
+                        });
+                    }
+
+                    const destinationRegion = targetRegionId
+                        ? (regions.get(targetRegionId) || null)
+                        : findRegionByLocationId(destinationLocation.id) || null;
+                    const originRegionId = originLocation ? (findRegionByLocationId(originLocation.id)?.id || originLocation.stubMetadata?.regionId || null) : null;
+                    const computedDestinationRegionId = destinationRegion?.id
+                        || destinationLocation.regionId
+                        || destinationLocation.stubMetadata?.regionId
+                        || null;
+                    const destinationRegionForExit = computedDestinationRegionId && originRegionId !== computedDestinationRegionId
+                        ? computedDestinationRegionId
+                        : null;
+                    const fallbackName = destinationLocation.name
+                        || destinationLocation.stubMetadata?.shortDescription
+                        || destinationLocation.stubMetadata?.targetRegionName
+                        || destinationLocation.description
+                        || destinationLocation.id;
+                    const exitName = resolvedName || fallbackName;
+
+                    ensureExitConnection(originLocation, destinationLocation, {
+                        description: resolvedDescription || exitName,
+                        bidirectional: false,
+                        destinationRegion: destinationRegionForExit
+                    });
+
+                    createdInfo = {
+                        type: 'location',
+                        destinationId: destinationLocation.id,
+                        name: fallbackName,
+                        isStub: Boolean(destinationLocation.isStub),
+                        existing: true
+                    };
+                } else if (normalizedType === 'location') {
+                    if (!resolvedName) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Exit name is required to create a new location.'
+                        });
+                    }
+
                     const locationStub = await createLocationFromEvent({
                         name: resolvedName,
                         originLocation,
-                        descriptionHint: resolvedDescription || `Unmarked path leaving ${originLocation.name || originLocation.id}.`,
+                        descriptionHint: resolvedDescription || resolvedName,
                         directionHint: null,
-                        expandStub: false
+                        expandStub: false,
+                        targetRegionId
                     });
 
                     if (!locationStub) {

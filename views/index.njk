@@ -626,24 +626,25 @@
             </header>
             <form id="newExitForm" class="modal__body new-exit-body" novalidate>
                 <div class="new-exit-field">
-                    <label for="newExitName">Exit Name</label>
-                    <input type="text" id="newExitName" name="name" maxlength="120" required>
+                    <label for="newExitRegion">Region</label>
+                    <select id="newExitRegion" name="regionId">
+                        <option value="">Create new region</option>
+                    </select>
                 </div>
-                <div class="new-exit-field">
+                <div class="new-exit-field" id="newExitLocationGroup" hidden>
+                    <label for="newExitLocation">Location</label>
+                    <select id="newExitLocation" name="locationId">
+                        <option value="">Create new location</option>
+                    </select>
+                </div>
+                <div class="new-exit-field" id="newExitNameGroup">
+                    <label for="newExitName">Exit Name</label>
+                    <input type="text" id="newExitName" name="name" maxlength="120">
+                </div>
+                <div class="new-exit-field" id="newExitDescriptionGroup">
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
                 </div>
-                <fieldset class="new-exit-field new-exit-type">
-                    <legend>Exit Type</legend>
-                    <label for="newExitTypeLocation" class="new-exit-type-option">
-                        <input type="radio" id="newExitTypeLocation" name="type" value="location" checked>
-                        Location (path within the current region)
-                    </label>
-                    <label for="newExitTypeRegion" class="new-exit-type-option">
-                        <input type="radio" id="newExitTypeRegion" name="type" value="region">
-                        Region (leads to a new or existing region)
-                    </label>
-                </fieldset>
                 <footer class="new-exit-footer">
                     <div class="new-exit-status" id="newExitStatus" role="status" aria-live="polite"></div>
                     <div class="new-exit-actions">
@@ -2644,15 +2645,20 @@
         const npcNeedsCloseBtn = document.getElementById('npcNeedsCloseBtn');
         const newExitModal = document.getElementById('newExitModal');
         const newExitForm = document.getElementById('newExitForm');
+        const newExitRegionSelect = document.getElementById('newExitRegion');
+        const newExitLocationSelect = document.getElementById('newExitLocation');
+        const newExitLocationGroup = document.getElementById('newExitLocationGroup');
+        const newExitNameGroup = document.getElementById('newExitNameGroup');
+        const newExitDescriptionGroup = document.getElementById('newExitDescriptionGroup');
         const newExitNameInput = document.getElementById('newExitName');
         const newExitDescriptionInput = document.getElementById('newExitDescription');
-        const newExitTypeLocation = document.getElementById('newExitTypeLocation');
-        const newExitTypeRegion = document.getElementById('newExitTypeRegion');
         const newExitStatus = document.getElementById('newExitStatus');
         const newExitCancelBtn = document.getElementById('newExitCancelBtn');
         const newExitSaveBtn = document.getElementById('newExitSaveBtn');
         const newExitCloseBtn = document.getElementById('newExitCloseBtn');
         const newExitButton = document.getElementById('newExitButton');
+        let newExitOptionsCache = null;
+        let newExitRegionsById = new Map();
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
         const addNpcNameInput = document.getElementById('addNpcName');
@@ -4946,7 +4952,177 @@
             }
         }
 
-        function openNewExitModal() {
+        function getNewExitRegionOption(regionId) {
+            if (!regionId) {
+                return null;
+            }
+            return newExitRegionsById.get(regionId) || null;
+        }
+
+        async function ensureNewExitOptionsLoaded(force = false) {
+            if (!force && newExitOptionsCache && Array.isArray(newExitOptionsCache.regions)) {
+                return newExitOptionsCache;
+            }
+
+            const originLocationId = lastRenderedLocation?.id;
+            const query = originLocationId ? `?originLocationId=${encodeURIComponent(originLocationId)}` : '';
+            const response = await fetch(`/api/exits/options${query}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            if (!data?.success || !Array.isArray(data.regions)) {
+                throw new Error(data?.error || 'Invalid response when loading region data');
+            }
+
+            newExitOptionsCache = data;
+            newExitRegionsById = new Map();
+            data.regions.forEach(region => {
+                const normalizedLocations = Array.isArray(region.locations)
+                    ? region.locations.map(loc => ({
+                        id: loc.id,
+                        name: loc.name || loc.id,
+                        isStub: Boolean(loc.isStub),
+                        regionId: loc.regionId || region.id,
+                        isRegionEntryStub: Boolean(loc.isRegionEntryStub)
+                    }))
+                    : [];
+                newExitRegionsById.set(region.id, {
+                    id: region.id,
+                    name: region.name || region.id,
+                    isStub: Boolean(region.isStub),
+                    locations: normalizedLocations
+                });
+            });
+
+            return newExitOptionsCache;
+        }
+
+        function populateNewExitRegionSelect(defaultRegionId = '') {
+            if (!newExitRegionSelect) {
+                return;
+            }
+
+            const previousValue = defaultRegionId !== undefined ? defaultRegionId : newExitRegionSelect.value;
+            newExitRegionSelect.innerHTML = '';
+
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Create new region';
+            newExitRegionSelect.appendChild(defaultOption);
+
+            if (newExitOptionsCache?.regions) {
+                newExitOptionsCache.regions.forEach(region => {
+                    const option = document.createElement('option');
+                    option.value = region.id;
+                    option.textContent = region.isStub ? `${region.name} (pending)` : region.name;
+                    option.dataset.isStub = region.isStub ? 'true' : 'false';
+                    newExitRegionSelect.appendChild(option);
+                });
+            }
+
+            if (previousValue && Array.from(newExitRegionSelect.options).some(opt => opt.value === previousValue)) {
+                newExitRegionSelect.value = previousValue;
+            } else {
+                newExitRegionSelect.value = '';
+            }
+
+            handleNewExitRegionChange();
+        }
+
+        function populateNewExitLocationSelect(regionId) {
+            if (!newExitLocationSelect || !newExitLocationGroup) {
+                return;
+            }
+
+            if (!regionId) {
+                newExitLocationSelect.innerHTML = '';
+                newExitLocationGroup.setAttribute('hidden', '');
+                return;
+            }
+
+            const regionOption = getNewExitRegionOption(regionId);
+
+            newExitLocationGroup.removeAttribute('hidden');
+            newExitLocationSelect.innerHTML = '';
+
+            const createOption = document.createElement('option');
+            createOption.value = '';
+            createOption.textContent = 'Create new location';
+            createOption.dataset.isCreateOption = 'true';
+            newExitLocationSelect.appendChild(createOption);
+
+            if (regionOption && Array.isArray(regionOption.locations)) {
+                regionOption.locations.forEach(loc => {
+                    const option = document.createElement('option');
+                    option.value = loc.id;
+                    option.textContent = loc.name;
+                    option.dataset.isStub = loc.isStub ? 'true' : 'false';
+                    option.dataset.regionId = loc.regionId || regionOption.id;
+                    newExitLocationSelect.appendChild(option);
+                });
+            }
+
+            newExitLocationSelect.selectedIndex = 0;
+
+            handleNewExitLocationChange();
+        }
+
+        function shouldShowNewExitTextFields() {
+            const selectedRegionId = newExitRegionSelect?.value || '';
+            if (!selectedRegionId) {
+                return true;
+            }
+            const selectedLocationId = newExitLocationSelect?.value || '';
+            if (!selectedLocationId) {
+                const regionOption = getNewExitRegionOption(selectedRegionId);
+                if (regionOption?.isStub && (!regionOption.locations || regionOption.locations.length === 0)) {
+                    return true;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function syncNewExitFieldVisibility() {
+            const showFields = shouldShowNewExitTextFields();
+            if (newExitNameGroup) {
+                if (showFields) {
+                    newExitNameGroup.removeAttribute('hidden');
+                } else {
+                    newExitNameGroup.setAttribute('hidden', '');
+                }
+            }
+            if (newExitDescriptionGroup) {
+                if (showFields) {
+                    newExitDescriptionGroup.removeAttribute('hidden');
+                } else {
+                    newExitDescriptionGroup.setAttribute('hidden', '');
+                }
+            }
+        }
+
+        function handleNewExitRegionChange() {
+            const regionId = newExitRegionSelect?.value || '';
+            populateNewExitLocationSelect(regionId);
+            syncNewExitFieldVisibility();
+        }
+
+        function handleNewExitLocationChange() {
+            syncNewExitFieldVisibility();
+            const selectedLocationId = newExitLocationSelect?.value || '';
+            if (selectedLocationId) {
+                if (newExitNameInput) {
+                    newExitNameInput.value = '';
+                }
+                if (newExitDescriptionInput) {
+                    newExitDescriptionInput.value = '';
+                }
+            }
+        }
+
+
+        async function openNewExitModal() {
             if (!newExitModal || !npcModalBackdrop) {
                 return;
             }
@@ -4954,23 +5130,59 @@
                 alert('No active location available to add an exit.');
                 return;
             }
+
             if (newExitForm) {
                 newExitForm.reset();
             }
-            if (newExitTypeLocation) {
-                newExitTypeLocation.checked = true;
+            if (newExitRegionSelect) {
+                newExitRegionSelect.value = '';
             }
+            if (newExitLocationSelect) {
+                newExitLocationSelect.innerHTML = '';
+            }
+            if (newExitLocationGroup) {
+                newExitLocationGroup.setAttribute('hidden', '');
+            }
+            if (newExitNameGroup) {
+                newExitNameGroup.removeAttribute('hidden');
+            }
+            if (newExitDescriptionGroup) {
+                newExitDescriptionGroup.removeAttribute('hidden');
+            }
+
             setNewExitStatus('', null);
             if (newExitSaveBtn) {
                 newExitSaveBtn.disabled = false;
             }
+
+            syncNewExitFieldVisibility();
+
+            let loadError = null;
+            try {
+                await ensureNewExitOptionsLoaded();
+                populateNewExitRegionSelect('');
+            } catch (error) {
+                loadError = error;
+                setNewExitStatus(`Failed to load region information: ${error?.message || 'Unknown error'}`, 'error');
+                if (newExitSaveBtn) {
+                    newExitSaveBtn.disabled = true;
+                }
+            }
+
             npcModalBackdrop.removeAttribute('hidden');
             newExitModal.removeAttribute('hidden');
             newExitModal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
             scrollModalToTop(newExitModal);
+
             setTimeout(() => {
-                newExitNameInput?.focus();
+                if (loadError) {
+                    newExitCloseBtn?.focus();
+                } else if (newExitRegionSelect) {
+                    newExitRegionSelect.focus();
+                } else {
+                    newExitNameInput?.focus();
+                }
             }, 50);
         }
 
@@ -4988,15 +5200,27 @@
                 return;
             }
 
+            const selectedRegionId = newExitRegionSelect?.value?.trim() || '';
+            const selectedLocationId = newExitLocationSelect?.value?.trim() || '';
+            const nameFieldsVisible = shouldShowNewExitTextFields();
             const name = newExitNameInput?.value?.trim() || '';
             const description = newExitDescriptionInput?.value?.trim() || '';
-            const type = newExitTypeRegion?.checked ? 'region' : 'location';
 
-            if (!name) {
+            if (nameFieldsVisible && !name) {
                 setNewExitStatus('Please provide a name for the exit.', 'error');
                 newExitNameInput?.focus();
                 return;
             }
+
+            const creatingNewRegion = !selectedRegionId;
+            const creatingNewLocation = Boolean(selectedRegionId && !selectedLocationId);
+            const usingExistingLocation = Boolean(selectedRegionId && selectedLocationId);
+
+            const type = creatingNewRegion ? 'region' : 'location';
+            const regionOption = getNewExitRegionOption(selectedRegionId);
+            const locationOption = selectedLocationId
+                ? Array.from(newExitLocationSelect?.options || []).find(opt => opt.value === selectedLocationId)
+                : null;
 
             let placeholderButton = null;
             if (locationExitsList) {
@@ -5008,9 +5232,19 @@
                 placeholderButton.type = 'button';
                 placeholderButton.className = 'exit-button exit-button-pending';
                 placeholderButton.disabled = true;
-                placeholderButton.textContent = type === 'region'
-                    ? `${name} (region)`
-                    : name;
+                let placeholderLabel = name;
+                if (!placeholderLabel) {
+                    if (usingExistingLocation) {
+                        placeholderLabel = locationOption?.textContent?.trim() || locationOption?.value || 'Selected location';
+                    } else if (selectedRegionId) {
+                        placeholderLabel = regionOption?.name || regionOption?.id || 'Selected region';
+                    } else {
+                        placeholderLabel = 'New Exit';
+                    }
+                }
+                placeholderButton.textContent = creatingNewRegion
+                    ? `${placeholderLabel} (region)`
+                    : placeholderLabel;
                 placeholderButton.dataset.pendingExit = 'true';
                 locationExitsList.appendChild(placeholderButton);
             }
@@ -5018,11 +5252,19 @@
             setNewExitStatus('Creating exit…', null);
             newExitSaveBtn.disabled = true;
 
-            const payload = {
-                type,
-                name,
-                description
-            };
+            const payload = { type };
+            if (!usingExistingLocation || name) {
+                payload.name = name;
+            }
+            if (nameFieldsVisible || description) {
+                payload.description = description;
+            }
+            if (selectedRegionId) {
+                payload.regionId = selectedRegionId;
+            }
+            if (selectedLocationId) {
+                payload.locationId = selectedLocationId;
+            }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
             if (clientId) {
@@ -5046,6 +5288,8 @@
                 closeNewExitModal();
                 showLocationOverlay('Updating exits...');
                 overlayShown = true;
+                newExitOptionsCache = null;
+                newExitRegionsById = new Map();
 
                 if (data.location) {
                     lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
@@ -5092,6 +5336,21 @@
             newExitModal.setAttribute('hidden', '');
             if (newExitForm) {
                 newExitForm.reset();
+            }
+            if (newExitRegionSelect) {
+                newExitRegionSelect.value = '';
+            }
+            if (newExitLocationSelect) {
+                newExitLocationSelect.innerHTML = '';
+            }
+            if (newExitLocationGroup) {
+                newExitLocationGroup.setAttribute('hidden', '');
+            }
+            if (newExitNameGroup) {
+                newExitNameGroup.removeAttribute('hidden');
+            }
+            if (newExitDescriptionGroup) {
+                newExitDescriptionGroup.removeAttribute('hidden');
             }
             setNewExitStatus('', null);
             if (newExitSaveBtn) {
@@ -5382,6 +5641,14 @@
             newExitCloseBtn.addEventListener('click', () => {
                 closeNewExitModal();
             });
+        }
+
+        if (newExitRegionSelect) {
+            newExitRegionSelect.addEventListener('change', handleNewExitRegionChange);
+        }
+
+        if (newExitLocationSelect) {
+            newExitLocationSelect.addEventListener('change', handleNewExitLocationChange);
         }
 
         if (newExitForm) {
