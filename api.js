@@ -2839,7 +2839,13 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false }) {
+            if (skipNpcEvents) {
+                if (stream && stream.isEnabled) {
+                    stream.status('npc_turns:skipped', 'Skipping NPC and random events due to forced action.');
+                }
+                return [];
+            }
             const results = [];
 
             try {
@@ -3853,9 +3859,16 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
-                        stream.status('npc_turns:pending', 'Resolving NPC turns.');
-                        const npcTurns = await executeNpcTurnsAfterPlayer({ location, stream });
-                        if (npcTurns && npcTurns.length) {
+                        const skipNpcEvents = Boolean(isForcedEventAction);
+                        stream.status('npc_turns:pending', skipNpcEvents
+                            ? 'Forced event detected; skipping NPC turns and random events.'
+                            : 'Resolving NPC turns.');
+                        const npcTurns = await executeNpcTurnsAfterPlayer({
+                            location,
+                            stream,
+                            skipNpcEvents
+                        });
+                        if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
                             streamState.npcTurns = npcTurns.length;
 
