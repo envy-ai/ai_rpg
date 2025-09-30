@@ -4038,6 +4038,10 @@ function findRegionByLocationId(locationId) {
 
 async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey }) {
     try {
+        if (config.omit_item_generation) {
+            return [];
+        }
+
         const settingSnapshot = getActiveSettingSnapshot();
         if (!settingSnapshot) {
             if (!character || !character.isNPC) {
@@ -7167,6 +7171,10 @@ function parseLocationThingsXml(xmlContent) {
 
 async function generateLocationThingsForLocation({ location, chatEndpoint = null, model = null, apiKey = null } = {}) {
     if (!location || typeof location.id !== 'string') {
+        return [];
+    }
+
+    if (config.omit_item_generation) {
         return [];
     }
 
@@ -10833,7 +10841,8 @@ app.get('/', (req, res) => {
         player: currentPlayer ? currentPlayer.getStatus() : null,
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,
-        rarityDefinitions
+        rarityDefinitions,
+        checkMovePlausibility: config.check_move_plausibility || 'never'
     });
 });
 

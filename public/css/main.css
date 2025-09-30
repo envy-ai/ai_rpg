@@ -123,7 +123,6 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin: 0 auto;
   background: rgba(255, 255, 255, 0.1);
   -webkit-backdrop-filter: blur(10px);
           backdrop-filter: blur(10px);
@@ -233,7 +232,7 @@ p:not(:last-child) {
 }
 
 .location-block {
-  flex: 0 0 32%;
+  flex: 0 0 25%;
   min-width: 320px;
   max-width: 420px;
   display: flex;
@@ -3918,6 +3917,8 @@ body.modal-open {
 
 .adventure-content {
   position: relative;
+  width: auto;
+  max-width: 100%;
   z-index: 1;
 }
 

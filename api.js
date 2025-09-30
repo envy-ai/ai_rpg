@@ -2963,7 +2963,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     let npcEventResult = null;
                     try {
-                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false });
+                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false, isNpcTurn: true });
                     } catch (error) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
@@ -3155,6 +3155,45 @@ module.exports = function registerApiRoutes(scope) {
                 const trimmedVisibleContent = firstVisibleIndex > -1
                     ? originalUserContent.slice(firstVisibleIndex)
                     : '';
+                const isCommentOnlyAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('#');
+
+                if (isCommentOnlyAction) {
+                    const responseData = {
+                        response: '',
+                        commentLogged: true,
+                        messages: newChatEntries
+                    };
+
+                    streamState.commentOnly = true;
+                    stream.status('player_action:complete', 'Comment logged; skipping processing.');
+
+                    if (stream.isEnabled) {
+                        const previewMeta = {
+                            ...streamState,
+                            enabled: true,
+                            playerAction: true,
+                            commentOnly: true
+                        };
+                        stream.playerAction({
+                            ...responseData,
+                            streamMeta: previewMeta
+                        });
+                        stream.complete({ commentOnly: true, playerActionStreamed: true });
+                    } else {
+                        stream.complete({ commentOnly: true, playerActionStreamed: false });
+                    }
+
+                    if (stream.requestId) {
+                        responseData.requestId = stream.requestId;
+                        responseData.streamMeta = {
+                            ...streamState,
+                            enabled: stream.isEnabled,
+                            commentOnly: true
+                        };
+                    }
+
+                    return res.json(responseData);
+                }
                 const isForcedEventAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('!!');
                 const forcedEventText = isForcedEventAction
                     ? trimmedVisibleContent.slice(2).replace(/^\s+/, '')
@@ -3166,9 +3205,22 @@ module.exports = function registerApiRoutes(scope) {
                     ? trimmedVisibleContent.slice(1).replace(/^\s+/, '')
                     : null;
 
+                const trimLeadingMarkers = (text) => {
+                    if (typeof text !== 'string') {
+                        return text;
+                    }
+                    const match = text.match(/^([!#]+)/);
+                    if (!match) {
+                        return text;
+                    }
+                    const markers = match[0];
+                    const trimmed = text.slice(markers.length);
+                    return trimmed;
+                };
+
                 const sanitizedUserContent = isForcedEventAction
                     ? (forcedEventText || '')
-                    : (isCreativeModeAction ? (creativeActionText || '') : originalUserContent);
+                    : (isCreativeModeAction ? (creativeActionText || '') : trimLeadingMarkers(originalUserContent));
 
                 if (isForcedEventAction) {
                     stream.status('player_action:forced_event', 'Processing forced event override.');
@@ -3562,6 +3614,21 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    pushChatEntry({
+                        role: 'assistant',
+                        content: responseData.response
+                    }, newChatEntries);
+
+                    recordEventSummaryEntry({
+                        label: '📋 Events – Forced Action',
+                        events: responseData.events,
+                        experienceAwards: responseData.experienceAwards,
+                        currencyChanges: responseData.currencyChanges,
+                        environmentalDamageEvents: responseData.environmentalDamageEvents,
+                        needBarChanges: responseData.needBarChanges,
+                        timestamp: new Date().toISOString()
+                    }, newChatEntries);
+
                     if (debugInfo) {
                         responseData.debug = {
                             ...debugInfo,
@@ -3649,7 +3716,11 @@ module.exports = function registerApiRoutes(scope) {
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
                     const aiResponse = response.data.choices[0].message.content;
 
-                    stream.status('player_action:llm_complete', 'Checking for disposition changes.');
+                    if (config.omit_npc_generation) {
+                        stream.status('player_action:llm_complete', 'Skipping disposition checks (NPC generation disabled).');
+                    } else {
+                        stream.status('player_action:llm_complete', 'Checking for disposition changes.');
+                    }
 
                     // Store AI response in history
                     const aiResponseEntry = pushChatEntry({
@@ -3659,13 +3730,15 @@ module.exports = function registerApiRoutes(scope) {
 
                     let dispositionPromptResult = null;
                     let dispositionChanges = [];
-                    try {
-                        dispositionPromptResult = await runDispositionCheckPrompt({ location });
-                        if (Array.isArray(dispositionPromptResult?.structured) && dispositionPromptResult.structured.length) {
-                            dispositionChanges = applyDispositionChanges(dispositionPromptResult.structured);
+                    if (!config.omit_npc_generation) {
+                        try {
+                            dispositionPromptResult = await runDispositionCheckPrompt({ location });
+                            if (Array.isArray(dispositionPromptResult?.structured) && dispositionPromptResult.structured.length) {
+                                dispositionChanges = applyDispositionChanges(dispositionPromptResult.structured);
+                            }
+                        } catch (dispositionError) {
+                            console.warn('Failed to evaluate disposition changes:', dispositionError.message);
                         }
-                    } catch (dispositionError) {
-                        console.warn('Failed to evaluate disposition changes:', dispositionError.message);
                     }
 
                     // Include debug information in response for development
@@ -4551,6 +4624,8 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const destinationLocation = gameLocations.get(exit.destination);
+                    const destinationIsStub = Boolean(destinationLocation?.isStub);
+                    const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
                     if (destinationLocation) {
                         exit.destinationName = destinationLocation.name
                             || destinationLocation.stubMetadata?.blueprintDescription
@@ -4584,6 +4659,8 @@ module.exports = function registerApiRoutes(scope) {
 
                     exit.destinationRegionName = destinationRegionName;
                     exit.destinationRegionExpanded = destinationRegionExpanded;
+                    exit.destinationIsStub = destinationIsStub;
+                    exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
                 }
             }
 
@@ -6424,6 +6501,8 @@ module.exports = function registerApiRoutes(scope) {
                     for (const [dirKey, exit] of Object.entries(locationData.exits)) {
                         if (!exit) continue;
                         const destLocation = gameLocations.get(exit.destination);
+                        const destinationIsStub = Boolean(destLocation?.isStub);
+                        const destinationIsRegionEntryStub = Boolean(destLocation?.stubMetadata?.isRegionEntryStub);
                         if (destLocation) {
                             exit.destinationName = destLocation.name || destLocation.stubMetadata?.blueprintDescription || exit.destination;
                         }
@@ -6453,6 +6532,8 @@ module.exports = function registerApiRoutes(scope) {
 
                         exit.destinationRegionName = destinationRegionName;
                         exit.destinationRegionExpanded = destinationRegionExpanded;
+                        exit.destinationIsStub = destinationIsStub;
+                        exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
                     }
                 }
                 locationData.npcs = buildNpcProfiles(destinationLocation);
@@ -6544,6 +6625,8 @@ module.exports = function registerApiRoutes(scope) {
                                 const destinationName = destinationLocation?.name
                                     || destinationLocation?.stubMetadata?.blueprintDescription
                                     || null;
+                                const destinationIsStub = Boolean(destinationLocation?.isStub);
+                                const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
 
                                 let destinationRegionName = null;
                                 let destinationRegionExpanded = false;
@@ -6570,7 +6653,9 @@ module.exports = function registerApiRoutes(scope) {
                                     destinationName,
                                     bidirectional: exit?.bidirectional !== false,
                                     isVehicle: Boolean(exit?.isVehicle),
-                                    vehicleType: exit?.vehicleType || null
+                                    vehicleType: exit?.vehicleType || null,
+                                    destinationIsStub,
+                                    destinationIsRegionEntryStub
                                 };
                             })
                         };

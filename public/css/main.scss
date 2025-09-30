@@ -130,7 +130,7 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin: 0 auto;
+  //margin: 0 auto;
   @include glass-effect();
   border-radius: $border-radius-lg;
   overflow: hidden;
@@ -240,7 +240,7 @@ p:not(:last-child) {
 
 // left column of adventure content
 .location-block {
-  flex: 0 0 32%;
+  flex: 0 0 25%;
   min-width: 320px;
   max-width: 420px;
   display: flex;
@@ -4070,6 +4070,8 @@ body.modal-open {
 
 .adventure-content {
   position: relative;
+  width: auto;
+  max-width: 100%;
   z-index: 1;
 }
 .message.event-summary-batch {

@@ -914,6 +914,7 @@
     <script>
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
         window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
+        window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
             //window.systemPrompt = {{ systemPrompt | dump | safe }};
@@ -7136,7 +7137,37 @@
 
         function initLocationDisplay() {
             // Function to update location display
-            const locationCache = {};
+        const locationCache = {};
+        const MOVE_PLAUSIBILITY_POLICY = (window.CHECK_MOVE_PLAUSIBILITY || 'never').toLowerCase();
+
+        function isUnexploredRegionExit(exit) {
+            return Boolean(exit?.destinationRegion && !exit.destinationRegionExpanded);
+        }
+
+        function isUnexploredLocationExit(exit) {
+            if (!exit) {
+                return false;
+            }
+            if (isUnexploredRegionExit(exit)) {
+                return true;
+            }
+            return Boolean(exit.destinationIsRegionEntryStub || exit.destinationIsStub);
+        }
+
+        function shouldUseEventMove(exit) {
+            switch (MOVE_PLAUSIBILITY_POLICY) {
+                case 'always':
+                    return true;
+                case 'never':
+                    return false;
+                case 'unexplored_locations':
+                    return isUnexploredLocationExit(exit);
+                case 'unexplored_regions':
+                    return isUnexploredRegionExit(exit);
+                default:
+                    return false;
+            }
+        }
             const locationOverlay = document.getElementById('locationOverlay');
             const locationOverlayText = document.getElementById('locationOverlayText');
             const locationNPCs = document.getElementById('locationNPCs');
@@ -8171,7 +8202,77 @@
                     ? `I take the ${vehicleType} to ${targetName}.`
                     : `I move to ${targetName}.`;
 
-                await window.AIRPG_CHAT.dispatchAutomatedMessage(message);
+        const useEventMove = shouldUseEventMove(exit);
+
+        if (useEventMove) {
+            showLocationOverlay(`Moving to ${targetName}...`);
+            if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
+                        console.error('AIRPG chat client not available; cannot dispatch move command.');
+                        hideLocationOverlay();
+                        alert('Unable to queue move command via chat.');
+                        return;
+                    }
+                    try {
+                        await window.AIRPG_CHAT.dispatchAutomatedMessage(message);
+                    } catch (error) {
+                        console.error('Failed to dispatch move via chat:', error);
+                        hideLocationOverlay();
+                        alert('Failed to queue move command via chat.');
+                    }
+            return;
+        }
+
+        if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
+            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`);
+        }
+
+        await performDirectMove(exit.destination, targetName);
+    }
+
+            async function performDirectMove(destinationId, targetName) {
+                if (!destinationId) {
+                    return;
+                }
+
+                showLocationOverlay(`Moving to ${targetName || 'the destination'}...`);
+                try {
+                    const response = await fetch('/api/player/move', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ destinationId })
+                    });
+
+                    const result = await response.json();
+                    if (result.success && result.location) {
+                        if (result.location.name) {
+                            locationCache[result.location.id] = result.location.name;
+                        }
+                        if (Array.isArray(result.location.exits)) {
+                            result.location.exits.forEach(exit => {
+                                if (exit.destination && exit.destinationName) {
+                                    locationCache[exit.destination] = exit.destinationName;
+                                }
+                            });
+                        } else if (result.location.exits) {
+                            Object.values(result.location.exits).forEach(exit => {
+                                if (exit?.destination && exit.destinationName) {
+                                    locationCache[exit.destination] = exit.destinationName;
+                                }
+                            });
+                        }
+                        await window.updateLocationDisplay(result.location);
+                        if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
+                            window.loadRegionMap?.();
+                        }
+                    } else if (result.error) {
+                        hideLocationOverlay();
+                        alert(`Move failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    console.error('Move failed:', error);
+                    hideLocationOverlay();
+                    alert(`Move failed: ${error.message}`);
+                }
             }
 
             // Load current player location on page load

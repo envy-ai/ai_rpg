@@ -2540,6 +2540,10 @@ class Events {
             return;
         }
 
+        if (context.isNpcTurn) {
+            return;
+        }
+
         context.suppressNewExitHandling = true;
 
         const destinationName = entries.find(entry => entry && entry.trim());
@@ -3655,6 +3659,11 @@ class Events {
         }
 
         const eventMap = parsedEvents.parsed;
+        const config = this.config || {};
+        const omitNpcGeneration = Boolean(config?.omit_npc_generation);
+        const omitItemGeneration = Boolean(config?.omit_item_generation);
+        const suppressedNpcEvents = omitNpcGeneration ? new Set(['npc_arrival_departure', 'alter_npc']) : null;
+        const suppressedItemEvents = omitItemGeneration ? new Set(['item_appear', 'alter_item']) : null;
         const prioritizedOrder = [
             'move_location',
             'alter_location',
@@ -3681,6 +3690,14 @@ class Events {
         });
 
         for (const eventKey of orderedKeys) {
+            if (suppressedNpcEvents && suppressedNpcEvents.has(eventKey)) {
+                console.warn(`Skipping ${eventKey} events because omit_npc_generation is enabled.`);
+                continue;
+            }
+            if (suppressedItemEvents && suppressedItemEvents.has(eventKey)) {
+                console.warn(`Skipping ${eventKey} events because omit_item_generation is enabled.`);
+                continue;
+            }
             const entries = eventMap[eventKey];
             const handler = this._handlers[eventKey];
             if (!handler) {
@@ -3745,7 +3762,7 @@ class Events {
         });
     }
 
-    static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true } = {}) {
+    static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true, isNpcTurn = false } = {}) {
         if (!textToCheck || !textToCheck.trim()) {
             return null;
         }
@@ -3849,6 +3866,7 @@ class Events {
                         currencyChanges: [],
                         environmentalDamageEvents: [],
                         allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
+                        isNpcTurn: Boolean(isNpcTurn),
                         stream
                     });
                     if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {

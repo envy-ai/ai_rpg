@@ -71,3 +71,15 @@ locations:
   maxItems: 4
   maxScenery: 4
   levelVariation: 3
+
+# Number of events to check concurrently when processing text. Omit to do them all.
+# A lower number makes it easier for the AI but is slower and will use more tokens/requests.
+# You can omit this for sophisticated models that can handle more complex prompts.
+events_to_check_concurrently: 10
+
+# This can be: never, unexplored_regions, unexplored_locations, or always
+check_move_plausibility: unexplored_locations
+
+# Mostly to speed up testing and development - prevent certain types of generation
+omit_npc_generation: true
+omit_item_generation: true
