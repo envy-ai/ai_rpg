@@ -6568,7 +6568,9 @@ module.exports = function registerApiRoutes(scope) {
                                     destinationRegionName,
                                     destinationRegionExpanded,
                                     destinationName,
-                                    bidirectional: exit?.bidirectional !== false
+                                    bidirectional: exit?.bidirectional !== false,
+                                    isVehicle: Boolean(exit?.isVehicle),
+                                    vehicleType: exit?.vehicleType || null
                                 };
                             })
                         };
@@ -8626,11 +8628,13 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (!exit) {
                                 exit = new LocationExit({
-                                    description: exitInfo.description || `Path to ${exitInfo.destination}`,
+                                    description: exitInfo.description || `${exitInfo.destination}`,
                                     destination: exitInfo.destination,
                                     destinationRegion: exitInfo.destinationRegion || null,
                                     bidirectional: exitInfo.bidirectional !== false,
-                                    id: exitId
+                                    id: exitId,
+                                    isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType),
+                                    vehicleType: exitInfo.vehicleType || null
                                 });
                                 gameLocationExits.set(exit.id, exit);
                             } else {
@@ -8656,6 +8660,16 @@ module.exports = function registerApiRoutes(scope) {
                                 } catch (_) {
                                     exit.update({ destinationRegion: exitInfo.destinationRegion || null });
                                 }
+                                try {
+                                    exit.isVehicle = Boolean(exitInfo.isVehicle || exitInfo.vehicleType);
+                                } catch (_) {
+                                    exit.update({ isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType) });
+                                }
+                                try {
+                                    exit.vehicleType = exitInfo.vehicleType || null;
+                                } catch (_) {
+                                    exit.update({ vehicleType: exitInfo.vehicleType || null });
+                                }
                             }
 
                             location.addExit(direction, exit);
@@ -8674,7 +8688,9 @@ module.exports = function registerApiRoutes(scope) {
                             destination: exitData.destination,
                             destinationRegion: exitData.destinationRegion || null,
                             bidirectional: exitData.bidirectional,
-                            id: exitData.id
+                            id: exitData.id,
+                            isVehicle: Boolean(exitData.isVehicle || exitData.vehicleType),
+                            vehicleType: exitData.vehicleType || null
                         });
                         gameLocationExits.set(id, exit);
                     }

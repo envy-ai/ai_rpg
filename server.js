@@ -2954,8 +2954,16 @@ function normalizeRegionLocationName(name) {
 
 function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, isVehicle = undefined, vehicleType = undefined } = {}) {
     if (!fromLocation || !toLocation) {
+        console.log('🧭 ensureExitConnection aborted: missing from/to location');
+        console.trace();
         return null;
     }
+
+    const fromLabel = `${fromLocation.name || fromLocation.id || 'unknown'} (${fromLocation.id || 'no-id'})`;
+    const toLabel = `${toLocation.name || toLocation.id || 'unknown'} (${toLocation.id || 'no-id'})`;
+
+    console.log(`🧭 ensureExitConnection: ${fromLabel} -> ${toLabel} | requested bidirectional=${Boolean(bidirectional)} isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')} destinationRegion=${destinationRegion || 'null'}`);
+    console.trace();
 
     const { getAvailableDirections, getExit, addExit } = fromLocation || {};
 
@@ -2995,7 +3003,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     }
 
     if (!exit) {
-        const exitDescription = description || `Path to ${toLocation.name || 'an unknown location'}`;
+        const exitDescription = description || `${toLocation.name || 'an unknown location'}`;
         exit = new LocationExit({
             description: exitDescription,
             destination: toLocation.id,
@@ -3009,6 +3017,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             addExit.call(fromLocation, directionKey, exit);
         }
         gameLocationExits.set(exit.id, exit);
+        console.log(`  ↳ created new exit ${exit.id} on direction "${directionKey}" (bidirectional=${exit.bidirectional})`);
     } else {
         if (description) {
             try {
@@ -3034,6 +3043,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
                 exit.destinationRegion = destinationRegion;
             }
         }
+        console.log(`  ↳ reusing existing exit ${exit.id} on direction "${directionKey}"`);
     }
 
     if (isVehicle !== undefined) {
@@ -3049,6 +3059,8 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         ? (vehicleType || null)
         : (exit?.vehicleType || null);
 
+    console.log(`  ↳ final exit state: id=${exit.id} isVehicle=${exit.isVehicle} vehicleType=${exit.vehicleType || 'null'} bidirectional=${exit.bidirectional} direction="${directionKey}" destinationRegion=${exit.destinationRegion || 'null'}`);
+
     if (bidirectional) {
         let reverseDestinationRegion = null;
         const reverseRegion = findRegionByLocationId(fromLocation.id);
@@ -3058,6 +3070,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             reverseDestinationRegion = fromLocation.stubMetadata.regionId;
         }
 
+        console.log(`  ↳ ensuring reverse connection ${toLabel} -> ${fromLabel} (destinationRegion=${reverseDestinationRegion || 'null'})`);
         ensureExitConnection(
             toLocation,
             fromLocation,
@@ -3087,7 +3100,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     if (existing) {
         if (originLocation && directionHint) {
             ensureExitConnection(originLocation, existing, {
-                description: descriptionHint || `Path to ${existing.name || trimmedName}`,
+                description: descriptionHint || `${existing.name || trimmedName}`,
                 bidirectional: false
             });
         }
@@ -3123,7 +3136,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
     if (originLocation) {
         ensureExitConnection(originLocation, stub, {
-            description: descriptionHint || `Path to ${trimmedName}`,
+            description: descriptionHint || `${trimmedName}`,
             bidirectional: false
         });
     }
@@ -3175,7 +3188,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         }
 
         return ensureExitConnection(originLocation, targetLocation, {
-            description: description || `Path to ${targetLocation.name || trimmedName}`,
+            description: description || `${targetLocation.name || trimmedName}`,
             bidirectional: true,
             destinationRegion: destinationRegionId || null
         });
@@ -3295,7 +3308,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
     gameLocations.set(regionEntryStub.id, regionEntryStub);
 
     ensureExitConnection(originLocation, regionEntryStub, {
-        description: description || `Path to ${trimmedName}`,
+        description: description || `${trimmedName}`,
         bidirectional: false,
         destinationRegion: newRegionId
     });
@@ -3602,7 +3615,7 @@ async function expandRegionEntryStub(stubLocation) {
             stubLocation,
             entranceLocation,
             region,
-            originDescription: metadata.shortDescription || stubLocation.description || `Path to ${region.name}`
+            originDescription: metadata.shortDescription || stubLocation.description || `${region.name}`
         });
 
         pendingRegionStubs.delete(targetRegionId);
@@ -3629,7 +3642,7 @@ async function expandRegionEntryStub(stubLocation) {
         stubLocation,
         entranceLocation,
         region,
-        originDescription: metadata.shortDescription || stubLocation.description || `Path to ${region.name}`
+        originDescription: metadata.shortDescription || stubLocation.description || `${region.name}`
     });
 
     pendingRegionStubs.delete(targetRegionId);
@@ -3648,6 +3661,35 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     if (originLocation) {
         const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
         const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
+
+        if (originDirection && typeof originLocation.getExit === 'function') {
+            const existingOriginExit = originLocation.getExit(originDirection);
+            if (existingOriginExit) {
+                try {
+                    existingOriginExit.destination = entranceLocation.id;
+                } catch (_) {
+                    existingOriginExit.update({ destination: entranceLocation.id });
+                }
+                try {
+                    existingOriginExit.destinationRegion = region.id;
+                } catch (_) {
+                    existingOriginExit.update({ destinationRegion: region.id });
+                }
+                try {
+                    existingOriginExit.description = originDescription;
+                } catch (_) {
+                    existingOriginExit.update({ description: originDescription });
+                }
+                try {
+                    existingOriginExit.bidirectional = true;
+                } catch (_) {
+                    existingOriginExit.update({ bidirectional: true });
+                }
+                existingOriginExit.isVehicle = originIsVehicle;
+                existingOriginExit.vehicleType = originVehicleType;
+            }
+        }
+
         ensureExitConnection(originLocation, entranceLocation, {
             description: originDescription,
             bidirectional: true,
@@ -3692,7 +3734,7 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
             continue;
         }
 
-        const description = exit.description || `Path to ${targetLocation.name || exit.destination}`;
+        const description = exit.description || `${targetLocation.name || exit.destination}`;
         ensureExitConnection(entranceLocation, targetLocation, {
             description,
             bidirectional: exit.bidirectional !== false,
@@ -4125,7 +4167,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                             thing.imageId = null;
                         }
                     } else {
-                        console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player inventory`);
+                        //console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player inventory`);
                     }
                 } catch (imageError) {
                     console.warn('Failed to schedule thing image generation:', imageError.message);
@@ -7703,6 +7745,9 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
 
 // Function to render location NPC prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey, existingLocationsInRegion = [] }) {
+    if (config.omitNpcGeneration) {
+        return;
+    }
     try {
         let region = Region.get(location.regionId);
         const allNpcIds = Utils.difference(new Set(players.keys()), new Set([currentPlayer?.id].filter(Boolean)));
@@ -7959,7 +8004,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             } else {
-                console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
+                //console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
             }
         }
 
@@ -7973,6 +8018,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
 async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, chatEndpoint, model, apiKey }) {
     if (!region) {
+        throw new Error('Region is required for generating region NPCs');
+    }
+    if (config.omitNpcGeneration) {
         return [];
     }
 
@@ -8714,7 +8762,7 @@ async function generatePlayerImage(player, options = {}) {
         }
 
         if (player.isNPC && !force && !shouldGenerateNpcImage(player)) {
-            console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
+            //console.log(`🎭 Skipping NPC portrait for ${player.name} (${player.id}) - outside player context`);
             return {
                 success: false,
                 skipped: true,
@@ -8746,7 +8794,7 @@ async function generatePlayerImage(player, options = {}) {
 
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
-            console.log('Image generation is not enabled, skipping player portrait generation');
+            //console.log('Image generation is not enabled, skipping player portrait generation');
             return {
                 success: false,
                 skipped: true,
@@ -8965,7 +9013,7 @@ async function generateLocationImage(location, options = {}) {
         const { force = false, clientId = null } = options || {};
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
-            console.log('Image generation is not enabled, skipping location scene generation');
+            //console.log('Image generation is not enabled, skipping location scene generation');
             return {
                 success: false,
                 skipped: true,
@@ -9129,7 +9177,7 @@ async function generateLocationExitImage(locationExit, options = {}) {
         const { force = false, clientId = null } = options || {};
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
-            console.log('Image generation is not enabled, skipping location exit passage generation');
+            //console.log('Image generation is not enabled, skipping location exit passage generation');
             return {
                 success: false,
                 skipped: true,
@@ -9229,10 +9277,10 @@ async function generateLocationExitImage(locationExit, options = {}) {
 async function generateThingImage(thing, options = {}) {
     try {
         const { force = false, clientId = null } = options || {};
-        console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
+        //console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
-            console.log('Image generation is not enabled, skipping thing image generation');
+            //console.log('Image generation is not enabled, skipping thing image generation');
             return {
                 success: false,
                 skipped: true,
@@ -9740,23 +9788,19 @@ async function generateLocationFromPrompt(options = {}) {
 
         if (isStubExpansion && resolvedOriginLocation) {
             const travelDirection = stubMetadata.originDirection || 'forward';
-            const cleanedDescription = `Path to ${location.name || 'an adjacent area'}`;
+            const cleanedDescription = `${location.name || 'an adjacent area'}`;
             const stubVehicleType = typeof stubMetadata?.vehicleType === 'string' ? stubMetadata.vehicleType : null;
             const stubIsVehicle = Boolean(stubMetadata?.isVehicleExit || stubVehicleType);
             ensureExitConnection(resolvedOriginLocation, location, {
                 description: cleanedDescription,
-                bidirectional: false,
-                isVehicle: stubIsVehicle,
-                vehicleType: stubVehicleType
+                bidirectional: false
             });
 
             const reverseDirection = getOppositeDirection(travelDirection) || 'back';
-            const returnDescription = `Path back to ${resolvedOriginLocation.name || 'the previous area'}`;
+            const returnDescription = `${resolvedOriginLocation.name || 'the previous area'}`;
             ensureExitConnection(location, resolvedOriginLocation, {
                 description: returnDescription,
-                bidirectional: false,
-                isVehicle: stubIsVehicle,
-                vehicleType: stubVehicleType
+                bidirectional: false
             });
         }
 
@@ -10132,7 +10176,19 @@ async function generateRegionExitStubs({
 
         if (!sourceLocation) {
             console.warn(`Unable to match exit location "${definition.exitLocation}" within region ${region.name}.`);
-            continue;
+            const fallbackLocation = (region.entranceLocationId && gameLocations.get(region.entranceLocationId))
+                || (region.locationIds || [])
+                    .map(id => gameLocations.get(id))
+                    .find(Boolean)
+                || null;
+
+            if (!fallbackLocation) {
+                console.warn(`No fallback location available in region ${region.name}; skipping exit stub for "${definition.name}".`);
+                continue;
+            }
+
+            console.warn(`Falling back to use ${fallbackLocation.name || fallbackLocation.id} for exit location "${definition.exitLocation}".`);
+            sourceLocation = fallbackLocation;
         }
 
         const normalizedTargetName = normalizeRegionLocationName(definition.name);
@@ -10244,7 +10300,7 @@ async function generateRegionExitStubs({
         gameLocations.set(regionEntryStub.id, regionEntryStub);
         stubMap.set(normalizeRegionLocationName(regionEntryStub.name), regionEntryStub);
 
-        const exitDescription = `Path to ${definition.name}`;
+        const exitDescription = `${definition.name}`;
         ensureExitConnection(sourceLocation, regionEntryStub, {
             description: exitDescription,
             bidirectional: false,
@@ -10377,9 +10433,9 @@ async function instantiateRegionLocations({
             const existingExit = fromStub.getExit(existingDir);
             if (existingExit && !existingExit.description) {
                 try {
-                    existingExit.description = `Path to ${toStub.name}`;
+                    existingExit.description = `${toStub.name}`;
                 } catch (_) {
-                    existingExit.update({ description: `Path to ${toStub.name}` });
+                    existingExit.update({ description: `${toStub.name}` });
                 }
             }
             return;
@@ -10397,7 +10453,7 @@ async function instantiateRegionLocations({
         }
 
         const exit = new LocationExit({
-            description: `Path to ${toStub.name}`,
+            description: `${toStub.name}`,
             destination: toStub.id,
             bidirectional: false
         });

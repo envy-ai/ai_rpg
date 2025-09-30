@@ -71,14 +71,20 @@ class Region {
     const exits = Array.isArray(blueprint.exits)
       ? blueprint.exits
         .map(exit => {
-          if (!exit) return null;
-          if (typeof exit === 'string') {
-            return { target: exit.trim(), direction: null };
+          if (!exit) {
+            return null;
           }
-          const target = typeof exit.target === 'string' ? exit.target.trim() : '';
-          const direction = typeof exit.direction === 'string' ? exit.direction.trim().toLowerCase() : null;
-          if (!target) return null;
-          return { target, direction };
+          if (typeof exit === 'string') {
+            const trimmed = exit.trim();
+            return trimmed || null;
+          }
+          if (typeof exit === 'object') {
+            const target = typeof exit.target === 'string'
+              ? exit.target.trim()
+              : (typeof exit.name === 'string' ? exit.name.trim() : (typeof exit.destination === 'string' ? exit.destination.trim() : ''));
+            return target || null;
+          }
+          return null;
         })
         .filter(Boolean)
       : [];
@@ -221,16 +227,11 @@ class Region {
       const exitEntries = exitsNode
         ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
           const destinationAttr = exitNode.getAttribute('destination');
-          const directionAttr = exitNode.getAttribute('direction');
           const textDest = exitNode.textContent?.trim();
-          const targetCandidate = destinationAttr?.trim() || textDest || exitNode.getAttribute('name')?.trim() || '';
-          if (!targetCandidate) {
-            return null;
-          }
-          return {
-            target: targetCandidate,
-            direction: directionAttr ? directionAttr.trim().toLowerCase() : null
-          };
+          const namedAttr = exitNode.getAttribute('name')?.trim();
+          const targetCandidate = destinationAttr?.trim() || textDest || namedAttr || '';
+          const normalized = targetCandidate.trim();
+          return normalized || null;
         }).filter(Boolean)
         : [];
 

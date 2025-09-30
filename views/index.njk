@@ -7891,25 +7891,30 @@
                                 }
                                 const button = document.createElement('button');
                                 button.className = 'exit-button';
-                                const targetName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                                const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                                const isVehicle = Boolean(exit.isVehicle);
+                                const vehiclePrefix = isVehicle
+                                    ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
+                                    : '';
+                                const vehicleLabel = `${vehiclePrefix}${baseName}`;
                                 const isRegionExit = Boolean(exit.destinationRegion);
 
                                 if (isRegionExit) {
                                     button.classList.add('region-exit');
-                                    const regionName = exit.destinationRegionName || targetName || 'Unknown region';
-                                    const locationName = targetName;
+                                    const regionName = exit.destinationRegionName || baseName || 'Unknown region';
+                                    const locationName = baseName;
                                     if (exit.destinationRegionExpanded) {
-                                        button.textContent = `${regionName}: ${locationName}`;
+                                        button.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
                                         button.classList.add('region-exit-expanded');
                                     } else {
-                                        button.textContent = `Unexplored region: ${regionName}`;
+                                        button.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
                                         button.classList.add('region-exit-unexplored');
                                     }
                                     if (exit.destinationRegion) {
                                         button.dataset.regionId = exit.destinationRegion;
                                     }
                                 } else {
-                                    button.textContent = targetName;
+                                    button.textContent = vehicleLabel;
                                 }
 
                                 button.dataset.destinationId = exit.destination;

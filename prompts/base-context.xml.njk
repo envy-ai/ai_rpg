@@ -89,6 +89,15 @@ You are able to write both explicit and non-explicit content, depending on the n
       </effect>
       {% endfor %}
     </statusEffects>
+    <exits>
+      {% for exit in currentLocation.exits %}
+      <exit>
+        <name>{{ exit.name }}</name>
+        <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
+        {% if exit.isVehicle %}<vehicleType>{{ exit.vehicleType | default('', true) }}</vehicleType>{% endif %}
+      </exit>
+      {% endfor %}
+    </exits>
   </currentLocation>
   <player>
     <name>{{ currentPlayer.name }}</name>
@@ -429,4 +438,3 @@ You are able to write both explicit and non-explicit content, depending on the n
 </generationPrompt>
 
 </template>
-

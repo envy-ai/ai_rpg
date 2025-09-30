@@ -12,6 +12,8 @@ class LocationExit {
   #destination;
   #destinationRegion;
   #bidirectional;
+  #isVehicle;
+  #vehicleType;
   #imageId;
   #createdAt;
   #lastUpdated;
@@ -33,7 +35,7 @@ class LocationExit {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    */
-  constructor({ description = '', destination, destinationRegion = null, bidirectional = true, id = null, imageId = null } = {}) {
+  constructor({ description = '', destination, destinationRegion = null, bidirectional = true, id = null, imageId = null, isVehicle = false, vehicleType = null } = {}) {
     // Validate required parameters
     if (description !== undefined && typeof description !== 'string') {
       throw new Error('Exit description must be a string when provided');
@@ -47,6 +49,14 @@ class LocationExit {
       throw new Error('Bidirectional flag must be a boolean');
     }
 
+    if (typeof isVehicle !== 'boolean') {
+      throw new Error('isVehicle must be a boolean');
+    }
+
+    if (vehicleType !== null && typeof vehicleType !== 'string') {
+      throw new Error('vehicleType must be a string or null');
+    }
+
     // Initialize private fields
     this.#id = id || LocationExit.#generateId();
     this.#description = typeof description === 'string' ? description.trim() : '';
@@ -54,6 +64,11 @@ class LocationExit {
     this.#destinationRegion = destinationRegion && typeof destinationRegion === 'string' ? destinationRegion.trim() : null;
     this.#bidirectional = bidirectional;
     this.#imageId = imageId;
+    this.#isVehicle = isVehicle;
+    this.#vehicleType = vehicleType && typeof vehicleType === 'string' ? vehicleType.trim() || null : null;
+    if (this.#vehicleType && !this.#isVehicle) {
+      this.#isVehicle = true;
+    }
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
   }
@@ -77,6 +92,14 @@ class LocationExit {
 
   get bidirectional() {
     return this.#bidirectional;
+  }
+
+  get isVehicle() {
+    return this.#isVehicle;
+  }
+
+  get vehicleType() {
+    return this.#vehicleType;
   }
 
   get createdAt() {
@@ -132,6 +155,29 @@ class LocationExit {
     this.#lastUpdated = new Date();
   }
 
+  set isVehicle(flag) {
+    if (typeof flag !== 'boolean') {
+      throw new Error('isVehicle must be a boolean');
+    }
+    this.#isVehicle = flag;
+    if (!flag) {
+      this.#vehicleType = null;
+    }
+    this.#lastUpdated = new Date();
+  }
+
+  set vehicleType(type) {
+    if (type !== null && typeof type !== 'string') {
+      throw new Error('vehicleType must be a string or null');
+    }
+    const trimmed = typeof type === 'string' ? type.trim() : null;
+    this.#vehicleType = trimmed || null;
+    if (this.#vehicleType) {
+      this.#isVehicle = true;
+    }
+    this.#lastUpdated = new Date();
+  }
+
   /**
    * Check if this exit allows travel in the opposite direction
    * @returns {boolean} - True if the exit is bidirectional
@@ -172,7 +218,7 @@ class LocationExit {
    * @param {string|null} [updates.destinationRegion] - Region ID the exit leads to (for inter-region exits)
    * @param {boolean} [updates.bidirectional] - New bidirectional flag
    */
-  update({ description, destination, destinationRegion, bidirectional } = {}) {
+  update({ description, destination, destinationRegion, bidirectional, isVehicle, vehicleType } = {}) {
     if (description !== undefined) {
       this.description = description;
     }
@@ -184,6 +230,12 @@ class LocationExit {
     }
     if (bidirectional !== undefined) {
       this.bidirectional = bidirectional;
+    }
+    if (isVehicle !== undefined) {
+      this.isVehicle = isVehicle;
+    }
+    if (vehicleType !== undefined) {
+      this.vehicleType = vehicleType;
     }
   }
 
@@ -199,6 +251,8 @@ class LocationExit {
       destinationRegion: this.#destinationRegion,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
+      isVehicle: this.#isVehicle,
+      vehicleType: this.#vehicleType,
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString()
     };
@@ -216,6 +270,8 @@ class LocationExit {
       destinationRegion: this.#destinationRegion,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
+      isVehicle: this.#isVehicle,
+      vehicleType: this.#vehicleType,
       type: this.#bidirectional ? 'two-way' : 'one-way',
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString()
@@ -236,7 +292,8 @@ class LocationExit {
    */
   toString() {
     const direction = this.#bidirectional ? '↔' : '→';
-    return `LocationExit(${this.#id}): "${this.#description}" ${direction} ${this.#destination}`;
+    const vehicleInfo = this.#isVehicle ? ` via ${this.#vehicleType || 'vehicle'}` : '';
+    return `LocationExit(${this.#id}): "${this.#description}"${vehicleInfo} ${direction} ${this.#destination}`;
   }
 
   /**

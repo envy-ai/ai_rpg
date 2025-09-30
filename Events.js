@@ -2783,7 +2783,7 @@ class Events {
 
             if (targetLocation) {
                 const exit = ensureExitConnection(location, directionKey, targetLocation, {
-                    description: description || `Path to ${targetLocation.name || targetLocation.id}`,
+                    description: description || `${targetLocation.name || targetLocation.id}`,
                     bidirectional: false
                 });
 
