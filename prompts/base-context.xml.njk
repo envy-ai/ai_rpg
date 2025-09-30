@@ -388,6 +388,9 @@ You are able to write both explicit and non-explicit content, depending on the n
       <name>{{ item.name }}</name>
       <description>{{ item.description }}</description>
       <isScenery>{{ item.isScenery | default(false) }}</isScenery>
+      <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+      <rarity>{{ item.rarity | default('common') }}</rarity>
+      <value>{{ item.value | default(0) }}</value>
       <statusEffects>
         {% for effect in item.statusEffects %}
         <effect>
@@ -405,6 +408,9 @@ You are able to write both explicit and non-explicit content, depending on the n
       <name>{{ item.name }}</name>
       <description>{{ item.description }}</description>
       <isScenery>{{ item.isScenery | default(true) }}</isScenery>
+      <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+      <rarity>{{ item.rarity | default('common') }}</rarity>
+      <value>{{ item.value | default(0) }}</value>
       <statusEffects>
         {% for effect in item.statusEffects %}
         <effect>

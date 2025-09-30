@@ -3036,8 +3036,6 @@ class Player {
         const itemSlotType = this.#normalizeSlotType(item.slot);
         if (!itemSlotType || itemSlotType === 'n/a' || itemSlotType !== slotData.slotType) {
             console.log(`Incompatible slot types: item(${itemSlotType}) vs slot(${slotData.slotType})`);
-            //print trace
-            console.trace();
             return `Incompatible item slot type: ${itemSlotType} (expected: ${slotData.slotType})`;
         }
 

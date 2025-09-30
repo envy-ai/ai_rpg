@@ -579,7 +579,9 @@ class Location {
         description: exit.description || 'No description',
         destination: exit.destination,
         destinationRegion: exit.destinationRegion || null,
-        bidirectional: exit.bidirectional !== false
+        bidirectional: exit.bidirectional !== false,
+        isVehicle: Boolean(exit.isVehicle),
+        vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null
       };
     }
 

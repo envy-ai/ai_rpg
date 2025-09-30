@@ -9,6 +9,7 @@
 <value>{% if thingSeed.value is defined %}{{ thingSeed.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
 <weight>{% if thingSeed.weight is defined %}{{ thingSeed.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
 <relativeLevel>{% if thingSeed.relativeLevel is defined %}{{ thingSeed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
+<isVehicle>{% if thingSeed.isVehicle is defined %}{{ thingSeed.isVehicle }}{% else %}[true or false] -- note that an item is a vehicle if it can be used to travel, so a teleportation wand and a jetpack are both vehicles. A vehicle is scenery it's big enough to get inside or ride on (like a car or horse) but not so big you can walk around in it, like a bus or jet liner. Those are considered regions and should not be created as items or scenery at all.{% endif %}</isVehicle>
 <attributeBonuses>
     optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses
     <attributeBonus>
