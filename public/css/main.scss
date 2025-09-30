@@ -275,7 +275,7 @@ p:not(:last-child) {
 
   .location-placeholder {
     width: 100%;
-    aspect-ratio: 1;
+    aspect-ratio: 16/9;
     background: $white-50;
     border: 2px dashed $white-30;
     box-sizing: border-box;

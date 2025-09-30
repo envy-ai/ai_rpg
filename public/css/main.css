@@ -262,7 +262,7 @@ p:not(:last-child) {
 }
 .location-block .location-placeholder {
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 16/9;
   background: rgba(255, 255, 255, 0.5);
   border: 2px dashed rgba(255, 255, 255, 0.3);
   box-sizing: border-box;

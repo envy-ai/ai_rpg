@@ -28,6 +28,8 @@ class AIRPGChat {
         this.wsReady = false;
         window.AIRPG_CLIENT_ID = this.clientId;
 
+        this.pendingMoveOverlay = false;
+
         this.init();
         this.initSkillIncreaseControls();
         this.connectWebSocket();
@@ -1273,6 +1275,17 @@ class AIRPGChat {
                 });
             },
             move_location: (entries) => {
+                if (Array.isArray(entries) && entries.length) {
+                    if (!this.pendingMoveOverlay) {
+                        this.pendingMoveOverlay = true;
+                        const overlayDestination = safeItem(entries[0], 'a new location');
+                        try {
+                            window.showLocationOverlay?.(`Moving to ${overlayDestination}...`);
+                        } catch (_) {
+                            // Overlay helpers might not be ready; ignore.
+                        }
+                    }
+                }
                 entries.forEach((location) => {
                     const destination = safeItem(location, 'a new location');
                     this.addEventSummary('🚶', `Travelled to ${destination}.`);
@@ -2683,6 +2696,7 @@ class AIRPGChat {
 
     async checkLocationUpdate() {
         console.log('Checking for location update...');
+        const overlayWasRequested = this.pendingMoveOverlay === true;
         try {
             const response = await fetch('/api/player', { cache: 'no-store' });
             const result = await response.json();
@@ -2717,6 +2731,15 @@ class AIRPGChat {
             }
         } catch (error) {
             console.log('Could not check location update:', error);
+        } finally {
+            if (overlayWasRequested) {
+                try {
+                    window.hideLocationOverlay?.();
+                } catch (_) {
+                    // ignore overlay errors
+                }
+                this.pendingMoveOverlay = false;
+            }
         }
         console.log("Location update check complete.");
     }
