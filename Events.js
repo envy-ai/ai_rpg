@@ -2535,6 +2535,8 @@ class Events {
             return;
         }
 
+        context.suppressNewExitHandling = true;
+
         const destinationName = entries.find(entry => entry && entry.trim());
         if (!destinationName) {
             return;
@@ -2553,7 +2555,9 @@ class Events {
             directionKeyFromName,
             generateStubName,
             ensureExitConnection,
-            generateLocationExitImage
+            generateLocationExitImage,
+            regions,
+            pendingRegionStubs
         } = this.deps;
 
         const stream = context.stream;
@@ -2570,45 +2574,100 @@ class Events {
                 }
             }
 
-            if (stream && stream.isEnabled) {
-                stream.status('event:location:generate_start', `Generating location "${destinationName}"...`, { scope: 'location' });
-            }
-
-            destination = await createLocationFromEvent({
-                name: destinationName,
-                originLocation,
-                descriptionHint: originLocation ? `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.` : null,
-                directionHint: null
-            });
-
-            if (stream && stream.isEnabled) {
-                if (destination) {
-                    stream.status('event:location:generate_complete', `Location ready: ${destination.name || destinationName}`, { scope: 'location' });
-                    if (!destination.isStub) {
-                        if (typeof destination?.toJSON === 'function') {
-                            stream.emit('location_generated', {
-                                location: destination.toJSON(),
-                                locationId: destination.id,
-                                source: 'event-move'
-                            });
-                        } else {
-                            stream.emit('location_generated', {
-                                location: null,
-                                locationId: destination?.id || null,
-                                name: destination?.name || destinationName,
-                                source: 'event-move'
-                            });
-                        }
-                        emittedLocationGenerated = true;
+            if (originLocation) {
+                const normalizedTarget = destinationName.trim().toLowerCase();
+                const candidateDirections = originLocation.getAvailableDirections ? originLocation.getAvailableDirections() : [];
+                const matchingDirection = candidateDirections.find(dir => {
+                    const exit = originLocation.getExit(dir);
+                    if (!exit) {
+                        return false;
                     }
-                } else {
-                    stream.status('event:location:generate_error', `Failed to generate location "${destinationName}".`, { scope: 'location' });
+
+                    const destinationLocation = exit.destination ? gameLocations.get(exit.destination) : null;
+                    if (destinationLocation) {
+                        const locationName = destinationLocation.name || destinationLocation.stubMetadata?.blueprintDescription || '';
+                        if (locationName && locationName.trim().toLowerCase() === normalizedTarget) {
+                            return true;
+                        }
+                    }
+
+                    const destinationRegionId = exit.destinationRegion || null;
+                    if (destinationRegionId) {
+                        if (regions.has(destinationRegionId)) {
+                            const targetRegion = regions.get(destinationRegionId);
+                            if (targetRegion?.name?.trim().toLowerCase() === normalizedTarget) {
+                                return true;
+                            }
+                        }
+                        const pendingRegion = pendingRegionStubs.get(destinationRegionId);
+                        if (pendingRegion?.name?.trim().toLowerCase() === normalizedTarget) {
+                            return true;
+                        }
+                    }
+
+                    const exitDescription = exit.description || '';
+                    if (exitDescription.trim().toLowerCase() === normalizedTarget) {
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if (matchingDirection) {
+                    const exit = originLocation.getExit(matchingDirection);
+                    if (exit) {
+                        destination = exit.destination ? gameLocations.get(exit.destination) : null;
+                        if (!destination && exit.destinationRegion) {
+                            const pending = pendingRegionStubs.get(exit.destinationRegion);
+                            if (pending?.entranceStubId) {
+                                destination = gameLocations.get(pending.entranceStubId) || null;
+                            }
+                        }
+                    }
                 }
             }
 
             if (!destination) {
-                console.warn(`Unable to resolve or generate destination location "${destinationName}" from event.`);
-                return;
+                if (stream && stream.isEnabled) {
+                    stream.status('event:location:generate_start', `Generating location "${destinationName}"...`, { scope: 'location' });
+                }
+
+                destination = await createLocationFromEvent({
+                    name: destinationName,
+                    originLocation,
+                    descriptionHint: originLocation ? `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.` : null,
+                    directionHint: null
+                });
+
+                if (stream && stream.isEnabled) {
+                    if (destination) {
+                        stream.status('event:location:generate_complete', `Location ready: ${destination.name || destinationName}`, { scope: 'location' });
+                        if (!destination.isStub) {
+                            if (typeof destination?.toJSON === 'function') {
+                                stream.emit('location_generated', {
+                                    location: destination.toJSON(),
+                                    locationId: destination.id,
+                                    source: 'event-move'
+                                });
+                            } else {
+                                stream.emit('location_generated', {
+                                    location: null,
+                                    locationId: destination?.id || null,
+                                    name: destination?.name || destinationName,
+                                    source: 'event-move'
+                                });
+                            }
+                            emittedLocationGenerated = true;
+                        }
+                    } else {
+                        stream.status('event:location:generate_error', `Failed to generate location "${destinationName}".`, { scope: 'location' });
+                    }
+                }
+
+                if (!destination) {
+                    console.warn(`Unable to resolve or generate destination location "${destinationName}" from event.`);
+                    return;
+                }
             }
         }
 
@@ -2616,6 +2675,9 @@ class Events {
             const initialLabel = destination.name || destinationName;
             if (stream && stream.isEnabled) {
                 stream.status('event:location:expand_start', `Expanding location "${initialLabel}"...`, { scope: 'location' });
+            }
+            if (destination.stubMetadata?.isRegionEntryStub && !context.skipNpcTurns) {
+                context.skipNpcTurns = true;
             }
             try {
                 await scheduleStubExpansion(destination);
@@ -2669,10 +2731,18 @@ class Events {
         } catch (error) {
             console.warn('Failed to queue location item images after event move:', error.message);
         }
+
+        if (destination?.stubMetadata?.isRegionEntryStub && !context.skipNpcTurns) {
+            context.skipNpcTurns = true;
+        }
     }
 
     static async handleNewExitEvents(entries = [], context = {}) {
         if (!Array.isArray(entries) || !entries.length) {
+            return;
+        }
+
+        if (context?.suppressNewExitHandling) {
             return;
         }
 
