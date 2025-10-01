@@ -772,14 +772,20 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
             if (!data || typeof data !== 'object') {
-                return null;
+                throw new Error('recordPlausibilityEntry requires structured plausibility data');
+            }
+
+            const raw = typeof data.raw === 'string' && data.raw.trim().length ? data.raw.trim() : null;
+            const structured = data.structured && typeof data.structured === 'object' ? data.structured : null;
+            if (!raw && !structured) {
+                throw new Error('recordPlausibilityEntry received data without raw text or structured content');
             }
 
             let serialized;
             try {
-                serialized = JSON.parse(JSON.stringify(data));
-            } catch (_) {
-                serialized = { ...data };
+                serialized = JSON.parse(JSON.stringify({ raw, structured }));
+            } catch (error) {
+                throw new Error(`Failed to serialize plausibility data: ${error.message}`);
             }
 
             const entry = {

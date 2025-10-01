@@ -6,6 +6,7 @@ class AIRPGChat {
         this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
+        this.templateEnv = null;
 
         // Start with system prompt for AI context
         this.chatHistory = [
@@ -30,6 +31,7 @@ class AIRPGChat {
 
         this.pendingMoveOverlay = false;
 
+        this.ensureTemplateEnvironment();
         this.init();
         this.initSkillIncreaseControls();
         this.connectWebSocket();
@@ -310,9 +312,9 @@ class AIRPGChat {
                     break;
                 }
                 case 'plausibility': {
-                    const plausibilityHtml = attachment.plausibilityHtml || attachment.plausibility || attachment.content || '';
-                    if (plausibilityHtml) {
-                        html = `<div class="message-insight-tooltip plausibility-tooltip">${plausibilityHtml}</div>`;
+                    const markup = this.renderPlausibilityMarkup(attachment.plausibility);
+                    if (markup) {
+                        html = `<div class="message-insight-tooltip plausibility-tooltip">${markup}</div>`;
                         icon = '🧭';
                         label = 'View plausibility analysis';
                     }
@@ -454,6 +456,70 @@ class AIRPGChat {
         return {
             html: detailsElement.innerHTML
         };
+    }
+
+    ensureTemplateEnvironment() {
+        if (this.templateEnv) {
+            return this.templateEnv;
+        }
+        if (window.AIRPG_TEMPLATE_ENV) {
+            this.templateEnv = window.AIRPG_TEMPLATE_ENV;
+            return this.templateEnv;
+        }
+        if (!window.nunjucks || typeof window.nunjucks.Environment !== 'function' || typeof window.nunjucks.WebLoader !== 'function') {
+            throw new Error('Nunjucks runtime is required for plausibility rendering.');
+        }
+        const loader = new window.nunjucks.WebLoader('/templates', {
+            useCache: true,
+            async: false
+        });
+        this.templateEnv = new window.nunjucks.Environment(loader, { autoescape: true });
+        window.AIRPG_TEMPLATE_ENV = this.templateEnv;
+        return this.templateEnv;
+    }
+
+    normalizePlausibilityPayload(plausibility) {
+        if (!plausibility || typeof plausibility !== 'object') {
+            throw new Error('Plausibility payload must be an object.');
+        }
+
+        const structured = plausibility.structured && typeof plausibility.structured === 'object'
+            ? plausibility.structured
+            : null;
+        if (!structured) {
+            throw new Error('Plausibility payload missing structured data.');
+        }
+
+        if (typeof structured.type !== 'string' || !structured.type.trim()) {
+            throw new Error('Plausibility structured data missing outcome type.');
+        }
+
+        let sanitized;
+        try {
+            sanitized = JSON.parse(JSON.stringify(structured));
+        } catch (error) {
+            throw new Error(`Failed to sanitize plausibility data: ${error.message}`);
+        }
+
+        sanitized.type = sanitized.type.trim();
+        if (typeof sanitized.reason === 'string') {
+            sanitized.reason = sanitized.reason.trim();
+        }
+
+        return {
+            raw: typeof plausibility.raw === 'string' && plausibility.raw.trim().length ? plausibility.raw.trim() : null,
+            structured: sanitized
+        };
+    }
+
+    renderPlausibilityMarkup(plausibility) {
+        const normalized = this.normalizePlausibilityPayload(plausibility);
+        const env = this.ensureTemplateEnvironment();
+        try {
+            return env.render('plausibility.njk', { plausibility: normalized.structured });
+        } catch (error) {
+            throw new Error(`Failed to render plausibility details: ${error.message}`);
+        }
     }
 
     findLatestAttachableMessage() {
@@ -1966,16 +2032,18 @@ class AIRPGChat {
         });
     }
 
-    addPlausibilityMessage(contentHtml) {
+    addPlausibilityMessage(plausibility) {
+        const normalized = this.normalizePlausibilityPayload(plausibility);
+
         const attached = this.attachInsightToLatestMessage('plausibility', {
-            plausibilityHtml: contentHtml
+            plausibility: normalized
         });
         if (attached) {
             return;
         }
 
         const timestamp = new Date().toISOString();
-        const messageDiv = this.buildPlausibilityMessageElement({ html: contentHtml, timestamp });
+        const messageDiv = this.buildPlausibilityMessageElement({ data: normalized, timestamp });
         if (!messageDiv) {
             return;
         }
@@ -2000,10 +2068,8 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    buildPlausibilityMessageElement({ html, timestamp }) {
-        if (!html) {
-            return null;
-        }
+    buildPlausibilityMessageElement({ data, timestamp }) {
+        const markup = this.renderPlausibilityMarkup(data);
 
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message plausibility-message';
@@ -2021,7 +2087,7 @@ class AIRPGChat {
         details.appendChild(summaryEl);
 
         const body = document.createElement('div');
-        body.innerHTML = html;
+        body.innerHTML = markup;
         details.appendChild(body);
 
         contentDiv.appendChild(details);
@@ -2238,8 +2304,12 @@ class AIRPGChat {
     }
 
     createPlausibilityEntryElement(entry) {
+        if (!entry || typeof entry.plausibility !== 'object') {
+            throw new Error('Chat history entry missing plausibility payload.');
+        }
+        const normalized = this.normalizePlausibilityPayload(entry.plausibility);
         const messageDiv = this.buildPlausibilityMessageElement({
-            html: entry.plausibilityHtml || entry.plausibility || entry.content || '',
+            data: normalized,
             timestamp: entry.timestamp
         });
         if (!messageDiv) {

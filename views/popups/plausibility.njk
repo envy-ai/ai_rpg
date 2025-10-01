@@ -1,0 +1,80 @@
+{% set type_label = plausibility.type %}
+{% set type_lower = type_label | lower %}
+<div class="popup-card popup-card--plausibility" data-outcome="{{ type_lower }}">
+  <header class="popup-card__header">
+    <span class="popup-card__icon" aria-hidden="true">🧭</span>
+    <div class="popup-card__header-text">
+      <h3 class="popup-card__title">Plausibility Check</h3>
+      <span class="popup-card__subtitle">Outcome analysis for the latest action</span>
+    </div>
+    <span class="popup-card__badge popup-card__badge--{{ type_lower }}">{{ type_label | replace('_', ' ') | title }}</span>
+  </header>
+
+  <div class="popup-card__body">
+    <section class="popup-card__section">
+      <h4 class="popup-card__section-title">Summary</h4>
+      <ul class="popup-card__list">
+        <li class="popup-card__list-item">
+          <strong>Outcome:</strong>
+          <span>{{ plausibility.type | replace('_', ' ') | title }}</span>
+        </li>
+        {% if plausibility.reason %}
+        <li class="popup-card__list-item">
+          <strong>Reason:</strong>
+          <span>{{ plausibility.reason }}</span>
+        </li>
+        {% endif %}
+      </ul>
+    </section>
+
+    {% if plausibility.skillCheck %}
+      {% set skill = plausibility.skillCheck %}
+      <section class="popup-card__section">
+        <h4 class="popup-card__section-title">Skill Check</h4>
+        <ul class="popup-card__list">
+          {% if skill.skill %}
+          <li class="popup-card__list-item"><strong>Skill:</strong> <span>{{ skill.skill }}</span></li>
+          {% endif %}
+          {% if skill.attribute %}
+          <li class="popup-card__list-item"><strong>Attribute:</strong> <span>{{ skill.attribute }}</span></li>
+          {% endif %}
+          {% if skill.difficulty %}
+          <li class="popup-card__list-item"><strong>Difficulty:</strong> <span>{{ skill.difficulty }}</span></li>
+          {% endif %}
+          {% if skill.reason %}
+          <li class="popup-card__list-item"><strong>Skill Reason:</strong> <span>{{ skill.reason }}</span></li>
+          {% endif %}
+        </ul>
+
+        {% if skill.circumstanceModifiers or skill.circumstanceModifierReason or (skill.circumstanceModifier is defined and skill.circumstanceModifier != 0) %}
+        <div class="popup-card__subsection">
+          <h5 class="popup-card__subsection-title">Circumstance Modifiers</h5>
+          <ul class="popup-card__modifier-list">
+            {% if skill.circumstanceModifiers %}
+              {% for modifier in skill.circumstanceModifiers %}
+                <li class="popup-card__modifier-item">
+                  <span class="popup-card__modifier-amount">{{ modifier.amount }}</span>
+                  {% if modifier.reason %}
+                    <span class="popup-card__modifier-reason">{{ modifier.reason }}</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            {% endif %}
+            {% if skill.circumstanceModifier is defined and skill.circumstanceModifier != 0 %}
+              <li class="popup-card__modifier-item popup-card__modifier-item--total">
+                <span class="popup-card__modifier-label">Total</span>
+                <span class="popup-card__modifier-amount">{{ skill.circumstanceModifier }}</span>
+              </li>
+            {% endif %}
+            {% if skill.circumstanceModifierReason %}
+              <li class="popup-card__modifier-item popup-card__modifier-item--note">
+                <span class="popup-card__modifier-reason">{{ skill.circumstanceModifierReason }}</span>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
+</div>

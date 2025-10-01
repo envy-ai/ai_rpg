@@ -125,6 +125,165 @@ p:not(:last-child) {
   position: relative;
 }
 
+// Popup cards
+.popup-card {
+  @include glass-effect($glass-bg-dark);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: $border-radius-lg;
+  color: $white-90;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 320px;
+  max-width: 420px;
+}
+
+.popup-card__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.popup-card__icon {
+  font-size: 1.5rem;
+}
+
+.popup-card__header-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popup-card__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: $white;
+}
+
+.popup-card__subtitle {
+  font-size: 0.85rem;
+  color: $white-60;
+}
+
+.popup-card__badge {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: $white;
+}
+
+.popup-card__badge--plausible {
+  background: rgba(92, 214, 139, 0.18);
+  border-color: rgba(92, 214, 139, 0.35);
+  color: #b9ffd1;
+}
+
+.popup-card__badge--implausible,
+.popup-card__badge--rejected {
+  background: rgba(244, 98, 98, 0.18);
+  border-color: rgba(244, 98, 98, 0.35);
+  color: #ffd6d6;
+}
+
+.popup-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.popup-card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popup-card__section-title {
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: $white-70;
+}
+
+.popup-card__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 1em;
+}
+
+.popup-card__list-item {
+  display: flex;
+  gap: 6px;
+  font-size: 0.95rem;
+
+  strong {
+    color: $white;
+    font-weight: 600;
+  }
+}
+
+.popup-card__subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.popup-card__subsection-title {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: $white-60;
+}
+
+.popup-card__modifier-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 1em;
+}
+
+.popup-card__modifier-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: $white-70;
+}
+
+.popup-card__modifier-item--total {
+  margin-top: 6px;
+  font-weight: 600;
+  color: $white;
+}
+
+.popup-card__modifier-item--note {
+  font-style: italic;
+  color: $white-60;
+}
+
+.popup-card__modifier-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  color: $white-50;
+}
+
+.popup-card__raw-text {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: $white-70;
+}
+
 // Main container
 .container {
   display: flex;
