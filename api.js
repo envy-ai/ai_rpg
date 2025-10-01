@@ -767,12 +767,19 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function recordPlausibilityEntry({ html, timestamp = null, parentId = null } = {}, collector = null) {
+        function recordPlausibilityEntry({ data, timestamp = null, parentId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
             }
-            if (!html || typeof html !== 'string') {
+            if (!data || typeof data !== 'object') {
                 return null;
+            }
+
+            let serialized;
+            try {
+                serialized = JSON.parse(JSON.stringify(data));
+            } catch (_) {
+                serialized = { ...data };
             }
 
             const entry = {
@@ -780,7 +787,7 @@ module.exports = function registerApiRoutes(scope) {
                 type: 'plausibility',
                 timestamp: timestamp || new Date().toISOString(),
                 parentId: parentId || null,
-                plausibilityHtml: html
+                plausibility: serialized
             };
 
             return pushChatEntry(entry, collector);
@@ -3501,8 +3508,11 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.attackDamage = attackDamageApplication;
                     }
 
-                    if (plausibilityInfo?.html) {
-                        responseData.plausibility = plausibilityInfo.html;
+                    if (plausibilityInfo?.structured || plausibilityInfo?.raw) {
+                        responseData.plausibility = {
+                            raw: plausibilityInfo.raw || null,
+                            structured: plausibilityInfo.structured || null
+                        };
                     }
 
                     const rejectionDebug = {
@@ -3530,9 +3540,12 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    if (plausibilityInfo?.html) {
+                    if (plausibilityInfo?.structured || plausibilityInfo?.raw) {
                         recordPlausibilityEntry({
-                            html: plausibilityInfo.html,
+                            data: {
+                                raw: plausibilityInfo.raw || null,
+                                structured: plausibilityInfo.structured || null
+                            },
                             timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
                             parentId: rejectionMessageEntry?.id || null
                         }, newChatEntries);
@@ -3975,8 +3988,11 @@ module.exports = function registerApiRoutes(scope) {
                         debugInfo.needBarAdjustments = needBarAdjustments;
                     }
 
-                    if (plausibilityInfo && plausibilityInfo.html) {
-                        responseData.plausibility = plausibilityInfo.html;
+                    if (plausibilityInfo?.structured || plausibilityInfo?.raw) {
+                        responseData.plausibility = {
+                            raw: plausibilityInfo.raw || null,
+                            structured: plausibilityInfo.structured || null
+                        };
                     }
 
                     recordEventSummaryEntry({
@@ -3992,7 +4008,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (responseData.plausibility) {
                         recordPlausibilityEntry({
-                            html: responseData.plausibility,
+                            data: responseData.plausibility,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                             parentId: aiResponseEntry?.id || null
                         }, newChatEntries);
