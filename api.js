@@ -3,6 +3,7 @@ const { DOMParser } = require('xmldom');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
+const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -296,6 +297,22 @@ module.exports = function registerApiRoutes(scope) {
             if (value === null || value === undefined) {
                 return fallback;
             }
+
+            console.log("Normalize summary text value:", value);
+            if (typeof value === 'object') {
+                const candidateKeys = ['text', 'name', 'title', 'label', 'description', 'raw'];
+                for (const key of candidateKeys) {
+                    const entry = value[key];
+                    if (typeof entry === 'string') {
+                        const trimmedEntry = entry.trim();
+                        if (trimmedEntry) {
+                            return trimmedEntry;
+                        }
+                    }
+                }
+                return fallback;
+            }
+
             const text = String(value).trim();
             return text || fallback;
         };
@@ -422,6 +439,7 @@ module.exports = function registerApiRoutes(scope) {
                         case 'new_exit_discovered':
                             entries.forEach(description => {
                                 add('🚪', `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`);
+                                console.log("[Debug] New exit discovered event:", description);
                             });
                             break;
                         case 'npc_arrival_departure':
@@ -790,6 +808,45 @@ module.exports = function registerApiRoutes(scope) {
                 parentId: parentId || null,
                 skillCheck: serializedResolution
             };
+
+            return pushChatEntry(entry, collector);
+        }
+
+        function recordAttackCheckEntry({ summary, attackCheck = null, timestamp = null, parentId = null } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+            if (!summary || typeof summary !== 'object') {
+                return null;
+            }
+
+            let summaryCopy;
+            try {
+                summaryCopy = JSON.parse(JSON.stringify(summary));
+            } catch (_) {
+                summaryCopy = { ...summary };
+            }
+
+            let attackCheckCopy = null;
+            if (attackCheck && typeof attackCheck === 'object') {
+                try {
+                    attackCheckCopy = JSON.parse(JSON.stringify(attackCheck));
+                } catch (_) {
+                    attackCheckCopy = { ...attackCheck };
+                }
+            }
+
+            const entry = {
+                role: 'assistant',
+                type: 'attack-check',
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                attackSummary: summaryCopy
+            };
+
+            if (attackCheckCopy) {
+                entry.attackCheck = attackCheckCopy;
+            }
 
             return pushChatEntry(entry, collector);
         }
@@ -3086,6 +3143,12 @@ module.exports = function registerApiRoutes(scope) {
                     if (isAttack) {
                         if (attackSummaryValue) {
                             npcTurnResult.attackSummary = attackSummaryValue;
+                            recordAttackCheckEntry({
+                                summary: attackSummaryValue,
+                                attackCheck: attackCheckForResult,
+                                timestamp: npcTurnTimestamp,
+                                parentId: npcTurnEntry?.id || null
+                            }, newChatEntries);
                         }
                         if (attackDamageApplication) {
                             npcTurnResult.attackDamage = attackDamageApplication;
@@ -3457,6 +3520,15 @@ module.exports = function registerApiRoutes(scope) {
                         role: 'assistant',
                         content: rejectionReason
                     }, newChatEntries);
+
+                    if (attackContextForPlausibility?.summary) {
+                        recordAttackCheckEntry({
+                            summary: attackContextForPlausibility.summary,
+                            attackCheck: attackCheckInfo,
+                            timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
+                            parentId: rejectionMessageEntry?.id || null
+                        }, newChatEntries);
+                    }
 
                     if (plausibilityInfo?.html) {
                         recordPlausibilityEntry({
@@ -3903,6 +3975,10 @@ module.exports = function registerApiRoutes(scope) {
                         debugInfo.needBarAdjustments = needBarAdjustments;
                     }
 
+                    if (plausibilityInfo && plausibilityInfo.html) {
+                        responseData.plausibility = plausibilityInfo.html;
+                    }
+
                     recordEventSummaryEntry({
                         label: '📋 Events – Player Turn',
                         events: responseData.events,
@@ -3925,6 +4001,18 @@ module.exports = function registerApiRoutes(scope) {
                     if (responseData.actionResolution) {
                         recordSkillCheckEntry({
                             resolution: responseData.actionResolution,
+                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                            parentId: aiResponseEntry?.id || null
+                        }, newChatEntries);
+                    }
+
+                    const attackSummaryForLogging = responseData.attackSummary
+                        || responseData.attackCheck?.summary
+                        || null;
+                    if (attackSummaryForLogging) {
+                        recordAttackCheckEntry({
+                            summary: attackSummaryForLogging,
+                            attackCheck: responseData.attackCheck || null,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                             parentId: aiResponseEntry?.id || null
                         }, newChatEntries);
@@ -3982,10 +4070,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (npcTurnError) {
                         console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
-                    }
-
-                    if (plausibilityInfo && plausibilityInfo.html) {
-                        responseData.plausibility = plausibilityInfo.html;
                     }
 
                     if (stream.isEnabled && !playerActionStreamSent) {

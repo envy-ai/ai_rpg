@@ -81,5 +81,5 @@ events_to_check_concurrently: 10
 check_move_plausibility: unexplored_locations
 
 # Mostly to speed up testing and development - prevent certain types of generation
-omit_npc_generation: true
-omit_item_generation: true
+omit_npc_generation: false
+omit_item_generation: false

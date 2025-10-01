@@ -2856,7 +2856,8 @@ class Events {
                     name: newName,
                     originLocation: location,
                     descriptionHint,
-                    directionHint: directionKey
+                    directionHint: directionKey,
+                    expandStub: false
                 });
             } catch (error) {
                 console.warn('Failed to create location stub from event:', error?.message || error);
@@ -2864,7 +2865,7 @@ class Events {
             }
 
             if (targetLocation) {
-                const exit = ensureExitConnection(location, directionKey, targetLocation, {
+                const exit = ensureExitConnection(location, targetLocation, {
                     description: description || `${targetLocation.name || targetLocation.id}`,
                     bidirectional: false
                 });

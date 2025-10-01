@@ -42,6 +42,8 @@ class LocationExit {
     }
 
     if (!destination || typeof destination !== 'string') {
+      console.log('Invalid destination provided to LocationExit:', destination);
+      console.trace();
       throw new Error('Exit destination is required and must be a string');
     }
 

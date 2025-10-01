@@ -146,6 +146,10 @@ class AIRPGChat {
             return this.createSkillCheckEntryElement(entry);
         }
 
+        if (entry.type === 'attack-check') {
+            return this.createAttackCheckEntryElement(entry);
+        }
+
         const messageDiv = document.createElement('div');
         const role = entry.role === 'user' ? 'user-message' : 'ai-message';
         messageDiv.className = `message ${role}`;
@@ -1305,6 +1309,7 @@ class AIRPGChat {
                 entries.forEach((description) => {
                     const detail = safeItem(description, 'a new path');
                     this.addEventSummary('🚪', `New exit discovered: ${detail}.`);
+                    console.log("[Debug] New exit discovered event:", detail)
                 });
             },
             npc_arrival_departure: (entries) => {
@@ -1939,27 +1944,34 @@ class AIRPGChat {
         return messageDiv;
     }
 
-    addAttackCheckMessage(summary) {
+    createAttackCheckEntryElement(entry) {
+        const messageDiv = this.buildAttackCheckMessageElement({
+            summary: entry.attackSummary || entry.summary || entry.attackCheck?.summary || null,
+            timestamp: entry.timestamp
+        });
+        if (!messageDiv) {
+            return null;
+        }
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            messageDiv.appendChild(actions);
+        }
+        return messageDiv;
+    }
+
+    buildAttackCheckMessageElement({ summary, timestamp }) {
         if (!summary || typeof summary !== 'object') {
-            return;
+            return null;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message attack-check-message';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '⚔️ Attack Check';
-
-        const contentDiv = document.createElement('div');
-
-        const lines = [];
         const formatSigned = (value) => {
             if (typeof value !== 'number' || Number.isNaN(value)) {
                 return null;
             }
             return value >= 0 ? `+${value}` : `${value}`;
         };
+
+        const lines = [];
 
         const resultParts = [];
         if (typeof summary.hit === 'boolean') {
@@ -2221,8 +2233,20 @@ class AIRPGChat {
         }
 
         if (!lines.length) {
-            return;
+            return null;
         }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message attack-check-message';
+        messageDiv.dataset.type = 'attack-check';
+        messageDiv.dataset.timestamp = timestamp || '';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '⚔️ Attack Check';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
 
         const details = document.createElement('details');
         const summaryEl = document.createElement('summary');
@@ -2238,13 +2262,23 @@ class AIRPGChat {
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
+        timestampDiv.textContent = this.formatTimestamp(timestamp);
 
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        return messageDiv;
+    }
+
+    addAttackCheckMessage(summary) {
+        const messageDiv = this.buildAttackCheckMessageElement({
+            summary,
+            timestamp: new Date().toISOString()
+        });
+        if (!messageDiv) {
+            return;
+        }
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -2657,6 +2691,8 @@ class AIRPGChat {
             const exitName = (payload.created && payload.created.name)
                 || payload.location?.name
                 || 'a new exit';
+            console.log('Discovered new exit:');
+            console.log(exitName);
             const summary = payload.created?.type === 'region'
                 ? `New region pathway discovered: ${exitName}`
                 : `New exit discovered: ${exitName}`;
