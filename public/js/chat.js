@@ -609,6 +609,9 @@ class AIRPGChat {
             case 'location_exit_created':
                 this.handleLocationExitCreated(payload);
                 break;
+            case 'location_exit_deleted':
+                this.handleLocationExitDeleted(payload);
+                break;
             case 'image_job_update':
                 this.handleImageJobUpdate(payload);
                 break;
@@ -2696,6 +2699,63 @@ class AIRPGChat {
             const summary = payload.created?.type === 'region'
                 ? `New region pathway discovered: ${exitName}`
                 : `New exit discovered: ${exitName}`;
+            if (!this.pushEventBundleItem('🚪', summary)) {
+                this.addMessage('ai', `🚪 ${summary}`, false);
+            }
+        }
+    }
+
+    handleLocationExitDeleted(payload) {
+        if (!payload) {
+            return;
+        }
+
+        const originLocationId = payload.originLocationId || null;
+        const locationData = payload.location || null;
+        const currentLocationId = window.AIRPG_LAST_LOCATION_ID || null;
+        const targetLocationId = locationData?.id || originLocationId;
+        const isSelfEvent = payload.initiatedBy && payload.initiatedBy === this.clientId;
+
+        const shouldRefreshLocation = targetLocationId
+            && (!currentLocationId || currentLocationId === originLocationId || currentLocationId === targetLocationId);
+
+        if (shouldRefreshLocation) {
+            if (locationData && typeof window.updateLocationDisplay === 'function') {
+                try {
+                    window.updateLocationDisplay(locationData);
+                } catch (error) {
+                    console.warn('Failed to refresh location after exit deletion:', error);
+                }
+            } else {
+                this.checkLocationUpdate().catch(error => {
+                    console.warn('Failed to refresh location after exit deletion fallback:', error);
+                });
+            }
+        }
+
+        const mapTab = document.querySelector('[data-tab="map"]');
+        if (mapTab && mapTab.classList.contains('active')) {
+            const mapContainer = document.getElementById('mapContainer');
+            const activeRegionId = mapContainer?.dataset?.regionId || null;
+            const originRegionId = payload.originRegionId || null;
+            if (!activeRegionId || !originRegionId || originRegionId === activeRegionId) {
+                try {
+                    window.loadRegionMap?.(activeRegionId || originRegionId || null);
+                } catch (error) {
+                    console.warn('Failed to refresh region map after exit deletion:', error);
+                }
+            }
+        }
+
+        if (!isSelfEvent) {
+            const deletedStubName = payload?.deletedStub?.regionStubName
+                || payload?.deletedStub?.name
+                || null;
+            const destinationId = payload?.removed?.destinationId || null;
+            const summary = deletedStubName
+                ? `Exit removed: ${deletedStubName}`
+                : (destinationId ? `Exit removed to ${destinationId}` : 'An exit was removed.');
+
             if (!this.pushEventBundleItem('🚪', summary)) {
                 this.addMessage('ai', `🚪 ${summary}`, false);
             }

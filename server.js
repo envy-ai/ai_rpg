@@ -10063,10 +10063,7 @@ function renderRegionStubPrompt({ settingDescription, region }) {
         const templateName = 'region-generator.stub.xml.njk';
         const variables = {
             setting: settingDescription,
-            currentRegion: {
-                name: region.name,
-                description: region.description
-            },
+            currentRegion: region,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
             maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
         };
@@ -11066,6 +11063,7 @@ const apiScope = {
     gameLocations,
     gameLocationExits,
     pendingRegionStubs,
+    regionEntryExpansionPromises,
     pendingLocationImages,
     npcGenerationPromises,
     levelUpAbilityPromises,

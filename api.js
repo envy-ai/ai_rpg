@@ -6164,6 +6164,117 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function findExitOnLocation(location, predicate) {
+            if (!location || typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+                return null;
+            }
+
+            const directions = location.getAvailableDirections();
+            for (const direction of directions) {
+                const exit = location.getExit(direction);
+                if (!exit) {
+                    continue;
+                }
+                try {
+                    if (predicate(exit, direction)) {
+                        return { direction, exit };
+                    }
+                } catch (error) {
+                    console.warn('findExitOnLocation predicate failure:', error.message);
+                    throw error;
+                }
+            }
+            return null;
+        }
+
+        function findExitById(location, exitId) {
+            if (!exitId) {
+                return null;
+            }
+            return findExitOnLocation(location, exit => exit.id === exitId);
+        }
+
+        function removeExitStrict(location, direction, exitId = null) {
+            if (!location || typeof location.removeExit !== 'function' || !direction) {
+                throw new Error('removeExitStrict requires a location with a removable exit');
+            }
+            const removed = location.removeExit(direction);
+            if (!removed) {
+                const locationId = location.id || 'unknown';
+                const message = exitId
+                    ? `Failed to remove exit '${exitId}' from direction '${direction}' on location '${locationId}'`
+                    : `Failed to remove exit on direction '${direction}' for location '${locationId}'`;
+                throw new Error(message);
+            }
+            if (exitId && gameLocationExits.has(exitId)) {
+                gameLocationExits.delete(exitId);
+            }
+            return true;
+        }
+
+        function deleteStubLocation(stubLocation) {
+            if (!stubLocation || typeof stubLocation.getAvailableDirections !== 'function') {
+                return null;
+            }
+
+            const stubId = stubLocation.id || null;
+            const removedExitIds = [];
+
+            const directions = stubLocation.getAvailableDirections();
+            for (const direction of directions) {
+                const stubExit = stubLocation.getExit(direction);
+                if (!stubExit) {
+                    continue;
+                }
+                removeExitStrict(stubLocation, direction, stubExit.id || null);
+                if (stubExit.id) {
+                    removedExitIds.push(stubExit.id);
+                }
+            }
+
+            if (stubId && pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+                pendingLocationImages.delete(stubId);
+            }
+
+            if (stubId && stubExpansionPromises && typeof stubExpansionPromises.delete === 'function') {
+                stubExpansionPromises.delete(stubId);
+            }
+
+            if (stubId && regionEntryExpansionPromises && typeof regionEntryExpansionPromises.delete === 'function') {
+                regionEntryExpansionPromises.delete(stubId);
+            }
+
+            const stubRegionId = stubLocation.regionId || (stubLocation.stubMetadata?.regionId ?? null);
+            if (stubRegionId) {
+                const stubRegion = regions.get(stubRegionId);
+                if (stubRegion) {
+                    try {
+                        const filteredIds = stubRegion.locationIds.filter(id => id !== stubId);
+                        stubRegion.locationIds = filteredIds;
+                        if (stubRegion.entranceLocationId === stubId) {
+                            stubRegion.entranceLocationId = null;
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to update region '${stubRegionId}' while deleting stub '${stubId}':`, error.message);
+                    }
+                }
+            }
+
+            if (stubId && gameLocations.has(stubId)) {
+                gameLocations.delete(stubId);
+            }
+
+            return {
+                stubId,
+                stubRegionId,
+                removedExitIds,
+                name: stubLocation.name
+                    || stubLocation.stubMetadata?.shortDescription
+                    || stubLocation.stubMetadata?.targetRegionName
+                    || stubId
+            };
+        }
+
         app.get('/api/exits/options', (req, res) => {
             try {
                 const originLocationIdRaw = typeof req.query.originLocationId === 'string' ? req.query.originLocationId.trim() : '';
@@ -6478,6 +6589,200 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error.message || 'Failed to create exit'
+                });
+            }
+        });
+
+        app.delete('/api/locations/:id/exits/:exitId', (req, res) => {
+            try {
+                const locationIdRaw = req.params.id;
+                const exitIdRaw = req.params.exitId;
+
+                const locationId = typeof locationIdRaw === 'string' ? locationIdRaw.trim() : '';
+                const exitId = typeof exitIdRaw === 'string' ? exitIdRaw.trim() : '';
+
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location ID is required'
+                    });
+                }
+
+                if (!exitId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Exit ID is required'
+                    });
+                }
+
+                const originLocation = gameLocations.get(locationId) || Location.get(locationId);
+                if (!originLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location with ID '${locationId}' not found`
+                    });
+                }
+
+                const locatedExit = findExitById(originLocation, exitId);
+                if (!locatedExit) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Exit '${exitId}' was not found on location '${locationId}'`
+                    });
+                }
+
+                const { direction: originDirection, exit: targetExit } = locatedExit;
+                const destinationId = targetExit.destination || null;
+                const destinationLocation = destinationId
+                    ? (gameLocations.get(destinationId) || Location.get(destinationId))
+                    : null;
+                const destinationMetadata = destinationLocation?.stubMetadata || null;
+
+                const regionCandidateIds = [];
+                if (targetExit.destinationRegion) {
+                    regionCandidateIds.push(targetExit.destinationRegion);
+                }
+                if (destinationMetadata?.targetRegionId) {
+                    regionCandidateIds.push(destinationMetadata.targetRegionId);
+                }
+                if (destinationMetadata?.regionId) {
+                    regionCandidateIds.push(destinationMetadata.regionId);
+                }
+
+                let resolvedRegionStubId = null;
+                for (const candidate of regionCandidateIds) {
+                    if (candidate && pendingRegionStubs.has(candidate)) {
+                        resolvedRegionStubId = candidate;
+                        break;
+                    }
+                }
+
+                if (!resolvedRegionStubId && destinationLocation?.id) {
+                    for (const [candidateId, stubInfo] of pendingRegionStubs.entries()) {
+                        if (stubInfo?.entranceStubId === destinationLocation.id) {
+                            resolvedRegionStubId = candidateId;
+                            break;
+                        }
+                    }
+                }
+
+                const pendingRegionStub = resolvedRegionStubId ? pendingRegionStubs.get(resolvedRegionStubId) : null;
+                const destinationIsRegionStub = Boolean(destinationMetadata?.isRegionEntryStub || pendingRegionStub);
+                const destinationWasStub = Boolean(destinationLocation?.isStub);
+
+                const body = req.body || {};
+                const initiatorClientIdRaw = body.clientId ?? req.query?.clientId;
+                const requestIdRaw = body.requestId ?? req.query?.requestId;
+
+                const initiatorClientId = typeof initiatorClientIdRaw === 'string' && initiatorClientIdRaw.trim()
+                    ? initiatorClientIdRaw.trim()
+                    : null;
+                const requestId = typeof requestIdRaw === 'string' && requestIdRaw.trim()
+                    ? requestIdRaw.trim()
+                    : null;
+
+                removeExitStrict(originLocation, originDirection, targetExit.id || null);
+
+                let reverseRemoval = null;
+                if (destinationLocation) {
+                    const reverseExit = findExitOnLocation(destinationLocation, candidate => candidate.destination === originLocation.id);
+                    if (reverseExit) {
+                        removeExitStrict(destinationLocation, reverseExit.direction, reverseExit.exit.id || null);
+                        reverseRemoval = {
+                            exitId: reverseExit.exit.id || null,
+                            direction: reverseExit.direction
+                        };
+                    }
+                }
+
+                let deletedStubInfo = null;
+                let preservedStubInfo = null;
+
+                if (destinationLocation && destinationWasStub) {
+                    if (destinationIsRegionStub) {
+                        const stubDescriptor = deleteStubLocation(destinationLocation);
+                        if (resolvedRegionStubId && pendingRegionStubs.has(resolvedRegionStubId)) {
+                            const stubRecord = pendingRegionStubs.get(resolvedRegionStubId);
+                            stubDescriptor.regionStubId = resolvedRegionStubId;
+                            stubDescriptor.regionStubName = stubRecord?.name || stubDescriptor.name;
+                            pendingRegionStubs.delete(resolvedRegionStubId);
+                        } else if (resolvedRegionStubId) {
+                            stubDescriptor.regionStubId = resolvedRegionStubId;
+                            stubDescriptor.regionStubName = stubDescriptor.name;
+                        }
+                        deletedStubInfo = stubDescriptor;
+                    } else {
+                        const remainingDirections = destinationLocation.getAvailableDirections()
+                            .map(direction => ({ direction, exit: destinationLocation.getExit(direction) }))
+                            .filter(entry => Boolean(entry.exit));
+
+                        if (remainingDirections.length === 0) {
+                            deletedStubInfo = deleteStubLocation(destinationLocation);
+                        } else {
+                            preservedStubInfo = {
+                                stubId: destinationLocation.id,
+                                remainingExitCount: remainingDirections.length
+                            };
+                        }
+                    }
+                }
+
+                const refreshedOrigin = gameLocations.get(originLocation.id) || Location.get(originLocation.id) || originLocation;
+                const locationData = buildLocationResponse(refreshedOrigin);
+                if (!locationData) {
+                    throw new Error('Failed to serialize updated location after deleting exit.');
+                }
+
+                const originRegion = findRegionByLocationId(originLocation.id) || null;
+
+                if (realtimeHub && typeof realtimeHub.emit === 'function') {
+                    const realtimePayload = {
+                        originLocationId: originLocation.id,
+                        originLocationName: locationData.name || null,
+                        originRegionId: originRegion?.id || null,
+                        originRegionName: originRegion?.name || null,
+                        removed: {
+                            exitId: targetExit.id || null,
+                            direction: originDirection,
+                            destinationId: targetExit.destination || null,
+                            destinationRegionId: targetExit.destinationRegion || null
+                        },
+                        reverseRemoved: reverseRemoval,
+                        deletedStub: deletedStubInfo,
+                        preservedStub: preservedStubInfo,
+                        location: locationData,
+                        initiatedBy: initiatorClientId,
+                        requestId: requestId,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    try {
+                        realtimeHub.emit(null, 'location_exit_deleted', realtimePayload);
+                    } catch (broadcastError) {
+                        console.warn('Failed to broadcast exit deletion:', broadcastError.message);
+                    }
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Exit deleted.',
+                    location: locationData,
+                    removed: {
+                        exitId: targetExit.id || null,
+                        direction: originDirection
+                    },
+                    reverseRemoved: reverseRemoval,
+                    deletedStub: deletedStubInfo,
+                    preservedStub: preservedStubInfo
+                });
+            } catch (error) {
+                console.error('Error deleting exit:', error);
+                const statusCode = Number.isFinite(error?.statusCode)
+                    ? Number(error.statusCode)
+                    : (Number.isFinite(error?.status) ? Number(error.status) : 500);
+                res.status(statusCode).json({
+                    success: false,
+                    error: error?.message || 'Failed to delete exit'
                 });
             }
         });

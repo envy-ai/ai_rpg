@@ -618,6 +618,50 @@ p:not(:last-child) {
   transition: background 0.2s ease, border 0.2s ease;
 }
 
+.exit-item {
+  position: relative;
+  display: block;
+}
+.exit-item:last-child {
+  margin-bottom: 0;
+}
+.exit-item .exit-button {
+  width: 100%;
+}
+
+.exit-delete-button {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(252, 165, 165, 0.4);
+  border-radius: 6px;
+  color: #fecaca;
+  font-size: 0.8rem;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, background 0.18s ease, border 0.18s ease, color 0.18s ease;
+}
+.exit-delete-button:hover, .exit-delete-button:focus {
+  background: rgba(220, 38, 38, 0.35);
+  border-color: rgba(248, 113, 113, 0.65);
+  color: #fee2e2;
+  outline: none;
+}
+
+.exit-item:hover .exit-delete-button,
+.exit-delete-button:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .exit-button:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.35);

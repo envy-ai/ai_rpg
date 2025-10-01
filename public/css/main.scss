@@ -650,8 +650,6 @@ p:not(:last-child) {
 .exit-item {
   position: relative;
   display: block;
-  margin-bottom: 10px;
-  padding-left: 36px;
 
   &:last-child {
     margin-bottom: 0;
@@ -665,7 +663,7 @@ p:not(:last-child) {
 .exit-delete-button {
   position: absolute;
   top: 50%;
-  left: 0;
+  right: 5px;
   width: 26px;
   height: 26px;
   transform: translateY(-50%);

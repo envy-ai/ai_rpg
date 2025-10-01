@@ -8187,8 +8187,18 @@
                                 if (!exit || !exit.destination) {
                                     return;
                                 }
-                                const button = document.createElement('button');
-                                button.className = 'exit-button';
+
+                                const exitId = typeof exit.id === 'string' && exit.id.trim() ? exit.id.trim() : null;
+                                const container = document.createElement('div');
+                                container.className = 'exit-item';
+                                container.dataset.direction = key;
+                                if (exitId) {
+                                    container.dataset.exitId = exitId;
+                                }
+
+                                const travelButton = document.createElement('button');
+                                travelButton.type = 'button';
+                                travelButton.className = 'exit-button';
                                 const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
                                 const isVehicle = Boolean(exit.isVehicle);
                                 const vehiclePrefix = isVehicle
@@ -8198,26 +8208,72 @@
                                 const isRegionExit = Boolean(exit.destinationRegion);
 
                                 if (isRegionExit) {
-                                    button.classList.add('region-exit');
+                                    travelButton.classList.add('region-exit');
                                     const regionName = exit.destinationRegionName || baseName || 'Unknown region';
                                     const locationName = baseName;
                                     if (exit.destinationRegionExpanded) {
-                                        button.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
-                                        button.classList.add('region-exit-expanded');
+                                        travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
+                                        travelButton.classList.add('region-exit-expanded');
                                     } else {
-                                        button.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
-                                        button.classList.add('region-exit-unexplored');
+                                        travelButton.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
+                                        travelButton.classList.add('region-exit-unexplored');
                                     }
                                     if (exit.destinationRegion) {
-                                        button.dataset.regionId = exit.destinationRegion;
+                                        travelButton.dataset.regionId = exit.destinationRegion;
                                     }
                                 } else {
-                                    button.textContent = vehicleLabel;
+                                    travelButton.textContent = vehicleLabel;
                                 }
 
-                                button.dataset.destinationId = exit.destination;
-                                button.addEventListener('click', () => moveToLocation(exit));
-                                locationExitsList.appendChild(button);
+                                travelButton.dataset.destinationId = exit.destination;
+                                travelButton.addEventListener('click', () => moveToLocation(exit));
+                                container.appendChild(travelButton);
+
+                                if (exitId) {
+                                    const deleteButton = document.createElement('button');
+                                    deleteButton.type = 'button';
+                                    deleteButton.className = 'exit-delete-button';
+                                    deleteButton.textContent = '🗑️';
+
+                                    const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
+                                    deleteButton.setAttribute('aria-label', `Delete exit: ${friendlyName}`);
+                                    deleteButton.title = `Delete exit: ${friendlyName}`;
+
+                                    deleteButton.addEventListener('click', async (event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+
+                                        const confirmed = window.confirm(`Delete exit "${friendlyName}"? This cannot be undone.`);
+                                        if (!confirmed) {
+                                            return;
+                                        }
+
+                                        deleteButton.disabled = true;
+                                        try {
+                                            const response = await fetch(`/api/locations/${encodeURIComponent(location.id)}/exits/${encodeURIComponent(exitId)}`, {
+                                                method: 'DELETE',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
+                                            });
+                                            const data = await response.json().catch(() => null);
+                                            if (!response.ok || !data?.success) {
+                                                throw new Error(data?.error || `HTTP ${response.status}`);
+                                            }
+                                            if (data.location && typeof window.updateLocationDisplay === 'function') {
+                                                await window.updateLocationDisplay(data.location);
+                                            }
+                                        } catch (error) {
+                                            console.warn('Failed to delete exit:', error);
+                                            alert(`Failed to delete exit: ${error.message || error}`);
+                                        } finally {
+                                            deleteButton.disabled = false;
+                                        }
+                                    });
+
+                                    container.appendChild(deleteButton);
+                                }
+
+                                locationExitsList.appendChild(container);
                             });
                         }
                     }
