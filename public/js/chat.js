@@ -310,9 +310,9 @@ class AIRPGChat {
                     break;
                 }
                 case 'plausibility': {
-                    const plausibilityHtml = attachment.plausibilityHtml || attachment.plausibility || attachment.content || '';
-                    if (plausibilityHtml) {
-                        html = `<div class="message-insight-tooltip plausibility-tooltip">${plausibilityHtml}</div>`;
+                    const details = this.generatePlausibilityInsight(attachment.plausibilityHtml || attachment.plausibility || attachment.content || '');
+                    if (details?.html) {
+                        html = `<div class="message-insight-tooltip plausibility-tooltip">${details.html}</div>`;
                         icon = '🧭';
                         label = 'View plausibility analysis';
                     }
@@ -454,6 +454,122 @@ class AIRPGChat {
         return {
             html: detailsElement.innerHTML
         };
+    }
+
+    generatePlausibilityInsight(rawHtml) {
+        if (!rawHtml || typeof rawHtml !== 'string') {
+            return null;
+        }
+
+        console.log('Generating plausibility insight from HTML:', rawHtml);
+
+        const escapedOriginal = this.escapeHtml(rawHtml);
+        const buildFallback = () => ({
+            html: `<h4>Plausibility Assessment</h4><pre>${escapedOriginal}</pre>`
+        });
+
+        try {
+            const trimmed = rawHtml.trim();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(trimmed, 'text/xml');
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return buildFallback();
+            }
+
+            const root = doc.getElementsByTagName('plausibility')[0];
+            if (!root) {
+                return buildFallback();
+            }
+
+            const getText = (node, tag) => {
+                if (!node) {
+                    return null;
+                }
+                const child = node.getElementsByTagName(tag)?.[0];
+                if (!child || typeof child.textContent !== 'string') {
+                    return null;
+                }
+                const value = child.textContent.trim();
+                return value || null;
+            };
+
+            const listItems = [];
+
+            const type = getText(root, 'type');
+            if (type) {
+                listItems.push(`<li><strong>Result:</strong> ${this.escapeHtml(type)}</li>`);
+            }
+
+            const reason = getText(root, 'reason');
+            if (reason) {
+                listItems.push(`<li><strong>Reason:</strong> ${this.escapeHtml(reason)}</li>`);
+            }
+
+            const skillNode = root.getElementsByTagName('skillCheck')?.[0];
+            if (skillNode) {
+                const skillItems = [];
+
+                const skillReason = getText(skillNode, 'reason');
+                if (skillReason) {
+                    skillItems.push(`<li>Reason: ${this.escapeHtml(skillReason)}</li>`);
+                }
+
+                const skillName = getText(skillNode, 'skill');
+                if (skillName) {
+                    skillItems.push(`<li>Skill: ${this.escapeHtml(skillName)}</li>`);
+                }
+
+                const attribute = getText(skillNode, 'attribute');
+                if (attribute) {
+                    skillItems.push(`<li>Attribute: ${this.escapeHtml(attribute)}</li>`);
+                }
+
+                const difficulty = getText(skillNode, 'difficulty');
+                if (difficulty) {
+                    skillItems.push(`<li>Difficulty: ${this.escapeHtml(difficulty)}</li>`);
+                }
+
+                const modifiersParent = skillNode.getElementsByTagName('curcumstanceModifiers')[0]
+                    || skillNode.getElementsByTagName('circumstanceModifiers')[0];
+                if (modifiersParent) {
+                    const modifierNodes = Array.from(modifiersParent.getElementsByTagName('circumstanceModifier'));
+                    const modifierEntries = modifierNodes
+                        .map(node => {
+                            const amount = getText(node, 'amount');
+                            const modifierReason = getText(node, 'reason');
+                            if (!amount && !modifierReason) {
+                                return null;
+                            }
+                            const parts = [];
+                            if (amount) {
+                                parts.push(`Amount: ${this.escapeHtml(amount)}`);
+                            }
+                            if (modifierReason && modifierReason.toLowerCase() !== 'n/a') {
+                                parts.push(`Reason: ${this.escapeHtml(modifierReason)}`);
+                            }
+                            return parts.length ? `<li>${parts.join(' • ')}</li>` : null;
+                        })
+                        .filter(Boolean);
+                    if (modifierEntries.length) {
+                        skillItems.push(`<li>Modifiers<ul>${modifierEntries.join('')}</ul></li>`);
+                    }
+                }
+
+                if (skillItems.length) {
+                    listItems.push(`<li><strong>Skill Check</strong><ul>${skillItems.join('')}</ul></li>`);
+                }
+            }
+
+            if (!listItems.length) {
+                return buildFallback();
+            }
+
+            return {
+                html: `<h4>Plausibility Assessment</h4><ul>${listItems.join('')}</ul>`
+            };
+        } catch (_) {
+            return buildFallback();
+        }
     }
 
     findLatestAttachableMessage() {
@@ -2220,8 +2336,8 @@ class AIRPGChat {
         details.appendChild(summaryEl);
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'skill-check-details';
-        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
+        wrapper.className = 'skill-check-details insight-card';
+        wrapper.innerHTML = `<h4>Skill Check Breakdown</h4><ul>${lines.join('\n')}</ul>`;
         details.appendChild(wrapper);
 
         contentDiv.appendChild(details);
@@ -2577,8 +2693,8 @@ class AIRPGChat {
         details.appendChild(summaryEl);
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'skill-check-details attack-check-details';
-        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
+        wrapper.className = 'skill-check-details attack-check-details insight-card';
+        wrapper.innerHTML = `<h4>Attack Check Breakdown</h4><ul>${lines.join('\n')}</ul>`;
         details.appendChild(wrapper);
 
         contentDiv.appendChild(details);

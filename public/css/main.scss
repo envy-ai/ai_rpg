@@ -1993,6 +1993,57 @@ p:not(:last-child) {
   color: #f8fafc;
 }
 
+.message.skill-check-message,
+.message.attack-check-message,
+.message.plausibility-message {
+  display: none !important;
+}
+
+.insight-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.35);
+}
+
+.insight-card h4 {
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #bae6fd;
+}
+
+.insight-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insight-card ul ul {
+  margin-top: 6px;
+  padding-left: 14px;
+  gap: 4px;
+}
+
+.insight-card li {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.95);
+  line-height: 1.4;
+}
+
+.insight-card pre {
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.85);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .message-action--delete:hover {
   background: rgba(239, 68, 68, 0.65);
 }
