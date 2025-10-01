@@ -103,8 +103,38 @@ class AIRPGChat {
         this.messageRegistry.clear();
         const fragment = document.createDocumentFragment();
 
+        const aggregatedEntries = [];
+        let lastAttachable = null;
+
         this.serverHistory.forEach(entry => {
-            const element = this.createChatMessageElement(entry);
+            if (!entry) {
+                lastAttachable = null;
+                return;
+            }
+
+            const entryType = entry.type || null;
+            if (entryType === 'skill-check' || entryType === 'attack-check' || entryType === 'plausibility') {
+                if (lastAttachable) {
+                    lastAttachable.attachments.push(entry);
+                    return;
+                }
+                aggregatedEntries.push({ entry, attachments: [] });
+                lastAttachable = null;
+                return;
+            }
+
+            const record = { entry, attachments: [] };
+            aggregatedEntries.push(record);
+
+            if (!entryType) {
+                lastAttachable = record;
+            } else {
+                lastAttachable = null;
+            }
+        });
+
+        aggregatedEntries.forEach(({ entry, attachments }) => {
+            const element = this.createChatMessageElement(entry, attachments);
             if (element) {
                 fragment.appendChild(element);
                 if (entry.timestamp) {
@@ -129,7 +159,7 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    createChatMessageElement(entry) {
+    createChatMessageElement(entry, attachments = []) {
         if (!entry) {
             return null;
         }
@@ -179,12 +209,169 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        const insights = this.prepareAttachmentInsights(attachments);
+
         const actions = this.createMessageActions(entry);
         if (actions) {
             messageDiv.appendChild(actions);
+            if (insights.length) {
+                this.appendInsightButtons(actions, insights);
+            }
+        } else if (insights.length) {
+            const insightsOnly = document.createElement('div');
+            insightsOnly.className = 'message-actions message-actions--insights-only';
+            this.appendInsightButtons(insightsOnly, insights);
+            messageDiv.appendChild(insightsOnly);
         }
 
         return messageDiv;
+    }
+
+    prepareAttachmentInsights(attachments = []) {
+        if (!Array.isArray(attachments) || !attachments.length) {
+            return [];
+        }
+
+        const insights = [];
+
+        attachments.forEach(attachment => {
+            if (!attachment) {
+                return;
+            }
+
+            let html = null;
+            let icon = null;
+            let label = null;
+
+            switch (attachment.type) {
+                case 'skill-check': {
+                    const element = this.buildSkillCheckMessageElement({
+                        resolution: attachment.skillCheck || attachment.resolution || null,
+                        timestamp: null
+                    });
+                    if (element) {
+                        const detailsElement = element.querySelector('.skill-check-details');
+                        if (detailsElement) {
+                            html = `<div class="message-insight-tooltip skill-check-tooltip">${detailsElement.innerHTML}</div>`;
+                            icon = '🎯';
+                            label = 'View skill check details';
+                        }
+                    }
+                    break;
+                }
+                case 'attack-check': {
+                    const element = this.buildAttackCheckMessageElement({
+                        summary: attachment.attackSummary || attachment.summary || attachment.attackCheck?.summary || null,
+                        timestamp: null
+                    });
+                    if (element) {
+                        const detailsElement = element.querySelector('.attack-check-details');
+                        if (detailsElement) {
+                            html = `<div class="message-insight-tooltip attack-check-tooltip">${detailsElement.innerHTML}</div>`;
+                            icon = '⚔️';
+                            label = 'View attack check details';
+                        }
+                    }
+                    break;
+                }
+                case 'plausibility': {
+                    const plausibilityHtml = attachment.plausibilityHtml || attachment.plausibility || attachment.content || '';
+                    if (plausibilityHtml) {
+                        html = `<div class="message-insight-tooltip plausibility-tooltip">${plausibilityHtml}</div>`;
+                        icon = '🧭';
+                        label = 'View plausibility analysis';
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            if (icon && html) {
+                insights.push({ icon, html, label: label || 'View additional details' });
+            }
+        });
+
+        return insights;
+    }
+
+    appendInsightButtons(actionsContainer, insights = []) {
+        if (!actionsContainer || !insights.length) {
+            return;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-insight-icons';
+
+        insights.forEach(insight => {
+            if (!insight || !insight.icon || !insight.html) {
+                return;
+            }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'message-insight-button';
+            button.textContent = insight.icon;
+            if (insight.label) {
+                button.setAttribute('aria-label', insight.label);
+                button.title = insight.label;
+            }
+
+            button.addEventListener('mouseenter', event => this.handleInsightMouseEnter(event, insight.html));
+            button.addEventListener('mousemove', event => this.handleInsightMouseMove(event));
+            button.addEventListener('mouseleave', () => this.handleInsightMouseLeave());
+            button.addEventListener('focus', () => this.handleInsightFocus(button, insight.html));
+            button.addEventListener('blur', () => this.handleInsightMouseLeave());
+            button.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    this.handleInsightMouseLeave();
+                }
+            });
+
+            wrapper.appendChild(button);
+        });
+
+        actionsContainer.insertBefore(wrapper, actionsContainer.firstChild || null);
+    }
+
+    handleInsightMouseEnter(event, html) {
+        this.showInsightTooltip(html, event);
+    }
+
+    handleInsightMouseMove(event) {
+        const controller = window.floatingTooltipController;
+        if (controller && typeof controller.move === 'function') {
+            controller.move(event);
+        }
+    }
+
+    handleInsightMouseLeave() {
+        const controller = window.floatingTooltipController;
+        if (controller && typeof controller.hide === 'function') {
+            controller.hide();
+        }
+    }
+
+    handleInsightFocus(button, html) {
+        if (!button) {
+            return;
+        }
+        const rect = button.getBoundingClientRect();
+        const syntheticEvent = {
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.bottom,
+            target: button
+        };
+        this.showInsightTooltip(html, syntheticEvent);
+    }
+
+    showInsightTooltip(html, event) {
+        if (!html || !event) {
+            return;
+        }
+        const controller = window.floatingTooltipController;
+        if (controller && typeof controller.show === 'function') {
+            controller.show(html, event, { allowHTML: true });
+        }
     }
 
     createEventSummaryElement(entry) {

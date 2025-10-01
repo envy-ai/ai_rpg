@@ -1358,6 +1358,13 @@ class Events {
             }
         }
 
+        let baseContext = {};
+        try {
+            baseContext = buildBasePromptContext({ locationOverride: location });
+        } catch (error) {
+            throw new Error(`Failed to build base context for alter_item: ${error.message}`);
+        }
+
         const endpoint = config.ai.endpoint;
         const chatEndpoint = endpoint.endsWith('/')
             ? `${endpoint}chat/completions`

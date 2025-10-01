@@ -1862,6 +1862,46 @@ p:not(:last-child) {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+.message-actions--insights-only {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.message-insight-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message-insight-button {
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #f8fafc;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.message-insight-button:hover,
+.message-insight-button:focus {
+  background: rgba(59, 130, 246, 0.55);
+  border-color: rgba(255, 255, 255, 0.4);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.message-insight-tooltip {
+  max-width: 320px;
+  color: #f8fafc;
+}
+
 .message-action--delete:hover {
   background: rgba(239, 68, 68, 0.65);
 }
