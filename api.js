@@ -7972,6 +7972,35 @@ module.exports = function registerApiRoutes(scope) {
             return merged;
         }
 
+        function logSettingAutofillPrompt({ systemPrompt, generationPrompt, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `setting_autofill_${timestamp}.log`);
+                const parts = [
+                    `=== SETTINGS AUTOFILL (${new Date().toISOString()}) ===`,
+                    '=== SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    ''
+                ];
+
+                if (responseText !== undefined) {
+                    parts.push('=== AI RESPONSE ===', responseText || '(empty)', '');
+                }
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log settings autofill prompt:', error.message);
+            }
+        }
+
         function sanitizeForAbilityXml(value) {
             if (value === null || value === undefined) {
                 return '';
@@ -8093,6 +8122,12 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('AI did not return a usable response');
                 }
 
+                logSettingAutofillPrompt({
+                    systemPrompt,
+                    generationPrompt,
+                    responseText: aiMessage
+                });
+
                 const generatedSetting = parseSettingXmlResponse(aiMessage);
                 const mergedSetting = mergeSettingValues(normalizedSetting, generatedSetting);
 
@@ -8143,13 +8178,31 @@ module.exports = function registerApiRoutes(scope) {
                 const setting = SettingInfo.getById(id);
 
                 if (!setting) {
-                    return res.status(404).json({
-                        success: false,
-                        error: 'Setting not found'
+                    const fallbackName = (updates && typeof updates.name === 'string' && updates.name.trim())
+                        ? updates.name.trim()
+                        : `Setting ${id}`;
+
+                    if (SettingInfo.getByName(fallbackName)) {
+                        return res.status(404).json({
+                            success: false,
+                            error: 'Setting not found, and a new setting with the provided name already exists.'
+                        });
+                    }
+
+                    const newSetting = new SettingInfo({
+                        ...updates,
+                        id,
+                        name: fallbackName
+                    });
+
+                    return res.status(201).json({
+                        success: true,
+                        setting: newSetting.toJSON(),
+                        created: true,
+                        message: 'Setting not found. Created a new setting instead.'
                     });
                 }
 
-                // Check if name conflict with another setting
                 if (updates.name && updates.name !== setting.name) {
                     const existingSetting = SettingInfo.getByName(updates.name);
                     if (existingSetting && existingSetting.id !== id) {

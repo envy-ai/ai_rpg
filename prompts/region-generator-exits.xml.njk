@@ -10,6 +10,12 @@ You are a an AI role-playing gamemaster.
 <setting>
 {{ setting }}
 </setting>
+{% if currentRegion.parentRegion %}
+<parentRegion>
+<name>{{ currentRegion.parentRegion.name }}</name>
+<description>{{ currentRegion.parentRegion.description }}</description>
+</parentRegion>
+{% endif %}
 <currentRegion>
 <name>{{ currentRegion.name }}</name>
 <description>{{ currentRegion.description }}</description>
@@ -21,14 +27,17 @@ You are a an AI role-playing gamemaster.
     </location>
 {% endfor %}
 </locations>
+{% if currentRegion.parentRegion %}<note>This region is entirely within the parent region {{ currentRegion.parentRegion.name }}.</note>{% endif %}
 </currentRegion>
 </context>
 
-I'd like you to generate a set of 1 or more new regions that connect to the current region. Each region should have a 3 sentence description. "Region" is defined loosely in that it's just a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. Locations within the region will be generated when the region is first visited by the player.
+If appropriate, generate a set of 1 or more new regions that connect to the current region. Each region should have a 3 sentence description. "Region" is defined loosely in that it's just a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. Locations within the region will be generated when the region is first visited by the player.
 
 Generally, regions can only be contained by one other region, so only use the Contains relationship once at most (or not at all if it doesn't make sense). Regions can be adjacent to multiple other regions and have other regions within them. Regions should never be as small as a single area or room -- that is a location and should be generated later when the player visits the region.
 
 Make sure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
+
+Note that a small region (like a building) contained entirely within another region (like a town) may need no region exits, since the exit to the larger region is implicit. In that case, simply do not generate any regions.
 
 <regions>
 <region>
@@ -43,3 +52,8 @@ Make sure the exit location you choose for each region makes sense given the cur
 </regions>
     </generationPrompt>
 </template>
+
+or, if no regions are generated:
+
+<regions>
+</regions>
