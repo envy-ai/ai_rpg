@@ -260,6 +260,31 @@ class Region {
     return this.#id;
   }
 
+  get parentRegion() {
+    return this.#parentRegionId ? Region.get(this.#parentRegionId) : null;
+  }
+
+  get parentHierarchy() {
+    const hierarchy = [];
+
+    let ids = new Set();
+
+    let current = this.parentRegion;
+    while (current) {
+      hierarchy.unshift(current);
+      if (ids.has(current.id)) {
+        throw new Error('Circular parentRegion reference detected in Region hierarchy');
+      }
+      ids.add(current.id);
+
+      if (!current.parentRegionId) {
+        break;
+      }
+      current = current.parentRegion;
+    }
+    return hierarchy;
+  }
+
   get name() {
     return this.#name;
   }

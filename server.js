@@ -2275,9 +2275,14 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
-    const historyEntries = chatHistory.slice(-10);
-    const gameHistory = historyEntries.length
-        ? historyEntries.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
+    // Don't truncate history for now, let the model handle it
+    const historyEntries = chatHistory; //.slice(-10);
+
+    // Filter out entries without content, which gets rid of skill and plausibulity checks
+    // that we don't want cluttering the history.
+    const filteredHistory = historyEntries.filter(entry => entry.content);
+    const gameHistory = filteredHistory.length
+        ? filteredHistory.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
         : 'No significant prior events.';
 
     return {
@@ -4768,14 +4773,16 @@ function renderLocationNpcPrompt(location, options = {}) {
 function renderRegionNpcPrompt(region, options = {}) {
     try {
         const templateName = 'region-generator-important-npcs.njk';
+        /*
         const safeRegion = region ? {
             id: region.id,
             name: region.name,
             description: region.description
         } : { id: null, name: 'Unknown Region', description: '' };
+        */
 
         return promptEnv.render(templateName, {
-            region: safeRegion,
+            region: region,
             allLocationsInRegion: options.allLocationsInRegion || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
@@ -9959,11 +9966,7 @@ function renderRegionExitsPrompt({ region, settingDescription }) {
 
         const variables = {
             setting: settingDescription,
-            currentRegion: {
-                name: region.name,
-                description: region.description,
-                locations: locationEntries
-            }
+            currentRegion: region
         };
 
         const rendered = promptEnv.render(templateName, variables);
