@@ -4854,6 +4854,197 @@ module.exports = function registerApiRoutes(scope) {
             return locationData;
         }
 
+        function buildRegionParentOptions({ excludeId = null } = {}) {
+            const options = [];
+            for (const region of regions.values()) {
+                if (excludeId && region.id === excludeId) {
+                    continue;
+                }
+                options.push({
+                    id: region.id,
+                    name: region.name,
+                    description: region.description,
+                    parentRegionId: region.parentRegionId || null
+                });
+            }
+            options.sort((a, b) => {
+                const nameA = (a.name || '').toLowerCase();
+                const nameB = (b.name || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+            return options;
+        }
+
+        app.get('/api/regions/:id', (req, res) => {
+            try {
+                const regionIdRaw = req.params.id;
+                const regionId = typeof regionIdRaw === 'string' ? regionIdRaw.trim() : '';
+                if (!regionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Region ID is required'
+                    });
+                }
+
+                const region = regions.get(regionId);
+                if (!region) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Region '${regionId}' not found`
+                    });
+                }
+
+                const parentOptions = buildRegionParentOptions({ excludeId: regionId });
+                const payload = {
+                    id: region.id,
+                    name: region.name,
+                    description: region.description,
+                    parentRegionId: region.parentRegionId || null
+                };
+
+                let parentRegionName = null;
+                if (payload.parentRegionId && regions.has(payload.parentRegionId)) {
+                    parentRegionName = regions.get(payload.parentRegionId).name || null;
+                }
+
+                res.json({
+                    success: true,
+                    region: {
+                        ...payload,
+                        parentRegionName
+                    },
+                    parentOptions
+                });
+            } catch (error) {
+                console.error('Failed to load region:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to load region'
+                });
+            }
+        });
+
+        app.put('/api/regions/:id', (req, res) => {
+            try {
+                const regionIdRaw = req.params.id;
+                const regionId = typeof regionIdRaw === 'string' ? regionIdRaw.trim() : '';
+                if (!regionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Region ID is required'
+                    });
+                }
+
+                const region = regions.get(regionId);
+                if (!region) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Region '${regionId}' not found`
+                    });
+                }
+
+                const {
+                    name,
+                    description,
+                    parentRegionId: parentRegionIdRaw
+                } = req.body || {};
+
+                if (typeof name !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Region name must be provided as a string'
+                    });
+                }
+                if (typeof description !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Region description must be provided as a string'
+                    });
+                }
+
+                const parentRegionId = typeof parentRegionIdRaw === 'string' && parentRegionIdRaw.trim()
+                    ? parentRegionIdRaw.trim()
+                    : null;
+
+                if (parentRegionId === regionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Region cannot be its own parent'
+                    });
+                }
+
+                if (parentRegionId && !regions.has(parentRegionId)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Parent region '${parentRegionId}' not found`
+                    });
+                }
+
+                if (parentRegionId) {
+                    let cursor = regions.get(parentRegionId);
+                    const guard = new Set([regionId]);
+                    while (cursor) {
+                        if (guard.has(cursor.id)) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'Cannot set parent region because it would create a cycle'
+                            });
+                        }
+                        if (!cursor.parentRegionId) {
+                            break;
+                        }
+                        guard.add(cursor.id);
+                        cursor = regions.get(cursor.parentRegionId) || null;
+                    }
+                }
+
+                try {
+                    const trimmedName = name.trim();
+                    const trimmedDescription = description.trim();
+                    region.name = trimmedName;
+                    region.description = trimmedDescription;
+                } catch (validationError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: validationError?.message || 'Invalid region values'
+                    });
+                }
+
+                if (parentRegionId !== undefined && parentRegionId !== region.parentRegionId) {
+                    region.parentRegionId = parentRegionId;
+                }
+
+                const parentOptions = buildRegionParentOptions({ excludeId: regionId });
+                const payload = {
+                    id: region.id,
+                    name: region.name,
+                    description: region.description,
+                    parentRegionId: region.parentRegionId || null
+                };
+
+                let parentRegionName = null;
+                if (payload.parentRegionId && regions.has(payload.parentRegionId)) {
+                    parentRegionName = regions.get(payload.parentRegionId).name || null;
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Region updated successfully.',
+                    region: {
+                        ...payload,
+                        parentRegionName
+                    },
+                    parentOptions
+                });
+            } catch (error) {
+                console.error('Failed to update region:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to update region'
+                });
+            }
+        });
+
         // Update an NPC's core data (experimental editing UI)
         app.put('/api/npcs/:id', (req, res) => {
             try {

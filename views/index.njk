@@ -42,6 +42,7 @@
                                         <button type="button" class="location-image-menu-button" id="locationImageMenuButton" aria-haspopup="true" aria-expanded="false" aria-label="Location options">•••</button>
                                         <div class="location-image-menu" id="locationImageMenu" hidden>
                                             <button type="button" class="location-image-menu-item" id="locationImageEditButton">Edit Location</button>
+                                            <button type="button" class="location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
                                             <button type="button" class="location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
                                         </div>
                                     </div>
@@ -887,6 +888,40 @@
                     <div class="location-edit-actions">
                         <button type="button" class="location-edit-cancel" id="locationEditCancelBtn">Cancel</button>
                         <button type="submit" class="location-edit-save" id="locationEditSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div id="regionEditModal" class="modal region-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="regionEditModalTitle">Edit Region</h2>
+                <button type="button" class="modal__close" id="regionEditCloseBtn" aria-label="Close region editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="regionEditForm" class="modal__body location-edit-form region-edit-form" novalidate>
+                <div class="location-edit-field">
+                    <label for="regionEditName">Region Name</label>
+                    <input type="text" id="regionEditName" name="name" maxlength="160" required>
+                </div>
+                <div class="location-edit-field">
+                    <label for="regionEditDescription">Description</label>
+                    <textarea id="regionEditDescription" name="description" rows="6" required></textarea>
+                </div>
+                <div class="location-edit-field">
+                    <label for="regionEditParent">Parent Region</label>
+                    <select id="regionEditParent" name="parentRegionId">
+                        <option value="">None</option>
+                    </select>
+                </div>
+                <footer class="location-edit-footer region-edit-footer">
+                    <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions">
+                        <button type="button" class="location-edit-cancel region-edit-cancel" id="regionEditCancelBtn">Cancel</button>
+                        <button type="submit" class="location-edit-save region-edit-save" id="regionEditSaveBtn">Save Changes</button>
                     </div>
                 </footer>
             </form>
@@ -2659,6 +2694,7 @@
         const newExitButton = document.getElementById('newExitButton');
         let newExitOptionsCache = null;
         let newExitRegionsById = new Map();
+        let editingRegionId = null;
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
         const addNpcNameInput = document.getElementById('addNpcName');
@@ -2717,6 +2753,7 @@
         const locationImageMenuButton = document.getElementById('locationImageMenuButton');
         const locationImageMenu = document.getElementById('locationImageMenu');
         const locationImageEditButton = document.getElementById('locationImageEditButton');
+        const locationRegionEditButton = document.getElementById('locationRegionEditButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const locationEditModal = document.getElementById('locationEditModal');
         const locationEditForm = document.getElementById('locationEditForm');
@@ -2727,6 +2764,15 @@
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
         const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
         const locationEditSaveBtn = document.getElementById('locationEditSaveBtn');
+        const regionEditModal = document.getElementById('regionEditModal');
+        const regionEditForm = document.getElementById('regionEditForm');
+        const regionEditNameInput = document.getElementById('regionEditName');
+        const regionEditDescriptionInput = document.getElementById('regionEditDescription');
+        const regionEditParentSelect = document.getElementById('regionEditParent');
+        const regionEditStatus = document.getElementById('regionEditStatus');
+        const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
+        const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
+        const regionEditSaveBtn = document.getElementById('regionEditSaveBtn');
         const npcViewName = document.getElementById('npcViewName');
         const npcViewDescription = document.getElementById('npcViewDescription');
         const npcViewClass = document.getElementById('npcViewClass');
@@ -7921,6 +7967,197 @@
             }
         }
 
+        function setRegionEditStatus(message = '', type = null) {
+            if (!regionEditStatus) {
+                return;
+            }
+            regionEditStatus.textContent = message || '';
+            regionEditStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                regionEditStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                regionEditStatus.classList.add('is-success');
+            }
+        }
+
+        function populateRegionParentOptions(options = [], selectedId = null) {
+            if (!regionEditParentSelect) {
+                return;
+            }
+            regionEditParentSelect.innerHTML = '';
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'None';
+            regionEditParentSelect.appendChild(defaultOption);
+
+            (options || []).forEach(option => {
+                if (!option || !option.id) {
+                    return;
+                }
+               const opt = document.createElement('option');
+                opt.value = option.id;
+                opt.textContent = option.name || option.id;
+                if (option.id === selectedId) {
+                    opt.selected = true;
+                }
+                regionEditParentSelect.appendChild(opt);
+            });
+        }
+
+        async function openRegionEditModal() {
+            if (!regionEditModal || !lastRenderedLocation) {
+                return;
+            }
+            const regionId = lastRenderedLocation.regionId
+                || lastRenderedLocation.stubMetadata?.regionId
+                || null;
+
+            if (!regionId) {
+                alert('No region is associated with the current location.');
+                return;
+            }
+
+            editingRegionId = regionId;
+            if (regionEditForm) {
+                regionEditForm.reset();
+            }
+            populateRegionParentOptions([], null);
+            if (regionEditSaveBtn) {
+                regionEditSaveBtn.disabled = true;
+            }
+            setRegionEditStatus('Loading region…', null);
+
+            regionEditModal.removeAttribute('hidden');
+            regionEditModal.setAttribute('aria-hidden', 'false');
+            regionEditModal.classList.add('is-open');
+
+            try {
+                const response = await fetch(`/api/regions/${encodeURIComponent(regionId)}`);
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.region) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (regionEditNameInput) {
+                    regionEditNameInput.value = data.region.name || '';
+                }
+                if (regionEditDescriptionInput) {
+                    regionEditDescriptionInput.value = data.region.description || '';
+                }
+                populateRegionParentOptions(data.parentOptions || [], data.region.parentRegionId || null);
+                setRegionEditStatus('', null);
+                if (regionEditSaveBtn) {
+                    regionEditSaveBtn.disabled = false;
+                }
+                setTimeout(() => {
+                    regionEditNameInput?.focus();
+                }, 50);
+            } catch (error) {
+                console.warn('Failed to load region for editing:', error);
+                setRegionEditStatus(`Failed to load region: ${error?.message || 'Unknown error'}`, 'error');
+                if (regionEditSaveBtn) {
+                    regionEditSaveBtn.disabled = true;
+                }
+            }
+        }
+
+        function closeRegionEditModal() {
+            if (!regionEditModal) {
+                return;
+            }
+            regionEditModal.setAttribute('hidden', '');
+            regionEditModal.setAttribute('aria-hidden', 'true');
+            regionEditModal.classList.remove('is-open');
+            setRegionEditStatus('', null);
+            if (regionEditForm) {
+                regionEditForm.reset();
+            }
+            if (regionEditSaveBtn) {
+                regionEditSaveBtn.disabled = false;
+            }
+            editingRegionId = null;
+        }
+
+        async function submitRegionEditForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (!regionEditForm) {
+                return;
+            }
+            if (!editingRegionId) {
+                setRegionEditStatus('No region is currently selected for editing.', 'error');
+                return;
+            }
+
+            const nameValue = regionEditNameInput?.value ?? '';
+            if (!nameValue.trim()) {
+                setRegionEditStatus('Region name cannot be empty.', 'error');
+                regionEditNameInput?.focus();
+                return;
+            }
+
+            const descriptionValue = regionEditDescriptionInput?.value ?? '';
+            if (!descriptionValue.trim()) {
+                setRegionEditStatus('Region description cannot be empty.', 'error');
+                regionEditDescriptionInput?.focus();
+                return;
+            }
+
+            const parentValueRaw = regionEditParentSelect?.value ?? '';
+            const payload = {
+                name: nameValue.trim(),
+                description: descriptionValue.trim(),
+                parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null
+            };
+
+            setRegionEditStatus('Saving changes…', null);
+            if (regionEditSaveBtn) {
+                regionEditSaveBtn.disabled = true;
+            }
+
+            try {
+                const response = await fetch(`/api/regions/${encodeURIComponent(editingRegionId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success || !data.region) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                setRegionEditStatus('Region updated successfully.', 'success');
+                newExitOptionsCache = null;
+                newExitRegionsById = new Map();
+                ensureNewExitOptionsLoaded(true).catch(error => {
+                    console.warn('Failed to refresh exit options after region edit:', error);
+                });
+
+                const mapTab = document.querySelector('[data-tab="map"]');
+                if (mapTab && mapTab.classList.contains('active')) {
+                    const mapContainer = document.getElementById('mapContainer');
+                    const activeRegionId = mapContainer?.dataset?.regionId || null;
+                    if (!activeRegionId || activeRegionId === editingRegionId) {
+                        try {
+                            await window.loadRegionMap?.(activeRegionId || editingRegionId || null);
+                        } catch (mapError) {
+                            console.warn('Failed to refresh map after region edit:', mapError);
+                        }
+                    }
+                }
+
+                closeRegionEditModal();
+            } catch (error) {
+                console.warn('Failed to update region:', error);
+                setRegionEditStatus(`Failed to update region: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                if (regionEditSaveBtn) {
+                    regionEditSaveBtn.disabled = false;
+                }
+            }
+        }
+
         async function regenerateLocationImage() {
             if (!lastRenderedLocation || !lastRenderedLocation.id) {
                 alert('No location is currently loaded.');
@@ -8008,6 +8245,14 @@
             });
         }
 
+        if (locationRegionEditButton) {
+            locationRegionEditButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu();
+                await openRegionEditModal();
+            });
+        }
+
         if (locationImageRegenerateButton) {
             locationImageRegenerateButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -8042,9 +8287,20 @@
             locationEditForm.addEventListener('submit', submitLocationEditForm);
         }
 
+        if (regionEditCancelBtn) {
+            regionEditCancelBtn.addEventListener('click', () => closeRegionEditModal());
+        }
+        if (regionEditCloseBtn) {
+            regionEditCloseBtn.addEventListener('click', () => closeRegionEditModal());
+        }
+        if (regionEditForm) {
+            regionEditForm.addEventListener('submit', submitRegionEditForm);
+        }
+
         window.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 closeLocationEditModal();
+                closeRegionEditModal();
             }
         });
 

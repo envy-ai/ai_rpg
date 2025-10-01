@@ -289,8 +289,42 @@ class Region {
     return this.#name;
   }
 
+  set name(value) {
+    if (value === undefined || value === null) {
+      throw new Error('Region name must be provided');
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Region name must be a string');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error('Region name cannot be empty');
+    }
+    if (this.#name && Region.#indexByName.has(this.#name.toLowerCase())) {
+      Region.#indexByName.delete(this.#name.toLowerCase());
+    }
+    this.#name = trimmed;
+    Region.#indexByName.set(trimmed.toLowerCase(), this);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   get description() {
     return this.#description;
+  }
+
+  set description(value) {
+    if (value === undefined || value === null) {
+      throw new Error('Region description must be provided');
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Region description must be a string');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error('Region description cannot be empty');
+    }
+    this.#description = trimmed;
+    this.#lastUpdated = new Date().toISOString();
   }
 
   get locationBlueprints() {
