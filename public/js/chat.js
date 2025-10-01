@@ -104,7 +104,18 @@ class AIRPGChat {
         const fragment = document.createDocumentFragment();
 
         const aggregatedEntries = [];
+        const recordsById = new Map();
+        const pendingAttachments = new Map();
         let lastAttachable = null;
+        const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility']);
+
+        const attachToRecord = (record, attachment) => {
+            if (record && attachment) {
+                record.attachments.push(attachment);
+                return true;
+            }
+            return false;
+        };
 
         this.serverHistory.forEach(entry => {
             if (!entry) {
@@ -113,12 +124,31 @@ class AIRPGChat {
             }
 
             const entryType = entry.type || null;
-            if (entryType === 'skill-check' || entryType === 'attack-check' || entryType === 'plausibility') {
-                if (lastAttachable) {
-                    lastAttachable.attachments.push(entry);
+            const isAttachmentType = attachmentTypes.has(entryType);
+            const parentId = entry.parentId || null;
+
+            if (isAttachmentType) {
+                if (parentId) {
+                    const parentRecord = recordsById.get(parentId);
+                    if (attachToRecord(parentRecord, entry)) {
+                        return;
+                    }
+                    if (!pendingAttachments.has(parentId)) {
+                        pendingAttachments.set(parentId, []);
+                    }
+                    pendingAttachments.get(parentId).push(entry);
                     return;
                 }
-                aggregatedEntries.push({ entry, attachments: [] });
+
+                if (attachToRecord(lastAttachable, entry)) {
+                    return;
+                }
+
+                const orphanRecord = { entry, attachments: [] };
+                aggregatedEntries.push(orphanRecord);
+                if (entry.id) {
+                    recordsById.set(entry.id, orphanRecord);
+                }
                 lastAttachable = null;
                 return;
             }
@@ -126,12 +156,29 @@ class AIRPGChat {
             const record = { entry, attachments: [] };
             aggregatedEntries.push(record);
 
+            if (entry.id) {
+                recordsById.set(entry.id, record);
+                if (pendingAttachments.has(entry.id)) {
+                    const pendingList = pendingAttachments.get(entry.id);
+                    pendingList.forEach(pendingEntry => record.attachments.push(pendingEntry));
+                    pendingAttachments.delete(entry.id);
+                }
+            }
+
             if (!entryType) {
                 lastAttachable = record;
             } else {
                 lastAttachable = null;
             }
         });
+
+        if (pendingAttachments.size) {
+            for (const pendingList of pendingAttachments.values()) {
+                pendingList.forEach(entry => {
+                    aggregatedEntries.push({ entry, attachments: [] });
+                });
+            }
+        }
 
         aggregatedEntries.forEach(({ entry, attachments }) => {
             const element = this.createChatMessageElement(entry, attachments);
@@ -245,32 +292,20 @@ class AIRPGChat {
 
             switch (attachment.type) {
                 case 'skill-check': {
-                    const element = this.buildSkillCheckMessageElement({
-                        resolution: attachment.skillCheck || attachment.resolution || null,
-                        timestamp: null
-                    });
-                    if (element) {
-                        const detailsElement = element.querySelector('.skill-check-details');
-                        if (detailsElement) {
-                            html = `<div class="message-insight-tooltip skill-check-tooltip">${detailsElement.innerHTML}</div>`;
-                            icon = '🎯';
-                            label = 'View skill check details';
-                        }
+                    const details = this.generateSkillCheckInsight(attachment.skillCheck || attachment.resolution || null);
+                    if (details?.html) {
+                        html = `<div class="message-insight-tooltip skill-check-tooltip">${details.html}</div>`;
+                        icon = '🎯';
+                        label = 'View skill check details';
                     }
                     break;
                 }
                 case 'attack-check': {
-                    const element = this.buildAttackCheckMessageElement({
-                        summary: attachment.attackSummary || attachment.summary || attachment.attackCheck?.summary || null,
-                        timestamp: null
-                    });
-                    if (element) {
-                        const detailsElement = element.querySelector('.attack-check-details');
-                        if (detailsElement) {
-                            html = `<div class="message-insight-tooltip attack-check-tooltip">${detailsElement.innerHTML}</div>`;
-                            icon = '⚔️';
-                            label = 'View attack check details';
-                        }
+                    const details = this.generateAttackCheckInsight(attachment.attackSummary || attachment.summary || attachment.attackCheck?.summary || null);
+                    if (details?.html) {
+                        html = `<div class="message-insight-tooltip attack-check-tooltip">${details.html}</div>`;
+                        icon = '⚔️';
+                        label = 'View attack check details';
                     }
                     break;
                 }
@@ -300,11 +335,23 @@ class AIRPGChat {
             return;
         }
 
-        const wrapper = document.createElement('div');
-        wrapper.className = 'message-insight-icons';
+        let wrapper = actionsContainer.querySelector('.message-insight-icons');
+        if (!wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.className = 'message-insight-icons';
+            actionsContainer.insertBefore(wrapper, actionsContainer.firstChild || null);
+        }
+
+        if (!actionsContainer.__insightKeys) {
+            actionsContainer.__insightKeys = new Set();
+        }
 
         insights.forEach(insight => {
             if (!insight || !insight.icon || !insight.html) {
+                return;
+            }
+            const signature = `${insight.icon}:${insight.html}`;
+            if (actionsContainer.__insightKeys.has(signature)) {
                 return;
             }
             const button = document.createElement('button');
@@ -328,9 +375,8 @@ class AIRPGChat {
             });
 
             wrapper.appendChild(button);
+            actionsContainer.__insightKeys.add(signature);
         });
-
-        actionsContainer.insertBefore(wrapper, actionsContainer.firstChild || null);
     }
 
     handleInsightMouseEnter(event, html) {
@@ -372,6 +418,79 @@ class AIRPGChat {
         if (controller && typeof controller.show === 'function') {
             controller.show(html, event, { allowHTML: true });
         }
+    }
+
+    generateSkillCheckInsight(resolution) {
+        if (!resolution || typeof resolution !== 'object') {
+            return null;
+        }
+
+        const element = this.buildSkillCheckMessageElement({ resolution, timestamp: null });
+        if (!element) {
+            return null;
+        }
+        const detailsElement = element.querySelector('.skill-check-details');
+        if (!detailsElement) {
+            return null;
+        }
+        return {
+            html: detailsElement.innerHTML
+        };
+    }
+
+    generateAttackCheckInsight(summary) {
+        if (!summary || typeof summary !== 'object') {
+            return null;
+        }
+
+        const element = this.buildAttackCheckMessageElement({ summary, timestamp: null });
+        if (!element) {
+            return null;
+        }
+        const detailsElement = element.querySelector('.attack-check-details');
+        if (!detailsElement) {
+            return null;
+        }
+        return {
+            html: detailsElement.innerHTML
+        };
+    }
+
+    findLatestAttachableMessage() {
+        if (!this.chatLog) {
+            return null;
+        }
+        const candidates = Array.from(this.chatLog.querySelectorAll('.message'))
+            .reverse()
+            .filter(node => !node.classList.contains('event-summary-batch')
+                && node.dataset.type !== 'skill-check'
+                && node.dataset.type !== 'attack-check'
+                && node.dataset.type !== 'plausibility');
+        return candidates.length ? candidates[0] : null;
+    }
+
+    attachInsightToLatestMessage(type, payload) {
+        const parent = this.findLatestAttachableMessage();
+        if (!parent) {
+            return false;
+        }
+
+        const attachments = [{ type, ...payload }];
+        const insights = this.prepareAttachmentInsights(attachments);
+        if (!insights.length) {
+            return false;
+        }
+
+        let actions = parent.querySelector('.message-actions');
+        if (!actions) {
+            actions = document.createElement('div');
+            actions.className = 'message-actions message-actions--insights-only';
+            parent.appendChild(actions);
+        }
+
+        this.appendInsightButtons(actions, insights);
+        parent.classList.add('message--has-insights');
+        return true;
     }
 
     createEventSummaryElement(entry) {
@@ -1848,6 +1967,13 @@ class AIRPGChat {
     }
 
     addPlausibilityMessage(contentHtml) {
+        const attached = this.attachInsightToLatestMessage('plausibility', {
+            plausibilityHtml: contentHtml
+        });
+        if (attached) {
+            return;
+        }
+
         const timestamp = new Date().toISOString();
         const messageDiv = this.buildPlausibilityMessageElement({ html: contentHtml, timestamp });
         if (!messageDiv) {
@@ -1858,6 +1984,13 @@ class AIRPGChat {
     }
 
     addSkillCheckMessage(resolution) {
+        const attached = this.attachInsightToLatestMessage('skill-check', {
+            skillCheck: resolution
+        });
+        if (attached) {
+            return;
+        }
+
         const timestamp = new Date().toISOString();
         const messageDiv = this.buildSkillCheckMessageElement({ resolution, timestamp });
         if (!messageDiv) {
@@ -2462,6 +2595,13 @@ class AIRPGChat {
     }
 
     addAttackCheckMessage(summary) {
+        const attached = this.attachInsightToLatestMessage('attack-check', {
+            attackSummary: summary
+        });
+        if (attached) {
+            return;
+        }
+
         const messageDiv = this.buildAttackCheckMessageElement({
             summary,
             timestamp: new Date().toISOString()
