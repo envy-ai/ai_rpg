@@ -646,6 +646,13 @@
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
                 </div>
+                <div class="new-exit-field new-exit-field--checkbox" id="newExitChildRegionGroup" hidden>
+                    <label class="modal-checkbox" for="newExitChildRegion">
+                        <input type="checkbox" id="newExitChildRegion" name="childRegion">
+                        <span>This region should inherit from the current region</span>
+                    </label>
+                    <p class="modal-checkbox-hint">When enabled, the new region stub is created as a child of your current region.</p>
+                </div>
                 <footer class="new-exit-footer">
                     <div class="new-exit-status" id="newExitStatus" role="status" aria-live="polite"></div>
                     <div class="new-exit-actions">
@@ -2691,6 +2698,8 @@
         const newExitCancelBtn = document.getElementById('newExitCancelBtn');
         const newExitSaveBtn = document.getElementById('newExitSaveBtn');
         const newExitCloseBtn = document.getElementById('newExitCloseBtn');
+        const newExitChildRegionGroup = document.getElementById('newExitChildRegionGroup');
+        const newExitChildRegionCheckbox = document.getElementById('newExitChildRegion');
         const newExitButton = document.getElementById('newExitButton');
         let newExitOptionsCache = null;
         let newExitRegionsById = new Map();
@@ -5132,6 +5141,8 @@
 
         function syncNewExitFieldVisibility() {
             const showFields = shouldShowNewExitTextFields();
+            const creatingNewRegion = !(newExitRegionSelect?.value?.trim());
+            const currentRegionId = lastRenderedLocation?.regionId || lastRenderedLocation?.stubMetadata?.regionId || null;
             if (newExitNameGroup) {
                 if (showFields) {
                     newExitNameGroup.removeAttribute('hidden');
@@ -5144,6 +5155,16 @@
                     newExitDescriptionGroup.removeAttribute('hidden');
                 } else {
                     newExitDescriptionGroup.setAttribute('hidden', '');
+                }
+            }
+            if (newExitChildRegionGroup) {
+                if (creatingNewRegion && currentRegionId) {
+                    newExitChildRegionGroup.removeAttribute('hidden');
+                } else {
+                    newExitChildRegionGroup.setAttribute('hidden', '');
+                    if (newExitChildRegionCheckbox) {
+                        newExitChildRegionCheckbox.checked = false;
+                    }
                 }
             }
         }
@@ -5194,6 +5215,12 @@
             }
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
+            }
+            if (newExitChildRegionGroup) {
+                newExitChildRegionGroup.setAttribute('hidden', '');
+            }
+            if (newExitChildRegionCheckbox) {
+                newExitChildRegionCheckbox.checked = false;
             }
 
             setNewExitStatus('', null);
@@ -5261,6 +5288,10 @@
             const creatingNewRegion = !selectedRegionId;
             const creatingNewLocation = Boolean(selectedRegionId && !selectedLocationId);
             const usingExistingLocation = Boolean(selectedRegionId && selectedLocationId);
+            const childRegionSelected = Boolean(creatingNewRegion && newExitChildRegionCheckbox?.checked);
+            const parentRegionIdForChild = childRegionSelected
+                ? (lastRenderedLocation?.regionId || lastRenderedLocation?.stubMetadata?.regionId || null)
+                : null;
 
             const type = creatingNewRegion ? 'region' : 'location';
             const regionOption = getNewExitRegionOption(selectedRegionId);
@@ -5292,6 +5323,7 @@
                     ? `${placeholderLabel} (region)`
                     : placeholderLabel;
                 placeholderButton.dataset.pendingExit = 'true';
+                placeholderButton.classList.add('exit-button--unexplored');
                 locationExitsList.appendChild(placeholderButton);
             }
 
@@ -5310,6 +5342,9 @@
             }
             if (selectedLocationId) {
                 payload.locationId = selectedLocationId;
+            }
+            if (creatingNewRegion && parentRegionIdForChild) {
+                payload.parentRegionId = parentRegionIdForChild;
             }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
@@ -5397,6 +5432,12 @@
             }
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
+            }
+            if (newExitChildRegionGroup) {
+                newExitChildRegionGroup.setAttribute('hidden', '');
+            }
+            if (newExitChildRegionCheckbox) {
+                newExitChildRegionCheckbox.checked = false;
             }
             setNewExitStatus('', null);
             if (newExitSaveBtn) {
@@ -8482,6 +8523,9 @@
                                 }
 
                                 travelButton.dataset.destinationId = exit.destination;
+                                const destinationIsStub = Boolean(exit.destinationIsStub);
+                                const isExplored = !destinationIsStub && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
+                                travelButton.classList.add(isExplored ? 'exit-button--explored' : 'exit-button--unexplored');
                                 travelButton.addEventListener('click', () => moveToLocation(exit));
                                 container.appendChild(travelButton);
 

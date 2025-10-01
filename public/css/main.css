@@ -667,6 +667,26 @@ p:not(:last-child) {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+.exit-button.exit-button--explored {
+  background: rgba(16, 185, 129, 0.28);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.exit-button.exit-button--explored:hover {
+  background: rgba(16, 185, 129, 0.4);
+  border-color: rgba(13, 148, 136, 0.65);
+}
+
+.exit-button.exit-button--unexplored {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.exit-button.exit-button--unexplored:hover {
+  background: rgba(148, 163, 184, 0.32);
+  border-color: rgba(148, 163, 184, 0.45);
+}
+
 .exit-button.region-exit {
   background: rgba(16, 185, 129, 0.22);
   border-color: rgba(16, 185, 129, 0.45);
@@ -681,8 +701,8 @@ p:not(:last-child) {
 }
 
 .exit-button.region-exit.region-exit-expanded {
-  background: rgba(16, 185, 129, 0.32);
-  border-color: rgba(20, 184, 166, 0.65);
+  background: rgba(34, 197, 94, 0.38);
+  border-color: rgba(22, 163, 74, 0.65);
 }
 
 .exit-button.region-exit:hover {
@@ -2618,7 +2638,9 @@ body.modal-open {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
-.npc-edit-field {
+.npc-edit-field,
+.location-edit-field,
+.new-exit-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2629,7 +2651,9 @@ body.modal-open {
   grid-column: span 2;
 }
 
-.npc-edit-field label {
+.npc-edit-field label,
+.location-edit-field label,
+.new-exit-field label {
   font-size: 0.85rem;
   letter-spacing: 0.02em;
 }
@@ -2637,6 +2661,12 @@ body.modal-open {
 .npc-edit-field input,
 .npc-edit-field select,
 .npc-edit-section textarea,
+.location-edit-field input,
+.location-edit-field select,
+.location-edit-field textarea,
+.new-exit-field input,
+.new-exit-field select,
+.new-exit-field textarea,
 .thing-edit-row input,
 .thing-edit-row textarea,
 .thing-edit-row select,
@@ -2654,6 +2684,12 @@ body.modal-open {
 
 .npc-edit-field input:focus,
 .npc-edit-section textarea:focus,
+.location-edit-field input:focus,
+.location-edit-field textarea:focus,
+.location-edit-field select:focus,
+.new-exit-field input:focus,
+.new-exit-field textarea:focus,
+.new-exit-field select:focus,
 .thing-edit-row input:focus,
 .thing-edit-row textarea:focus,
 .thing-edit-row select:focus,
@@ -2675,6 +2711,68 @@ body.modal-open {
 }
 
 .npc-edit-help-text {
+  font-size: 0.75rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.new-exit-field--checkbox {
+  gap: 4px;
+}
+
+.modal-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+
+.modal-checkbox input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.65);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-checkbox input[type=checkbox]::after {
+  content: "✓";
+  font-size: 0.75rem;
+  color: #f8fafc;
+  display: block;
+  transform: scale(0);
+  transition: transform 0.15s ease;
+}
+
+.modal-checkbox input[type=checkbox]:checked {
+  background: rgba(59, 130, 246, 0.45);
+  border-color: rgba(96, 165, 250, 0.75);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+}
+
+.modal-checkbox input[type=checkbox]:checked::after {
+  transform: scale(1);
+}
+
+.modal-checkbox input[type=checkbox]:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+}
+
+.modal-checkbox-hint {
   font-size: 0.75rem;
   color: rgba(226, 232, 240, 0.75);
 }
@@ -2702,7 +2800,13 @@ body.modal-open {
 .npc-edit-add-btn,
 .npc-edit-remove-btn,
 .npc-edit-save-btn,
-.npc-edit-cancel {
+.npc-edit-cancel,
+.location-edit-save,
+.location-edit-cancel,
+.region-edit-save,
+.region-edit-cancel,
+.new-exit-save,
+.new-exit-cancel {
   border: none;
   border-radius: 8px;
   padding: 8px 14px;
@@ -2735,29 +2839,50 @@ body.modal-open {
   outline: none;
 }
 
-.npc-edit-cancel {
+.npc-edit-cancel,
+.location-edit-cancel,
+.region-edit-cancel,
+.new-exit-cancel {
   background: rgba(148, 163, 184, 0.2);
   color: #e2e8f0;
 }
 
 .npc-edit-cancel:hover,
-.npc-edit-cancel:focus {
+.npc-edit-cancel:focus,
+.location-edit-cancel:hover,
+.location-edit-cancel:focus,
+.region-edit-cancel:hover,
+.region-edit-cancel:focus,
+.new-exit-cancel:hover,
+.new-exit-cancel:focus {
   background: rgba(148, 163, 184, 0.35);
   color: #ffffff;
 }
 
-.npc-edit-save-btn {
+.npc-edit-save-btn,
+.location-edit-save,
+.region-edit-save,
+.new-exit-save {
   background: rgba(59, 130, 246, 0.3);
   color: #ffffff;
   font-weight: 600;
 }
 
 .npc-edit-save-btn:hover,
-.npc-edit-save-btn:focus {
+.npc-edit-save-btn:focus,
+.location-edit-save:hover,
+.location-edit-save:focus,
+.region-edit-save:hover,
+.region-edit-save:focus,
+.new-exit-save:hover,
+.new-exit-save:focus {
   background: rgba(37, 99, 235, 0.5);
 }
 
-.npc-edit-save-btn:disabled {
+.npc-edit-save-btn:disabled,
+.location-edit-save:disabled,
+.region-edit-save:disabled,
+.new-exit-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -3874,7 +3999,10 @@ body.modal-open {
   gap: 12px;
 }
 
-.npc-edit-footer {
+.npc-edit-footer,
+.location-edit-footer,
+.region-edit-footer,
+.new-exit-footer {
   margin-top: 4px;
   display: flex;
   flex-direction: column;
@@ -3883,24 +4011,36 @@ body.modal-open {
   padding-top: 12px;
 }
 
-.npc-edit-actions {
+.npc-edit-actions,
+.location-edit-actions,
+.region-edit-actions,
+.new-exit-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
 }
 
-.npc-edit-status {
+.npc-edit-status,
+.location-edit-status,
+.region-edit-status,
+.new-exit-status {
   font-size: 0.85rem;
   min-height: 1.1em;
   color: #e2e8f0;
 }
 
-.npc-edit-status.is-error {
+.npc-edit-status.is-error,
+.location-edit-status.is-error,
+.region-edit-status.is-error,
+.new-exit-status.is-error {
   color: #fca5a5;
 }
 
-.npc-edit-status.is-success {
+.npc-edit-status.is-success,
+.location-edit-status.is-success,
+.region-edit-status.is-success,
+.new-exit-status.is-success {
   color: #bbf7d0;
 }
 

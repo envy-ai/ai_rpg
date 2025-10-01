@@ -6609,6 +6609,7 @@ module.exports = function registerApiRoutes(scope) {
                     description,
                     regionId: targetRegionIdRaw,
                     locationId: targetLocationIdRaw,
+                    parentRegionId: parentRegionIdRaw,
                     clientId: initiatorClientIdRaw
                 } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
@@ -6622,6 +6623,9 @@ module.exports = function registerApiRoutes(scope) {
                     : null;
                 const targetLocationId = typeof targetLocationIdRaw === 'string' && targetLocationIdRaw.trim()
                     ? targetLocationIdRaw.trim()
+                    : null;
+                const requestedParentRegionId = typeof parentRegionIdRaw === 'string' && parentRegionIdRaw.trim()
+                    ? parentRegionIdRaw.trim()
                     : null;
 
                 const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
@@ -6643,10 +6647,20 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
+                    let parentRegionId = null;
+                    if (requestedParentRegionId) {
+                        if (regions.has(requestedParentRegionId)) {
+                            parentRegionId = requestedParentRegionId;
+                        } else if (pendingRegionStubs.has(requestedParentRegionId)) {
+                            parentRegionId = requestedParentRegionId;
+                        }
+                    }
+
                     const regionStub = createRegionStubFromEvent({
                         name: resolvedName,
                         description: resolvedDescription,
-                        originLocation
+                        originLocation,
+                        parentRegionId
                     });
 
                     if (!regionStub) {
@@ -6660,7 +6674,8 @@ module.exports = function registerApiRoutes(scope) {
                         type: 'region',
                         stubId: regionStub?.id || null,
                         regionId: regionStub?.stubMetadata?.targetRegionId || regionStub?.stubMetadata?.regionId || null,
-                        name: regionStub?.name || resolvedName
+                        name: regionStub?.name || resolvedName,
+                        parentRegionId: parentRegionId || null
                     };
                 } else if (normalizedType === 'location' && targetLocationId) {
                     const destinationLocation = gameLocations.get(targetLocationId) || Location.get(targetLocationId);

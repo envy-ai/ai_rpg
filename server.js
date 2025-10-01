@@ -3197,7 +3197,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-function createRegionStubFromEvent({ name, originLocation = null, description = null } = {}) {
+function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -3310,6 +3310,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         targetRegionId: newRegionId,
         targetRegionName: trimmedName,
         targetRegionDescription: descriptionText,
+        targetRegionParentId: parentRegionId || null,
         targetRegionRelationship: 'Adjacent',
         targetRegionRelativeLevel: 0,
         settingDescription
@@ -3342,7 +3343,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         description: descriptionText,
         relationship: 'Adjacent',
         relativeLevel: 0,
-        parentRegionId: null,
+        parentRegionId: parentRegionId || null,
         sourceRegionId: currentRegion?.id || null,
         exitLocationId: originLocation.id,
         entranceStubId: regionEntryStub.id,
