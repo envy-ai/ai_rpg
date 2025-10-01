@@ -3583,6 +3583,7 @@ async function expandRegionEntryStub(stubLocation) {
             }
 
             const locationDefinitions = parseRegionStubLocations(stubResponse);
+            const exitDefinitions = parseRegionExitsResponse(stubResponse);
             if (!locationDefinitions.length) {
                 console.warn('Region stub generation returned no locations.');
                 return null;
@@ -3619,7 +3620,8 @@ async function expandRegionEntryStub(stubLocation) {
                     settingDescription,
                     chatEndpoint,
                     model,
-                    apiKey
+                    apiKey,
+                    predefinedExitDefinitions: exitDefinitions
                 });
             } catch (instantiationError) {
                 console.warn('Failed to instantiate region from stub:', instantiationError.message);
@@ -8751,7 +8753,7 @@ function renderLocationGeneratorPrompt(options = {}) {
 
 function renderRegionGeneratorPrompt(options = {}) {
     try {
-        const templateName = 'region-generator.full.xml.njk';
+        const templateName = 'region-generator.all.xml.njk';
         const activeSetting = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(activeSetting);
         const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
@@ -8800,7 +8802,8 @@ function renderRegionGeneratorPrompt(options = {}) {
             regionDescription: options.regionDescription || null,
             regionNotes: options.regionNotes || null,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
+            mode: 'full'
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -9951,23 +9954,14 @@ function renderRegionEntrancePrompt() {
 
 function renderRegionExitsPrompt({ region, settingDescription }) {
     try {
-        const templateName = 'region-generator-exits.xml.njk';
-        const locationEntries = Array.isArray(region.locationIds)
-            ? region.locationIds
-                .map(id => gameLocations.get(id))
-                .filter(Boolean)
-                .map(loc => ({
-                    name: loc.name || loc.id,
-                    description: loc.description
-                        || loc.stubMetadata?.blueprintDescription
-                        || loc.stubMetadata?.shortDescription
-                        || 'No description provided.'
-                }))
-            : [];
+        const templateName = 'region-generator.all.xml.njk';
 
         const variables = {
             setting: settingDescription,
-            currentRegion: region
+            currentRegion: region,
+            mode: 'exits',
+            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
         };
 
         const rendered = promptEnv.render(templateName, variables);
@@ -10017,7 +10011,39 @@ function parseRegionExitsResponse(xmlSnippet) {
         return [];
     }
 
-    const regionNodes = Array.from(doc.getElementsByTagName('region'));
+    const pickRegionNodes = () => {
+        const nodeLists = [];
+        const connectedParents = Array.from(doc.getElementsByTagName('connectedRegions'));
+        if (connectedParents.length) {
+            connectedParents.forEach(parent => {
+                nodeLists.push(...Array.from(parent.getElementsByTagName('region')));
+            });
+        }
+
+        if (!nodeLists.length) {
+            const legacyParents = Array.from(doc.getElementsByTagName('regions'));
+            legacyParents.forEach(parent => {
+                nodeLists.push(...Array.from(parent.getElementsByTagName('region')));
+            });
+        }
+
+        if (!nodeLists.length) {
+            const fallback = Array.from(doc.getElementsByTagName('region'));
+            const filtered = fallback.filter(node => {
+                const parentTag = node?.parentNode?.tagName;
+                if (!parentTag) {
+                    return false;
+                }
+                const normalized = parentTag.toLowerCase();
+                return normalized === 'connectedregions' || normalized === 'regions';
+            });
+            return filtered;
+        }
+
+        return nodeLists;
+    };
+
+    const regionNodes = pickRegionNodes();
     if (!regionNodes.length) {
         return [];
     }
@@ -10061,12 +10087,13 @@ function parseRegionExitsResponse(xmlSnippet) {
 
 function renderRegionStubPrompt({ settingDescription, region }) {
     try {
-        const templateName = 'region-generator.stub.xml.njk';
+        const templateName = 'region-generator.all.xml.njk';
         const variables = {
             setting: settingDescription,
             currentRegion: region,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
+            mode: 'stub'
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -10116,7 +10143,30 @@ function parseRegionStubLocations(xmlSnippet) {
         return [];
     }
 
-    const locationNodes = Array.from(doc.getElementsByTagName('location'));
+    const resolveLocationNodes = () => {
+        const regionNode = doc.getElementsByTagName('region')[0];
+        if (regionNode) {
+            const locationsParent = regionNode.getElementsByTagName('locations')?.[0];
+            if (locationsParent) {
+                const nodes = Array.from(locationsParent.getElementsByTagName('location'));
+                if (nodes.length) {
+                    return nodes;
+                }
+            }
+        }
+
+        const directLocationsParent = doc.getElementsByTagName('locations')?.[0];
+        if (directLocationsParent) {
+            const nodes = Array.from(directLocationsParent.getElementsByTagName('location'));
+            if (nodes.length) {
+                return nodes;
+            }
+        }
+
+        return Array.from(doc.getElementsByTagName('location'));
+    };
+
+    const locationNodes = resolveLocationNodes();
     if (!locationNodes.length) {
         return [];
     }
@@ -10165,69 +10215,77 @@ async function generateRegionExitStubs({
     regionAverageLevel,
     chatEndpoint,
     model,
-    apiKey
+    apiKey,
+    predefinedDefinitions = null
 }) {
     if (!region) {
         return;
     }
 
-    const prompt = renderRegionExitsPrompt({ region, settingDescription });
-    if (!prompt) {
-        return;
-    }
+    let definitions = Array.isArray(predefinedDefinitions)
+        ? predefinedDefinitions.filter(Boolean)
+        : null;
 
-    const messages = [
-        { role: 'system', content: prompt.systemPrompt },
-        { role: 'user', content: prompt.generationPrompt }
-    ];
-
-    const requestData = {
-        model,
-        messages,
-        max_tokens: 1500,
-        temperature: config.ai.temperature || 0.6
-    };
-
-    let aiResponse = '';
-    try {
-        const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: config.baseTimeoutSeconds
-        });
-
-        aiResponse = response.data?.choices?.[0]?.message?.content || '';
-        const durationSeconds = (Date.now() - requestStart) / 1000;
-
-        try {
-            const logDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
-            const logPath = path.join(logDir, `region_exits_${region.id}_${timestamp}.log`);
-            const logParts = [
-                formatDurationLine(durationSeconds),
-                '=== REGION EXITS PROMPT ===',
-                prompt.generationPrompt,
-                '\n=== REGION EXITS RESPONSE ===',
-                aiResponse,
-                '\n'
-            ];
-            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log region exits generation:', logError.message);
+    if (!definitions || !definitions.length) {
+        const prompt = renderRegionExitsPrompt({ region, settingDescription });
+        if (!prompt) {
+            return;
         }
-    } catch (error) {
-        console.warn('Failed to generate region exits:', error.message);
-        return;
+
+        const messages = [
+            { role: 'system', content: prompt.systemPrompt },
+            { role: 'user', content: prompt.generationPrompt }
+        ];
+
+        const requestData = {
+            model,
+            messages,
+            max_tokens: 1500,
+            temperature: config.ai.temperature || 0.6
+        };
+
+        let aiResponse = '';
+        try {
+            const requestStart = Date.now();
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: config.baseTimeoutSeconds
+            });
+
+            aiResponse = response.data?.choices?.[0]?.message?.content || '';
+            const durationSeconds = (Date.now() - requestStart) / 1000;
+
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+                const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+                const logPath = path.join(logDir, `region_exits_${region.id}_${timestamp}.log`);
+                const logParts = [
+                    formatDurationLine(durationSeconds),
+                    '=== REGION EXITS PROMPT ===',
+                    prompt.generationPrompt,
+                    '\n=== REGION EXITS RESPONSE ===',
+                    aiResponse,
+                    '\n'
+                ];
+                fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+            } catch (logError) {
+                console.warn('Failed to log region exits generation:', logError.message);
+            }
+        } catch (error) {
+            console.warn('Failed to generate region exits:', error.message);
+            return;
+        }
+
+        definitions = parseRegionExitsResponse(aiResponse);
     }
 
-    const definitions = parseRegionExitsResponse(aiResponse);
-    if (!definitions.length) {
+    if (!definitions || !definitions.length) {
         return;
     }
 
@@ -10425,7 +10483,8 @@ async function instantiateRegionLocations({
     settingDescription,
     chatEndpoint,
     model,
-    apiKey
+    apiKey,
+    predefinedExitDefinitions = null
 }) {
     const stubMap = new Map();
 
@@ -10604,7 +10663,8 @@ async function instantiateRegionLocations({
         regionAverageLevel,
         chatEndpoint,
         model,
-        apiKey
+        apiKey,
+        predefinedDefinitions: predefinedExitDefinitions
     });
 
     return stubMap;
@@ -10775,6 +10835,7 @@ async function generateRegionFromPrompt(options = {}) {
         }
 
         const region = Region.fromXMLSnippet(aiResponse);
+        const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });
 
@@ -10795,7 +10856,8 @@ async function generateRegionFromPrompt(options = {}) {
                 settingDescription,
                 chatEndpoint,
                 model,
-                apiKey
+                apiKey,
+                predefinedExitDefinitions: connectedRegionDefinitions
             });
         } catch (instantiationError) {
             console.warn('Failed to instantiate region structure:', instantiationError.message);

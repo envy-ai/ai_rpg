@@ -260,6 +260,29 @@ class Region {
     return this.#id;
   }
 
+  get childRegions() {
+    const children = [];
+    for (const region of Region.#indexById.values()) {
+      if (region.parentRegionId === this.#id) {
+        children.push(region);
+      }
+    }
+    return children;
+  }
+
+  get siblingRegions() {
+    if (!this.#parentRegionId) {
+      return [];
+    }
+    const siblings = [];
+    for (const region of Region.#indexById.values()) {
+      if (region.id !== this.#id && region.parentRegionId === this.#parentRegionId) {
+        siblings.push(region);
+      }
+    }
+    return siblings;
+  }
+
   get parentRegion() {
     return this.#parentRegionId ? Region.get(this.#parentRegionId) : null;
   }

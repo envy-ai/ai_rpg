@@ -1,0 +1,125 @@
+<template>
+    <role>Region Architect</role>
+
+    <systemPrompt>
+You are an AI role-playing gamemaster responsible for expanding a living world. Produce cohesive, internally consistent region plans that respect the provided setting, existing geography, and tone. Keep responses structured, avoid meta commentary, and do not invent duplicate names.
+    </systemPrompt>
+
+    <generationPrompt>
+<context>
+  <setting>
+    <name>{{ setting.name }}</name>
+    <description>{{ setting.description }}</description>
+    <theme>{{ setting.theme }}</theme>
+    <genre>{{ setting.genre }}</genre>
+    <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+    <magicLevel>{{ setting.magicLevel }}</magicLevel>
+    <techLevel>{{ setting.techLevel }}</techLevel>
+    <tone>{{ setting.tone }}</tone>
+    <difficulty>{{ setting.difficulty }}</difficulty>
+    <currencyName>{{ setting.currencyName }}</currencyName>
+    <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+    <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+    <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+    <races>
+      {{ (setting.races or []) | join("      \n") }}
+    </races>
+  </setting>
+  <player>
+    <name>{{ currentPlayer.name }}</name>
+    <description>{{ currentPlayer.description }}</description>
+    <class>{{ currentPlayer.class }}</class>
+    <race>{{ currentPlayer.race }}</race>
+  </player>
+  {% if currentRegion %}
+  <currentRegion>
+    <name>{{ currentRegion.name }}</name>
+    <description>{{ currentRegion.description }}</description>
+    {% if currentRegion.parentRegion %}
+    <parentRegion>
+      <name>{{ currentRegion.parentRegion.name }}</name>
+      <description>{{ currentRegion.parentRegion.description }}</description>
+    </parentRegion>
+    <siblingRegions>
+      <!-- These regions all have the same parent as the current region.  It may make sense for some of them to be connected. -->
+      {% for sibling in currentRegion.parentRegion.childRegions if sibling.name != currentRegion.name %}
+      <region>
+        <name>{{ sibling.name }}</name>
+        <description>{{ sibling.description }}</description>
+      </region>
+      {% endfor %}
+    </siblingRegions>
+    {% endif %}
+    {% if currentRegion.locations %}
+    <existingLocations>
+      {% for loc in currentRegion.locations %}
+      <location>
+        <name>{{ loc.name }}</name>
+        <description>{{ loc.description }}</description>
+        {% if loc.relativeLevel is defined %}<relativeLevel>{{ loc.relativeLevel }}</relativeLevel>{% endif %}
+      </location>
+      {% endfor %}
+    </existingLocations>
+    {% endif %}
+  </currentRegion>
+  {% endif %}
+</context>
+
+{% set mode = mode or 'full' %}
+{% set isStub = mode == 'stub' or currentRegion %}
+{% set includeLocations = mode in ['full', 'stub'] %}
+{% set includeConnections = mode != 'locations' %}
+
+{% if isStub %}
+You are expanding the existing region described above. Invent **new** locations that fit naturally within this region, without duplicating existing locations. Use judgments on how many new locations are appropriate (generally between {{ minLocations }} and {{ maxLocations }}). Respect the established tone, geography, and level range. Describe how each new location connects to other locations in this region, explaining why those exits make sense. After defining the new locations, consider how this region links to other regions and propose any notable connected regions.
+{% elseif mode == 'exits' %}
+You are analysing the current region and proposing meaningful connected regions that can be reached from it. Use the existing locations and themes to pick sensible exit points. Each connected region must include a description, a relative difficulty, the relationship (Within, Contains, Adjacent), and the location that serves as the exit.
+{% else %}
+Design a brand new region for the setting above. Propose between 1 and {{ maxLocations }} distinct locations that together form a coherent mini-map. Provide names, vivid three-sentence descriptions, relative levels, and explain the logic behind each intra-region exit. After the location list, suggest other regions that are reachable, contained, or containing this new region so navigation feels natural.
+{% endif %}
+
+Note that "region" is defined loosely as a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. As a general rule, a building should have a location for the exterior and a region for the interior. Regions can be as small as a single room building or vastly larger than that.
+
+When proposing connected regions, ensure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
+
+Always avoid contradictions with the setting, and use consistent terminology (e.g., Within, Contains, Adjacent) when describing regional relationships.
+
+{% if includeLocations %}
+<region>
+  <regionName>{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}</regionName>
+  <regionDescription>{% if isStub %}{{ currentRegion.description }}{% else %}{{ regionDescription or 'Three sentences that describe this region.' }}{% endif %}</regionDescription>
+  <relativeLevel>{% if isStub and currentRegion.relativeLevel is defined %}{{ currentRegion.relativeLevel }}{% else %}0{% endif %}</relativeLevel>
+  <locations>
+{% if isStub %}
+    <!-- Only list **new** locations to add to the current region -->
+{% endif %}
+    <!-- For each location below, follow the structure exactly once per location. -->
+    <location>
+      <name>Concise, evocative location name</name>
+      <description>Three sentence description emphasising sensory detail and interactive elements.</description>
+      <relativeLevel>Integer from -3 to +3 relative to the region average</relativeLevel>
+      <notesAboutExits>Brief explanation of which neighbouring locations this place connects to and why it makes sense.</notesAboutExits>
+      <exits>
+        <exit>Name of other location in region</exit>
+        <!-- Repeat <exit> elements as needed; 0-4 per location is typical. -->
+      </exits>
+    </location>
+  </locations>
+</region>
+{% endif %}
+
+{% if includeConnections %}
+<connectedRegions>
+  <!-- List zero or more connected regions. Omit entirely if none make sense. The parent region (if any) is already implicitly linked, so there is no need to repeat that connection here unless there are multiple exits to it. -->
+  <region>
+    <regionName>Name of the connected region</regionName>
+    <regionDescription>Three sentence summary of the connected region as a whole.</regionDescription>
+    <relativeLevel>Integer from -1 to +3 relative to the current region</relativeLevel>
+    <relationshipToCurrentRegion>Within | Contains | Adjacent</relationshipToCurrentRegion>
+    <exitLocation>Location name of the exit point to this region</exitLocation>
+    <exitVehicle>Optional; if the exit has a vehicle that ferries people to and from this destination (could be a taxi, bus, plane, starship, boat, fixed destination teleporter, mine elevator, etc, that is not controlled by the player). It should make sense in the phrase "[exitVehicle] to [exitLocation]".</exitVehicle>
+  </region>
+</connectedRegions>
+{% endif %}
+    </generationPrompt>
+</template>
