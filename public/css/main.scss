@@ -1695,8 +1695,7 @@ p:not(:last-child) {
 }
 
 .chat-sidebar {
-  flex: 0 0 320px;
-  max-width: 360px;
+  flex: 0 0 30%;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;

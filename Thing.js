@@ -262,6 +262,14 @@ class Thing {
     return Array.from(Thing.#indexByName.keys());
   }
 
+  static thingNameExists(name) {
+    if (!name || typeof name !== 'string') {
+      return false;
+    }
+
+    return Thing.#indexByName.has(name.toLowerCase());
+  }
+
   // Static private method for generating unique IDs
   static #generateId() {
     const timestamp = Date.now();

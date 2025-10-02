@@ -2562,6 +2562,7 @@ class Events {
             findLocationByNameLoose,
             createLocationFromEvent,
             scheduleStubExpansion,
+            expandRegionEntryStub,
             generateLocationImage,
             queueNpcAssetsForLocation,
             queueLocationThingImages,
@@ -2644,6 +2645,45 @@ class Events {
             }
 
             if (!destination) {
+                const normalizedTarget = destinationName.trim().toLowerCase();
+
+                if (pendingRegionStubs && typeof pendingRegionStubs.values === 'function') {
+                    for (const pending of pendingRegionStubs.values()) {
+                        if (!pending || !pending.name) {
+                            continue;
+                        }
+                        if (pending.name.trim().toLowerCase() !== normalizedTarget) {
+                            continue;
+                        }
+                        const pendingStub = pending.entranceStubId ? gameLocations.get(pending.entranceStubId) : null;
+                        if (pendingStub) {
+                            destination = pendingStub;
+                            break;
+                        }
+                    }
+                }
+
+                if (!destination && regions && typeof regions.values === 'function') {
+                    for (const region of regions.values()) {
+                        if (!region || !region.name) {
+                            continue;
+                        }
+                        if (region.name.trim().toLowerCase() !== normalizedTarget) {
+                            continue;
+                        }
+                        const entranceId = region.entranceLocationId
+                            || (Array.isArray(region.locationIds) ? region.locationIds.find(id => gameLocations.get(id)) : null);
+                        if (entranceId) {
+                            destination = gameLocations.get(entranceId) || null;
+                        }
+                        if (destination) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!destination) {
                 if (stream && stream.isEnabled) {
                     stream.status('event:location:generate_start', `Generating location "${destinationName}"...`, { scope: 'location' });
                 }
@@ -2696,8 +2736,17 @@ class Events {
                 context.skipNpcTurns = true;
             }
             try {
-                await scheduleStubExpansion(destination);
-                destination = gameLocations.get(destination.id) || destination;
+                if (destination.stubMetadata?.isRegionEntryStub && typeof expandRegionEntryStub === 'function') {
+                    const expanded = await expandRegionEntryStub(destination);
+                    if (expanded) {
+                        destination = expanded;
+                    } else {
+                        destination = gameLocations.get(destination.id) || destination;
+                    }
+                } else {
+                    await scheduleStubExpansion(destination);
+                    destination = gameLocations.get(destination.id) || destination;
+                }
                 if (stream && stream.isEnabled) {
                     const updatedLabel = destination?.name || initialLabel;
                     stream.status('event:location:expand_complete', `Expansion complete: ${updatedLabel}`, { scope: 'location' });
@@ -3674,6 +3723,7 @@ class Events {
         const suppressedNpcEvents = omitNpcGeneration ? new Set(['npc_arrival_departure', 'alter_npc']) : null;
         const suppressedItemEvents = omitItemGeneration ? new Set(['item_appear', 'alter_item']) : null;
         const prioritizedOrder = [
+            'new_exit_discovered',
             'move_location',
             'alter_location',
             'item_appear',

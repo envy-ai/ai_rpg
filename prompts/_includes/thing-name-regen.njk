@@ -1,10 +1,5 @@
-<template>
-    <comment>This prompt runs after items are generated.</comment>
-    <role>NPC name regenerator</role>
-<generationPrompt>
-
-Here's a list of items in the game:
-{% for item in existingItems %}{{ item.name }}|{% endfor %}
+Here's the full list of items in the game:
+{% for name in allThingNames %}{{ name }}|{% endfor %}
 
 Here is a list of items that have duplicate names:
 <itemsToRegenerateName>
@@ -33,5 +28,3 @@ Give each item a different name that fits the setting and culture of the locatio
     ... the rest of the items ...
   </item>
 </items>
-</generationPrompt>
-</template>

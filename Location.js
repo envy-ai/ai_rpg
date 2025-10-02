@@ -297,14 +297,14 @@ class Location {
 
   static get(locationId) {
     if (!locationId || typeof locationId !== 'string') {
-      throw new Error('Location ID must be a non-empty string');
+      return null;
     }
     return Location.#indexByID.get(locationId) || null;
   }
 
   static findByName(name) {
     if (!name || typeof name !== 'string') {
-      throw new Error('Location name must be a non-empty string');
+      return null;
     }
     return Location.#indexByName.get(name.toLowerCase()) || null;
   }

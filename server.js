@@ -1314,7 +1314,8 @@ function queueLocationThingImages(location) {
     }
 }
 
-function serializeNpcForClient(npc) {
+function serializeNpcForClient(npc, options = {}) {
+    const { includePartyMembers = true } = options || {};
     if (!npc) {
         return null;
     }
@@ -1433,7 +1434,24 @@ function serializeNpcForClient(npc) {
         }
     }
 
-    return {
+    let partyMembers = null;
+    if (includePartyMembers && typeof npc.getPartyMembers === 'function') {
+        try {
+            const rawMemberIds = npc.getPartyMembers();
+            const memberIds = Array.isArray(rawMemberIds)
+                ? rawMemberIds
+                : (rawMemberIds instanceof Set ? Array.from(rawMemberIds) : []);
+
+            partyMembers = memberIds
+                .map(id => players.get(id))
+                .filter(Boolean)
+                .map(member => serializeNpcForClient(member, { includePartyMembers: false }));
+        } catch (_) {
+            partyMembers = [];
+        }
+    }
+
+    const serialized = {
         id: npc.id,
         name: npc.name,
         description: npc.description,
@@ -1464,6 +1482,12 @@ function serializeNpcForClient(npc) {
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer
     };
+
+    if (includePartyMembers) {
+        serialized.partyMembers = Array.isArray(partyMembers) ? partyMembers : [];
+    }
+
+    return serialized;
 }
 
 function buildNpcProfiles(location) {
@@ -3525,7 +3549,8 @@ async function expandRegionEntryStub(stubLocation) {
                 region: {
                     name: regionName,
                     description: regionDescription
-                }
+                },
+                previousRegion: currentPlayer.currentLocation.region
             });
 
             if (!stubPrompt) {
@@ -10189,7 +10214,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     const results = [];
 
     const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle }) => {
-        if (!name || !exitLocation) {
+        if (!name) {
             return;
         }
         const parsedLevel = Number.parseInt(relativeLevel, 10);
@@ -10222,7 +10247,7 @@ function parseRegionExitsResponse(xmlSnippet) {
             const description = getChildValue(stubNode, 'regionDescription');
             const relativeLevel = getChildValue(stubNode, 'relativeLevel');
             const relationship = getChildValue(stubNode, 'relationshipToCurrentRegion');
-            const exitLocation = getChildValue(stubNode, 'exitLocation') || locationName;
+            const exitLocation = locationName || getChildValue(stubNode, 'exitLocation') || null;
             const exitVehicle = getChildValue(stubNode, 'exitVehicle');
 
             tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle });
@@ -10249,7 +10274,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     return results;
 }
 
-function renderRegionStubPrompt({ settingDescription, region }) {
+function renderRegionStubPrompt({ settingDescription, region, previousRegion }) {
     try {
         const templateName = 'region-generator.all.xml.njk';
         let minRegionExits = null;
@@ -10257,14 +10282,20 @@ function renderRegionStubPrompt({ settingDescription, region }) {
         if (Region.stubRegionCount <= 2) minRegionExits = 1;
 
         const variables = {
-            setting: settingDescription,
+            setting: currentSetting,
             currentRegion: region,
+            previousRegion: currentPlayer.previousLocation.region,
+            currentLocation: currentPlayer.location,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
             maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
             minRegionExits: minRegionExits,
             mode: 'stub',
             currentPlayer: currentPlayer,
         };
+
+
+        console.trace();
+        console.log('Rendering region stub prompt with variables:', variables);
 
         const renderedTemplate = promptEnv.render(templateName, variables);
         const parsed = parseXMLTemplate(renderedTemplate);
@@ -11225,6 +11256,7 @@ Events.initialize({
     generateItemsByNames,
     createLocationFromEvent,
     scheduleStubExpansion,
+    expandRegionEntryStub,
     generateLocationImage,
     queueNpcAssetsForLocation,
     queueLocationThingImages,

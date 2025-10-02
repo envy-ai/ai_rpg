@@ -1,9 +1,16 @@
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
-const Location = require('./Location.js');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
+
+let CachedLocationModule = null;
+function getLocationModule() {
+    if (!CachedLocationModule) {
+        CachedLocationModule = require('./Location.js');
+    }
+    return CachedLocationModule;
+}
 
 class Player {
     // Private fields using ES13 syntax
@@ -42,6 +49,7 @@ class Player {
     #isHostile;
     #isDead;
     #corpseCountdown;
+    #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -1224,6 +1232,33 @@ class Player {
         return null;
     }
 
+    get location() {
+        const Location = getLocationModule();
+        return Location.get(this.#currentLocation) || null;
+    }
+
+    get previousLocationId() {
+        return this.#previousLocationId;
+    }
+
+    get previousLocation() {
+        const Location = getLocationModule();
+        return Location.get(this.#previousLocationId) || null;
+    }
+
+    updatePreviousLocation() {
+        this.#previousLocationId = this.#currentLocation;
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    static updatePreviousLocationsForAll() {
+        for (const player of Player.#instances) {
+            if (player instanceof Player) {
+                player.updatePreviousLocation();
+            }
+        }
+    }
+
     // Public getters for private fields
     get attributeDefinitions() {
         return this.#definitions.attributes ?? {};
@@ -1448,6 +1483,8 @@ class Player {
     get currentLocation() {
         return this.#currentLocation;
     }
+
+
 
     get isNPC() {
         return this.#isNPC;
@@ -2493,6 +2530,7 @@ class Player {
     setLocation(location) {
         // Load object if given an id
         if (typeof location === 'string') {
+            const Location = getLocationModule();
             location = Location.get(location);
         }
 

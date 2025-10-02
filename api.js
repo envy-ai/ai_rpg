@@ -3274,6 +3274,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 stream.status('player_action:received', 'Processing player action.');
+                Player.updatePreviousLocationsForAll();
 
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
@@ -4323,7 +4324,7 @@ module.exports = function registerApiRoutes(scope) {
                 const members = memberIds
                     .map(id => players.get(id))
                     .filter(Boolean)
-                    .map(member => serializeNpcForClient(member));
+                    .map(member => serializeNpcForClient(member, { includePartyMembers: false }));
 
                 res.json({
                     success: true,
@@ -9774,7 +9775,7 @@ module.exports = function registerApiRoutes(scope) {
                         return false;
                     }
                     if (generatedImages.has(imageId)) {
-                        console.log(`Found existing image in cache for ID: ${imageId}`);
+                        //console.log(`Found existing image in cache for ID: ${imageId}`);
                         return true;
                     }
                     console.log(`No existing image found for ID: ${imageId}`);

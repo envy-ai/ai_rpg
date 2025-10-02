@@ -22,10 +22,27 @@ You are a an AI role-playing gamemaster.
     <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
   </setting>
-<region>
-<name>{{ currentRegion.name }}</name>
-<description>{{ currentRegion.description }}</description>
-</region>
+  <player>
+    <name>{{ currentPlayer.name }}</name>
+    <description>{{ currentPlayer.description }}</description>
+    <class>{{ currentPlayer.class }}</class>
+    <race>{{ currentPlayer.race }}</race>
+  </player>
+  <previousRegion>
+    <name>{{ previousRegion.name }}</name>
+    <description>{{ previousRegion.description }}</description>
+    <locations>
+      {% for loc in previousRegion.locations %}
+      <location>
+        <name>{{ loc.name }}</name>
+        <description>{{ loc.description }}</description>
+      </location>
+    {% endfor %}
+  </previousRegion>
+  <region>
+    <name>{{ currentRegion.name }}</name>
+    <description>{{ currentRegion.description }}</description>
+  </region>
 </context>
 
 I'd like you to generate a set of {{ minLocations }}-{{ maxLocations }} interesting locations that would be within the region in the context above. Note that "region" is loosely defined as a group of locations, so it could be as small as a single building or vastly larger than that. Choose a number of locations that would make sense.  First, make a numbered list of short location names (use your judgment about how many). Then, output the locations in this format:

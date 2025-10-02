@@ -1,7 +1,14 @@
 const crypto = require('crypto');
 const { DOMParser } = require('xmldom');
-const Location = require('./Location.js');
 const Utils = require('./Utils.js');
+
+let CachedLocationModule = null;
+function getLocationModule() {
+  if (!CachedLocationModule) {
+    CachedLocationModule = require('./Location.js');
+  }
+  return CachedLocationModule;
+}
 
 class Region {
   #id;
@@ -570,6 +577,7 @@ class Region {
 
   getNPCs() {
     const npcs = [];
+    const Location = getLocationModule();
     for (const locId of this.#locationIds) {
       const location = Location.get(locId);
       if (location && Array.isArray(location.npcIds)) {
@@ -584,12 +592,25 @@ class Region {
     return npcs;
   }
 
+  get locations() {
+    const locations = [];
+    const Location = getLocationModule();
+    for (const locId of this.#locationIds) {
+      const location = Location.get(locId);
+      if (location) {
+        locations.push(location);
+      }
+    }
+    return locations;
+  }
+
   /**
    * Returns a Set of unique NPC IDs present in all locations of this region.
    * @returns {Set<string>} Set of NPC IDs
    */
   getNPCIds() {
     const npcIds = new Set();
+    const Location = getLocationModule();
     for (const locId of this.#locationIds) {
       const location = Location.get(locId);
       if (location && Array.isArray(location.npcIds)) {
