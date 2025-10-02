@@ -1,27 +1,29 @@
 <item>
-<name>{% if thingSeed.name %}{{ thingSeed.name }}{% else %}[Item Name]{% endif %}</name>
-<description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}[1-2 sentence description of the item]{% endif %}</description>
-<itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}["item" or "scenery" depending on whether it can be picked up or not]{% endif %}</itemOrScenery>
-<type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}[Type of item (e.g., weapon, armor, consumable, tool, etc.)]{% endif %}</type>
-<slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}[Available gear slots: {% if equipmentSlots %}[{% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}]{% else %}N/A if not equippable{% endif %}]{% endif %}</slot>
-<rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}[{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
-{% endif %}</rarity>
-<value>{% if thingSeed.value is defined %}{{ thingSeed.value }}{% else %}[Monetary value of the item in currency units]{% endif %}</value>
-<weight>{% if thingSeed.weight is defined %}{{ thingSeed.weight }}{% else %}[Weight of the item in pounds]{% endif %}</weight>
-<relativeLevel>{% if thingSeed.relativeLevel is defined %}{{ thingSeed.relativeLevel }}{% else %}[Integer from -3 to +3]{% endif %}</relativeLevel>
-<isVehicle>{% if thingSeed.isVehicle is defined %}{{ thingSeed.isVehicle }}{% else %}[true or false] -- note that an item is a vehicle if it can be used to travel, so a teleportation wand and a jetpack are both vehicles. A vehicle is scenery it's big enough to get inside or ride on (like a car or horse) but not so big you can walk around in it, like a bus or jet liner. Those are considered regions and should not be created as items or scenery at all.{% endif %}</isVehicle>
+<name>{% if thingSeed.name %}{{ thingSeed.name }}{% else %}<!-- Item Name -->{% endif %}</name>
+<description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}<!--1-2 sentence description of the item-->{% endif %}</description>
+<itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}<!--for furniture, workstations, scenery, and things that are too large (or otherwise impossible) to pick up, answer "scenery"; otherwise answer "item"-->{% endif %}</itemOrScenery>
+<type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}<!--Type of item (e.g., weapon, armor, consumable, tool, etc.)-->{% endif %}</type>
+<slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}<!--Available gear slots: {% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}
+    N/A if not equippable -->{% endif %}</slot>
+<rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}<!--{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
+-->{% endif %}</rarity>
+<value>{% if thingSeed.value is defined %}{{ thingSeed.value }}{% else %}<!--Monetary value of the item in currency units-->{% endif %}</value>
+<weight>{% if thingSeed.weight is defined %}{{ thingSeed.weight }}{% else %}<!--Weight of the item in pounds-->{% endif %}</weight>
+<relativeLevel>{% if thingSeed.relativeLevel is defined %}{{ thingSeed.relativeLevel }}{% else %}<!--Integer from -3 to +3-->{% endif %}</relativeLevel>
+<isVehicle>{% if thingSeed.isVehicle is defined %}{{ thingSeed.isVehicle }}{% else %}<!--true or false--> 
+    <!-- note that an item is a vehicle if it can be used to travel, so a teleportation wand and a jetpack are both vehicles. A vehicle is scenery it's big enough to get inside or ride on (like a car or horse) but not so big you can walk around in it, like a bus or jet liner. Those are considered regions and should not be created as items or scenery at all.--> {% endif %}</isVehicle>
 <attributeBonuses>
-    optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses
+    <!-- optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses -->
     <attributeBonus>
-        <attribute>[one of: {% for attribute in attributes %}{{ attribute }}{% if not loop.last %}, {% endif %}{% endfor %}]</attribute>
-        <bonus>[Bonus value (between -4 and +4)]</bonus>
+        <attribute><!--one of: {% for attribute in attributes %}{{ attribute }}{% if not loop.last %}, {% endif %}{% endfor %}--></attribute>
+        <bonus><!--Bonus value (between -4 and +4)--></bonus>
     </attributeBonus>
 </attributeBonuses>
 <causeStatusEffect>
-    optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed
-    <name>[Name of the status effect (e.g., "Poisoned", "Blessed", etc.)]</name>
-    <description>[1-2 sentence description of the status effect]</description>
-    <duration>[Duration if item is consumable; N/A if equippable]</duration>
+    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed -->
+    <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
+    <description><!--1-2 sentence description of the status effect--></description>
+    <duration><!--Duration if item is consumable; N/A if equippable--></duration>
 </causeStatusEffect>
-<properties>[Any special properties or effects of the item]</properties>
+<properties><!--Any special properties or effects of the item--></properties>
 </item>

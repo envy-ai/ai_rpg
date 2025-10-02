@@ -957,7 +957,7 @@ function buildNewGameDefaults(settingSnapshot = null) {
 
     const parsedSkillCount = Number.parseInt(settingSnapshot.defaultNumSkills, 10);
     defaults.numSkills = Number.isFinite(parsedSkillCount)
-        ? Math.max(1, Math.min(100, parsedSkillCount))
+        ? Math.max(0, Math.min(100, parsedSkillCount))
         : defaults.numSkills;
 
     const existingSkills = Array.isArray(settingSnapshot.defaultExistingSkills)
@@ -6657,6 +6657,9 @@ function parseInventoryItems(xmlContent) {
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
+            const itemOrSceneryNode = node.getElementsByTagName('itemOrScenery')[0];
+            const itemOrScenery = itemOrSceneryNode ? itemOrSceneryNode.textContent.trim().toLowerCase() : '';
+
             const item = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
@@ -6667,6 +6670,8 @@ function parseInventoryItems(xmlContent) {
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
                 relativeLevel,
+                thingType: itemOrScenery,
+                attributeBonuses,
                 attributeBonuses,
                 causeStatusEffect
             };
@@ -7460,9 +7465,11 @@ function renderSkillsPrompt(context = {}) {
                 .filter(Boolean)
                 .map(name => ({ name }))
             : [];
+        const hasNumSkills = Object.prototype.hasOwnProperty.call(context, 'numSkills');
+        const requestedNumSkills = hasNumSkills ? context.numSkills : 20;
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A fantastical realm of adventure.',
-            numSkills: context.numSkills || 20,
+            numSkills: requestedNumSkills,
             attributes: context.attributes || [],
             existingSkills
         });
@@ -7606,7 +7613,10 @@ function buildFallbackSkills({ count, attributes }) {
 }
 
 async function generateSkillsList({ count, settingDescription, existingSkills = [] }) {
-    const safeCount = Math.max(1, Math.min(100, Number(count) || 20));
+    const numericCount = Number(count);
+    const safeCount = Number.isFinite(numericCount)
+        ? Math.max(0, Math.min(100, numericCount))
+        : Math.max(0, Math.min(100, 20));
 
     const normalizedExisting = Array.isArray(existingSkills)
         ? existingSkills
@@ -8752,84 +8762,86 @@ function renderLocationGeneratorPrompt(options = {}) {
 }
 
 function renderRegionGeneratorPrompt(options = {}) {
-    try {
-        const templateName = 'region-generator.all.xml.njk';
-        const activeSetting = getActiveSettingSnapshot();
-        const settingDescription = describeSettingForPrompt(activeSetting);
-        const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
-        const overrideSetting = options.setting;
+    const templateName = 'region-generator.all.xml.njk';
+    const activeSetting = getActiveSettingSnapshot();
+    const settingDescription = describeSettingForPrompt(activeSetting);
+    const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+    const overrideSetting = options.setting;
 
-        const settingKeys = [
-            'name',
-            'description',
-            'theme',
-            'genre',
-            'startingLocationType',
-            'magicLevel',
-            'techLevel',
-            'tone',
-            'difficulty',
-            'currencyName',
-            'currencyNamePlural',
-            'currencyValueNotes',
-            'writingStyleNotes'
-        ];
+    const settingKeys = [
+        'name',
+        'description',
+        'theme',
+        'genre',
+        'startingLocationType',
+        'magicLevel',
+        'techLevel',
+        'tone',
+        'difficulty',
+        'currencyName',
+        'currencyNamePlural',
+        'currencyValueNotes',
+        'writingStyleNotes'
+    ];
 
-        let settingContext = defaultSettingContext;
-        if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
-            settingContext = { ...defaultSettingContext };
-            for (const key of settingKeys) {
-                if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
-                    settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
-                }
+    let settingContext = defaultSettingContext;
+    if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
+        settingContext = { ...defaultSettingContext };
+        for (const key of settingKeys) {
+            if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
+                settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
             }
-            if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
-                settingContext.races = normalizeSettingList(overrideSetting.races);
-            }
-            if (!settingContext.description) {
-                settingContext.description = defaultSettingContext.description;
-            }
-        } else if (typeof overrideSetting === 'string') {
-            settingContext = {
-                ...defaultSettingContext,
-                description: overrideSetting
-            };
         }
-
-        const variables = {
-            setting: settingContext,
-            regionName: options.regionName || null,
-            regionDescription: options.regionDescription || null,
-            regionNotes: options.regionNotes || null,
-            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
-            mode: 'full'
-        };
-
-        const renderedTemplate = promptEnv.render(templateName, variables);
-        const parsedXML = parseXMLTemplate(renderedTemplate);
-        const systemPrompt = parsedXML.systemPrompt;
-        const generationPrompt = parsedXML.generationPrompt;
-
-        if (!systemPrompt || !generationPrompt) {
-            throw new Error('Region generator template missing systemPrompt or generationPrompt');
+        if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
+            settingContext.races = normalizeSettingList(overrideSetting.races);
         }
-
-        return {
-            systemPrompt: systemPrompt.trim(),
-            generationPrompt: generationPrompt.trim()
-        };
-    } catch (error) {
-        console.error('Error rendering region generator template:', error);
-        return {
-            systemPrompt: 'You are an AI gamemaster. Design a cohesive region for an RPG world.',
-            generationPrompt: 'Generate a region with 5 locations in XML format describing names, descriptions, and exit connections.'
+        if (!settingContext.description) {
+            settingContext.description = defaultSettingContext.description;
+        }
+    } else if (typeof overrideSetting === 'string') {
+        settingContext = {
+            ...defaultSettingContext,
+            description: overrideSetting
         };
     }
+
+    let minRegionExits = null;
+    // Always make sure there are stub regions that can be explored.
+    if (Region.stubRegionCount <= 2) minRegionExits = 1;
+
+    const variables = {
+        setting: settingContext,
+        regionName: options.regionName || null,
+        regionDescription: options.regionDescription || null,
+        regionNotes: options.regionNotes || null,
+        minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
+        maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
+        minRegionExits: minRegionExits,
+        currentPlayer: currentPlayer,
+        mode: 'full'
+    };
+
+    const renderedTemplate = promptEnv.render(templateName, variables);
+    const parsedXML = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedXML.systemPrompt;
+    const generationPrompt = parsedXML.generationPrompt;
+
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Region generator template missing systemPrompt or generationPrompt');
+    }
+
+    return {
+        systemPrompt: systemPrompt.trim(),
+        generationPrompt: generationPrompt.trim()
+    };
 }
 
 // Function to generate player portrait image
 async function generatePlayerImage(player, options = {}) {
+    if (!currentSetting) {
+        console.log('No active setting, skipping player portrait generation');
+        return { success: false, skipped: true, reason: 'no-setting' };
+    }
     try {
         const { force = false, clientId = null } = options || {};
 
@@ -9952,16 +9964,160 @@ function renderRegionEntrancePrompt() {
     }
 }
 
+function renderExistingRegionExitPrompt({ sourceRegion, sourceLocation, targetRegion }) {
+    try {
+        const templateName = 'region-existing-exit.xml.njk';
+        const variables = {
+            sourceRegion: {
+                name: sourceRegion?.name || 'Unknown Region',
+                description: sourceRegion?.description || 'No description provided.'
+            },
+            sourceLocation: {
+                name: sourceLocation?.name || sourceLocation?.id || 'Unknown Location',
+                summary: sourceLocation?.description
+                    || sourceLocation?.stubMetadata?.shortDescription
+                    || sourceLocation?.stubMetadata?.blueprintDescription
+                    || 'No summary provided.'
+            },
+            targetRegion: {
+                name: targetRegion?.name || 'Unknown Region',
+                description: targetRegion?.description || 'No description provided.',
+                locations: Array.isArray(targetRegion?.locationIds)
+                    ? targetRegion.locationIds
+                        .map(id => gameLocations.get(id))
+                        .filter(Boolean)
+                        .map(loc => ({
+                            name: loc.name || loc.id,
+                            description: loc.description
+                                || loc.stubMetadata?.blueprintDescription
+                                || loc.stubMetadata?.shortDescription
+                                || 'No description provided.'
+                        }))
+                    : []
+            }
+        };
+
+        const renderedTemplate = promptEnv.render(templateName, variables);
+        const parsed = parseXMLTemplate(renderedTemplate);
+        const systemPrompt = parsed.systemPrompt ? parsed.systemPrompt.trim() : null;
+        const generationPrompt = parsed.generationPrompt ? parsed.generationPrompt.trim() : null;
+
+        if (!generationPrompt) {
+            throw new Error('Existing region exit template missing generationPrompt');
+        }
+
+        return { systemPrompt, generationPrompt };
+    } catch (error) {
+        console.error('Error rendering existing region exit template:', error);
+        return null;
+    }
+}
+
+function parseExistingRegionExitResponse(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        return null;
+    }
+
+    try {
+        const sanitize = (input) => `<root>${input}</root>`
+            .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+            .replace(/<\s*br\s*>/gi, '<br/>')
+            .replace(/<\s*hr\s*>/gi, '<hr/>');
+
+        const parser = new DOMParser({
+            errorHandler: {
+                warning: () => { },
+                error: () => { },
+                fatalError: () => { }
+            }
+        });
+        const doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+
+        if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+            throw new Error('Parser error');
+        }
+
+        const exitNode = doc.getElementsByTagName('remoteExit')[0] || doc.documentElement;
+        if (!exitNode) {
+            return null;
+        }
+
+        const nameNode = exitNode.getElementsByTagName('name')[0] || doc.getElementsByTagName('name')[0];
+        const reasonNode = exitNode.getElementsByTagName('reason')[0] || doc.getElementsByTagName('reason')[0];
+        const name = nameNode ? nameNode.textContent.trim() : null;
+        const reason = reasonNode ? reasonNode.textContent.trim() : null;
+
+        if (!name) {
+            return null;
+        }
+
+        return { name, reason };
+    } catch (error) {
+        console.warn('Failed to parse existing region exit response:', error.message);
+        return null;
+    }
+}
+
+async function chooseExistingRegionExit({
+    sourceRegion,
+    sourceLocation,
+    targetRegion,
+    chatEndpoint,
+    model,
+    apiKey
+}) {
+    const prompt = renderExistingRegionExitPrompt({ sourceRegion, sourceLocation, targetRegion });
+    if (!prompt) {
+        return null;
+    }
+
+    const messages = [];
+    if (prompt.systemPrompt) {
+        messages.push({ role: 'system', content: prompt.systemPrompt });
+    }
+    messages.push({ role: 'user', content: prompt.generationPrompt });
+
+    const requestData = {
+        model,
+        messages,
+        max_tokens: 300,
+        temperature: config.ai.temperature || 0.4
+    };
+
+    try {
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: config.baseTimeoutSeconds
+        });
+
+        const aiResponse = response.data?.choices?.[0]?.message?.content || '';
+        const parsed = parseExistingRegionExitResponse(aiResponse);
+        return parsed;
+    } catch (error) {
+        console.warn('Failed to choose existing region exit location:', error.message);
+        return null;
+    }
+}
+
 function renderRegionExitsPrompt({ region, settingDescription }) {
     try {
         const templateName = 'region-generator.all.xml.njk';
+
+        let minRegionExits = null;
+        // Always make sure there are stub regions that can be explored.
+        if (Region.stubRegionCount <= 2) minRegionExits = 1;
 
         const variables = {
             setting: settingDescription,
             currentRegion: region,
             mode: 'exits',
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10
+            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
+            minRegionExits: minRegionExits,
+            currentPlayer: currentPlayer,
         };
 
         const rendered = promptEnv.render(templateName, variables);
@@ -10011,75 +10167,83 @@ function parseRegionExitsResponse(xmlSnippet) {
         return [];
     }
 
-    const pickRegionNodes = () => {
-        const nodeLists = [];
-        const connectedParents = Array.from(doc.getElementsByTagName('connectedRegions'));
-        if (connectedParents.length) {
-            connectedParents.forEach(parent => {
-                nodeLists.push(...Array.from(parent.getElementsByTagName('region')));
-            });
-        }
-
-        if (!nodeLists.length) {
-            const legacyParents = Array.from(doc.getElementsByTagName('regions'));
-            legacyParents.forEach(parent => {
-                nodeLists.push(...Array.from(parent.getElementsByTagName('region')));
-            });
-        }
-
-        if (!nodeLists.length) {
-            const fallback = Array.from(doc.getElementsByTagName('region'));
-            const filtered = fallback.filter(node => {
-                const parentTag = node?.parentNode?.tagName;
-                if (!parentTag) {
-                    return false;
-                }
-                const normalized = parentTag.toLowerCase();
-                return normalized === 'connectedregions' || normalized === 'regions';
-            });
-            return filtered;
-        }
-
-        return nodeLists;
-    };
-
-    const regionNodes = pickRegionNodes();
-    if (!regionNodes.length) {
-        return [];
-    }
-
-    const getTagValue = (node, tag) => {
-        const element = node.getElementsByTagName(tag)?.[0];
-        if (!element || typeof element.textContent !== 'string') {
+    const getFirstChildByTag = (node, tag) => {
+        if (!node) {
             return null;
         }
-        const value = element.textContent.trim();
-        return value || null;
+        const tagLower = tag.toLowerCase();
+        const candidates = Array.from(node.childNodes || []);
+        return candidates.find(child => child.nodeType === 1 && child.tagName && child.tagName.toLowerCase() === tagLower) || null;
     };
 
-    const results = [];
-    for (const node of regionNodes) {
-        const name = getTagValue(node, 'regionName');
-        const description = getTagValue(node, 'regionDescription') || '';
-        const relativeLevelValue = getTagValue(node, 'relativeLevel');
-        const relationship = getTagValue(node, 'relationshipToCurrentRegion') || 'Adjacent';
-        const exitLocation = getTagValue(node, 'exitLocation');
-        const exitVehicle = getTagValue(node, 'exitVehicle');
-
-        if (!name || !exitLocation) {
-            continue;
+    const getChildValue = (node, tag) => {
+        const child = getFirstChildByTag(node, tag);
+        if (!child || typeof child.textContent !== 'string') {
+            return null;
         }
+        const trimmed = child.textContent.trim();
+        return trimmed || null;
+    };
 
-        const relativeLevel = Number.parseInt(relativeLevelValue, 10);
+    const stubRegions = Array.from(doc.getElementsByTagName('stubRegion'));
+    const results = [];
 
+    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle }) => {
+        if (!name || !exitLocation) {
+            return;
+        }
+        const parsedLevel = Number.parseInt(relativeLevel, 10);
         results.push({
             name,
-            description,
-            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
-            relationship,
+            description: description || '',
+            relativeLevel: Number.isFinite(parsedLevel) ? parsedLevel : 0,
+            relationship: relationship || 'Adjacent',
             exitLocation,
             exitVehicle: exitVehicle || null
         });
+    };
+
+    if (stubRegions.length) {
+        for (const stubNode of stubRegions) {
+            const locationNode = (() => {
+                let current = stubNode.parentNode;
+                while (current) {
+                    if (current.tagName && current.tagName.toLowerCase() === 'location') {
+                        return current;
+                    }
+                    current = current.parentNode;
+                }
+                return null;
+            })();
+
+            const locationName = locationNode ? getChildValue(locationNode, 'name') : null;
+
+            const name = getChildValue(stubNode, 'regionName');
+            const description = getChildValue(stubNode, 'regionDescription');
+            const relativeLevel = getChildValue(stubNode, 'relativeLevel');
+            const relationship = getChildValue(stubNode, 'relationshipToCurrentRegion');
+            const exitLocation = getChildValue(stubNode, 'exitLocation') || locationName;
+            const exitVehicle = getChildValue(stubNode, 'exitVehicle');
+
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle });
+        }
+    }
+
+    if (!results.length) {
+        const legacyRegions = Array.from(doc.getElementsByTagName('connectedRegions'))
+            .concat(Array.from(doc.getElementsByTagName('regions')))
+            .flatMap(parent => Array.from(parent.getElementsByTagName('region')));
+
+        for (const node of legacyRegions) {
+            const name = getChildValue(node, 'regionName');
+            const description = getChildValue(node, 'regionDescription');
+            const relativeLevel = getChildValue(node, 'relativeLevel');
+            const relationship = getChildValue(node, 'relationshipToCurrentRegion');
+            const exitLocation = getChildValue(node, 'exitLocation');
+            const exitVehicle = getChildValue(node, 'exitVehicle');
+
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle });
+        }
     }
 
     return results;
@@ -10088,12 +10252,18 @@ function parseRegionExitsResponse(xmlSnippet) {
 function renderRegionStubPrompt({ settingDescription, region }) {
     try {
         const templateName = 'region-generator.all.xml.njk';
+        let minRegionExits = null;
+        // Always make sure there are stub regions that can be explored.
+        if (Region.stubRegionCount <= 2) minRegionExits = 1;
+
         const variables = {
             setting: settingDescription,
             currentRegion: region,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
             maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
-            mode: 'stub'
+            minRegionExits: minRegionExits,
+            mode: 'stub',
+            currentPlayer: currentPlayer,
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -10222,70 +10392,12 @@ async function generateRegionExitStubs({
         return;
     }
 
-    let definitions = Array.isArray(predefinedDefinitions)
+    const definitions = Array.isArray(predefinedDefinitions)
         ? predefinedDefinitions.filter(Boolean)
-        : null;
+        : [];
 
-    if (!definitions || !definitions.length) {
-        const prompt = renderRegionExitsPrompt({ region, settingDescription });
-        if (!prompt) {
-            return;
-        }
-
-        const messages = [
-            { role: 'system', content: prompt.systemPrompt },
-            { role: 'user', content: prompt.generationPrompt }
-        ];
-
-        const requestData = {
-            model,
-            messages,
-            max_tokens: 1500,
-            temperature: config.ai.temperature || 0.6
-        };
-
-        let aiResponse = '';
-        try {
-            const requestStart = Date.now();
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: config.baseTimeoutSeconds
-            });
-
-            aiResponse = response.data?.choices?.[0]?.message?.content || '';
-            const durationSeconds = (Date.now() - requestStart) / 1000;
-
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-                const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
-                const logPath = path.join(logDir, `region_exits_${region.id}_${timestamp}.log`);
-                const logParts = [
-                    formatDurationLine(durationSeconds),
-                    '=== REGION EXITS PROMPT ===',
-                    prompt.generationPrompt,
-                    '\n=== REGION EXITS RESPONSE ===',
-                    aiResponse,
-                    '\n'
-                ];
-                fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-            } catch (logError) {
-                console.warn('Failed to log region exits generation:', logError.message);
-            }
-        } catch (error) {
-            console.warn('Failed to generate region exits:', error.message);
-            return;
-        }
-
-        definitions = parseRegionExitsResponse(aiResponse);
-    }
-
-    if (!definitions || !definitions.length) {
+    if (!definitions.length) {
+        console.warn(`No connected region definitions supplied for region "${region?.name || region?.id || 'unknown'}"; skipping exit stub generation.`);
         return;
     }
 
@@ -10313,6 +10425,20 @@ async function generateRegionExitStubs({
 
             console.warn(`Falling back to use ${fallbackLocation.name || fallbackLocation.id} for exit location "${definition.exitLocation}".`);
             sourceLocation = fallbackLocation;
+        }
+
+        const existingRegion = Region.getByName(definition.name);
+        if (existingRegion) {
+            await connectExistingRegion({
+                region,
+                sourceLocation,
+                existingRegion,
+                definition,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+            continue;
         }
 
         const normalizedTargetName = normalizeRegionLocationName(definition.name);
@@ -10448,6 +10574,71 @@ async function generateRegionExitStubs({
 
         console.log(`🌐 Created pending region stub for "${definition.name}" linked to ${region.name}.`);
     }
+}
+
+
+async function connectExistingRegion({
+    region,
+    sourceLocation,
+    existingRegion,
+    definition,
+    chatEndpoint,
+    model,
+    apiKey
+}) {
+    if (!region || !sourceLocation || !existingRegion) {
+        return;
+    }
+
+    const exitChoice = await chooseExistingRegionExit({
+        sourceRegion: region,
+        sourceLocation,
+        targetRegion: existingRegion,
+        chatEndpoint,
+        model,
+        apiKey
+    });
+
+    const candidateLocations = Array.isArray(existingRegion.locationIds)
+        ? existingRegion.locationIds
+            .map(id => gameLocations.get(id))
+            .filter(Boolean)
+        : [];
+
+    const targetNameNormalized = exitChoice?.name
+        ? normalizeRegionLocationName(exitChoice.name)
+        : null;
+
+    let remoteLocation = targetNameNormalized
+        ? candidateLocations.find(loc => normalizeRegionLocationName(loc.name) === targetNameNormalized)
+        : null;
+
+    if (!remoteLocation && candidateLocations.length) {
+        remoteLocation = candidateLocations[0];
+    }
+
+    if (!remoteLocation) {
+        console.warn(`Could not determine remote location for existing region connection to "${existingRegion.name}".`);
+        return;
+    }
+
+    const vehicleLabel = definition.exitVehicle || null;
+
+    ensureExitConnection(sourceLocation, remoteLocation, {
+        description: existingRegion.name,
+        destinationRegion: existingRegion.id,
+        isVehicle: Boolean(vehicleLabel),
+        vehicleType: vehicleLabel || null
+    });
+
+    ensureExitConnection(remoteLocation, sourceLocation, {
+        description: region.name,
+        destinationRegion: region.id,
+        isVehicle: Boolean(vehicleLabel),
+        vehicleType: vehicleLabel || null
+    });
+
+    console.log(`🔗 Linked existing region "${region.name}" ↔ "${existingRegion.name}" via ${sourceLocation.name || sourceLocation.id} and ${remoteLocation.name || remoteLocation.id}.`);
 }
 
 

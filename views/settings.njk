@@ -138,8 +138,8 @@
 
                     <div class="form-group">
                         <label for="defaultNumSkills">Default Number of Skills</label>
-                        <input type="number" id="defaultNumSkills" name="defaultNumSkills" min="1" max="100" value="20">
-                        <div class="help-text">Prefills the number of skills to generate (1-100).</div>
+                        <input type="number" id="defaultNumSkills" name="defaultNumSkills" min="0" max="100" value="20">
+                        <div class="help-text">Prefills the number of skills to generate (0-100).</div>
                     </div>
 
                     <div class="form-group full-width">
@@ -350,7 +350,11 @@
             document.getElementById('defaultPlayerName').value = setting.defaultPlayerName || '';
             document.getElementById('defaultPlayerDescription').value = setting.defaultPlayerDescription || '';
             document.getElementById('defaultStartingLocation').value = setting.defaultStartingLocation || '';
-            document.getElementById('defaultNumSkills').value = setting.defaultNumSkills || 20;
+            const defaultNumSkillsField = document.getElementById('defaultNumSkills');
+            if (defaultNumSkillsField) {
+                const parsedNumSkills = Number.parseInt(setting.defaultNumSkills, 10);
+                defaultNumSkillsField.value = Number.isFinite(parsedNumSkills) ? parsedNumSkills : 20;
+            }
             document.getElementById('defaultExistingSkills').value = Array.isArray(setting.defaultExistingSkills) ? setting.defaultExistingSkills.join('\n') : '';
             document.getElementById('availableClasses').value = Array.isArray(setting.availableClasses) ? setting.availableClasses.join('\n') : '';
             document.getElementById('availableRaces').value = Array.isArray(setting.availableRaces) ? setting.availableRaces.join('\n') : '';
@@ -576,7 +580,10 @@
 
                 // Convert playerStartingLevel to number
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;
-                settingData.defaultNumSkills = parseInt(settingData.defaultNumSkills) || 20;
+                const parsedDefaultNumSkills = Number.parseInt(settingData.defaultNumSkills, 10);
+                settingData.defaultNumSkills = Number.isFinite(parsedDefaultNumSkills)
+                    ? Math.max(0, Math.min(100, parsedDefaultNumSkills))
+                    : 20;
                 const parsedDefaultCurrency = parseInt(settingData.defaultStartingCurrency, 10);
                 settingData.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency) ? Math.max(0, parsedDefaultCurrency) : 0;
                 const defaultExistingSkillsText = settingData.defaultExistingSkills || '';
@@ -684,7 +691,10 @@
                 const formData = new FormData(form);
                 const settingPayload = Object.fromEntries(formData.entries());
                 settingPayload.playerStartingLevel = settingPayload.playerStartingLevel || '';
-                settingPayload.defaultNumSkills = settingPayload.defaultNumSkills || '';
+                const parsedPayloadNumSkills = Number.parseInt(settingPayload.defaultNumSkills, 10);
+                settingPayload.defaultNumSkills = Number.isFinite(parsedPayloadNumSkills)
+                    ? Math.max(0, Math.min(100, parsedPayloadNumSkills))
+                    : '';
                 settingPayload.defaultExistingSkills = splitLines(settingPayload.defaultExistingSkills);
                 settingPayload.availableClasses = splitLines(settingPayload.availableClasses);
                 settingPayload.availableRaces = splitLines(settingPayload.availableRaces);

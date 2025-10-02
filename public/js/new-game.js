@@ -219,10 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const datasetValue = Number.parseInt(numSkillsField.dataset?.defaultValue ?? '', 10);
     if (Number.isFinite(datasetValue)) {
-      return Math.max(1, Math.min(100, datasetValue));
+      return Math.max(0, Math.min(100, datasetValue));
     }
     const fieldValue = Number.parseInt(numSkillsField.value ?? '', 10);
-    return Number.isFinite(fieldValue) ? Math.max(1, Math.min(100, fieldValue)) : 20;
+    return Number.isFinite(fieldValue) ? Math.max(0, Math.min(100, fieldValue)) : 20;
   })();
 
   function showOverlay() {
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const numSkillsRaw = (numSkillsField?.value || '').trim();
       const parsedNumSkills = Number.parseInt(numSkillsRaw, 10);
       const resolvedNumSkills = Number.isFinite(parsedNumSkills) ? parsedNumSkills : defaultNumSkills;
-      const numSkills = Math.max(1, Math.min(100, resolvedNumSkills));
+      const numSkills = Math.max(0, Math.min(100, resolvedNumSkills));
       const existingSkillsRaw = document.getElementById('existingSkills')?.value || '';
       const existingSkills = existingSkillsRaw
         .split(/\r?\n/)

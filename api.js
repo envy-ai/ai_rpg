@@ -6728,7 +6728,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     ensureExitConnection(originLocation, destinationLocation, {
                         description: resolvedDescription || exitName,
-                        bidirectional: false,
+                        bidirectional: true,
                         destinationRegion: destinationRegionForExit
                     });
 
@@ -9070,7 +9070,7 @@ module.exports = function registerApiRoutes(scope) {
                 const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
                 const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
-                const fallbackSkillCount = Math.max(1, Math.min(100, newGameDefaults.numSkills || 20));
+                const fallbackSkillCount = Math.max(0, Math.min(100, newGameDefaults.numSkills || 20));
                 const endpoint = config.ai?.endpoint;
                 const apiKey = config.ai?.apiKey;
                 const model = config.ai?.model;
@@ -9078,7 +9078,7 @@ module.exports = function registerApiRoutes(scope) {
                     ? (endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`)
                     : null;
                 const numSkills = Number.isFinite(parsedSkillCount)
-                    ? Math.max(1, Math.min(100, parsedSkillCount))
+                    ? Math.max(0, Math.min(100, parsedSkillCount))
                     : fallbackSkillCount;
 
                 report('new_game:start', 'Preparing your adventure...');

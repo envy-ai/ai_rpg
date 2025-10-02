@@ -3676,6 +3676,7 @@ class Events {
         const prioritizedOrder = [
             'move_location',
             'alter_location',
+            'item_appear',
             'pick_up_item',
             'transfer_item',
             'drop_item',

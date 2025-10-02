@@ -179,7 +179,7 @@ class Region {
         regionName = child.textContent.trim();
       } else if (!regionDescription && (tag === 'regiondescription' || tag === 'description')) {
         regionDescription = child.textContent.trim();
-      } else if (!regionLevel && tag === 'relativeLevel') {
+      } else if (!regionLevel && tag === 'relativelevel') {
         const parsedLevel = Number(child.textContent.trim());
         if (Number.isFinite(parsedLevel)) {
           regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
@@ -200,9 +200,13 @@ class Region {
       const attrId = node.getAttribute('id')?.trim();
       const attrName = node.getAttribute('name')?.trim();
 
-      const locNameNode = node.getElementsByTagName('name')[0];
-      const locDescriptionNode = node.getElementsByTagName('description')[0];
-      const exitsNode = node.getElementsByTagName('exits')[0];
+      const childElements = Array.from(node.childNodes).filter(child => child.nodeType === 1);
+      const findDirectChild = (tagName) => childElements.find(child => child.tagName && child.tagName.toLowerCase() === tagName);
+
+      const locNameNode = findDirectChild('name');
+      const locDescriptionNode = findDirectChild('description');
+      const relativeLevelNode = findDirectChild('relativelevel');
+      const exitsNode = findDirectChild('exits');
       let relativeLevel = null;
 
       let locName = locNameNode ? locNameNode.textContent.trim() : null;
@@ -214,13 +218,11 @@ class Region {
       }
 
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
-      if (exitsNode) {
-        const relativeNode = exitsNode.getElementsByTagName('relativeLevel')[0];
-        if (relativeNode) {
-          const parsedRelative = Number(relativeNode.textContent.trim());
-          if (Number.isFinite(parsedRelative)) {
-            relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelative)));
-          }
+
+      if (relativeLevelNode) {
+        const parsedRelative = Number(relativeLevelNode.textContent.trim());
+        if (Number.isFinite(parsedRelative)) {
+          relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelative)));
         }
       }
 
@@ -258,6 +260,10 @@ class Region {
 
   get id() {
     return this.#id;
+  }
+
+  static get stubRegionCount() {
+    return Array.from(Region.#indexById.values()).filter(region => region.isStub).length;
   }
 
   get childRegions() {

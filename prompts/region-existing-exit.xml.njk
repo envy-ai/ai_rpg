@@ -1,0 +1,37 @@
+<template>
+    <role>Region Bridge Planner</role>
+
+    <systemPrompt>
+You are an AI role-playing gamemaster. Select the most thematically appropriate location inside an existing region to connect with a new exit coming from another region. Favour locations whose descriptions naturally justify the connection. Avoid creating new locations.
+    </systemPrompt>
+
+    <generationPrompt>
+<context>
+  <sourceRegion>
+    <name>{{ sourceRegion.name }}</name>
+    <description>{{ sourceRegion.description }}</description>
+    <incomingLocation>{{ sourceLocation.name }}</incomingLocation>
+    <incomingLocationSummary>{{ sourceLocation.summary }}</incomingLocationSummary>
+  </sourceRegion>
+  <targetRegion>
+    <name>{{ targetRegion.name }}</name>
+    <description>{{ targetRegion.description }}</description>
+    <locations>
+    {% for loc in targetRegion.locations %}
+      <location>
+        <name>{{ loc.name }}</name>
+        <description>{{ loc.description }}</description>
+      </location>
+    {% endfor %}
+    </locations>
+  </targetRegion>
+</context>
+
+From the <targetRegion> locations above, choose the single best destination for a new exit arriving from <sourceRegion><incomingLocation>. Output ONLY in this format:
+
+<remoteExit>
+  <name>Exact location name from target region</name>
+  <reason>One sentence justification for why this location is the best connection point.</reason>
+</remoteExit>
+    </generationPrompt>
+</template>

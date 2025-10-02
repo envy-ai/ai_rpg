@@ -131,7 +131,7 @@ class SettingInfo {
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
     const parsedDefaultSkillCount = Number.parseInt(options.defaultNumSkills, 10);
     this.#defaultNumSkills = Number.isFinite(parsedDefaultSkillCount)
-      ? Math.max(1, Math.min(100, parsedDefaultSkillCount))
+      ? Math.max(0, Math.min(100, parsedDefaultSkillCount))
       : 20;
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
@@ -321,7 +321,7 @@ class SettingInfo {
   set defaultNumSkills(value) {
     const parsed = Number.parseInt(value, 10);
     this.#defaultNumSkills = Number.isFinite(parsed)
-      ? Math.max(1, Math.min(100, parsed))
+      ? Math.max(0, Math.min(100, parsed))
       : 20;
     this.#updateTimestamp();
   }

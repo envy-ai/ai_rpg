@@ -111,7 +111,7 @@
                             <div class="help-text">{{ helpDesc }}</div>
                         </div>
 
-                        <div class="form-group">
+                        <div class="form-group full-width">
                             <label for="playerClassSelect">Class</label>
                             <select id="playerClassSelect" name="playerClassSelect" data-other-input="playerClassOther">
                                 <option value="">-- Select Class --</option>
@@ -124,7 +124,7 @@
                             <div class="help-text">Choose a class from the setting or provide your own.</div>
                         </div>
 
-                        <div class="form-group">
+                        <div class="form-group full-width">
                             <label for="playerRaceSelect">Race</label>
                             <select id="playerRaceSelect" name="playerRaceSelect" data-other-input="playerRaceOther">
                                 <option value="">-- Select Race --</option>
@@ -143,15 +143,15 @@
             <div class="help-text">{{ helpLoc }}</div>
         </div>
 
-        <div class="form-group">
-            <label for="startingCurrency">Starting Currency</label>
+                        <div class="form-group">
+                            <label for="startingCurrency">Starting Currency</label>
             <input type="number" id="startingCurrency" name="startingCurrency" min="0" value="{{ defaultStartingCurrency }}" data-default-value="{{ defaultStartingCurrency }}">
             <div class="help-text">Optional. How much money the player begins with.</div>
         </div>
 
                         <div class="form-group">
                             <label for="numSkills">Number of Skills</label>
-                            <input type="number" id="numSkills" name="numSkills" value="{{ defaultNumSkills }}" min="1" max="100" data-default-value="{{ defaultNumSkills }}">
+                            <input type="number" id="numSkills" name="numSkills" value="{{ defaultNumSkills }}" min="0" max="100" data-default-value="{{ defaultNumSkills }}">
                             <div class="help-text">How many unique skills to generate (default 20).</div>
                         </div>
 

@@ -78,11 +78,19 @@ You are analysing the current region and proposing meaningful connected regions 
 Design a brand new region for the setting above. Propose between 1 and {{ maxLocations }} distinct locations that together form a coherent mini-map. Provide names, vivid three-sentence descriptions, relative levels, and explain the logic behind each intra-region exit. After the location list, suggest other regions that are reachable, contained, or containing this new region so navigation feels natural.
 {% endif %}
 
-Note that "region" is defined loosely as a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. As a general rule, a building should have a location for the exterior and a region for the interior. Regions can be as small as a single room building or vastly larger than that.
+Guidelines: 
+* Note that "region" is defined loosely as a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. As a general rule, a building should have a location for the exterior and a regionExit for the interior. Regions can be as small as a single room building or vastly larger than that. Note that it is not necessary to generate a regionExit to the parent region, as it will already be connected; however, you may generate a regionExit to the parent region if it makes sense to have more than one.
 
-When proposing connected regions, ensure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
+* When proposing region exits, ensure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
 
-Always avoid contradictions with the setting, and use consistent terminology (e.g., Within, Contains, Adjacent) when describing regional relationships.
+* Always avoid contradictions with the setting, and use consistent terminology (e.g., Within, Contains, Adjacent) when describing regional relationships.
+
+* Furniture and workstations are not locations. These should be mentioned in the description, but will be generated as scenery later. For example, a "blacksmith's forge" is not a location, but a "blacksmith's workshop" is.
+
+{% if currentRegion.name %}Create the following XML for the region named "{{ currentRegion.name }}".{% elseif regionName %}Create the following XML for a new region named "{{ regionName }}".{% else %}Create a region using the following XML format.{% endif %}
+{% if currentRegion.description %}The region is described as "{{ currentRegion.description }}".{% endif %}
+
+{% if minRegionExits %}Provide at least {{ minRegionExits }} non-'within' regionExit(s) among the locations.{% endif %}
 
 {% if includeLocations %}
 <region>
@@ -94,6 +102,7 @@ Always avoid contradictions with the setting, and use consistent terminology (e.
     <!-- Only list **new** locations to add to the current region -->
 {% endif %}
     <!-- For each location below, follow the structure exactly once per location. -->
+    <!-- If this location is a building exterior, include a regionExits element with a stubRegion for the building interior. The description for this case should be of the place around the building, not the interior itself. -->
     <location>
       <name>Concise, evocative location name</name>
       <description>Three sentence description emphasising sensory detail and interactive elements.</description>
@@ -103,23 +112,30 @@ Always avoid contradictions with the setting, and use consistent terminology (e.
         <exit>Name of other location in region</exit>
         <!-- Repeat <exit> elements as needed; 0-4 per location is typical. -->
       </exits>
+      <regionExits>
+        <!-- If this location is a building exterior, list the building interior region here. Otherwise, omit this element entirely. -->
+        <stubRegion>
+          <regionName>Name of the building</regionName>
+          <regionDescription>Three sentence summary of the building.</regionDescription>
+          <relativeLevel>Integer from -1 to +3 relative to the current region</relativeLevel>
+          <relationshipToCurrentRegion>always "Within", because it's a building</relationshipToCurrentRegion>
+          <exitLocation>Room name of the exit point to this region</exitLocation>
+          <exitVehicle>Optional; if the exit has a vehicle that ferries people to and from this destination (could be a taxi, bus, plane, starship, boat, fixed destination teleporter, mine elevator, etc, that is not controlled by the player). It should make sense in the phrase "[exitVehicle] to [exitLocation]".</exitVehicle>
+        </stubRegion>
+        <!-- If this location is the exit point to a connected region, list the region name(s) here. Otherwise, omit this element entirely. -->
+        <stubRegion>
+          <regionName>Name of the connected region</regionName>
+          <regionDescription>Three sentence summary of the connected region as a whole.</regionDescription>
+          <relativeLevel>Integer from -1 to +3 relative to the current region</relativeLevel>
+          <relationshipToCurrentRegion>Within | Contains | Adjacent</relationshipToCurrentRegion>
+          <exitLocation>Location name of the exit point to this region</exitLocation>
+          <exitVehicle>Optional; if the exit has a vehicle that ferries people to and from this destination (could be a taxi, bus, plane, starship, boat, fixed destination teleporter, mine elevator, etc, that is not controlled by the player). It should make sense in the phrase "[exitVehicle] to [exitLocation]".</exitVehicle>
+        </stubRegion>
+      </regionExits>
     </location>
   </locations>
 </region>
 {% endif %}
 
-{% if includeConnections %}
-<connectedRegions>
-  <!-- List zero or more connected regions. Omit entirely if none make sense. The parent region (if any) is already implicitly linked, so there is no need to repeat that connection here unless there are multiple exits to it. -->
-  <region>
-    <regionName>Name of the connected region</regionName>
-    <regionDescription>Three sentence summary of the connected region as a whole.</regionDescription>
-    <relativeLevel>Integer from -1 to +3 relative to the current region</relativeLevel>
-    <relationshipToCurrentRegion>Within | Contains | Adjacent</relationshipToCurrentRegion>
-    <exitLocation>Location name of the exit point to this region</exitLocation>
-    <exitVehicle>Optional; if the exit has a vehicle that ferries people to and from this destination (could be a taxi, bus, plane, starship, boat, fixed destination teleporter, mine elevator, etc, that is not controlled by the player). It should make sense in the phrase "[exitVehicle] to [exitLocation]".</exitVehicle>
-  </region>
-</connectedRegions>
-{% endif %}
     </generationPrompt>
 </template>

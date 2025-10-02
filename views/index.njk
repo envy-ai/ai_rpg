@@ -158,7 +158,7 @@
 
                             <aside class="chat-sidebar" aria-label="Player and party overview">
                                 <section class="chat-player-section">
-                                    <h3 class="chat-sidebar-heading">Player</h3>
+                                    <h3 class="chat-sidebar-heading" id="chatPlayerName">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
                                         <div class="chat-player-portrait" id="chatPlayerPortrait">
                                             <div class="chat-player-portrait-image" id="chatPlayerPortraitImage">
@@ -169,8 +169,17 @@
                                             </div>
                                         </div>
                                         <div class="player-need-bars need-bars" id="chatPlayerNeedBars" hidden></div>
+                                        <div class="chat-player-actions" id="chatPlayerActions">
+                                            <button type="button" class="chat-player-action-button" id="chatPlayerViewButton" disabled>
+                                                <span class="chat-player-action-icon" aria-hidden="true">👁️</span>
+                                                <span class="chat-player-action-label">View</span>
+                                            </button>
+                                            <button type="button" class="chat-player-action-button" id="chatPlayerInventoryButton" disabled>
+                                                <span class="chat-player-action-icon" aria-hidden="true">🎒</span>
+                                                <span class="chat-player-action-label">Inventory</span>
+                                            </button>
+                                        </div>
                                         <div class="chat-player-details">
-                                            <div class="chat-player-name" id="chatPlayerName">Unnamed Adventurer</div>
                                             <div class="chat-player-meta">
                                                 <span class="chat-player-level" id="chatPlayerLevel">Level ?</span>
                                                 <span class="chat-player-archetype" id="chatPlayerArchetype">Class · Race</span>
@@ -1457,6 +1466,8 @@
             healthBar: document.getElementById('chatPlayerHealthBar'),
             healthBarFill: document.getElementById('chatPlayerHealthBarFill'),
             needBars: document.getElementById('chatPlayerNeedBars'),
+            viewButton: document.getElementById('chatPlayerViewButton'),
+            inventoryButton: document.getElementById('chatPlayerInventoryButton'),
             name: document.getElementById('chatPlayerName'),
             level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
@@ -1466,6 +1477,47 @@
             partyEmpty: document.getElementById('chatPartyEmpty'),
             partyCount: document.getElementById('chatPartyCount')
         };
+
+        function getLatestPlayerData() {
+            const baseData = (window.currentPlayerData && typeof window.currentPlayerData === 'object')
+                ? window.currentPlayerData
+                : null;
+            if (!baseData || !baseData.id) {
+                return baseData;
+            }
+            if (window.currentNpcData instanceof Map) {
+                return window.currentNpcData.get(baseData.id) || baseData;
+            }
+            return baseData;
+        }
+
+        if (chatSidebarElements.viewButton) {
+            chatSidebarElements.viewButton.addEventListener('click', () => {
+                const playerData = getLatestPlayerData();
+                if (!playerData || typeof showNpcViewModal !== 'function') {
+                    return;
+                }
+                try {
+                    showNpcViewModal(playerData);
+                } catch (error) {
+                    console.warn('Failed to open player view modal:', error);
+                }
+            });
+        }
+
+        if (chatSidebarElements.inventoryButton) {
+            chatSidebarElements.inventoryButton.addEventListener('click', () => {
+                const playerData = getLatestPlayerData();
+                if (!playerData || typeof showNpcInventoryModal !== 'function') {
+                    return;
+                }
+                try {
+                    showNpcInventoryModal(playerData);
+                } catch (error) {
+                    console.warn('Failed to open player inventory modal:', error);
+                }
+            });
+        }
 
         function updateChatPlayerPanel(player = {}) {
             if (!chatSidebarElements.card) {
@@ -1564,6 +1616,13 @@
                 if (typeof window.registerNpcContextMenu === 'function' && chatSidebarElements.card) {
                     window.registerNpcContextMenu(chatSidebarElements.card, { ...data, isNPC: false });
                 }
+            }
+
+            if (chatSidebarElements.viewButton) {
+                chatSidebarElements.viewButton.disabled = !data || !data.id;
+            }
+            if (chatSidebarElements.inventoryButton) {
+                chatSidebarElements.inventoryButton.disabled = !data || !data.id;
             }
         }
 

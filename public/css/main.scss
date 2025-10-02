@@ -1718,7 +1718,6 @@ p:not(:last-child) {
   font-weight: 600;
   color: rgba(226, 232, 240, 0.92);
   letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .chat-player-card {
@@ -1736,6 +1735,58 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.chat-player-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.chat-player-action-button {
+  flex: 1 1 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(30, 41, 59, 0.6);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background 0.2s ease, border 0.2s ease, transform 0.2s ease,
+    box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.chat-player-action-button:hover,
+.chat-player-action-button:focus-visible {
+  background: rgba(51, 65, 85, 0.75);
+  border-color: rgba(148, 163, 184, 0.5);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.35);
+  transform: translateY(-1px);
+}
+
+.chat-player-action-button:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.55);
+  outline-offset: 2px;
+}
+
+.chat-player-action-button:active {
+  transform: translateY(0);
+  background: rgba(30, 41, 59, 0.85);
+}
+
+.chat-player-action-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chat-player-action-label {
+  font-size: 0.85rem;
 }
 
 .chat-player-portrait {

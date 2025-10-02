@@ -258,6 +258,10 @@ class Thing {
     return this.#normalizeRarityKey(value);
   }
 
+  static get allThingNames() {
+    return Array.from(Thing.#indexByName.keys());
+  }
+
   // Static private method for generating unique IDs
   static #generateId() {
     const timestamp = Date.now();
