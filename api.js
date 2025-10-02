@@ -1527,6 +1527,32 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function logDispositionCheck({ systemPrompt, generationPrompt, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `disposition_check_${timestamp}.log`);
+                const parts = [
+                    '=== DISPOSITION CHECK SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== DISPOSITION CHECK GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== DISPOSITION CHECK RESPONSE ===',
+                    responseText || '(no response)',
+                    ''
+                ];
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log disposition check prompt:', error.message);
+            }
+        }
+
         const BAREHANDED_KEYWORDS = new Set(['barehanded', 'bare hands', 'unarmed', 'fists']);
 
         const applyNeedBarTurnTick = () => {
@@ -2317,33 +2343,38 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const trimmed = responseText.trim();
-            if (!trimmed) {
-                return [];
-            }
+        const trimmed = responseText.trim();
+        if (!trimmed) {
+            return [];
+        }
 
-            let doc;
-            try {
-                const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
-                });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
-            } catch (_) {
-                return [];
-            }
+        let doc;
+        try {
+            const parser = new DOMParser({
+                errorHandler: {
+                    warning: () => { },
+                    error: () => { },
+                    fatalError: () => { }
+                }
+            });
+            doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+        } catch (_) {
+            return [];
+        }
 
-            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
-                return [];
-            }
+        if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+            return [];
+        }
 
-            const npcNodes = Array.from(doc.getElementsByTagName('npc'));
-            if (!npcNodes.length) {
-                return [];
-            }
+        const root = doc.documentElement;
+        if (!root || root.tagName?.toLowerCase() !== 'npcs') {
+            return [];
+        }
+
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+        if (!npcNodes.length) {
+            return [];
+        }
 
             const seen = new Set();
             const names = [];
@@ -2361,6 +2392,32 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return names;
+        }
+
+        function logNextNpcListPrompt({ systemPrompt, generationPrompt, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `next_npc_list_${timestamp}.log`);
+                const parts = [
+                    '=== NEXT NPC LIST SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== NEXT NPC LIST GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== NEXT NPC LIST RESPONSE ===',
+                    responseText || '(no response)',
+                    ''
+                ];
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log next NPC list prompt:', error.message);
+            }
         }
 
         async function runNextNpcListPrompt({ locationOverride = null } = {}) {
@@ -2402,6 +2459,13 @@ module.exports = function registerApiRoutes(scope) {
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
                 const names = parseNpcQueueResponse(raw);
+
+                logNextNpcListPrompt({
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: raw
+                });
+
                 return { raw, names };
             } catch (error) {
                 console.warn('Failed to run next NPC list prompt:', error.message);
@@ -2622,6 +2686,13 @@ module.exports = function registerApiRoutes(scope) {
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
                 const structured = parseDispositionCheckResponse(raw);
+
+                logDispositionCheck({
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: raw
+                });
+
                 return { raw, structured };
             } catch (error) {
                 console.warn('Failed to run disposition check prompt:', error.message);

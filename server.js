@@ -2286,6 +2286,10 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
+    if (!npcs.length && party.length) {
+        npcs.push(...party.map(member => ({ ...member })));
+    }
+
     const itemsInScene = [];
     if (location) {
         for (const thing of things.values()) {
