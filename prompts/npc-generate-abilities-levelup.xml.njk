@@ -46,7 +46,7 @@ You are an experienced AI game master who writes concise XML data about non-play
 </existingNpcs>
 </context>
 
-For each character listed above, generate a set of 1 to 4 that are appropriate to the character's description, race, and class. These abilities should all be level {{ currentPlayer.level }}. Abilities should be unique and interesting, avoiding generic or overly broad abilities. Abilities should be level appropriate (level 1 is starting level and level 20 is considered very high level). Abilities can be active, passive, or triggered, and should be more interesting than just an attribute bonus. Use your judgment to determine the number of abilities based on the NPC's race and class, and only generate them up to that NPC's current level. Character classes with fewer skills tend to have more abilities, and supernatural classes are often ability-based.  Output the abilities in this format:
+For each character listed above, generate a set of 2 to 4 that are appropriate to the character's description, race, and class. These abilities should all be level {{ currentPlayer.level }}. Abilities should be unique and interesting, avoiding generic or overly broad abilities. Abilities should be level appropriate (level 1 is starting level and level 20 is considered very high level). Abilities can be active, passive, or triggered, and should be more interesting than just an attribute bonus. Use your judgment to determine the number of abilities based on the NPC's race and class, and only generate them up to that NPC's current level. Character classes with fewer skills tend to have more abilities, and supernatural classes are often ability-based.  Output the abilities in this format:
 
 {% include "_includes/ability-format.njk" %}
 </generationPrompt>

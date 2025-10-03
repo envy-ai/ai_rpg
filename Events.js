@@ -2979,7 +2979,9 @@ class Events {
             createLocationFromEvent,
             queueNpcAssetsForLocation,
             generateLocationImage,
-            gameLocations
+            gameLocations,
+            players,
+            findActorByName
         } = this.deps;
         const removeNpcFromOtherLocations = (npcId, excludeId = null) => {
             if (!npcId || !gameLocations) {
@@ -3021,8 +3023,48 @@ class Events {
             return null;
         })();
 
+        const resolveNpcByName = (name) => {
+            if (!name) {
+                return null;
+            }
+            if (typeof findActorByName === 'function') {
+                const found = findActorByName(name);
+                if (found) {
+                    return found;
+                }
+            }
+            if (players instanceof Map) {
+                const normalized = String(name).trim().toLowerCase();
+                for (const actor of players.values()) {
+                    if (actor && typeof actor.name === 'string' && actor.name.trim().toLowerCase() === normalized) {
+                        return actor;
+                    }
+                }
+            }
+            return null;
+        };
+
+        const isNpcNamePresentInLocation = (name) => {
+            const existing = resolveNpcByName(name);
+            if (!existing) {
+                return false;
+            }
+            if (typeof existing.currentLocation === 'string' && existing.currentLocation === location.id) {
+                return true;
+            }
+            if (Array.isArray(location.npcIds) && location.npcIds.includes(existing.id)) {
+                return true;
+            }
+            return false;
+        };
+
         for (const entry of entries) {
             if (!entry || !entry.name) continue;
+
+            if (entry.action === 'arrived' && isNpcNamePresentInLocation(entry.name)) {
+                continue;
+            }
+
             const npc = await ensureNpcByName(entry.name, context);
             if (!npc) continue;
 

@@ -4537,15 +4537,14 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             const requestedThingType = typeof seed.itemOrScenery === 'string'
                 ? seed.itemOrScenery.trim().toLowerCase()
                 : null;
-            const normalizedSeedType = requestedThingType === 'scenery' ? 'scenery' : 'item';
 
             const thingSeed = {
                 ...seed,
                 name,
-                itemOrScenery: normalizedSeedType
+                itemOrScenery: requestedThingType
             };
 
-            const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: normalizedSeedType === 'item' });
+            const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity);
             if (rarityDefinitionForSeed) {
                 thingSeed.rarity = rarityDefinitionForSeed.label;
                 thingSeed.rarityDescription = rarityDefinitionForSeed.description || `A ${rarityDefinitionForSeed.label} item.`;
@@ -4629,12 +4628,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                         : (resolvedRegion?.averageLevel || currentPlayer?.level || 1));
                 const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
 
-                const responseThingType = typeof itemData?.itemOrScenery === 'string'
-                    ? itemData.itemOrScenery.trim().toLowerCase()
-                    : null;
-                const finalThingType = responseThingType === 'scenery' ? 'scenery' : normalizedSeedType;
-
-                const scaledAttributeBonuses = finalThingType === 'item'
+                const scaledAttributeBonuses = itemData?.itemOrScenery === 'item'
                     ? scaleAttributeBonusesForItem(
                         Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
                         { level: computedLevel, rarity: itemData?.rarity }
@@ -4673,13 +4667,16 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     level: computedLevel
                 });
 
+                console.log(itemData);
+                console.log("Itemdata ^^");
+
                 const thing = new Thing({
                     name,
                     description: composedDescription,
-                    thingType: finalThingType,
-                    rarity: itemData?.rarity || null,
-                    itemTypeDetail: itemData?.type || null,
-                    slot: itemData?.slot || null,
+                    thingType: itemData?.thingType,
+                    rarity: itemData?.rarity,
+                    type: itemData?.type,
+                    slot: itemData?.slot,
                     attributeBonuses: scaledAttributeBonuses,
                     causeStatusEffect: itemData?.causeStatusEffect,
                     level: computedLevel,

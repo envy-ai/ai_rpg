@@ -2271,6 +2271,137 @@
             }
         }
 
+        async function dropThingToCurrentLocation(thing, options = {}) {
+            if (!thing || !thing.id) {
+                throw new Error('Missing item information.');
+            }
+
+            const playerId = window.currentPlayerData?.id || null;
+            const ownerIdCandidate = options.npcId || null;
+            let ownerId = ownerIdCandidate || null;
+            let ownerType = null;
+
+            if (ownerId && playerId && ownerId === playerId) {
+                ownerType = 'player';
+            } else if (ownerId) {
+                ownerType = 'npc';
+            } else if (playerId) {
+                ownerType = 'player';
+                ownerId = playerId;
+            }
+
+            const normalizeId = (value) => {
+                if (typeof value !== 'string') {
+                    return null;
+                }
+                const trimmed = value.trim();
+                return trimmed || null;
+            };
+
+            let locationId = options.locationId || null;
+            const ownerData = ownerId && window.currentNpcData instanceof Map
+                ? window.currentNpcData.get(ownerId)
+                : null;
+            if (!locationId && ownerData) {
+                locationId = ownerData.currentLocation || ownerData.locationId || null;
+            }
+            if (!locationId && window.lastRenderedLocation?.id) {
+                locationId = window.lastRenderedLocation.id;
+            }
+            if (!locationId && window.currentPlayerData?.currentLocation) {
+                locationId = window.currentPlayerData.currentLocation;
+            }
+
+            const payload = {};
+            if (ownerId) {
+                payload.ownerId = ownerId;
+            }
+            if (ownerType) {
+                payload.ownerType = ownerType;
+            }
+            locationId = normalizeId(locationId);
+            if (locationId) {
+                payload.locationId = locationId;
+            }
+
+            const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}/drop`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json().catch(() => ({}));
+
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            const droppedThing = result.thing || thing;
+            thingDataCache.set(droppedThing.id, droppedThing);
+
+            if (result.owner && result.owner.id) {
+                if (window.currentNpcData instanceof Map) {
+                    window.currentNpcData.set(result.owner.id, result.owner);
+                }
+
+                if (playerId && result.owner.id === playerId) {
+                    window.currentPlayerData = { ...window.currentPlayerData, ...result.owner };
+                    try {
+                        await window.refreshInventory?.();
+                    } catch (inventoryError) {
+                        console.warn('Failed to refresh inventory after drop:', inventoryError);
+                    }
+                }
+            } else if (ownerType === 'player') {
+                try {
+                    await window.refreshInventory?.();
+                } catch (inventoryError) {
+                    console.warn('Failed to refresh inventory after drop:', inventoryError);
+                }
+            }
+
+            if (options.context === 'npc-inventory' && Array.isArray(currentNpcInventory)) {
+                currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
+                renderNpcInventory(currentNpcInventory);
+            }
+
+            if (options.context === 'npc-equipment' && typeof currentNpcViewId !== 'undefined') {
+                const viewId = currentNpcViewId;
+                const refreshedNpc = (result.owner && result.owner.id === viewId)
+                    ? result.owner
+                    : (window.currentNpcData instanceof Map ? window.currentNpcData.get(viewId) : null);
+                if (refreshedNpc && typeof showNpcViewModal === 'function') {
+                    showNpcViewModal(refreshedNpc);
+                }
+            }
+
+            if (result.location) {
+                try {
+                    await window.updateLocationDisplay?.(result.location);
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                } catch (locationError) {
+                    console.warn('Failed to update location display after drop:', locationError);
+                    try {
+                        await window.loadCurrentLocation?.();
+                    } catch (_) {}
+                }
+            } else {
+                try {
+                    await window.loadCurrentLocation?.();
+                } catch (locationError) {
+                    console.warn('Failed to reload location after drop:', locationError);
+                }
+            }
+
+            try {
+                await window.refreshParty?.();
+            } catch (partyError) {
+                console.warn('Failed to refresh party after drop:', partyError);
+            }
+
+            return result;
+        }
+
         function registerThingContextMenu(card, thing, options = {}) {
             if (!card || !thing || !thing.id) {
                 return;
@@ -2321,6 +2452,16 @@
                 regenerateImageButton.className = 'thing-card-menu-item';
                 regenerateImageButton.textContent = 'Regenerate Image';
                 menu.appendChild(regenerateImageButton);
+            }
+
+            const canDrop = options.context === 'npc-inventory' || options.context === 'npc-equipment';
+            let dropButton = null;
+            if (canDrop) {
+                dropButton = document.createElement('button');
+                dropButton.type = 'button';
+                dropButton.className = 'thing-card-menu-item';
+                dropButton.textContent = 'Drop';
+                menu.appendChild(dropButton);
             }
 
             const allowDeletion = Boolean(options.allowDelete ?? true);
@@ -2487,6 +2628,22 @@
                             force: false,
                             altText: placeholderAlt
                         });
+                    }
+                });
+            }
+
+            if (dropButton) {
+                dropButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    dropButton.disabled = true;
+                    try {
+                        closeThingContextMenu();
+                        await dropThingToCurrentLocation(thingDataCache.get(thing.id) || thing, options);
+                    } catch (error) {
+                        console.warn('Failed to drop item:', error);
+                        alert(`Failed to drop item: ${error?.message || error}`);
+                    } finally {
+                        dropButton.disabled = false;
                     }
                 });
             }
@@ -8563,6 +8720,9 @@
                             locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                         } else {
                             locationExitsList.innerHTML = '';
+                            const currentRegionId = location.regionId
+                                || location.stubMetadata?.regionId
+                                || null;
                             exitEntries.forEach(([key, exit]) => {
                                 if (!exit || !exit.destination) {
                                     return;
@@ -8585,7 +8745,9 @@
                                     ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
                                     : '';
                                 const vehicleLabel = `${vehiclePrefix}${baseName}`;
-                                const isRegionExit = Boolean(exit.destinationRegion);
+                                const destinationRegionId = exit.destinationRegion || null;
+                                const regionMatchesCurrent = Boolean(destinationRegionId && currentRegionId && destinationRegionId === currentRegionId);
+                                const isRegionExit = Boolean(destinationRegionId && !regionMatchesCurrent);
 
                                 if (isRegionExit) {
                                     travelButton.classList.add('region-exit');

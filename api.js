@@ -8156,6 +8156,166 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/things/:id/drop', (req, res) => {
+            try {
+                const { id } = req.params;
+                const thingId = typeof id === 'string' ? id.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing ID is required'
+                    });
+                }
+
+                const thing = things.get(thingId) || Thing.getById(thingId);
+                if (!thing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Thing not found'
+                    });
+                }
+
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                let { ownerId = null, ownerType = null, locationId = null } = body;
+
+                const normalize = (value) => {
+                    if (typeof value !== 'string') {
+                        return null;
+                    }
+                    const trimmed = value.trim();
+                    return trimmed || null;
+                };
+
+                ownerId = normalize(ownerId);
+                ownerType = normalize(ownerType);
+                locationId = normalize(locationId);
+
+                const resolveActorById = (actorId) => {
+                    if (!actorId) {
+                        return null;
+                    }
+                    try {
+                        if (players instanceof Map && players.has(actorId)) {
+                            return players.get(actorId);
+                        }
+                    } catch (_) { }
+                    if (currentPlayer && currentPlayer.id === actorId) {
+                        return currentPlayer;
+                    }
+                    return null;
+                };
+
+                let owner = null;
+                if (ownerId) {
+                    owner = resolveActorById(ownerId);
+                }
+                if (!owner && ownerType === 'player' && currentPlayer) {
+                    owner = currentPlayer;
+                    ownerId = currentPlayer.id;
+                }
+
+                if (!owner) {
+                    const meta = thing.metadata || {};
+                    const metaOwnerId = normalize(meta.ownerId || meta.ownerID || meta.owner);
+                    if (metaOwnerId) {
+                        owner = resolveActorById(metaOwnerId);
+                        if (owner) {
+                            ownerId = owner.id || metaOwnerId;
+                        }
+                    }
+                }
+
+                const resolveLocationById = (targetId) => {
+                    if (!targetId) {
+                        return null;
+                    }
+                    let location = null;
+                    if (Location && typeof Location.get === 'function') {
+                        try {
+                            location = Location.get(targetId);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+                    if (!location && gameLocations instanceof Map) {
+                        location = gameLocations.get(targetId) || null;
+                    }
+                    return location;
+                };
+
+                let targetLocation = resolveLocationById(locationId);
+                if (!targetLocation && owner && owner.currentLocation) {
+                    targetLocation = resolveLocationById(owner.currentLocation);
+                }
+                if (!targetLocation && owner && owner.locationId) {
+                    targetLocation = resolveLocationById(owner.locationId);
+                }
+                if (!targetLocation && currentPlayer?.currentLocation) {
+                    targetLocation = resolveLocationById(currentPlayer.currentLocation);
+                }
+
+                if (!targetLocation) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Unable to determine drop location'
+                    });
+                }
+
+                if (owner && typeof owner.removeInventoryItem === 'function') {
+                    try {
+                        owner.removeInventoryItem(thing.id);
+                    } catch (inventoryError) {
+                        console.warn('Failed to remove thing from owner inventory:', inventoryError?.message || inventoryError);
+                    }
+                }
+
+                const existingMetadata = thing.metadata || {};
+                const previousLocationId = normalize(existingMetadata.locationId);
+                if (previousLocationId && previousLocationId !== targetLocation.id) {
+                    const previousLocation = resolveLocationById(previousLocationId);
+                    if (previousLocation && typeof previousLocation.removeThingId === 'function') {
+                        previousLocation.removeThingId(thing.id);
+                        if (gameLocations instanceof Map) {
+                            gameLocations.set(previousLocation.id, previousLocation);
+                        }
+                    }
+                }
+
+                const updatedMetadata = { ...existingMetadata };
+                delete updatedMetadata.owner;
+                delete updatedMetadata.ownerId;
+                delete updatedMetadata.ownerID;
+                updatedMetadata.locationId = targetLocation.id;
+                thing.metadata = updatedMetadata;
+
+                if (typeof targetLocation.addThingId === 'function') {
+                    targetLocation.addThingId(thing.id);
+                }
+                if (gameLocations instanceof Map) {
+                    gameLocations.set(targetLocation.id, targetLocation);
+                }
+
+                const responsePayload = {
+                    success: true,
+                    thing: thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name },
+                    location: typeof buildLocationResponse === 'function' ? buildLocationResponse(targetLocation) : null,
+                    message: `${thing.name || 'Item'} dropped successfully.`
+                };
+
+                if (owner) {
+                    responsePayload.owner = serializeNpcForClient(owner);
+                }
+
+                res.json(responsePayload);
+            } catch (error) {
+                console.error('Failed to drop item:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to drop item'
+                });
+            }
+        });
+
         // Delete a thing
         app.delete('/api/things/:id', (req, res) => {
             try {
