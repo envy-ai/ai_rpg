@@ -2971,12 +2971,34 @@ class Events {
         };
         const location = context.location;
 
+        const currentPlayer = this.currentPlayer;
+        const playerPartyIds = (() => {
+            if (!currentPlayer || typeof currentPlayer.getPartyMembers !== 'function') {
+                return null;
+            }
+            try {
+                const members = currentPlayer.getPartyMembers();
+                if (Array.isArray(members)) {
+                    return new Set(members.map(id => (typeof id === 'string' ? id.trim() : id)).filter(Boolean));
+                }
+                if (members instanceof Set) {
+                    return new Set(Array.from(members).map(id => (typeof id === 'string' ? id.trim() : id)).filter(Boolean));
+                }
+            } catch (_) {
+                return null;
+            }
+            return null;
+        })();
+
         for (const entry of entries) {
             if (!entry || !entry.name) continue;
             const npc = await ensureNpcByName(entry.name, context);
             if (!npc) continue;
 
             if (entry.action === 'arrived') {
+                if (playerPartyIds && playerPartyIds.has(npc.id)) {
+                    continue;
+                }
                 removeNpcFromOtherLocations(npc.id, location.id);
                 try {
                     npc.setLocation(location.id);
