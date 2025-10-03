@@ -98,7 +98,7 @@ async function generateLocationWithAI(options = {}) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: config.baseTimeoutSeconds
+      timeout: baseTimeoutMilliseconds
     });
 
     if (!response.data || !response.data.choices || !response.data.choices[0]) {

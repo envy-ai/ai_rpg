@@ -5087,13 +5087,39 @@
                 throw new Error(data?.error || 'Invalid response when loading region data');
             }
 
-            newExitOptionsCache = data;
+            const filteredRegions = Array.isArray(data.regions)
+                ? data.regions
+                    .filter(region => {
+                        const name = typeof region?.name === 'string' ? region.name.trim() : '';
+                        return Boolean(name);
+                    })
+                    .map(region => ({
+                        ...region,
+                        name: region.name.trim(),
+                        locations: Array.isArray(region.locations)
+                            ? region.locations
+                                .filter(loc => {
+                                    const name = typeof loc?.name === 'string' ? loc.name.trim() : '';
+                                    return Boolean(name);
+                                })
+                                .map(loc => ({
+                                    ...loc,
+                                    name: loc.name.trim()
+                                }))
+                            : []
+                    }))
+                : [];
+
+            newExitOptionsCache = {
+                ...data,
+                regions: filteredRegions
+            };
             newExitRegionsById = new Map();
-            data.regions.forEach(region => {
+            filteredRegions.forEach(region => {
                 const normalizedLocations = Array.isArray(region.locations)
                     ? region.locations.map(loc => ({
                         id: loc.id,
-                        name: loc.name || loc.id,
+                        name: loc.name,
                         isStub: Boolean(loc.isStub),
                         regionId: loc.regionId || region.id,
                         isRegionEntryStub: Boolean(loc.isRegionEntryStub)
@@ -5101,7 +5127,7 @@
                     : [];
                 newExitRegionsById.set(region.id, {
                     id: region.id,
-                    name: region.name || region.id,
+                    name: region.name,
                     isStub: Boolean(region.isStub),
                     locations: normalizedLocations
                 });

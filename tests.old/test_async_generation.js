@@ -134,7 +134,7 @@ async function testAsyncImageGeneration() {
 
         console.log('  Submitting sync request (this will take 30-60 seconds)...');
         const syncResponse = await axios.post(`${baseURL}/api/generate-image`, syncPayload, {
-          timeout: config.baseTimeoutSeconds // 2 minute timeout
+          timeout: baseTimeoutMilliseconds // 2 minute timeout
         });
 
         if (syncResponse.data.success) {

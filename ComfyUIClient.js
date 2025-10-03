@@ -207,7 +207,7 @@ class ComfyUIClient {
       console.log(`🔍 Testing ComfyUI connection to ${this.baseURL}...`);
 
       const response = await axios.get(`${this.baseURL}/queue`, {
-        timeout: config.baseTimeoutSeconds
+        timeout: baseTimeoutMilliseconds
       });
 
       console.log(`✅ ComfyUI server is reachable`);

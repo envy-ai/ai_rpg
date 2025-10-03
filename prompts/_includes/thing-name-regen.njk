@@ -1,15 +1,17 @@
 Here's the full list of items in the game:
-{% for name in allThingNames %}{{ name }}|{% endfor %}
+{% for name in allThingNames %}{{ name }}
+{% endfor %}
 
 Here is a list of items that have duplicate names:
 <itemsToRegenerateName>
 {% for item in itemsToRegenerateName %}- {{ item.name }}
 <item>
+  <id>{{ item.id }}</id>
   <name>{{ item.name }}</name>
   <description>{{ item.description }}</description>
 </item>
 {% endfor %}
-</items>
+</itemsToRegenerateName>
 
 {% if bannedWords %}
 Banned words:
@@ -17,14 +19,13 @@ Banned words:
 {% endfor %}
 {% endif %}
 
-Give each item a different name that fits the setting and culture of the location and region{% if bannedWords %}, and does not use any of the banned words{% endif %}. The ITEM name should be unique among all items in the game. Replace their name in the description as well, if ite appears there. Return them in this format:
+Give each item in the itemsToRegenerateName list a different name that fits the setting and culture of the location and region{% if bannedWords %}, and does not use any of the banned words{% endif %}. The ITEM name should be unique among all items in the game. Replace their name in the description as well, if ite appears there. Return them in this format:
 <items>
   <item>
     <oldName>original item name</oldName>
     <name>new item name</name>
-    <description>description</description>
   </item>
   <item>
-    ... the rest of the items ...
+    ... the rest of the items, if more than one ...
   </item>
 </items>

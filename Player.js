@@ -55,7 +55,9 @@ class Player {
     static #levelUpHandler = null;
     static #needBarDefinitions = null;
     static #NEED_BAR_SMALL_FRACTION = 0.1;
+    static #NEED_BAR_MEDIUM_FRACTION = 0.175;
     static #NEED_BAR_LARGE_FRACTION = 0.25;
+    static #needBarMagnitudeValues;
 
     static availableSkills = new Map();
     static #gearSlotDefinitions = null;
@@ -91,6 +93,53 @@ class Player {
         }
 
         return items;
+    }
+
+    static #normalizeNeedMagnitudeKey(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        const normalized = String(value).trim().toLowerCase();
+        if (!normalized) {
+            return null;
+        }
+        if (['small', 'minor', 'light', 'tiny'].includes(normalized)) {
+            return 'small';
+        }
+        if (['medium', 'moderate', 'average', 'standard', 'normal'].includes(normalized)) {
+            return 'medium';
+        }
+        if (['large', 'major', 'big', 'heavy', 'huge'].includes(normalized)) {
+            return 'large';
+        }
+        if (['all', 'fill', 'full', 'max', 'maximum', 'complete'].includes(normalized)) {
+            return 'all';
+        }
+        return normalized;
+    }
+
+    static #normalizeNeedValueMap(source) {
+        if (!source || typeof source !== 'object') {
+            return null;
+        }
+
+        const entries = {};
+        for (const [rawKey, rawValue] of Object.entries(source)) {
+            if (!rawKey) {
+                continue;
+            }
+            const key = this.#normalizeNeedMagnitudeKey(rawKey);
+            if (!key || key === 'all') {
+                continue;
+            }
+            const numeric = Number(rawValue);
+            if (!Number.isFinite(numeric) || numeric <= 0) {
+                continue;
+            }
+            entries[key] = Math.round(numeric);
+        }
+
+        return Object.keys(entries).length ? Object.freeze(entries) : null;
     }
 
     static #buildNeedBarDefinition(id, config = {}) {
@@ -420,6 +469,7 @@ class Player {
                 const raw = fs.readFileSync(needBarsPath, 'utf8');
                 const data = yaml.load(raw) || {};
                 const source = typeof data.need_bars === 'object' && data.need_bars !== null ? data.need_bars : {};
+                this.#needBarMagnitudeValues = this.#normalizeNeedValueMap(data.need_values);
                 const normalized = {};
                 for (const [id, config] of Object.entries(source)) {
                     if (!id) {
@@ -439,6 +489,7 @@ class Player {
             } catch (error) {
                 console.warn('Failed to load need bar definitions:', error?.message || error);
                 this.#needBarDefinitions = {};
+                this.#needBarMagnitudeValues = null;
             }
         }
         return this.#needBarDefinitions;
@@ -446,6 +497,16 @@ class Player {
 
     static get needBars() {
         return this.needBarDefinitions;
+    }
+
+    static get needBarMagnitudeValues() {
+        if (this.#needBarMagnitudeValues === undefined) {
+            this.needBarDefinitions;
+            if (this.#needBarMagnitudeValues === undefined) {
+                this.#needBarMagnitudeValues = null;
+            }
+        }
+        return this.#needBarMagnitudeValues;
     }
 
     static getNeedBarDefinitionsForContext() {
@@ -2224,9 +2285,17 @@ class Player {
             return 0;
         }
 
-        const magnitudeNormalized = typeof magnitude === 'string' ? magnitude.trim().toLowerCase() : '';
-        if (!magnitudeNormalized) {
+        const magnitudeKey = this.#normalizeNeedMagnitudeKey(magnitude);
+        if (!magnitudeKey || magnitudeKey === 'all') {
             return 0;
+        }
+
+        const configuredMap = this.needBarMagnitudeValues;
+        if (configuredMap && Object.prototype.hasOwnProperty.call(configuredMap, magnitudeKey)) {
+            const configuredValue = configuredMap[magnitudeKey];
+            if (Number.isFinite(configuredValue) && configuredValue > 0) {
+                return Math.max(1, Math.round(configuredValue));
+            }
         }
 
         const range = (Number.isFinite(bar.max) && Number.isFinite(bar.min))
@@ -2240,18 +2309,15 @@ class Player {
             return Math.max(1, Math.round(range * fraction));
         };
 
-        switch (magnitudeNormalized) {
+        switch (magnitudeKey) {
             case 'small':
-            case 'minor':
-            case 'light':
                 return resolveAmount(this.#NEED_BAR_SMALL_FRACTION);
+            case 'medium':
+                return resolveAmount(this.#NEED_BAR_MEDIUM_FRACTION);
             case 'large':
-            case 'major':
-            case 'big':
-            case 'heavy':
                 return resolveAmount(this.#NEED_BAR_LARGE_FRACTION);
             default:
-                return 0;
+                return resolveAmount(this.#NEED_BAR_SMALL_FRACTION);
         }
     }
 
@@ -2277,19 +2343,7 @@ class Player {
             direction = 'increase';
         }
 
-        const magnitudeRaw = typeof options.magnitude === 'string' ? options.magnitude.trim().toLowerCase() : '';
-        let magnitude = null;
-        if (['small', 'minor', 'light'].includes(magnitudeRaw)) {
-            magnitude = 'small';
-        } else if (['large', 'major', 'big', 'heavy'].includes(magnitudeRaw)) {
-            magnitude = 'large';
-        } else if (['all', 'fill', 'full', 'max', 'maximum'].includes(magnitudeRaw)) {
-            magnitude = 'all';
-        } else if (magnitudeRaw) {
-            magnitude = magnitudeRaw;
-        } else {
-            magnitude = 'small';
-        }
+        const magnitude = Player.#normalizeNeedMagnitudeKey(options.magnitude) || 'small';
 
         const sanitizeReason = (reason) => {
             if (!reason || typeof reason !== 'string') {

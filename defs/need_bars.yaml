@@ -1,3 +1,8 @@
+need_values:
+  small: 10
+  medium: 25
+  large: 70
+  all: 100
 need_bars:
   food:
     name: Food
@@ -12,15 +17,13 @@ need_bars:
     change_per_turn: -1
     relative_to_level: false
     small_increase:
-      - light meal
       - snack
-      - foraged food
+    medium_increase:
+      - light meal
     large_increase:
-      - hearty meal
-      - feast
-      - well-prepared food
+      - hearty meal, large meal
     fill_completely:
-      - large meal
+      - feast
     small_decrease:
       - light activity
     large_decrease:

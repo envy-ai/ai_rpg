@@ -1051,7 +1051,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: (config.ai.baseTimeoutSeconds ? config.ai.baseTimeoutSeconds * 1000 : 60000)
+                    timeout: (config.ai.baseTimeoutMilliseconds ? config.ai.baseTimeoutMilliseconds * 1000 : 60000)
                 });
                 const durationSeconds = (Date.now() - start) / 1000;
 
@@ -1500,7 +1500,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const attackResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -2343,38 +2343,38 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-        const trimmed = responseText.trim();
-        if (!trimmed) {
-            return [];
-        }
+            const trimmed = responseText.trim();
+            if (!trimmed) {
+                return [];
+            }
 
-        let doc;
-        try {
-            const parser = new DOMParser({
-                errorHandler: {
-                    warning: () => { },
-                    error: () => { },
-                    fatalError: () => { }
-                }
-            });
-            doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
-        } catch (_) {
-            return [];
-        }
+            let doc;
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+            } catch (_) {
+                return [];
+            }
 
-        if (!doc || doc.getElementsByTagName('parsererror')?.length) {
-            return [];
-        }
+            if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                return [];
+            }
 
-        const root = doc.documentElement;
-        if (!root || root.tagName?.toLowerCase() !== 'npcs') {
-            return [];
-        }
+            const root = doc.documentElement;
+            if (!root || root.tagName?.toLowerCase() !== 'npcs') {
+                return [];
+            }
 
-        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
-        if (!npcNodes.length) {
-            return [];
-        }
+            const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+            if (!npcNodes.length) {
+                return [];
+            }
 
             const seen = new Set();
             const names = [];
@@ -2454,7 +2454,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -2681,7 +2681,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -2908,7 +2908,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3010,7 +3010,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3949,7 +3949,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds // 60 second timeout
+                    timeout: baseTimeoutMilliseconds // 60 second timeout
                 });
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
@@ -8719,7 +8719,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds
+                    timeout: baseTimeoutMilliseconds
                 });
 
                 const aiMessage = aiResponse?.data?.choices?.[0]?.message?.content;
@@ -10083,7 +10083,7 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: config.baseTimeoutSeconds // 30 second timeout for test
+                    timeout: baseTimeoutMilliseconds // 30 second timeout for test
                 });
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {

@@ -104,9 +104,9 @@ dispositions:
       0: neutral
       1: mildly interested (+1 to relevant circumstance modifier)
       20: interested (+2 to relevant circumstance modifier)
-      40: aroused (+4 to relevant circumstance modifier)
-      80: horny to point of distraction (+7 to relevant circumstance modifier)
-      120: obsessive lust overriding all reason (+10 to relevant circumstance modifier)
+      40: willing (+4 to relevant circumstance modifier)
+      80: desirous (+7 to relevant circumstance modifier)
+      120: lustful (+10 to relevant circumstance modifier)
   respect:
     description: Represents a character's level of admiration or esteem for the player character.
     move_up:

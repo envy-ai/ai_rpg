@@ -26,7 +26,7 @@ async function testImageGeneration() {
 
     try {
       const generateResponse = await axios.post(`${baseURL}/api/generate-image`, testPayload, {
-        timeout: config.baseTimeoutSeconds // 2 minute timeout for image generation
+        timeout: baseTimeoutMilliseconds // 2 minute timeout for image generation
       });
 
       if (generateResponse.data.success) {
