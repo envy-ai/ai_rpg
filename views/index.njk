@@ -2402,6 +2402,89 @@
             return result;
         }
 
+        async function moveThingToNpcInventory(thing, npcId, { locationId = null } = {}) {
+            if (!thing || !thing.id) {
+                throw new Error('Missing item information.');
+            }
+            if (!npcId) {
+                throw new Error('NPC identifier is required.');
+            }
+
+            const payload = {
+                ownerId: npcId,
+                ownerType: 'npc'
+            };
+            if (locationId) {
+                payload.locationId = locationId;
+            }
+
+            const response = await fetch(`/api/things/${encodeURIComponent(thing.id)}/give`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            const ownerData = result.owner || null;
+            if (ownerData && window.currentNpcData instanceof Map) {
+                window.currentNpcData.set(ownerData.id, ownerData);
+            }
+
+            const updatedThing = result.thing || thing;
+            thingDataCache.set(updatedThing.id, updatedThing);
+
+            if (window.lastRenderedLocation) {
+                if (Array.isArray(window.lastRenderedLocation.things)) {
+                    window.lastRenderedLocation.things = window.lastRenderedLocation.things.filter(entry => entry && entry.id !== thing.id);
+                }
+                if (Array.isArray(window.lastRenderedLocation.thingIds)) {
+                    window.lastRenderedLocation.thingIds = window.lastRenderedLocation.thingIds.filter(id => id !== thing.id);
+                }
+            }
+
+            if (ownerData && currentNpcInventoryNpcId && ownerData.id === currentNpcInventoryNpcId) {
+                const updatedInventory = Array.isArray(ownerData.inventory) ? ownerData.inventory : [];
+                currentNpcInventory = updatedInventory;
+                renderNpcInventory(updatedInventory);
+            }
+
+            if (ownerData && currentNpcViewId && ownerData.id === currentNpcViewId && typeof showNpcViewModal === 'function') {
+                showNpcViewModal(ownerData);
+            }
+
+            if (locationId && window.lastRenderedLocation && (window.lastRenderedLocation.id === locationId)) {
+                try {
+                    if (result.location) {
+                        await window.updateLocationDisplay?.(result.location);
+                        window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                    } else {
+                        await window.loadCurrentLocation?.();
+                    }
+                } catch (error) {
+                    console.warn('Failed to update location after moving item to NPC inventory:', error);
+                }
+            } else if (result.location && result.location.id && window.lastRenderedLocation && window.lastRenderedLocation.id === result.location.id) {
+                try {
+                    await window.updateLocationDisplay?.(result.location);
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
+                } catch (error) {
+                    console.warn('Failed to refresh location after moving item to NPC inventory:', error);
+                }
+            }
+
+            try {
+                await window.refreshParty?.();
+            } catch (partyError) {
+                console.warn('Failed to refresh party after moving item to NPC inventory:', partyError);
+            }
+
+            return result;
+        }
+
         function registerThingContextMenu(card, thing, options = {}) {
             if (!card || !thing || !thing.id) {
                 return;
@@ -2462,6 +2545,16 @@
                 dropButton.className = 'thing-card-menu-item';
                 dropButton.textContent = 'Drop';
                 menu.appendChild(dropButton);
+            }
+
+            const canPickup = options.context === 'location';
+            let pickupButton = null;
+            if (canPickup) {
+                pickupButton = document.createElement('button');
+                pickupButton.type = 'button';
+                pickupButton.className = 'thing-card-menu-item';
+                pickupButton.textContent = 'Put in Inventory';
+                menu.appendChild(pickupButton);
             }
 
             const allowDeletion = Boolean(options.allowDelete ?? true);
@@ -2644,6 +2737,162 @@
                         alert(`Failed to drop item: ${error?.message || error}`);
                     } finally {
                         dropButton.disabled = false;
+                    }
+                });
+            }
+
+            if (pickupButton) {
+                pickupButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+
+                    try {
+                        const fetchNpcOptions = async () => {
+                            const options = [];
+                            const seenIds = new Set();
+
+                            const pushEntry = (entry) => {
+                                if (!entry || !entry.id || !entry.name) {
+                                    return;
+                                }
+
+                                const trimmedName = entry.name.trim();
+                                if (!trimmedName || seenIds.has(entry.id)) {
+                                    return;
+                                }
+
+                                seenIds.add(entry.id);
+                                options.push({ id: entry.id, name: trimmedName });
+                            };
+
+                            // Always include the current player
+                            if (window.currentPlayerData && window.currentPlayerData.id && window.currentPlayerData.name) {
+                                pushEntry(window.currentPlayerData);
+                            }
+
+                            // Include cached NPCs
+                            if (window.currentNpcData instanceof Map) {
+                                window.currentNpcData.forEach(pushEntry);
+                            }
+
+                            try {
+                                const response = await fetch('/api/players');
+                                const data = await response.json().catch(() => ({}));
+                                if (response.ok && data?.success && Array.isArray(data.players)) {
+                                    data.players
+                                        .filter(entry => entry && entry.id && entry.name && entry.isNPC)
+                                        .forEach(pushEntry);
+                                }
+                            } catch (fetchError) {
+                                console.warn('Failed to fetch NPC list:', fetchError);
+                            }
+
+                            return options;
+                        };
+
+                        const npcOptions = await fetchNpcOptions();
+
+                        if (!npcOptions.length) {
+                            alert('No NPCs are available to receive this item.');
+                            return;
+                        }
+
+                        const sortedNpcList = npcOptions.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+                        const modal = document.createElement('div');
+                        modal.className = 'npc-selection-modal';
+
+                        const backdrop = document.createElement('div');
+                        backdrop.className = 'npc-selection-backdrop';
+
+                        const dialog = document.createElement('div');
+                        dialog.className = 'npc-selection-dialog';
+
+                        const header = document.createElement('div');
+                        header.className = 'npc-selection-header';
+                        const title = document.createElement('h2');
+                        title.textContent = 'Select Person';
+                        header.appendChild(title);
+
+                        const closeBtn = document.createElement('button');
+                        closeBtn.type = 'button';
+                        closeBtn.className = 'npc-selection-close';
+                        closeBtn.textContent = '🗙';
+                        closeBtn.setAttribute('aria-label', 'Close');
+                        header.appendChild(closeBtn);
+
+                        const body = document.createElement('div');
+                        body.className = 'npc-selection-body';
+
+                        const list = document.createElement('ul');
+                        list.className = 'npc-selection-list';
+                        sortedNpcList.forEach(entry => {
+                            const itemButton = document.createElement('button');
+                            itemButton.type = 'button';
+                            itemButton.className = 'npc-selection-item';
+                            itemButton.textContent = entry.name;
+                            itemButton.dataset.npcId = entry.id;
+
+                            const itemLi = document.createElement('li');
+                            itemLi.appendChild(itemButton);
+                            list.appendChild(itemLi);
+                        });
+                        body.appendChild(list);
+
+                        const footer = document.createElement('div');
+                        footer.className = 'npc-selection-footer';
+                        const cancelBtn = document.createElement('button');
+                        cancelBtn.type = 'button';
+                        cancelBtn.className = 'npc-selection-cancel';
+                        cancelBtn.textContent = 'Cancel';
+                        footer.appendChild(cancelBtn);
+
+                        dialog.appendChild(header);
+                        dialog.appendChild(body);
+                        dialog.appendChild(footer);
+                        modal.appendChild(backdrop);
+                        modal.appendChild(dialog);
+                        document.body.appendChild(modal);
+                        document.body.classList.add('modal-open');
+
+                        const cleanup = () => {
+                            document.body.classList.remove('modal-open');
+                            modal.remove();
+                        };
+
+                        const handleSelection = async (npcId) => {
+                            if (!npcId) {
+                                return;
+                            }
+                            try {
+                                pickupButton.disabled = true;
+                                await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, npcId, {
+                                    locationId: options.locationId || (window.lastRenderedLocation?.id || null)
+                                });
+                            } catch (error) {
+                                console.warn('Failed to move item into inventory:', error);
+                                alert(`Failed to move item: ${error?.message || error}`);
+                            } finally {
+                                pickupButton.disabled = false;
+                                cleanup();
+                            }
+                        };
+
+                        closeBtn.addEventListener('click', cleanup);
+                        cancelBtn.addEventListener('click', cleanup);
+                        backdrop.addEventListener('click', cleanup);
+                        list.addEventListener('click', (ev) => {
+                            if (!(ev.target instanceof HTMLButtonElement)) {
+                                return;
+                            }
+                            const targetId = ev.target.dataset.npcId || null;
+                            if (targetId) {
+                                handleSelection(targetId);
+                            }
+                        });
+                    } catch (error) {
+                        console.warn('Failed to prepare NPC selection modal:', error);
+                        alert(`Unable to show NPC selection: ${error?.message || error}`);
                     }
                 });
             }

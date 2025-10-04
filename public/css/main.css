@@ -69,6 +69,121 @@ p:not(:last-child) {
   text-align: center;
 }
 
+.npc-selection-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3500;
+}
+
+.npc-selection-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 24, 0.6);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.npc-selection-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 90vw);
+  max-height: min(520px, 80vh);
+  background: rgba(18, 22, 40, 0.96);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.npc-selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.npc-selection-header h2 {
+  font-size: 1.1rem;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.npc-selection-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.npc-selection-body {
+  padding: 16px 22px 8px;
+  overflow-y: auto;
+}
+
+.npc-selection-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.npc-selection-item {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.npc-selection-item:hover, .npc-selection-item:focus {
+  border-color: rgba(102, 126, 234, 0.45);
+  background: rgba(102, 126, 234, 0.18);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.npc-selection-footer {
+  padding: 16px 22px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.npc-selection-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.npc-selection-cancel:hover, .npc-selection-cancel:focus {
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+.npc-selection-body::-webkit-scrollbar {
+  width: 8px;
+}
+.npc-selection-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
+
 .image-lightbox {
   position: fixed;
   inset: 0;
