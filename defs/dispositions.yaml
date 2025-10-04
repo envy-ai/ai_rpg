@@ -1,8 +1,8 @@
-first_impression_multiplier: 3.0
+first_impression_multiplier: 6
 range:
   min: -200
   max: 200
-  typical_step: 5
+  typical_step: 1
   typical_big_step: 50
 dispositions:
   platonic:
