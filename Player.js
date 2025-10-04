@@ -49,6 +49,7 @@ class Player {
     #isHostile;
     #isDead;
     #corpseCountdown;
+    #importantMemories = [];
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
 
     static #npcInventoryChangeHandler = null;
@@ -1427,6 +1428,26 @@ class Player {
             this.#applyHostileDispositionsToCurrentPlayer();
         }
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    get importantMemories() {
+        return Array.from(this.#importantMemories);
+    }
+
+    addImportantMemory(memory) {
+        if (typeof memory !== 'string' || !memory.trim()) {
+            return false;
+        }
+
+        // Don't add duplicates
+        if (this.#importantMemories.has(memory.trim())) {
+            return false;
+        }
+
+        const trimmed = memory.trim();
+        this.#importantMemories.add(trimmed);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
     }
 
     get corpseCountdown() {

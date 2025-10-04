@@ -128,6 +128,31 @@ p:not(:last-child) {
   overflow-y: auto;
 }
 
+.npc-selection-filter {
+  margin-bottom: 14px;
+}
+
+.npc-selection-filter-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+}
+.npc-selection-filter-input::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.npc-selection-filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.npc-selection-filter-input:focus {
+  outline: none;
+  border-color: rgba(102, 126, 234, 0.45);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+}
+
 .npc-selection-list {
   list-style: none;
   display: flex;

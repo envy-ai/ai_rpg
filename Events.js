@@ -1385,18 +1385,25 @@ class Events {
                 continue;
             }
 
+            const entryNewName = typeof entry.newName === 'string' ? entry.newName.trim() : '';
+
+            if (entryNewName && entryNewName.trim().toLowerCase().startsWith('n/a')) {
+                console.warn(`Alter item entry has newName starting with 'N/A'; skipping.`);
+                continue;
+            }
+
             let targetThing = null;
             if (entry.originalName) {
                 targetThing = findThingByName(entry.originalName);
             }
-            if (!targetThing && entry.newName) {
-                targetThing = findThingByName(entry.newName);
+            if (!targetThing && entryNewName) {
+                targetThing = findThingByName(entryNewName);
             }
 
-            const fallbackName = entry.originalName || entry.newName || 'Unknown Item';
+            const fallbackName = entry.originalName || entryNewName || 'Unknown Item';
             const promptThing = this.buildThingPromptSnapshot(targetThing, { fallbackName });
-            const seedName = entry.newName && entry.newName.trim()
-                ? entry.newName.trim()
+            const seedName = entryNewName
+                ? entryNewName
                 : (promptThing.name || fallbackName);
 
             const promptPayload = {
@@ -1466,8 +1473,14 @@ class Events {
             }
 
             const parsedItem = this.parseThingAlterXml(aiContent);
-            if (!parsedItem || !parsedItem.name) {
+            const parsedName = parsedItem?.name ? String(parsedItem.name).trim() : '';
+            if (!parsedItem || !parsedName) {
                 console.warn(`Failed to parse alteration response for ${seedName}.`);
+                continue;
+            }
+
+            if (parsedName.toLowerCase() === 'n/a') {
+                console.warn(`Alter item response returned name 'N/A' for ${seedName}; skipping.`);
                 continue;
             }
 
@@ -4033,9 +4046,7 @@ class Events {
                     model,
                     messages,
                     max_tokens: parsedTemplate.maxTokens || 400,
-                    temperature: typeof parsedTemplate.temperature === 'number'
-                        ? parsedTemplate.temperature
-                        : 0.3
+                    temperature: 0,
                 };
 
                 const response = await axios.post(chatEndpoint, requestData, {

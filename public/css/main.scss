@@ -137,6 +137,30 @@ p:not(:last-child) {
   overflow-y: auto;
 }
 
+.npc-selection-filter {
+  margin-bottom: 14px;
+}
+
+.npc-selection-filter-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: $white-90;
+  font-size: 0.95rem;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: rgba(102, 126, 234, 0.45);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+  }
+}
+
 .npc-selection-list {
   list-style: none;
   display: flex;

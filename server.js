@@ -11391,8 +11391,8 @@ async function generateRegionFromPrompt(options = {}) {
 }
 
 // Middleware
-app.use(bodyParser.json({ limit: '1mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
+app.use(bodyParser.json({ limit: '20mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '20mb' }));
 app.use(express.static('public'));
 
 // Route for AI RPG Chat Interface

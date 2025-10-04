@@ -6272,6 +6272,81 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== PLAYER AND LOCATION QUERY ENDPOINTS ====================
 
+        // Get all named locations (summary list)
+        app.get('/api/locations', (req, res) => {
+            try {
+                const scope = typeof req.query?.scope === 'string' ? req.query.scope.trim().toLowerCase() : null;
+                const includeNamedOnly = !scope || scope === 'named' || scope === 'names';
+
+                if (!(gameLocations instanceof Map) || gameLocations.size === 0) {
+                    return res.json({
+                        success: true,
+                        locations: []
+                    });
+                }
+
+                const summaries = [];
+                const seenIds = new Set();
+
+                const resolveRegionName = (regionId) => {
+                    if (!regionId || !(regions instanceof Map)) {
+                        return null;
+                    }
+                    const region = regions.get(regionId);
+                    if (!region) {
+                        return null;
+                    }
+                    const rawName = typeof region.name === 'string' ? region.name.trim() : '';
+                    return rawName || null;
+                };
+
+                const pushLocation = (location) => {
+                    if (!location || !location.id || seenIds.has(location.id)) {
+                        return;
+                    }
+
+                    const rawName = typeof location.name === 'string' ? location.name.trim() : '';
+                    if (includeNamedOnly && !rawName) {
+                        return;
+                    }
+
+                    const regionId = location.regionId || location.stubMetadata?.regionId || null;
+                    const regionName = resolveRegionName(regionId) || 'Unknown Region';
+                    const label = rawName ? `[${regionName}]: ${rawName}` : `[${regionName}]`;
+
+                    summaries.push({
+                        id: location.id,
+                        name: rawName,
+                        regionId,
+                        regionName,
+                        label
+                    });
+                    seenIds.add(location.id);
+                };
+
+                for (const location of gameLocations.values()) {
+                    pushLocation(location);
+                }
+
+                summaries.sort((a, b) => {
+                    const labelA = typeof a.label === 'string' ? a.label.toLowerCase() : '';
+                    const labelB = typeof b.label === 'string' ? b.label.toLowerCase() : '';
+                    return labelA.localeCompare(labelB);
+                });
+
+                res.json({
+                    success: true,
+                    locations: summaries
+                });
+            } catch (error) {
+                console.error('Failed to list locations:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list locations'
+                });
+            }
+        });
+
         // Get location by ID
         app.get('/api/locations/:id', async (req, res) => {
             try {
@@ -8152,6 +8227,353 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(400).json({
                     success: false,
                     error: error.message
+                });
+            }
+        });
+
+        app.post('/api/things/:id/give', (req, res) => {
+            try {
+                const rawThingId = req.params.id;
+                const thingId = typeof rawThingId === 'string' ? rawThingId.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Thing ID is required'
+                    });
+                }
+
+                const thing = things.get(thingId) || Thing.getById(thingId);
+                if (!thing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Thing with ID '${thingId}' not found`
+                    });
+                }
+
+                if (thing.thingType && thing.thingType !== 'item') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Only item-type things can be moved into an inventory.'
+                    });
+                }
+
+                const payload = req.body && typeof req.body === 'object' ? req.body : {};
+
+                const normalizeText = (value) => {
+                    if (typeof value !== 'string') {
+                        return null;
+                    }
+                    const trimmed = value.trim();
+                    return trimmed || null;
+                };
+
+                const ownerId = normalizeText(payload.ownerId);
+                const ownerType = normalizeText(payload.ownerType);
+                const requestedLocationId = normalizeText(payload.locationId);
+
+                if (!ownerId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'ownerId is required'
+                    });
+                }
+
+                const resolveOwnerById = (candidateId) => {
+                    if (!candidateId) {
+                        return null;
+                    }
+                    if (players instanceof Map && players.has(candidateId)) {
+                        return players.get(candidateId);
+                    }
+                    if (currentPlayer && currentPlayer.id === candidateId) {
+                        return currentPlayer;
+                    }
+                    return null;
+                };
+
+                let owner = resolveOwnerById(ownerId);
+                if (!owner && ownerType === 'player' && currentPlayer && currentPlayer.id) {
+                    owner = currentPlayer.id === ownerId ? currentPlayer : owner;
+                }
+
+                if (!owner) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Owner '${ownerId}' not found`
+                    });
+                }
+
+                if (typeof owner.addInventoryItem !== 'function' || typeof owner.hasInventoryItem !== 'function') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Target owner cannot hold inventory items.'
+                    });
+                }
+
+                const resolveLocationById = (targetId) => {
+                    if (!targetId) {
+                        return null;
+                    }
+                    let location = null;
+                    if (typeof Location?.get === 'function') {
+                        try {
+                            location = Location.get(targetId);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+                    if (!location && gameLocations instanceof Map) {
+                        location = gameLocations.get(targetId) || null;
+                    }
+                    return location;
+                };
+
+                const previousMetadata = thing.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
+                const previousOwnerId = normalizeText(previousMetadata.ownerId || previousMetadata.ownerID || previousMetadata.owner);
+                const previousLocationId = normalizeText(previousMetadata.locationId || previousMetadata.locationID);
+
+                if (previousOwnerId && previousOwnerId !== owner.id) {
+                    const previousOwner = resolveOwnerById(previousOwnerId);
+                    if (previousOwner && typeof previousOwner.removeInventoryItem === 'function') {
+                        previousOwner.removeInventoryItem(thing.id);
+                    }
+                }
+
+                const candidateLocationIds = new Set();
+                if (requestedLocationId) {
+                    candidateLocationIds.add(requestedLocationId);
+                }
+                if (previousLocationId) {
+                    candidateLocationIds.add(previousLocationId);
+                }
+
+                const touchedLocations = [];
+                const removeThingFromLocation = (location) => {
+                    if (!location) {
+                        return false;
+                    }
+                    let changed = false;
+                    if (typeof location.removeThingId === 'function') {
+                        changed = location.removeThingId(thing.id) || changed;
+                    }
+                    if (!changed && Array.isArray(location.thingIds) && location.thingIds.includes(thing.id)) {
+                        location.thingIds = location.thingIds.filter(id => id !== thing.id);
+                        changed = true;
+                    }
+                    if (changed) {
+                        touchedLocations.push(location);
+                        if (gameLocations instanceof Map && location.id) {
+                            gameLocations.set(location.id, location);
+                        }
+                    }
+                    return changed;
+                };
+
+                let ensuredLocationRemoval = false;
+                for (const locationId of candidateLocationIds) {
+                    const location = resolveLocationById(locationId);
+                    const changed = removeThingFromLocation(location);
+                    ensuredLocationRemoval = ensuredLocationRemoval || changed;
+                }
+
+                if (requestedLocationId && !ensuredLocationRemoval) {
+                    return res.status(409).json({
+                        success: false,
+                        error: `Thing '${thingId}' was not present in location '${requestedLocationId}'.`
+                    });
+                }
+
+                owner.addInventoryItem(thing);
+
+                if (!owner.hasInventoryItem(thing.id)) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to move item into inventory.'
+                    });
+                }
+
+                const updatedMetadata = { ...previousMetadata };
+                updatedMetadata.ownerId = owner.id;
+                delete updatedMetadata.owner;
+                delete updatedMetadata.ownerID;
+                delete updatedMetadata.locationId;
+                delete updatedMetadata.locationID;
+                thing.metadata = updatedMetadata;
+
+                if (things instanceof Map) {
+                    things.set(thing.id, thing);
+                }
+
+                let locationPayload = null;
+                if (touchedLocations.length) {
+                    const mostRecent = touchedLocations[touchedLocations.length - 1];
+                    if (typeof buildLocationResponse === 'function') {
+                        locationPayload = buildLocationResponse(mostRecent);
+                    }
+                }
+
+                const responsePayload = {
+                    success: true,
+                    thing: typeof thing.toJSON === 'function' ? thing.toJSON() : { id: thing.id },
+                    owner: serializeNpcForClient(owner),
+                    location: locationPayload,
+                    message: `${thing.name || 'Item'} moved to inventory.`
+                };
+
+                res.json(responsePayload);
+            } catch (error) {
+                console.error('Failed to move thing into inventory:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to move item into inventory'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/teleport', (req, res) => {
+            try {
+                const { id } = req.params;
+                const thingId = typeof id === 'string' ? id.trim() : '';
+                if (!thingId) {
+                    return res.status(400).json({ success: false, error: 'Thing ID is required' });
+                }
+
+                const thing = things.get(thingId) || Thing.getById(thingId);
+                if (!thing) {
+                    return res.status(404).json({ success: false, error: 'Thing not found' });
+                }
+
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
+                if (!rawLocationId) {
+                    return res.status(400).json({ success: false, error: 'Destination locationId is required' });
+                }
+
+                const resolveLocationById = (targetId) => {
+                    if (!targetId) {
+                        return null;
+                    }
+                    let location = null;
+                    if (typeof Location?.get === 'function') {
+                        try {
+                            location = Location.get(targetId);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+                    if (!location && gameLocations instanceof Map) {
+                        location = gameLocations.get(targetId) || null;
+                    }
+                    return location;
+                };
+
+                const destinationLocation = resolveLocationById(rawLocationId);
+                if (!destinationLocation) {
+                    return res.status(404).json({ success: false, error: `Destination location '${rawLocationId}' not found` });
+                }
+
+                const previousMetadata = thing.metadata || {};
+                const previousLocationId = typeof previousMetadata.locationId === 'string' ? previousMetadata.locationId.trim() : null;
+                const previousLocation = previousLocationId ? resolveLocationById(previousLocationId) : null;
+
+                const affectedOwnerIds = new Set();
+                const removeFromActor = (actor) => {
+                    if (!actor || typeof actor.removeInventoryItem !== 'function') {
+                        return;
+                    }
+                    let removed = false;
+                    try {
+                        removed = actor.removeInventoryItem(thing.id, { suppressNpcEquip: Boolean(actor.isNPC) });
+                    } catch (error) {
+                        console.warn('Failed to remove item from actor inventory:', error?.message || error);
+                    }
+                    if (removed && typeof actor.unequipItemId === 'function') {
+                        try {
+                            actor.unequipItemId(thing.id, { suppressTimestamp: true });
+                        } catch (_) {
+                            /* ignore */
+                        }
+                    }
+                    if (removed && actor.id) {
+                        affectedOwnerIds.add(actor.id);
+                    }
+                };
+
+                if (players instanceof Map) {
+                    for (const actor of players.values()) {
+                        removeFromActor(actor);
+                    }
+                }
+                if (currentPlayer && (!players || !players.has?.(currentPlayer.id))) {
+                    removeFromActor(currentPlayer);
+                }
+
+                if (previousLocation && typeof previousLocation.removeThingId === 'function') {
+                    try {
+                        previousLocation.removeThingId(thing.id);
+                    } catch (error) {
+                        console.warn('Failed to detach thing from previous location:', error?.message || error);
+                    }
+                    if (gameLocations instanceof Map) {
+                        gameLocations.set(previousLocation.id, previousLocation);
+                    }
+                }
+
+                if (typeof destinationLocation.addThingId === 'function') {
+                    destinationLocation.addThingId(thing.id);
+                }
+                if (gameLocations instanceof Map) {
+                    gameLocations.set(destinationLocation.id, destinationLocation);
+                }
+
+                const updatedMetadata = { ...previousMetadata };
+                delete updatedMetadata.owner;
+                delete updatedMetadata.ownerId;
+                delete updatedMetadata.ownerID;
+                updatedMetadata.locationId = destinationLocation.id;
+                thing.metadata = updatedMetadata;
+
+                if (things instanceof Map) {
+                    things.set(thing.id, thing);
+                }
+
+                let previousLocationPayload = null;
+                if (previousLocation && typeof buildLocationResponse === 'function') {
+                    try {
+                        previousLocationPayload = buildLocationResponse(previousLocation);
+                    } catch (error) {
+                        console.warn('Failed to serialize previous location after teleport:', error?.message || error);
+                    }
+                }
+
+                let destinationPayload = null;
+                if (typeof buildLocationResponse === 'function') {
+                    try {
+                        destinationPayload = buildLocationResponse(destinationLocation);
+                    } catch (error) {
+                        console.warn('Failed to serialize destination location after teleport:', error?.message || error);
+                    }
+                }
+
+                const responsePayload = {
+                    success: true,
+                    thing: typeof thing.toJSON === 'function' ? thing.toJSON() : { id: thing.id },
+                    destination: destinationPayload,
+                    previousLocation: previousLocationPayload,
+                    removedOwnerIds: Array.from(affectedOwnerIds),
+                    locationIds: Array.from(new Set([
+                        destinationLocation.id,
+                        previousLocation?.id || null
+                    ].filter(Boolean))),
+                    message: `${thing.name || 'Item'} teleported successfully.`
+                };
+
+                res.json(responsePayload);
+            } catch (error) {
+                console.error('Failed to teleport item:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to teleport item'
                 });
             }
         });
