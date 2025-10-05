@@ -10650,7 +10650,10 @@ module.exports = function registerApiRoutes(scope) {
                 metadata.totalGeneratedImages = generatedImages.size;
                 metadata.totalSkills = skills.size;
 
-                await summarizeChatBacklog(chatHistory);
+                const summaryConfig = getSummaryConfig();
+                if (summaryConfig.summarize_on_load !== false) {
+                    await summarizeChatBacklog(chatHistory);
+                }
 
                 res.json({
                     success: true,

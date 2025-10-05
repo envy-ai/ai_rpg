@@ -17,13 +17,13 @@ need_bars:
     change_per_turn: -1
     relative_to_level: false
     small_increase:
-      - snack
+      - light snack
     medium_increase:
-      - light meal
+      - hearty snack, light meal, small meal
     large_increase:
-      - hearty meal, large meal
+      - a normal meal
     fill_completely:
-      - feast
+      - feast, large meal, hearty meal
     small_decrease:
       - light activity
     large_decrease:

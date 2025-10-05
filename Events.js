@@ -1401,6 +1401,30 @@ class Events {
             }
 
             const fallbackName = entry.originalName || entryNewName || 'Unknown Item';
+
+            if (!targetThing) {
+                try {
+                    const createdThing = await this.createNewThingFromAlterEntry({
+                        entry,
+                        context,
+                        initialLocation: location,
+                        things
+                    });
+                    if (createdThing) {
+                        alteredSummaries.push({
+                            id: createdThing.id,
+                            name: createdThing.name,
+                            thingType: createdThing.thingType,
+                            originalName: entry.originalName || null,
+                            newName: createdThing.name
+                        });
+                    }
+                } catch (creationError) {
+                    console.warn(`Failed to create new item for alter_item entry "${fallbackName}":`, creationError.message);
+                }
+                continue;
+            }
+
             const promptThing = this.buildThingPromptSnapshot(targetThing, { fallbackName });
             const seedName = entryNewName
                 ? entryNewName
@@ -1507,8 +1531,31 @@ class Events {
                     const safeNameSource = seedName || 'item';
                     const safeName = safeNameSource.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
                     const logPath = path.join(logsDir, `alter_item_${Date.now()}_${safeName}.log`);
+                    const requestedName = entryNewName
+                        || (typeof entry.originalName === 'string' ? entry.originalName.trim() : '');
+                    const finalName = typeof summary?.newName === 'string' && summary.newName.trim()
+                        ? summary.newName.trim()
+                        : parsedName;
+                    const nameComparisonLines = [];
+                    if (requestedName) {
+                        nameComparisonLines.push(`Requested item name: ${requestedName}`);
+                    } else {
+                        nameComparisonLines.push('Requested item name: (not provided)');
+                    }
+                    if (finalName) {
+                        nameComparisonLines.push(`Final generated item name: ${finalName}`);
+                        if (requestedName && finalName.toLowerCase() !== requestedName.toLowerCase()) {
+                            nameComparisonLines.push('⚠️ Final name differs from requested event name.');
+                        } else {
+                            nameComparisonLines.push('Final name matches requested event name.');
+                        }
+                    } else {
+                        nameComparisonLines.push('Final generated item name: (missing)');
+                    }
                     const logLines = [
                         `=== API CALL DURATION: ${apiDurationSeconds.toFixed(3)}s ===`,
+                        ...nameComparisonLines,
+                        '',
                         '=== ALTER ITEM SYSTEM PROMPT ===',
                         parsedTemplate.systemPrompt,
                         '',
@@ -1532,6 +1579,102 @@ class Events {
             }
             context.alteredItems.push(...alteredSummaries);
         }
+    }
+
+    static async createNewThingFromAlterEntry({ entry, context, initialLocation, things }) {
+        if (!entry || typeof entry !== 'object') {
+            throw new Error('Alter item entry is required to create a new item.');
+        }
+
+        const rawName = typeof entry.newName === 'string' && entry.newName.trim()
+            ? entry.newName.trim()
+            : (typeof entry.originalName === 'string' ? entry.originalName.trim() : '');
+
+        if (!rawName) {
+            throw new Error('Alter item entry is missing a usable name for item creation.');
+        }
+
+        const description = entry.changeDescription && entry.changeDescription.trim()
+            ? entry.changeDescription.trim()
+            : `An item named ${rawName}.`;
+
+        const ownerCandidate = context?.player && typeof context.player.id === 'string'
+            ? context.player
+            : null;
+
+        let resolvedLocation = this.resolveLocationCandidate(initialLocation);
+        if (!resolvedLocation && ownerCandidate?.currentLocation) {
+            resolvedLocation = this.resolveLocationCandidate(ownerCandidate.currentLocation);
+        }
+        if (!resolvedLocation && context?.location) {
+            resolvedLocation = this.resolveLocationCandidate(context.location);
+        }
+        if (!resolvedLocation && this.currentPlayer?.currentLocation) {
+            resolvedLocation = this.resolveLocationCandidate(this.currentPlayer.currentLocation);
+        }
+
+        const baseLevelReference = this.resolveBaseLevelReference({
+            context,
+            owner: ownerCandidate,
+            location: resolvedLocation,
+            existingThing: null
+        });
+
+        const computedLevel = this.clampLevel(baseLevelReference, baseLevelReference);
+
+        const metadata = {
+            ownerId: ownerCandidate?.id || null,
+            locationId: resolvedLocation?.id && !ownerCandidate ? resolvedLocation.id : null,
+            locationName: resolvedLocation?.name && !ownerCandidate ? resolvedLocation.name : null,
+            level: computedLevel,
+            relativeLevel: 0
+        };
+
+        const sanitizedMetadata = this.sanitizeMetadataObject(metadata);
+
+        const newThing = new Thing({
+            name: rawName,
+            description,
+            thingType: 'item',
+            rarity: Thing.getDefaultRarityLabel(),
+            itemTypeDetail: null,
+            slot: null,
+            attributeBonuses: [],
+            causeStatusEffect: null,
+            level: computedLevel,
+            relativeLevel: 0,
+            metadata: sanitizedMetadata
+        });
+
+        if (things instanceof Map) {
+            things.set(newThing.id, newThing);
+        }
+
+        if (sanitizedMetadata.ownerId && ownerCandidate && typeof ownerCandidate.addInventoryItem === 'function') {
+            try {
+                ownerCandidate.addInventoryItem(newThing);
+            } catch (error) {
+                console.warn(`Failed to add new item ${rawName} to ${ownerCandidate.name || ownerCandidate.id}:`, error.message);
+            }
+        } else if (sanitizedMetadata.locationId || resolvedLocation) {
+            this.addThingToLocation(newThing, sanitizedMetadata.locationId || resolvedLocation);
+        }
+
+        newThing.imageId = null;
+
+        if (typeof this.deps.ensureUniqueThingNames === 'function') {
+            try {
+                await this.deps.ensureUniqueThingNames({
+                    things: [newThing],
+                    location: resolvedLocation,
+                    owner: ownerCandidate
+                });
+            } catch (error) {
+                console.warn('Failed to enforce unique thing names for newly created item:', error.message);
+            }
+        }
+
+        return newThing;
     }
 
     static async applyAlterationResult({
