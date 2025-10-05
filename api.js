@@ -3171,6 +3171,25 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runDispositionCheckPrompt({ locationOverride = null } = {}) {
             try {
+                const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+                let textToCheck = '';
+                for (let index = historyEntries.length - 1; index >= 0; index -= 1) {
+                    const entry = historyEntries[index];
+                    if (!entry || entry.travel) {
+                        continue;
+                    }
+                    const candidate = typeof entry.content === 'string' ? entry.content.trim() : '';
+                    const summaryCandidate = !candidate && typeof entry.summary === 'string'
+                        ? entry.summary.trim()
+                        : '';
+                    const resolved = candidate || summaryCandidate;
+                    if (!resolved) {
+                        continue;
+                    }
+                    textToCheck = resolved;
+                    break;
+                }
+
                 const baseContext = buildBasePromptContext({ locationOverride });
                 const dispositionTypes = Array.isArray(baseContext?.dispositionTypes)
                     ? baseContext.dispositionTypes
@@ -3183,7 +3202,8 @@ module.exports = function registerApiRoutes(scope) {
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'disposition-check',
-                    dispositionTypes
+                    dispositionTypes,
+                    textToCheck
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -3460,7 +3480,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null } = {}) {
+        async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null, totalPrompts = 1 } = {}) {
             if (!npc || !Array.isArray(historyEntries) || !historyEntries.length) {
                 return { raw: '', memory: null };
             }
@@ -3578,7 +3598,10 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 renderedTemplate = promptEnv.render('base-context.xml.njk', templatePayload);
             } catch (error) {
-                console.warn('Failed to render npc-memories template:', error.message);
+                const prettyError = nunjucks && nunjucks.lib && typeof nunjucks.lib.prettifyError === 'function'
+                    ? nunjucks.lib.prettifyError(error)
+                    : error;
+                console.warn('Failed to render npc-memories template:', prettyError);
                 return { raw: '', memory: null };
             }
 
@@ -3609,14 +3632,34 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds * (Number.isFinite(totalPrompts) && totalPrompts > 0 ? totalPrompts : 1)
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
-                const memoryMatch = raw.match(/<memory>([\s\S]*?)<\/memory>/i);
-                const memoryText = memoryMatch && typeof memoryMatch[1] === 'string'
-                    ? memoryMatch[1].trim()
-                    : '';
+
+                let memoryText = '';
+                try {
+                    const parser = new DOMParser();
+                    const sanitized = sanitizeForXml(raw || '');
+                    const doc = parser.parseFromString(sanitized, 'text/xml');
+                    const parseError = doc.getElementsByTagName('parsererror')[0];
+                    if (!parseError) {
+                        const memoryNode = doc.getElementsByTagName('memory')[0];
+                        if (memoryNode && typeof memoryNode.textContent === 'string') {
+                            memoryText = memoryNode.textContent.trim();
+                        }
+                    }
+                } catch (parseError) {
+                    console.warn(`Failed to parse npc-memories response for ${npc.name || 'NPC'}:`, parseError.message);
+                }
+
+                logNpcMemoriesPrompt({
+                    npcName: npc.name || 'Unknown NPC',
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    historyEntries: sanitizedHistoryEntries,
+                    responseText: raw
+                });
 
                 return {
                     raw,
@@ -3674,6 +3717,9 @@ module.exports = function registerApiRoutes(scope) {
 
             const lowercaseCache = new Map();
 
+            const memoryTasks = [];
+            const totalCandidates = candidateIds.size;
+
             for (const actorId of candidateIds) {
                 const actor = players.get(actorId);
                 if (!actor) {
@@ -3714,24 +3760,31 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                try {
-                    const result = await runNpcMemoriesPrompt({
-                        npc: actor,
-                        historyEntries: filteredHistory,
-                        locationOverride: previousLocation
-                    });
+                memoryTasks.push((async () => {
+                    try {
+                        const result = await runNpcMemoriesPrompt({
+                            npc: actor,
+                            historyEntries: filteredHistory,
+                            locationOverride: previousLocation,
+                            totalPrompts: totalCandidates
+                        });
 
-                    if (result?.memory) {
-                        const added = typeof actor.addImportantMemory === 'function'
-                            ? actor.addImportantMemory(result.memory)
-                            : false;
-                        if (added) {
-                            console.log(`🧠 Added memory for ${actor.name}: ${result.memory}`);
+                        if (result?.memory) {
+                            const added = typeof actor.addImportantMemory === 'function'
+                                ? actor.addImportantMemory(result.memory)
+                                : false;
+                            if (added) {
+                                console.log(`🧠 Added memory for ${actor.name}: ${result.memory}`);
+                            }
                         }
+                    } catch (error) {
+                        console.warn(`Error while generating memories for ${actor.name}:`, error.message);
                     }
-                } catch (error) {
-                    console.warn(`Error while generating memories for ${actor.name}:`, error.message);
-                }
+                })());
+            }
+
+            if (memoryTasks.length) {
+                await Promise.allSettled(memoryTasks);
             }
         }
 
@@ -8418,6 +8471,8 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const previousLocationIdForMemories = currentPlayer.currentLocation || null;
+
                 currentPlayer.setLocation(destinationLocation.id);
 
                 if (typeof currentPlayer.getPartyMembers === 'function') {
@@ -8460,6 +8515,18 @@ module.exports = function registerApiRoutes(scope) {
                     queueLocationThingImages(destinationLocation);
                 } catch (thingQueueError) {
                     console.warn('Failed to queue thing images after moving:', thingQueueError.message);
+                }
+
+                if (previousLocationIdForMemories && previousLocationIdForMemories !== destinationLocation.id) {
+                    try {
+                        await generateNpcMemoriesForLocationChange({
+                            previousLocationId: previousLocationIdForMemories,
+                            newLocationId: destinationLocation.id,
+                            player: currentPlayer
+                        });
+                    } catch (memoryError) {
+                        console.warn('Failed to generate NPC memories after direct move:', memoryError.message || memoryError);
+                    }
                 }
 
                 const locationData = destinationLocation.toJSON();

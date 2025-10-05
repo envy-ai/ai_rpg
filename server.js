@@ -4047,7 +4047,8 @@ const viewsEnv = nunjucks.configure('views', {
 
 // Configure Nunjucks for prompts (no autoescape for prompts)
 const promptEnv = nunjucks.configure('prompts', {
-    autoescape: false
+    autoescape: false,
+    dev: true
 });
 
 // Configure Nunjucks for image generation templates (no autoescape)
@@ -11948,6 +11949,7 @@ const apiScope = {
     fs,
     path,
     Utils,
+    nunjucks,
     JOB_STATUS,
     PORT,
     Location,

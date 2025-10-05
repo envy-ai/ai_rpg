@@ -6,7 +6,7 @@ Text to check for events:
 Event Checks:
 {% for eventPrompt in eventPrompts %}{{ loop.index }}. {% include eventPrompt %}{% endfor %}
 
-Respond with a numbered list of answers corresponding to the event checks above, checking *only* the text inside the textToCheck tags (the remaining game history is provided strictly for context). If an event did not occur, respond with "N/A" for that item. Keep answers concise and to the point. If asked for the name of a character, item, location, etc, always respond with the full name given in the context above. If there are multiple candidates for matching an item name, prefer the one that appears in the player or location inventory, and then the one that matches the name most exactly. Answer the questions in a numbered list format, without any additional commentary or explanation. For example:
+Respond with a numbered list of answers corresponding to the event checks above, checking *only* the text inside the textToCheck tags (the remaining game history is provided strictly for context). If an event did not occur, respond with "N/A" for that item. Keep answers concise and to the point. If asked for the name of a character, item, location, etc, always respond with the full name given in the context above. If there are multiple candidates for matching an item name, prefer the one that appears in the player or location inventory, and then the one that matches the name most exactly. Omit considering anything outside the textToCheck block. Answer the questions in a numbered list format, without any additional commentary or explanation. For example:
 
 1. ...
 2. ...

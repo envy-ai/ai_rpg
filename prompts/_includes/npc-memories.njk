@@ -99,12 +99,6 @@
   </needBars>
 </currentNpc>
 <recentNpcHistory>
-  {% if not rawHistoryEntries %}
-    <error>Missing history entries data for NPC history context.</error>
-  {% elif rawHistoryEntries is string %}
-    <error>History entries data is a string; expected an iterable of entries.</error>
-  {% elif not (rawHistoryEntries is iterable) %}
-    <error>History entries data is not iterable.</error>
   {% else %}
     {% set npcNameValue = currentNpc.name | default('') | trim %}
     {% if not npcNameValue %}
@@ -159,7 +153,7 @@
   {% endif %}
 </recentNpcHistory>
 
-Consider whether the NPC above would think of any of the above events as an important moment in their life. If so, create a concise memory of the event from the NPC's perspective, in the style of a diary entry or personal note. The memory should be no more than 2 sentences long. If none of the events would be significant enough to remember, return an empty element. Don't return a memory that's very similar to something already listed among their memories. Output in this format:
+Consider whether the NPC above would think of any of the above events as an important moment in their life. If so, create a concise memory of the event from the NPC's perspective, in the style of a diary entry or personal note. The memory should be no more than 2 sentences long. If none of the events would be significant enough to remember, return an empty element. Don't return a memory that's very similar to something already listed among their memories. Omit anything that's outside of the recentNpcHistory block. Output in this format:
 
 If no memories are generated, return:
 <memory></memory>
