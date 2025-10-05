@@ -2300,14 +2300,52 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
-    // Don't truncate history for now, let the model handle it
-    const historyEntries = chatHistory; //.slice(-10);
+    const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+    const summaryConfig = config?.summaries || {};
+    const rawMaxUnsummarized = Number(summaryConfig.max_unsummarized_log_entries);
+    const maxUnsummarizedEntries = Number.isInteger(rawMaxUnsummarized) && rawMaxUnsummarized > 0
+        ? rawMaxUnsummarized
+        : 0;
 
-    // Filter out entries without content, which gets rid of skill and plausibulity checks
-    // that we don't want cluttering the history.
-    const filteredHistory = historyEntries.filter(entry => entry.content);
-    const gameHistory = filteredHistory.length
-        ? filteredHistory.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
+    const relevantHistory = historyEntries.filter(entry => entry && (entry.content || entry.summary));
+
+    const tailEntries = maxUnsummarizedEntries > 0
+        ? relevantHistory.slice(-maxUnsummarizedEntries)
+        : [];
+    const summaryCandidates = maxUnsummarizedEntries > 0
+        ? relevantHistory.slice(0, -maxUnsummarizedEntries)
+        : relevantHistory;
+
+    const summaryLines = [];
+    for (const entry of summaryCandidates) {
+        if (!entry) {
+            continue;
+        }
+        const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+        if (!summaryText) {
+            continue;
+        }
+        summaryLines.push(`${summaryText}`);
+    }
+
+    const tailLines = [];
+    for (const entry of tailEntries) {
+        if (!entry) {
+            continue;
+        }
+        const contentText = typeof entry.content === 'string' ? entry.content.trim() : '';
+        if (!contentText) {
+            continue;
+        }
+        const role = typeof entry.role === 'string' && entry.role.trim()
+            ? entry.role.trim()
+            : 'system';
+        tailLines.push(`[${role}] ${contentText}`);
+    }
+
+    const combinedHistoryLines = summaryLines.concat(tailLines);
+    const gameHistory = combinedHistoryLines.length
+        ? combinedHistoryLines.join('\n')
         : 'No significant prior events.';
 
     const experiencePointValues = getExperiencePointValues();
