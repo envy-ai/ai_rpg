@@ -1,0 +1,17 @@
+In the context of the above story log, summarize the following numbered entries:
+
+<entries>
+{% for entry in entries %}
+<entry number="{{ loop.index }}">
+{{ entry.content }}
+</entry>
+{% endfor %}
+</entries>
+
+Respond with the summaries in this format:
+
+<summaries>
+  <summary number="1">[summary of entry 1 in {{ summaries.summary_word_length }} words or less]</summary>
+  <summary number="2">[summary of entry 2 in {{ summaries.summary_word_length }} words or less]</summary>
+  ... and so on ...
+</summaries>

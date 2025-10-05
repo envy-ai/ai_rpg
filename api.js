@@ -274,6 +274,144 @@ module.exports = function registerApiRoutes(scope) {
             return normalized;
         };
 
+        const shouldSummarizeEntry = (entry) => {
+            if (!entry) {
+                return false;
+            }
+            if (entry.type === 'player-action' || entry.type === 'random-event') {
+                return true;
+            }
+            if (entry.randomEvent) {
+                return true;
+            }
+            return false;
+        };
+
+        const summarizeChatEntry = async (entry, { location = null, type = null } = {}) => {
+            if (!entry || !entry.id || !entry.content) {
+                return null;
+            }
+            if (Utils.hasChatSummary(entry.id)) {
+                const existing = Utils.getChatSummary(entry.id);
+                if (existing && existing.summary && !entry.summary) {
+                    entry.summary = existing.summary;
+                }
+                return existing;
+            }
+
+            if (!shouldSummarizeEntry(entry)) {
+                return null;
+            }
+
+            const endpoint = config?.ai?.endpoint;
+            const apiKey = config?.ai?.apiKey;
+            const model = config?.ai?.model;
+            if (!endpoint || !apiKey || !model) {
+                return null;
+            }
+
+            try {
+                const baseContext = buildBasePromptContext({ locationOverride: location || null });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'summarize',
+                    textToSummarize: entry.content
+                });
+
+                console.log(`Summarizing chat entry ${entry.id}: "${entry.content}"`);
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt) {
+                    return null;
+                }
+
+                const messages = [
+                    { role: 'system', content: String(parsedTemplate.systemPrompt).trim() }
+                ];
+                if (parsedTemplate.generationPrompt) {
+                    messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
+                }
+
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`;
+
+                const requestData = {
+                    model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || 120,
+                    temperature: typeof parsedTemplate.temperature === 'number'
+                        ? parsedTemplate.temperature
+                        : 0.2
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: baseTimeoutMilliseconds
+                });
+
+                const summaryText = response.data?.choices?.[0]?.message?.content || '';
+                const trimmedSummary = summaryText.trim();
+                if (!trimmedSummary) {
+                    return null;
+                }
+
+                const payload = {
+                    summary: trimmedSummary,
+                    type: type || entry.type || null,
+                    timestamp: entry.timestamp || null
+                };
+
+                Utils.setChatSummary(entry.id, payload);
+                entry.summary = trimmedSummary;
+
+                return payload;
+            } catch (error) {
+                console.warn('Failed to summarize chat entry:', error.message);
+                return null;
+            }
+        };
+
+        const summarizeChatBacklog = async (entries) => {
+            if (!Array.isArray(entries)) {
+                return;
+            }
+
+            console.log(`🔍 Summarizing backlog of ${entries.length} chat entries...`);
+            let count = 0;
+            for (const entry of entries) {
+                count++;
+                if (count % 10 === 0) {
+                    console.log(`🔍 Summarizing entry ${count}...`);
+                }
+
+                if (!entry || !entry.id || !entry.content) {
+                    continue;
+                }
+
+                const stored = Utils.getChatSummary(entry.id);
+                if (stored && stored.summary) {
+                    entry.summary = stored.summary;
+                    continue;
+                }
+
+                if (!shouldSummarizeEntry(entry)) {
+                    continue;
+                }
+
+                try {
+                    await summarizeChatEntry(entry, {
+                        type: entry.type || (entry.randomEvent ? 'random-event' : null)
+                    });
+                } catch (error) {
+                    console.warn('Failed to summarize backlog entry:', error.message);
+                }
+            }
+        };
+
         const findChatEntryIndexByTimestamp = (timestamp) => {
             if (!timestamp) {
                 return -1;
@@ -1090,7 +1228,9 @@ module.exports = function registerApiRoutes(scope) {
                     content: narrativeText,
                     actor: 'Random Event',
                     randomEvent: true,
-                    rarity: rarity || 'common'
+                    rarity: rarity || 'common',
+                    type: 'random-event',
+                    locationId: location?.id || null
                 });
                 const randomEventTimestamp = randomEventEntry?.timestamp || new Date().toISOString();
 
@@ -1122,6 +1262,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (Array.isArray(eventChecks?.environmentalDamageEvents) && eventChecks.environmentalDamageEvents.length) {
                     summary.environmentalDamageEvents = eventChecks.environmentalDamageEvents;
+                }
+
+                try {
+                    await summarizeChatEntry(randomEventEntry, { location, type: 'random-event' });
+                } catch (summaryError) {
+                    console.warn('Failed to summarize random event entry:', summaryError.message);
+                }
+
+                if (randomEventEntry.summary) {
+                    summary.summary = randomEventEntry.summary;
                 }
                 if (Array.isArray(eventChecks?.needBarChanges) && eventChecks.needBarChanges.length) {
                     summary.needBarChanges = eventChecks.needBarChanges;
@@ -3866,8 +4016,20 @@ module.exports = function registerApiRoutes(scope) {
 
                     const forcedEventEntry = pushChatEntry({
                         role: 'assistant',
-                        content: responseData.response
+                        content: responseData.response,
+                        type: 'player-action',
+                        locationId: location?.id || null
                     }, newChatEntries);
+
+                    try {
+                        await summarizeChatEntry(forcedEventEntry, { location, type: 'player-action' });
+                    } catch (summaryError) {
+                        console.warn('Failed to summarize forced event entry:', summaryError.message);
+                    }
+
+                    if (forcedEventEntry.summary) {
+                        responseData.summary = forcedEventEntry.summary;
+                    }
 
                     recordEventSummaryEntry({
                         label: '📋 Events – Forced Action',
@@ -3976,8 +4138,16 @@ module.exports = function registerApiRoutes(scope) {
                     // Store AI response in history
                     const aiResponseEntry = pushChatEntry({
                         role: 'assistant',
-                        content: aiResponse
+                        content: aiResponse,
+                        type: 'player-action',
+                        locationId: location?.id || null
                     }, newChatEntries);
+
+                    try {
+                        await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
+                    } catch (summaryError) {
+                        console.warn('Failed to summarize player action entry:', summaryError.message);
+                    }
 
                     let dispositionPromptResult = null;
                     let dispositionChanges = [];
@@ -3996,6 +4166,10 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+
+                    if (aiResponseEntry.summary) {
+                        responseData.summary = aiResponseEntry.summary;
+                    }
 
                     if (stream.requestId) {
                         responseData.requestId = stream.requestId;
@@ -10118,7 +10292,7 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Load game state from a save
-        app.post('/api/load', (req, res) => {
+        app.post('/api/load', async (req, res) => {
             try {
                 const { saveName } = req.body;
 
@@ -10318,6 +10492,8 @@ module.exports = function registerApiRoutes(scope) {
                 metadata.chatHistoryLength = Array.isArray(chatHistory) ? chatHistory.length : (metadata.chatHistoryLength || 0);
                 metadata.totalGeneratedImages = generatedImages.size;
                 metadata.totalSkills = skills.size;
+
+                await summarizeChatBacklog(chatHistory);
 
                 res.json({
                     success: true,

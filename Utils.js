@@ -8,6 +8,7 @@ let cachedRegionModule = null;
 let cachedThingModule = null;
 let cachedPlayerModule = null;
 let cachedSkillModule = null;
+const chatSummaryStore = new Map();
 
 class Utils {
   static intersection = (setA, setB) => new Set([...setA].filter(x => setB.has(x)));
@@ -190,6 +191,8 @@ class Utils {
       }
     }
 
+    serialized.chatSummaries = this.serializeChatSummaries();
+
 
     return serialized;
   }
@@ -222,6 +225,8 @@ class Utils {
     if (serialized.setting) {
       ensureFile('setting.json', serialized.setting);
     }
+
+    ensureFile('chatSummaries.json', serialized.chatSummaries || {});
   }
 
   static loadSerializedGameState(saveDir) {
@@ -251,7 +256,8 @@ class Utils {
       players: readJson('allPlayers.json', {}),
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
-      setting: readJson('setting.json', null)
+      setting: readJson('setting.json', null),
+      chatSummaries: readJson('chatSummaries.json', {})
     };
 
     return serialized;
@@ -283,6 +289,8 @@ class Utils {
     const Thing = this.#getThingModule();
     const Player = this.#getPlayerModule();
     const Skill = this.#getSkillModule();
+
+    this.loadChatSummaries(serialized.chatSummaries || {});
 
     if (Array.isArray(jobQueue)) {
       jobQueue.length = 0;
@@ -492,6 +500,59 @@ class Utils {
       metadata: serialized.metadata || {},
       setting: serialized.setting || null
     };
+  }
+
+  static setChatSummary(messageId, summaryPayload = {}) {
+    if (!messageId) {
+      return;
+    }
+    const entry = {
+      entryId: messageId,
+      summary: typeof summaryPayload.summary === 'string' ? summaryPayload.summary : (summaryPayload.text || null),
+      type: summaryPayload.type || null,
+      timestamp: summaryPayload.timestamp || null,
+      metadata: summaryPayload.metadata && typeof summaryPayload.metadata === 'object'
+        ? { ...summaryPayload.metadata }
+        : undefined
+    };
+    chatSummaryStore.set(messageId, entry);
+  }
+
+  static getChatSummary(messageId) {
+    return messageId ? chatSummaryStore.get(messageId) || null : null;
+  }
+
+  static hasChatSummary(messageId) {
+    return chatSummaryStore.has(messageId);
+  }
+
+  static serializeChatSummaries() {
+    return Object.fromEntries(chatSummaryStore.entries());
+  }
+
+  static loadChatSummaries(data = {}) {
+    chatSummaryStore.clear();
+    if (!data || typeof data !== 'object') {
+      return;
+    }
+    for (const [key, value] of Object.entries(data)) {
+      if (!key) {
+        continue;
+      }
+      if (value && typeof value === 'object') {
+        chatSummaryStore.set(key, {
+          entryId: key,
+          summary: typeof value.summary === 'string' ? value.summary : null,
+          type: value.type || null,
+          timestamp: value.timestamp || null,
+          metadata: value.metadata && typeof value.metadata === 'object' ? { ...value.metadata } : undefined
+        });
+      }
+    }
+  }
+
+  static getAllChatSummaries() {
+    return new Map(chatSummaryStore);
   }
 }
 
