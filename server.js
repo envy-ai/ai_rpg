@@ -1,6 +1,7 @@
 const http = require('http');
 const express = require('express');
 const axios = require('axios');
+const attachAxiosMetricsLogger = require('./utils/axios-metrics.js');
 const bodyParser = require('body-parser');
 const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
@@ -36,6 +37,8 @@ const Region = require('./Region.js');
 const ComfyUIClient = require('./ComfyUIClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
+
+attachAxiosMetricsLogger(axios);
 
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 let cachedBannedNpcWords = null;
