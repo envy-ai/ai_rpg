@@ -274,11 +274,36 @@ module.exports = function registerApiRoutes(scope) {
             return normalized;
         };
 
+        const getSummaryConfig = () => config?.summaries || {};
+        const summariesEnabled = () => {
+            const summaryConfig = getSummaryConfig();
+            return summaryConfig.enabled !== false;
+        };
+
+        const getSummaryBatchSize = () => {
+            const raw = Number(getSummaryConfig().batch_size);
+            if (Number.isInteger(raw) && raw > 0) {
+                return raw;
+            }
+            return 30;
+        };
+
+        const getSummaryWordLength = () => {
+            const raw = Number(getSummaryConfig().summary_word_length);
+            if (Number.isInteger(raw) && raw > 0) {
+                return raw;
+            }
+            return 12;
+        };
+
         const shouldSummarizeEntry = (entry) => {
             if (!entry) {
                 return false;
             }
             if (entry.type === 'player-action' || entry.type === 'random-event') {
+                return true;
+            }
+            if (entry.type === null || entry.type === undefined) {
                 return true;
             }
             if (entry.randomEvent) {
@@ -287,8 +312,184 @@ module.exports = function registerApiRoutes(scope) {
             return false;
         };
 
+        const parseBatchSummaryResponse = (xmlContent, expectedCount) => {
+            const result = new Map();
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                return result;
+            }
+
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(xmlContent, 'text/xml');
+                const parserError = doc.getElementsByTagName('parsererror')[0];
+                if (parserError) {
+                    throw new Error(parserError.textContent);
+                }
+
+                const summaryNodes = Array.from(doc.getElementsByTagName('summary'));
+                summaryNodes.forEach(node => {
+                    const numberAttr = node.getAttribute('number');
+                    const idx = Number(numberAttr);
+                    if (!Number.isInteger(idx) || idx <= 0) {
+                        return;
+                    }
+                    const text = node.textContent ? node.textContent.trim() : '';
+                    result.set(idx - 1, text);
+                });
+            } catch (error) {
+                console.warn('Failed to parse batch summary response:', error.message);
+            }
+
+            if (result.size !== expectedCount) {
+                console.warn(`Batch summary parser returned ${result.size} summaries, expected ${expectedCount}.`);
+            }
+
+            return result;
+        };
+
+        const runSummaryBatch = async (batch, { wordLength }) => {
+            if (!Array.isArray(batch) || !batch.length) {
+                return true;
+            }
+
+            const endpoint = config?.ai?.endpoint;
+            const apiKey = config?.ai?.apiKey;
+            const model = config?.ai?.model;
+            if (!endpoint || !apiKey || !model) {
+                return false;
+            }
+
+            let locationOverride = null;
+            const primaryLocationId = batch[0]?.locationId || null;
+            if (primaryLocationId && typeof Location?.get === 'function') {
+                try {
+                    locationOverride = Location.get(primaryLocationId) || null;
+                } catch (_) {
+                    locationOverride = null;
+                }
+            }
+
+            let baseContext = {};
+            try {
+                baseContext = buildBasePromptContext({ locationOverride });
+            } catch (error) {
+                console.warn('Failed to build base context for chat summarization:', error.message);
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'summarize_batch',
+                entries: batch.map(item => ({ content: item.content })),
+                summaries: {
+                    summary_word_length: wordLength
+                }
+            });
+
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt) {
+                return false;
+            }
+
+            const messages = [
+                { role: 'system', content: String(parsedTemplate.systemPrompt).trim() }
+            ];
+            if (parsedTemplate.generationPrompt) {
+                messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
+            }
+
+            const chatEndpoint = endpoint.endsWith('/')
+                ? `${endpoint}chat/completions`
+                : `${endpoint}/chat/completions`;
+
+            const requestData = {
+                model,
+                messages,
+                max_tokens: parsedTemplate.maxTokens || 600,
+                temperature: typeof parsedTemplate.temperature === 'number'
+                    ? parsedTemplate.temperature
+                    : 0.2
+            };
+
+            try {
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: baseTimeoutMilliseconds
+                });
+
+                const summaryResponse = response.data?.choices?.[0]?.message?.content || '';
+                const parsedSummaries = parseBatchSummaryResponse(summaryResponse, batch.length);
+
+                batch.forEach((item, index) => {
+                    const summaryText = parsedSummaries.get(index) || null;
+                    if (summaryText) {
+                        Utils.setChatSummary(item.entryId, {
+                            summary: summaryText,
+                            type: item.type || null,
+                            timestamp: item.timestamp || null
+                        });
+
+                        const historyEntry = chatHistory.find(history => history && history.id === item.entryId);
+                        if (historyEntry) {
+                            historyEntry.summary = summaryText;
+                        }
+                    }
+                });
+
+                return true;
+            } catch (error) {
+                console.warn('Failed to process summary batch:', error.message);
+                for (let i = batch.length - 1; i >= 0; i -= 1) {
+                    Utils.enqueueChatSummaryCandidate(batch[i]);
+                }
+                return false;
+            }
+        };
+
+        const processSummaryQueue = async (options = {}) => {
+            if (!summariesEnabled()) {
+                return;
+            }
+
+            const { flushRemainder = false } = options;
+            const batchSize = getSummaryBatchSize();
+            const wordLength = getSummaryWordLength();
+
+            while (Utils.getChatSummaryQueueLength() >= batchSize) {
+                const batch = Utils.dequeueChatSummaryBatch(batchSize);
+                if (!batch.length) {
+                    break;
+                }
+                const success = await runSummaryBatch(batch, { wordLength });
+                if (!success) {
+                    return;
+                }
+            }
+
+            if (!flushRemainder) {
+                return;
+            }
+
+            const remaining = Utils.getChatSummaryQueueLength();
+            if (remaining <= 0) {
+                return;
+            }
+
+            const tailBatch = Utils.dequeueChatSummaryBatch(remaining);
+            if (!tailBatch.length) {
+                return;
+            }
+
+            await runSummaryBatch(tailBatch, { wordLength });
+        };
+
         const summarizeChatEntry = async (entry, { location = null, type = null } = {}) => {
             if (!entry || !entry.id || !entry.content) {
+                return null;
+            }
+            if (!summariesEnabled()) {
                 return null;
             }
             if (Utils.hasChatSummary(entry.id)) {
@@ -303,91 +504,35 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const endpoint = config?.ai?.endpoint;
-            const apiKey = config?.ai?.apiKey;
-            const model = config?.ai?.model;
-            if (!endpoint || !apiKey || !model) {
-                return null;
-            }
+            const summaryType = type || entry.type || (entry.randomEvent ? 'random-event' : 'general');
+            const locationId = location?.id || entry.locationId || null;
 
-            try {
-                const baseContext = buildBasePromptContext({ locationOverride: location || null });
-                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
-                    ...baseContext,
-                    promptType: 'summarize',
-                    textToSummarize: entry.content
-                });
+            Utils.enqueueChatSummaryCandidate({
+                entryId: entry.id,
+                content: entry.content,
+                locationId,
+                type: summaryType,
+                timestamp: entry.timestamp || null
+            });
 
-                console.log(`Summarizing chat entry ${entry.id}: "${entry.content}"`);
+            await processSummaryQueue();
 
-                const parsedTemplate = parseXMLTemplate(renderedTemplate);
-                if (!parsedTemplate?.systemPrompt) {
-                    return null;
-                }
-
-                const messages = [
-                    { role: 'system', content: String(parsedTemplate.systemPrompt).trim() }
-                ];
-                if (parsedTemplate.generationPrompt) {
-                    messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
-                }
-
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? `${endpoint}chat/completions`
-                    : `${endpoint}/chat/completions`;
-
-                const requestData = {
-                    model,
-                    messages,
-                    max_tokens: parsedTemplate.maxTokens || 120,
-                    temperature: typeof parsedTemplate.temperature === 'number'
-                        ? parsedTemplate.temperature
-                        : 0.2
-                };
-
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds
-                });
-
-                const summaryText = response.data?.choices?.[0]?.message?.content || '';
-                const trimmedSummary = summaryText.trim();
-                if (!trimmedSummary) {
-                    return null;
-                }
-
-                const payload = {
-                    summary: trimmedSummary,
-                    type: type || entry.type || null,
-                    timestamp: entry.timestamp || null
-                };
-
-                Utils.setChatSummary(entry.id, payload);
-                entry.summary = trimmedSummary;
-
-                return payload;
-            } catch (error) {
-                console.warn('Failed to summarize chat entry:', error.message);
-                return null;
-            }
+            return null;
         };
 
         const summarizeChatBacklog = async (entries) => {
-            if (!Array.isArray(entries)) {
+            if (!Array.isArray(entries) || !summariesEnabled()) {
                 return;
             }
 
-            console.log(`🔍 Summarizing backlog of ${entries.length} chat entries...`);
+            console.log(`Starting chat backlog summarization for ${entries.length} entries...`);
+
             let count = 0;
             for (const entry of entries) {
-                count++;
-                if (count % 10 === 0) {
-                    console.log(`🔍 Summarizing entry ${count}...`);
+                count += 1;
+                if (count % 10 === 0 || count === entries.length) {
+                    console.log(`Summarizing entry ${count} of ${entries.length}`);
                 }
-
                 if (!entry || !entry.id || !entry.content) {
                     continue;
                 }
@@ -402,13 +547,25 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                try {
-                    await summarizeChatEntry(entry, {
-                        type: entry.type || (entry.randomEvent ? 'random-event' : null)
-                    });
-                } catch (error) {
-                    console.warn('Failed to summarize backlog entry:', error.message);
+                const beforeEnqueue = Utils.getChatSummaryQueueLength();
+                Utils.enqueueChatSummaryCandidate({
+                    entryId: entry.id,
+                    content: entry.content,
+                    locationId: entry.locationId || null,
+                    type: entry.type || (entry.randomEvent ? 'random-event' : 'general'),
+                    timestamp: entry.timestamp || null
+                });
+
+                const afterEnqueue = Utils.getChatSummaryQueueLength();
+                if (afterEnqueue === beforeEnqueue) {
+                    continue;
                 }
+
+                await processSummaryQueue();
+            }
+
+            if (Utils.getChatSummaryQueueLength() > 0) {
+                await processSummaryQueue({ flushRemainder: true });
             }
         };
 

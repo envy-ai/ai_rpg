@@ -9,6 +9,7 @@ let cachedThingModule = null;
 let cachedPlayerModule = null;
 let cachedSkillModule = null;
 const chatSummaryStore = new Map();
+const chatSummaryQueue = [];
 
 class Utils {
   static intersection = (setA, setB) => new Set([...setA].filter(x => setB.has(x)));
@@ -553,6 +554,41 @@ class Utils {
 
   static getAllChatSummaries() {
     return new Map(chatSummaryStore);
+  }
+
+  static enqueueChatSummaryCandidate(candidate = {}) {
+    if (!candidate || !candidate.entryId || !candidate.content) {
+      return;
+    }
+    if (chatSummaryQueue.some(item => item.entryId === candidate.entryId)) {
+      return;
+    }
+    chatSummaryQueue.push({
+      entryId: candidate.entryId,
+      content: candidate.content,
+      locationId: candidate.locationId || null,
+      type: candidate.type || null,
+      timestamp: candidate.timestamp || null
+    });
+  }
+
+  static dequeueChatSummaryBatch(batchSize) {
+    const size = Number(batchSize);
+    if (!Number.isInteger(size) || size <= 0) {
+      return [];
+    }
+    if (chatSummaryQueue.length < size) {
+      return [];
+    }
+    return chatSummaryQueue.splice(0, size);
+  }
+
+  static getChatSummaryQueueLength() {
+    return chatSummaryQueue.length;
+  }
+
+  static peekChatSummaryQueue() {
+    return [...chatSummaryQueue];
   }
 }
 
