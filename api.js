@@ -3,6 +3,7 @@ const { DOMParser } = require('xmldom');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
+const Utils = require('./Utils.js');
 const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
@@ -24,13 +25,24 @@ module.exports = function registerApiRoutes(scope) {
                 return next();
             }
 
-            const routeLabel = req.path;
+            //const routeLabel = `${req.method || 'GET'} ${req.originalUrl || req.path}`;
+
+            // Skip if routeLabel contains /image
+            const routeLabel = (() => {
+                const method = req.method || 'GET';
+                const path = req.originalUrl || req.path || '';
+                if (path.includes('/image')) {
+                    return `${method} [image request]`;
+                }
+                return `${method} ${path}`;
+            })();
+
             millisecond_timestamp = Date.now();
-            //console.log(`⬅️ ${routeLabel} request received at ${new Date().toISOString()}`);
+            console.log(`⬅️ ${routeLabel} request received at ${new Date().toISOString()}`);
 
             res.on('finish', () => {
                 const duration = (Date.now() - millisecond_timestamp) / 1000;
-                //console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
+                console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
             });
 
             next();
@@ -10053,102 +10065,40 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                // Create save directory name with timestamp and player name
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
                 const playerName = currentPlayer.name.replace(/[^a-zA-Z0-9]/g, '_');
                 const saveName = `${timestamp}_${playerName}`;
                 const saveDir = path.join(__dirname, 'saves', saveName);
 
-                // Create save directory
-                if (!fs.existsSync(saveDir)) {
-                    fs.mkdirSync(saveDir, { recursive: true });
-                }
+                const serialized = Utils.serializeGameState({
+                    currentPlayer,
+                    gameLocations,
+                    gameLocationExits,
+                    regions,
+                    chatHistory,
+                    generatedImages,
+                    things,
+                    players,
+                    skills,
+                    currentSetting
+                });
 
-                // Save game world data (locations and exits)
-                const gameWorldData = {
-                    locations: Object.fromEntries(
-                        Array.from(gameLocations.entries()).map(([id, location]) => [id, location.toJSON()])
-                    ),
-                    locationExits: Object.fromEntries(
-                        Array.from(gameLocationExits.entries()).map(([id, exit]) => [id, exit.toJSON()])
-                    ),
-                    regions: Object.fromEntries(
-                        Array.from(regions.entries()).map(([id, region]) => [id, region.toJSON()])
-                    )
-                };
-                fs.writeFileSync(
-                    path.join(saveDir, 'gameWorld.json'),
-                    JSON.stringify(gameWorldData, null, 2)
-                );
+                const metadata = serialized.metadata || {};
+                serialized.metadata = metadata;
+                metadata.saveName = saveName;
+                metadata.timestamp = metadata.timestamp || new Date().toISOString();
+                metadata.totalPlayers = players.size;
+                metadata.totalThings = things.size;
+                metadata.totalLocations = gameLocations.size;
+                metadata.totalLocationExits = gameLocationExits.size;
+                metadata.totalRegions = regions.size;
+                metadata.chatHistoryLength = Array.isArray(chatHistory) ? chatHistory.length : (metadata.chatHistoryLength || 0);
+                metadata.totalGeneratedImages = generatedImages.size;
+                metadata.totalSkills = skills.size;
+                metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
+                metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
 
-                // Save chat history
-                fs.writeFileSync(
-                    path.join(saveDir, 'chatHistory.json'),
-                    JSON.stringify(chatHistory, null, 2)
-                );
-
-                // Save generated images metadata
-                const imagesData = Object.fromEntries(generatedImages);
-                fs.writeFileSync(
-                    path.join(saveDir, 'images.json'),
-                    JSON.stringify(imagesData, null, 2)
-                );
-
-                // Save world things (items and scenery)
-                const thingsData = Object.fromEntries(
-                    Array.from(things.entries()).map(([id, thing]) => [id, thing.toJSON()])
-                );
-                fs.writeFileSync(
-                    path.join(saveDir, 'things.json'),
-                    JSON.stringify(thingsData, null, 2)
-                );
-
-                // Save all players data
-                const allPlayersData = Object.fromEntries(
-                    Array.from(players.entries()).map(([id, player]) => [id, player.toJSON()])
-                );
-                fs.writeFileSync(
-                    path.join(saveDir, 'allPlayers.json'),
-                    JSON.stringify(allPlayersData, null, 2)
-                );
-
-                // Save generated skill definitions
-                const skillsData = Array.from(skills.values()).map(skill => skill.toJSON());
-                fs.writeFileSync(
-                    path.join(saveDir, 'skills.json'),
-                    JSON.stringify(skillsData, null, 2)
-                );
-
-                // Save metadata about the save
-                const metadata = {
-                    saveName: saveName,
-                    timestamp: new Date().toISOString(),
-                    playerName: currentPlayer.name,
-                    playerId: currentPlayer.toJSON().id,
-                    playerLevel: currentPlayer.level,
-                    gameVersion: '1.0.0',
-                    chatHistoryLength: chatHistory.length,
-                    totalPlayers: players.size,
-                    totalThings: things.size,
-                    totalLocations: gameLocations.size,
-                    totalLocationExits: gameLocationExits.size,
-                    totalRegions: regions.size,
-                    totalGeneratedImages: generatedImages.size,
-                    totalSkills: skills.size,
-                    currentSettingId: currentSetting?.id || null,
-                    currentSettingName: currentSetting?.name || null
-                };
-
-                if (currentSetting && typeof currentSetting.toJSON === 'function') {
-                    const settingPath = path.join(saveDir, 'setting.json');
-                    const settingData = currentSetting.toJSON();
-                    fs.writeFileSync(settingPath, JSON.stringify(settingData, null, 2));
-                }
-
-                fs.writeFileSync(
-                    path.join(saveDir, 'metadata.json'),
-                    JSON.stringify(metadata, null, 2)
-                );
+                Utils.writeSerializedGameState(saveDir, serialized);
 
                 res.json({
                     success: true,
@@ -10189,14 +10139,8 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                // Load metadata
-                const metadataPath = path.join(saveDir, 'metadata.json');
-                let metadata = {};
-                if (fs.existsSync(metadataPath)) {
-                    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-                }
+                const serialized = Utils.loadSerializedGameState(saveDir);
 
-                // Reset in-memory image job state before loading new data
                 jobQueue.length = 0;
                 imageJobs.clear();
                 pendingLocationImages.clear();
@@ -10204,262 +10148,82 @@ module.exports = function registerApiRoutes(scope) {
                 npcGenerationPromises.clear();
                 isProcessingJob = false;
 
-                const skillsPath = path.join(saveDir, 'skills.json');
-                skills.clear();
-                if (fs.existsSync(skillsPath)) {
-                    try {
-                        const skillsData = JSON.parse(fs.readFileSync(skillsPath, 'utf8')) || [];
-                        for (const skillEntry of skillsData) {
-                            try {
-                                const skill = Skill.fromJSON(skillEntry);
-                                skills.set(skill.name, skill);
-                            } catch (skillError) {
-                                console.warn('Skipping invalid skill entry:', skillError.message);
-                            }
+                const hydrationResult = Utils.hydrateGameState(serialized, {
+                    gameLocations,
+                    gameLocationExits,
+                    regions,
+                    chatHistoryRef: chatHistory,
+                    generatedImages,
+                    things,
+                    players,
+                    skills,
+                    jobQueue,
+                    imageJobs,
+                    pendingLocationImages,
+                    npcGenerationPromises
+                });
+
+                let metadata = hydrationResult.metadata || {};
+                if (!metadata || typeof metadata !== 'object') {
+                    metadata = {};
+                }
+                metadata.saveName = metadata.saveName || saveName;
+
+                const loadedSetting = hydrationResult.setting || null;
+                if (loadedSetting) {
+                    if (currentSetting && typeof currentSetting.updateFromJSON === 'function') {
+                        try {
+                            currentSetting.updateFromJSON(loadedSetting);
+                        } catch (settingError) {
+                            console.warn('Failed to apply loaded setting:', settingError.message);
                         }
-                    } catch (skillLoadError) {
-                        console.warn('Failed to load skills from save:', skillLoadError.message);
-                    }
-                }
-                Player.setAvailableSkills(skills);
-
-                // Load world things before players so inventories can resolve
-                const thingsPath = path.join(saveDir, 'things.json');
-                things.clear();
-                if (typeof Thing.clear === 'function') {
-                    Thing.clear();
-                }
-                if (fs.existsSync(thingsPath)) {
-                    try {
-                        const thingsData = JSON.parse(fs.readFileSync(thingsPath, 'utf8')) || {};
-                        for (const [id, payload] of Object.entries(thingsData)) {
-                            try {
-                                const thing = Thing.fromJSON(payload);
-                                things.set(id, thing);
-                            } catch (thingError) {
-                                console.warn('Skipping invalid thing entry:', thingError.message);
-                            }
-                        }
-                    } catch (thingLoadError) {
-                        console.warn('Failed to load things from save:', thingLoadError.message);
-                    }
-                }
-
-                // Load all players first
-                const allPlayersPath = path.join(saveDir, 'allPlayers.json');
-                if (fs.existsSync(allPlayersPath)) {
-                    players.clear();
-                    const allPlayersData = JSON.parse(fs.readFileSync(allPlayersPath, 'utf8')) || {};
-                    for (const [id, playerData] of Object.entries(allPlayersData)) {
-                        const player = Player.fromJSON(playerData);
-                        if (typeof player.syncSkillsWithAvailable === 'function') {
-                            player.syncSkillsWithAvailable();
-                        }
-                        players.set(id, player);
-                    }
-                }
-
-                // Set current player from metadata
-                if (metadata.playerId && players.has(metadata.playerId)) {
-                    currentPlayer = players.get(metadata.playerId);
-                } else {
-                    currentPlayer = null;
-                }
-
-                // Restore setting
-                const settingFilePath = path.join(saveDir, 'setting.json');
-                if (fs.existsSync(settingFilePath)) {
-                    try {
-                        const settingData = JSON.parse(fs.readFileSync(settingFilePath, 'utf8'));
-                        if (settingData && typeof settingData === 'object') {
-                            if (settingData.id) {
-                                SettingInfo.delete(settingData.id);
-                            }
-                            const loadedSetting = SettingInfo.fromJSON ? SettingInfo.fromJSON(settingData) : new SettingInfo(settingData);
+                    } else if (typeof SettingInfo?.fromJSON === 'function') {
+                        try {
+                            currentSetting = SettingInfo.fromJSON(loadedSetting);
+                        } catch (settingError) {
+                            console.warn('Failed to instantiate setting from save:', settingError.message);
                             currentSetting = loadedSetting;
                         }
-                    } catch (settingError) {
-                        console.warn('Failed to restore setting from save:', settingError.message);
-                        currentSetting = null;
+                    } else {
+                        currentSetting = loadedSetting;
                     }
                 } else {
                     currentSetting = null;
                 }
 
-                // Load game world data
-                const gameWorldPath = path.join(saveDir, 'gameWorld.json');
-                if (fs.existsSync(gameWorldPath)) {
-                    const gameWorldData = JSON.parse(fs.readFileSync(gameWorldPath, 'utf8'));
-
-                    // Clear existing game world
-                    gameLocations.clear();
-                    gameLocationExits.clear();
-                    regions.clear();
-                    Region.clear();
-
-                    // Recreate Location instances
-                    for (const [id, locationData] of Object.entries(gameWorldData.locations || {})) {
-                        const location = new Location({
-                            description: locationData.description ?? null,
-                            baseLevel: locationData.baseLevel ?? null,
-                            id: locationData.id,
-                            regionId: locationData.regionId ?? null,
-                            checkRegionId: false,
-                            name: locationData.name ?? null,
-                            imageId: locationData.imageId ?? null,
-                            isStub: locationData.isStub ?? false,
-                            stubMetadata: locationData.stubMetadata ?? null,
-                            hasGeneratedStubs: locationData.hasGeneratedStubs ?? false,
-                            statusEffects: locationData.statusEffects || [],
-                            npcIds: locationData.npcIds || [],
-                            thingIds: locationData.thingIds || []
-                        });
-
-                        const exitsByDirection = locationData.exits || {};
-                        for (const [direction, exitInfo] of Object.entries(exitsByDirection)) {
-                            if (!exitInfo || !exitInfo.destination) {
-                                continue;
-                            }
-
-                            const exitId = exitInfo.id || undefined;
-                            let exit = exitId ? gameLocationExits.get(exitId) : null;
-
-                            if (!exit) {
-                                exit = new LocationExit({
-                                    description: exitInfo.description || `${exitInfo.destination}`,
-                                    destination: exitInfo.destination,
-                                    destinationRegion: exitInfo.destinationRegion || null,
-                                    bidirectional: exitInfo.bidirectional !== false,
-                                    id: exitId,
-                                    isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType),
-                                    vehicleType: exitInfo.vehicleType || null
-                                });
-                                gameLocationExits.set(exit.id, exit);
-                            } else {
-                                if (exitInfo.description) {
-                                    try {
-                                        exit.description = exitInfo.description;
-                                    } catch (_) {
-                                        exit.update({ description: exitInfo.description });
-                                    }
-                                }
-                                try {
-                                    exit.destination = exitInfo.destination;
-                                } catch (_) {
-                                    exit.update({ destination: exitInfo.destination });
-                                }
-                                try {
-                                    exit.bidirectional = exitInfo.bidirectional !== false;
-                                } catch (_) {
-                                    exit.update({ bidirectional: exitInfo.bidirectional !== false });
-                                }
-                                try {
-                                    exit.destinationRegion = exitInfo.destinationRegion || null;
-                                } catch (_) {
-                                    exit.update({ destinationRegion: exitInfo.destinationRegion || null });
-                                }
-                                try {
-                                    exit.isVehicle = Boolean(exitInfo.isVehicle || exitInfo.vehicleType);
-                                } catch (_) {
-                                    exit.update({ isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType) });
-                                }
-                                try {
-                                    exit.vehicleType = exitInfo.vehicleType || null;
-                                } catch (_) {
-                                    exit.update({ vehicleType: exitInfo.vehicleType || null });
-                                }
-                            }
-
-                            location.addExit(direction, exit);
-                        }
-
-                        gameLocations.set(id, location);
-                    }
-
-                    // Recreate LocationExit instances not already attached
-                    for (const [id, exitData] of Object.entries(gameWorldData.locationExits || {})) {
-                        if (gameLocationExits.has(id)) {
-                            continue;
-                        }
-                        const exit = new LocationExit({
-                            description: exitData.description,
-                            destination: exitData.destination,
-                            destinationRegion: exitData.destinationRegion || null,
-                            bidirectional: exitData.bidirectional,
-                            id: exitData.id,
-                            isVehicle: Boolean(exitData.isVehicle || exitData.vehicleType),
-                            vehicleType: exitData.vehicleType || null
-                        });
-                        gameLocationExits.set(id, exit);
-                    }
-
-                    for (const [id, regionData] of Object.entries(gameWorldData.regions || {})) {
-                        try {
-                            const region = Region.fromJSON(regionData);
-                            regions.set(id, region);
-                        } catch (regionError) {
-                            console.warn(`Failed to load region ${id}:`, regionError.message);
-                        }
-                    }
+                let resolvedPlayer = null;
+                if (metadata.playerId && players.has(metadata.playerId)) {
+                    resolvedPlayer = players.get(metadata.playerId);
+                }
+                if (!resolvedPlayer) {
+                    const iterator = players.values();
+                    resolvedPlayer = iterator.next().value || null;
+                }
+                if (!resolvedPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No players found in save file'
+                    });
                 }
 
-                // Load chat history
-                const chatHistoryPath = path.join(saveDir, 'chatHistory.json');
-                if (fs.existsSync(chatHistoryPath)) {
-                    chatHistory = JSON.parse(fs.readFileSync(chatHistoryPath, 'utf8')) || [];
+                currentPlayer = resolvedPlayer;
+                this.currentPlayer = currentPlayer;
+                Player.setCurrentPlayer?.(currentPlayer);
+                if (typeof Player.register === 'function') {
+                    Player.register(currentPlayer);
                 }
 
-                // Load generated images
-                const imagesPath = path.join(saveDir, 'images.json');
-                if (fs.existsSync(imagesPath)) {
-                    generatedImages.clear();
-                    const imagesData = JSON.parse(fs.readFileSync(imagesPath, 'utf8')) || {};
-                    for (const [id, imageData] of Object.entries(imagesData)) {
-                        generatedImages.set(id, imageData);
-                    }
-                }
-
-                // Clean up stale image references
                 const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
                 const hasImage = (imageId) => {
-                    //console.log(`Checking existing image for ID: ${imageId}`);
                     if (!imageId) {
-                        console.warn('No image ID provided');
                         return false;
                     }
                     if (generatedImages.has(imageId)) {
-                        //console.log(`Found existing image in cache for ID: ${imageId}`);
                         return true;
                     }
-                    console.log(`No existing image found for ID: ${imageId}`);
                     const imagesDir = path.join(__dirname, 'public', 'generated-images');
                     return KNOWN_EXTENSIONS.some(ext => fs.existsSync(path.join(imagesDir, `${imageId}${ext}`)));
                 };
-
-                for (const thing of things.values()) {
-                    //console.log(`Checking existing image for thing ${thing.name}: ${thing.imageId}`);
-                    if (thing && thing.imageId && !hasImage(thing.imageId)) {
-                        thing.imageId = null;
-                    }
-                }
-
-                for (const player of players.values()) {
-                    //console.log(`Checking existing image for player ${player.name}: ${player.imageId}`);
-                    if (!player) {
-                        continue;
-                    }
-                    if (player.imageId && !hasImage(player.imageId)) {
-                        player.imageId = null;
-                    }
-                    if (typeof player.getInventoryItems === 'function') {
-                        const inventoryItems = player.getInventoryItems();
-                        for (const item of inventoryItems) {
-                            if (item && item.imageId && !hasImage(item.imageId)) {
-                                item.imageId = null;
-                            }
-                        }
-                    }
-                }
 
                 const ensureInventoryImages = (character) => {
                     if (!character || typeof character.getInventoryItems !== 'function') {
@@ -10473,14 +10237,30 @@ module.exports = function registerApiRoutes(scope) {
                         if (!item) {
                             continue;
                         }
-                        if (!item.imageId || !hasImage(item.imageId)) {
+                        if (item.imageId && !hasImage(item.imageId)) {
                             item.imageId = null;
                         }
                     }
                 };
 
+                for (const thing of things.values()) {
+                    if (thing && thing.imageId && !hasImage(thing.imageId)) {
+                        thing.imageId = null;
+                    }
+                }
+
+                for (const player of players.values()) {
+                    if (!player) {
+                        continue;
+                    }
+                    if (player.imageId && !hasImage(player.imageId)) {
+                        player.imageId = null;
+                    }
+                    ensureInventoryImages(player);
+                }
+
                 if (currentPlayer) {
-                    if (!currentPlayer.imageId || !hasImage(currentPlayer.imageId)) {
+                    if (currentPlayer.imageId && !hasImage(currentPlayer.imageId)) {
                         currentPlayer.imageId = null;
                     }
                     ensureInventoryImages(currentPlayer);
@@ -10506,12 +10286,38 @@ module.exports = function registerApiRoutes(scope) {
                         if (!npc) {
                             continue;
                         }
-                        if (!npc.imageId || !hasImage(npc.imageId)) {
+                        if (npc.imageId && !hasImage(npc.imageId)) {
                             npc.imageId = null;
                         }
                         ensureInventoryImages(npc);
                     }
                 }
+
+                metadata.playerId = metadata.playerId || currentPlayer.id;
+                metadata.playerName = metadata.playerName || currentPlayer.name;
+                try {
+                    if (typeof currentPlayer.getCurrentLocation === 'function') {
+                        const locationId = currentPlayer.currentLocation;
+                        if (locationId && gameLocations.has(locationId)) {
+                            this.currentLocation = gameLocations.get(locationId);
+                        }
+                    }
+                } catch (locationError) {
+                    console.warn('Failed to resolve current location after load:', locationError.message);
+                }
+
+                metadata.playerLevel = metadata.playerLevel || currentPlayer.level;
+                metadata.timestamp = metadata.timestamp || new Date().toISOString();
+                metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
+                metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+                metadata.totalPlayers = players.size;
+                metadata.totalThings = things.size;
+                metadata.totalLocations = gameLocations.size;
+                metadata.totalLocationExits = gameLocationExits.size;
+                metadata.totalRegions = regions.size;
+                metadata.chatHistoryLength = Array.isArray(chatHistory) ? chatHistory.length : (metadata.chatHistoryLength || 0);
+                metadata.totalGeneratedImages = generatedImages.size;
+                metadata.totalSkills = skills.size;
 
                 res.json({
                     success: true,
@@ -10527,7 +10333,7 @@ module.exports = function registerApiRoutes(scope) {
                         totalGeneratedImages: generatedImages.size,
                         currentSetting: currentSetting && typeof currentSetting.toJSON === 'function'
                             ? currentSetting.toJSON()
-                            : null
+                            : (currentSetting || null)
                     },
                     message: `Game loaded successfully from: ${saveName}`
                 });

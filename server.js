@@ -3533,6 +3533,100 @@ async function expandRegionEntryStub(stubLocation) {
         let region = regions.get(targetRegionId) || null;
         const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
 
+        const resolveEntranceLocation = (targetRegion) => {
+            if (!targetRegion) {
+                return null;
+            }
+            const entranceLocationId = targetRegion.entranceLocationId || null;
+            let entranceLocation = entranceLocationId ? gameLocations.get(entranceLocationId) : null;
+            if (!entranceLocation && Array.isArray(targetRegion.locationIds)) {
+                entranceLocation = targetRegion.locationIds
+                    .map(id => gameLocations.get(id))
+                    .find(Boolean) || null;
+            }
+            if (entranceLocation) {
+                targetRegion.entranceLocationId = entranceLocation.id;
+            }
+            return entranceLocation || null;
+        };
+
+        const targetRegionName = (pendingInfo?.name || metadata.targetRegionName || '').trim();
+        let originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
+        if (targetRegionName) {
+            const existingRegionByName = Region.getByName(targetRegionName);
+            if (existingRegionByName) {
+                metadata.targetRegionId = existingRegionByName.id;
+                metadata.targetRegionName = existingRegionByName.name;
+
+                if (!metadata.originLocationId) {
+                    const originMatch = Array.from(gameLocations.values()).find(location => {
+                        if (!location || typeof location.getAvailableDirections !== 'function') {
+                            return false;
+                        }
+                        return location.getAvailableDirections().some(direction => {
+                            const exit = location.getExit(direction);
+                            if (!exit || exit.destination !== stubLocation.id) {
+                                return false;
+                            }
+                            metadata.originDirection = metadata.originDirection || direction;
+                            return true;
+                        });
+                    });
+                    if (originMatch) {
+                        metadata.originLocationId = originMatch.id;
+                        originLocation = originMatch;
+                    }
+                }
+
+                stubLocation.stubMetadata = metadata;
+
+                const entranceLocation = resolveEntranceLocation(existingRegionByName);
+                if (entranceLocation) {
+                    if (originLocation && typeof originLocation.removeExit === 'function' && typeof originLocation.getAvailableDirections === 'function') {
+                        for (const direction of originLocation.getAvailableDirections()) {
+                            const exit = originLocation.getExit(direction);
+                            if (exit && exit.destination === stubLocation.id) {
+                                originLocation.removeExit(direction);
+                            }
+                        }
+                    }
+
+                    await finalizeRegionEntry({
+                        stubLocation,
+                        entranceLocation,
+                        region: existingRegionByName,
+                        originDescription: metadata.shortDescription || stubLocation.description || `${existingRegionByName.name}`
+                    });
+
+                    if (originLocation) {
+                        const originDescription = metadata.shortDescription || stubLocation.description || `${existingRegionByName.name}`;
+                        const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
+                        const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
+
+                        const hasExistingReturn = typeof originLocation.getAvailableDirections === 'function'
+                            && originLocation.getAvailableDirections().some(direction => {
+                                const exit = originLocation.getExit(direction);
+                                return exit && exit.destination === entranceLocation.id;
+                            });
+
+                        if (!hasExistingReturn) {
+                            ensureExitConnection(originLocation, entranceLocation, {
+                                description: originDescription,
+                                bidirectional: true,
+                                destinationRegion: existingRegionByName.id,
+                                isVehicle: originIsVehicle,
+                                vehicleType: originVehicleType
+                            });
+                        }
+                    }
+
+                    pendingRegionStubs.delete(targetRegionId);
+                    regionEntryExpansionPromises.delete(stubLocation.id);
+                    return entranceLocation;
+                }
+            }
+        }
+
         if (pendingInfo?.parentRegionId && region && !region.parentRegionId) {
             region.parentRegionId = pendingInfo.parentRegionId;
         }
@@ -3681,16 +3775,7 @@ async function expandRegionEntryStub(stubLocation) {
         }
 
         // Region already exists
-        const entranceLocationId = region.entranceLocationId || null;
-        let entranceLocation = entranceLocationId ? gameLocations.get(entranceLocationId) : null;
-        if (!entranceLocation) {
-            entranceLocation = region.locationIds
-                .map(id => gameLocations.get(id))
-                .find(Boolean);
-            if (entranceLocation) {
-                region.entranceLocationId = entranceLocation.id;
-            }
-        }
+        const entranceLocation = resolveEntranceLocation(region);
 
         if (!entranceLocation) {
             return null;
@@ -7074,6 +7159,200 @@ async function enforceBannedNpcNames({
     return workingList;
 }
 
+async function ensureUniqueNpcNames({
+    npcDataList,
+    existingNpcSummaries,
+    conversationMessages,
+    chatEndpoint,
+    model,
+    apiKey
+} = {}) {
+    if (!Array.isArray(npcDataList) || !npcDataList.length) {
+        return npcDataList;
+    }
+
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+        return npcDataList;
+    }
+
+    if (!chatEndpoint || !model || !apiKey) {
+        return npcDataList;
+    }
+
+    const workingList = npcDataList.map(npc => ({ ...npc }));
+
+    const baseMessages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
+
+    const rebuildNameSet = () => {
+        const nameSet = new Map();
+        for (const npc of Player.getAll()) {
+            if (!npc || !npc.isNPC || typeof npc.name !== 'string') {
+                continue;
+            }
+            const key = npc.name.trim().toLowerCase();
+            if (!key) {
+                continue;
+            }
+            if (!nameSet.has(key)) {
+                nameSet.set(key, []);
+            }
+            nameSet.get(key).push(npc.name);
+        }
+        return nameSet;
+    };
+
+    let existingNameSet = rebuildNameSet();
+
+    let attempts = 0;
+    while (attempts < 3) {
+        const seenNew = new Map();
+        const duplicates = [];
+
+        for (const npc of workingList) {
+            if (!npc || typeof npc.name !== 'string') {
+                continue;
+            }
+            const trimmed = npc.name.trim();
+            if (!trimmed) {
+                continue;
+            }
+            const key = trimmed.toLowerCase();
+            const seenCount = seenNew.get(key) || 0;
+            const hasExisting = existingNameSet.has(key);
+            if (hasExisting || seenCount > 0) {
+                duplicates.push(npc);
+            }
+            seenNew.set(key, seenCount + 1);
+        }
+
+        if (!duplicates.length) {
+            break;
+        }
+
+        const contextMap = new Map();
+        const addContext = (summary) => {
+            if (!summary || !summary.name) {
+                return;
+            }
+            const key = summary.name.trim().toLowerCase();
+            if (!key) {
+                return;
+            }
+            if (!contextMap.has(key)) {
+                contextMap.set(key, summary);
+            }
+        };
+
+        if (Array.isArray(existingNpcSummaries)) {
+            existingNpcSummaries.forEach(addContext);
+        }
+
+        Player.getAll().forEach(npc => addContext(summarizeNpcForNameRegen(npc)));
+        workingList.forEach(npc => addContext({
+            name: npc?.name,
+            shortDescription: npc?.shortDescription || '',
+            detailedDescription: npc?.description || ''
+        }));
+
+        const regenerationCandidates = duplicates.map(npc => ({
+            name: npc.name,
+            shortDescription: npc.shortDescription || '',
+            detailedDescription: npc.description || ''
+        }));
+
+        const prompt = renderNpcNameRegenPrompt({
+            existingNpcSummaries: Array.from(contextMap.values()),
+            regenerationCandidates
+        });
+
+        if (!prompt) {
+            break;
+        }
+
+        const regenMessages = baseMessages.concat({ role: 'user', content: prompt });
+
+        const requestData = {
+            model,
+            messages: regenMessages,
+            max_tokens: 600,
+            temperature: 0.5
+        };
+
+        let regenText = '';
+        let apiDurationSeconds = null;
+        try {
+            const requestStart = Date.now();
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: baseTimeoutMilliseconds
+            });
+            regenText = response.data?.choices?.[0]?.message?.content || '';
+            apiDurationSeconds = (Date.now() - requestStart) / 1000;
+        } catch (error) {
+            console.warn('NPC duplicate name regeneration failed:', error.message);
+            break;
+        }
+
+        if (!regenText.trim()) {
+            attempts += 1;
+            continue;
+        }
+
+        try {
+            logNpcNameRegeneration({ prompt, responseText: regenText, durationSeconds: apiDurationSeconds });
+        } catch (logError) {
+            console.warn('Failed to log NPC duplicate name regeneration:', logError.message);
+        }
+
+        const mapping = parseNpcNameRegenResponse(regenText);
+        if (!mapping.size) {
+            attempts += 1;
+            continue;
+        }
+
+        for (const npc of workingList) {
+            if (!npc || typeof npc.name !== 'string') {
+                continue;
+            }
+            const currentName = npc.name.trim();
+            if (!currentName) {
+                continue;
+            }
+            const replacement = mapping.get(currentName) || mapping.get(currentName.toLowerCase());
+            if (replacement && replacement.newName) {
+                npc.name = replacement.newName;
+                if (replacement.shortDescription) {
+                    npc.shortDescription = replacement.shortDescription;
+                }
+                if (replacement.description) {
+                    npc.description = replacement.description;
+                }
+            }
+        }
+
+        existingNameSet = rebuildNameSet();
+        workingList.forEach(npc => {
+            if (!npc || typeof npc.name !== 'string') {
+                return;
+            }
+            const key = npc.name.trim().toLowerCase();
+            if (!key) {
+                return;
+            }
+            if (!existingNameSet.has(key)) {
+                existingNameSet.set(key, [npc.name]);
+            }
+        });
+
+        attempts += 1;
+    }
+
+    return workingList;
+}
+
 function computeNpcRenameMap(originalNames = [], updatedNpcs = []) {
     const renameMap = new Map();
     if (!Array.isArray(originalNames) || !Array.isArray(updatedNpcs)) {
@@ -8249,6 +8528,16 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 model,
                 apiKey
             });
+
+            npcs = await ensureUniqueNpcNames({
+                npcDataList: npcs,
+                existingNpcSummaries: existingNpcSummariesForRegen,
+                conversationMessages: baseConversation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+
             npcRenameMap = computeNpcRenameMap(originalNpcNames, npcs);
         }
 
@@ -8528,6 +8817,16 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 model,
                 apiKey
             });
+
+            parsedNpcs = await ensureUniqueNpcNames({
+                npcDataList: parsedNpcs,
+                existingNpcSummaries: existingNpcSummariesForRegen,
+                conversationMessages: baseConversation,
+                chatEndpoint,
+                model,
+                apiKey
+            });
+
             regionNpcRenameMap = computeNpcRenameMap(originalRegionNpcNames, parsedNpcs);
         }
 
