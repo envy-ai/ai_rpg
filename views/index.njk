@@ -185,6 +185,7 @@
                                                 <span class="chat-player-archetype" id="chatPlayerArchetype">Class · Race</span>
                                             </div>
                                             <div class="chat-player-health" id="chatPlayerHealth">HP: ? / ?</div>
+                                            <div class="chat-player-health" id="chatPlayerExperience">Exp: ? / 100</div>
                                             <p class="chat-player-description" id="chatPlayerDescription">No description available.</p>
                                         </div>
                                     </div>
@@ -1472,6 +1473,7 @@
             level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
             health: document.getElementById('chatPlayerHealth'),
+            experience: document.getElementById('chatPlayerExperience'),
             description: document.getElementById('chatPlayerDescription'),
             partyGrid: document.getElementById('chatPartyMembers'),
             partyEmpty: document.getElementById('chatPartyEmpty'),
@@ -1561,6 +1563,11 @@
             const healthMaximum = Number.isFinite(data?.maxHealth) ? data.maxHealth : '?';
             if (chatSidebarElements.health) {
                 chatSidebarElements.health.textContent = `HP: ${healthCurrent} / ${healthMaximum}`;
+            }
+
+            const experienceValue = Number.isFinite(data?.experience) ? data.experience : '?';
+            if (chatSidebarElements.experience) {
+                chatSidebarElements.experience.textContent = `Exp: ${experienceValue} / 100`;
             }
 
             const description = (data?.shortDescription || data?.description || 'No description available.').trim();

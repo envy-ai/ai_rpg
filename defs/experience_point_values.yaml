@@ -1,10 +1,16 @@
 Defeating a boss: 100
 Completing a major quest: 50
-Exploring a new area: 10
+Exploring a new area: 3
+Going to a new region: 15
+Exploring a significant landmark: 10
+Helping an NPC with a major task: 15
+Helping an NPC with a minor task: 5
 Completing a side quest: 20
 Defeating a standard enemy: 5
 Finding a hidden item: 10
 Crafting an item: 10
+Crafting a high-quality item: 20
+Crafting an epic or legendary item: 50
 Creating a building or structure: 30
 Defeating a mini-boss: 25
 Defeating an elite enemy: 15
@@ -13,3 +19,4 @@ Succeeding at an easy task: 2
 Succeeding at a medium task: 5
 Succeeding at a hard task: 10
 Failing a task: 1
+Traveling to a previously visited area: 0

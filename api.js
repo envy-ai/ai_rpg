@@ -309,17 +309,53 @@ module.exports = function registerApiRoutes(scope) {
             return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
         };
 
-        const pushChatEntry = (entry, collector = null) => {
+        const requireLocationId = (value, contextLabel = 'chat entry') => {
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed.length) {
+                    return trimmed;
+                }
+            }
+
+            throw new Error(`${contextLabel} is missing a valid locationId`);
+        };
+
+        const pushChatEntry = (entry, collector = null, locationId = null) => {
             const normalized = normalizeChatEntry(entry);
             if (!normalized) {
                 return null;
             }
 
+            const resolvedLocationId = (() => {
+                if (locationId && typeof locationId === 'string' && locationId.trim()) {
+                    return locationId.trim();
+                }
+                if (typeof normalized.locationId === 'string' && normalized.locationId.trim()) {
+                    return normalized.locationId.trim();
+                }
+                const metadataLocation = normalized.metadata && typeof normalized.metadata === 'object'
+                    ? normalized.metadata.locationId
+                    : null;
+                if (typeof metadataLocation === 'string' && metadataLocation.trim()) {
+                    return metadataLocation.trim();
+                }
+                throw new Error('pushChatEntry is missing a valid locationId');
+            })();
+
+            normalized.locationId = resolvedLocationId;
+            const existingMetadata = normalized.metadata && typeof normalized.metadata === 'object'
+                ? normalized.metadata
+                : {};
+            normalized.metadata = {
+                ...existingMetadata,
+                locationId: resolvedLocationId
+            };
+
             if (!normalized.travel) {
                 const npcNames = collectNpcNamesForContext(normalized);
                 if (npcNames.length) {
                     normalized.metadata = {
-                        ...(normalized.metadata && typeof normalized.metadata === 'object' ? normalized.metadata : {}),
+                        ...normalized.metadata,
                         npcNames
                     };
                 }
@@ -1157,7 +1193,8 @@ module.exports = function registerApiRoutes(scope) {
             environmentalDamageEvents = null,
             needBarChanges = null,
             timestamp = null,
-            parentId = null
+            parentId = null,
+            locationId = null
         } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -1175,6 +1212,8 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
+            const resolvedLocationId = requireLocationId(locationId, 'recordEventSummaryEntry');
+
             const summaryText = formatEventSummaryText(bundle.items, label);
             if (!summaryText) {
                 return null;
@@ -1190,10 +1229,11 @@ module.exports = function registerApiRoutes(scope) {
                 summaryItems: bundle.items.map(item => ({
                     icon: item?.icon || '•',
                     text: item?.text || ''
-                }))
+                })),
+                locationId: resolvedLocationId
             };
 
-            const storedEntry = pushChatEntry(entry, collector);
+            const storedEntry = pushChatEntry(entry, collector, resolvedLocationId);
             return {
                 summaryText,
                 shouldRefresh: bundle.shouldRefresh,
@@ -1201,13 +1241,15 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function recordPlausibilityEntry({ data, timestamp = null, parentId = null } = {}, collector = null) {
+        function recordPlausibilityEntry({ data, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
             }
             if (!data || typeof data !== 'object') {
                 throw new Error('recordPlausibilityEntry requires structured plausibility data');
             }
+
+            const resolvedLocationId = requireLocationId(locationId, 'recordPlausibilityEntry');
 
             const raw = typeof data.raw === 'string' && data.raw.trim().length ? data.raw.trim() : null;
             const structured = data.structured && typeof data.structured === 'object' ? data.structured : null;
@@ -1227,19 +1269,22 @@ module.exports = function registerApiRoutes(scope) {
                 type: 'plausibility',
                 timestamp: timestamp || new Date().toISOString(),
                 parentId: parentId || null,
-                plausibility: serialized
+                plausibility: serialized,
+                locationId: resolvedLocationId
             };
 
-            return pushChatEntry(entry, collector);
+            return pushChatEntry(entry, collector, resolvedLocationId);
         }
 
-        function recordSkillCheckEntry({ resolution, timestamp = null, parentId = null } = {}, collector = null) {
+        function recordSkillCheckEntry({ resolution, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
             }
             if (!resolution || typeof resolution !== 'object') {
                 return null;
             }
+
+            const resolvedLocationId = requireLocationId(locationId, 'recordSkillCheckEntry');
 
             let serializedResolution = null;
             try {
@@ -1253,19 +1298,22 @@ module.exports = function registerApiRoutes(scope) {
                 type: 'skill-check',
                 timestamp: timestamp || new Date().toISOString(),
                 parentId: parentId || null,
-                skillCheck: serializedResolution
+                skillCheck: serializedResolution,
+                locationId: resolvedLocationId
             };
 
-            return pushChatEntry(entry, collector);
+            return pushChatEntry(entry, collector, resolvedLocationId);
         }
 
-        function recordAttackCheckEntry({ summary, attackCheck = null, timestamp = null, parentId = null } = {}, collector = null) {
+        function recordAttackCheckEntry({ summary, attackCheck = null, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
             }
             if (!summary || typeof summary !== 'object') {
                 return null;
             }
+
+            const resolvedLocationId = requireLocationId(locationId, 'recordAttackCheckEntry');
 
             let summaryCopy;
             try {
@@ -1288,14 +1336,15 @@ module.exports = function registerApiRoutes(scope) {
                 type: 'attack-check',
                 timestamp: timestamp || new Date().toISOString(),
                 parentId: parentId || null,
-                attackSummary: summaryCopy
+                attackSummary: summaryCopy,
+                locationId: resolvedLocationId
             };
 
             if (attackCheckCopy) {
                 entry.attackCheck = attackCheckCopy;
             }
 
-            return pushChatEntry(entry, collector);
+            return pushChatEntry(entry, collector, resolvedLocationId);
         }
 
         function loadRandomEventLines(type) {
@@ -1507,6 +1556,7 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
+                const randomEventLocationId = requireLocationId(location?.id, 'random event entry');
                 const randomEventEntry = pushChatEntry({
                     role: 'assistant',
                     content: narrativeText,
@@ -1514,8 +1564,8 @@ module.exports = function registerApiRoutes(scope) {
                     randomEvent: true,
                     rarity: rarity || 'common',
                     type: 'random-event',
-                    locationId: location?.id || null
-                });
+                    locationId: randomEventLocationId
+                }, null, randomEventLocationId);
                 const randomEventTimestamp = randomEventEntry?.timestamp || new Date().toISOString();
 
                 let eventChecks = null;
@@ -1569,7 +1619,8 @@ module.exports = function registerApiRoutes(scope) {
                     environmentalDamageEvents: summary.environmentalDamageEvents,
                     needBarChanges: summary.needBarChanges,
                     timestamp: summary.timestamp,
-                    parentId: randomEventEntry?.id || null
+                    parentId: randomEventEntry?.id || null,
+                    locationId: randomEventLocationId
                 });
 
                 return summary;
@@ -2866,6 +2917,42 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function logNpcMemoriesPrompt({ npcName, systemPrompt, generationPrompt, historyEntries, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const safeName = (npcName || 'unknown_npc').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 64) || 'npc';
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `npc_memories_${safeName}_${timestamp}.log`);
+
+                const parts = [
+                    `NPC: ${npcName || 'Unknown NPC'}`,
+                    '',
+                    '=== NPC MEMORIES SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== NPC MEMORIES GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== HISTORY ENTRIES ===',
+                    Array.isArray(historyEntries)
+                        ? JSON.stringify(historyEntries, null, 2)
+                        : '(history unavailable)',
+                    '',
+                    '=== NPC MEMORIES RESPONSE ===',
+                    responseText || '(no response)',
+                    ''
+                ];
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log npc memories prompt:', error.message);
+            }
+        }
+
         async function runNextNpcListPrompt({ locationOverride = null } = {}) {
             try {
                 const baseContext = buildBasePromptContext({ locationOverride });
@@ -3373,6 +3460,281 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null } = {}) {
+            if (!npc || !Array.isArray(historyEntries) || !historyEntries.length) {
+                return { raw: '', memory: null };
+            }
+
+            const endpoint = config?.ai?.endpoint;
+            const apiKey = config?.ai?.apiKey;
+            const model = config?.ai?.model;
+            if (!endpoint || !apiKey || !model) {
+                return { raw: '', memory: null };
+            }
+
+            let baseContext;
+            try {
+                baseContext = buildBasePromptContext({ locationOverride });
+            } catch (error) {
+                console.warn('Failed to build base context for NPC memories:', error.message);
+                baseContext = {};
+            }
+
+            const npcName = typeof npc.name === 'string' ? npc.name.trim() : '';
+            const nameLower = npcName.toLowerCase();
+
+            const deepClone = (value) => {
+                if (!value || typeof value !== 'object') {
+                    return value;
+                }
+                try {
+                    return JSON.parse(JSON.stringify(value));
+                } catch (_) {
+                    return Array.isArray(value) ? [...value] : { ...value };
+                }
+            };
+
+            let currentNpcContext = null;
+            if (Array.isArray(baseContext?.npcs)) {
+                currentNpcContext = baseContext.npcs.find(candidate => {
+                    const candidateName = typeof candidate?.name === 'string' ? candidate.name.trim() : '';
+                    return candidateName && candidateName.toLowerCase() === nameLower;
+                }) || null;
+            }
+            if (!currentNpcContext && Array.isArray(baseContext?.party)) {
+                currentNpcContext = baseContext.party.find(candidate => {
+                    const candidateName = typeof candidate?.name === 'string' ? candidate.name.trim() : '';
+                    return candidateName && candidateName.toLowerCase() === nameLower;
+                }) || null;
+            }
+
+            if (currentNpcContext) {
+                currentNpcContext = deepClone(currentNpcContext);
+            } else {
+                currentNpcContext = {
+                    name: npc.name || 'Unknown NPC',
+                    description: npc.description || '',
+                    class: npc.class || null,
+                    race: npc.race || null,
+                    personality: {
+                        type: npc.personalityType || '',
+                        traits: npc.personalityTraits || '',
+                        notes: npc.personalityNotes || ''
+                    },
+                    health: npc.health ?? 'unknown',
+                    maxHealth: npc.maxHealth ?? 'unknown',
+                    dispositionsTowardsPlayer: [],
+                    inventory: [],
+                    skills: [],
+                    abilities: [],
+                    statusEffects: [],
+                    needBars: []
+                };
+            }
+
+            if (!currentNpcContext.personality) {
+                currentNpcContext.personality = {
+                    type: npc.personalityType || '',
+                    traits: npc.personalityTraits || '',
+                    notes: npc.personalityNotes || ''
+                };
+            }
+
+            const existingMemories = Array.isArray(npc.importantMemories) ? npc.importantMemories : [];
+            currentNpcContext.importantMemories = existingMemories.slice(0);
+
+            const sanitizedHistoryEntries = historyEntries
+                .map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        return null;
+                    }
+                    const metadata = entry.metadata && typeof entry.metadata === 'object'
+                        ? {
+                            npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
+                            locationId: entry.metadata.locationId || null
+                        }
+                        : undefined;
+                    return {
+                        role: entry.role || null,
+                        content: entry.content || null,
+                        summary: entry.summary || null,
+                        metadata
+                    };
+                })
+                .filter(Boolean);
+
+            if (!sanitizedHistoryEntries.length) {
+                return { raw: '', memory: null };
+            }
+
+            const templatePayload = {
+                ...baseContext,
+                promptType: 'npc-memories',
+                currentNpc: currentNpcContext,
+                historyEntries: sanitizedHistoryEntries
+            };
+
+            let renderedTemplate;
+            try {
+                renderedTemplate = promptEnv.render('base-context.xml.njk', templatePayload);
+            } catch (error) {
+                console.warn('Failed to render npc-memories template:', error.message);
+                return { raw: '', memory: null };
+            }
+
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                return { raw: '', memory: null };
+            }
+
+            const chatEndpoint = endpoint.endsWith('/')
+                ? `${endpoint}chat/completions`
+                : `${endpoint}/chat/completions`;
+
+            const requestData = {
+                model,
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
+                temperature: typeof parsedTemplate.temperature === 'number'
+                    ? parsedTemplate.temperature
+                    : 0.2
+            };
+
+            try {
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: baseTimeoutMilliseconds
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const memoryMatch = raw.match(/<memory>([\s\S]*?)<\/memory>/i);
+                const memoryText = memoryMatch && typeof memoryMatch[1] === 'string'
+                    ? memoryMatch[1].trim()
+                    : '';
+
+                return {
+                    raw,
+                    memory: memoryText ? memoryText : null
+                };
+            } catch (error) {
+                console.warn(`Failed to run npc-memories prompt for ${npc.name || 'NPC'}:`, error.message);
+                return { raw: '', memory: null };
+            }
+        }
+
+        async function generateNpcMemoriesForLocationChange({ previousLocationId, newLocationId, player } = {}) {
+            if (!previousLocationId || !player) {
+                return;
+            }
+            if (previousLocationId === newLocationId) {
+                return;
+            }
+
+            let previousLocation = gameLocations.get(previousLocationId);
+            if (!previousLocation && typeof Location?.get === 'function') {
+                try {
+                    previousLocation = Location.get(previousLocationId) || null;
+                } catch (_) {
+                    previousLocation = null;
+                }
+            }
+
+            if (!previousLocation) {
+                return;
+            }
+
+            const npcIds = Array.isArray(previousLocation.npcIds)
+                ? previousLocation.npcIds.slice(0)
+                : [];
+            const partyMemberIds = typeof player.getPartyMembers === 'function'
+                ? player.getPartyMembers()
+                : [];
+
+            const candidateIds = new Set();
+            npcIds.forEach(id => { if (id) candidateIds.add(id); });
+            if (Array.isArray(partyMemberIds)) {
+                partyMemberIds.forEach(id => {
+                    if (id && id !== player.id) {
+                        candidateIds.add(id);
+                    }
+                });
+            }
+
+            if (!candidateIds.size) {
+                return;
+            }
+
+            const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+
+            const lowercaseCache = new Map();
+
+            for (const actorId of candidateIds) {
+                const actor = players.get(actorId);
+                if (!actor) {
+                    continue;
+                }
+
+                const actorName = typeof actor.name === 'string' ? actor.name.trim() : '';
+                if (!actorName) {
+                    continue;
+                }
+
+                const actorLower = lowercaseCache.get(actorName) || actorName.toLowerCase();
+                lowercaseCache.set(actorName, actorLower);
+
+                const filteredHistory = [];
+                for (const entry of historyEntries) {
+                    if (!entry || entry.travel) {
+                        continue;
+                    }
+                    const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
+                    const npcNames = Array.isArray(metadata?.npcNames) ? metadata.npcNames : null;
+                    if (!npcNames || !npcNames.length) {
+                        continue;
+                    }
+                    const matches = npcNames.some(name => {
+                        if (typeof name !== 'string') {
+                            return false;
+                        }
+                        return name.trim().toLowerCase() === actorLower;
+                    });
+                    if (!matches) {
+                        continue;
+                    }
+                    filteredHistory.push(entry);
+                }
+
+                if (!filteredHistory.length) {
+                    continue;
+                }
+
+                try {
+                    const result = await runNpcMemoriesPrompt({
+                        npc: actor,
+                        historyEntries: filteredHistory,
+                        locationOverride: previousLocation
+                    });
+
+                    if (result?.memory) {
+                        const added = typeof actor.addImportantMemory === 'function'
+                            ? actor.addImportantMemory(result.memory)
+                            : false;
+                        if (added) {
+                            console.log(`🧠 Added memory for ${actor.name}: ${result.memory}`);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Error while generating memories for ${actor.name}:`, error.message);
+                }
+            }
+        }
+
         async function runActionNarrativeForActor({
             actor,
             actionText,
@@ -3613,12 +3975,14 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
 
+                    const npcTurnLocationId = requireLocationId(npcLocation?.id, 'npc turn entry');
                     const npcTurnEntry = pushChatEntry({
                         role: 'assistant',
                         content: npcResponse,
                         actor: npc.name || null,
-                        isNpcTurn: true
-                    });
+                        isNpcTurn: true,
+                        locationId: npcTurnLocationId
+                    }, newChatEntries, npcTurnLocationId);
                     const npcTurnTimestamp = npcTurnEntry?.timestamp || new Date().toISOString();
 
                     const npcTurnResult = {
@@ -3655,7 +4019,8 @@ module.exports = function registerApiRoutes(scope) {
                         environmentalDamageEvents: npcTurnResult.environmentalDamageEvents,
                         needBarChanges: npcTurnResult.needBarChanges,
                         timestamp: npcTurnTimestamp,
-                        parentId: npcTurnEntry?.id || null
+                        parentId: npcTurnEntry?.id || null,
+                        locationId: npcTurnLocationId
                     }, newChatEntries);
 
                     if (!isAttack && actionResolution) {
@@ -3666,7 +4031,8 @@ module.exports = function registerApiRoutes(scope) {
                         recordSkillCheckEntry({
                             resolution: npcTurnResult.actionResolution,
                             timestamp: npcTurnTimestamp,
-                            parentId: npcTurnEntry?.id || null
+                            parentId: npcTurnEntry?.id || null,
+                            locationId: npcTurnLocationId
                         }, newChatEntries);
                     }
 
@@ -3677,7 +4043,8 @@ module.exports = function registerApiRoutes(scope) {
                                 summary: attackSummaryValue,
                                 attackCheck: attackCheckForResult,
                                 timestamp: npcTurnTimestamp,
-                                parentId: npcTurnEntry?.id || null
+                                parentId: npcTurnEntry?.id || null,
+                                locationId: npcTurnLocationId
                             }, newChatEntries);
                         }
                         if (attackDamageApplication) {
@@ -3767,6 +4134,49 @@ module.exports = function registerApiRoutes(scope) {
             let playerActionStreamSent = false;
             const newChatEntries = [];
 
+            const initialPlayerLocationId = currentPlayer?.currentLocation || null;
+            let locationMemoriesProcessed = false;
+
+            const processLocationChangeMemoriesIfNeeded = async () => {
+                if (locationMemoriesProcessed) {
+                    return;
+                }
+                locationMemoriesProcessed = true;
+
+                const player = currentPlayer || null;
+                if (!player || !initialPlayerLocationId) {
+                    return;
+                }
+
+                const currentLocationId = player.currentLocation || null;
+                if (!currentLocationId || currentLocationId === initialPlayerLocationId) {
+                    return;
+                }
+
+                try {
+                    await generateNpcMemoriesForLocationChange({
+                        previousLocationId: initialPlayerLocationId,
+                        newLocationId: currentLocationId,
+                        player
+                    });
+                } catch (error) {
+                    console.warn('Failed to update NPC memories after travel:', error.message || error);
+                }
+            };
+
+            const respond = async (payload, statusCode = 200) => {
+                try {
+                    await processLocationChangeMemoriesIfNeeded();
+                } catch (error) {
+                    console.warn('Failed during post-turn memory update:', error.message || error);
+                }
+
+                if (statusCode !== 200) {
+                    return res.status(statusCode).json(payload);
+                }
+                return res.json(payload);
+            };
+
             const stripStreamedEventArtifacts = (payload) => {
                 if (!payload || typeof payload !== 'object') {
                     return;
@@ -3788,7 +4198,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!messages) {
                     stream.error({ message: 'Missing messages parameter.' });
                     stream.complete({ aborted: true });
-                    return res.status(400).json({ error: 'Missing messages parameter' });
+                    return respond({ error: 'Missing messages parameter' }, 400);
                 }
 
                 stream.status('player_action:received', 'Processing player action.');
@@ -3811,11 +4221,13 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
                     pushChatEntry({
                         role: 'user',
                         content: userMessage.content,
-                        travel: isTravelMessage
-                    }, newChatEntries);
+                        travel: isTravelMessage,
+                        locationId: playerChatLocationId
+                    }, newChatEntries, playerChatLocationId);
                 }
 
                 stream.status('player_action:context', 'Preparing game state for action.');
@@ -3869,7 +4281,7 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
 
-                    return res.json(responseData);
+                    return respond(responseData);
                 }
                 const isForcedEventAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('!!');
                 const forcedEventText = isForcedEventAction
@@ -3976,14 +4388,15 @@ module.exports = function registerApiRoutes(scope) {
 
                                 responseData.debug = rejectionDebug;
 
+                                const attackRejectionLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'attack rejection entry');
                                 pushChatEntry({
                                     role: 'assistant',
-                                    content: attackRejectionReason
-                                }, newChatEntries);
+                                    content: attackRejectionReason,
+                                    locationId: attackRejectionLocationId
+                                }, newChatEntries, attackRejectionLocationId);
 
                                 responseData.messages = newChatEntries;
-                                res.json(responseData);
-                                return;
+                                return respond(responseData);
                             }
 
                             attackContextForPlausibility = buildAttackContextForActor({
@@ -4066,17 +4479,20 @@ module.exports = function registerApiRoutes(scope) {
 
                     responseData.debug = rejectionDebug;
 
+                    const rejectionLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'plausibility rejection entry');
                     const rejectionMessageEntry = pushChatEntry({
                         role: 'assistant',
-                        content: rejectionReason
-                    }, newChatEntries);
+                        content: rejectionReason,
+                        locationId: rejectionLocationId
+                    }, newChatEntries, rejectionLocationId);
 
                     if (attackContextForPlausibility?.summary) {
                         recordAttackCheckEntry({
                             summary: attackContextForPlausibility.summary,
                             attackCheck: attackCheckInfo,
                             timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
-                            parentId: rejectionMessageEntry?.id || null
+                            parentId: rejectionMessageEntry?.id || null,
+                            locationId: rejectionLocationId
                         }, newChatEntries);
                     }
 
@@ -4087,13 +4503,13 @@ module.exports = function registerApiRoutes(scope) {
                                 structured: plausibilityInfo.structured || null
                             },
                             timestamp: rejectionMessageEntry?.timestamp || new Date().toISOString(),
-                            parentId: rejectionMessageEntry?.id || null
+                            parentId: rejectionMessageEntry?.id || null,
+                            locationId: rejectionLocationId
                         }, newChatEntries);
                     }
 
                     responseData.messages = newChatEntries;
-                    res.json(responseData);
-                    return;
+                    return respond(responseData);
                 }
 
                 if (!isForcedEventAction
@@ -4314,12 +4730,13 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    const forcedEventLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'forced event entry');
                     const forcedEventEntry = pushChatEntry({
                         role: 'assistant',
                         content: responseData.response,
                         type: 'player-action',
-                        locationId: location?.id || null
-                    }, newChatEntries);
+                        locationId: forcedEventLocationId
+                    }, newChatEntries, forcedEventLocationId);
 
                     try {
                         await summarizeChatEntry(forcedEventEntry, { location, type: 'player-action' });
@@ -4339,7 +4756,8 @@ module.exports = function registerApiRoutes(scope) {
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
                         timestamp: forcedEventEntry?.timestamp || new Date().toISOString(),
-                        parentId: forcedEventEntry?.id || null
+                        parentId: forcedEventEntry?.id || null,
+                        locationId: forcedEventLocationId
                     }, newChatEntries);
 
                     if (debugInfo) {
@@ -4397,8 +4815,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     responseData.messages = newChatEntries;
-                    res.json(responseData);
-                    return;
+                    return respond(responseData);
                 }
 
                 // Use configuration from config.yaml
@@ -4438,12 +4855,13 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     // Store AI response in history
+                    const aiResponseLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'player action entry');
                     const aiResponseEntry = pushChatEntry({
                         role: 'assistant',
                         content: aiResponse,
                         type: 'player-action',
-                        locationId: location?.id || null
-                    }, newChatEntries);
+                        locationId: aiResponseLocationId
+                    }, newChatEntries, aiResponseLocationId);
 
                     try {
                         await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
@@ -4573,14 +4991,16 @@ module.exports = function registerApiRoutes(scope) {
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
                         timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                        parentId: aiResponseEntry?.id || null
+                        parentId: aiResponseEntry?.id || null,
+                        locationId: aiResponseLocationId
                     }, newChatEntries);
 
                     if (responseData.plausibility) {
                         recordPlausibilityEntry({
                             data: responseData.plausibility,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                            parentId: aiResponseEntry?.id || null
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
                         }, newChatEntries);
                     }
 
@@ -4588,7 +5008,8 @@ module.exports = function registerApiRoutes(scope) {
                         recordSkillCheckEntry({
                             resolution: responseData.actionResolution,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                            parentId: aiResponseEntry?.id || null
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
                         }, newChatEntries);
                     }
 
@@ -4600,7 +5021,8 @@ module.exports = function registerApiRoutes(scope) {
                             summary: attackSummaryForLogging,
                             attackCheck: responseData.attackCheck || null,
                             timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                            parentId: aiResponseEntry?.id || null
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
                         }, newChatEntries);
                     }
 
@@ -4693,9 +5115,9 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     responseData.messages = newChatEntries;
-                    res.json(responseData);
+                    await respond(responseData);
                 } else {
-                    res.status(500).json({ error: 'Invalid response from AI API' });
+                    await respond({ error: 'Invalid response from AI API' }, 500);
                 }
 
             } catch (error) {
@@ -4720,16 +5142,16 @@ module.exports = function registerApiRoutes(scope) {
                     // API returned an error
                     const statusCode = error.response.status;
                     const errorMessage = error.response.data?.error?.message || 'API request failed';
-                    res.status(statusCode).json(withMeta({ error: `API Error (${statusCode}): ${errorMessage}` }));
+                    await respond(withMeta({ error: `API Error (${statusCode}): ${errorMessage}` }), statusCode);
                 } else if (error.code === 'ECONNABORTED') {
                     // Timeout
-                    res.status(408).json(withMeta({ error: 'Request timeout - AI API took too long to respond' }));
+                    await respond(withMeta({ error: 'Request timeout - AI API took too long to respond' }), 408);
                 } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
                     // Connection issues
-                    res.status(503).json(withMeta({ error: 'Cannot connect to AI API - check your endpoint URL' }));
+                    await respond(withMeta({ error: 'Cannot connect to AI API - check your endpoint URL' }), 503);
                 } else {
                     // Other errors
-                    res.status(500).json(withMeta({ error: `Request failed: ${error.message}` }));
+                    await respond(withMeta({ error: `Request failed: ${error.message}` }), 500);
                 }
             }
         });

@@ -2319,6 +2319,47 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         return ` [Seen by ${seen.join(', ')}]`;
     };
 
+    const formatLocationSuffix = (entry) => {
+        if (!entry) {
+            return '';
+        }
+
+        const isPlayerAction = entry.type === 'player-action';
+        const isRandomAction = entry.type === 'random-event' || entry.randomEvent === true;
+        const isNpcAction = entry.isNpcTurn === true;
+        if (!isPlayerAction && !isRandomAction && !isNpcAction) {
+            return '';
+        }
+
+        const rawLocationId = typeof entry.locationId === 'string' && entry.locationId.trim()
+            ? entry.locationId.trim()
+            : (typeof entry.metadata?.locationId === 'string' && entry.metadata.locationId.trim()
+                ? entry.metadata.locationId.trim()
+                : '');
+        if (!rawLocationId) {
+            return '';
+        }
+
+        let locationRecord = gameLocations.get(rawLocationId);
+        if (!locationRecord && typeof Location?.get === 'function') {
+            try {
+                locationRecord = Location.get(rawLocationId) || null;
+            } catch (_) {
+                locationRecord = null;
+            }
+        }
+
+        const locationDetails = typeof locationRecord?.getDetails === 'function'
+            ? locationRecord.getDetails()
+            : null;
+        const locationName = locationDetails?.name || locationRecord?.name || '';
+        if (!locationName) {
+            return '';
+        }
+
+        return ` [location: ${locationName}]`;
+    };
+
     const relevantHistory = historyEntries.filter(entry => entry && (entry.content || entry.summary));
 
     const tailEntries = maxUnsummarizedEntries > 0
@@ -2338,7 +2379,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             continue;
         }
         const suffix = formatSeenBySuffix(entry);
-        summaryLines.push(`${summaryText}${suffix}`);
+        const locationSuffix = formatLocationSuffix(entry);
+        summaryLines.push(`${summaryText}${locationSuffix}${suffix}`);
     }
 
     const tailLines = [];
@@ -2354,7 +2396,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             ? entry.role.trim()
             : 'system';
         const suffix = formatSeenBySuffix(entry);
-        tailLines.push(`[${role}] ${contentText}${suffix}`);
+        const locationSuffix = formatLocationSuffix(entry);
+        tailLines.push(`[${role}] ${contentText}${locationSuffix}${suffix}`);
     }
 
     const combinedHistoryLines = summaryLines.concat(tailLines);
@@ -10912,8 +10955,9 @@ function renderRegionStubPrompt({ settingDescription, region, previousRegion }) 
         };
 
 
-        console.trace();
-        console.log('Rendering region stub prompt with variables:', variables);
+        //console.trace();
+        //console.log('Rendering region stub prompt with variables:', variables);
+        console.log(`🧩 Rendering region stub prompt for region "${region?.name || region?.id || 'unknown'}"`);
 
         const renderedTemplate = promptEnv.render(templateName, variables);
         const parsed = parseXMLTemplate(renderedTemplate);
