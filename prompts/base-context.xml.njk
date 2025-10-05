@@ -223,6 +223,11 @@ You are able to write both explicit and non-explicit content, depending on the n
         </dispositionTowardsPlayer>
         {% endfor %}
       </dispositionsTowardsPlayer>
+      <importantMemories>
+        {% for memory in npc.importantMemories %}
+        <memory>{{ memory }}</memory>
+        {% endfor %}
+      </importantMemories>
       <inventory>
         {% for item in npc.inventory %}<item>
           <name>{{ item.name }}</name>
@@ -322,6 +327,11 @@ You are able to write both explicit and non-explicit content, depending on the n
         </dispositionTowardsPlayer>
         {% endfor %}
       </dispositionsTowardsPlayer>
+      <importantMemories>
+        {% for memory in member.importantMemories %}
+        <memory>{{ memory }}</memory>
+        {% endfor %}
+      </importantMemories>
       <inventory>
         {% for item in member.inventory %}<item>
           <name>{{ item.name }}</name>

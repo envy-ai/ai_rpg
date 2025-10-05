@@ -262,16 +262,143 @@ module.exports = function registerApiRoutes(scope) {
             return entry;
         };
 
+        const collectNpcNamesForContext = (entry = null) => {
+            const names = new Set();
+
+            const addNpcId = (npcId) => {
+                if (!npcId || typeof npcId !== 'string') {
+                    return;
+                }
+                const npc = players.get(npcId);
+                if (npc && npc.isNPC) {
+                    const label = typeof npc.name === 'string' && npc.name.trim()
+                        ? npc.name.trim()
+                        : npcId;
+                    names.add(label);
+                }
+            };
+
+            let locationId = null;
+            if (entry && entry.locationId) {
+                locationId = entry.locationId;
+            } else if (entry && entry.metadata && entry.metadata.locationId) {
+                locationId = entry.metadata.locationId;
+            } else if (currentPlayer?.currentLocation) {
+                locationId = currentPlayer.currentLocation;
+            }
+
+            if (locationId) {
+                let locationRecord = gameLocations.get(locationId) || null;
+                if (!locationRecord && typeof Location?.get === 'function') {
+                    try {
+                        locationRecord = Location.get(locationId) || null;
+                    } catch (_) {
+                        locationRecord = null;
+                    }
+                }
+
+                if (locationRecord && Array.isArray(locationRecord.npcIds)) {
+                    locationRecord.npcIds.forEach(addNpcId);
+                }
+            }
+
+            if (currentPlayer && Array.isArray(currentPlayer.party)) {
+                currentPlayer.party.forEach(addNpcId);
+            }
+
+            return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        };
+
         const pushChatEntry = (entry, collector = null) => {
             const normalized = normalizeChatEntry(entry);
             if (!normalized) {
                 return null;
             }
+
+            if (!normalized.travel) {
+                const npcNames = collectNpcNamesForContext(normalized);
+                if (npcNames.length) {
+                    normalized.metadata = {
+                        ...(normalized.metadata && typeof normalized.metadata === 'object' ? normalized.metadata : {}),
+                        npcNames
+                    };
+                }
+            }
+
             chatHistory.push(normalized);
             if (Array.isArray(collector)) {
                 collector.push(normalized);
             }
             return normalized;
+        };
+
+        const emitAiUsageMetrics = (response, { label = 'chat_completion', streamEmitter = null } = {}) => {
+            if (!response || !response.data || typeof response.data !== 'object') {
+                return null;
+            }
+
+            const url = response.config?.url || response.config?.baseURL || '';
+            const hostnameMatches = (target) => typeof target === 'string' && (
+                target.includes('://localhost')
+                || target.includes('://127.0.0.1')
+                || target.includes('://0.0.0.0')
+                || target.includes('://[::1]')
+            );
+            const isLocalhostCall = hostnameMatches(url) || hostnameMatches(response.config?.baseURL || '');
+            if (isLocalhostCall) {
+                return null;
+            }
+
+            const usage = response.data.usage || {};
+            const coalesceNumber = (...values) => {
+                for (const value of values) {
+                    const numeric = Number(value);
+                    if (Number.isFinite(numeric)) {
+                        return numeric;
+                    }
+                }
+                return null;
+            };
+
+            const promptTokens = coalesceNumber(usage.prompt_tokens, usage.promptTokens);
+            const completionTokens = coalesceNumber(usage.completion_tokens, usage.completionTokens);
+            const totalTokens = coalesceNumber(
+                usage.total_tokens,
+                usage.totalTokens,
+                promptTokens !== null && completionTokens !== null ? promptTokens + completionTokens : null
+            );
+            const cachedTokens = coalesceNumber(usage.cached_tokens, usage.prompt_tokens_cached, usage.prompt_tokens_cache);
+
+            if (promptTokens === null && completionTokens === null && totalTokens === null && cachedTokens === null) {
+                return null;
+            }
+
+            const startTimestamp = response.config?.metadata?.__aiMetricsStart || null;
+            const durationMs = startTimestamp ? Date.now() - startTimestamp : null;
+            const durationSeconds = durationMs ? durationMs / 1000 : null;
+            const tokensPerSecond = durationSeconds && durationSeconds > 0 && totalTokens !== null
+                ? Number((totalTokens / durationSeconds).toFixed(2))
+                : null;
+
+            const metricsPayload = {
+                label,
+                promptTokens,
+                completionTokens,
+                totalTokens,
+                cachedTokens,
+                durationMs,
+                tokensPerSecond
+            };
+
+            if (streamEmitter?.isEnabled) {
+                try {
+                    streamEmitter.status('ai_metrics:usage', metricsPayload);
+                } catch (error) {
+                    console.warn('Failed to emit AI usage metrics to client:', error.message);
+                }
+            }
+
+            return metricsPayload;
         };
 
         const getSummaryConfig = () => config?.summaries || {};
@@ -3616,7 +3743,8 @@ module.exports = function registerApiRoutes(scope) {
             const {
                 messages,
                 clientId: rawClientId,
-                requestId: rawRequestId
+                requestId: rawRequestId,
+                travel: rawTravelFlag
             } = requestBody;
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
             let corpseProcessingRan = false;
@@ -3669,9 +3797,24 @@ module.exports = function registerApiRoutes(scope) {
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
                 if (userMessage && userMessage.role === 'user') {
+                    const isTravelMessage = rawTravelFlag === true;
+                    if (isTravelMessage && Array.isArray(chatHistory) && chatHistory.length > 0) {
+                        const previousEntry = chatHistory[chatHistory.length - 1];
+                        if (previousEntry && previousEntry.travel === true && previousEntry.role === 'user') {
+                            chatHistory.pop();
+                            if (Array.isArray(newChatEntries) && newChatEntries.length > 0) {
+                                const lastCollectorEntry = newChatEntries[newChatEntries.length - 1];
+                                if (lastCollectorEntry && lastCollectorEntry.id === previousEntry.id) {
+                                    newChatEntries.pop();
+                                }
+                            }
+                        }
+                    }
+
                     pushChatEntry({
                         role: 'user',
-                        content: userMessage.content
+                        content: userMessage.content,
+                        travel: isTravelMessage
                     }, newChatEntries);
                 }
 
@@ -4283,6 +4426,8 @@ module.exports = function registerApiRoutes(scope) {
                     timeout: baseTimeoutMilliseconds // 60 second timeout
                 });
 
+                const usageMetrics = emitAiUsageMetrics(response, { label: 'player_action', streamEmitter: stream });
+
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
                     const aiResponse = response.data.choices[0].message.content;
 
@@ -4323,6 +4468,10 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+
+                    if (usageMetrics) {
+                        responseData.aiUsage = usageMetrics;
+                    }
 
                     if (aiResponseEntry.summary) {
                         responseData.summary = aiResponseEntry.summary;
@@ -10018,6 +10167,7 @@ module.exports = function registerApiRoutes(scope) {
 
         // Create a new game with fresh player and starting location
         app.post('/api/new-game', async (req, res) => {
+            const requestStart = Date.now();
             const body = req.body || {};
             const stream = createStreamEmitter({ clientId: body.clientId, requestId: body.requestId });
             const report = (stage, message) => {
@@ -10372,6 +10522,8 @@ module.exports = function registerApiRoutes(scope) {
                         regionEntranceId: entranceLocation.id
                     }
                 });
+                const durationSeconds = (Date.now() - requestStart) / 1000;
+                console.log(`✅ /api/new-game completed in ${durationSeconds.toFixed(3)}s`);
 
             } catch (error) {
                 console.error('Error creating new game:', error);
@@ -10381,6 +10533,8 @@ module.exports = function registerApiRoutes(scope) {
                     error: 'Failed to create new game',
                     details: error.message
                 });
+                const durationSeconds = (Date.now() - requestStart) / 1000;
+                console.log(`❌ /api/new-game failed after ${durationSeconds.toFixed(3)}s`);
             }
         });
 

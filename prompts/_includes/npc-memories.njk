@@ -1,0 +1,103 @@
+<currentNpc>
+  <name>{{ currentNpc.name }}</name>
+  <description>{{ currentNpc.description }}</description>
+  <class>{{ currentNpc.class | default('Unknown') }}</class>
+  <race>{{ currentNpc.race | default('Unknown') }}</race>
+  <personality>
+    <type>{{ currentNpc.personality.type | default('Unknown', true) }}</type>
+    <traits>{{ currentNpc.personality.traits | default('None', true) }}</traits>
+    <notes>{{ currentNpc.personality.notes | default('', true) }}</notes>
+  </personality>
+  <health>{{ currentNpc.health | default('unknown') }}</health>
+  <maxHealth>{{ currentNpc.maxHealth | default('unknown') }}</maxHealth>
+  <dispositionsTowardsPlayer>
+    {% for disposition in currentNpc.dispositionsTowardsPlayer %}
+    <dispositionTowardsPlayer>
+      <type>{{ disposition.type }}</type>
+      <intensity>{{ disposition.intensityName }}</intensity>
+    </dispositionTowardsPlayer>
+    {% endfor %}
+  </dispositionsTowardsPlayer>
+  <importantMemories>
+    {% for memory in currentNpc.importantMemories %}
+    <memory>{{ memory }}</memory>
+    {% endfor %}
+  </importantMemories>
+  <inventory>
+    {% for item in currentNpc.inventory %}<item>
+      <name>{{ item.name }}</name>
+      <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+    </item>
+  {% endfor %}</inventory>
+  <skills>
+    {% for skill in currentNpc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+  </skills>
+  <abilities>
+    {% for ability in currentNpc.abilities %}
+    <ability>
+      <name>{{ ability.name }}</name>
+      <description>{{ ability.description }}</description>
+      <type>{{ ability.type }}</type>
+      <level>{{ ability.level }}</level>
+    </ability>
+    {% endfor %}
+  </abilities>
+  <statusEffects>
+    {% for effect in currentNpc.statusEffects %}
+    <effect>
+      <description>{{ effect.description }}</description>
+      <duration>{{ effect.duration | default('unknown') }}</duration>
+    </effect>
+    {% endfor %}
+  </statusEffects>
+  <needBars>
+    {% for bar in currentNpc.needBars %}
+    <needBar>
+      <name>{{ bar.name }}</name>
+      <description>{{ bar.description }}</description>
+      <value>{{ bar.value | default('', true) }}</value>
+      <min>{{ bar.min | default('', true) }}</min>
+      <max>{{ bar.max | default('', true) }}</max>
+      <changePerTurn>{{ bar.changePerTurn | default(0) }}</changePerTurn>
+      <playerOnly>{{ bar.playerOnly | default(false) }}</playerOnly>
+      <relatedAttribute>{{ bar.relatedAttribute | default('', true) }}</relatedAttribute>
+      <currentThreshold>
+        <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
+        <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
+        <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
+      </currentThreshold>
+      <effectThresholds>
+        {% for threshold in bar.effectThresholds %}
+        <threshold>
+          <value>{{ threshold.threshold | default('', true) }}</value>
+          <name>{{ threshold.name | default('', true) }}</name>
+          <effect>{{ threshold.effect | default('', true) }}</effect>
+        </threshold>
+        {% endfor %}
+      </effectThresholds>
+      <increases>
+        <small>
+          {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
+        </small>
+        <large>
+          {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
+        </large>
+        <fill>
+          {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
+        </fill>
+      </increases>
+      <decreases>
+        <small>
+          {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
+        </small>
+        <large>
+          {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
+        </large>
+      </decreases>
+    </needBar>
+    {% endfor %}
+  </needBars>
+</currentNpc>
+ 
+//TODO: Show the most recent 10 game history messages where the NPC was present.
+

@@ -3184,7 +3184,7 @@ class AIRPGChat {
         }
     }
 
-    async submitChatMessage(rawContent, { setButtonLoading = false } = {}) {
+    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
         if (!trimmed) {
@@ -3217,7 +3217,8 @@ class AIRPGChat {
                 body: JSON.stringify({
                     messages: this.chatHistory,
                     clientId: this.clientId,
-                    requestId
+                    requestId,
+                    travel: Boolean(travel)
                 })
             });
 
@@ -3263,11 +3264,11 @@ class AIRPGChat {
         }
 
         this.messageInput.value = '';
-        await this.submitChatMessage(rawInput, { setButtonLoading: true });
+        await this.submitChatMessage(rawInput, { setButtonLoading: true, travel: false });
     }
 
-    async dispatchAutomatedMessage(message) {
-        await this.submitChatMessage(message, { setButtonLoading: false });
+    async dispatchAutomatedMessage(message, { travel = false } = {}) {
+        await this.submitChatMessage(message, { setButtonLoading: false, travel: Boolean(travel) });
     }
 
     async checkLocationUpdate() {

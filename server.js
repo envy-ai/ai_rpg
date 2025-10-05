@@ -2307,6 +2307,18 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         ? rawMaxUnsummarized
         : 0;
 
+    const formatSeenBySuffix = (entry) => {
+        if (!entry || entry.travel) {
+            return '';
+        }
+        const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
+        const seen = Array.isArray(metadata?.npcNames) ? metadata.npcNames : null;
+        if (!seen || !seen.length) {
+            return '';
+        }
+        return ` [Seen by ${seen.join(', ')}]`;
+    };
+
     const relevantHistory = historyEntries.filter(entry => entry && (entry.content || entry.summary));
 
     const tailEntries = maxUnsummarizedEntries > 0
@@ -2325,7 +2337,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         if (!summaryText) {
             continue;
         }
-        summaryLines.push(`${summaryText}`);
+        const suffix = formatSeenBySuffix(entry);
+        summaryLines.push(`${summaryText}${suffix}`);
     }
 
     const tailLines = [];
@@ -2340,7 +2353,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         const role = typeof entry.role === 'string' && entry.role.trim()
             ? entry.role.trim()
             : 'system';
-        tailLines.push(`[${role}] ${contentText}`);
+        const suffix = formatSeenBySuffix(entry);
+        tailLines.push(`[${role}] ${contentText}${suffix}`);
     }
 
     const combinedHistoryLines = summaryLines.concat(tailLines);

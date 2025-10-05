@@ -9728,7 +9728,7 @@
                         return;
                     }
                     try {
-                        await window.AIRPG_CHAT.dispatchAutomatedMessage(message);
+                        await window.AIRPG_CHAT.dispatchAutomatedMessage(message, { travel: true });
                     } catch (error) {
                         console.error('Failed to dispatch move via chat:', error);
                         hideLocationOverlay();
@@ -9738,7 +9738,7 @@
         }
 
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
-            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`);
+            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, { travel: false });
         }
 
         await performDirectMove(exit.destination, targetName);
