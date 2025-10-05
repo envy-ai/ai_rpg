@@ -1989,6 +1989,41 @@ p:not(:last-child) {
 .health-bar[aria-hidden="true"] {
   display: none;
 }
+
+.health-change-float {
+  position: absolute;
+  pointer-events: none;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1;
+  opacity: 0.95;
+  transform: translate3d(0, 0, 0);
+  animation: health-change-float 2.5s ease-out forwards;
+  -webkit-text-stroke: 2px white;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.6);
+  will-change: transform, opacity;
+  z-index: 30;
+}
+
+.health-change--gain {
+  color: #4ade80;
+}
+
+.health-change--loss {
+  color: #f87171;
+}
+
+@keyframes health-change-float {
+  0% {
+    opacity: 0.95;
+    transform: translate3d(0, 0, 0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(0px, -28px, 0);
+  }
+}
 .health-bar-fill {
   width: 0%;
   height: 100%;

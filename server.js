@@ -4096,6 +4096,14 @@ imagePromptEnv.addFilter('json', function (str) {
 // Function to parse XML template and extract prompts
 function parseXMLTemplate(xmlContent) {
     try {
+        if (xmlContent === undefined || xmlContent === null) {
+            throw new Error('XML template content is empty');
+        }
+
+        if (typeof xmlContent !== 'string') {
+            xmlContent = String(xmlContent);
+        }
+
         const parser = new DOMParser();
         const doc = parser.parseFromString(xmlContent, 'text/xml');
 

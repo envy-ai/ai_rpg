@@ -158,12 +158,10 @@ class Location {
         }
 
         // Convert numeric fields to numbers
-        if (child.tagName === 'baseLevel') {
-          locationData[child.tagName] = parseInt(value, 10);
-        } else if (child.tagName === 'relativeLevel') {
-          locationData[child.tagName] = parseInt(value, 10);
+        if (child.tagName === 'relativeLevel') {
+          locationData[child.tagName] = parseInt(value, 0);
         } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
-          locationData[child.tagName] = parseInt(value, 10);
+          locationData[child.tagName] = parseInt(value, 0);
         } else {
           locationData[child.tagName] = value;
         }

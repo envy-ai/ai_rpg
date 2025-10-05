@@ -448,6 +448,33 @@ class Region {
     return this.#averageLevel;
   }
 
+  setAverageLevel(level) {
+    if (level === undefined) {
+      return this.#averageLevel;
+    }
+
+    if (level === null || level === '') {
+      if (this.#averageLevel !== null) {
+        this.#averageLevel = null;
+        this.#lastUpdated = new Date().toISOString();
+      }
+      return this.#averageLevel;
+    }
+
+    const numericLevel = Number(level);
+    if (!Number.isFinite(numericLevel)) {
+      throw new Error('Average level must be a finite number');
+    }
+
+    const normalized = Math.max(1, Math.min(20, Math.round(numericLevel)));
+    if (normalized !== this.#averageLevel) {
+      this.#averageLevel = normalized;
+      this.#lastUpdated = new Date().toISOString();
+    }
+
+    return this.#averageLevel;
+  }
+
   #normalizeStatusEffects(effects = []) {
     if (!Array.isArray(effects)) {
       return [];

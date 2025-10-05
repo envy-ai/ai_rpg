@@ -900,6 +900,10 @@
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
                 </div>
+                <div class="location-edit-field location-edit-field--static">
+                    <span class="location-edit-label">Absolute Level</span>
+                    <span id="locationEditAbsoluteLevel" class="location-edit-value">—</span>
+                </div>
                 <footer class="location-edit-footer">
                     <div class="location-edit-status" id="locationEditStatus" role="status" aria-live="polite"></div>
                     <div class="location-edit-actions">
@@ -933,6 +937,10 @@
                     <select id="regionEditParent" name="parentRegionId">
                         <option value="">None</option>
                     </select>
+                </div>
+                <div class="location-edit-field">
+                    <label for="regionEditAverageLevel">Average Level</label>
+                    <input type="number" id="regionEditAverageLevel" name="averageLevel" min="1" max="20" step="1" required>
                 </div>
                 <footer class="location-edit-footer region-edit-footer">
                     <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>
@@ -1460,6 +1468,104 @@
             });
         }
 
+        function cloneActorRecord(actor) {
+            if (!actor || typeof actor !== 'object') {
+                return null;
+            }
+            const clone = { ...actor };
+            if (Array.isArray(actor.needBars)) {
+                clone.needBars = actor.needBars.map(bar => ({ ...bar }));
+            }
+            return clone;
+        }
+
+        function computeHealthDelta(previousActor, currentActor) {
+            const previousHealth = Number(previousActor?.health);
+            const currentHealth = Number(currentActor?.health);
+            if (!Number.isFinite(previousHealth) || !Number.isFinite(currentHealth)) {
+                return 0;
+            }
+            return currentHealth - previousHealth;
+        }
+
+        function triggerHealthChangeEffect(target, previousActor, currentActor) {
+            if (!target) {
+                return;
+            }
+            const delta = computeHealthDelta(previousActor, currentActor);
+            if (!delta) {
+                return;
+            }
+            spawnHealthChangeFloat(target, delta);
+        }
+
+        function spawnHealthChangeFloat(target, delta) {
+            if (!target || !Number.isFinite(delta) || delta === 0) {
+                return;
+            }
+
+            if (typeof console !== 'undefined') {
+                try {
+                    const actorCard = target.closest('[data-npc-id]');
+                    const actorId = actorCard?.dataset?.npcId || window.currentPlayerData?.id || null;
+                    const actorName = actorCard?.querySelector('.location-entity-name')?.textContent
+                        || window.currentPlayerData?.name
+                        || null;
+                    console.debug('[HPChange]', {
+                        delta,
+                        actorId,
+                        actorName,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (_) {
+                    console.debug('[HPChange]', { delta, timestamp: new Date().toISOString() });
+                }
+            }
+
+            const indicator = document.createElement('div');
+            indicator.className = 'health-change-float';
+            indicator.classList.add(delta > 0 ? 'health-change--gain' : 'health-change--loss');
+            indicator.textContent = `${delta > 0 ? '+' : ''}${Math.round(delta)}`;
+            indicator.setAttribute('aria-hidden', 'true');
+
+            const computedStyle = window.getComputedStyle(target);
+            if (computedStyle.position === 'static') {
+                target.style.position = 'relative';
+            }
+
+            const rect = target.getBoundingClientRect();
+            const width = rect.width || target.offsetWidth || 0;
+            const height = rect.height || target.offsetHeight || 0;
+
+            const horizontalPadding = Math.min(width * 0.25, 40);
+            const verticalPadding = Math.min(height * 0.25, 32);
+            const availableWidth = Math.max(width - horizontalPadding * 2, 0);
+            const availableHeight = Math.max(height - verticalPadding * 2, 0);
+
+            const randomX = horizontalPadding + (availableWidth ? Math.random() * availableWidth : 0);
+            const randomY = verticalPadding + (availableHeight ? Math.random() * availableHeight : 0);
+
+            indicator.style.left = `${randomX}px`;
+            indicator.style.top = `${randomY}px`;
+
+            const horizontalDrift = (Math.random() * 28) - 14;
+            const verticalDrift = -(Math.random() * 24 + 24);
+            indicator.style.setProperty('--float-x', `${horizontalDrift}px`);
+            indicator.style.setProperty('--float-y', `${verticalDrift}px`);
+
+            target.appendChild(indicator);
+
+            indicator.addEventListener('animationend', () => {
+                indicator.remove();
+            }, { once: true });
+
+            window.setTimeout(() => {
+                if (indicator.isConnected) {
+                    indicator.remove();
+                }
+            }, 15000);
+        }
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
@@ -1526,7 +1632,13 @@
                 return;
             }
 
-            const data = (player && typeof player === 'object') ? player : {};
+            const source = (player && typeof player === 'object') ? player : {};
+            const previousSnapshot = (window.currentPlayerData && window.currentPlayerData.id === source.id)
+                ? window.currentPlayerData
+                : null;
+
+            const cloned = cloneActorRecord(source) || { ...source };
+            const data = cloned;
             window.currentPlayerData = data;
 
             const resolvedLocationId = data?.locationId || data?.currentLocation || null;
@@ -1618,11 +1730,15 @@
 
             if (data?.id) {
                 if (window.currentNpcData instanceof Map) {
-                    window.currentNpcData.set(data.id, { ...data });
+                    window.currentNpcData.set(data.id, cloneActorRecord(data) || { ...data });
                 }
                 if (typeof window.registerNpcContextMenu === 'function' && chatSidebarElements.card) {
                     window.registerNpcContextMenu(chatSidebarElements.card, { ...data, isNPC: false });
                 }
+            }
+
+            if (chatSidebarElements.portrait) {
+                triggerHealthChangeEffect(chatSidebarElements.portrait, previousSnapshot, data);
             }
 
             if (chatSidebarElements.viewButton) {
@@ -1669,6 +1785,8 @@
                 if (!member) {
                     return;
                 }
+
+                const previous = member?.id ? npcDataCache.get(member.id) : null;
 
                 const card = document.createElement('div');
                 card.className = 'location-entity-card is-npc';
@@ -1751,12 +1869,15 @@
                     });
                 }
 
-                if (typeof registerNpcContextMenu === 'function' && member.id) {
-                    npcDataCache.set(member.id, member);
-                    registerNpcContextMenu(card, member);
-                }
-
                 container.appendChild(card);
+
+                if (member?.id) {
+                    if (typeof registerNpcContextMenu === 'function') {
+                        registerNpcContextMenu(card, member);
+                    }
+                    triggerHealthChangeEffect(portrait, previous, member);
+                    npcDataCache.set(member.id, cloneActorRecord(member) || { ...member });
+                }
             });
         }
 
@@ -3637,6 +3758,7 @@
         const locationEditNameInput = document.getElementById('locationEditName');
         const locationEditDescriptionInput = document.getElementById('locationEditDescription');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
         const locationEditStatus = document.getElementById('locationEditStatus');
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
         const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
@@ -3646,6 +3768,7 @@
         const regionEditNameInput = document.getElementById('regionEditName');
         const regionEditDescriptionInput = document.getElementById('regionEditDescription');
         const regionEditParentSelect = document.getElementById('regionEditParent');
+        const regionEditAverageLevelInput = document.getElementById('regionEditAverageLevel');
         const regionEditStatus = document.getElementById('regionEditStatus');
         const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
         const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
@@ -7758,7 +7881,7 @@
                             return;
                         }
 
-                        npcDataCache.set(npcId, data.npc);
+                        npcDataCache.set(npcId, cloneActorRecord(data.npc) || { ...data.npc });
                         const freshItems = Array.isArray(data.npc.inventory) ? data.npc.inventory : [];
                         currentNpcInventory = freshItems;
                         currentNpcInventoryNpcId = npcId;
@@ -8797,15 +8920,29 @@
             }
         }
 
+        const UNKNOWN_LEVEL_DISPLAY = '—';
+
+        function updateLocationAbsoluteLevelDisplay(value) {
+            if (!locationEditAbsoluteLevel) {
+                return;
+            }
+            if (Number.isFinite(value)) {
+                const normalized = Math.max(1, Math.round(value));
+                locationEditAbsoluteLevel.textContent = String(normalized);
+            } else {
+                locationEditAbsoluteLevel.textContent = UNKNOWN_LEVEL_DISPLAY;
+            }
+        }
+
         function openLocationEditModal() {
             if (!locationEditModal || !lastRenderedLocation) {
                 return;
             }
             const name = lastRenderedLocation.name || '';
             const description = lastRenderedLocation.description || '';
-            const level = Number.isFinite(lastRenderedLocation.baseLevel)
+            const numericLevel = Number.isFinite(lastRenderedLocation.baseLevel)
                 ? lastRenderedLocation.baseLevel
-                : '';
+                : null;
 
             if (locationEditNameInput) {
                 locationEditNameInput.value = name;
@@ -8814,8 +8951,9 @@
                 locationEditDescriptionInput.value = description;
             }
             if (locationEditLevelInput) {
-                locationEditLevelInput.value = level;
+                locationEditLevelInput.value = numericLevel ?? '';
             }
+            updateLocationAbsoluteLevelDisplay(numericLevel);
 
             setLocationEditStatus('', null);
             locationEditModal.removeAttribute('hidden');
@@ -8834,6 +8972,7 @@
             locationEditModal.setAttribute('aria-hidden', 'true');
             locationEditModal.classList.remove('is-open');
             setLocationEditStatus('', null);
+            updateLocationAbsoluteLevelDisplay(null);
         }
 
         async function submitLocationEditForm(event) {
@@ -8961,6 +9100,9 @@
                 regionEditSaveBtn.disabled = true;
             }
             setRegionEditStatus('Loading region…', null);
+            if (regionEditAverageLevelInput) {
+                regionEditAverageLevelInput.value = '';
+            }
 
             regionEditModal.removeAttribute('hidden');
             regionEditModal.setAttribute('aria-hidden', 'false');
@@ -8979,6 +9121,12 @@
                 if (regionEditDescriptionInput) {
                     regionEditDescriptionInput.value = data.region.description || '';
                 }
+                if (regionEditAverageLevelInput) {
+                    const averaged = Number.isFinite(data.region.averageLevel)
+                        ? Math.max(1, Math.round(data.region.averageLevel))
+                        : '';
+                    regionEditAverageLevelInput.value = averaged;
+                }
                 populateRegionParentOptions(data.parentOptions || [], data.region.parentRegionId || null);
                 setRegionEditStatus('', null);
                 if (regionEditSaveBtn) {
@@ -8992,6 +9140,9 @@
                 setRegionEditStatus(`Failed to load region: ${error?.message || 'Unknown error'}`, 'error');
                 if (regionEditSaveBtn) {
                     regionEditSaveBtn.disabled = true;
+                }
+                if (regionEditAverageLevelInput) {
+                    regionEditAverageLevelInput.value = '';
                 }
             }
         }
@@ -9011,6 +9162,9 @@
                 regionEditSaveBtn.disabled = false;
             }
             editingRegionId = null;
+            if (regionEditAverageLevelInput) {
+                regionEditAverageLevelInput.value = '';
+            }
         }
 
         async function submitRegionEditForm(event) {
@@ -9039,11 +9193,29 @@
                 return;
             }
 
+            const averageLevelRaw = regionEditAverageLevelInput?.value ?? '';
+            if (!averageLevelRaw.toString().trim()) {
+                setRegionEditStatus('Region average level is required.', 'error');
+                regionEditAverageLevelInput?.focus();
+                return;
+            }
+            const averageLevelValue = Number(averageLevelRaw);
+            if (!Number.isFinite(averageLevelValue) || averageLevelValue < 1) {
+                setRegionEditStatus('Average level must be a positive number.', 'error');
+                regionEditAverageLevelInput?.focus();
+                return;
+            }
+            const normalizedAverageLevel = Math.max(1, Math.min(20, Math.round(averageLevelValue)));
+            if (regionEditAverageLevelInput) {
+                regionEditAverageLevelInput.value = normalizedAverageLevel;
+            }
+
             const parentValueRaw = regionEditParentSelect?.value ?? '';
             const payload = {
                 name: nameValue.trim(),
                 description: descriptionValue.trim(),
-                parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null
+                parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null,
+                averageLevel: normalizedAverageLevel
             };
 
             setRegionEditStatus('Saving changes…', null);
@@ -9220,6 +9392,16 @@
         }
         if (locationEditForm) {
             locationEditForm.addEventListener('submit', submitLocationEditForm);
+        }
+
+        if (locationEditLevelInput) {
+            locationEditLevelInput.addEventListener('input', () => {
+                const raw = locationEditLevelInput.value;
+                const hasValue = typeof raw === 'string' && raw.trim() !== '';
+                const parsed = hasValue ? Number(raw) : null;
+                const normalized = Number.isFinite(parsed) ? parsed : null;
+                updateLocationAbsoluteLevelDisplay(normalized);
+            });
         }
 
         if (regionEditCancelBtn) {
@@ -9484,6 +9666,8 @@
                         } else {
                             locationNPCs.innerHTML = '';
                             npcs.forEach(npc => {
+                                const previous = npc?.id ? npcDataCache.get(npc.id) : null;
+
                                 const card = document.createElement('div');
                                 card.className = 'location-entity-card is-npc';
 
@@ -9562,11 +9746,15 @@
                                     });
                                 }
 
-                                if (npc && npc.id) {
-                                    npcDataCache.set(npc.id, npc);
-                                    registerNpcContextMenu(card, npc);
-                                }
                                 locationNPCs.appendChild(card);
+
+                                if (npc && npc.id) {
+                                    if (typeof registerNpcContextMenu === 'function') {
+                                        registerNpcContextMenu(card, npc);
+                                    }
+                                    triggerHealthChangeEffect(portrait, previous, npc);
+                                    npcDataCache.set(npc.id, cloneActorRecord(npc) || { ...npc });
+                                }
                             });
                         }
                     }
@@ -9720,9 +9908,14 @@
                 const regionName = exit.destinationRegion ? (exit.destinationRegionName || baseName) : null;
                 const targetName = (regionName || baseName || 'the destination').toString().trim() || 'the destination';
                 const vehicleType = typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : '';
+                const playerName = (window.currentPlayerData?.name || '').toString().trim();
+                if (!playerName) {
+                    throw new Error('Player name is missing when preparing travel narration for exit traversal.');
+                }
+
                 const message = vehicleType
-                    ? `I take the ${vehicleType} to ${targetName}.`
-                    : `I move to ${targetName}.`;
+                    ? `${playerName} took the ${vehicleType} to ${targetName}.`
+                    : `${playerName} moved to ${targetName}.`;
 
         const useEventMove = shouldUseEventMove(exit);
 
@@ -9959,17 +10152,32 @@
                 emptyState.style.display = safeMembers.length ? 'none' : 'block';
                 partyGrid.style.display = safeMembers.length ? 'flex' : 'none';
 
+                const previousSnapshots = new Map();
+                if (npcDataCache instanceof Map) {
+                    safeMembers.forEach(member => {
+                        if (member?.id && npcDataCache.has(member.id)) {
+                            previousSnapshots.set(member.id, npcDataCache.get(member.id));
+                        }
+                    });
+                }
+
                 renderChatPartyPanel(safeMembers);
 
                 safeMembers.forEach(member => {
-                const card = document.createElement('div');
-                card.className = 'party-card';
-                if (member?.id) {
-                    card.dataset.npcId = member.id;
-                }
+                    if (!member) {
+                        return;
+                    }
 
-                const portrait = document.createElement('div');
-                portrait.className = 'party-portrait';
+                    const previous = member?.id ? previousSnapshots.get(member.id) : null;
+
+                    const card = document.createElement('div');
+                    card.className = 'party-card';
+                    if (member?.id) {
+                        card.dataset.npcId = member.id;
+                    }
+
+                    const portrait = document.createElement('div');
+                    portrait.className = 'party-portrait';
 
                     const portraitImage = document.createElement('div');
                     portraitImage.className = 'party-portrait-image';
@@ -10003,20 +10211,20 @@
 
                     updateHealthBar(portraitHealthBar, portraitHealthFill, member?.health, member?.maxHealth);
 
-                renderNeedBars(
-                    portraitNeedBars,
-                    Array.isArray(member?.needBars) ? member.needBars : [],
-                    {
-                        includePlayerOnly: false,
-                        variant: 'npc'
-                    }
-                );
+                    renderNeedBars(
+                        portraitNeedBars,
+                        Array.isArray(member?.needBars) ? member.needBars : [],
+                        {
+                            includePlayerOnly: false,
+                            variant: 'npc'
+                        }
+                    );
 
-                applyNpcDeathStyling(card, portrait, member);
+                    applyNpcDeathStyling(card, portrait, member);
 
-                const name = document.createElement('div');
-                name.className = 'party-name';
-                name.textContent = member.name || 'Unknown';
+                    const name = document.createElement('div');
+                    name.className = 'party-name';
+                    name.textContent = member.name || 'Unknown';
 
                     const role = document.createElement('div');
                     role.className = 'party-role';
@@ -10066,15 +10274,15 @@
                     card.appendChild(meta);
                     card.appendChild(stats);
 
-                    if (member && member.id) {
-                        npcDataCache.set(member.id, member);
-                    }
-
-                    if (member && member.id && typeof registerNpcContextMenu === 'function') {
-                        registerNpcContextMenu(card, member);
-                    }
-
                     partyGrid.appendChild(card);
+
+                    if (member && member.id) {
+                        if (typeof registerNpcContextMenu === 'function') {
+                            registerNpcContextMenu(card, member);
+                        }
+                        triggerHealthChangeEffect(portrait, previous, member);
+                        npcDataCache.set(member.id, cloneActorRecord(member) || { ...member });
+                    }
                 });
             }
 

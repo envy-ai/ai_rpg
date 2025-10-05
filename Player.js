@@ -819,6 +819,13 @@ class Player {
         this.#isDead = options.isDead ?? false;
         this.#corpseCountdown = Number.isFinite(options.corpseCountdown) ? options.corpseCountdown : null;
 
+        const seedMemories = Array.isArray(options.importantMemories)
+            ? options.importantMemories
+                .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+                .filter(Boolean)
+            : [];
+        this.#importantMemories = seedMemories.slice(0);
+
         // Location (can be Location ID string or Location object)
         this.#currentLocation = options.location ?? null;
 
@@ -1440,12 +1447,11 @@ class Player {
         }
 
         // Don't add duplicates
-        if (this.#importantMemories.has(memory.trim())) {
+        const trimmed = memory.trim();
+        if (this.#importantMemories.includes(trimmed)) {
             return false;
         }
-
-        const trimmed = memory.trim();
-        this.#importantMemories.add(trimmed);
+        this.#importantMemories.push(trimmed);
         this.#lastUpdated = new Date().toISOString();
         return true;
     }
@@ -2886,7 +2892,8 @@ class Player {
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
             needBars: this.getNeedBars(),
-            corpseCountdown: this.#corpseCountdown
+            corpseCountdown: this.#corpseCountdown,
+            importantMemories: this.importantMemories
         };
 
         status.personality = {
@@ -2942,7 +2949,8 @@ class Player {
             lastUpdated: this.#lastUpdated,
             experience: this.#experience,
             currency: this.#currency,
-            needBars: this.getNeedBars()
+            needBars: this.getNeedBars(),
+            importantMemories: this.importantMemories
         };
     }
 
@@ -2982,7 +2990,8 @@ class Player {
             lastUpdated: data.lastUpdated,
             needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
             isDead: data.isDead,
-            corpseCountdown: data.corpseCountdown
+            corpseCountdown: data.corpseCountdown,
+            importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : []
         });
 
         player.#createdAt = data.createdAt;

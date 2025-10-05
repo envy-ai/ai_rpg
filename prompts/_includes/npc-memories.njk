@@ -99,16 +99,31 @@
   </needBars>
 </currentNpc>
 <recentNpcHistory>
+  {% if historyEntries is defined %}
+    {% set rawHistoryEntries = historyEntries %}
+  {% elif chatHistory is defined %}
+    {% set rawHistoryEntries = chatHistory %}
+  {% elif gameHistoryEntries is defined %}
+    {% set rawHistoryEntries = gameHistoryEntries %}
+  {% else %}
+    {% set rawHistoryEntries = null %}
+  {% endif %}
+  {% if not rawHistoryEntries %}
+    <error>Missing history entries data for NPC history context.</error>
+  {% elif rawHistoryEntries is string %}
+    <error>History entries data is a string; expected an iterable of entries.</error>
+  {% elif not (rawHistoryEntries is iterable) %}
+    <error>History entries data is not iterable.</error>
   {% else %}
     {% set npcNameValue = currentNpc.name | default('') | trim %}
     {% if not npcNameValue %}
       <error>currentNpc.name is required to filter history entries.</error>
     {% else %}
       {% set normalizedNpcName = npcNameValue | lower %}
-      {% set collected = namespace(entries=[]) %}
       {% set maxEntries = 10 %}
+      {% set entriesFound = 0 %}
       {% for entry in rawHistoryEntries | reverse %}
-        {% if collected.entries | length < maxEntries %}
+        {% if entriesFound < maxEntries %}
           {% if entry %}
             {% set metadata = entry.metadata if entry.metadata is defined else null %}
             {% set npcNamesList = metadata.npcNames if metadata and metadata.npcNames is defined else [] %}
@@ -131,22 +146,19 @@
                 {% endif %}
                 {% set trimmedText = rawText | trim %}
                 {% if trimmedText %}
-                  {% set roleValue = entry.role if entry.role is defined and entry.role else 'system' %}
-                  {% set collected.entries = collected.entries + [{ "role": roleValue | trim, "text": trimmedText }] %}
+                  {%- set roleValue = entry.role if entry.role is defined and entry.role else 'system' %}
+                  <historyEntry>
+                    <role>{{ roleValue | trim }}</role>
+                    <text>{{ trimmedText | e('xml') }}</text>
+                  </historyEntry>
+                  {% set entriesFound = entriesFound + 1 -%}
                 {% endif %}
               {% endif %}
             {% endif %}
           {% endif %}
         {% endif %}
       {% endfor %}
-      {% if collected.entries | length %}
-        {% for entry in collected.entries %}
-          <historyEntry>
-            <role>{{ entry.role }}</role>
-            <text>{{ entry.text }}</text>
-          </historyEntry>
-        {% endfor %}
-      {% else %}
+      {% if entriesFound == 0 %}
         <info>No recent history entries involving {{ npcNameValue }}.</info>
       {% endif %}
     {% endif %}

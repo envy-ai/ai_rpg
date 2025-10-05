@@ -3779,6 +3779,8 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (error) {
                         console.warn(`Error while generating memories for ${actor.name}:`, error.message);
+                        console.log(actor);
+                        console.trace();
                     }
                 })());
             }
@@ -5960,7 +5962,8 @@ module.exports = function registerApiRoutes(scope) {
                     id: region.id,
                     name: region.name,
                     description: region.description,
-                    parentRegionId: region.parentRegionId || null
+                    parentRegionId: region.parentRegionId || null,
+                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
                 };
 
                 let parentRegionName = null;
@@ -6004,11 +6007,13 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const body = req.body || {};
                 const {
                     name,
                     description,
-                    parentRegionId: parentRegionIdRaw
-                } = req.body || {};
+                    parentRegionId: parentRegionIdRaw,
+                    averageLevel: averageLevelRaw
+                } = body;
 
                 if (typeof name !== 'string') {
                     return res.status(400).json({
@@ -6075,12 +6080,36 @@ module.exports = function registerApiRoutes(scope) {
                     region.parentRegionId = parentRegionId;
                 }
 
+                const hasAverageLevel = Object.prototype.hasOwnProperty.call(body, 'averageLevel');
+                if (hasAverageLevel) {
+                    try {
+                        if (averageLevelRaw === null || averageLevelRaw === '') {
+                            region.setAverageLevel(null);
+                        } else {
+                            const numericAverage = Number(averageLevelRaw);
+                            if (!Number.isFinite(numericAverage)) {
+                                return res.status(400).json({
+                                    success: false,
+                                    error: 'Average level must be numeric'
+                                });
+                            }
+                            region.setAverageLevel(numericAverage);
+                        }
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid average level value'
+                        });
+                    }
+                }
+
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
                 const payload = {
                     id: region.id,
                     name: region.name,
                     description: region.description,
-                    parentRegionId: region.parentRegionId || null
+                    parentRegionId: region.parentRegionId || null,
+                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
                 };
 
                 let parentRegionName = null;
