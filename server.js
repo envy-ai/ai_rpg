@@ -1341,6 +1341,15 @@ function serializeNpcForClient(npc, options = {}) {
         abilities = [];
     }
 
+    let importantMemories = [];
+    try {
+        importantMemories = Array.isArray(npc.importantMemories)
+            ? npc.importantMemories.slice(0)
+            : (typeof npc.getImportantMemories === 'function' ? npc.getImportantMemories() : []);
+    } catch (_) {
+        importantMemories = [];
+    }
+
     let statusEffects = [];
     try {
         statusEffects = typeof npc.getStatusEffects === 'function' ? npc.getStatusEffects() : [];
@@ -1474,6 +1483,7 @@ function serializeNpcForClient(npc, options = {}) {
         attributes,
         skills,
         abilities,
+        importantMemories,
         statusEffects,
         unspentSkillPoints,
         inventory,

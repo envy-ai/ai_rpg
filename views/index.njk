@@ -555,6 +555,28 @@
             </form>
         </div>
     </div>
+    <div id="npcMemoriesModal" class="modal npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcMemoriesModalTitle">Edit Memories</h2>
+                <button type="button" class="modal__close" id="npcMemoriesCloseBtn" aria-label="Close memories editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body npc-memories-body">
+                <p class="npc-memories-help">Update the character's important memories. Drag the handle to reorder entries.</p>
+                <div id="npcMemoriesList" class="npc-memories-list" role="list"></div>
+                <button type="button" class="npc-memories-add" id="npcMemoriesAddBtn">Add Memory</button>
+            </div>
+            <footer class="modal__footer npc-memories-footer">
+                <div id="npcMemoriesStatus" class="npc-memories-status" role="status" aria-live="polite"></div>
+                <div class="npc-memories-actions">
+                    <button type="button" class="npc-memories-cancel" id="npcMemoriesCancelBtn">Cancel</button>
+                    <button type="button" class="npc-memories-save" id="npcMemoriesSaveBtn">Save</button>
+                </div>
+            </footer>
+        </div>
+    </div>
     <div id="addNpcModal" class="modal add-npc-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1476,6 +1498,9 @@
             const clone = { ...actor };
             if (Array.isArray(actor.needBars)) {
                 clone.needBars = actor.needBars.map(bar => ({ ...bar }));
+            }
+            if (Array.isArray(actor.importantMemories)) {
+                clone.importantMemories = actor.importantMemories.slice(0);
             }
             return clone;
         }
@@ -3695,6 +3720,14 @@
         const npcNeedsCancelBtn = document.getElementById('npcNeedsCancelBtn');
         const npcNeedsSaveBtn = document.getElementById('npcNeedsSaveBtn');
         const npcNeedsCloseBtn = document.getElementById('npcNeedsCloseBtn');
+        const npcMemoriesModal = document.getElementById('npcMemoriesModal');
+        const npcMemoriesModalTitle = document.getElementById('npcMemoriesModalTitle');
+        const npcMemoriesList = document.getElementById('npcMemoriesList');
+        const npcMemoriesAddBtn = document.getElementById('npcMemoriesAddBtn');
+        const npcMemoriesStatus = document.getElementById('npcMemoriesStatus');
+        const npcMemoriesCancelBtn = document.getElementById('npcMemoriesCancelBtn');
+        const npcMemoriesSaveBtn = document.getElementById('npcMemoriesSaveBtn');
+        const npcMemoriesCloseBtn = document.getElementById('npcMemoriesCloseBtn');
         const newExitModal = document.getElementById('newExitModal');
         const newExitForm = document.getElementById('newExitForm');
         const newExitRegionSelect = document.getElementById('newExitRegion');
@@ -4522,6 +4555,10 @@
         let currentNpcNeedsTargetId = null;
         let currentNpcNeedsTargetType = null;
         let currentNpcNeedsData = null;
+        let currentNpcMemoriesId = null;
+        let currentNpcMemoriesName = '';
+        let npcMemoriesDirty = false;
+        let draggedNpcMemoryRow = null;
         let lastRenderedLocation = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
@@ -5563,10 +5600,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -5594,10 +5632,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -5630,10 +5669,11 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -5667,12 +5707,230 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
+            }
+        }
+
+        function setNpcMemoriesStatus(message = '', type = null) {
+            if (!npcMemoriesStatus) {
+                return;
+            }
+            npcMemoriesStatus.textContent = message || '';
+            npcMemoriesStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                npcMemoriesStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                npcMemoriesStatus.classList.add('is-success');
+            }
+        }
+
+        function resetNpcMemoriesDirty() {
+            npcMemoriesDirty = false;
+            if (npcMemoriesSaveBtn) {
+                npcMemoriesSaveBtn.disabled = true;
+            }
+        }
+
+        function markNpcMemoriesDirty() {
+            npcMemoriesDirty = true;
+            if (npcMemoriesSaveBtn) {
+                npcMemoriesSaveBtn.disabled = false;
+            }
+        }
+
+        function createNpcMemoryRow(value = '') {
+            const row = document.createElement('div');
+            row.className = 'npc-memory-row';
+            row.setAttribute('role', 'listitem');
+
+            const handle = document.createElement('button');
+            handle.type = 'button';
+            handle.className = 'npc-memory-handle';
+            handle.setAttribute('aria-label', 'Reorder memory');
+            handle.textContent = '≡';
+            handle.draggable = true;
+
+            const textarea = document.createElement('textarea');
+            textarea.className = 'npc-memory-text';
+            textarea.rows = 3;
+            textarea.value = value || '';
+            textarea.addEventListener('input', () => {
+                markNpcMemoriesDirty();
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'npc-memory-delete';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', () => {
+                row.remove();
+                markNpcMemoriesDirty();
+                if (npcMemoriesList && !npcMemoriesList.children.length) {
+                    npcMemoriesList.appendChild(createNpcMemoryRow(''));
+                }
+            });
+
+            handle.addEventListener('dragstart', (event) => {
+                draggedNpcMemoryRow = row;
+                row.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', 'memory');
+            });
+
+            handle.addEventListener('dragend', () => {
+                if (draggedNpcMemoryRow === row) {
+                    draggedNpcMemoryRow = null;
+                }
+                row.classList.remove('dragging');
+            });
+
+            row.append(handle, textarea, deleteButton);
+            return row;
+        }
+
+        function renderNpcMemories(memories = []) {
+            if (!npcMemoriesList) {
+                return;
+            }
+            npcMemoriesList.innerHTML = '';
+            const entries = Array.isArray(memories) && memories.length ? memories : [''];
+            entries.forEach(memory => {
+                npcMemoriesList.appendChild(createNpcMemoryRow(memory));
+            });
+            resetNpcMemoriesDirty();
+        }
+
+        function collectNpcMemories() {
+            if (!npcMemoriesList) {
+                return [];
+            }
+            return Array.from(npcMemoriesList.querySelectorAll('.npc-memory-text'))
+                .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
+                .filter(entry => entry.length > 0);
+        }
+
+        function closeNpcMemoriesModal() {
+            if (!npcMemoriesModal) {
+                return;
+            }
+            npcMemoriesModal.setAttribute('aria-hidden', 'true');
+            npcMemoriesModal.setAttribute('hidden', '');
+            currentNpcMemoriesId = null;
+            currentNpcMemoriesName = '';
+            draggedNpcMemoryRow = null;
+            if (npcMemoriesList) {
+                npcMemoriesList.innerHTML = '';
+            }
+            setNpcMemoriesStatus('', null);
+            resetNpcMemoriesDirty();
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        async function showNpcMemoriesModal(target) {
+            if (!target || !npcMemoriesModal || !npcModalBackdrop) {
+                return;
+            }
+
+            const npcId = typeof target.id === 'string' ? target.id : null;
+            if (!npcId) {
+                console.warn('Unable to open memories editor: NPC id missing');
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            const latestNpc = npcDataCache?.get(npcId) || target;
+            const memories = Array.isArray(latestNpc?.importantMemories)
+                ? latestNpc.importantMemories.map(entry => (typeof entry === 'string' ? entry : '')).filter(Boolean)
+                : [];
+
+            currentNpcMemoriesId = npcId;
+            currentNpcMemoriesName = latestNpc?.name || target.name || 'Character';
+            draggedNpcMemoryRow = null;
+            setNpcMemoriesStatus('', null);
+            renderNpcMemories(memories);
+
+            npcModalBackdrop.removeAttribute('hidden');
+            npcMemoriesModal.removeAttribute('hidden');
+            npcMemoriesModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            if (npcMemoriesModalTitle) {
+                npcMemoriesModalTitle.textContent = `${formatPossessiveName(currentNpcMemoriesName, 'Character')} Memories`;
+            }
+            scrollModalToTop(npcMemoriesModal);
+
+            const firstField = npcMemoriesList?.querySelector('.npc-memory-text');
+            if (firstField) {
+                firstField.focus();
+            }
+        }
+
+        async function saveNpcMemories() {
+            if (!currentNpcMemoriesId) {
+                return;
+            }
+            const memories = collectNpcMemories();
+
+            try {
+                setNpcMemoriesStatus('Saving memories...');
+                if (npcMemoriesSaveBtn) {
+                    npcMemoriesSaveBtn.disabled = true;
+                }
+
+                const response = await fetch(`/api/npcs/${encodeURIComponent(currentNpcMemoriesId)}/memories`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ memories })
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                setNpcMemoriesStatus('Memories saved.', 'success');
+                resetNpcMemoriesDirty();
+
+                const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                if (npcDataCache) {
+                    const cached = npcDataCache.get(currentNpcMemoriesId) || {};
+                    npcDataCache.set(currentNpcMemoriesId, { ...cached, importantMemories: memories.slice(0) });
+                }
+
+                if (typeof window.loadCurrentLocation === 'function') {
+                    await window.loadCurrentLocation();
+                }
+                window.refreshParty?.();
+
+                closeNpcMemoriesModal();
+            } catch (error) {
+                console.warn('Failed to save NPC memories:', error);
+                setNpcMemoriesStatus(error?.message || 'Failed to save memories.', 'error');
+                if (npcMemoriesSaveBtn) {
+                    npcMemoriesSaveBtn.disabled = false;
+                }
             }
         }
 
@@ -5792,10 +6050,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -5901,10 +6160,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6487,9 +6747,10 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6509,10 +6770,12 @@
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6557,10 +6820,11 @@
             const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6722,6 +6986,88 @@
             npcNeedsForm.addEventListener('submit', submitNpcNeeds);
         }
 
+        if (npcMemoriesCancelBtn) {
+            npcMemoriesCancelBtn.addEventListener('click', () => {
+                closeNpcMemoriesModal();
+            });
+        }
+
+        if (npcMemoriesCloseBtn) {
+            npcMemoriesCloseBtn.addEventListener('click', () => {
+                closeNpcMemoriesModal();
+            });
+        }
+
+        if (npcMemoriesSaveBtn) {
+            npcMemoriesSaveBtn.addEventListener('click', async () => {
+                await saveNpcMemories();
+            });
+            npcMemoriesSaveBtn.disabled = true;
+        }
+
+        if (npcMemoriesAddBtn) {
+            npcMemoriesAddBtn.addEventListener('click', () => {
+                if (!npcMemoriesList) {
+                    return;
+                }
+                const row = createNpcMemoryRow('');
+                npcMemoriesList.appendChild(row);
+                const textarea = row.querySelector('.npc-memory-text');
+                if (textarea) {
+                    textarea.focus();
+                }
+                markNpcMemoriesDirty();
+            });
+        }
+
+        if (npcMemoriesList) {
+            npcMemoriesList.addEventListener('dragover', (event) => {
+                if (!draggedNpcMemoryRow) {
+                    return;
+                }
+                event.preventDefault();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                const targetRow = event.target.closest('.npc-memory-row');
+                if (!targetRow) {
+                    if (npcMemoriesList.lastElementChild !== draggedNpcMemoryRow) {
+                        npcMemoriesList.appendChild(draggedNpcMemoryRow);
+                        markNpcMemoriesDirty();
+                    }
+                    return;
+                }
+                if (targetRow === draggedNpcMemoryRow) {
+                    return;
+                }
+                const targetRect = targetRow.getBoundingClientRect();
+                const shouldInsertBefore = event.clientY < targetRect.top + targetRect.height / 2;
+                if (shouldInsertBefore) {
+                    npcMemoriesList.insertBefore(draggedNpcMemoryRow, targetRow);
+                } else {
+                    npcMemoriesList.insertBefore(draggedNpcMemoryRow, targetRow.nextSibling);
+                }
+                markNpcMemoriesDirty();
+            });
+
+            npcMemoriesList.addEventListener('drop', (event) => {
+                if (!draggedNpcMemoryRow) {
+                    return;
+                }
+                event.preventDefault();
+                draggedNpcMemoryRow.classList.remove('dragging');
+                draggedNpcMemoryRow = null;
+                markNpcMemoriesDirty();
+            });
+
+            npcMemoriesList.addEventListener('dragend', () => {
+                if (draggedNpcMemoryRow) {
+                    draggedNpcMemoryRow.classList.remove('dragging');
+                    draggedNpcMemoryRow = null;
+                }
+            });
+        }
+
         if (addNpcButton) {
             addNpcButton.addEventListener('click', () => {
                 openAddNpcModal();
@@ -6829,6 +7175,8 @@
                         closeNewExitModal();
                     } else if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
                         closeNpcNeedsModal();
+                    } else if (npcMemoriesModal && !npcMemoriesModal.hasAttribute('hidden')) {
+                        closeNpcMemoriesModal();
                     } else if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
                         closeNpcDispositionModal();
                     } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
@@ -8423,6 +8771,12 @@
                     return;
                 }
 
+                if (npcMemoriesModal && !npcMemoriesModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcMemoriesModal();
+                    return;
+                }
+
                 if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeNpcDispositionModal();
@@ -8644,9 +8998,16 @@
                 needsButton.textContent = 'Needs';
                 menu.appendChild(needsButton);
 
+                let memoriesButton = null;
                 let dispositionButton = null;
                 let deleteButton = null;
                 if (npc && npc.isNPC) {
+                    memoriesButton = document.createElement('button');
+                    memoriesButton.type = 'button';
+                    memoriesButton.className = 'npc-card-menu-item';
+                    memoriesButton.textContent = 'Memories';
+                    menu.appendChild(memoriesButton);
+
                     dispositionButton = document.createElement('button');
                     dispositionButton.type = 'button';
                     dispositionButton.className = 'npc-card-menu-item';
@@ -8798,6 +9159,15 @@
                         console.warn('Failed to open needs editor:', error);
                     }
                 });
+
+                if (memoriesButton) {
+                    memoriesButton.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const latestNpc = npcDataCache.get(npc.id) || npc;
+                        showNpcMemoriesModal(latestNpc);
+                    });
+                }
 
                 if (dispositionButton) {
                     dispositionButton.addEventListener('click', async (event) => {

@@ -6634,6 +6634,45 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/npcs/:id/memories', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc) {
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
+                }
+
+                const submitted = req.body?.memories;
+                if (!Array.isArray(submitted)) {
+                    return res.status(400).json({ success: false, error: 'Memories payload must be an array of strings' });
+                }
+
+                const normalized = submitted
+                    .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+                    .filter(entry => entry.length > 0);
+
+                try {
+                    npc.importantMemories = normalized;
+                } catch (error) {
+                    return res.status(400).json({ success: false, error: error.message || 'Failed to update memories' });
+                }
+
+                const npcProfile = serializeNpcForClient(npc);
+                res.json({
+                    success: true,
+                    npc: npcProfile,
+                    message: `Updated memories for ${npc.name || 'character'}.`
+                });
+            } catch (error) {
+                console.error('Error updating NPC memories:', error);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         app.put('/api/npcs/:id/dispositions', (req, res) => {
             try {
                 const npcId = req.params.id;
