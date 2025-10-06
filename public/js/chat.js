@@ -564,11 +564,6 @@ class AIRPGChat {
         container.className = 'message event-summary-batch';
         container.dataset.timestamp = entry.timestamp || '';
 
-        const actions = this.createMessageActions(entry);
-        if (actions) {
-            container.appendChild(actions);
-        }
-
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
         senderDiv.textContent = entry.summaryTitle || '📋 Events';
@@ -590,20 +585,6 @@ class AIRPGChat {
                 listItem.appendChild(document.createTextNode(` ${item.text}`));
                 list.appendChild(listItem);
             });
-        } else if (typeof entry.content === 'string') {
-            entry.content.split('\n').forEach((line, idx) => {
-                const trimmed = line.trim();
-                if (!trimmed) {
-                    return;
-                }
-                if (idx === 0 && !entry.summaryTitle) {
-                    senderDiv.textContent = trimmed;
-                    return;
-                }
-                const listItem = document.createElement('li');
-                listItem.textContent = trimmed;
-                list.appendChild(listItem);
-            });
         }
 
         listWrapper.appendChild(list);
@@ -615,6 +596,11 @@ class AIRPGChat {
         container.appendChild(senderDiv);
         container.appendChild(listWrapper);
         container.appendChild(timestampDiv);
+
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            container.appendChild(actions);
+        }
 
         return container;
     }
@@ -710,7 +696,33 @@ class AIRPGChat {
             return;
         }
         this.editCurrentEntry = entry;
-        this.editTextarea.value = entry.content || '';
+        let content = entry.content || '';
+
+        if (entry.type === 'event-summary') {
+            const summaryLines = [];
+            if (Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
+                entry.summaryItems.forEach(item => {
+                    if (!item || !item.text) {
+                        return;
+                    }
+                    const icon = item.icon || '•';
+                    summaryLines.push(`${icon} ${item.text}`.trim());
+                });
+            }
+
+            if (summaryLines.length) {
+                content = summaryLines.join('\n');
+            } else if (typeof content === 'string' && content.includes('\n')) {
+                const lines = content.split('\n');
+                const summaryTitle = (entry.summaryTitle || '').trim();
+                if (summaryTitle && lines.length && lines[0].trim() === summaryTitle) {
+                    lines.shift();
+                    content = lines.join('\n');
+                }
+            }
+        }
+
+        this.editTextarea.value = content;
         this.editModal.removeAttribute('hidden');
         this.editModal.classList.add('is-open');
         setTimeout(() => {
@@ -731,14 +743,22 @@ class AIRPGChat {
         if (!this.editCurrentEntry) {
             return;
         }
-        const timestamp = this.editCurrentEntry.timestamp;
+        const { id, timestamp } = this.editCurrentEntry;
         const content = this.editTextarea.value;
+
+        const payload = { content };
+        if (id) {
+            payload.id = id;
+        }
+        if (timestamp) {
+            payload.timestamp = timestamp;
+        }
 
         try {
             const response = await fetch('/api/chat/message', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ timestamp, content })
+                body: JSON.stringify(payload)
             });
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
@@ -761,11 +781,19 @@ class AIRPGChat {
             return;
         }
 
+        const payload = {};
+        if (entry.id) {
+            payload.id = entry.id;
+        }
+        if (entry.timestamp) {
+            payload.timestamp = entry.timestamp;
+        }
+
         try {
             const response = await fetch('/api/chat/message', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ timestamp: entry.timestamp })
+                body: JSON.stringify(payload)
             });
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));

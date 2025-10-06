@@ -5266,15 +5266,15 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
-        app.put('/api/chat/message', (req, res) => {
-            const { timestamp, content } = req.body || {};
-
-            if (typeof timestamp !== 'string' || !timestamp.trim()) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'timestamp is required'
-                });
+        const findChatEntryIndexById = (id) => {
+            if (!id) {
+                return -1;
             }
+            return chatHistory.findIndex(entry => entry && entry.id === id);
+        };
+
+        app.put('/api/chat/message', (req, res) => {
+            const { id, timestamp, content } = req.body || {};
 
             if (typeof content !== 'string') {
                 return res.status(400).json({
@@ -5283,7 +5283,25 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
-            const index = findChatEntryIndexByTimestamp(timestamp.trim());
+            let index = -1;
+            const trimmedId = typeof id === 'string' ? id.trim() : '';
+            const trimmedTimestamp = typeof timestamp === 'string' ? timestamp.trim() : '';
+
+            if (!trimmedId && !trimmedTimestamp) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'id or timestamp is required'
+                });
+            }
+
+            if (trimmedId) {
+                index = findChatEntryIndexById(trimmedId);
+            }
+
+            if (index === -1 && trimmedTimestamp) {
+                index = findChatEntryIndexByTimestamp(trimmedTimestamp);
+            }
+
             if (index === -1) {
                 return res.status(404).json({
                     success: false,
@@ -5307,16 +5325,27 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         app.delete('/api/chat/message', (req, res) => {
-            const { timestamp } = req.body || {};
+            const { id, timestamp } = req.body || {};
 
-            if (typeof timestamp !== 'string' || !timestamp.trim()) {
+            let index = -1;
+            const trimmedId = typeof id === 'string' ? id.trim() : '';
+            const trimmedTimestamp = typeof timestamp === 'string' ? timestamp.trim() : '';
+
+            if (!trimmedId && !trimmedTimestamp) {
                 return res.status(400).json({
                     success: false,
-                    error: 'timestamp is required'
+                    error: 'id or timestamp is required'
                 });
             }
 
-            const index = findChatEntryIndexByTimestamp(timestamp.trim());
+            if (trimmedId) {
+                index = findChatEntryIndexById(trimmedId);
+            }
+
+            if (index === -1 && trimmedTimestamp) {
+                index = findChatEntryIndexByTimestamp(trimmedTimestamp);
+            }
+
             if (index === -1) {
                 return res.status(404).json({
                     success: false,
@@ -5325,9 +5354,39 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const [removed] = chatHistory.splice(index, 1);
+
+            const orphaned = [];
+            const removedIds = new Set();
+            if (removed && removed.id) {
+                removedIds.add(removed.id);
+            }
+
+            let removedThisPass = true;
+            while (removedThisPass && removedIds.size) {
+                removedThisPass = false;
+                for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
+                    const entry = chatHistory[i];
+                    if (!entry || !entry.parentId) {
+                        continue;
+                    }
+                    if (!removedIds.has(entry.parentId)) {
+                        continue;
+                    }
+                    const [child] = chatHistory.splice(i, 1);
+                    if (child) {
+                        orphaned.push(child);
+                        if (child.id) {
+                            removedIds.add(child.id);
+                        }
+                        removedThisPass = true;
+                    }
+                }
+            }
+
             res.json({
                 success: true,
-                removed
+                removed,
+                orphaned
             });
         });
 
