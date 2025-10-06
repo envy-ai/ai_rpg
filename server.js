@@ -7260,7 +7260,8 @@ function parseInventoryItems(xmlContent) {
             throw new Error(parserError.textContent);
         }
 
-        const itemNodes = Array.from(doc.getElementsByTagName('item'));
+        const collectTags = ['item', 'scenery', 'thing'];
+        const itemNodes = collectTags.flatMap(tag => Array.from(doc.getElementsByTagName(tag)));
         const items = [];
 
         for (const node of itemNodes) {
@@ -8020,10 +8021,18 @@ function parseLocationThingsXml(xmlContent) {
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
+            const rawItemOrScenery = node.getElementsByTagName('itemOrScenery')[0]?.textContent?.trim();
+            const fallbackKind = (() => {
+                const tagName = typeof node.tagName === 'string' ? node.tagName.trim().toLowerCase() : '';
+                if (tagName === 'scenery') return 'scenery';
+                if (tagName === 'item' || tagName === 'thing') return 'item';
+                return '';
+            })();
+
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
-                itemOrScenery: node.getElementsByTagName('itemOrScenery')[0]?.textContent?.trim() || '',
+                itemOrScenery: rawItemOrScenery || fallbackKind,
                 type: node.getElementsByTagName('type')[0]?.textContent?.trim() || '',
                 slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
                 rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || '',
