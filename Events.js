@@ -393,6 +393,27 @@ class Events {
                     reason
                 };
             }).filter(Boolean),
+            item_to_npc: raw => this.splitVerticalBarEntries(raw).map(entry => {
+                const parts = this.extractArrowParts(entry, 3);
+                if (parts.length < 2) {
+                    return null;
+                }
+
+                const [itemRaw, npcRaw, ...rest] = parts;
+                const npcName = npcRaw ? String(npcRaw).trim() : '';
+                if (!npcName) {
+                    return null;
+                }
+
+                const itemName = itemRaw ? String(itemRaw).trim() : '';
+                const transformationDescription = rest.length ? rest.join(' -> ').trim() : '';
+
+                return {
+                    itemName: itemName || null,
+                    npcName,
+                    transformationDescription: transformationDescription || null
+                };
+            }).filter(Boolean),
             defeated_enemy: raw => this.splitVerticalBarEntries(raw),
             needbar_change: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const parts = this.extractArrowParts(entry, 4);
@@ -451,6 +472,7 @@ class Events {
             drop_item: (entries, context) => this.handleDropItemEvents(entries, context),
             heal_recover: (entries, context) => this.handleHealEvents(entries, context),
             item_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
+            item_to_npc: (entries, context) => this.handleItemToNpcEvents(entries, context),
             alter_location: (entries, context) => {
                 if (context?.suppressAlterLocationHandling) {
                     return;
@@ -2015,6 +2037,156 @@ class Events {
                 delete metadata.ownerId;
                 thing.metadata = metadata;
                 this.addThingToLocation(thing, location);
+            }
+        }
+    }
+
+    static async handleItemToNpcEvents(entries = [], context = {}) {
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return;
+        }
+
+        const {
+            findThingByName,
+            ensureNpcByName,
+            findRegionByLocationId,
+            Location: LocationClass
+        } = this.deps;
+
+        if (typeof ensureNpcByName !== 'function') {
+            throw new Error('item_to_npc handler requires ensureNpcByName');
+        }
+
+        if (typeof findThingByName !== 'function') {
+            throw new Error('item_to_npc handler requires findThingByName');
+        }
+
+        const players = this.players;
+        const things = this.things;
+
+        const resolveLocation = candidate => {
+            if (!candidate || !LocationClass || typeof LocationClass.get !== 'function') {
+                return null;
+            }
+            try {
+                return LocationClass.get(candidate) || null;
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const playerCandidate = context.player || this.currentPlayer || null;
+        const contextLocation = this.resolveLocationCandidate(context.location);
+
+        for (const entry of entries) {
+            if (!entry) {
+                continue;
+            }
+
+            const npcName = typeof entry.npcName === 'string' ? entry.npcName.trim() : '';
+            if (!npcName) {
+                throw new Error('item_to_npc entry missing NPC name');
+            }
+
+            const itemName = typeof entry.itemName === 'string' ? entry.itemName.trim() : '';
+            if (!itemName) {
+                throw new Error(`item_to_npc entry for "${npcName}" missing source item name`);
+            }
+
+            const transformationDescription = typeof entry.transformationDescription === 'string'
+                ? entry.transformationDescription.trim()
+                : '';
+
+            const thing = findThingByName(itemName);
+            if (!thing) {
+                throw new Error(`item_to_npc referenced missing item "${itemName}"`);
+            }
+
+            let location = contextLocation || null;
+            if (!location && thing.metadata && typeof thing.metadata.locationId === 'string') {
+                location = resolveLocation(thing.metadata.locationId);
+            }
+            if (!location && playerCandidate?.currentLocation) {
+                location = resolveLocation(playerCandidate.currentLocation);
+            }
+            if (!location && this.currentPlayer?.currentLocation) {
+                location = resolveLocation(this.currentPlayer.currentLocation);
+            }
+
+            if (!location) {
+                throw new Error(`item_to_npc could not resolve location for "${npcName}" transformation`);
+            }
+
+            let region = context.region || null;
+            if (!region && typeof findRegionByLocationId === 'function') {
+                try {
+                    region = findRegionByLocationId(location.id) || null;
+                } catch (_) {
+                    region = null;
+                }
+            }
+
+            const metadata = thing.metadata || {};
+            const ownerId = typeof metadata.ownerId === 'string' ? metadata.ownerId : null;
+            if (ownerId) {
+                let owner = null;
+                if (players instanceof Map) {
+                    owner = players.get(ownerId) || null;
+                } else if (Array.isArray(players)) {
+                    owner = players.find(candidate => candidate?.id === ownerId) || null;
+                } else if (players && typeof players.get === 'function') {
+                    try {
+                        owner = players.get(ownerId) || null;
+                    } catch (_) {
+                        owner = null;
+                    }
+                }
+                if (owner && typeof owner.removeInventoryItem === 'function') {
+                    owner.removeInventoryItem(thing);
+                }
+            }
+
+            this.detachThingFromKnownLocation(thing);
+            if (contextLocation) {
+                this.removeThingFromLocation(thing, contextLocation);
+            }
+            if (!contextLocation || contextLocation.id !== location.id) {
+                this.removeThingFromLocation(thing, location);
+            }
+
+            if (typeof thing.delete === 'function') {
+                thing.delete();
+            }
+
+            if (things instanceof Map) {
+                things.delete(thing.id);
+            } else if (Array.isArray(things)) {
+                const index = things.findIndex(candidate => candidate?.id === thing.id);
+                if (index >= 0) {
+                    things.splice(index, 1);
+                }
+            } else if (things && typeof things === 'object' && thing.id) {
+                if (Object.prototype.hasOwnProperty.call(things, thing.id)) {
+                    delete things[thing.id];
+                }
+            }
+
+            const oldItemData = {
+                name: thing.name || itemName,
+                description: typeof thing.description === 'string' ? thing.description : '',
+                transformationDescription
+            };
+
+            const ensureContext = {
+                ...context,
+                location,
+                region,
+                oldItem: oldItemData
+            };
+
+            const npc = await ensureNpcByName(npcName, ensureContext);
+            if (!npc) {
+                throw new Error(`item_to_npc failed to create NPC "${npcName}"`);
             }
         }
     }

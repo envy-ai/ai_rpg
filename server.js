@@ -1593,7 +1593,8 @@ async function ensureNpcByName(name, context = {}) {
     const generated = await generateNpcFromEvent({
         name,
         location: resolvedLocation,
-        region: resolvedRegion
+        region: resolvedRegion,
+        oldItem: context.oldItem || null
     });
 
     if (generated) {
@@ -5499,7 +5500,7 @@ function normalizeNpcPromptSeed(seed = {}) {
     return normalized;
 }
 
-function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [] } = {}) {
+function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [], oldItem = null } = {}) {
     try {
         const safeRegion = region ? {
             name: region.name || 'Unknown Region',
@@ -5517,13 +5518,33 @@ function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, r
 
         const npcSeed = normalizeNpcPromptSeed(npc || {});
 
+        const oldItemContext = (() => {
+            if (!oldItem || typeof oldItem !== 'object') {
+                return null;
+            }
+            const name = typeof oldItem.name === 'string' ? oldItem.name.trim() : '';
+            const description = typeof oldItem.description === 'string' ? oldItem.description.trim() : '';
+            const transformationDescription = typeof oldItem.transformationDescription === 'string'
+                ? oldItem.transformationDescription.trim()
+                : '';
+            if (!name && !description && !transformationDescription) {
+                return null;
+            }
+            return {
+                name: name || '',
+                description: description || '',
+                transformationDescription: transformationDescription || ''
+            };
+        })();
+
         return promptEnv.render('npc-generator-single.xml.njk', {
             setting: settingContext,
             region: safeRegion,
             location: safeLocation,
             existingNpcSummaries: existingNpcSummaries || [],
             npc: npcSeed,
-            attributeDefinitions: attributeDefinitionsForPrompt
+            attributeDefinitions: attributeDefinitionsForPrompt,
+            oldItem: oldItemContext
         });
     } catch (error) {
         console.error('Error rendering single NPC template:', error);
@@ -5544,7 +5565,7 @@ function summarizeNpcForPrompt(npc) {
     };
 }
 
-async function generateNpcFromEvent({ name, npc = null, location = null, region = null } = {}) {
+async function generateNpcFromEvent({ name, npc = null, location = null, region = null, oldItem = null } = {}) {
     const seedSource = (npc && typeof npc === 'object') ? { ...npc } : {};
     let trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName && typeof seedSource.name === 'string') {
@@ -5611,7 +5632,8 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             settingSnapshot,
             location: resolvedLocation,
             region: resolvedRegion,
-            existingNpcSummaries: existingNpcSummaries.slice(0, 25)
+            existingNpcSummaries: existingNpcSummaries.slice(0, 25),
+            oldItem
         });
 
         if (!renderedTemplate) {
