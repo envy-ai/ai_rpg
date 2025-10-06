@@ -92,3 +92,4 @@ summaries:
   summary_word_length: 12
   max_unsummarized_log_entries: 100
 generate_memory_interval: 10
+max_memories_to_recall: 10

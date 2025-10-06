@@ -10808,6 +10808,13 @@ module.exports = function registerApiRoutes(scope) {
                     startingCurrency: startingCurrencyInput
                 } = body;
                 const activeSetting = getActiveSettingSnapshot();
+                if (!activeSetting) {
+                    report('new_game:setting_missing', 'No active setting is loaded. Cannot start new game.');
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No active setting is loaded. Please apply a setting before starting a new game.'
+                    });
+                }
                 const newGameDefaults = buildNewGameDefaults(activeSetting);
                 const settingDescription = describeSettingForPrompt(activeSetting);
                 const rawPlayerName = typeof playerName === 'string' ? playerName.trim() : '';
