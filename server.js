@@ -5703,6 +5703,59 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
         }
 
         const parsedNpcs = parseLocationNpcs(npcResponse);
+        const baseConversation = [
+            ...messages,
+            { role: 'assistant', content: npcResponse }
+        ];
+
+        let skillAssignments = new Map();
+        let abilityAssignments = new Map();
+        let skillConversation = baseConversation;
+
+        const logsDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logsDir)) {
+            try {
+                fs.mkdirSync(logsDir, { recursive: true });
+            } catch (mkdirError) {
+                console.warn('Failed to ensure logs directory for NPC generation:', mkdirError?.message || mkdirError);
+            }
+        }
+
+        try {
+            const skillLogPath = path.join(logsDir, `npc_single_skills_${Date.now()}.log`);
+            const skillResult = await requestNpcSkillAssignments({
+                baseMessages: baseConversation,
+                chatEndpoint,
+                model,
+                apiKey,
+                logPath: skillLogPath
+            });
+            if (skillResult?.assignments instanceof Map) {
+                skillAssignments = skillResult.assignments;
+            }
+            if (Array.isArray(skillResult?.conversation) && skillResult.conversation.length) {
+                skillConversation = skillResult.conversation;
+            }
+        } catch (skillError) {
+            console.warn('Failed to generate skills for single NPC:', skillError?.message || skillError);
+        }
+
+        try {
+            const abilityLogPath = path.join(logsDir, `npc_single_abilities_${Date.now()}.log`);
+            const abilityResult = await requestNpcAbilityAssignments({
+                baseMessages: skillConversation,
+                chatEndpoint,
+                model,
+                apiKey,
+                logPath: abilityLogPath
+            });
+            if (abilityResult?.assignments instanceof Map) {
+                abilityAssignments = abilityResult.assignments;
+            }
+        } catch (abilityError) {
+            console.warn('Failed to generate abilities for single NPC:', abilityError?.message || abilityError);
+        }
+
         let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
         if (npcData) {
             npcData = { ...normalizeNpcPromptSeed(npcSeed), ...npcData };
@@ -5757,6 +5810,21 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
 
         if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
             resolvedLocation.addNpcId(npc.id);
+        }
+
+        const normalizedNpcName = (npc.name || '').trim().toLowerCase();
+        if (normalizedNpcName && skillAssignments instanceof Map) {
+            const skillEntry = skillAssignments.get(normalizedNpcName);
+            if (skillEntry && Array.isArray(skillEntry.skills) && skillEntry.skills.length) {
+                applyNpcSkillAllocations(npc, skillEntry.skills);
+            }
+        }
+
+        if (normalizedNpcName && abilityAssignments instanceof Map) {
+            const abilityEntry = abilityAssignments.get(normalizedNpcName);
+            if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
+                applyNpcAbilities(npc, abilityEntry.abilities);
+            }
         }
 
         const inventoryDescriptor = {

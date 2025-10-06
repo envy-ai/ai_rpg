@@ -408,6 +408,14 @@ class Utils {
         thingIds: locationData.thingIds || []
       });
 
+      if (Object.prototype.hasOwnProperty.call(locationData, 'visited')) {
+        try {
+          location.visited = Boolean(locationData.visited);
+        } catch (error) {
+          console.warn(`Failed to restore visited state for location ${location.id}:`, error.message);
+        }
+      }
+
       const exitsByDirection = locationData.exits || {};
       for (const [direction, exitInfo] of Object.entries(exitsByDirection)) {
         if (!exitInfo || !exitInfo.destination) {

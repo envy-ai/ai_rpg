@@ -1441,6 +1441,17 @@ class Player {
         return Array.from(this.#importantMemories);
     }
 
+    set importantMemories(memories) {
+        if (!Array.isArray(memories)) {
+            throw new Error('Important memories must be an array of strings');
+        }
+        const cleaned = memories
+            .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean);
+        this.#importantMemories = Array.from(new Set(cleaned)); // Remove duplicates
+        this.#lastUpdated = new Date().toISOString();
+    }
+
     addImportantMemory(memory) {
         if (typeof memory !== 'string' || !memory.trim()) {
             return false;
