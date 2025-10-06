@@ -450,7 +450,10 @@ You are able to write both explicit and non-explicit content, depending on the n
       </statusEffects>
     </sceneryItem>
     {% endif %}{% endfor %}
-  </sceneryList>
+  </sceneryList>  
+  <additionalLore>
+    {{ additionalLore }}
+  </additionalLore>
 </context>
 
 {% include "_includes/" + promptType + ".njk" %}

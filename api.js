@@ -5,6 +5,7 @@ const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const console = require('console');
+const Location = require('./Location.js');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -897,8 +898,15 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             break;
                         case 'item_appear':
-                            entries.forEach(item => {
-                                add('✨', `${safeSummaryItem(item)} appeared in the scene.`);
+                            (Array.isArray(entries) ? entries : [entries]).forEach(item => {
+                                const itemLabel = safeSummaryItem(item);
+
+                                const isAlsoPickedUp = Array.isArray(bundle)
+                                    && bundle.some(entry => entry && entry.icon === '🎒' && entry.text && entry.text.includes(itemLabel));
+
+                                if (!isAlsoPickedUp) {
+                                    add('✨', `${itemLabel} appeared in the scene.`);
+                                }
                             });
                             break;
                         case 'move_location':
@@ -3794,17 +3802,20 @@ module.exports = function registerApiRoutes(scope) {
             locationOverride = null,
             isCreativeModeAction = false
         }) {
+            console.log('Running action narrative for', actor ? actor.name : 'unknown actor');
             if (!actor) {
                 return { raw: '', debug: null };
             }
 
             try {
+                console.log('checking for additional lore')
                 const baseContext = await prepareBasePromptContext({ locationOverride });
+
                 const promptVariables = {
                     ...baseContext,
                     promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
                     actionText: actionText || '',
-                    characterName: actor.isNPC ? (actor.name || 'Unknown NPC') : 'The player'
+                    characterName: actor.isNPC ? (actor.name || 'Unknown NPC') : 'The player',
                 };
 
                 if (attackContext?.isAttack) {
@@ -4622,11 +4633,41 @@ module.exports = function registerApiRoutes(scope) {
                         const baseContext = await prepareBasePromptContext({ locationOverride: location });
                         const templateName = 'base-context.xml.njk';
 
+                        let additionalLore = '';
+                        const actionText = isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent;
+
+                        const currentLocation = baseContext.currentLocation || null;
+                        if (currentLocation && Array.isArray(currentLocation.exits)) {
+                            const exitNames = currentLocation.exits
+                                .map(exit => (exit && typeof exit.name === 'string' ? exit.name.trim() : ''))
+                                .filter(name => !!name);
+                            console.log('found exits:', exitNames);
+                            console.log('action text:', actionText);
+                            if (exitNames.length && actionText && typeof actionText === 'string') {
+                                const actionLower = actionText.toLowerCase();
+                                for (const exitName of exitNames) {
+                                    console.log('checking exit:', exitName);
+                                    const exitLower = exitName.toLowerCase();
+                                    if (actionLower.includes(exitLower)) {
+                                        const matchedLocation = Location.findByName(exitName) || null;
+                                        console.log('matched location:', matchedLocation.name);
+                                        //TODO: How can I reference the description of a stub location here?
+                                        if (matchedLocation) {
+                                            additionalLore += `Location -- ${matchedLocation.name}: ${matchedLocation.description}`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        console.log("additionalLore:", additionalLore);
+
                         const promptVariables = {
                             ...baseContext,
                             promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
-                            actionText: isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent,
-                            characterName: 'The player'
+                            actionText: actionText,
+                            characterName: 'The player',
+                            additionalLore: additionalLore.trim(),
                         };
 
                         if (attackContextForPlausibility) {
