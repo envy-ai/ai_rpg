@@ -534,7 +534,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let baseContext = {};
             try {
-                baseContext = buildBasePromptContext({ locationOverride });
+                baseContext = await prepareBasePromptContext({ locationOverride });
             } catch (error) {
                 console.warn('Failed to build base context for chat summarization:', error.message);
             }
@@ -1488,7 +1488,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const baseContext = buildBasePromptContext({ locationOverride });
+                const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'random-event',
@@ -1950,6 +1950,33 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function logNpcActionPrompt({ npcName, systemPrompt, generationPrompt }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const safeName = (npcName || 'unknown_npc').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 64) || 'npc';
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `npc_action_${safeName}_${timestamp}.log`);
+                const parts = [
+                    `NPC: ${npcName || 'Unknown NPC'}`,
+                    '',
+                    '=== NPC ACTION SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== NPC ACTION GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    ''
+                ];
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log NPC action prompt:', error.message);
+            }
+        }
+
         async function runAttackCheckPrompt({ actionText, locationOverride, characterName = 'The player' }) {
             if (!actionText || !actionText.trim()) {
                 return null;
@@ -1960,7 +1987,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const baseContext = buildBasePromptContext({ locationOverride: locationOverride || null });
+                const baseContext = await prepareBasePromptContext({ locationOverride: locationOverride || null });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'attack-check',
@@ -2955,7 +2982,7 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runNextNpcListPrompt({ locationOverride = null } = {}) {
             try {
-                const baseContext = buildBasePromptContext({ locationOverride });
+                const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'next-npc-list'
@@ -3190,7 +3217,7 @@ module.exports = function registerApiRoutes(scope) {
                     break;
                 }
 
-                const baseContext = buildBasePromptContext({ locationOverride });
+                const baseContext = await prepareBasePromptContext({ locationOverride });
                 const dispositionTypes = Array.isArray(baseContext?.dispositionTypes)
                     ? baseContext.dispositionTypes
                     : [];
@@ -3428,7 +3455,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const baseContext = buildBasePromptContext({ locationOverride });
+                const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'npc-plausibility-check',
@@ -3494,7 +3521,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let baseContext;
             try {
-                baseContext = buildBasePromptContext({ locationOverride });
+                baseContext = await prepareBasePromptContext({ locationOverride });
             } catch (error) {
                 console.warn('Failed to build base context for NPC memories:', error.message);
                 baseContext = {};
@@ -3804,7 +3831,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const baseContext = buildBasePromptContext({ locationOverride });
+                const baseContext = await prepareBasePromptContext({ locationOverride });
                 const promptVariables = {
                     ...baseContext,
                     promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
@@ -3837,14 +3864,25 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Action template missing system prompt.');
                 }
 
-                logPlayerActionPrompt({
-                    systemPrompt: String(parsedTemplate.systemPrompt).trim(),
-                    generationPrompt: parsedTemplate.generationPrompt || null
-                });
+                const trimmedSystemPrompt = String(parsedTemplate.systemPrompt).trim();
+                const generationPrompt = parsedTemplate.generationPrompt || null;
+
+                if (actor.isNPC) {
+                    logNpcActionPrompt({
+                        npcName: actor.name || null,
+                        systemPrompt: trimmedSystemPrompt,
+                        generationPrompt
+                    });
+                } else {
+                    logPlayerActionPrompt({
+                        systemPrompt: trimmedSystemPrompt,
+                        generationPrompt
+                    });
+                }
 
                 const systemMessage = {
                     role: 'system',
-                    content: String(parsedTemplate.systemPrompt).trim()
+                    content: trimmedSystemPrompt
                 };
 
                 const messages = [systemMessage];
@@ -4613,7 +4651,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                     try {
                         stream.status('player_action:prompt', 'Building prompt for AI response.');
-                        const baseContext = buildBasePromptContext({ locationOverride: location });
+                        const baseContext = await prepareBasePromptContext({ locationOverride: location });
                         const templateName = 'base-context.xml.njk';
 
                         const promptVariables = {

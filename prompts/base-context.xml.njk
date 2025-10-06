@@ -226,7 +226,7 @@ You are able to write both explicit and non-explicit content, depending on the n
       </dispositionsTowardsPlayer>
       <importantMemories>
         {% for entry in npc.selectedImportantMemories %}
-        <memory index="{{ entry.displayIndex | default(entry.index + 1) }}">{{ entry.memory }}</memory>
+        <memory>{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
       <inventory>
@@ -331,7 +331,7 @@ You are able to write both explicit and non-explicit content, depending on the n
       </dispositionsTowardsPlayer>
       <importantMemories>
         {% for entry in member.selectedImportantMemories %}
-        <memory index="{{ entry.displayIndex | default(entry.index + 1) }}">{{ entry.memory }}</memory>
+        <memory>{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
       <inventory>

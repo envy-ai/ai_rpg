@@ -5,17 +5,13 @@ let baseTimeoutMilliseconds = 120000;
 
 class Events {
     static async getBaseContext(options = {}) {
-        const { prepareBasePromptContext, buildBasePromptContext } = this.deps || {};
+        const { prepareBasePromptContext } = this.deps || {};
 
-        if (typeof prepareBasePromptContext === 'function') {
-            return await prepareBasePromptContext(options);
+        if (typeof prepareBasePromptContext !== 'function') {
+            throw new Error('prepareBasePromptContext dependency is not configured.');
         }
 
-        if (typeof buildBasePromptContext === 'function') {
-            return buildBasePromptContext(options);
-        }
-
-        throw new Error('No base prompt context builder is configured.');
+        return await prepareBasePromptContext(options);
     }
 
     static initialize(deps = {}) {
@@ -1358,8 +1354,7 @@ class Events {
             baseDir
         } = this.deps;
 
-        const hasBaseContextBuilder = typeof this.deps.prepareBasePromptContext === 'function'
-            || typeof this.deps.buildBasePromptContext === 'function';
+        const hasBaseContextBuilder = typeof this.deps.prepareBasePromptContext === 'function';
         if (!hasBaseContextBuilder || !promptEnv || typeof parseXMLTemplate !== 'function' || !axios) {
             console.warn('Alter item handler missing prompt dependencies.');
             return;
@@ -1987,8 +1982,7 @@ class Events {
             generatedImages
         } = this.deps;
 
-        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
-            || typeof this.deps?.buildBasePromptContext === 'function';
+        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function';
 
         if (
             !hasBaseContextBuilder ||
@@ -2261,8 +2255,7 @@ class Events {
             generatedImages
         } = this.deps;
 
-        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
-            || typeof this.deps?.buildBasePromptContext === 'function';
+        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function';
 
         if (
             !hasBaseContextBuilder ||
@@ -3233,7 +3226,27 @@ class Events {
             return false;
         };
 
-        for (const entry of entries) {
+        const sanitizedEntries = entries.filter(entry => {
+            if (!entry || entry.action !== 'arrived' || !entry.name) {
+                return true;
+            }
+
+            if (isNpcNamePresentInLocation(entry.name)) {
+                return false;
+            }
+            return true;
+        });
+
+        if (Array.isArray(entries)) {
+            entries.length = 0;
+            sanitizedEntries.forEach(item => entries.push(item));
+        }
+
+        if (!sanitizedEntries.length) {
+            return;
+        }
+
+        for (const entry of sanitizedEntries) {
             if (!entry || !entry.name) continue;
 
             if (entry.action === 'arrived' && isNpcNamePresentInLocation(entry.name)) {
@@ -4113,8 +4126,7 @@ class Events {
             const currentPlayer = this.currentPlayer;
             const { Location, promptEnv, parseXMLTemplate, axios, findRegionByLocationId } = this.deps;
 
-            const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
-                || typeof this.deps?.buildBasePromptContext === 'function';
+            const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function';
             if (!hasBaseContextBuilder) {
                 console.warn('Event check handler missing base context builder.');
                 return null;
