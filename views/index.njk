@@ -186,6 +186,7 @@
                                             </div>
                                             <div class="chat-player-health" id="chatPlayerHealth">HP: ? / ?</div>
                                             <div class="chat-player-health" id="chatPlayerExperience">Exp: ? / 100</div>
+                                            <div class="chat-player-health" id="chatPlayerCurrency">Coins: ?</div>
                                             <p class="chat-player-description" id="chatPlayerDescription">No description available.</p>
                                         </div>
                                     </div>
@@ -1566,6 +1567,19 @@
             }, 15000);
         }
 
+        function resolveCurrencyLabel({ capitalize = false } = {}) {
+            const setting = window.currentSetting || {};
+            const raw = typeof setting.currencyNamePlural === 'string' ? setting.currencyNamePlural.trim() : '';
+            const label = raw || 'coins';
+            if (!capitalize) {
+                return label;
+            }
+            if (!label) {
+                return label;
+            }
+            return label.charAt(0).toUpperCase() + label.slice(1);
+        }
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
@@ -1580,6 +1594,7 @@
             archetype: document.getElementById('chatPlayerArchetype'),
             health: document.getElementById('chatPlayerHealth'),
             experience: document.getElementById('chatPlayerExperience'),
+            currency: document.getElementById('chatPlayerCurrency'),
             description: document.getElementById('chatPlayerDescription'),
             partyGrid: document.getElementById('chatPartyMembers'),
             partyEmpty: document.getElementById('chatPartyEmpty'),
@@ -1680,6 +1695,12 @@
             const experienceValue = Number.isFinite(data?.experience) ? data.experience : '?';
             if (chatSidebarElements.experience) {
                 chatSidebarElements.experience.textContent = `Exp: ${experienceValue} / 100`;
+            }
+
+            const currencyValue = Number.isFinite(data?.currency) ? data.currency : null;
+            if (chatSidebarElements.currency) {
+                const currencyLabel = resolveCurrencyLabel({ capitalize: true });
+                chatSidebarElements.currency.textContent = `${currencyLabel}: ${currencyValue !== null ? currencyValue : '?'}`;
             }
 
             const description = (data?.shortDescription || data?.description || 'No description available.').trim();
@@ -8150,11 +8171,7 @@
                     npcViewCurrency.textContent = '';
                     npcViewCurrency.setAttribute('hidden', '');
                 } else {
-                    const currencyLabel = (() => {
-                        const setting = window.currentSetting || {};
-                        const label = typeof setting.currencyNamePlural === 'string' ? setting.currencyNamePlural.trim() : '';
-                        return label || 'coins';
-                    })();
+                    const currencyLabel = resolveCurrencyLabel();
                     npcViewCurrency.textContent = `Currency: ${currencyValue} ${currencyLabel}`;
                     npcViewCurrency.removeAttribute('hidden');
                 }

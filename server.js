@@ -3707,7 +3707,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null } = {}) {
+function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -3715,16 +3715,27 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     const normalizedTargetName = trimmedName.toLowerCase();
 
+    const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
+    const resolvedVehicleType = normalizedVehicleType ? normalizedVehicleType : null;
+    const resolvedIsVehicle = isVehicle === true || Boolean(resolvedVehicleType);
+
     const ensureExistingConnection = (targetLocation, destinationRegionId) => {
         if (!targetLocation) {
             return null;
         }
 
-        return ensureExitConnection(originLocation, targetLocation, {
+        const exitOptions = {
             description: description || `${targetLocation.name || trimmedName}`,
             bidirectional: true,
             destinationRegion: destinationRegionId || null
-        });
+        };
+
+        if (resolvedIsVehicle) {
+            exitOptions.isVehicle = true;
+            exitOptions.vehicleType = resolvedVehicleType;
+        }
+
+        return ensureExitConnection(originLocation, targetLocation, exitOptions);
     };
 
     const existingRegion = findRegionByNameLoose(trimmedName);
@@ -3823,7 +3834,9 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         targetRegionParentId: parentRegionId || null,
         targetRegionRelationship: 'Adjacent',
         targetRegionRelativeLevel: 0,
-        settingDescription
+        settingDescription,
+        vehicleType: resolvedVehicleType,
+        isVehicle: resolvedIsVehicle
     };
 
     if (currentRegion && Number.isFinite(currentRegion.averageLevel)) {
@@ -3841,11 +3854,18 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     gameLocations.set(regionEntryStub.id, regionEntryStub);
 
-    ensureExitConnection(originLocation, regionEntryStub, {
+    const exitOptions = {
         description: description || `${trimmedName}`,
         bidirectional: false,
         destinationRegion: newRegionId
-    });
+    };
+
+    if (resolvedIsVehicle) {
+        exitOptions.isVehicle = true;
+        exitOptions.vehicleType = resolvedVehicleType;
+    }
+
+    ensureExitConnection(originLocation, regionEntryStub, exitOptions);
 
     pendingRegionStubs.set(newRegionId, {
         id: newRegionId,
@@ -5450,6 +5470,10 @@ function normalizeNpcPromptSeed(seed = {}) {
     copyTrimmed('role');
     copyTrimmed('class');
     copyTrimmed('race');
+
+    if (Object.prototype.hasOwnProperty.call(seed, 'isHostile')) {
+        normalized.isHostile = Boolean(seed.isHostile);
+    }
 
     if (Object.prototype.hasOwnProperty.call(seed, 'relativeLevel')) {
         const relative = Number(seed.relativeLevel);

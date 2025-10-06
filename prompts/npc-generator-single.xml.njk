@@ -51,6 +51,7 @@ If a field is already filled in, keep it as is and just fill in the remaining fi
     <role>{% if npc.role %}{{ npc.role  }}{% else %}Clear role, job, or niche within the location.{% endif %}</role>
     <class>{% if npc.class %}{{ npc.class }}{% else %}RPG class, vocation, or archetype.{% endif %}</class>
     <race>{% if npc.race %}{{ npc.race }}{% else %}Species or origin.{% endif %}</race>
+    <isHostile>{% if npc.isHostile is defined -%}{% if npc.isHostile in [true, 'true', 'True', 1, '1', 'yes', 'Yes', 'hostile', 'Hostile'] %}true{% else %}false{% endif %}{%- else -%}true or false{%- endif %}</isHostile>
     <relativeLevel>{% if npc.relativeLevel %}{{ npc.relativeLevel }}{% else %}Integer from -3 to +3{% endif %}</relativeLevel>
     <currency>{% if npc.currency %}{{ npc.currency }}{% else %}Integer amount of currency the NPC has on hand, based on setting norms.{% endif %}</currency>
     <attributes>

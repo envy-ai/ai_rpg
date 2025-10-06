@@ -139,26 +139,70 @@ class Events {
                     return null;
                 }
 
-                const [typeRaw, nameRaw, descriptionRaw] = this.extractArrowParts(trimmed, 3);
-                if (typeRaw && nameRaw && descriptionRaw) {
-                    const kind = typeRaw.trim().toLowerCase();
-                    const name = nameRaw.trim();
-                    const description = descriptionRaw.trim();
+                const [firstRaw, secondRaw, thirdRaw, fourthRaw] = this.extractArrowParts(trimmed, 4);
 
-                    if (['location', 'region'].includes(kind) && name && description) {
+                const normalizeKind = value => {
+                    if (!value) {
+                        return null;
+                    }
+                    const lowered = value.trim().toLowerCase();
+                    return ['location', 'region'].includes(lowered) ? lowered : null;
+                };
+
+                const normalizeVehicle = value => {
+                    if (!value) {
+                        return null;
+                    }
+                    const trimmedValue = value.trim();
+                    if (!trimmedValue) {
+                        return null;
+                    }
+                    if (trimmedValue.toLowerCase() === 'none') {
+                        return null;
+                    }
+                    return trimmedValue;
+                };
+
+                const attemptParse = (nameCandidate, kindCandidate, vehicleCandidate, descriptionCandidate) => {
+                    const name = nameCandidate ? nameCandidate.trim() : '';
+                    const kind = normalizeKind(kindCandidate);
+                    const description = descriptionCandidate ? descriptionCandidate.trim() : '';
+                    const vehicleType = normalizeVehicle(vehicleCandidate);
+
+                    if (name && kind && description) {
                         return {
                             kind,
                             name,
                             description,
+                            vehicleType,
+                            isVehicle: Boolean(vehicleType),
                             raw: trimmed
                         };
                     }
+                    return null;
+                };
+
+                const parsedNewOrder = attemptParse(firstRaw, secondRaw, thirdRaw, fourthRaw);
+                if (parsedNewOrder) {
+                    return parsedNewOrder;
+                }
+
+                const parsedLegacyWithVehicle = attemptParse(firstRaw, secondRaw, null, thirdRaw);
+                if (parsedLegacyWithVehicle) {
+                    return parsedLegacyWithVehicle;
+                }
+
+                const parsedLegacyOrder = attemptParse(secondRaw, firstRaw, null, thirdRaw || fourthRaw);
+                if (parsedLegacyOrder) {
+                    return parsedLegacyOrder;
                 }
 
                 return {
                     kind: 'location',
                     name: trimmed,
                     description: trimmed,
+                    vehicleType: null,
+                    isVehicle: false,
                     raw: trimmed,
                     fallback: true
                 };
@@ -1088,6 +1132,15 @@ class Events {
 
         if (expectedParts === 3) {
             return [parts[0], parts[1], parts.slice(2).join(' -> ')];
+        }
+
+        if (expectedParts === 4) {
+            return [
+                parts[0],
+                parts[1],
+                parts[2],
+                parts.slice(3).join(' -> ')
+            ];
         }
 
         return parts;
@@ -3053,6 +3106,8 @@ class Events {
                     kind: 'location',
                     name: trimmed,
                     description: trimmed,
+                    vehicleType: null,
+                    isVehicle: false,
                     raw: trimmed,
                     fallback: true
                 };
@@ -3061,6 +3116,9 @@ class Events {
             const kind = typeof detail.kind === 'string' ? detail.kind.trim().toLowerCase() : 'location';
             const name = typeof detail.name === 'string' ? detail.name.trim() : '';
             const description = typeof detail.description === 'string' ? detail.description.trim() : '';
+            const vehicleTypeRaw = typeof detail.vehicleType === 'string' ? detail.vehicleType.trim() : '';
+            const vehicleType = vehicleTypeRaw ? vehicleTypeRaw : null;
+            const isVehicleExit = detail.isVehicle === true || Boolean(vehicleType);
             const rawSummary = detail.raw || description || name;
 
             if (rawSummary && typeof location.addStatusEffect === 'function') {
@@ -3080,7 +3138,9 @@ class Events {
                         await createRegionStubFromEvent({
                             name,
                             description,
-                            originLocation: location
+                            originLocation: location,
+                            vehicleType,
+                            isVehicle: isVehicleExit
                         });
                     } catch (error) {
                         console.warn('Failed to create region stub from event:', error?.message || error);
@@ -3120,10 +3180,17 @@ class Events {
             }
 
             if (targetLocation) {
-                const exit = ensureExitConnection(location, targetLocation, {
+                const exitOptions = {
                     description: description || `${targetLocation.name || targetLocation.id}`,
                     bidirectional: false
-                });
+                };
+
+                if (isVehicleExit) {
+                    exitOptions.isVehicle = true;
+                    exitOptions.vehicleType = vehicleType;
+                }
+
+                const exit = ensureExitConnection(location, targetLocation, exitOptions);
 
                 if (exit) {
                     exit.imageId = null;
@@ -4199,84 +4266,105 @@ class Events {
             const aggregatedStructured = { rawEntries: {}, parsed: {} };
             let hasStructuredData = false;
 
-            for (const promptChunk of eventPromptChunks) {
+            const processChunk = async (promptChunk) => {
                 if (!Array.isArray(promptChunk) || !promptChunk.length) {
-                    continue;
+                    return { rawResponses: [], htmlResponses: [], structuredChunk: null };
                 }
 
-                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
-                    ...baseContext,
-                    promptType: 'event-checks',
-                    textToCheck,
-                    eventPrompts: promptChunk
-                });
+                try {
+                    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                        ...baseContext,
+                        promptType: 'event-checks',
+                        textToCheck,
+                        eventPrompts: promptChunk
+                    });
 
-                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                    const parsedTemplate = parseXMLTemplate(renderedTemplate);
 
-                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
-                    console.warn('Event check template missing prompts, skipping event analysis for chunk.');
-                    continue;
-                }
-
-                const messages = [
-                    { role: 'system', content: parsedTemplate.systemPrompt },
-                    { role: 'user', content: parsedTemplate.generationPrompt }
-                ];
-
-                const requestData = {
-                    model,
-                    messages,
-                    max_tokens: parsedTemplate.maxTokens || 400,
-                    temperature: 0,
-                };
-
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds
-                });
-
-                const chunkResponse = response.data?.choices?.[0]?.message?.content || '';
-
-                this.logEventCheck({
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: chunkResponse
-                });
-
-                if (!chunkResponse.trim()) {
-                    continue;
-                }
-
-                rawResponses.push(chunkResponse);
-
-                const cleanedChunkResponse = this.cleanEventResponseText(chunkResponse);
-                const safeChunkResponse = this.escapeHtml(cleanedChunkResponse);
-                htmlResponses.push(safeChunkResponse.replace(/\n/g, '<br>'));
-
-                const structuredChunk = this.parseEventCheckResponse(promptChunk, chunkResponse);
-                if (!structuredChunk) {
-                    continue;
-                }
-
-                if (allowEnvironmentalEffects === false) {
-                    if (structuredChunk.parsed && Array.isArray(structuredChunk.parsed.environmental_status_damage)) {
-                        structuredChunk.parsed.environmental_status_damage = [];
+                    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                        console.warn('Event check template missing prompts, skipping event analysis for chunk.');
+                        return { rawResponses: [], htmlResponses: [], structuredChunk: null };
                     }
-                    if (
-                        structuredChunk.rawEntries &&
-                        Object.prototype.hasOwnProperty.call(structuredChunk.rawEntries, 'environmental_status_damage')
-                    ) {
-                        structuredChunk.rawEntries.environmental_status_damage = '';
-                    }
-                }
 
-                Object.assign(aggregatedStructured.rawEntries, structuredChunk.rawEntries || {});
-                Object.assign(aggregatedStructured.parsed, structuredChunk.parsed || {});
-                hasStructuredData = true;
-            }
+                    const messages = [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ];
+
+                    const requestData = {
+                        model,
+                        messages,
+                        max_tokens: parsedTemplate.maxTokens || 400,
+                        temperature: 0,
+                    };
+
+                    const response = await axios.post(chatEndpoint, requestData, {
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: baseTimeoutMilliseconds
+                    });
+
+                    const chunkResponse = response.data?.choices?.[0]?.message?.content || '';
+
+                    this.logEventCheck({
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        responseText: chunkResponse
+                    });
+
+                    if (!chunkResponse.trim()) {
+                        return { rawResponses: [], htmlResponses: [], structuredChunk: null };
+                    }
+
+                    const cleanedChunkResponse = this.cleanEventResponseText(chunkResponse);
+                    const safeChunkResponse = this.escapeHtml(cleanedChunkResponse);
+                    const htmlChunk = safeChunkResponse.replace(/\n/g, '<br>');
+
+                    const structuredChunk = this.parseEventCheckResponse(promptChunk, chunkResponse);
+                    if (structuredChunk && allowEnvironmentalEffects === false) {
+                        if (structuredChunk.parsed && Array.isArray(structuredChunk.parsed.environmental_status_damage)) {
+                            structuredChunk.parsed.environmental_status_damage = [];
+                        }
+                        if (
+                            structuredChunk.rawEntries &&
+                            Object.prototype.hasOwnProperty.call(structuredChunk.rawEntries, 'environmental_status_damage')
+                        ) {
+                            structuredChunk.rawEntries.environmental_status_damage = '';
+                        }
+                    }
+
+                    return {
+                        rawResponses: [chunkResponse],
+                        htmlResponses: [htmlChunk],
+                        structuredChunk: structuredChunk || null
+                    };
+                } catch (error) {
+                    console.warn('Event check chunk failed:', error.message);
+                    throw error;
+                }
+            };
+
+            const chunkResults = await Promise.all(eventPromptChunks.map((chunk, index) =>
+                processChunk(chunk).then(result => ({ ...result, index }))
+            ));
+
+            chunkResults
+                .sort((a, b) => a.index - b.index)
+                .forEach(({ rawResponses: chunkRaw, htmlResponses: chunkHtml, structuredChunk }) => {
+                    if (Array.isArray(chunkRaw) && chunkRaw.length) {
+                        rawResponses.push(...chunkRaw);
+                    }
+                    if (Array.isArray(chunkHtml) && chunkHtml.length) {
+                        htmlResponses.push(...chunkHtml);
+                    }
+                    if (structuredChunk) {
+                        Object.assign(aggregatedStructured.rawEntries, structuredChunk.rawEntries || {});
+                        Object.assign(aggregatedStructured.parsed, structuredChunk.parsed || {});
+                        hasStructuredData = true;
+                    }
+                });
 
             if (!rawResponses.length) {
                 return null;
