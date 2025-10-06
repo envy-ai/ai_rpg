@@ -5,6 +5,8 @@ server:
   port: 7777
   host: 0.0.0.0 # Use localhost for local development, 0.0.0.0 for external access
 
+max_memories_to_recall: 10
+
 # OpenAI-compatible API configuration
 ai:
   # API endpoint URL (examples):

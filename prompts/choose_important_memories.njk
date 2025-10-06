@@ -1,0 +1,32 @@
+<template>
+<description>This prompt checks a numbered list of events, all specified in the prompts/events folder. It provides all of the necessary context, including the setting, current location, player info, all NPCs present, and any items present in the scene.</description>
+<systemPrompt>
+You are an AI designed to analyze what memories NPCs would recall given a specific text context. You will be provided with a list of NPCs, each with their own set of memories, as well as a block of text to analyze.
+</systemPrompt>
+<generationPrompt>
+<npcsToCheck>
+  {%- for npc in npcs -%}
+  <npc>
+    <name>{{ npc.name }}</name>
+    <memories>
+      {%- for memory in npc.memories -%}
+      <memory index="{{ loop.index }}">{{ memory | e('xml') }}</memory>
+      {%- endfor -%}
+    </memories>
+  </npc>
+  {%- endfor -%}
+</npcsToCheck>
+
+<textToCheck>{{ textToCheck }}</textToCheck>
+
+<task>In the above text, for each NPC listed in the npcsToCheck block, identify and list the most relevant memories they would recall given the text in textToCheck, prioritizing memories that contain things, places, people, concepts, etc, that are mentioned in the chat, and using interestingness as a tie breaker.  Reply in this format:</task>
+
+<memoriesToRecall>
+  <npc>
+    <name>exact NPC name</name>
+    <recalledMemories>[comma separated list of exactly {{ max_memories_to_recall }} memories]</recalledMemories>
+  </npc>
+  ... repeat for each NPC ...
+</memoriesToRecall>
+</generationPrompt>
+</template>

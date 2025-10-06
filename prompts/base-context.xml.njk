@@ -204,6 +204,7 @@ You are able to write both explicit and non-explicit content, depending on the n
   <npcs>
     {% for npc in npcs %}
     <npc>
+      <id>{{ npc.id | default('unknown', true) }}</id>
       <name>{{ npc.name }}</name>
       <description>{{ npc.description }}</description>
       <class>{{ npc.class | default('Unknown') }}</class>
@@ -224,8 +225,8 @@ You are able to write both explicit and non-explicit content, depending on the n
         {% endfor %}
       </dispositionsTowardsPlayer>
       <importantMemories>
-        {% for memory in npc.importantMemories %}
-        <memory>{{ memory }}</memory>
+        {% for entry in npc.selectedImportantMemories %}
+        <memory index="{{ entry.displayIndex | default(entry.index + 1) }}">{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
       <inventory>
@@ -308,6 +309,7 @@ You are able to write both explicit and non-explicit content, depending on the n
   <playerParty>
     {% for member in party %}
     <member>
+      <id>{{ member.id | default('unknown', true) }}</id>
       <name>{{ member.name }}</name>
       <description>{{ member.description }}</description>
       <class>{{ member.class | default('Unknown') }}</class>
@@ -328,8 +330,8 @@ You are able to write both explicit and non-explicit content, depending on the n
         {% endfor %}
       </dispositionsTowardsPlayer>
       <importantMemories>
-        {% for memory in member.importantMemories %}
-        <memory>{{ memory }}</memory>
+        {% for entry in member.selectedImportantMemories %}
+        <memory index="{{ entry.displayIndex | default(entry.index + 1) }}">{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
       <inventory>

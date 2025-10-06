@@ -869,6 +869,11 @@ async function initializeComfyUI() {
 // In-memory chat history storage
 let chatHistory = [];
 
+let baseContextMemoryCache = {
+    turnKey: null,
+    selections: new Map()
+};
+
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
 let currentSetting = null; // Current game setting
@@ -2229,8 +2234,14 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const skills = collectActorSkills(npcStatus, npc);
             const personality = extractPersonality(npcStatus, npc);
             const needBars = collectNeedBarsForPrompt(npc, npcStatus, { includePlayerOnly: false });
+            const importantMemories = sanitizeImportantMemories(
+                npcStatus?.importantMemories
+                || npc?.importantMemories
+                || []
+            );
 
             npcs.push({
+                id: npc.id,
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
                 description: npcStatus?.description || npc.description || '',
                 class: npcStatus?.class || npc.class || null,
@@ -2243,7 +2254,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 dispositionsTowardsPlayer,
                 skills,
                 personality,
-                needBars
+                needBars,
+                importantMemories,
+                selectedImportantMemories: []
             });
         }
     }
@@ -2264,8 +2277,14 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             const dispositionsTowardsPlayer = computeDispositionsTowardsPlayer(member);
             const skills = collectActorSkills(memberStatus, member);
             const needBars = collectNeedBarsForPrompt(member, memberStatus, { includePlayerOnly: !member.isNPC });
+            const importantMemories = sanitizeImportantMemories(
+                memberStatus?.importantMemories
+                || member?.importantMemories
+                || []
+            );
 
             party.push({
+                id: member.id,
                 name: memberStatus?.name || member.name || 'Unknown Ally',
                 description: memberStatus?.description || member.description || '',
                 class: memberStatus?.class || member.class || null,
@@ -2278,7 +2297,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 personality,
                 skills,
                 dispositionsTowardsPlayer,
-                needBars
+                needBars,
+                importantMemories,
+                selectedImportantMemories: []
             });
         }
     }
@@ -2407,7 +2428,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
     const experiencePointValues = getExperiencePointValues();
 
-    return {
+    const context = {
         setting: settingContext,
         gameHistory,
         currentRegion: currentRegionContext,
@@ -2427,6 +2448,372 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         experiencePointValues,
         generatedThingRarity
     };
+
+    populateNpcSelectedMemoriesSync(context);
+
+    return context;
+}
+
+function getBaseContextTurnKey() {
+    const lastEntry = Array.isArray(chatHistory) && chatHistory.length
+        ? chatHistory[chatHistory.length - 1]
+        : null;
+    const marker = lastEntry?.turnId
+        || lastEntry?.timestamp
+        || lastEntry?.id
+        || '';
+    const playerId = currentPlayer?.id || 'no-player';
+    return `${playerId}:${chatHistory.length}:${marker}`;
+}
+
+function sanitizeImportantMemories(memories) {
+    if (!Array.isArray(memories)) {
+        return [];
+    }
+    return memories
+        .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter(Boolean);
+}
+
+function createSelectedEntries(indices, memories) {
+    const uniqueIndices = [];
+    for (const index of indices) {
+        if (!Number.isInteger(index) || index < 0 || index >= memories.length) {
+            continue;
+        }
+        if (!uniqueIndices.includes(index)) {
+            uniqueIndices.push(index);
+        }
+    }
+    return uniqueIndices.map(idx => ({
+        index: idx,
+        displayIndex: idx + 1,
+        memory: memories[idx]
+    }));
+}
+
+function cloneSelectedEntries(entries) {
+    if (!Array.isArray(entries)) {
+        return [];
+    }
+    return entries.map(entry => ({
+        index: entry.index,
+        displayIndex: entry.displayIndex,
+        memory: entry.memory
+    }));
+}
+
+function populateNpcSelectedMemoriesSync(baseContext) {
+    if (!baseContext || !config) {
+        return;
+    }
+
+    const maxConfigured = Number(config.max_memories_to_recall);
+    const maxMemories = Number.isInteger(maxConfigured) && maxConfigured > 0 ? maxConfigured : 10;
+
+    const turnKey = getBaseContextTurnKey();
+    if (baseContextMemoryCache.turnKey !== turnKey) {
+        baseContextMemoryCache.turnKey = turnKey;
+        baseContextMemoryCache.selections = new Map();
+    }
+
+    const actors = [];
+    const registerActor = (actor, groupLabel) => {
+        if (!actor || typeof actor !== 'object') {
+            return;
+        }
+        const actorId = actor.id || `${groupLabel}:${actor.name || ''}`.trim();
+        if (!actorId) {
+            return;
+        }
+        const important = sanitizeImportantMemories(actor.importantMemories
+            || actor.memories
+            || []);
+        actor.importantMemories = important;
+        actor.selectedImportantMemories = Array.isArray(actor.selectedImportantMemories)
+            ? actor.selectedImportantMemories
+            : [];
+        actors.push({ actor, actorId, important });
+    };
+
+    if (Array.isArray(baseContext.npcs)) {
+        baseContext.npcs.forEach(npc => registerActor(npc, 'npc'));
+    }
+    if (Array.isArray(baseContext.party)) {
+        baseContext.party.forEach(member => registerActor(member, 'party'));
+    }
+
+    for (const entry of actors) {
+        const { actor, actorId, important } = entry;
+        if (!important.length) {
+            actor.selectedImportantMemories = [];
+            continue;
+        }
+
+        const signature = `${actorId}::${important.join('||')}`;
+        const cached = baseContextMemoryCache.selections.get(actorId);
+
+        if (cached && cached.signature === signature && cached.fromFallback !== true) {
+            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
+            continue;
+        }
+
+        if (cached && cached.signature === signature && cached.fromFallback === true) {
+            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
+        }
+
+        if (important.length <= maxMemories) {
+            const selected = createSelectedEntries(important.map((_, index) => index), important);
+            actor.selectedImportantMemories = selected;
+            baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(selected), fromFallback: false });
+            continue;
+        }
+
+        const fallbackIndices = [];
+        for (let i = 0; i < Math.min(maxMemories, important.length); i += 1) {
+            fallbackIndices.push(i);
+        }
+        const fallbackSelected = createSelectedEntries(fallbackIndices, important);
+        actor.selectedImportantMemories = fallbackSelected;
+        baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(fallbackSelected), fromFallback: true });
+    }
+
+    baseContext.maxMemoriesToRecall = maxMemories;
+}
+
+function extractIndicesFromText(rawText, maxCount) {
+    if (!rawText || typeof rawText !== 'string') {
+        return [];
+    }
+    const matches = rawText.match(/\d+/g);
+    if (!matches) {
+        return [];
+    }
+    const indices = [];
+    for (const match of matches) {
+        const parsed = parseInt(match, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+            continue;
+        }
+        const zeroBased = parsed - 1;
+        if (!indices.includes(zeroBased)) {
+            indices.push(zeroBased);
+            if (maxCount && indices.length >= maxCount) {
+                break;
+            }
+        }
+    }
+    return indices;
+}
+
+function parseChooseImportantMemoriesResponse(responseText, maxCount) {
+    const selections = new Map();
+    if (!responseText || typeof responseText !== 'string') {
+        return selections;
+    }
+
+    const parser = new DOMParser();
+    let doc;
+    try {
+        doc = parser.parseFromString(`<root>${responseText}</root>`, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent || 'choose_important_memories response contained parser errors');
+        }
+    } catch (error) {
+        console.warn('Failed to parse choose_important_memories response as XML:', error.message);
+        return selections;
+    }
+
+    const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+    for (const node of npcNodes) {
+        const nameNode = node.getElementsByTagName('name')[0];
+        const recalledNode = node.getElementsByTagName('recalledMemories')[0];
+        const name = nameNode?.textContent?.trim();
+        const recalledText = recalledNode?.textContent || '';
+        if (!name) {
+            continue;
+        }
+        const indices = extractIndicesFromText(recalledText, maxCount);
+        if (indices.length) {
+            selections.set(name.trim().toLowerCase(), indices);
+        }
+    }
+
+    return selections;
+}
+
+async function populateNpcSelectedMemories(baseContext) {
+    if (!baseContext || !config) {
+        return;
+    }
+
+    const maxConfigured = Number(config.max_memories_to_recall);
+    const maxMemories = Number.isInteger(maxConfigured) && maxConfigured > 0 ? maxConfigured : 10;
+
+    const turnKey = getBaseContextTurnKey();
+    if (baseContextMemoryCache.turnKey !== turnKey) {
+        baseContextMemoryCache.turnKey = turnKey;
+        baseContextMemoryCache.selections = new Map();
+    }
+
+    const actors = [];
+    const registerActor = (actor, groupLabel) => {
+        if (!actor || typeof actor !== 'object') {
+            return;
+        }
+        const actorId = actor.id || `${groupLabel}:${actor.name || ''}`.trim();
+        if (!actorId) {
+            return;
+        }
+        const important = sanitizeImportantMemories(actor.importantMemories
+            || actor.memories
+            || []);
+        actor.importantMemories = important;
+        actor.selectedImportantMemories = Array.isArray(actor.selectedImportantMemories)
+            ? actor.selectedImportantMemories
+            : [];
+        actors.push({ actor, actorId, groupLabel, important });
+    };
+
+    if (Array.isArray(baseContext.npcs)) {
+        baseContext.npcs.forEach(npc => registerActor(npc, 'npc'));
+    }
+    if (Array.isArray(baseContext.party)) {
+        baseContext.party.forEach(member => registerActor(member, 'party'));
+    }
+
+    const pendingActors = [];
+
+    for (const entry of actors) {
+        const { actor, actorId, important } = entry;
+        if (!important.length) {
+            actor.selectedImportantMemories = [];
+            continue;
+        }
+
+        const signature = `${actorId}::${important.join('||')}`;
+        const cached = baseContextMemoryCache.selections.get(actorId);
+
+        if (cached && cached.signature === signature && cached.fromFallback !== true) {
+            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
+            continue;
+        }
+
+        if (cached && cached.signature === signature && cached.fromFallback === true) {
+            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
+        }
+
+        if (important.length <= maxMemories) {
+            const selected = createSelectedEntries(important.map((_, index) => index), important);
+            actor.selectedImportantMemories = selected;
+            baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(selected), fromFallback: false });
+            continue;
+        }
+
+        pendingActors.push({ actor, actorId, important, signature });
+    }
+
+    if (!pendingActors.length) {
+        baseContext.maxMemoriesToRecall = maxMemories;
+        return;
+    }
+
+    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
+    let selectionsByName = new Map();
+
+    if (canCallAi) {
+        const templatePayload = {
+            npcs: pendingActors.map(({ actor, important }) => ({
+                name: actor.name || actor.id || 'Unknown NPC',
+                memories: important
+            })),
+            textToCheck: baseContext.gameHistory || '',
+            max_memories_to_recall: maxMemories
+        };
+
+        let parsedTemplate = null;
+        try {
+            const renderedTemplate = promptEnv.render('choose_important_memories.njk', templatePayload);
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            console.warn('Failed to prepare choose_important_memories prompt:', error.message);
+        }
+
+        if (parsedTemplate?.systemPrompt && parsedTemplate?.generationPrompt) {
+            try {
+                const endpoint = config.ai.endpoint;
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`;
+                const requestData = {
+                    model: config.ai.model,
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    max_tokens: config.ai.maxTokens || 200,
+                    temperature: typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.2
+                };
+
+                const requestStart = Date.now();
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${config.ai.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: baseTimeoutMilliseconds
+                });
+
+                const responseText = response.data?.choices?.[0]?.message?.content || '';
+                selectionsByName = parseChooseImportantMemoriesResponse(responseText, maxMemories);
+
+                const promptForLog = [
+                    '--- SYSTEM PROMPT ---',
+                    parsedTemplate.systemPrompt || '(none)',
+                    '',
+                    '--- GENERATION PROMPT ---',
+                    parsedTemplate.generationPrompt || '(none)'
+                ].join('\n');
+                logChooseImportantMemories({
+                    prompt: promptForLog,
+                    responseText,
+                    durationSeconds: (Date.now() - requestStart) / 1000
+                });
+            } catch (error) {
+                console.warn('choose_important_memories request failed:', error.message);
+            }
+        }
+    } else {
+        console.warn('Skipping choose_important_memories prompt: AI configuration incomplete.');
+    }
+
+    for (const entry of pendingActors) {
+        const { actor, actorId, important, signature } = entry;
+        const normalizedName = (actor.name || actor.id || '').trim().toLowerCase();
+        const selectedIndices = selectionsByName.get(normalizedName) || [];
+
+        let indicesToUse = selectedIndices.slice(0, maxMemories);
+        if (!indicesToUse.length) {
+            const fallback = [];
+            for (let i = 0; i < Math.min(maxMemories, important.length); i += 1) {
+                fallback.push(i);
+            }
+            indicesToUse = fallback;
+        }
+
+        const selected = createSelectedEntries(indicesToUse, important);
+        actor.selectedImportantMemories = selected;
+        baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(selected), fromFallback: false });
+    }
+
+    baseContext.maxMemoriesToRecall = maxMemories;
+}
+
+async function prepareBasePromptContext(options = {}) {
+    const baseContext = buildBasePromptContext(options);
+    await populateNpcSelectedMemories(baseContext);
+    return baseContext;
 }
 
 function parsePlausibilityOutcome(xmlSnippet) {
@@ -2868,7 +3255,7 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
     try {
         const location = locationId ? Location.get(locationId) : (currentPlayer.currentLocation ? Location.get(currentPlayer.currentLocation) : null);
 
-        const baseContext = buildBasePromptContext({ locationOverride: location });
+        const baseContext = await prepareBasePromptContext({ locationOverride: location });
 
         const isAttack = Boolean(attackContext && attackContext.isAttack);
         const attackerTemplate = {
@@ -4693,7 +5080,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     };
 
     try {
-        const baseContext = buildBasePromptContext({ locationOverride: resolvedLocation });
+        const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
         const attributeList = (baseContext.attributes && baseContext.attributes.length)
             ? baseContext.attributes
             : Object.keys(attributeDefinitionsForPrompt || {})
@@ -8052,6 +8439,30 @@ function logThingNameRegeneration({ prompt, responseText, durationSeconds }) {
     }
 }
 
+function logChooseImportantMemories({ prompt, responseText, durationSeconds }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `choose_important_memories_${timestamp}.log`);
+        const parts = [
+            formatDurationLine(durationSeconds),
+            '=== CHOOSE IMPORTANT MEMORIES PROMPT ===',
+            prompt || '(none)',
+            '',
+            '=== CHOOSE IMPORTANT MEMORIES RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log choose_important_memories:', error.message);
+    }
+}
+
 function parseThingNameRegenResponse(xmlContent) {
     const mapping = new Map();
     if (!xmlContent || typeof xmlContent !== 'string') {
@@ -8147,7 +8558,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
 
     let baseContext;
     try {
-        baseContext = buildBasePromptContext({ locationOverride });
+        baseContext = await prepareBasePromptContext({ locationOverride });
     } catch (error) {
         console.warn('Failed to build base context for thing name regeneration:', error.message);
         return;
@@ -11917,6 +12328,7 @@ Events.initialize({
     gameLocations,
     getEventPromptTemplates,
     buildBasePromptContext,
+    prepareBasePromptContext,
     promptEnv,
     parseXMLTemplate,
     findActorByName,

@@ -4,6 +4,20 @@ const Thing = require('./Thing.js');
 let baseTimeoutMilliseconds = 120000;
 
 class Events {
+    static async getBaseContext(options = {}) {
+        const { prepareBasePromptContext, buildBasePromptContext } = this.deps || {};
+
+        if (typeof prepareBasePromptContext === 'function') {
+            return await prepareBasePromptContext(options);
+        }
+
+        if (typeof buildBasePromptContext === 'function') {
+            return buildBasePromptContext(options);
+        }
+
+        throw new Error('No base prompt context builder is configured.');
+    }
+
     static initialize(deps = {}) {
         this.deps = { ...deps };
 
@@ -1333,7 +1347,6 @@ class Events {
 
         const {
             findThingByName,
-            buildBasePromptContext,
             promptEnv,
             parseXMLTemplate,
             axios,
@@ -1345,7 +1358,9 @@ class Events {
             baseDir
         } = this.deps;
 
-        if (typeof buildBasePromptContext !== 'function' || !promptEnv || typeof parseXMLTemplate !== 'function' || !axios) {
+        const hasBaseContextBuilder = typeof this.deps.prepareBasePromptContext === 'function'
+            || typeof this.deps.buildBasePromptContext === 'function';
+        if (!hasBaseContextBuilder || !promptEnv || typeof parseXMLTemplate !== 'function' || !axios) {
             console.warn('Alter item handler missing prompt dependencies.');
             return;
         }
@@ -1367,7 +1382,7 @@ class Events {
 
         let baseContext = {};
         try {
-            baseContext = buildBasePromptContext({ locationOverride: location });
+            baseContext = await this.getBaseContext({ locationOverride: location });
         } catch (error) {
             throw new Error(`Failed to build base context for alter_item: ${error.message}`);
         }
@@ -1963,7 +1978,6 @@ class Events {
 
         const {
             Location,
-            buildBasePromptContext,
             promptEnv,
             parseXMLTemplate,
             axios,
@@ -1973,8 +1987,11 @@ class Events {
             generatedImages
         } = this.deps;
 
+        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
+            || typeof this.deps?.buildBasePromptContext === 'function';
+
         if (
-            typeof buildBasePromptContext !== 'function' ||
+            !hasBaseContextBuilder ||
             !promptEnv ||
             typeof parseXMLTemplate !== 'function' ||
             !axios
@@ -2036,7 +2053,7 @@ class Events {
                 continue;
             }
 
-            const baseContext = buildBasePromptContext({ locationOverride: location });
+            const baseContext = await this.getBaseContext({ locationOverride: location });
             const changeDescription = entry.changeDescription || '';
             const desiredName = entry.name && entry.name.trim()
                 ? entry.name.trim()
@@ -2233,7 +2250,6 @@ class Events {
 
         const {
             Location,
-            buildBasePromptContext,
             promptEnv,
             parseXMLTemplate,
             axios,
@@ -2245,8 +2261,11 @@ class Events {
             generatedImages
         } = this.deps;
 
+        const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
+            || typeof this.deps?.buildBasePromptContext === 'function';
+
         if (
-            typeof buildBasePromptContext !== 'function' ||
+            !hasBaseContextBuilder ||
             !promptEnv ||
             typeof parseXMLTemplate !== 'function' ||
             !axios
@@ -2320,7 +2339,7 @@ class Events {
                 }
             }
 
-            const baseContext = buildBasePromptContext({ locationOverride: location });
+            const baseContext = await this.getBaseContext({ locationOverride: location });
             const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : (typeof npc.toJSON === 'function' ? npc.toJSON() : {});
 
             const attributeSnapshot = {};
@@ -4092,7 +4111,14 @@ class Events {
 
         try {
             const currentPlayer = this.currentPlayer;
-            const { Location, buildBasePromptContext, promptEnv, parseXMLTemplate, axios, findRegionByLocationId } = this.deps;
+            const { Location, promptEnv, parseXMLTemplate, axios, findRegionByLocationId } = this.deps;
+
+            const hasBaseContextBuilder = typeof this.deps?.prepareBasePromptContext === 'function'
+                || typeof this.deps?.buildBasePromptContext === 'function';
+            if (!hasBaseContextBuilder) {
+                console.warn('Event check handler missing base context builder.');
+                return null;
+            }
 
             const location = currentPlayer && currentPlayer.currentLocation
                 ? Location.get(currentPlayer.currentLocation)
@@ -4107,7 +4133,7 @@ class Events {
                 }
             }
 
-            const baseContext = buildBasePromptContext({ locationOverride: location });
+            const baseContext = await this.getBaseContext({ locationOverride: location });
             const config = this.config || {};
             const endpoint = config?.ai?.endpoint;
             const apiKey = config?.ai?.apiKey;
