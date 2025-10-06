@@ -4651,9 +4651,23 @@ module.exports = function registerApiRoutes(scope) {
                                     if (actionLower.includes(exitLower)) {
                                         const matchedLocation = Location.findByName(exitName) || null;
                                         console.log('matched location:', matchedLocation.name);
-                                        //TODO: How can I reference the description of a stub location here?
                                         if (matchedLocation) {
-                                            additionalLore += `Location -- ${matchedLocation.name}: ${matchedLocation.description}`;
+                                            const stubDescription = matchedLocation.isStub
+                                                ? (typeof matchedLocation.stubMetadata?.shortDescription === 'string' && matchedLocation.stubMetadata.shortDescription.trim()
+                                                    ? matchedLocation.stubMetadata.shortDescription.trim()
+                                                    : typeof matchedLocation.stubMetadata?.blueprintDescription === 'string' && matchedLocation.stubMetadata.blueprintDescription.trim()
+                                                        ? matchedLocation.stubMetadata.blueprintDescription.trim()
+                                                        : null)
+                                                : null;
+                                            const locationDescription = typeof matchedLocation.description === 'string' && matchedLocation.description.trim()
+                                                ? matchedLocation.description.trim()
+                                                : stubDescription;
+
+                                            if (!locationDescription) {
+                                                throw new Error(`Location ${matchedLocation.name || matchedLocation.id || 'unknown'} is missing description metadata`);
+                                            }
+
+                                            additionalLore += `Location -- ${matchedLocation.name}: ${locationDescription}`;
                                         }
                                     }
                                 }

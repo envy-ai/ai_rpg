@@ -43,6 +43,8 @@ Generate exactly one NPC entry for the character named "{{ npc.name }}". Use the
 
 If a field is already filled in, keep it as is and just fill in the remaining fields in a way that makes sense.
 
+{% if oldItem %}Note that this NPC was created from the following item or scenery: "{{ oldItem.name }}", described as "{{ oldItem.description }}". The transformation is described as "{{ oldItem.transformationDescription }}". Use this as inspiration for the NPC's appearance, personality, and role.{% endif %}
+
 <npcs>
   <npc>
     <name>{% if npc.name %}{{ npc.name }}{% else %}An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.{% endif %}</name>
