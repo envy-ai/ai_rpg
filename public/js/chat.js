@@ -1829,36 +1829,8 @@ class AIRPGChat {
                     this.addEventSummary('🧬', text);
                 });
             },
-            needbar_change: (entries) => {
-                const formatLabel = (value) => {
-                    if (!value || typeof value !== 'string') {
-                        return '';
-                    }
-                    const trimmed = value.trim();
-                    if (!trimmed) {
-                        return '';
-                    }
-                    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-                };
-
-                entries.forEach((entry) => {
-                    const actor = safeName(entry?.character || entry?.name);
-                    const barName = safeItem(entry?.needBar, 'a need bar');
-                    const direction = formatLabel(entry?.direction || '');
-                    const magnitude = formatLabel(entry?.magnitude || '');
-                    const detailParts = [];
-                    if (magnitude) {
-                        detailParts.push(magnitude.toLowerCase());
-                    }
-                    if (direction) {
-                        detailParts.push(direction.toLowerCase());
-                    }
-                    const detailText = detailParts.length ? detailParts.join(' ') : '';
-                    const text = detailText
-                        ? `${actor}'s ${barName} had a ${detailText}.`
-                        : `${actor}'s ${barName} changed.`;
-                    this.addEventSummary('🧪', text);
-                });
+            needbar_change: () => {
+                // Need bar summaries are rendered with full detail server-side; avoid duplicate, less informative client entry.
             }
         };
 

@@ -3072,7 +3072,8 @@ class Events {
             createLocationFromEvent,
             ensureExitConnection,
             generateLocationExitImage,
-            createRegionStubFromEvent
+            createRegionStubFromEvent,
+            Region
         } = this.deps;
 
         let location = context.location || null;
@@ -3090,6 +3091,13 @@ class Events {
 
         const metadata = location.stubMetadata ? { ...location.stubMetadata } : {};
         const discovered = Array.isArray(metadata.discoveredExits) ? metadata.discoveredExits : [];
+        const discoveredNormalized = new Set(
+            discovered
+                .map(value => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+                .filter(Boolean)
+        );
+
+        const sanitizedEntries = [];
 
         for (const entry of entries) {
             if (!entry) {
@@ -3120,6 +3128,67 @@ class Events {
             const vehicleType = vehicleTypeRaw ? vehicleTypeRaw : null;
             const isVehicleExit = detail.isVehicle === true || Boolean(vehicleType);
             const rawSummary = detail.raw || description || name;
+            const normalizedVariants = Array.from(new Set([
+                rawSummary && typeof rawSummary === 'string' ? rawSummary.trim().toLowerCase() : '',
+                description ? description.trim().toLowerCase() : '',
+                name ? name.trim().toLowerCase() : ''
+            ].filter(Boolean)));
+
+            const alreadyRecorded = normalizedVariants.some(value => discoveredNormalized.has(value));
+
+            let exitAlreadyExists = false;
+            if (!alreadyRecorded && typeof location.getAvailableDirections === 'function' && typeof location.getExit === 'function') {
+                try {
+                    const directions = location.getAvailableDirections();
+                    for (const dir of directions) {
+                        const existingExit = location.getExit(dir);
+                        if (!existingExit) {
+                            continue;
+                        }
+
+                        const existingDescription = typeof existingExit.description === 'string'
+                            ? existingExit.description.trim().toLowerCase()
+                            : '';
+                        if (existingDescription && normalizedVariants.includes(existingDescription)) {
+                            exitAlreadyExists = true;
+                            break;
+                        }
+
+                        const destinationId = typeof existingExit.destination === 'string' ? existingExit.destination : null;
+                        if (destinationId) {
+                            const destinationLocation = Location?.get ? Location.get(destinationId) : null;
+                            const destinationName = destinationLocation?.name
+                                ? destinationLocation.name.trim().toLowerCase()
+                                : '';
+                            if (destinationName && normalizedVariants.includes(destinationName)) {
+                                exitAlreadyExists = true;
+                                break;
+                            }
+                        }
+
+                        const destinationRegionId = typeof existingExit.destinationRegion === 'string'
+                            ? existingExit.destinationRegion
+                            : null;
+                        if (destinationRegionId && detail.kind === 'region' && Region && typeof Region.get === 'function') {
+                            const targetRegion = Region.get(destinationRegionId);
+                            const regionName = targetRegion?.name ? targetRegion.name.trim().toLowerCase() : '';
+                            if (regionName && normalizedVariants.includes(regionName)) {
+                                exitAlreadyExists = true;
+                                break;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to inspect existing exits during new-exit handling:', error?.message || error);
+                }
+            }
+
+            if (alreadyRecorded || exitAlreadyExists) {
+                continue;
+            }
+
+            sanitizedEntries.push(detail);
+
 
             if (rawSummary && typeof location.addStatusEffect === 'function') {
                 location.addStatusEffect({
@@ -3130,7 +3199,17 @@ class Events {
 
             if (rawSummary) {
                 discovered.push(rawSummary);
+                const normalizedRaw = typeof rawSummary === 'string' ? rawSummary.trim().toLowerCase() : '';
+                if (normalizedRaw) {
+                    discoveredNormalized.add(normalizedRaw);
+                }
             }
+
+            normalizedVariants.forEach(value => {
+                if (value) {
+                    discoveredNormalized.add(value);
+                }
+            });
 
             if (kind === 'region') {
                 if (typeof createRegionStubFromEvent === 'function') {
@@ -3196,6 +3275,11 @@ class Events {
                     exit.imageId = null;
                 }
             }
+        }
+
+        if (Array.isArray(entries)) {
+            entries.length = 0;
+            sanitizedEntries.forEach(item => entries.push(item));
         }
 
         if (Object.keys(metadata).length) {

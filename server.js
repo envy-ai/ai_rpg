@@ -4687,7 +4687,7 @@ function findRegionByLocationId(locationId) {
     return null;
 }
 
-async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey }) {
+async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey, timeoutMultiplier = 1, autoEquip = true } = {}) {
     try {
         if (config.omit_item_generation) {
             return [];
@@ -4743,6 +4743,9 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             throw new Error('Missing AI configuration for inventory generation');
         }
 
+        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
+        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
+
         const requestData = {
             model: resolvedModel,
             messages,
@@ -4756,7 +4759,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: requestTimeout
         });
 
         const inventoryContent = response.data?.choices?.[0]?.message?.content;
@@ -4893,19 +4896,22 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             console.warn('Failed to write inventory log:', logErr.message);
         }
 
-        try {
-            await equipBestGearForCharacter({
-                character,
-                characterDescriptor,
-                region,
-                location,
-                settingDescription,
-                endpoint: resolvedEndpoint,
-                model: resolvedModel,
-                apiKey: resolvedApiKey
-            });
-        } catch (equipError) {
-            console.warn('Failed to run equip-best flow:', equipError.message);
+        if (autoEquip) {
+            try {
+                await equipBestGearForCharacter({
+                    character,
+                    characterDescriptor,
+                    region,
+                    location,
+                    settingDescription,
+                    endpoint: resolvedEndpoint,
+                    model: resolvedModel,
+                    apiKey: resolvedApiKey,
+                    timeoutMultiplier: timeoutScale
+                });
+            } catch (equipError) {
+                console.warn('Failed to run equip-best flow:', equipError.message);
+            }
         }
 
         if (createdThings.length) {
@@ -5965,7 +5971,8 @@ async function equipBestGearForCharacter({
     settingDescription = '',
     endpoint,
     model,
-    apiKey
+    apiKey,
+    timeoutMultiplier = 1
 }) {
     if (!character || typeof character.getInventoryItems !== 'function' || typeof character.getGear !== 'function') {
         return;
@@ -6076,6 +6083,9 @@ async function equipBestGearForCharacter({
         { role: 'user', content: generationPrompt }
     ];
 
+    const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
+    const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
+
     const requestData = {
         model: resolvedModel,
         messages,
@@ -6091,7 +6101,7 @@ async function equipBestGearForCharacter({
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: requestTimeout
         });
         equipResponse = response.data?.choices?.[0]?.message?.content || '';
     } catch (error) {
@@ -6504,7 +6514,7 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 }
 
-async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath }) {
+async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath, timeoutMultiplier = 1 }) {
     try {
         const availableSkillsMap = Player.getAvailableSkills();
         if (!availableSkillsMap || availableSkillsMap.size === 0) {
@@ -6538,6 +6548,9 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
 
         const messages = [...baseMessages, { role: 'user', content: skillsPrompt }];
 
+        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
+        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
+
         const requestData = {
             model,
             messages,
@@ -6551,7 +6564,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: requestTimeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -6762,7 +6775,7 @@ function parseNpcAbilityAssignments(xmlContent) {
     }
 }
 
-async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath }) {
+async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath, timeoutMultiplier = 1 }) {
     try {
         const abilitiesPrompt = renderNpcAbilitiesPrompt();
         if (!abilitiesPrompt) {
@@ -6773,6 +6786,9 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
         }
 
         const messages = [...baseMessages, { role: 'user', content: abilitiesPrompt }];
+
+        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
+        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
 
         const requestData = {
             model,
@@ -6787,7 +6803,7 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: requestTimeout
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -8950,7 +8966,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
 // Function to render location NPC prompt from template
 async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey, existingLocationsInRegion = [] }) {
     if (config.omit_npc_generation) {
-        return;
+        return [];
     }
     try {
         let region = Region.get(location.regionId);
@@ -8961,9 +8977,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const otherRegionNpcIds = Utils.difference(allNpcIds, regionNpcIdSet);
 
         const existingNpcIdsArray = Array.from(locationNpcIdSet);
-        let existingNpcsInThisLocation = getAllPlayers(existingNpcIdsArray).filter(npc => npc && npc.isNPC);
-        let existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
-        let existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
+        const existingNpcsInThisLocation = getAllPlayers(existingNpcIdsArray).filter(npc => npc && npc.isNPC);
+        const existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
+        const existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
 
         const existingNpcSummariesForRegen = [
             ...existingNpcsInThisLocation.map(summarizeNpcForNameRegen).filter(Boolean),
@@ -8988,7 +9004,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             generationHints.numHostiles,
             Math.max(0, Math.round(hintedNumNpcs / 2))
         );
-
+        const npcCountHint = Math.max(1, hintedNumNpcs || 1);
 
         const npcPrompt = renderLocationNpcPrompt(location, {
             regionTheme,
@@ -9041,7 +9057,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * npcCountHint)
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -9067,6 +9083,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         let npcs = parseLocationNpcs(npcResponse);
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
+        const npcTimeoutMultiplier = Math.max(1, npcs.length || npcCountHint);
 
         const originalNpcNames = npcs.map(npc => npc?.name || null);
         let npcRenameMap = new Map();
@@ -9102,7 +9119,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     chatEndpoint,
                     model,
                     apiKey,
-                    logPath: skillsLogPath
+                    logPath: skillsLogPath,
+                    timeoutMultiplier: npcTimeoutMultiplier
                 });
                 const rawAssignments = skillResult.assignments || new Map();
                 npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
@@ -9121,7 +9139,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     chatEndpoint,
                     model,
                     apiKey,
-                    logPath: abilitiesLogPath
+                    logPath: abilitiesLogPath,
+                    timeoutMultiplier: npcTimeoutMultiplier
                 });
                 const rawAbilityAssignments = abilityResult.assignments || new Map();
                 npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
@@ -9130,7 +9149,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             }
         }
 
-        const created = [];
         const survivingNpcIds = [];
         for (const npcId of existingNpcIdsArray) {
             const npc = players.get(npcId);
@@ -9144,6 +9162,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         if (typeof location.setNpcIds === 'function') {
             location.setNpcIds(survivingNpcIds);
         }
+
+        const created = [];
+        const npcContexts = [];
+        const resolvedRegion = region || findRegionByLocationId(location.id);
+        const equipSettingDescription = describeSettingForPrompt(getActiveSettingSnapshot());
 
         for (const npcData of npcs) {
             const attributes = {};
@@ -9188,6 +9211,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             } catch (_) {
                 // ignore level adjustment failures
             }
+
             players.set(npc.id, npc);
             location.addNpcId(npc.id);
             created.push(npc);
@@ -9203,22 +9227,56 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 applyNpcAbilities(npc, abilityAssignmentEntry.abilities);
             }
 
-            await generateInventoryForCharacter({
-                character: npc,
-                characterDescriptor: { role: npcData.role, class: npcData.class, race: npcData.race },
-                region: region || findRegionByLocationId(location.id),
-                location,
-                chatEndpoint,
-                model,
-                apiKey
-            });
+            const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
+            npcContexts.push({ npc, descriptor, name: npcData.name || npc.id });
+        }
 
+        const inventoryTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
+            try {
+                await generateInventoryForCharacter({
+                    character: npc,
+                    characterDescriptor: descriptor,
+                    region: resolvedRegion,
+                    location,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    timeoutMultiplier: npcTimeoutMultiplier,
+                    autoEquip: false
+                });
+            } catch (inventoryError) {
+                console.warn(`Failed to generate inventory for location NPC ${name}:`, inventoryError.message);
+            } finally {
+                restoreCharacterHealthToMaximum(npc);
+            }
+        })());
+
+        await Promise.all(inventoryTasks);
+
+        const equipTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
+            try {
+                await equipBestGearForCharacter({
+                    character: npc,
+                    characterDescriptor: descriptor,
+                    region: resolvedRegion,
+                    location,
+                    settingDescription: equipSettingDescription,
+                    endpoint: chatEndpoint,
+                    model,
+                    apiKey,
+                    timeoutMultiplier: npcTimeoutMultiplier
+                });
+            } catch (equipError) {
+                console.warn(`Failed to run equip-best flow for location NPC ${name}:`, equipError.message);
+            }
+        })());
+
+        await Promise.all(equipTasks);
+
+        for (const { npc } of npcContexts) {
             restoreCharacterHealthToMaximum(npc);
-
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
-            } else {
-                //console.log(`🎭 Skipping NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
             }
         }
 
@@ -9325,7 +9383,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * Math.max(1, regionLocations.length || 1))
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -9356,6 +9414,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         let parsedNpcs = parseRegionNpcs(npcResponse);
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
+        const npcTimeoutMultiplier = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
 
         const originalRegionNpcNames = parsedNpcs.map(npc => npc?.name || null);
         let regionNpcRenameMap = new Map();
@@ -9391,7 +9450,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     chatEndpoint,
                     model,
                     apiKey,
-                    logPath: skillsLogPath
+                    logPath: skillsLogPath,
+                    timeoutMultiplier: npcTimeoutMultiplier
                 });
                 const rawAssignments = skillResult.assignments || new Map();
                 regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
@@ -9410,7 +9470,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     chatEndpoint,
                     model,
                     apiKey,
-                    logPath: abilitiesLogPath
+                    logPath: abilitiesLogPath,
+                    timeoutMultiplier: npcTimeoutMultiplier
                 });
                 const rawAbilityAssignments = abilityResult.assignments || new Map();
                 regionNpcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, regionNpcRenameMap) || new Map();
@@ -9436,6 +9497,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         region.npcIds = [];
 
         const created = [];
+        const npcContexts = [];
+        const equipSettingDescription = describeSettingForPrompt(getActiveSettingSnapshot());
+
         for (const npcData of parsedNpcs) {
             const attributes = {};
             const attrSource = npcData.attributes || {};
@@ -9515,22 +9579,63 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 applyNpcAbilities(npc, regionAbilityAssignment.abilities);
             }
 
-            await generateInventoryForCharacter({
-                character: npc,
-                characterDescriptor: { role: npcData.role, class: npcData.class, race: npcData.race },
-                region,
-                location: targetLocation,
-                chatEndpoint,
-                model,
-                apiKey
+            const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
+            npcContexts.push({
+                npc,
+                descriptor,
+                targetLocation,
+                name: npcData.name || npc.id
             });
+        }
 
+        const inventoryTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
+            try {
+                await generateInventoryForCharacter({
+                    character: npc,
+                    characterDescriptor: descriptor,
+                    region,
+                    location: targetLocation,
+                    chatEndpoint,
+                    model,
+                    apiKey,
+                    timeoutMultiplier: npcTimeoutMultiplier,
+                    autoEquip: false
+                });
+            } catch (inventoryError) {
+                console.warn(`Failed to generate inventory for region NPC ${name}:`, inventoryError.message);
+            } finally {
+                restoreCharacterHealthToMaximum(npc);
+            }
+        })());
+
+        await Promise.all(inventoryTasks);
+
+        const equipTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
+            try {
+                await equipBestGearForCharacter({
+                    character: npc,
+                    characterDescriptor: descriptor,
+                    region,
+                    location: targetLocation,
+                    settingDescription: equipSettingDescription,
+                    endpoint: chatEndpoint,
+                    model,
+                    apiKey,
+                    timeoutMultiplier: npcTimeoutMultiplier
+                });
+            } catch (equipError) {
+                console.warn(`Failed to run equip-best flow for region NPC ${name}:`, equipError.message);
+            }
+        })());
+
+        await Promise.all(equipTasks);
+
+        for (const { npc, name } of npcContexts) {
             restoreCharacterHealthToMaximum(npc);
-
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             } else {
-                console.log(`🎭 Skipping region NPC portrait for ${npc.name} (${npc.id}) - outside player context`);
+                console.log(`🎭 Skipping region NPC portrait for ${name} (${npc.id}) - outside player context`);
             }
         }
 

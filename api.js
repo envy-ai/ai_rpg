@@ -1028,38 +1028,6 @@ module.exports = function registerApiRoutes(scope) {
                                 add('🔄', `${giver} gave ${item} to ${receiver}.`);
                             });
                             break;
-                        case 'needbar_change':
-                            {
-                                let emitted = false;
-                                entries.forEach(entry => {
-                                    const isPassiveAdjustment = (() => {
-                                        const magnitudeRaw = entry?.magnitude ? String(entry.magnitude).trim().toLowerCase() : '';
-                                        const reasonRaw = entry?.reason ? String(entry.reason).trim().toLowerCase() : '';
-                                        return magnitudeRaw === 'perturn' || reasonRaw.includes('passive per-turn adjustment');
-                                    })();
-                                    if (isPassiveAdjustment) {
-                                        return;
-                                    }
-                                    const actor = safeSummaryName(entry?.character || entry?.name);
-                                    const barName = safeSummaryItem(entry?.needBar, 'a Need Bar');
-                                    const direction = formatLabel(entry?.direction || '');
-                                    const magnitude = formatLabel(entry?.magnitude || '');
-                                    const detailParts = [];
-                                    if (magnitude) {
-                                        detailParts.push(magnitude.toLowerCase());
-                                    }
-                                    if (direction) {
-                                        detailParts.push(direction.toLowerCase());
-                                    }
-                                    const detail = detailParts.length ? detailParts.join(' ') : 'changed';
-                                    add('🧪', `${actor}'s ${barName} ${detail}.`);
-                                    emitted = true;
-                                });
-                                if (emitted) {
-                                    shouldRefresh = true;
-                                }
-                            }
-                            break;
                         default:
                             break;
                     }
