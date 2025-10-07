@@ -679,6 +679,10 @@
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
                 </div>
+                <div class="new-exit-field" id="newExitVehicleGroup">
+                    <label for="newExitVehicle">Vehicle</label>
+                    <input type="text" id="newExitVehicle" name="vehicle" placeholder="Optional: e.g. shuttle, portal, elevator">
+                </div>
                 <div class="new-exit-field new-exit-field--checkbox" id="newExitChildRegionGroup" hidden>
                     <label class="modal-checkbox" for="newExitChildRegion">
                         <input type="checkbox" id="newExitChildRegion" name="childRegion">
@@ -3737,6 +3741,8 @@
         const newExitDescriptionGroup = document.getElementById('newExitDescriptionGroup');
         const newExitNameInput = document.getElementById('newExitName');
         const newExitDescriptionInput = document.getElementById('newExitDescription');
+        const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
+        const newExitVehicleInput = document.getElementById('newExitVehicle');
         const newExitStatus = document.getElementById('newExitStatus');
         const newExitCancelBtn = document.getElementById('newExitCancelBtn');
         const newExitSaveBtn = document.getElementById('newExitSaveBtn');
@@ -6422,24 +6428,15 @@
         }
 
         function shouldShowNewExitTextFields() {
-            const selectedRegionId = newExitRegionSelect?.value || '';
-            if (!selectedRegionId) {
-                return true;
-            }
             const selectedLocationId = newExitLocationSelect?.value || '';
-            if (!selectedLocationId) {
-                const regionOption = getNewExitRegionOption(selectedRegionId);
-                if (regionOption?.isStub && (!regionOption.locations || regionOption.locations.length === 0)) {
-                    return true;
-                }
-                return true;
-            }
-            return false;
+            return !selectedLocationId;
         }
 
         function syncNewExitFieldVisibility() {
-            const showFields = shouldShowNewExitTextFields();
-            const creatingNewRegion = !(newExitRegionSelect?.value?.trim());
+            const selectedRegionId = newExitRegionSelect?.value?.trim() || '';
+            const selectedLocationId = newExitLocationSelect?.value?.trim() || '';
+            const showFields = !selectedLocationId;
+            const creatingNewRegion = !selectedRegionId;
             const currentRegionId = lastRenderedLocation?.regionId || lastRenderedLocation?.stubMetadata?.regionId || null;
             if (newExitNameGroup) {
                 if (showFields) {
@@ -6453,6 +6450,16 @@
                     newExitDescriptionGroup.removeAttribute('hidden');
                 } else {
                     newExitDescriptionGroup.setAttribute('hidden', '');
+                }
+            }
+            if (newExitVehicleGroup) {
+                if (showFields) {
+                    newExitVehicleGroup.removeAttribute('hidden');
+                } else {
+                    newExitVehicleGroup.setAttribute('hidden', '');
+                    if (newExitVehicleInput) {
+                        newExitVehicleInput.value = '';
+                    }
                 }
             }
             if (newExitChildRegionGroup) {
@@ -6482,6 +6489,9 @@
                 }
                 if (newExitDescriptionInput) {
                     newExitDescriptionInput.value = '';
+                }
+                if (newExitVehicleInput) {
+                    newExitVehicleInput.value = '';
                 }
             }
         }
@@ -6513,6 +6523,12 @@
             }
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
+            }
+            if (newExitVehicleGroup) {
+                newExitVehicleGroup.removeAttribute('hidden');
+            }
+            if (newExitVehicleInput) {
+                newExitVehicleInput.value = '';
             }
             if (newExitChildRegionGroup) {
                 newExitChildRegionGroup.setAttribute('hidden', '');
@@ -6576,6 +6592,7 @@
             const nameFieldsVisible = shouldShowNewExitTextFields();
             const name = newExitNameInput?.value?.trim() || '';
             const description = newExitDescriptionInput?.value?.trim() || '';
+            const vehicleTypeInput = newExitVehicleInput?.value?.trim() || '';
 
             if (nameFieldsVisible && !name) {
                 setNewExitStatus('Please provide a name for the exit.', 'error');
@@ -6584,7 +6601,10 @@
             }
 
             const creatingNewRegion = !selectedRegionId;
-            const creatingNewLocation = Boolean(selectedRegionId && !selectedLocationId);
+            const creatingNewLocation = Boolean(
+                selectedRegionId
+                && (!selectedLocationId || !Array.from(newExitLocationSelect?.options || []).some(opt => opt.value === selectedLocationId))
+            );
             const usingExistingLocation = Boolean(selectedRegionId && selectedLocationId);
             const childRegionSelected = Boolean(creatingNewRegion && newExitChildRegionCheckbox?.checked);
             const parentRegionIdForChild = childRegionSelected
@@ -6592,10 +6612,15 @@
                 : null;
 
             const type = creatingNewRegion ? 'region' : 'location';
-            const regionOption = getNewExitRegionOption(selectedRegionId);
             const locationOption = selectedLocationId
                 ? Array.from(newExitLocationSelect?.options || []).find(opt => opt.value === selectedLocationId)
                 : null;
+            const regionOption = getNewExitRegionOption(selectedRegionId);
+            const locationName = usingExistingLocation
+                ? (locationOption?.textContent?.trim() || locationOption?.value || '')
+                : creatingNewLocation
+                    ? name || 'New location'
+                    : '';
 
             let placeholderButton = null;
             if (locationExitsList) {
@@ -6609,9 +6634,11 @@
                 placeholderButton.disabled = true;
                 let placeholderLabel = name;
                 if (!placeholderLabel) {
-                    if (usingExistingLocation) {
+                    if (creatingNewLocation) {
+                        placeholderLabel = locationName || 'New location';
+                    } else if (usingExistingLocation) {
                         placeholderLabel = locationOption?.textContent?.trim() || locationOption?.value || 'Selected location';
-                    } else if (selectedRegionId) {
+                    } else if (creatingNewRegion) {
                         placeholderLabel = regionOption?.name || regionOption?.id || 'Selected region';
                     } else {
                         placeholderLabel = 'New Exit';
@@ -6643,6 +6670,9 @@
             }
             if (creatingNewRegion && parentRegionIdForChild) {
                 payload.parentRegionId = parentRegionIdForChild;
+            }
+            if (vehicleTypeInput) {
+                payload.vehicleType = vehicleTypeInput;
             }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
@@ -6730,6 +6760,12 @@
             }
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
+            }
+            if (newExitVehicleGroup) {
+                newExitVehicleGroup.removeAttribute('hidden');
+            }
+            if (newExitVehicleInput) {
+                newExitVehicleInput.value = '';
             }
             if (newExitChildRegionGroup) {
                 newExitChildRegionGroup.setAttribute('hidden', '');
