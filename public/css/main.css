@@ -2240,6 +2240,70 @@ p:not(:last-child) {
   font-style: italic;
 }
 
+.message .message-content {
+  margin-top: 8px;
+  line-height: 1.5;
+  text-align: left;
+}
+.message .message-content:empty {
+  margin-top: 0;
+}
+.message .message-content p {
+  margin: 0;
+}
+.message .message-content p:not(:first-child) {
+  margin-top: 0.75em;
+}
+.message .message-content ul,
+.message .message-content ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+.message .message-content li + li {
+  margin-top: 0.35em;
+}
+.message .message-content a {
+  color: rgba(147, 197, 253, 0.9);
+  text-decoration: underline;
+  text-decoration-color: rgba(147, 197, 253, 0.45);
+}
+.message .message-content a:hover, .message .message-content a:focus {
+  color: rgba(191, 219, 254, 0.95);
+  text-decoration-color: rgba(191, 219, 254, 0.75);
+}
+.message .message-content code {
+  background: rgba(15, 23, 42, 0.65);
+  border-radius: 6px;
+  padding: 0 4px;
+  font-family: "Fira Code", "Source Code Pro", monospace;
+  font-size: 0.95em;
+}
+.message .message-content pre {
+  margin: 0.9em 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  overflow-x: auto;
+}
+.message .message-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.message .message-content blockquote {
+  margin: 0.75em 0;
+  padding-left: 12px;
+  border-left: 3px solid rgba(148, 163, 184, 0.4);
+  color: rgba(226, 232, 240, 0.85);
+}
+.message .message-content strong {
+  color: #7cb6ef;
+}
+.message .message-content em {
+  color: #cbcbcb;
+}
+
 .message-actions {
   position: absolute;
   top: 6px;

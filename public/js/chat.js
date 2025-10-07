@@ -7,6 +7,7 @@ class AIRPGChat {
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
         this.templateEnv = null;
+        this.markdownRenderer = this.createMarkdownRenderer();
 
         // Start with system prompt for AI context
         this.chatHistory = [
@@ -87,6 +88,42 @@ class AIRPGChat {
             normalized.timestamp = new Date().toISOString();
         }
         return normalized;
+    }
+
+    createMarkdownRenderer() {
+        if (typeof window === 'undefined' || typeof window.markdownit !== 'function') {
+            return null;
+        }
+        try {
+            return window.markdownit({
+                html: true,
+                linkify: true,
+                breaks: true
+            });
+        } catch (error) {
+            console.warn('Failed to initialize Markdown renderer:', error);
+            return null;
+        }
+    }
+
+    setMessageContent(target, content, { allowMarkdown = true } = {}) {
+        if (!target) {
+            return;
+        }
+        const raw = content === undefined || content === null
+            ? ''
+            : (typeof content === 'string' ? content : String(content));
+
+        if (allowMarkdown && this.markdownRenderer && raw) {
+            try {
+                target.innerHTML = this.markdownRenderer.render(raw);
+                return;
+            } catch (error) {
+                console.warn('Failed to render markdown content:', error);
+            }
+        }
+
+        target.textContent = raw;
     }
 
     updateServerHistory(history) {
@@ -248,7 +285,8 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        contentDiv.textContent = entry.content || '';
+        const allowMarkdown = entry.role === 'assistant';
+        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1143,7 +1181,9 @@ class AIRPGChat {
         senderDiv.textContent = sender === 'user' ? '👤 You' : '🤖 AI Game Master';
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = content;
+        contentDiv.className = 'message-content';
+        const allowMarkdown = sender === 'ai';
+        this.setMessageContent(contentDiv, content, { allowMarkdown });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1213,7 +1253,8 @@ class AIRPGChat {
         senderDiv.textContent = `🤖 NPC · ${npcName || 'Unknown NPC'}`;
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = content;
+        contentDiv.className = 'message-content';
+        this.setMessageContent(contentDiv, content, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
