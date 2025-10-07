@@ -7927,6 +7927,73 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function syncStubPresentationWithExit(stubLocation, { name: rawName, description: rawDescription } = {}) {
+            if (!stubLocation || !stubLocation.isStub) {
+                return;
+            }
+
+            const normalizedName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
+            const normalizedDescription = typeof rawDescription === 'string' && rawDescription.trim()
+                ? rawDescription.trim()
+                : null;
+
+            if (normalizedName && stubLocation.name !== normalizedName) {
+                try {
+                    stubLocation.name = normalizedName;
+                } catch (error) {
+                    console.warn(`Failed to update stub name for ${stubLocation.id}:`, error.message);
+                }
+            }
+
+            const metadata = stubLocation.stubMetadata || {};
+            let metadataChanged = false;
+
+            if (normalizedDescription && metadata.shortDescription !== normalizedDescription) {
+                metadata.shortDescription = normalizedDescription;
+                metadataChanged = true;
+            }
+
+            if (normalizedDescription && metadata.blueprintDescription !== normalizedDescription) {
+                metadata.blueprintDescription = normalizedDescription;
+                metadataChanged = true;
+            }
+
+            if (metadata.isRegionEntryStub) {
+                if (normalizedName && metadata.targetRegionName !== normalizedName) {
+                    metadata.targetRegionName = normalizedName;
+                    metadataChanged = true;
+                }
+                if (normalizedDescription && metadata.targetRegionDescription !== normalizedDescription) {
+                    metadata.targetRegionDescription = normalizedDescription;
+                    metadataChanged = true;
+                }
+
+                const targetRegionId = metadata.targetRegionId || metadata.regionId || null;
+                if (targetRegionId && pendingRegionStubs.has(targetRegionId)) {
+                    const existing = pendingRegionStubs.get(targetRegionId) || {};
+                    const updated = { ...existing };
+                    let pendingChanged = false;
+
+                    if (normalizedName && updated.name !== normalizedName) {
+                        updated.name = normalizedName;
+                        pendingChanged = true;
+                    }
+                    if (normalizedDescription && updated.description !== normalizedDescription) {
+                        updated.description = normalizedDescription;
+                        pendingChanged = true;
+                    }
+
+                    if (pendingChanged) {
+                        pendingRegionStubs.set(targetRegionId, updated);
+                    }
+                }
+            }
+
+            if (metadataChanged) {
+                stubLocation.stubMetadata = metadata;
+            }
+        }
+
         app.get('/api/exits/options', (req, res) => {
             try {
                 const originLocationIdRaw = typeof req.query.originLocationId === 'string' ? req.query.originLocationId.trim() : '';
@@ -8137,11 +8204,24 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
+                    const regionStubName = regionStub?.name || resolvedName;
+                    const stubMetadata = regionStub?.stubMetadata || {};
+                    const regionStubDescription = resolvedDescription
+                        || stubMetadata.shortDescription
+                        || stubMetadata.targetRegionDescription
+                        || stubMetadata.blueprintDescription
+                        || regionStubName;
+
+                    syncStubPresentationWithExit(regionStub, {
+                        name: regionStubName,
+                        description: regionStubDescription
+                    });
+
                     createdInfo = {
                         type: 'region',
                         stubId: regionStub?.id || null,
                         regionId: regionStub?.stubMetadata?.targetRegionId || regionStub?.stubMetadata?.regionId || null,
-                        name: regionStub?.name || resolvedName,
+                        name: regionStub?.name || regionStubName,
                         parentRegionId: parentRegionId || null,
                         isVehicle: isVehicleExit,
                         vehicleType: normalizedVehicleType
@@ -8172,9 +8252,16 @@ module.exports = function registerApiRoutes(scope) {
                         || destinationLocation.description
                         || destinationLocation.id;
                     const exitName = resolvedName || fallbackName;
+                    const currentStubMetadata = destinationLocation.stubMetadata || {};
+                    const fallbackDescription = currentStubMetadata.shortDescription
+                        || currentStubMetadata.blueprintDescription
+                        || currentStubMetadata.targetRegionDescription
+                        || destinationLocation.description
+                        || exitName;
+                    const exitDescription = resolvedDescription || fallbackDescription || exitName;
 
                     const exitOptions = {
-                        description: resolvedDescription || exitName,
+                        description: exitDescription,
                         bidirectional: true,
                         destinationRegion: destinationRegionForExit
                     };
@@ -8186,10 +8273,15 @@ module.exports = function registerApiRoutes(scope) {
 
                     ensureExitConnection(originLocation, destinationLocation, exitOptions);
 
+                    syncStubPresentationWithExit(destinationLocation, {
+                        name: exitName,
+                        description: exitDescription
+                    });
+
                     createdInfo = {
                         type: 'location',
                         destinationId: destinationLocation.id,
-                        name: fallbackName,
+                        name: destinationLocation.name || exitName,
                         isStub: Boolean(destinationLocation.isStub),
                         existing: true,
                         isVehicle: isVehicleExit,

@@ -310,6 +310,16 @@ class Events {
                     item: item.trim()
                 };
             }).filter(Boolean),
+            harvest_gather: raw => this.splitVerticalBarEntries(raw).map(entry => {
+                const [name, item] = this.extractArrowParts(entry, 2);
+                if (!name || !item) {
+                    return null;
+                }
+                return {
+                    name: name.trim(),
+                    item: item.trim()
+                };
+            }).filter(Boolean),
             status_effect_change: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 const [entity, description, action] = this.extractArrowParts(entry, 3);
                 if (!entity || !description || !action) {
@@ -486,6 +496,7 @@ class Events {
             npc_arrival_departure: (entries, context) => this.handleNpcArrivalDepartureEvents(entries, context),
             party_change: (entries, context) => this.handlePartyChangeEvents(entries, context),
             pick_up_item: (entries, context) => this.handlePickUpItemEvents(entries, context),
+            harvest_gather: (entries, context) => this.handlePickUpItemEvents(entries, context),
             status_effect_change: (entries, context) => this.handleStatusEffectChangeEvents(entries, context),
             transfer_item: (entries, context) => this.handleTransferItemEvents(entries, context),
             currency: (entries, context) => this.handleCurrencyEvents(entries, context),
@@ -4340,6 +4351,7 @@ class Events {
             'move_location',
             'alter_location',
             'item_appear',
+            'harvest_gather',
             'pick_up_item',
             'transfer_item',
             'drop_item',
