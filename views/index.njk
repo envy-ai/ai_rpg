@@ -43,6 +43,8 @@
                                         <div class="location-image-menu" id="locationImageMenu" hidden>
                                             <button type="button" class="location-image-menu-item" id="locationImageEditButton">Edit Location</button>
                                             <button type="button" class="location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
+                                            <button type="button" class="location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
+                                            <button type="button" class="location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
                                             <button type="button" class="location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
                                         </div>
                                     </div>
@@ -974,6 +976,58 @@
                     <div class="location-edit-actions">
                         <button type="button" class="location-edit-cancel region-edit-cancel" id="regionEditCancelBtn">Cancel</button>
                         <button type="submit" class="location-edit-save region-edit-save" id="regionEditSaveBtn">Save Changes</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div id="summonNpcModal" class="modal summon-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="summonNpcModalTitle">Summon NPC</h2>
+                <button type="button" class="modal__close" id="summonNpcCloseBtn" aria-label="Close summon NPC dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="summonNpcForm" class="modal__body location-edit-form summon-modal-form" novalidate>
+                <div class="location-edit-field">
+                    <label for="summonNpcSelect">Select NPC</label>
+                    <select id="summonNpcSelect" name="npcId" required disabled>
+                        <option value="" disabled selected hidden>Select an NPC</option>
+                    </select>
+                </div>
+                <footer class="location-edit-footer">
+                    <div class="location-edit-status" id="summonNpcStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions">
+                        <button type="button" class="location-edit-cancel" id="summonNpcCancelBtn">Cancel</button>
+                        <button type="submit" class="location-edit-save" id="summonNpcConfirmBtn" disabled>Summon</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <div id="summonThingModal" class="modal summon-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="summonThingModalTitle">Summon Item or Scenery</h2>
+                <button type="button" class="modal__close" id="summonThingCloseBtn" aria-label="Close summon item dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="summonThingForm" class="modal__body location-edit-form summon-modal-form" novalidate>
+                <div class="location-edit-field">
+                    <label for="summonThingSelect">Select Item or Scenery</label>
+                    <select id="summonThingSelect" name="thingId" required disabled>
+                        <option value="" disabled selected hidden>Select an item</option>
+                    </select>
+                </div>
+                <footer class="location-edit-footer">
+                    <div class="location-edit-status" id="summonThingStatus" role="status" aria-live="polite"></div>
+                    <div class="location-edit-actions">
+                        <button type="button" class="location-edit-cancel" id="summonThingCancelBtn">Cancel</button>
+                        <button type="submit" class="location-edit-save" id="summonThingConfirmBtn" disabled>Summon</button>
                     </div>
                 </footer>
             </form>
@@ -3733,6 +3787,7 @@
         const npcMemoriesSaveBtn = document.getElementById('npcMemoriesSaveBtn');
         const npcMemoriesCloseBtn = document.getElementById('npcMemoriesCloseBtn');
         const newExitModal = document.getElementById('newExitModal');
+        const newExitModalTitle = document.getElementById('newExitModalTitle');
         const newExitForm = document.getElementById('newExitForm');
         const newExitRegionSelect = document.getElementById('newExitRegion');
         const newExitLocationSelect = document.getElementById('newExitLocation');
@@ -3753,6 +3808,7 @@
         let newExitOptionsCache = null;
         let newExitRegionsById = new Map();
         let editingRegionId = null;
+        let editingExitContext = null;
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
         const addNpcNameInput = document.getElementById('addNpcName');
@@ -3812,6 +3868,8 @@
         const locationImageMenu = document.getElementById('locationImageMenu');
         const locationImageEditButton = document.getElementById('locationImageEditButton');
         const locationRegionEditButton = document.getElementById('locationRegionEditButton');
+        const locationSummonNpcButton = document.getElementById('locationSummonNpcButton');
+        const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const locationEditModal = document.getElementById('locationEditModal');
         const locationEditForm = document.getElementById('locationEditForm');
@@ -3823,6 +3881,20 @@
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
         const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
         const locationEditSaveBtn = document.getElementById('locationEditSaveBtn');
+        const summonNpcModal = document.getElementById('summonNpcModal');
+        const summonNpcForm = document.getElementById('summonNpcForm');
+        const summonNpcSelect = document.getElementById('summonNpcSelect');
+        const summonNpcStatus = document.getElementById('summonNpcStatus');
+        const summonNpcCancelBtn = document.getElementById('summonNpcCancelBtn');
+        const summonNpcCloseBtn = document.getElementById('summonNpcCloseBtn');
+        const summonNpcConfirmBtn = document.getElementById('summonNpcConfirmBtn');
+        const summonThingModal = document.getElementById('summonThingModal');
+        const summonThingForm = document.getElementById('summonThingForm');
+        const summonThingSelect = document.getElementById('summonThingSelect');
+        const summonThingStatus = document.getElementById('summonThingStatus');
+        const summonThingCancelBtn = document.getElementById('summonThingCancelBtn');
+        const summonThingCloseBtn = document.getElementById('summonThingCloseBtn');
+        const summonThingConfirmBtn = document.getElementById('summonThingConfirmBtn');
         const regionEditModal = document.getElementById('regionEditModal');
         const regionEditForm = document.getElementById('regionEditForm');
         const regionEditNameInput = document.getElementById('regionEditName');
@@ -6292,6 +6364,62 @@
             return newExitRegionsById.get(regionId) || null;
         }
 
+        function findRegionAndLocationOptionForLocationId(locationId) {
+            if (!locationId || !(newExitRegionsById instanceof Map)) {
+                return null;
+            }
+            for (const region of newExitRegionsById.values()) {
+                if (!region || !Array.isArray(region.locations)) {
+                    continue;
+                }
+                const match = region.locations.find(loc => loc && loc.id === locationId);
+                if (match) {
+                    return { region, location: match };
+                }
+            }
+            return null;
+        }
+
+        function findExitMatchForPayload(locationData = {}, payload = {}, createdInfo = {}) {
+            const exits = Object.values(locationData.exits || {});
+            if (!exits.length) {
+                return null;
+            }
+
+            const normalizedType = (payload.type || '').toLowerCase();
+
+            if (normalizedType === 'region') {
+                const regionId = createdInfo?.regionId || payload.regionId || null;
+                const stubId = createdInfo?.stubId || null;
+                if (stubId) {
+                    const stubMatch = exits.find(exit => exit && exit.destination === stubId);
+                    if (stubMatch) {
+                        return stubMatch;
+                    }
+                }
+                if (regionId) {
+                    const regionMatch = exits.find(exit => exit && exit.destinationRegion === regionId);
+                    if (regionMatch) {
+                        return regionMatch;
+                    }
+                }
+            }
+
+            const targetLocationId = payload.locationId
+                || createdInfo?.destinationId
+                || createdInfo?.stubId
+                || null;
+
+            if (targetLocationId) {
+                const locationMatch = exits.find(exit => exit && exit.destination === targetLocationId);
+                if (locationMatch) {
+                    return locationMatch;
+                }
+            }
+
+            return null;
+        }
+
         async function ensureNewExitOptionsLoaded(force = false) {
             if (!force && newExitOptionsCache && Array.isArray(newExitOptionsCache.regions)) {
                 return newExitOptionsCache;
@@ -6497,7 +6625,7 @@
         }
 
 
-        async function openNewExitModal() {
+        async function openNewExitModal(context = null) {
             if (!newExitModal || !npcModalBackdrop) {
                 return;
             }
@@ -6505,6 +6633,16 @@
                 alert('No active location available to add an exit.');
                 return;
             }
+
+            const isEditing = Boolean(context && context.mode === 'edit' && context.exit && context.exitId);
+            editingExitContext = isEditing
+                ? {
+                    locationId: context.locationId || lastRenderedLocation.id,
+                    exitId: context.exitId,
+                    exit: context.exit,
+                    direction: context.direction || null
+                }
+                : null;
 
             if (newExitForm) {
                 newExitForm.reset();
@@ -6537,17 +6675,78 @@
                 newExitChildRegionCheckbox.checked = false;
             }
 
-            setNewExitStatus('', null);
+            if (newExitModalTitle) {
+                newExitModalTitle.textContent = isEditing ? 'Edit Exit' : 'Add New Exit';
+            }
             if (newExitSaveBtn) {
+                newExitSaveBtn.textContent = isEditing ? 'Update Exit' : 'Create Exit';
                 newExitSaveBtn.disabled = false;
             }
-
+            setNewExitStatus('', null);
             syncNewExitFieldVisibility();
 
             let loadError = null;
             try {
                 await ensureNewExitOptionsLoaded();
                 populateNewExitRegionSelect('');
+                if (isEditing && editingExitContext?.exit) {
+                    const exit = editingExitContext.exit;
+                    const destinationId = exit.destination || null;
+                    const destinationRegionId = exit.destinationRegion || null;
+
+                    let selectedRegionId = null;
+                    let selectedLocationId = null;
+
+                    if (destinationId) {
+                        const regionMatch = findRegionAndLocationOptionForLocationId(destinationId);
+                        if (regionMatch) {
+                            selectedRegionId = regionMatch.region.id;
+                            selectedLocationId = regionMatch.location.id;
+                        }
+                    }
+
+                    if (!selectedRegionId && destinationRegionId) {
+                        selectedRegionId = destinationRegionId;
+                        selectedLocationId = destinationId || '';
+                    }
+
+                    if (newExitRegionSelect) {
+                        if (selectedRegionId && Array.from(newExitRegionSelect.options).some(opt => opt.value === selectedRegionId)) {
+                            newExitRegionSelect.value = selectedRegionId;
+                        } else {
+                            newExitRegionSelect.value = '';
+                        }
+                    }
+
+                    handleNewExitRegionChange();
+
+                    if (selectedLocationId && newExitLocationSelect) {
+                        if (Array.from(newExitLocationSelect.options).some(opt => opt.value === selectedLocationId)) {
+                            newExitLocationSelect.value = selectedLocationId;
+                        } else {
+                            newExitLocationSelect.value = '';
+                        }
+                        handleNewExitLocationChange();
+                    } else {
+                        handleNewExitLocationChange();
+                    }
+
+                    const showTextFields = shouldShowNewExitTextFields();
+                    if (showTextFields && newExitNameInput) {
+                        newExitNameInput.value = exit.destinationRegionName
+                            || exit.destinationName
+                            || exit.description
+                            || '';
+                    }
+                    if (newExitDescriptionInput) {
+                        newExitDescriptionInput.value = exit.description || '';
+                    }
+                    if (newExitVehicleInput) {
+                        newExitVehicleInput.value = exit.vehicleType || '';
+                    }
+                } else {
+                    handleNewExitRegionChange();
+                }
             } catch (error) {
                 loadError = error;
                 setNewExitStatus(`Failed to load region information: ${error?.message || 'Unknown error'}`, 'error');
@@ -6582,8 +6781,13 @@
                 return;
             }
 
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
-                setNewExitStatus('No active location is available for adding exits.', 'error');
+            const isEditing = Boolean(editingExitContext);
+            const activeLocationId = isEditing
+                ? (editingExitContext?.locationId || lastRenderedLocation?.id || null)
+                : (lastRenderedLocation?.id || null);
+
+            if (!activeLocationId) {
+                setNewExitStatus('No active location is available for managing exits.', 'error');
                 return;
             }
 
@@ -6623,7 +6827,7 @@
                     : '';
 
             let placeholderButton = null;
-            if (locationExitsList) {
+            if (!isEditing && locationExitsList) {
                 const emptyState = locationExitsList.querySelector('.no-exits');
                 if (emptyState) {
                     emptyState.remove();
@@ -6652,7 +6856,7 @@
                 locationExitsList.appendChild(placeholderButton);
             }
 
-            setNewExitStatus('Creating exit…', null);
+            setNewExitStatus(isEditing ? 'Updating exit…' : 'Creating exit…', null);
             newExitSaveBtn.disabled = true;
 
             const payload = { type };
@@ -6682,7 +6886,7 @@
 
             let overlayShown = false;
             try {
-                const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}/exits`, {
+                const response = await fetch(`/api/locations/${encodeURIComponent(activeLocationId)}/exits`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -6694,33 +6898,114 @@
                 }
 
                 setNewExitStatus('', null);
-                closeNewExitModal();
-                showLocationOverlay('Updating exits...');
-                overlayShown = true;
                 newExitOptionsCache = null;
                 newExitRegionsById = new Map();
 
-                if (data.location) {
-                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
-                    const exits = Array.isArray(data.location.exits)
-                        ? data.location.exits
-                        : Object.values(data.location.exits || {});
-                    exits.forEach(exit => {
-                        if (exit && exit.destination && exit.destinationName) {
-                            locationCache[exit.destination] = exit.destinationName;
-                        }
-                    });
-                    await window.updateLocationDisplay(data.location);
-                }
+                if (!isEditing) {
+                    closeNewExitModal();
+                    showLocationOverlay('Updating exits...');
+                    overlayShown = true;
 
-                const mapTab = document.querySelector('[data-tab="map"]');
-                if (mapTab && mapTab.classList.contains('active')) {
-                    window.loadRegionMap?.();
+                    if (data.location) {
+                        lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                        const exits = Array.isArray(data.location.exits)
+                            ? data.location.exits
+                            : Object.values(data.location.exits || {});
+                        exits.forEach(exit => {
+                            if (exit && exit.destination && exit.destinationName) {
+                                locationCache[exit.destination] = exit.destinationName;
+                            }
+                        });
+                        await window.updateLocationDisplay(data.location);
+                    }
+
+                    const mapTab = document.querySelector('[data-tab="map"]');
+                    if (mapTab && mapTab.classList.contains('active')) {
+                        window.loadRegionMap?.();
+                    }
+                } else {
+                    let finalLocation = data.location || null;
+                    const createdInfo = data.created || {};
+                    const originalExitId = editingExitContext?.exitId || null;
+
+                    const newExitMatch = findExitMatchForPayload(finalLocation, payload, createdInfo);
+                    const newExitId = newExitMatch?.id || null;
+
+                    let shouldRemoveOriginal = false;
+                    if (originalExitId && newExitId && originalExitId !== newExitId) {
+                        shouldRemoveOriginal = true;
+                    } else if (!newExitId && originalExitId) {
+                        // If destination changed but we couldn't identify the new exit, fall back to comparing existing exit
+                        const originalStillPresent = Object.values(finalLocation?.exits || {})
+                            .some(exit => exit?.id === originalExitId);
+                        if (originalStillPresent) {
+                            const desiredDestination = payload.locationId
+                                || createdInfo?.destinationId
+                                || null;
+                            const originalExit = Object.values(finalLocation?.exits || {})
+                                .find(exit => exit?.id === originalExitId);
+                            if (originalExit && desiredDestination && originalExit.destination !== desiredDestination) {
+                                shouldRemoveOriginal = true;
+                            }
+                        }
+                    }
+
+                    if (shouldRemoveOriginal && originalExitId) {
+                        try {
+                            if (!overlayShown) {
+                                showLocationOverlay('Updating exits...');
+                                overlayShown = true;
+                            }
+                            const deleteResponse = await fetch(`/api/locations/${encodeURIComponent(activeLocationId)}/exits/${encodeURIComponent(originalExitId)}`, {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ clientId })
+                            });
+                            const deleteData = await deleteResponse.json().catch(() => ({}));
+                            if (!deleteResponse.ok || !deleteData?.success) {
+                                throw new Error(deleteData?.error || `HTTP ${deleteResponse.status}`);
+                            }
+                            finalLocation = deleteData.location || finalLocation;
+                        } catch (deleteError) {
+                            console.warn('Failed to remove previous exit during edit:', deleteError);
+                            alert(`Exit update succeeded, but removing the previous exit failed: ${deleteError?.message || deleteError}`);
+                        }
+                    }
+
+                    if (!overlayShown) {
+                        showLocationOverlay('Updating exits...');
+                        overlayShown = true;
+                    }
+
+                    const locationPayload = finalLocation || (await (async () => {
+                        try {
+                            const cacheBuster = Date.now().toString(36);
+                            const locationResponse = await fetch(`/api/locations/${encodeURIComponent(activeLocationId)}?_=${cacheBuster}`, { cache: 'no-store' });
+                            const locationData = await locationResponse.json().catch(() => ({}));
+                            return locationResponse.ok && locationData?.success ? locationData.location : null;
+                        } catch (_) {
+                            return null;
+                        }
+                    })());
+
+                    if (locationPayload) {
+                        lastRenderedLocation = JSON.parse(JSON.stringify(locationPayload));
+                        await window.updateLocationDisplay(locationPayload);
+                    } else {
+                        await window.loadCurrentLocation?.();
+                    }
+
+                    const mapTab = document.querySelector('[data-tab="map"]');
+                    if (mapTab && mapTab.classList.contains('active')) {
+                        window.loadRegionMap?.();
+                    }
+
+                    closeNewExitModal();
                 }
             } catch (error) {
                 console.warn('Failed to create exit:', error);
-                setNewExitStatus(`Failed to create exit: ${error?.message || 'Unknown error'}`, 'error');
-                if (placeholderButton && placeholderButton.isConnected) {
+                setNewExitStatus(`${isEditing ? 'Failed to update exit' : 'Failed to create exit'}: ${error?.message || 'Unknown error'}`, 'error');
+                if (!isEditing && placeholderButton && placeholderButton.isConnected) {
                     placeholderButton.remove();
                     if (locationExitsList && !locationExitsList.querySelector('.exit-button')) {
                         const emptyState = document.createElement('div');
@@ -6743,6 +7028,7 @@
             }
             newExitModal.setAttribute('aria-hidden', 'true');
             newExitModal.setAttribute('hidden', '');
+            editingExitContext = null;
             if (newExitForm) {
                 newExitForm.reset();
             }
@@ -6775,7 +7061,11 @@
             }
             setNewExitStatus('', null);
             if (newExitSaveBtn) {
+                newExitSaveBtn.textContent = 'Create Exit';
                 newExitSaveBtn.disabled = false;
+            }
+            if (newExitModalTitle) {
+                newExitModalTitle.textContent = 'Add New Exit';
             }
             const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
@@ -8840,6 +9130,19 @@
                 if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeNpcEditModal();
+                    return;
+                }
+
+                if (summonNpcModal && !summonNpcModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeSummonNpcModal();
+                    return;
+                }
+
+                if (summonThingModal && !summonThingModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeSummonThingModal();
+                    return;
                 }
         });
 
@@ -9464,6 +9767,556 @@
             }
         }
 
+        const summonNpcOptionIndex = new Map();
+        const summonThingOptionIndex = new Map();
+
+        function resetSummonSelect(selectElement, placeholderLabel) {
+            if (!selectElement) {
+                return;
+            }
+            selectElement.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = placeholderLabel;
+            option.disabled = true;
+            option.selected = true;
+            option.hidden = true;
+            selectElement.appendChild(option);
+            selectElement.value = '';
+        }
+
+        function setSummonNpcStatus(message = '', type = null) {
+            if (!summonNpcStatus) {
+                return;
+            }
+            summonNpcStatus.textContent = message || '';
+            summonNpcStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                summonNpcStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                summonNpcStatus.classList.add('is-success');
+            }
+        }
+
+        function setSummonThingStatus(message = '', type = null) {
+            if (!summonThingStatus) {
+                return;
+            }
+            summonThingStatus.textContent = message || '';
+            summonThingStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                summonThingStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                summonThingStatus.classList.add('is-success');
+            }
+        }
+
+        async function loadSummonActorDirectory() {
+            const response = await fetch('/api/players', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success || !Array.isArray(data.players)) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+
+            const directory = {
+                list: [],
+                map: new Map()
+            };
+
+            data.players.forEach(entry => {
+                if (!entry || !entry.id) {
+                    return;
+                }
+                directory.list.push(entry);
+                directory.map.set(entry.id, entry);
+            });
+
+            return directory;
+        }
+
+        async function gatherSummonResources() {
+            const [actorDirectory, locationOptions] = await Promise.all([
+                loadSummonActorDirectory(),
+                loadTeleportLocationOptions()
+            ]);
+
+            const locationLabelMap = new Map();
+            if (Array.isArray(locationOptions)) {
+                locationOptions.forEach(option => {
+                    if (option && option.id) {
+                        locationLabelMap.set(option.id, option.label || option.id);
+                    }
+                });
+            }
+
+            return { actorDirectory, locationLabelMap };
+        }
+
+        async function gatherSummonNpcOptions() {
+            const currentLocationId = lastRenderedLocation?.id || null;
+            if (!currentLocationId) {
+                throw new Error('No active location loaded.');
+            }
+
+            const { actorDirectory, locationLabelMap } = await gatherSummonResources();
+            const options = [];
+
+            for (const npc of actorDirectory.list) {
+                if (!npc || !npc.id || !npc.isNPC) {
+                    continue;
+                }
+                const name = typeof npc.name === 'string' ? npc.name.trim() : '';
+                if (!name) {
+                    continue;
+                }
+                if (npc.isDead) {
+                    continue;
+                }
+                const locationIdRaw = typeof npc.locationId === 'string' ? npc.locationId.trim() : '';
+                if (locationIdRaw && locationIdRaw === currentLocationId) {
+                    continue;
+                }
+                const locationName = locationIdRaw
+                    ? (locationLabelMap.get(locationIdRaw) || `Location ${locationIdRaw}`)
+                    : 'Unknown location';
+                options.push({
+                    id: npc.id,
+                    name,
+                    locationId: locationIdRaw || null,
+                    locationName,
+                    raw: npc
+                });
+            }
+
+            options.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            return options;
+        }
+
+        async function gatherSummonThingOptions() {
+            const currentLocationId = lastRenderedLocation?.id || null;
+            if (!currentLocationId) {
+                throw new Error('No active location loaded.');
+            }
+
+            const { actorDirectory, locationLabelMap } = await gatherSummonResources();
+            const response = await fetch('/api/things', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success || !Array.isArray(data.things)) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+
+            const options = [];
+            const seenIds = new Set();
+
+            data.things.forEach(thing => {
+                if (!thing || !thing.id || seenIds.has(thing.id)) {
+                    return;
+                }
+                const name = typeof thing.name === 'string' ? thing.name.trim() : '';
+                if (!name) {
+                    return;
+                }
+                const type = typeof thing.thingType === 'string' ? thing.thingType.trim().toLowerCase() : '';
+                if (type !== 'item' && type !== 'scenery') {
+                    return;
+                }
+
+                const metadata = thing.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
+                const locationIdRaw = typeof metadata.locationId === 'string' ? metadata.locationId.trim() : '';
+                if (locationIdRaw && locationIdRaw === currentLocationId) {
+                    return;
+                }
+
+                const ownerIdRaw = typeof metadata.ownerId === 'string' ? metadata.ownerId.trim()
+                    : (typeof metadata.ownerID === 'string' ? metadata.ownerID.trim() : '');
+                const ownerNameMeta = typeof metadata.ownerName === 'string' ? metadata.ownerName.trim()
+                    : (typeof metadata.owner === 'string' ? metadata.owner.trim() : '');
+                let ownerName = ownerNameMeta || null;
+                if (ownerIdRaw && actorDirectory.map.has(ownerIdRaw)) {
+                    ownerName = actorDirectory.map.get(ownerIdRaw).name || ownerName || ownerIdRaw;
+                } else if (!ownerName && ownerIdRaw) {
+                    ownerName = ownerIdRaw;
+                }
+
+                let originLabel = 'Unknown location';
+                if (locationIdRaw) {
+                    originLabel = locationLabelMap.get(locationIdRaw) || `Location ${locationIdRaw}`;
+                } else if (ownerName) {
+                    originLabel = `${ownerName}'s inventory`;
+                }
+
+                const typeLabel = type === 'scenery' ? 'Scenery' : 'Item';
+                options.push({
+                    id: thing.id,
+                    name,
+                    type: typeLabel,
+                    locationId: locationIdRaw || null,
+                    ownerId: ownerIdRaw || null,
+                    ownerName: ownerName || null,
+                    originLabel,
+                    raw: thing
+                });
+                seenIds.add(thing.id);
+            });
+
+            options.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            return options;
+        }
+
+        async function applySummonLocationUpdate(payload) {
+            if (!payload || !payload.id) {
+                return false;
+            }
+            if (!window.lastRenderedLocation || window.lastRenderedLocation.id !== payload.id) {
+                return false;
+            }
+            try {
+                await window.updateLocationDisplay?.(payload);
+                window.lastRenderedLocation = JSON.parse(JSON.stringify(payload));
+                return true;
+            } catch (error) {
+                console.warn('Failed to apply location update:', error);
+                return false;
+            }
+        }
+
+        async function openSummonNpcModal() {
+            if (!summonNpcModal) {
+                alert('Summon NPC dialog is unavailable.');
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                alert('No location is currently loaded.');
+                return;
+            }
+
+            summonNpcOptionIndex.clear();
+            resetSummonSelect(summonNpcSelect, 'Select an NPC');
+            if (summonNpcSelect) {
+                summonNpcSelect.disabled = true;
+            }
+            if (summonNpcConfirmBtn) {
+                summonNpcConfirmBtn.disabled = true;
+            }
+            setSummonNpcStatus('Loading NPCs...', null);
+
+            summonNpcModal.removeAttribute('hidden');
+            summonNpcModal.setAttribute('aria-hidden', 'false');
+            summonNpcModal.classList.add('is-open');
+            requestAnimationFrame(() => {
+                summonNpcSelect?.focus();
+            });
+
+            try {
+                const options = await gatherSummonNpcOptions();
+
+                if (!options.length) {
+                    setSummonNpcStatus('No NPCs are available to summon.', 'error');
+                    return;
+                }
+
+                const fragment = document.createDocumentFragment();
+                options.forEach(option => {
+                    summonNpcOptionIndex.set(option.id, option);
+                    const opt = document.createElement('option');
+                    opt.value = option.id;
+                    opt.textContent = `${option.name} — ${option.locationName}`;
+                    opt.dataset.locationId = option.locationId || '';
+                    opt.dataset.locationName = option.locationName || '';
+                    fragment.appendChild(opt);
+                });
+
+                if (summonNpcSelect) {
+                    summonNpcSelect.appendChild(fragment);
+                    summonNpcSelect.disabled = false;
+                    summonNpcSelect.value = '';
+                }
+
+                setSummonNpcStatus('', null);
+            } catch (error) {
+                console.warn('Failed to load summon NPC options:', error);
+                setSummonNpcStatus(`Failed to load NPCs: ${error?.message || error}`, 'error');
+            }
+        }
+
+        function closeSummonNpcModal() {
+            if (!summonNpcModal) {
+                return;
+            }
+            summonNpcModal.setAttribute('hidden', '');
+            summonNpcModal.setAttribute('aria-hidden', 'true');
+            summonNpcModal.classList.remove('is-open');
+            setSummonNpcStatus('', null);
+            summonNpcOptionIndex.clear();
+            resetSummonSelect(summonNpcSelect, 'Select an NPC');
+            if (summonNpcSelect) {
+                summonNpcSelect.disabled = true;
+            }
+            if (summonNpcConfirmBtn) {
+                summonNpcConfirmBtn.disabled = true;
+            }
+        }
+
+        async function openSummonThingModal() {
+            if (!summonThingModal) {
+                alert('Summon item dialog is unavailable.');
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                alert('No location is currently loaded.');
+                return;
+            }
+
+            summonThingOptionIndex.clear();
+            resetSummonSelect(summonThingSelect, 'Select an item');
+            if (summonThingSelect) {
+                summonThingSelect.disabled = true;
+            }
+            if (summonThingConfirmBtn) {
+                summonThingConfirmBtn.disabled = true;
+            }
+            setSummonThingStatus('Loading items...', null);
+
+            summonThingModal.removeAttribute('hidden');
+            summonThingModal.setAttribute('aria-hidden', 'false');
+            summonThingModal.classList.add('is-open');
+            requestAnimationFrame(() => {
+                summonThingSelect?.focus();
+            });
+
+            try {
+                const options = await gatherSummonThingOptions();
+
+                if (!options.length) {
+                    setSummonThingStatus('No items or scenery are available to summon.', 'error');
+                    return;
+                }
+
+                const fragment = document.createDocumentFragment();
+                options.forEach(option => {
+                    summonThingOptionIndex.set(option.id, option);
+                    const opt = document.createElement('option');
+                    opt.value = option.id;
+                    opt.textContent = `${option.name} — ${option.type} · ${option.originLabel}`;
+                    opt.dataset.origin = option.originLabel || '';
+                    fragment.appendChild(opt);
+                });
+
+                if (summonThingSelect) {
+                    summonThingSelect.appendChild(fragment);
+                    summonThingSelect.disabled = false;
+                    summonThingSelect.value = '';
+                }
+
+                setSummonThingStatus('', null);
+            } catch (error) {
+                console.warn('Failed to load summon item options:', error);
+                setSummonThingStatus(`Failed to load items: ${error?.message || error}`, 'error');
+            }
+        }
+
+        function closeSummonThingModal() {
+            if (!summonThingModal) {
+                return;
+            }
+            summonThingModal.setAttribute('hidden', '');
+            summonThingModal.setAttribute('aria-hidden', 'true');
+            summonThingModal.classList.remove('is-open');
+            setSummonThingStatus('', null);
+            summonThingOptionIndex.clear();
+            resetSummonSelect(summonThingSelect, 'Select an item');
+            if (summonThingSelect) {
+                summonThingSelect.disabled = true;
+            }
+            if (summonThingConfirmBtn) {
+                summonThingConfirmBtn.disabled = true;
+            }
+        }
+
+        function handleSummonNpcSelectionChange() {
+            if (!summonNpcSelect) {
+                return;
+            }
+            const npcId = summonNpcSelect.value;
+            if (!npcId || !summonNpcOptionIndex.has(npcId)) {
+                if (summonNpcConfirmBtn) {
+                    summonNpcConfirmBtn.disabled = true;
+                }
+                return;
+            }
+            if (summonNpcConfirmBtn) {
+                summonNpcConfirmBtn.disabled = false;
+            }
+            setSummonNpcStatus('', null);
+        }
+
+        function handleSummonThingSelectionChange() {
+            if (!summonThingSelect) {
+                return;
+            }
+            const thingId = summonThingSelect.value;
+            if (!thingId || !summonThingOptionIndex.has(thingId)) {
+                if (summonThingConfirmBtn) {
+                    summonThingConfirmBtn.disabled = true;
+                }
+                return;
+            }
+            if (summonThingConfirmBtn) {
+                summonThingConfirmBtn.disabled = false;
+            }
+            setSummonThingStatus('', null);
+        }
+
+        async function submitSummonNpcForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (!summonNpcSelect) {
+                return;
+            }
+            const npcId = summonNpcSelect.value;
+            if (!npcId || !summonNpcOptionIndex.has(npcId)) {
+                setSummonNpcStatus('Select an NPC to summon.', 'error');
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                setSummonNpcStatus('No location is currently loaded.', 'error');
+                return;
+            }
+
+            if (summonNpcConfirmBtn) {
+                summonNpcConfirmBtn.disabled = true;
+            }
+            setSummonNpcStatus('Summoning NPC...', null);
+
+            let overlayVisible = false;
+            try {
+                showLocationOverlay('Summoning NPC...');
+                overlayVisible = true;
+            } catch (_) {
+                // Ignore overlay errors
+            }
+
+            try {
+                const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/teleport`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ locationId: lastRenderedLocation.id })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                const npcPayload = data.npc || summonNpcOptionIndex.get(npcId)?.raw || null;
+                if (window.currentNpcData instanceof Map && npcPayload) {
+                    const cloned = cloneActorRecord(npcPayload) || { ...npcPayload };
+                    window.currentNpcData.set(npcId, cloned);
+                }
+
+                let applied = false;
+                if (data.previousLocation) {
+                    applied = await applySummonLocationUpdate(data.previousLocation) || applied;
+                }
+                if (data.destination) {
+                    applied = await applySummonLocationUpdate(data.destination) || applied;
+                }
+
+                if (!applied && window.loadCurrentLocation) {
+                    try {
+                        await window.loadCurrentLocation();
+                    } catch (error) {
+                        console.warn('Failed to refresh current location after NPC summon:', error);
+                    }
+                }
+
+                try {
+                    await window.refreshParty?.();
+                } catch (partyError) {
+                    console.warn('Failed to refresh party after NPC summon:', partyError);
+                }
+
+                closeSummonNpcModal();
+            } catch (error) {
+                console.warn('Failed to summon NPC:', error);
+                setSummonNpcStatus(`Failed to summon NPC: ${error?.message || error}`, 'error');
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+                if (summonNpcConfirmBtn && summonNpcModal?.classList.contains('is-open')) {
+                    summonNpcConfirmBtn.disabled = false;
+                }
+            }
+        }
+
+        async function submitSummonThingForm(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (!summonThingSelect) {
+                return;
+            }
+            const thingId = summonThingSelect.value;
+            const entry = thingId ? summonThingOptionIndex.get(thingId) : null;
+            if (!entry) {
+                setSummonThingStatus('Select an item or scenery to summon.', 'error');
+                return;
+            }
+            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                setSummonThingStatus('No location is currently loaded.', 'error');
+                return;
+            }
+
+            if (summonThingConfirmBtn) {
+                summonThingConfirmBtn.disabled = true;
+            }
+            setSummonThingStatus('Summoning item...', null);
+
+            let overlayVisible = false;
+            try {
+                showLocationOverlay('Summoning item...');
+                overlayVisible = true;
+            } catch (_) {
+                // Ignore overlay errors
+            }
+
+            try {
+                const teleportResult = await teleportThingToLocation(entry.raw, lastRenderedLocation.id, {
+                    context: 'general',
+                    originLocationId: entry.locationId || null
+                });
+
+                let locationUpdated = false;
+                if (teleportResult?.previousLocation) {
+                    locationUpdated = await applySummonLocationUpdate(teleportResult.previousLocation) || locationUpdated;
+                }
+                if (teleportResult?.destination) {
+                    locationUpdated = await applySummonLocationUpdate(teleportResult.destination) || locationUpdated;
+                }
+
+                if (!locationUpdated && typeof window.loadCurrentLocation === 'function') {
+                    try {
+                        await window.loadCurrentLocation();
+                    } catch (refreshError) {
+                        console.warn('Failed to refresh location after item summon:', refreshError);
+                    }
+                }
+
+                closeSummonThingModal();
+            } catch (error) {
+                console.warn('Failed to summon item:', error);
+                setSummonThingStatus(`Failed to summon item: ${error?.message || error}`, 'error');
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+                if (summonThingConfirmBtn && summonThingModal?.classList.contains('is-open')) {
+                    summonThingConfirmBtn.disabled = false;
+                }
+            }
+        }
+
         function setRegionEditStatus(message = '', type = null) {
             if (!regionEditStatus) {
                 return;
@@ -9783,6 +10636,22 @@
             });
         }
 
+        if (locationSummonNpcButton) {
+            locationSummonNpcButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu();
+                await openSummonNpcModal();
+            });
+        }
+
+        if (locationSummonThingButton) {
+            locationSummonThingButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu();
+                await openSummonThingModal();
+            });
+        }
+
         if (locationImageRegenerateButton) {
             locationImageRegenerateButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -9815,6 +10684,32 @@
         }
         if (locationEditForm) {
             locationEditForm.addEventListener('submit', submitLocationEditForm);
+        }
+
+        if (summonNpcCancelBtn) {
+            summonNpcCancelBtn.addEventListener('click', () => closeSummonNpcModal());
+        }
+        if (summonNpcCloseBtn) {
+            summonNpcCloseBtn.addEventListener('click', () => closeSummonNpcModal());
+        }
+        if (summonNpcForm) {
+            summonNpcForm.addEventListener('submit', submitSummonNpcForm);
+        }
+        if (summonNpcSelect) {
+            summonNpcSelect.addEventListener('change', handleSummonNpcSelectionChange);
+        }
+
+        if (summonThingCancelBtn) {
+            summonThingCancelBtn.addEventListener('click', () => closeSummonThingModal());
+        }
+        if (summonThingCloseBtn) {
+            summonThingCloseBtn.addEventListener('click', () => closeSummonThingModal());
+        }
+        if (summonThingForm) {
+            summonThingForm.addEventListener('submit', submitSummonThingForm);
+        }
+        if (summonThingSelect) {
+            summonThingSelect.addEventListener('change', handleSummonThingSelectionChange);
         }
 
         if (locationEditLevelInput) {
@@ -10034,12 +10929,34 @@
                                 container.appendChild(travelButton);
 
                                 if (exitId) {
+                                    const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
+
+                                    const editButton = document.createElement('button');
+                                    editButton.type = 'button';
+                                    editButton.className = 'exit-edit-button';
+                                    editButton.textContent = '✏️';
+                                    editButton.setAttribute('aria-label', `Edit exit: ${friendlyName}`);
+                                    editButton.title = `Edit exit: ${friendlyName}`;
+
+                                    editButton.addEventListener('click', (event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        openNewExitModal({
+                                            mode: 'edit',
+                                            exit: { ...exit },
+                                            exitId,
+                                            direction: key,
+                                            locationId: location.id
+                                        });
+                                    });
+
+                                    container.appendChild(editButton);
+
                                     const deleteButton = document.createElement('button');
                                     deleteButton.type = 'button';
                                     deleteButton.className = 'exit-delete-button';
                                     deleteButton.textContent = '🗑️';
 
-                                    const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
                                     deleteButton.setAttribute('aria-label', `Delete exit: ${friendlyName}`);
                                     deleteButton.title = `Delete exit: ${friendlyName}`;
 

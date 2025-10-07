@@ -6,3 +6,4 @@ saves/*
 public/generated-images/*
 logs/*
 logs_prev/*
+prompt_overrides/*

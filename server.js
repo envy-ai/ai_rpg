@@ -2441,6 +2441,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
     const context = {
         setting: settingContext,
+        config: config,
         gameHistory,
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
@@ -3613,11 +3614,15 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
     }
+
+    const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
+    const resolvedVehicleType = normalizedVehicleType ? normalizedVehicleType : null;
+    const resolvedIsVehicle = isVehicle === true || Boolean(resolvedVehicleType);
 
     const originRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
     const targetRegion = targetRegionId ? regions.get(targetRegionId) || null : null;
@@ -3670,7 +3675,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             settingDescription: describeSettingForPrompt(settingSnapshot),
             regionId: effectiveRegionId,
             regionName: effectiveRegionName,
-            allowRename: false
+            allowRename: false,
+            vehicleType: resolvedVehicleType,
+            isVehicle: resolvedIsVehicle
         },
         checkRegionId: !pendingTargetRegion
     });
@@ -3681,11 +3688,18 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         const destinationRegionForExit = effectiveRegionId && originRegion?.id !== effectiveRegionId
             ? effectiveRegionId
             : null;
-        ensureExitConnection(originLocation, stub, {
+        const exitOptions = {
             description: descriptionHint || `${trimmedName}`,
             bidirectional: false,
             destinationRegion: destinationRegionForExit
-        });
+        };
+
+        if (resolvedIsVehicle) {
+            exitOptions.isVehicle = true;
+            exitOptions.vehicleType = resolvedVehicleType;
+        }
+
+        ensureExitConnection(originLocation, stub, exitOptions);
     }
 
     if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {
@@ -4419,6 +4433,63 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
         }
     }
 
+    const stubThingIds = Array.isArray(stubLocation.thingIds)
+        ? [...stubLocation.thingIds]
+        : (typeof stubLocation.getThingIds === 'function' ? Array.from(stubLocation.getThingIds()) : []);
+
+    if (stubThingIds.length) {
+        const entranceNameFallback = entranceLocation.name
+            || entranceLocation.stubMetadata?.shortDescription
+            || (region?.name ? `${region.name} Entrance` : entranceLocation.id);
+
+        for (const thingId of stubThingIds) {
+            if (!thingId) {
+                continue;
+            }
+            const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+            if (!thing) {
+                continue;
+            }
+
+            Events.removeThingFromLocation(thing, stubLocation);
+            Events.addThingToLocation(thing, entranceLocation);
+
+            const metadata = thing.metadata && typeof thing.metadata === 'object' ? { ...thing.metadata } : {};
+            metadata.locationId = entranceLocation.id;
+            metadata.locationName = entranceNameFallback;
+            delete metadata.ownerId;
+            delete metadata.ownerID;
+            thing.metadata = metadata;
+
+            if (things instanceof Map) {
+                things.set(thing.id, thing);
+            }
+        }
+    }
+
+    const stubNpcIds = Array.isArray(stubLocation.npcIds) ? [...stubLocation.npcIds] : [];
+    if (stubNpcIds.length) {
+        for (const npcId of stubNpcIds) {
+            if (!npcId) {
+                continue;
+            }
+            const npc = players.get(npcId);
+            if (npc) {
+                try {
+                    npc.setLocation(entranceLocation.id);
+                } catch (error) {
+                    console.warn(`Failed to update NPC ${npcId} location during region entry finalization:`, error.message);
+                }
+            }
+            if (typeof stubLocation.removeNpcId === 'function') {
+                stubLocation.removeNpcId(npcId);
+            }
+            if (typeof entranceLocation.addNpcId === 'function') {
+                entranceLocation.addNpcId(npcId);
+            }
+        }
+    }
+
     gameLocations.delete(stubLocation.id);
 
     const replacementLocationId = entranceLocation.id;
@@ -4446,6 +4517,14 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
     const currentRegionLocationIds = region.locationIds || [];
     if (Array.isArray(currentRegionLocationIds) && currentRegionLocationIds.includes(stubLocation.id)) {
         region.locationIds = currentRegionLocationIds.filter(id => id !== stubLocation.id);
+    }
+
+    if (region && typeof region.addLocationId === 'function') {
+        region.addLocationId(entranceLocation.id);
+    }
+
+    if (Array.isArray(region.locationIds) && !region.locationIds.includes(entranceLocation.id)) {
+        region.locationIds.push(entranceLocation.id);
     }
 
     if (originLocation && typeof originLocation.removeNpcId === 'function') {
@@ -10162,7 +10241,8 @@ function renderRegionGeneratorPrompt(options = {}) {
         maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
         minRegionExits: minRegionExits,
         currentPlayer: currentPlayer,
-        mode: 'full'
+        mode: 'full',
+        config: config
     };
 
     const renderedTemplate = promptEnv.render(templateName, variables);
@@ -11462,6 +11542,7 @@ function renderRegionExitsPrompt({ region, settingDescription }) {
             maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
             minRegionExits: minRegionExits,
             currentPlayer: currentPlayer,
+            config: config
         };
 
         const rendered = promptEnv.render(templateName, variables);
@@ -11610,6 +11691,7 @@ function renderRegionStubPrompt({ settingDescription, region, previousRegion }) 
             minRegionExits: minRegionExits,
             mode: 'stub',
             currentPlayer: currentPlayer,
+            config: config
         };
 
 

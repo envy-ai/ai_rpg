@@ -172,7 +172,12 @@ class Location {
 
     if (existingLocation) {
       if (!locationData.description || typeof locationData.description !== 'string') {
-        throw new Error('Stub expansion missing description in AI response');
+        console.log('Stub expansion missing description in AI response');
+        const fallbackDescription = existingLocation.description
+          || existingLocation.stubMetadata?.shortDescription
+          || existingLocation.name
+          || 'No description available.';
+        locationData.description = fallbackDescription;
       }
 
       let parsedBaseLevel = typeof locationData.baseLevel === 'number' && !Number.isNaN(locationData.baseLevel)

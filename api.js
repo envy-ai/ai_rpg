@@ -6859,6 +6859,143 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/npcs/:id/teleport', (req, res) => {
+            try {
+                const rawNpcId = req.params.id;
+                const npcId = typeof rawNpcId === 'string' ? rawNpcId.trim() : '';
+                if (!npcId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC ID is required'
+                    });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc || !npc.isNPC) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `NPC with ID '${npcId}' not found`
+                    });
+                }
+
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
+                if (!rawLocationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Destination locationId is required'
+                    });
+                }
+
+                const resolveLocationById = (locationId) => {
+                    if (!locationId) {
+                        return null;
+                    }
+
+                    let location = null;
+                    if (gameLocations instanceof Map && gameLocations.has(locationId)) {
+                        location = gameLocations.get(locationId);
+                    }
+
+                    if (!location) {
+                        try {
+                            location = Location.get(locationId);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+
+                    return location || null;
+                };
+
+                const destinationLocation = resolveLocationById(rawLocationId);
+                if (!destinationLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Destination location '${rawLocationId}' not found`
+                    });
+                }
+
+                const originLocationId = typeof npc.currentLocation === 'string' ? npc.currentLocation : null;
+                if (originLocationId && originLocationId === destinationLocation.id) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `${npc.name || 'NPC'} is already at the requested location`
+                    });
+                }
+
+                const originLocation = resolveLocationById(originLocationId);
+
+                if (originLocation) {
+                    if (typeof originLocation.removeNpcId === 'function') {
+                        originLocation.removeNpcId(npcId);
+                    } else if (Array.isArray(originLocation.npcIds)) {
+                        originLocation.npcIds = originLocation.npcIds.filter(id => id !== npcId);
+                    }
+
+                    if (gameLocations instanceof Map) {
+                        gameLocations.set(originLocation.id, originLocation);
+                    }
+                }
+
+                if (typeof destinationLocation.addNpcId === 'function') {
+                    destinationLocation.addNpcId(npcId);
+                } else if (Array.isArray(destinationLocation.npcIds)) {
+                    if (!destinationLocation.npcIds.includes(npcId)) {
+                        destinationLocation.npcIds.push(npcId);
+                    }
+                }
+
+                npc.setLocation(destinationLocation.id);
+
+                if (players instanceof Map) {
+                    players.set(npc.id, npc);
+                }
+
+                if (gameLocations instanceof Map) {
+                    gameLocations.set(destinationLocation.id, destinationLocation);
+                }
+
+                let previousLocationPayload = null;
+                if (originLocation && typeof buildLocationResponse === 'function') {
+                    try {
+                        previousLocationPayload = buildLocationResponse(originLocation);
+                    } catch (error) {
+                        console.warn('Failed to serialize previous location after NPC teleport:', error?.message || error);
+                    }
+                }
+
+                let destinationPayload = null;
+                if (typeof buildLocationResponse === 'function') {
+                    try {
+                        destinationPayload = buildLocationResponse(destinationLocation);
+                    } catch (error) {
+                        console.warn('Failed to serialize destination location after NPC teleport:', error?.message || error);
+                    }
+                }
+
+                const responsePayload = {
+                    success: true,
+                    npc: serializeNpcForClient(npc),
+                    destination: destinationPayload,
+                    previousLocation: previousLocationPayload,
+                    locationIds: Array.from(new Set([
+                        destinationLocation.id,
+                        originLocation?.id || null
+                    ].filter(Boolean))),
+                    message: `${npc.name || 'NPC'} summoned successfully.`
+                };
+
+                res.json(responsePayload);
+            } catch (error) {
+                console.error('Failed to teleport NPC:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to teleport NPC'
+                });
+            }
+        });
+
         // Delete an NPC entirely
         app.delete('/api/npcs/:id', (req, res) => {
             try {
@@ -7934,11 +8071,15 @@ module.exports = function registerApiRoutes(scope) {
                     regionId: targetRegionIdRaw,
                     locationId: targetLocationIdRaw,
                     parentRegionId: parentRegionIdRaw,
+                    vehicleType: vehicleTypeRaw,
                     clientId: initiatorClientIdRaw
                 } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
                 const resolvedDescription = typeof description === 'string' ? description.trim() : '';
                 const resolvedType = typeof type === 'string' ? type.trim().toLowerCase() : 'location';
+                const resolvedVehicleType = typeof vehicleTypeRaw === 'string' ? vehicleTypeRaw.trim() : '';
+                const normalizedVehicleType = resolvedVehicleType ? resolvedVehicleType : null;
+                const isVehicleExit = Boolean(normalizedVehicleType);
                 const initiatorClientId = (typeof initiatorClientIdRaw === 'string' && initiatorClientIdRaw.trim())
                     ? initiatorClientIdRaw.trim()
                     : null;
@@ -7984,7 +8125,9 @@ module.exports = function registerApiRoutes(scope) {
                         name: resolvedName,
                         description: resolvedDescription,
                         originLocation,
-                        parentRegionId
+                        parentRegionId,
+                        vehicleType: normalizedVehicleType,
+                        isVehicle: isVehicleExit
                     });
 
                     if (!regionStub) {
@@ -7999,7 +8142,9 @@ module.exports = function registerApiRoutes(scope) {
                         stubId: regionStub?.id || null,
                         regionId: regionStub?.stubMetadata?.targetRegionId || regionStub?.stubMetadata?.regionId || null,
                         name: regionStub?.name || resolvedName,
-                        parentRegionId: parentRegionId || null
+                        parentRegionId: parentRegionId || null,
+                        isVehicle: isVehicleExit,
+                        vehicleType: normalizedVehicleType
                     };
                 } else if (normalizedType === 'location' && targetLocationId) {
                     const destinationLocation = gameLocations.get(targetLocationId) || Location.get(targetLocationId);
@@ -8028,18 +8173,27 @@ module.exports = function registerApiRoutes(scope) {
                         || destinationLocation.id;
                     const exitName = resolvedName || fallbackName;
 
-                    ensureExitConnection(originLocation, destinationLocation, {
+                    const exitOptions = {
                         description: resolvedDescription || exitName,
                         bidirectional: true,
                         destinationRegion: destinationRegionForExit
-                    });
+                    };
+
+                    if (isVehicleExit) {
+                        exitOptions.isVehicle = true;
+                        exitOptions.vehicleType = normalizedVehicleType;
+                    }
+
+                    ensureExitConnection(originLocation, destinationLocation, exitOptions);
 
                     createdInfo = {
                         type: 'location',
                         destinationId: destinationLocation.id,
                         name: fallbackName,
                         isStub: Boolean(destinationLocation.isStub),
-                        existing: true
+                        existing: true,
+                        isVehicle: isVehicleExit,
+                        vehicleType: normalizedVehicleType
                     };
                 } else if (normalizedType === 'location') {
                     if (!resolvedName) {
@@ -8055,7 +8209,9 @@ module.exports = function registerApiRoutes(scope) {
                         descriptionHint: resolvedDescription || resolvedName,
                         directionHint: null,
                         expandStub: false,
-                        targetRegionId
+                        targetRegionId,
+                        vehicleType: normalizedVehicleType,
+                        isVehicle: isVehicleExit
                     });
 
                     if (!locationStub) {
@@ -8069,7 +8225,9 @@ module.exports = function registerApiRoutes(scope) {
                         type: 'location',
                         destinationId: locationStub.id,
                         name: locationStub.name || resolvedName,
-                        isStub: Boolean(locationStub.isStub)
+                        isStub: Boolean(locationStub.isStub),
+                        isVehicle: isVehicleExit,
+                        vehicleType: normalizedVehicleType
                     };
                 } else {
                     return res.status(400).json({
@@ -10328,7 +10486,7 @@ module.exports = function registerApiRoutes(scope) {
             return merged;
         }
 
-        function logSettingAutofillPrompt({ systemPrompt, generationPrompt, responseText }) {
+        function logSettingAutofillPrompt({ systemPrompt, generationPrompt, additionalInstructions = '', responseText }) {
             try {
                 const logDir = path.join(__dirname, 'logs');
                 if (!fs.existsSync(logDir)) {
@@ -10417,6 +10575,10 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const additionalInstructions = typeof req.body?.instructions === 'string'
+                    ? req.body.instructions.trim()
+                    : '';
+
                 const normalizedSetting = normalizeSettingPayload(incomingSetting);
 
                 const renderedTemplate = promptEnv.render('fill-setting-form.xml.njk', {
@@ -10424,7 +10586,8 @@ module.exports = function registerApiRoutes(scope) {
                         ...normalizedSetting,
                         defaultExistingSkills: normalizedSetting.defaultExistingSkills,
                         availableClasses: normalizedSetting.availableClasses,
-                        availableRaces: normalizedSetting.availableRaces
+                        availableRaces: normalizedSetting.availableRaces,
+                        additionalInstructions: additionalInstructions
                     }
                 });
 
@@ -10481,6 +10644,7 @@ module.exports = function registerApiRoutes(scope) {
                 logSettingAutofillPrompt({
                     systemPrompt,
                     generationPrompt,
+                    additionalInstructions,
                     responseText: aiMessage
                 });
 
@@ -11234,9 +11398,32 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const playerName = currentPlayer.name.replace(/[^a-zA-Z0-9]/g, '_');
-                const saveName = `${timestamp}_${playerName}`;
+                const sanitizeSegment = (value, fallback) => {
+                    const source = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+                    return source
+                        .replace(/[^a-zA-Z0-9_-]/g, '_')
+                        .replace(/_{2,}/g, '_')
+                        .replace(/^_+|_+$/g, '')
+                        || fallback;
+                };
+
+                const settingSegment = sanitizeSegment(currentSetting?.name, 'Setting');
+                const playerSegment = sanitizeSegment(currentPlayer.name, currentPlayer.id || 'Player');
+                const currentLocationId = currentPlayer.currentLocation || null;
+                const currentLocation = currentLocationId
+                    ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
+                    : null;
+                const locationSegment = sanitizeSegment(
+                    currentLocation?.name
+                        || currentLocation?.description
+                        || currentLocationId
+                        || 'Location',
+                    'Location'
+                );
+                const timestampFragment = Date.now().toString(36);
+                const baseIdFragment = currentPlayer.id || timestampFragment;
+                const uniqueSegment = sanitizeSegment(`${baseIdFragment}-${timestampFragment}`, `Save-${timestampFragment}`);
+                const saveName = `${settingSegment}-${playerSegment}-${locationSegment}-${uniqueSegment}`;
                 const saveDir = path.join(__dirname, 'saves', saveName);
 
                 const serialized = Utils.serializeGameState({
@@ -11266,6 +11453,8 @@ module.exports = function registerApiRoutes(scope) {
                 metadata.totalSkills = skills.size;
                 metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
                 metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+                metadata.currentLocationId = currentLocationId || metadata.currentLocationId || null;
+                metadata.currentLocationName = currentLocation?.name || metadata.currentLocationName || null;
 
                 Utils.writeSerializedGameState(saveDir, serialized);
 

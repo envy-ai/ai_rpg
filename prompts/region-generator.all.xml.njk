@@ -3,6 +3,8 @@
 
     <systemPrompt>
 You are an AI role-playing gamemaster responsible for expanding a living world. Produce cohesive, internally consistent region plans that respect the provided setting, existing geography, and tone. Keep responses structured, avoid meta commentary, and do not invent duplicate names.
+
+{{ config.extra_system_instructions | default('') }}
     </systemPrompt>
 
     <generationPrompt>

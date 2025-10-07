@@ -220,11 +220,71 @@
         </div>
     </div>
 
+    <div id="autofillInstructionsModal" class="modal settings-autofill-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2>Additional Guidance</h2>
+                <button type="button" class="modal__close" id="autofillInstructionsCloseBtn" aria-label="Close auto-fill instructions dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p class="help-text" style="margin-bottom: 0.75rem;">Optional notes for the AI when generating missing setting details. Leave blank to continue without extra guidance.</p>
+                <textarea id="autofillInstructionsInput" rows="5" placeholder="E.g., focus on coastal cities and political intrigue..."></textarea>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="autofillInstructionsCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="autofillInstructionsConfirmBtn">Apply Guidance</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
     <script>
         let currentSettings = [];
         let selectedSettingId = null;
         let isEditMode = false;
         let appliedSetting = null;
+        const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
+        const autofillInstructionsInput = document.getElementById('autofillInstructionsInput');
+        const autofillInstructionsCancelBtn = document.getElementById('autofillInstructionsCancelBtn');
+        const autofillInstructionsCloseBtn = document.getElementById('autofillInstructionsCloseBtn');
+        const autofillInstructionsConfirmBtn = document.getElementById('autofillInstructionsConfirmBtn');
+        let pendingAutofillButton = null;
+
+        function openAutofillInstructionsModal(triggerButton) {
+            if (!autofillInstructionsModal) {
+                handleGenerateFill(triggerButton, '');
+                return;
+            }
+            pendingAutofillButton = triggerButton || null;
+            if (autofillInstructionsInput) {
+                autofillInstructionsInput.value = '';
+            }
+            if (autofillInstructionsConfirmBtn) {
+                autofillInstructionsConfirmBtn.disabled = false;
+            }
+            autofillInstructionsModal.removeAttribute('hidden');
+            autofillInstructionsModal.setAttribute('aria-hidden', 'false');
+            autofillInstructionsModal.classList.add('is-open');
+            requestAnimationFrame(() => {
+                autofillInstructionsInput?.focus();
+            });
+        }
+
+        function closeAutofillInstructionsModal() {
+            if (!autofillInstructionsModal) {
+                return;
+            }
+            autofillInstructionsModal.setAttribute('hidden', '');
+            autofillInstructionsModal.setAttribute('aria-hidden', 'true');
+            autofillInstructionsModal.classList.remove('is-open');
+            if (autofillInstructionsConfirmBtn) {
+                autofillInstructionsConfirmBtn.disabled = false;
+            }
+            pendingAutofillButton = null;
+        }
 
         // Load settings on page load
         document.addEventListener('DOMContentLoaded', async function() {
@@ -242,6 +302,13 @@
             await refreshSettingsList();
             await loadCurrentSetting();
             setupEventListeners();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && autofillInstructionsModal && !autofillInstructionsModal.hasAttribute('hidden')) {
+                event.preventDefault();
+                closeAutofillInstructionsModal();
+            }
         });
 
         async function refreshSettingsList() {
@@ -671,13 +738,30 @@
 
             const generateBtn = document.getElementById('generateBtn');
             if (generateBtn) {
-                generateBtn.addEventListener('click', () => handleGenerateFill(generateBtn));
+                generateBtn.addEventListener('click', () => openAutofillInstructionsModal(generateBtn));
+            }
+
+            if (autofillInstructionsCancelBtn) {
+                autofillInstructionsCancelBtn.addEventListener('click', () => closeAutofillInstructionsModal());
+            }
+            if (autofillInstructionsCloseBtn) {
+                autofillInstructionsCloseBtn.addEventListener('click', () => closeAutofillInstructionsModal());
+            }
+            if (autofillInstructionsConfirmBtn) {
+                autofillInstructionsConfirmBtn.addEventListener('click', () => {
+                    const instructions = autofillInstructionsInput?.value?.trim() || '';
+                    const targetButton = pendingAutofillButton || generateBtn;
+                    closeAutofillInstructionsModal();
+                    if (targetButton) {
+                        handleGenerateFill(targetButton, instructions);
+                    }
+                });
             }
 
             // Save/Load buttons removed; auto behaviors implemented
         }
 
-        async function handleGenerateFill(buttonEl) {
+        async function handleGenerateFill(buttonEl, instructions = '') {
             if (!buttonEl || buttonEl.disabled) {
                 return;
             }
@@ -687,6 +771,7 @@
             buttonEl.textContent = '✨ Generating...';
 
             try {
+                const instructionsText = typeof instructions === 'string' ? instructions.trim() : '';
                 const form = document.getElementById('settingForm');
                 const formData = new FormData(form);
                 const settingPayload = Object.fromEntries(formData.entries());
@@ -706,7 +791,7 @@
                 const response = await fetch('/api/settings/fill-missing', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ setting: settingPayload })
+                    body: JSON.stringify({ setting: settingPayload, instructions: instructionsText })
                 });
 
                 const data = await response.json();

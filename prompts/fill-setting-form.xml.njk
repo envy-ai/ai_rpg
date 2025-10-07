@@ -33,16 +33,19 @@ Here is the XML structure representing the game setting:
   <defaultStartingCurrency>{{ setting.defaultStartingCurrency }}</defaultStartingCurrency>
   <defaultNumSkills>{{ setting.defaultNumSkills }}</defaultNumSkills>
   <defaultExistingSkills>
+    <!-- A list of skills that the player starts with. These should be appropriate to the setting and the player's starting class and background. Names only, inside <skill></skill> tags-->
 {% for skill in setting.defaultExistingSkills %}
     <skill>{{ skill }}</skill>
 {% endfor %}
   </defaultExistingSkills>
   <availableClasses>
+    <!-- A list of classes that the player can choose from. These should be appropriate to the setting and the player's background. Names only, inside <class></class> tags-->
 {% for cls in setting.availableClasses %}
     <class>{{ cls }}</class>
 {% endfor %}
   </availableClasses>
   <availableRaces>
+    <!-- A list of races that the player can choose from. These should be appropriate to the setting and the player's background. Names only, inside <race></race> tags-->
 {% for race in setting.availableRaces %}
     <race>{{ race }}</race>
 {% endfor %}
@@ -57,5 +60,8 @@ When populating currencyValueNotes, describe the relative value of the currency 
 [value]: [item]
 [value]: [item]
 ...
+
+{% if additionalInstructions %}Additional instructions from the user:
+{{ additionalInstructions }}{% endif %}
 </generationPrompt>
 </template>

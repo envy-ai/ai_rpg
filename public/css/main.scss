@@ -971,9 +971,41 @@ p:not(:last-child) {
   }
 }
 
+.exit-edit-button,
 .exit-delete-button {
   position: absolute;
   top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, background 0.18s ease, border 0.18s ease,
+    color 0.18s ease;
+}
+
+.exit-edit-button {
+  right: 36px;
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  color: #bfdbfe;
+
+  &:hover,
+  &:focus {
+    background: rgba(59, 130, 246, 0.35);
+    border-color: rgba(191, 219, 254, 0.65);
+    color: #e0f2fe;
+    outline: none;
+  }
+}
+
+.exit-delete-button {
   right: 5px;
   width: 26px;
   height: 26px;
@@ -982,15 +1014,8 @@ p:not(:last-child) {
   align-items: center;
   justify-content: center;
   background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(252, 165, 165, 0.4);
-  border-radius: 6px;
   color: #fecaca;
-  font-size: 0.8rem;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s ease, background 0.18s ease, border 0.18s ease,
-    color 0.18s ease;
+  border: 1px solid rgba(252, 165, 165, 0.4);
 
   &:hover,
   &:focus {
@@ -1001,7 +1026,9 @@ p:not(:last-child) {
   }
 }
 
+.exit-item:hover .exit-edit-button,
 .exit-item:hover .exit-delete-button,
+.exit-edit-button:focus,
 .exit-delete-button:focus {
   opacity: 1;
   pointer-events: auto;
@@ -3201,6 +3228,21 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.modal__footer .button-group {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .npc-edit-grid {
