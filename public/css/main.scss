@@ -1425,6 +1425,12 @@ p:not(:last-child) {
   max-width: 120px;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease;
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.35);
+  z-index: 0;
+}
+
+.location-entity-card.context-menu-open,
+.inventory-card.context-menu-open {
+  z-index: 60;
 }
 
 .location-entity-card:is(:hover, :focus-within),
@@ -3038,6 +3044,11 @@ p:not(:last-child) {
 
 .location-image-wrapper {
   position: relative;
+  z-index: 0;
+
+  &.context-menu-open {
+    z-index: 60;
+  }
 }
 
 .npc-card-menu-button,
@@ -3089,7 +3100,7 @@ p:not(:last-child) {
   pointer-events: none;
   transform: translateY(-6px);
   transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 5;
+  z-index: 80;
 }
 
 .npc-card-menu.is-open,

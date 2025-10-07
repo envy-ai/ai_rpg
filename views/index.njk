@@ -2447,7 +2447,7 @@
             return request;
         }
 
-        const thingMenuState = { openMenu: null, trigger: null };
+        const thingMenuState = { openMenu: null, trigger: null, card: null };
         let thingMenuListenersAttached = false;
 
         function attachThingMenuListeners() {
@@ -2482,8 +2482,12 @@
             if (thingMenuState.trigger) {
                 thingMenuState.trigger.setAttribute('aria-expanded', 'false');
             }
+            if (thingMenuState.card) {
+                thingMenuState.card.classList.remove('context-menu-open');
+            }
             thingMenuState.openMenu = null;
             thingMenuState.trigger = null;
+            thingMenuState.card = null;
         }
 
         function updateLocationThingReference(thingId, updater) {
@@ -3143,6 +3147,8 @@
                     button.setAttribute('aria-expanded', 'true');
                     thingMenuState.openMenu = menu;
                     thingMenuState.trigger = button;
+                    thingMenuState.card = card;
+                    card.classList.add('context-menu-open');
                 }
             });
 
@@ -3961,6 +3967,9 @@
             locationImageMenu.classList.add('is-open');
             locationImageMenuButton.setAttribute('aria-expanded', 'true');
             locationImageMenuOpen = true;
+            if (locationImageWrapper) {
+                locationImageWrapper.classList.add('context-menu-open');
+            }
 
             const firstItem = locationImageMenu.querySelector('.location-image-menu-item');
             if (firstItem) {
@@ -3984,6 +3993,9 @@
             locationImageMenu.classList.remove('is-open');
             locationImageMenuButton.setAttribute('aria-expanded', 'false');
             locationImageMenuOpen = false;
+            if (locationImageWrapper) {
+                locationImageWrapper.classList.remove('context-menu-open');
+            }
 
             requestAnimationFrame(() => {
                 if (document.activeElement && locationImageMenu?.contains(document.activeElement)) {
@@ -9256,7 +9268,7 @@
             const locationItems = document.getElementById('locationItems');
             const npcDataCache = new Map();
             window.currentNpcData = npcDataCache;
-            const npcMenuState = { openMenu: null, trigger: null };
+            const npcMenuState = { openMenu: null, trigger: null, card: null };
 
             function closeNpcContextMenu() {
                 if (npcMenuState.openMenu) {
@@ -9265,8 +9277,12 @@
                 if (npcMenuState.trigger) {
                     npcMenuState.trigger.setAttribute('aria-expanded', 'false');
                 }
+                if (npcMenuState.card) {
+                    npcMenuState.card.classList.remove('context-menu-open');
+                }
                 npcMenuState.openMenu = null;
                 npcMenuState.trigger = null;
+                npcMenuState.card = null;
                 closeThingContextMenu();
             }
 
@@ -9369,6 +9385,8 @@
                         button.setAttribute('aria-expanded', 'true');
                         npcMenuState.openMenu = menu;
                         npcMenuState.trigger = button;
+                        npcMenuState.card = card;
+                        card.classList.add('context-menu-open');
                     }
                 });
 

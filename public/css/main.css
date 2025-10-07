@@ -953,9 +953,7 @@ p:not(:last-child) {
   border: 1px solid rgba(147, 197, 253, 0.45);
   color: #bfdbfe;
 }
-
-.exit-edit-button:hover,
-.exit-edit-button:focus {
+.exit-edit-button:hover, .exit-edit-button:focus {
   background: rgba(59, 130, 246, 0.35);
   border-color: rgba(191, 219, 254, 0.65);
   color: #e0f2fe;
@@ -971,8 +969,8 @@ p:not(:last-child) {
   align-items: center;
   justify-content: center;
   background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(252, 165, 165, 0.4);
   color: #fecaca;
+  border: 1px solid rgba(252, 165, 165, 0.4);
 }
 .exit-delete-button:hover, .exit-delete-button:focus {
   background: rgba(220, 38, 38, 0.35);
@@ -1370,6 +1368,12 @@ p:not(:last-child) {
   max-width: 120px;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease;
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.35);
+  z-index: 0;
+}
+
+.location-entity-card.context-menu-open,
+.inventory-card.context-menu-open {
+  z-index: 60;
 }
 
 .location-entity-card:is(:hover, :focus-within),
@@ -2892,6 +2896,10 @@ p:not(:last-child) {
 
 .location-image-wrapper {
   position: relative;
+  z-index: 0;
+}
+.location-image-wrapper.context-menu-open {
+  z-index: 60;
 }
 
 .npc-card-menu-button,
@@ -2943,7 +2951,7 @@ p:not(:last-child) {
   pointer-events: none;
   transform: translateY(-6px);
   transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 5;
+  z-index: 80;
 }
 
 .npc-card-menu.is-open,
