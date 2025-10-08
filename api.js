@@ -888,13 +888,41 @@ module.exports = function registerApiRoutes(scope) {
                             break;
                         case 'heal_recover':
                             entries.forEach(entry => {
+                                const recipient = safeSummaryName(entry?.recipient || entry?.character);
+                                if (!recipient) {
+                                    return;
+                                }
+
                                 const healer = entry?.healer ? safeSummaryName(entry.healer) : null;
-                                const recipient = safeSummaryName(entry?.recipient);
-                                const effect = entry?.effect && String(entry.effect).trim();
-                                const detail = effect ? ` (${effect})` : '';
-                                add('💖', healer
-                                    ? `${healer} healed ${recipient}${detail}.`
-                                    : `${recipient} recovered${detail}.`);
+                                const rawAmount = Number(entry?.amountHealed);
+                                const amount = Number.isFinite(rawAmount) ? Math.max(0, Math.round(rawAmount)) : null;
+                                const reasonText = entry?.reason ? safeSummaryItem(entry.reason, '') : '';
+                                const amountText = amount ? `${amount} hit point${amount === 1 ? '' : 's'}` : null;
+
+                                let summary = '';
+                                if (healer && healer !== recipient) {
+                                    summary = `${healer} healed ${recipient}`;
+                                    if (amountText) {
+                                        summary += ` for ${amountText}`;
+                                    }
+                                } else {
+                                    summary = `${recipient} healed`;
+                                    if (amountText) {
+                                        summary += ` ${amountText}`;
+                                    }
+                                }
+
+                                const supplemental = reasonText && reasonText !== summary ? reasonText : '';
+                                if (supplemental) {
+                                    summary += ` (${supplemental})`;
+                                }
+
+                                summary = summary.replace(/\s+\.\.\.$/, '').replace(/\s+$/, '');
+                                if (!summary.endsWith('.')) {
+                                    summary += '.';
+                                }
+
+                                add('💖', summary);
                             });
                             break;
                         case 'item_appear':

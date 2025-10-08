@@ -1715,15 +1715,39 @@ class AIRPGChat {
             },
             heal_recover: (entries) => {
                 entries.forEach((entry) => {
-                    const healer = entry?.healer ? safeName(entry.healer) : null;
-                    const recipient = safeName(entry?.recipient);
-                    const effect = entry?.effect && String(entry.effect).trim();
-                    const detail = effect ? ` (${effect})` : '';
-                    if (healer) {
-                        this.addEventSummary('💖', `${healer} healed ${recipient}${detail}.`);
-                    } else {
-                        this.addEventSummary('💖', `${recipient} recovered${detail}.`);
+                    const recipient = safeName(entry?.recipient || entry?.character);
+                    if (!recipient) {
+                        return;
                     }
+
+                    const healer = entry?.healer ? safeName(entry.healer) : null;
+                    const rawAmount = Number(entry?.amountHealed);
+                    const amount = Number.isFinite(rawAmount) ? Math.max(0, Math.round(rawAmount)) : null;
+                    const reasonText = entry?.reason ? safeItem(entry.reason, '') : '';
+                    const amountText = amount ? `${amount} hit point${amount === 1 ? '' : 's'}` : null;
+
+                    let summary;
+                    if (healer && healer !== recipient) {
+                        summary = `${healer} healed ${recipient}`;
+                        if (amountText) {
+                            summary += ` for ${amountText}`;
+                        }
+                    } else {
+                        summary = `${recipient} healed`;
+                        if (amountText) {
+                            summary += ` ${amountText}`;
+                        }
+                    }
+
+                    if (reasonText) {
+                        summary += ` (${reasonText})`;
+                    }
+
+                    if (!summary.endsWith('.')) {
+                        summary += '.';
+                    }
+
+                    this.addEventSummary('💖', summary);
                 });
             },
             item_appear: (entries) => {

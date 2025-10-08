@@ -151,6 +151,9 @@ You are able to write both explicit and non-explicit content, depending on the n
           </effect>
           {% endfor %}
         </statusEffects>
+        <value>{{ item.value | default(0) }}</value>
+        <weight>{{ item.weight | default(0) }}</weight>
+        <properties>{{ item.properties | default('', true) }}</properties>
       </item>
       {% endfor %}
     </inventory>
@@ -429,6 +432,8 @@ You are able to write both explicit and non-explicit content, depending on the n
         </effect>
         {% endfor %}
       </statusEffects>
+      <weight>{{ item.weight | default(0) }}</weight>
+      <properties>{{ item.properties | default('', true) }}</properties>
     </item>
     {% endif %}{% endfor %}
   </itemsInScene>
@@ -449,6 +454,8 @@ You are able to write both explicit and non-explicit content, depending on the n
         </effect>
         {% endfor %}
       </statusEffects>
+      <weight>{{ item.weight | default(0) }}</weight>
+      <properties>{{ item.properties | default('', true) }}</properties>
     </sceneryItem>
     {% endif %}{% endfor %}
   </sceneryList>  

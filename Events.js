@@ -49,11 +49,31 @@ class Events {
                 return { character, item };
             }).filter(Boolean),
             heal_recover: raw => this.splitVerticalBarEntries(raw).map(entry => {
-                const [healer, recipient, effect] = this.extractArrowParts(entry, 3);
-                if (!recipient) {
+                const parts = this.extractArrowParts(entry, 3);
+                if (!parts.length) {
                     return null;
                 }
-                return { healer, recipient, effect };
+                const [firstPart, secondPart, thirdPart] = parts;
+                const character = firstPart ? firstPart.trim() : '';
+                if (!character) {
+                    return null;
+                }
+
+                const normalizedMagnitude = secondPart ? secondPart.trim().toLowerCase() : '';
+                const reason = thirdPart ? thirdPart.trim() : null;
+                if (['small', 'medium', 'large', 'all', 'al'].includes(normalizedMagnitude)) {
+                    return {
+                        character,
+                        magnitude: normalizedMagnitude,
+                        reason
+                    };
+                }
+
+                return {
+                    healer: character,
+                    recipient: secondPart ? secondPart.trim() : '',
+                    effect: thirdPart ? thirdPart.trim() : ''
+                };
             }).filter(Boolean),
             item_appear: raw => this.splitVerticalBarEntries(raw),
             alter_location: raw => this.splitVerticalBarEntries(raw).map(entry => {
@@ -1404,21 +1424,113 @@ class Events {
         if (!Array.isArray(entries) || !entries.length) {
             return;
         }
+
         const { findActorByName } = this.deps;
-        for (const { healer, recipient, effect } of entries) {
-            if (!recipient) continue;
-            const target = findActorByName(recipient);
-            if (!target) {
+        const magnitudePercentages = new Map([
+            ['small', 0.20],
+            ['medium', 0.45],
+            ['large', 0.70],
+            ['all', 1],
+            ['al', 1]
+        ]);
+
+        for (const entry of entries) {
+            if (!entry) {
                 continue;
             }
-            const amount = this.extractNumericValue(effect);
-            if (typeof target.modifyHealth === 'function') {
-                const healAmount = amount ? Math.abs(amount) : 5;
-                target.modifyHealth(healAmount, healer ? `Healed by ${healer}` : 'Healed');
+
+            const recipientName = (entry.character || entry.recipient || '').trim();
+            if (!recipientName) {
+                continue;
             }
-            if (typeof target.addStatusEffect === 'function' && effect) {
-                target.addStatusEffect({ description: `Bolstered: ${effect}`, duration: this.DEFAULT_STATUS_DURATION });
+
+            const target = findActorByName(recipientName);
+            if (!target || typeof target.modifyHealth !== 'function') {
+                continue;
             }
+
+            const healerName = entry.healer ? String(entry.healer).trim() : '';
+            const magnitudeLabel = entry.magnitude ? String(entry.magnitude).trim().toLowerCase() : '';
+            const rawReason = entry.reason ? String(entry.reason).trim() : (entry.effect ? String(entry.effect).trim() : '');
+            const reason = rawReason && rawReason.toLowerCase() !== 'n/a' ? rawReason : '';
+            const effectText = entry.effect ? String(entry.effect).trim() : '';
+
+            const maxHealth = Number(target?.maxHealth);
+            const currentHealth = Number(target?.health);
+            let healAmount = null;
+
+            if (magnitudeLabel && magnitudePercentages.has(magnitudeLabel) && Number.isFinite(maxHealth)) {
+                const percent = magnitudePercentages.get(magnitudeLabel);
+                if (percent >= 1 && Number.isFinite(currentHealth)) {
+                    healAmount = Math.max(0, Math.round(maxHealth - currentHealth));
+                } else {
+                    healAmount = Math.round(maxHealth * percent);
+                }
+            }
+
+            if (!healAmount && effectText) {
+                const numeric = this.extractNumericValue(effectText);
+                if (Number.isFinite(numeric)) {
+                    healAmount = Math.abs(Math.round(numeric));
+                }
+            }
+
+            if (!healAmount) {
+                if (Number.isFinite(maxHealth)) {
+                    healAmount = Math.max(1, Math.round(maxHealth * 0.2));
+                } else {
+                    healAmount = 5;
+                }
+            }
+
+            if (!Number.isFinite(healAmount) || healAmount <= 0) {
+                continue;
+            }
+
+            const magnitudeTitle = magnitudeLabel
+                ? magnitudeLabel.charAt(0).toUpperCase() + magnitudeLabel.slice(1)
+                : '';
+
+            const reasonParts = [];
+            if (magnitudeTitle) {
+                reasonParts.push(`${magnitudeTitle} heal`);
+            }
+            if (reason) {
+                reasonParts.push(reason);
+            } else if (healerName) {
+                reasonParts.push(`by ${healerName}`);
+            }
+
+            const modifyReason = reasonParts.length
+                ? reasonParts.join(' - ')
+                : (healerName ? `Healed by ${healerName}` : 'Healed');
+
+            const result = target.modifyHealth(healAmount, modifyReason);
+
+            if (result && typeof target.addStatusEffect === 'function') {
+                if (reason) {
+                    target.addStatusEffect({ description: `Recovering: ${reason}`, duration: this.DEFAULT_STATUS_DURATION });
+                } else if (magnitudeTitle) {
+                    target.addStatusEffect({ description: `Recovered (${magnitudeTitle})`, duration: this.DEFAULT_STATUS_DURATION });
+                }
+            }
+
+            const healedAmount = Number.isFinite(result?.change) ? result.change : healAmount;
+            entry.recipient = recipientName;
+            if (healerName) {
+                entry.healer = healerName;
+            }
+            if (magnitudeTitle) {
+                entry.magnitude = magnitudeLabel;
+            }
+            if (reason) {
+                entry.reason = reason;
+            }
+            entry.amountHealed = healedAmount;
+            if (!entry.effect && effectText) {
+                entry.effect = effectText;
+            }
+
         }
     }
 

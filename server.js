@@ -2003,7 +2003,13 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             statusEffects,
             equippedSlot: equipped,
             isScenery,
-            thingType: normalizedThingType || (isScenery ? 'scenery' : null)
+            thingType: normalizedThingType || (isScenery ? 'scenery' : null),
+            rarity: item.rarity || null,
+            attributeBonuses: Array.isArray(item.attributeBonuses) ? item.attributeBonuses : [],
+            causeStatusEffect: item.causeStatusEffect || null,
+            value: item.metadata.value,
+            weight: item.metadata.weight,
+            properties: item.metadata.properties
         };
     };
 

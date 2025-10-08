@@ -19,3 +19,9 @@ The player notices an exit they hadn't seen before.
 The player finds a valuable item that's not already listed in the scene.
 A harmless random event happens, at the AI GM's discretion.
 Someone arrives and tells everyone about something important or interesting that just happened.
+There is an unconscious NPC, potentially seriously injured.
+An injured or other wise endangered NPC calls out for help.
+An NPC offers a really good deal on a high quality item.
+An NPC offers a really good deal on a high quality item that turns out to be junk.
+An NPC offers to buy an item in the player's inventory for more than it's worth.
+An NPC gives the player a fetch quest and offers a nice reward.
