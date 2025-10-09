@@ -15,9 +15,9 @@ const EVENT_PROMPT_ORDER = [
     { key: 'consume_item' },
     { key: 'transfer_item' },
     { key: 'harvest_gather' },
+    { key: 'item_appear' },
     { key: 'pick_up_item' },
     { key: 'drop_item' },
-    { key: 'item_appear' },
     { key: 'scenery_appear' },
     { key: 'harvestable_resource_appear' },
     { key: 'alter_npc' },
@@ -171,6 +171,31 @@ class Events {
             }
         }
 
+        const altered = parsedEntries.alter_item;
+        if (Array.isArray(altered)) {
+            for (const entry of altered) {
+                const originalName = entry?.from || entry?.originalName;
+                const newName = entry?.to || entry?.newName;
+
+                if (originalName) {
+                    this.alteredItems.add(originalName);
+                }
+                if (newName) {
+                    this.alteredItems.add(newName);
+                }
+
+                if (!entry?.from && originalName) {
+                    entry.from = originalName;
+                }
+                if (!entry?.to && newName) {
+                    entry.to = newName;
+                }
+                if (!entry?.description && entry?.changeDescription) {
+                    entry.description = entry.changeDescription;
+                }
+            }
+        }
+
         const consumed = parsedEntries.consume_item;
         if (Array.isArray(consumed)) {
             for (const entry of consumed) {
@@ -179,18 +204,6 @@ class Events {
                     continue;
                 }
                 this.destroyedItems.add(itemName);
-            }
-        }
-
-        const altered = parsedEntries.alter_item;
-        if (Array.isArray(altered)) {
-            for (const entry of altered) {
-                if (entry?.from) {
-                    this.alteredItems.add(entry.from);
-                }
-                if (entry?.to) {
-                    this.alteredItems.add(entry.to);
-                }
             }
         }
     }
@@ -515,10 +528,10 @@ class Events {
             'consume_item',
             'alter_item',
             'transfer_item',
+            'item_appear',
             'harvest_gather',
             'pick_up_item',
             'drop_item',
-            'item_appear',
             'scenery_appear',
             'harvestable_resource_appear',
             'alter_npc',
@@ -626,15 +639,34 @@ class Events {
                 return { item: entry.trim() };
             }).filter(Boolean),
             alter_item: raw => splitPipeList(raw).map(entry => {
-                const [from, to, description] = splitArrowParts(entry, 3);
-                if (!from && !to) {
+                const parts = splitArrowParts(entry, 3);
+                if (!parts.length) {
                     return null;
                 }
-                return {
-                    from: from ? from.trim() : null,
-                    to: to ? to.trim() : null,
-                    description: description ? description.trim() : null
+
+                const originalName = parts[0] ? parts[0].trim() : '';
+                const newNameInput = parts.length > 1 ? parts[1].trim() : '';
+                const description = parts.length > 2 ? parts[2].trim() : '';
+
+                if (!originalName && !newNameInput) {
+                    return null;
+                }
+
+                const normalized = {
+                    originalName: originalName || null,
+                    newName: newNameInput || null,
+                    changeDescription: description || null
                 };
+
+                if (!normalized.newName && normalized.originalName) {
+                    normalized.newName = normalized.originalName;
+                }
+
+                normalized.from = normalized.originalName;
+                normalized.to = normalized.newName;
+                normalized.description = normalized.changeDescription;
+
+                return normalized;
             }).filter(Boolean),
             transfer_item: raw => splitPipeList(raw).map(entry => {
                 const [giver, item, receiver] = splitArrowParts(entry, 3);
@@ -1023,26 +1055,55 @@ class Events {
                     throw new Error('alter_item handler requires findThingByName dependency.');
                 }
                 for (const entry of entries) {
-                    const targetName = entry.to || entry.from;
-                    if (!targetName) {
+                    if (!entry) {
                         continue;
                     }
-                    const thing = findThingByName(targetName);
+
+                    const originalName = entry.originalName || entry.from || null;
+                    const newName = entry.newName || entry.to || null;
+                    const changeDescription = entry.changeDescription || entry.description || null;
+
+                    if (originalName && !entry.from) {
+                        entry.from = originalName;
+                    }
+                    if (newName && !entry.to) {
+                        entry.to = newName;
+                    }
+                    if (changeDescription && !entry.description) {
+                        entry.description = changeDescription;
+                    }
+                    if (!originalName && !newName) {
+                        continue;
+                    }
+
+                    const lookupCandidates = [originalName, newName].filter(candidate => typeof candidate === 'string' && candidate.trim());
+                    let thing = null;
+                    for (const candidate of lookupCandidates) {
+                        thing = findThingByName(candidate);
+                        if (thing) {
+                            break;
+                        }
+                    }
+
                     if (!thing) {
                         continue;
                     }
-                    if (entry.description && typeof thing.addStatusEffect === 'function') {
-                        thing.addStatusEffect(makeStatusEffect(entry.description, null));
+
+                    if (changeDescription && typeof thing.addStatusEffect === 'function') {
+                        thing.addStatusEffect(makeStatusEffect(changeDescription, null));
                     }
-                    if (entry.to && entry.from && entry.to !== entry.from && typeof thing.rename === 'function') {
-                        thing.rename(entry.to);
+                    if (originalName && newName && newName !== originalName && typeof thing.rename === 'function') {
+                        thing.rename(newName);
                     }
-                    if (entry.from) {
-                        this.alteredItems.add(entry.from);
+                    if (originalName) {
+                        this.alteredItems.add(originalName);
                     }
-                    if (entry.to) {
-                        this.alteredItems.add(entry.to);
+                    if (newName) {
+                        this.alteredItems.add(newName);
                     }
+                    entry.originalName = originalName || null;
+                    entry.newName = newName || null;
+                    entry.changeDescription = changeDescription || null;
                 }
             },
             transfer_item: function (entries = [], context = {}) {
@@ -1076,7 +1137,7 @@ class Events {
                     }
                 }
             },
-            harvest_gather: function (entries = [], context = {}) {
+            harvest_gather: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
@@ -1084,16 +1145,25 @@ class Events {
                 if (typeof generateItemsByNames !== 'function') {
                     throw new Error('harvest_gather handler requires generateItemsByNames dependency.');
                 }
+
+                const generationTasks = [];
                 for (const entry of entries) {
                     const actor = entry.harvester ? findActorByName?.(entry.harvester) : null;
-                    if (actor && typeof actor.addInventoryItem === 'function') {
-                        generateItemsByNames({ itemNames: [entry.item], owner: actor }).catch(error => {
-                            console.warn('Failed to generate harvested item:', error.message);
-                        });
+                    if (actor && typeof actor.addInventoryItem === 'function' && entry.item) {
+                        generationTasks.push(
+                            generateItemsByNames({ itemNames: [entry.item], owner: actor }).catch(error => {
+                                console.warn('Failed to generate harvested item:', error.message);
+                                return [];
+                            })
+                        );
                     }
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);
                     }
+                }
+
+                if (generationTasks.length) {
+                    await Promise.all(generationTasks);
                 }
             },
             pick_up_item: function (entries = [], context = {}) {
@@ -1136,33 +1206,54 @@ class Events {
                     }
                 }
             },
-            item_appear: function (items = [], context = {}) {
-                this._generateItemsIntoWorld(items, context.location);
-                if (Array.isArray(items)) {
-                    for (const item of items) {
-                        if (typeof item === 'string' && item.trim()) {
-                            this.newItems.add(item);
-                        }
+            item_appear: async function (items = [], context = {}) {
+                if (!Array.isArray(items) || !items.length) {
+                    return;
+                }
+
+                try {
+                    await this._generateItemsIntoWorld(items, context.location);
+                } catch (error) {
+                    console.warn('Failed to generate items:', error.message);
+                }
+
+                for (const item of items) {
+                    if (typeof item === 'string' && item.trim()) {
+                        this.newItems.add(item);
                     }
                 }
             },
-            scenery_appear: function (items = [], context = {}) {
-                this._generateItemsIntoWorld(items, context.location, { treatAsScenery: true });
-                if (Array.isArray(items)) {
-                    for (const item of items) {
-                        if (typeof item === 'string' && item.trim()) {
-                            this.newItems.add(item);
-                        }
+            scenery_appear: async function (items = [], context = {}) {
+                if (!Array.isArray(items) || !items.length) {
+                    return;
+                }
+
+                try {
+                    await this._generateItemsIntoWorld(items, context.location, { treatAsScenery: true });
+                } catch (error) {
+                    console.warn('Failed to generate scenery items:', error.message);
+                }
+
+                for (const item of items) {
+                    if (typeof item === 'string' && item.trim()) {
+                        this.newItems.add(item);
                     }
                 }
             },
-            harvestable_resource_appear: function (items = [], context = {}) {
-                this._generateItemsIntoWorld(items, context.location, { treatAsResource: true });
-                if (Array.isArray(items)) {
-                    for (const item of items) {
-                        if (typeof item === 'string' && item.trim()) {
-                            this.newItems.add(item);
-                        }
+            harvestable_resource_appear: async function (items = [], context = {}) {
+                if (!Array.isArray(items) || !items.length) {
+                    return;
+                }
+
+                try {
+                    await this._generateItemsIntoWorld(items, context.location, { treatAsResource: true });
+                } catch (error) {
+                    console.warn('Failed to generate harvestable resources:', error.message);
+                }
+
+                for (const item of items) {
+                    if (typeof item === 'string' && item.trim()) {
+                        this.newItems.add(item);
                     }
                 }
             },
@@ -1424,17 +1515,16 @@ class Events {
 
     static _generateItemsIntoWorld(names = [], location = null, options = {}) {
         if (!Array.isArray(names) || !names.length) {
-            return;
+            return Promise.resolve([]);
         }
+
         const { generateItemsByNames } = this._deps;
         if (typeof generateItemsByNames !== 'function') {
-            console.warn('generateItemsByNames dependency missing; cannot spawn items.');
-            return;
+            return Promise.reject(new Error('generateItemsByNames dependency is not configured.'));
         }
+
         const locationCandidate = this.resolveLocationCandidate(location) || location;
-        generateItemsByNames({ itemNames: names, location: locationCandidate, options }).catch(error => {
-            console.warn('Failed to generate items:', error.message);
-        });
+        return generateItemsByNames({ itemNames: names, location: locationCandidate, options });
     }
 
     static _removeItemFromInventories(thing) {

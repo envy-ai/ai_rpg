@@ -1709,11 +1709,11 @@ class AIRPGChat {
                         if (consumer) {
                             this.addEventSummary('🧪', `${consumer} consumed ${itemName}.`);
                         } else {
-                            this.addEventSummary('🧪', `${itemName} was consumed.`);
+                            this.addEventSummary('🧪', `${itemName} was consumed or destroyed.`);
                         }
                     } else {
                         const itemName = safeItem(entry, 'An item');
-                        this.addEventSummary('🧪', `${itemName} was consumed.`);
+                        this.addEventSummary('🧪', `${itemName} was consumed or destroyed.`);
                     }
                 });
             },
@@ -1866,11 +1866,14 @@ class AIRPGChat {
                     if (!entry) {
                         return;
                     }
-                    const original = safeItem(entry.originalName || entry.newName || 'an item');
-                    const renamed = entry.newName && entry.originalName && entry.newName !== entry.originalName
-                        ? safeItem(entry.newName)
+                    const originalName = entry.originalName || entry.from || null;
+                    const newName = entry.newName || entry.to || null;
+                    const changeDescriptionRaw = entry.changeDescription || entry.description || '';
+                    const original = safeItem(originalName || newName || 'an item');
+                    const renamed = newName && originalName && newName !== originalName
+                        ? safeItem(newName)
                         : null;
-                    const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                    const changeDescription = changeDescriptionRaw ? String(changeDescriptionRaw).trim() : '';
                     let text;
                     if (renamed) {
                         text = `${original} upgraded to ${renamed}`;

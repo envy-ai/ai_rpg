@@ -992,11 +992,14 @@ module.exports = function registerApiRoutes(scope) {
                                 if (!entry) {
                                     return;
                                 }
-                                const original = safeSummaryItem(entry.originalName || entry.newName || 'an item');
-                                const renamed = entry.newName && entry.originalName && entry.newName !== entry.originalName
-                                    ? safeSummaryItem(entry.newName)
+                                const originalName = entry.originalName || entry.from || null;
+                                const newName = entry.newName || entry.to || null;
+                                const description = entry.changeDescription || entry.description || '';
+                                const original = safeSummaryItem(originalName || newName || 'an item');
+                                const renamed = newName && originalName && newName !== originalName
+                                    ? safeSummaryItem(newName)
                                     : null;
-                                const changeDescription = entry.changeDescription ? String(entry.changeDescription).trim() : '';
+                                const changeDescription = description ? String(description).trim() : '';
                                 let text;
                                 if (renamed) {
                                     text = `${original} changed to ${renamed}`;
