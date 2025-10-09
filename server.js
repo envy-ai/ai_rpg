@@ -122,6 +122,32 @@ const JOB_STATUS = {
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const entityImageJobs = new Map(); // Track active jobs per entity key
 
+axios.interceptors.request.use(request_config => {
+    if (!config?.ai?.preventReasoning) {
+        return request_config;
+    }
+
+    try {
+        const isChatRequest =
+            typeof request_config.url === 'string' &&
+            /\/chat\/completions$/.test(request_config.url);
+
+        if (isChatRequest && request_config.data && Array.isArray(request_config.data.messages)) {
+            const cannedAssistant = {
+                role: 'assistant',
+                content: '<think></think>'
+            };
+
+            // Insert the pre-seeded assistant reply before the user turn
+            request_config.data.messages.splice(0, 0, cannedAssistant);
+            // If you prefer it at the very front, use splice(0, 0, cannedAssistant)
+        }
+    } catch (err) {
+        console.warn('Prompt seeding interceptor failed:', err.message);
+    }
+    return request_config;
+});
+
 function getImagePromptTemplateName(kind, fallback) {
     const templates = config?.imagegen?.prompt_generator_templates || {};
     const template = templates[kind];
@@ -8735,6 +8761,10 @@ function parseThingNameRegenResponse(xmlContent) {
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
     if (!Array.isArray(candidateThings) || !candidateThings.length) {
+        return;
+    }
+
+    if (config?.deduplicate_item_names === false) {
         return;
     }
 

@@ -85,6 +85,7 @@ check_move_plausibility: unexplored_locations
 # Mostly to speed up testing and development - prevent certain types of generation
 omit_npc_generation: false
 omit_item_generation: false
+deduplicate_item_names: true
 summaries:
   enabled: true
   summarize_on_load: false

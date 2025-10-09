@@ -16,6 +16,15 @@ body {
   overflow: hidden;
 }
 
+@media (max-width: 768px) {
+  body {
+    min-height: 100vh;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -2285,6 +2294,15 @@ p:not(:last-child) {
 
   .chat-party-grid .location-entity-card {
     flex: 1 1 calc(50% - 10px);
+  }
+
+  .chat-container {
+    max-height: 95vh;
+    overflow: auto;
+  }
+
+  .chat-log {
+    max-height: 48vh;
   }
 }
 

@@ -75,6 +75,7 @@ class Events {
                     effect: thirdPart ? thirdPart.trim() : ''
                 };
             }).filter(Boolean),
+            scenery_appear: raw => this.splitVerticalBarEntries(raw),
             item_appear: raw => this.splitVerticalBarEntries(raw),
             alter_location: raw => this.splitVerticalBarEntries(raw).map(entry => {
                 if (!entry) {
@@ -501,6 +502,7 @@ class Events {
             death_incapacitation: (entries, context) => this.handleDeathEvents(entries, context),
             drop_item: (entries, context) => this.handleDropItemEvents(entries, context),
             heal_recover: (entries, context) => this.handleHealEvents(entries, context),
+            scenery_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
             item_appear: (entries, context) => this.handleItemAppearEvents(entries, context),
             item_to_npc: (entries, context) => this.handleItemToNpcEvents(entries, context),
             alter_location: (entries, context) => {
@@ -4457,11 +4459,12 @@ class Events {
         const omitNpcGeneration = Boolean(config?.omit_npc_generation);
         const omitItemGeneration = Boolean(config?.omit_item_generation);
         const suppressedNpcEvents = omitNpcGeneration ? new Set(['npc_arrival_departure', 'alter_npc']) : null;
-        const suppressedItemEvents = omitItemGeneration ? new Set(['item_appear', 'alter_item']) : null;
+        const suppressedItemEvents = omitItemGeneration ? new Set(['scenery_appear', 'item_appear', 'alter_item']) : null;
         const prioritizedOrder = [
             'new_exit_discovered',
             'move_location',
             'alter_location',
+            'scenery_appear',
             'item_appear',
             'harvest_gather',
             'pick_up_item',

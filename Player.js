@@ -51,6 +51,7 @@ class Player {
     #corpseCountdown;
     #importantMemories = [];
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
+    #lastActionWasTravel = false;
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -1318,6 +1319,25 @@ class Player {
     updatePreviousLocation() {
         this.#previousLocationId = this.#currentLocation;
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    get lastActionWasTravel() {
+        return Boolean(this.#lastActionWasTravel);
+    }
+
+    set lastActionWasTravel(value) {
+        const normalized = Boolean(value);
+        if (this.#lastActionWasTravel !== normalized) {
+            const locationLabel = (() => {
+                try {
+                    return this.location?.name || this.#currentLocation || 'unknown location';
+                } catch (_) {
+                    return this.#currentLocation || 'unknown location';
+                }
+            })();
+            console.log(`🏃 Player ${this.#name || this.#id || 'unknown'} lastActionWasTravel set to ${normalized ? 'true' : 'false'} (location: ${locationLabel})`);
+        }
+        this.#lastActionWasTravel = normalized;
     }
 
     static updatePreviousLocationsForAll() {

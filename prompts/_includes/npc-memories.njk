@@ -99,70 +99,70 @@
   </needBars>
 </currentNpc>
 <recentNpcHistory>
-  {% if historyEntries is defined %}
-    {% set rawHistoryEntries = historyEntries %}
-  {% elif chatHistory is defined %}
-    {% set rawHistoryEntries = chatHistory %}
-  {% elif gameHistoryEntries is defined %}
-    {% set rawHistoryEntries = gameHistoryEntries %}
-  {% else %}
-    {% set rawHistoryEntries = null %}
-  {% endif %}
-  {% if not rawHistoryEntries %}
+  {%- if historyEntries is defined %}
+    {%- set rawHistoryEntries = historyEntries %}
+  {%- elif chatHistory is defined %}
+    {%- set rawHistoryEntries = chatHistory %}
+  {%- elif gameHistoryEntries is defined %}
+    {%- set rawHistoryEntries = gameHistoryEntries %}
+  {%- else %}
+    {%- set rawHistoryEntries = null %}
+  {%- endif %}
+  {%- if not rawHistoryEntries %}
     <error>Missing history entries data for NPC history context.</error>
-  {% elif rawHistoryEntries is string %}
+  {%- elif rawHistoryEntries is string %}
     <error>History entries data is a string; expected an iterable of entries.</error>
-  {% elif not (rawHistoryEntries is iterable) %}
+  {%- elif not (rawHistoryEntries is iterable) %}
     <error>History entries data is not iterable.</error>
-  {% else %}
-    {% set npcNameValue = currentNpc.name | default('') | trim %}
-    {% if not npcNameValue %}
+  {%- else %}
+    {%- set npcNameValue = currentNpc.name | default('') | trim %}
+    {%- if not npcNameValue %}
       <error>currentNpc.name is required to filter history entries.</error>
-    {% else %}
-      {% set normalizedNpcName = npcNameValue | lower %}
-      {% set maxEntries = 10 %}
-      {% set entriesFound = 0 %}
-      {% for entry in rawHistoryEntries | reverse %}
-        {% if entriesFound < maxEntries %}
-          {% if entry %}
-            {% set metadata = entry.metadata if entry.metadata is defined else null %}
-            {% set npcNamesList = metadata.npcNames if metadata and metadata.npcNames is defined else [] %}
-            {% if npcNamesList %}
-              {% set npcFound = false %}
-              {% for npcName in npcNamesList %}
-                {% if not npcFound and npcName %}
-                  {% set normalizedSeen = npcName | trim | lower %}
-                  {% if normalizedSeen == normalizedNpcName %}
-                    {% set npcFound = true %}
-                  {% endif %}
-                {% endif %}
-              {% endfor %}
-              {% if npcFound %}
-                {% set rawText = '' %}
-                {% if entry.content is defined and entry.content %}
-                  {% set rawText = entry.content %}
-                {% elif entry.summary is defined and entry.summary %}
-                  {% set rawText = entry.summary %}
-                {% endif %}
-                {% set trimmedText = rawText | trim %}
-                {% if trimmedText %}
-                  {%- set roleValue = entry.role if entry.role is defined and entry.role else 'system' %}
+    {%- else %}
+      {%- set normalizedNpcName = npcNameValue | lower %}
+      {%- set maxEntries = 10 %}
+      {%- set entriesFound = 0 %}
+      {%- for entry in rawHistoryEntries | reverse -%}
+        {%- if entriesFound < maxEntries -%}
+          {%- if entry -%}
+            {%- set metadata = entry.metadata if entry.metadata is defined else null -%}
+            {%- set npcNamesList = metadata.npcNames if metadata and metadata.npcNames is defined else [] -%}
+            {%- if npcNamesList -%}
+              {%- set npcFound = false -%}
+              {%- for npcName in npcNamesList -%}
+                {%- if not npcFound and npcName -%}
+                  {%- set normalizedSeen = npcName | trim | lower -%}
+                  {%- if normalizedSeen == normalizedNpcName -%}
+                    {%- set npcFound = true -%}
+                  {%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- if npcFound -%}
+                {%- set rawText = '' -%}
+                {%- if entry.content is defined and entry.content -%}
+                  {%- set rawText = entry.content -%}
+                {%- elif entry.summary is defined and entry.summary -%}
+                  {%- set rawText = entry.summary -%}
+                {%- endif -%}
+                {%- set trimmedText = rawText | trim -%}
+                {%- if trimmedText -%}
+                  {%- set roleValue = entry.role if entry.role is defined and entry.role else 'system' -%}
                   <historyEntry>
                     <role>{{ roleValue | trim }}</role>
                     <text>{{ trimmedText | e('xml') }}</text>
                   </historyEntry>
-                  {% set entriesFound = entriesFound + 1 -%}
-                {% endif %}
-              {% endif %}
-            {% endif %}
-          {% endif %}
-        {% endif %}
-      {% endfor %}
-      {% if entriesFound == 0 %}
+                  {%- set entriesFound = entriesFound + 1 -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if entriesFound == 0 -%}
         <info>No recent history entries involving {{ npcNameValue }}.</info>
-      {% endif %}
-    {% endif %}
-  {% endif %}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endif -%}
 </recentNpcHistory>
 
 Consider whether the NPC above would think of any of the above events as an important moment in their life. If so, create a concise memory of the event from the NPC's perspective, in the style of a diary entry or personal note. The memory should be no more than 2 sentences long. If none of the events would be significant enough to remember, return an empty element. Don't return a memory that's very similar to something already listed among their memories. Omit anything that's outside of the recentNpcHistory block. Output in this format:

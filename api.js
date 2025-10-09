@@ -925,6 +925,7 @@ module.exports = function registerApiRoutes(scope) {
                                 add('💖', summary);
                             });
                             break;
+                        case 'scenery_appear':
                         case 'item_appear':
                             (Array.isArray(entries) ? entries : [entries]).forEach(item => {
                                 const itemLabel = safeSummaryItem(item);
@@ -4236,12 +4237,27 @@ module.exports = function registerApiRoutes(scope) {
 
             const initialPlayerLocationId = currentPlayer?.currentLocation || null;
             let locationMemoriesProcessed = false;
+            let currentActionIsTravel = false;
+            let previousActionWasTravel = false;
+
+            if (typeof rawTravelFlag !== 'undefined') {
+                console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
+            }
 
             const processLocationChangeMemoriesIfNeeded = async () => {
                 if (locationMemoriesProcessed) {
                     return;
                 }
                 locationMemoriesProcessed = true;
+
+                previousActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
+                if (currentPlayer) {
+                    console.log(`🧠 Memory check: currentActionIsTravel=${currentActionIsTravel}, previousActionWasTravel=${previousActionWasTravel}`);
+                }
+
+                if (currentActionIsTravel && previousActionWasTravel) {
+                    return;
+                }
 
                 const player = currentPlayer || null;
                 if (!player || !initialPlayerLocationId) {
@@ -4269,6 +4285,12 @@ module.exports = function registerApiRoutes(scope) {
                     await processLocationChangeMemoriesIfNeeded();
                 } catch (error) {
                     console.warn('Failed during post-turn memory update:', error.message || error);
+                }
+
+                if (currentPlayer) {
+                    currentPlayer.lastActionWasTravel = currentActionIsTravel;
+                } else {
+                    console.log("** Warning: currentPlayer is not set when trying to update lastActionWasTravel **");
                 }
 
                 if (statusCode !== 200) {
@@ -4308,15 +4330,25 @@ module.exports = function registerApiRoutes(scope) {
                 const userMessage = messages[messages.length - 1];
                 if (userMessage && userMessage.role === 'user') {
                     const isTravelMessage = rawTravelFlag === true;
-                    if (isTravelMessage && Array.isArray(chatHistory) && chatHistory.length > 0) {
-                        const previousEntry = chatHistory[chatHistory.length - 1];
-                        if (previousEntry && previousEntry.travel === true && previousEntry.role === 'user') {
-                            chatHistory.pop();
-                            if (Array.isArray(newChatEntries) && newChatEntries.length > 0) {
-                                const lastCollectorEntry = newChatEntries[newChatEntries.length - 1];
-                                if (lastCollectorEntry && lastCollectorEntry.id === previousEntry.id) {
-                                    newChatEntries.pop();
-                                }
+                    currentActionIsTravel = isTravelMessage;
+
+                    let priorEntry = null;
+                    if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+                        priorEntry = chatHistory[chatHistory.length - 1];
+                    }
+
+                    const priorWasTravel = Boolean(priorEntry && priorEntry.travel === true && priorEntry.role === 'user');
+                    previousActionWasTravel = isTravelMessage ? priorWasTravel : false;
+                    if (isTravelMessage) {
+                        console.log(`🚶 Player travel action detected. Prior travel? ${priorWasTravel}`);
+                    }
+
+                    if (isTravelMessage && priorWasTravel) {
+                        chatHistory.pop();
+                        if (Array.isArray(newChatEntries) && newChatEntries.length > 0) {
+                            const lastCollectorEntry = newChatEntries[newChatEntries.length - 1];
+                            if (lastCollectorEntry && priorEntry && lastCollectorEntry.id === priorEntry.id) {
+                                newChatEntries.pop();
                             }
                         }
                     }
@@ -4328,6 +4360,9 @@ module.exports = function registerApiRoutes(scope) {
                         travel: isTravelMessage,
                         locationId: playerChatLocationId
                     }, newChatEntries, playerChatLocationId);
+                } else {
+                    currentActionIsTravel = false;
+                    previousActionWasTravel = false;
                 }
 
                 stream.status('player_action:context', 'Preparing game state for action.');
@@ -11535,9 +11570,9 @@ module.exports = function registerApiRoutes(scope) {
                     : null;
                 const locationSegment = sanitizeSegment(
                     currentLocation?.name
-                        || currentLocation?.description
-                        || currentLocationId
-                        || 'Location',
+                    || currentLocation?.description
+                    || currentLocationId
+                    || 'Location',
                     'Location'
                 );
                 const timestampFragment = Date.now().toString(36);

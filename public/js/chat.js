@@ -1672,6 +1672,7 @@ class AIRPGChat {
         };
 
         const locationRefreshEventTypes = new Set([
+            'scenery_appear',
             'item_appear',
             'drop_item',
             'pick_up_item',
@@ -1748,6 +1749,12 @@ class AIRPGChat {
                     }
 
                     this.addEventSummary('💖', summary);
+                });
+            },
+            scenery_appear: (entries) => {
+                entries.forEach((item) => {
+                    const itemName = safeItem(item);
+                    this.addEventSummary('✨', `${itemName} appeared in the scene.`);
                 });
             },
             item_appear: (entries) => {
