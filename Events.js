@@ -1,35 +1,38 @@
+const SanitizedStringSet = require('./SanitizedStringSet.js');
+const Utils = require('./Utils.js');
+
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
 const MAJOR_STATUS_DURATION = 5;
 
 const EVENT_PROMPT_ORDER = [
-    { index: 1, key: 'new_exit_discovered' },
-    { index: 2, key: 'alter_location' },
-    { index: 3, key: 'currency' },
-    { index: 4, key: 'item_to_npc' },
-    { index: 5, key: 'consume_item' },
-    { index: 6, key: 'alter_item' },
-    { index: 7, key: 'transfer_item' },
-    { index: 8, key: 'harvest_gather' },
-    { index: 9, key: 'pick_up_item' },
-    { index: 10, key: 'drop_item' },
-    { index: 11, key: 'item_appear' },
-    { index: 12, key: 'scenery_appear' },
-    { index: 13, key: 'harvestable_resource_appear' },
-    { index: 14, key: 'alter_npc' },
-    { index: 15, key: 'status_effect_change' },
-    { index: 16, key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
-    { index: 17, key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
-    { index: 18, key: 'npc_first_appearance' },
-    { index: 19, key: 'party_change' },
-    { index: 20, key: 'environmental_status_damage' },
-    { index: 21, key: 'heal_recover' },
-    { index: 22, key: 'needbar_change' },
-    { index: 23, key: 'attack_damage' },
-    { index: 24, key: 'death_incapacitation' },
-    { index: 25, key: 'defeated_enemy' },
-    { index: 26, key: 'experience_check' },
-    { index: 27, key: 'move_location' }
+    { key: 'new_exit_discovered' },
+    { key: 'move_location' },
+    { key: 'alter_location' },
+    { key: 'currency' },
+    { key: 'item_to_npc' },
+    { key: 'consume_item' },
+    { key: 'alter_item' },
+    { key: 'transfer_item' },
+    { key: 'harvest_gather' },
+    { key: 'pick_up_item' },
+    { key: 'drop_item' },
+    { key: 'item_appear' },
+    { key: 'scenery_appear' },
+    { key: 'harvestable_resource_appear' },
+    { key: 'alter_npc' },
+    { key: 'status_effect_change' },
+    { key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
+    { key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
+    { key: 'npc_first_appearance' },
+    { key: 'party_change' },
+    { key: 'environmental_status_damage' },
+    { key: 'heal_recover' },
+    { key: 'needbar_change' },
+    { key: 'attack_damage' },
+    { key: 'death_incapacitation' },
+    { key: 'defeated_enemy' },
+    { key: 'experience_check' },
 ];
 
 const NO_EVENT_TOKENS = new Set(['n/a', 'na', 'none', 'nothing']);
@@ -122,6 +125,20 @@ class Events {
     static _aggregators = {};
     static _handlers = {};
     static _baseTimeout = BASE_TIMEOUT_MS;
+
+    static alteredItems = new SanitizedStringSet();
+    static newItems = new SanitizedStringSet();
+    static obtainedItems = new SanitizedStringSet();
+    static destroyedItems = new SanitizedStringSet();
+    static droppedItems = new SanitizedStringSet();
+
+    static alteredCharacters = new SanitizedStringSet();
+    static newCharacters = new SanitizedStringSet();
+    static arrivedCharacters = new SanitizedStringSet();
+    static departedCharacters = new SanitizedStringSet();
+    static defeatedEnemies = new SanitizedStringSet();
+
+    static movedLocations = new SanitizedStringSet();
 
     static initialize(deps = {}) {
         if (!deps) {
@@ -304,8 +321,8 @@ class Events {
         const rawGroups = new Map();
         const parsedGroups = new Map();
 
-        for (const definition of EVENT_PROMPT_ORDER) {
-            const raw = numbered.get(definition.index) || '';
+        EVENT_PROMPT_ORDER.forEach((definition, position) => {
+            const raw = numbered.get(position + 1) || '';
             if (!rawGroups.has(definition.key)) {
                 rawGroups.set(definition.key, []);
                 parsedGroups.set(definition.key, []);
@@ -318,7 +335,7 @@ class Events {
                 ? ensureArray(parsed).map(entry => definition.postProcess(entry))
                 : parsed;
             parsedGroups.get(definition.key).push(value);
-        }
+        });
 
         const rawEntries = {};
         const parsedEntries = {};
@@ -401,30 +418,30 @@ class Events {
 
         const executionOrder = [
             'new_exit_discovered',
-            'move_location',
             'alter_location',
+            'currency',
+            'item_to_npc',
+            'consume_item',
+            'alter_item',
+            'transfer_item',
+            'harvest_gather',
+            'pick_up_item',
+            'drop_item',
             'item_appear',
             'scenery_appear',
             'harvestable_resource_appear',
-            'harvest_gather',
-            'pick_up_item',
-            'transfer_item',
-            'drop_item',
-            'consume_item',
-            'alter_item',
-            'currency',
-            'item_to_npc',
             'alter_npc',
+            'status_effect_change',
             'npc_arrival_departure',
             'party_change',
-            'status_effect_change',
+            'environmental_status_damage',
             'heal_recover',
             'needbar_change',
-            'environmental_status_damage',
             'attack_damage',
             'death_incapacitation',
             'defeated_enemy',
-            'experience_check'
+            'experience_check',
+            'move_location'
         ];
 
         const parsedMap = parsedEvents.parsed;
@@ -501,7 +518,22 @@ class Events {
                     description: description ? description.trim() : null
                 };
             }).filter(Boolean),
-            consume_item: raw => splitPipeList(raw).map(name => name.trim()).filter(Boolean),
+            consume_item: raw => splitPipeList(raw).map(entry => {
+                if (typeof entry !== 'string' || !entry.trim()) {
+                    return null;
+                }
+                const arrowParts = splitArrowParts(entry, 2);
+                if (arrowParts.length === 2) {
+                    const [user, item] = arrowParts;
+                    if (user && item) {
+                        return {
+                            user: user.trim(),
+                            item: item.trim()
+                        };
+                    }
+                }
+                return { item: entry.trim() };
+            }).filter(Boolean),
             alter_item: raw => splitPipeList(raw).map(entry => {
                 const [from, to, description] = splitArrowParts(entry, 3);
                 if (!from && !to) {
@@ -692,7 +724,31 @@ class Events {
                 }
                 return numbers.reduce((total, value) => total + value, 0);
             },
-            consume_item: list => flattenAndFilter(list).map(name => name.trim()).filter(Boolean)
+            consume_item: list => {
+                const entries = flattenAndFilter(list);
+                const normalized = [];
+                for (const entry of entries) {
+                    if (!entry) {
+                        continue;
+                    }
+                    if (typeof entry === 'string') {
+                        const itemName = entry.trim();
+                        if (itemName) {
+                            normalized.push({ item: itemName });
+                        }
+                        continue;
+                    }
+                    if (typeof entry === 'object') {
+                        const itemName = entry.item ? String(entry.item).trim() : '';
+                        if (!itemName) {
+                            continue;
+                        }
+                        const userName = entry.user ? String(entry.user).trim() : '';
+                        normalized.push(userName ? { user: userName, item: itemName } : { item: itemName });
+                    }
+                }
+                return normalized;
+            }
         };
     }
 
@@ -715,6 +771,7 @@ class Events {
                     if (!normalizedName) {
                         continue;
                     }
+                    this.movedLocations.add(normalizedName);
                     if (typeof location.addExit === 'function') {
                         const payload = {
                             name: normalizedName,
@@ -752,6 +809,9 @@ class Events {
                     }
                     if (typeof location.addStatusEffect === 'function') {
                         location.addStatusEffect(makeStatusEffect(entry.description, null));
+                    }
+                    if (entry.name) {
+                        this.movedLocations.add(entry.name);
                     }
                 }
             },
@@ -824,6 +884,13 @@ class Events {
                     }
 
                     this._detachThingFromWorld(item);
+                    if (itemName) {
+                        this.destroyedItems.add(itemName);
+                    }
+                    if (npcName) {
+                        this.newCharacters.add(npcName);
+                        this.arrivedCharacters.add(npcName);
+                    }
                     const npc = await ensureNpcByName(npcName, transformationContext);
                     if (!npc) {
                         throw new Error(`item_to_npc failed to create NPC "${npcName}"`);
@@ -839,13 +906,20 @@ class Events {
                     throw new Error('consume_item handler requires findThingByName dependency.');
                 }
 
-                for (const name of items) {
-                    const item = findThingByName(name);
+                for (const entry of items) {
+                    const itemName = typeof entry === 'string'
+                        ? entry.trim()
+                        : (entry && entry.item ? String(entry.item).trim() : '');
+                    if (!itemName) {
+                        continue;
+                    }
+                    const item = findThingByName(itemName);
                     if (!item) {
                         continue;
                     }
                     this._removeItemFromInventories(item);
                     this._detachThingFromWorld(item);
+                    this.destroyedItems.add(itemName);
                 }
             },
             alter_item: function (entries = [], context = {}) {
@@ -870,6 +944,12 @@ class Events {
                     }
                     if (entry.to && entry.from && entry.to !== entry.from && typeof thing.rename === 'function') {
                         thing.rename(entry.to);
+                    }
+                    if (entry.from) {
+                        this.alteredItems.add(entry.from);
+                    }
+                    if (entry.to) {
+                        this.alteredItems.add(entry.to);
                     }
                 }
             },
@@ -899,6 +979,9 @@ class Events {
                     } else {
                         this._detachThingFromWorld(thing);
                     }
+                    if (entry.item) {
+                        this.obtainedItems.add(entry.item);
+                    }
                 }
             },
             harvest_gather: function (entries = [], context = {}) {
@@ -916,6 +999,9 @@ class Events {
                             console.warn('Failed to generate harvested item:', error.message);
                         });
                     }
+                    if (entry.item) {
+                        this.obtainedItems.add(entry.item);
+                    }
                 }
             },
             pick_up_item: function (entries = [], context = {}) {
@@ -932,6 +1018,9 @@ class Events {
                     this._detachThingFromKnownLocation(thing);
                     actor.addInventoryItem(thing);
                     thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                    if (entry.item) {
+                        this.obtainedItems.add(entry.item);
+                    }
                 }
             },
             drop_item: function (entries = [], context = {}) {
@@ -950,16 +1039,40 @@ class Events {
                         actor.removeInventoryItem(thing);
                     }
                     this.addThingToLocation(thing, location);
+                    if (entry.item) {
+                        this.droppedItems.add(entry.item);
+                    }
                 }
             },
             item_appear: function (items = [], context = {}) {
                 this._generateItemsIntoWorld(items, context.location);
+                if (Array.isArray(items)) {
+                    for (const item of items) {
+                        if (typeof item === 'string' && item.trim()) {
+                            this.newItems.add(item);
+                        }
+                    }
+                }
             },
             scenery_appear: function (items = [], context = {}) {
                 this._generateItemsIntoWorld(items, context.location, { treatAsScenery: true });
+                if (Array.isArray(items)) {
+                    for (const item of items) {
+                        if (typeof item === 'string' && item.trim()) {
+                            this.newItems.add(item);
+                        }
+                    }
+                }
             },
             harvestable_resource_appear: function (items = [], context = {}) {
                 this._generateItemsIntoWorld(items, context.location, { treatAsResource: true });
+                if (Array.isArray(items)) {
+                    for (const item of items) {
+                        if (typeof item === 'string' && item.trim()) {
+                            this.newItems.add(item);
+                        }
+                    }
+                }
             },
             alter_npc: function (entries = [], context = {}) {
                 const { findActorByName } = this._deps;
@@ -973,6 +1086,9 @@ class Events {
                     }
                     if (entry.description && typeof npc.addStatusEffect === 'function') {
                         npc.addStatusEffect(makeStatusEffect(entry.description, null));
+                    }
+                    if (entry.name) {
+                        this.alteredCharacters.add(entry.name);
                     }
                 }
             },
@@ -992,6 +1108,10 @@ class Events {
                                 console.warn('Failed to ensure NPC arrival:', error.message);
                             });
                         }
+                        this.arrivedCharacters.add(name);
+                        if (entry.firstAppearance) {
+                            this.newCharacters.add(name);
+                        }
                     }
                     const npc = findActorByName?.(name);
                     if (!npc) {
@@ -999,6 +1119,7 @@ class Events {
                     }
                     if (entry.action === 'left' && typeof npc.setLocation === 'function') {
                         npc.setLocation(null);
+                        this.departedCharacters.add(name);
                     }
                     if (entry.destination && typeof npc.setDestination === 'function') {
                         npc.setDestination(entry.destination);
@@ -1032,6 +1153,9 @@ class Events {
                 }
                 const { findActorByName } = this._deps;
                 for (const entry of entries) {
+                    if (entry.entity) {
+                        this.alteredCharacters.add(entry.entity);
+                    }
                     const entity = findActorByName?.(entry.entity);
                     if (!entity) {
                         continue;
@@ -1075,6 +1199,9 @@ class Events {
                     const change = actor.adjustNeedBar(entry.bar, entry.direction, entry.magnitude);
                     if (change) {
                         context.needBarChanges.push(change);
+                    }
+                    if (entry.character) {
+                        this.alteredCharacters.add(entry.character);
                     }
                 }
             },
@@ -1151,6 +1278,9 @@ class Events {
                     const xp = Math.max(25, Math.round(level * 50));
                     awards.push({ amount: xp, reason: `Defeated ${name}` });
                     player.addExperience(xp);
+                    if (name) {
+                        this.defeatedEnemies.add(name);
+                    }
                 }
                 if (!Array.isArray(context.experienceAwards)) {
                     context.experienceAwards = [];
@@ -1191,6 +1321,7 @@ class Events {
                     if (destination) {
                         player.setLocation(destination.id);
                         context.location = destination;
+                        this.movedLocations.add(destination.name || destinationName);
                     }
                 } catch (error) {
                     console.warn('Failed to move player location:', error.message);

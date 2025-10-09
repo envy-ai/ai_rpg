@@ -1696,8 +1696,18 @@ class AIRPGChat {
             },
             consume_item: (entries) => {
                 entries.forEach((entry) => {
-                    const item = safeItem(entry?.item, 'An item');
-                    this.addEventSummary('🧪', `${item} was consumed.`);
+                    if (entry && typeof entry === 'object') {
+                        const consumer = entry.user ? safeName(entry.user) : null;
+                        const itemName = safeItem(entry.item, 'An item');
+                        if (consumer) {
+                            this.addEventSummary('🧪', `${consumer} consumed ${itemName}.`);
+                        } else {
+                            this.addEventSummary('🧪', `${itemName} was consumed.`);
+                        }
+                    } else {
+                        const itemName = safeItem(entry, 'An item');
+                        this.addEventSummary('🧪', `${itemName} was consumed.`);
+                    }
                 });
             },
             death_incapacitation: (entries) => {
