@@ -126,6 +126,7 @@ class Events {
     static _handlers = {};
     static _baseTimeout = BASE_TIMEOUT_MS;
 
+    static animatedItems = new SanitizedStringSet();
     static alteredItems = new SanitizedStringSet();
     static newItems = new SanitizedStringSet();
     static obtainedItems = new SanitizedStringSet();
@@ -139,6 +140,91 @@ class Events {
     static defeatedEnemies = new SanitizedStringSet();
 
     static movedLocations = new SanitizedStringSet();
+
+    static _resetTrackingSets() {
+        this.animatedItems.clear();
+        this.alteredItems.clear();
+        this.newItems.clear();
+        this.obtainedItems.clear();
+        this.destroyedItems.clear();
+        this.droppedItems.clear();
+
+        this.alteredCharacters.clear();
+        this.newCharacters.clear();
+        this.arrivedCharacters.clear();
+        this.departedCharacters.clear();
+        this.defeatedEnemies.clear();
+
+        this.movedLocations.clear();
+    }
+
+    static _trackItemsFromParsing(parsedEntries = {}) {
+        const animated = parsedEntries.item_to_npc;
+        if (Array.isArray(animated)) {
+            for (const entry of animated) {
+                const itemName = entry?.item;
+                if (!itemName) {
+                    continue;
+                }
+                this.animatedItems.add(itemName);
+                this.destroyedItems.add(itemName);
+            }
+        }
+
+        const consumed = parsedEntries.consume_item;
+        if (Array.isArray(consumed)) {
+            for (const entry of consumed) {
+                const itemName = entry?.item;
+                if (!itemName) {
+                    continue;
+                }
+                this.destroyedItems.add(itemName);
+            }
+        }
+
+        const altered = parsedEntries.alter_item;
+        if (Array.isArray(altered)) {
+            for (const entry of altered) {
+                if (entry?.from) {
+                    this.alteredItems.add(entry.from);
+                }
+                if (entry?.to) {
+                    this.alteredItems.add(entry.to);
+                }
+            }
+        }
+    }
+
+    static _pruneExcludedItemEntries(parsedEntries = {}) {
+        const shouldSkip = itemName => (
+            typeof itemName === 'string'
+            && (this.animatedItems.has(itemName)
+                || this.destroyedItems.has(itemName)
+                || this.alteredItems.has(itemName))
+        );
+
+        const filterByItem = key => {
+            if (!Array.isArray(parsedEntries[key])) {
+                return;
+            }
+            parsedEntries[key] = parsedEntries[key].filter(entry => {
+                const name = entry?.item;
+                if (!name) {
+                    return Boolean(entry);
+                }
+                return !shouldSkip(name);
+            });
+        };
+
+        filterByItem('transfer_item');
+        filterByItem('harvest_gather');
+        filterByItem('pick_up_item');
+        filterByItem('drop_item');
+
+        if (Array.isArray(parsedEntries.item_appear)) {
+            parsedEntries.item_appear = parsedEntries.item_appear.filter(itemName => !shouldSkip(itemName));
+        }
+    }
 
     static initialize(deps = {}) {
         if (!deps) {
@@ -162,6 +248,8 @@ class Events {
         if (isBlank(textToCheck)) {
             return null;
         }
+
+        this._resetTrackingSets();
 
         const promptEnv = this._deps.promptEnv;
         const parseXMLTemplate = this._deps.parseXMLTemplate;
@@ -364,6 +452,9 @@ class Events {
             }
             parsedEntries.npc_arrival_departure.push(...arrivals);
         }
+
+        this._trackItemsFromParsing(parsedEntries);
+        this._pruneExcludedItemEntries(parsedEntries);
 
         return { rawEntries, parsed: parsedEntries };
     }
@@ -885,6 +976,7 @@ class Events {
 
                     this._detachThingFromWorld(item);
                     if (itemName) {
+                        this.animatedItems.add(itemName);
                         this.destroyedItems.add(itemName);
                     }
                     if (npcName) {
