@@ -51,11 +51,21 @@
                             <button type="button" class="toggle-password" onclick="togglePassword('ai-apiKey')">👁️</button>
                         </div>
                         
+                        {% set modelOptions = config.model_swap_options or [] %}
+                        {% if config.ai.model and (config.ai.model not in modelOptions) %}
+                            {% set modelOptions = modelOptions + [config.ai.model] %}
+                        {% endif %}
                         <div class="form-group">
                             <label for="ai-model">Model:</label>
-                            <input type="text" id="ai-model" name="ai.model" value="{{ config.ai.model }}" required>
-                            <span class="help-text">AI model name (e.g., gpt-3.5-turbo)</span>
+                            <select id="ai-model" name="ai.model" required>
+                                {% for option in modelOptions %}
+                                    <option value="{{ option }}" {% if option == config.ai.model %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                                <option value="__add_new__">Add New...</option>
+                            </select>
+                            <span class="help-text">Select the AI model to use</span>
                         </div>
+                        <input type="hidden" id="model-options" name="model_swap_options" value='{{ modelOptions | dump }}'>
                         
                         <div class="form-group">
                             <label for="ai-maxTokens">Max Tokens:</label>
@@ -80,6 +90,24 @@
                 <!-- Status Messages -->
                 <div id="status-message" class="status-message" style="display: none;"></div>
             </form>
+        </div>
+    </div>
+
+    <div id="addModelModal" class="modal config-add-model-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2>Add AI Model</h2>
+                <button type="button" class="modal__close" id="addModelCancelClose" aria-label="Close add model dialog">✖️</button>
+            </header>
+            <div class="modal__body">
+                <label for="newModelName">Model name</label>
+                <input type="text" id="newModelName" placeholder="e.g., gpt-4o-mini">
+                <p id="addModelError" class="help-text" style="color: rgb(255, 150, 150);" hidden></p>
+            </div>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" id="addModelCancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="addModelConfirm">Add Model</button>
+            </footer>
         </div>
     </div>
     

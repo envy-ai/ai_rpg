@@ -12637,6 +12637,30 @@ app.post('/config', (req, res) => {
             }
         }
 
+        if (typeof updatedConfig.model_swap_options === 'string') {
+            try {
+                const parsedOptions = JSON.parse(updatedConfig.model_swap_options);
+                updatedConfig.model_swap_options = Array.isArray(parsedOptions)
+                    ? parsedOptions.filter(option => typeof option === 'string' && option.trim()).map(option => option.trim())
+                    : [];
+            } catch (_) {
+                if (updatedConfig.model_swap_options) {
+                    updatedConfig.model_swap_options = String(updatedConfig.model_swap_options)
+                        .split(/[\n,]+/)
+                        .map(entry => entry.trim())
+                        .filter(Boolean);
+                } else {
+                    updatedConfig.model_swap_options = [];
+                }
+            }
+        }
+        if (!Array.isArray(updatedConfig.model_swap_options)) {
+            updatedConfig.model_swap_options = [];
+        }
+        updatedConfig.model_swap_options = Array.from(new Set(
+            updatedConfig.model_swap_options.map(option => option.trim()).filter(Boolean)
+        ));
+
         // Save to config.yaml file
         const yamlString = yaml.dump(updatedConfig, {
             defaultFlowStyle: false,
