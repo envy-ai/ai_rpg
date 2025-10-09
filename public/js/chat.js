@@ -1697,7 +1697,14 @@ class AIRPGChat {
             consume_item: (entries) => {
                 entries.forEach((entry) => {
                     if (entry && typeof entry === 'object') {
-                        const consumer = entry.user ? safeName(entry.user) : null;
+                        const rawUser = typeof entry.user === 'string'
+                            ? entry.user.trim()
+                            : (entry.user === undefined || entry.user === null
+                                ? ''
+                                : String(entry.user).trim());
+                        const consumer = rawUser && rawUser.toLowerCase() !== 'someone'
+                            ? safeName(rawUser)
+                            : null;
                         const itemName = safeItem(entry.item, 'An item');
                         if (consumer) {
                             this.addEventSummary('🧪', `${consumer} consumed ${itemName}.`);
