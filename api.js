@@ -9018,7 +9018,12 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to queue thing images after moving:', thingQueueError.message);
                 }
 
-                if (previousLocationIdForMemories && previousLocationIdForMemories !== destinationLocation.id) {
+                const lastActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
+                const consecutiveTravelActions = Number(currentPlayer?.consecutiveTravelActions) || 0;
+
+                if (!(lastActionWasTravel && consecutiveTravelActions >= 2)
+                    && previousLocationIdForMemories
+                    && previousLocationIdForMemories !== destinationLocation.id) {
                     try {
                         await generateNpcMemoriesForLocationChange({
                             previousLocationId: previousLocationIdForMemories,
@@ -9028,6 +9033,8 @@ module.exports = function registerApiRoutes(scope) {
                     } catch (memoryError) {
                         console.warn('Failed to generate NPC memories after direct move:', memoryError.message || memoryError);
                     }
+                } else if (lastActionWasTravel && consecutiveTravelActions >= 2) {
+                    console.log('🧠 Skipping NPC memory generation: consecutive travel actions detected during move request.');
                 }
 
                 const locationData = destinationLocation.toJSON();

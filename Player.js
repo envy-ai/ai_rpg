@@ -52,6 +52,7 @@ class Player {
     #importantMemories = [];
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
     #lastActionWasTravel = false;
+    #consecutiveTravelActions = 0;
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -1327,7 +1328,8 @@ class Player {
 
     set lastActionWasTravel(value) {
         const normalized = Boolean(value);
-        if (this.#lastActionWasTravel !== normalized) {
+        const previous = this.#lastActionWasTravel;
+        if (previous !== normalized) {
             const locationLabel = (() => {
                 try {
                     return this.location?.name || this.#currentLocation || 'unknown location';
@@ -1338,6 +1340,15 @@ class Player {
             console.log(`🏃 Player ${this.#name || this.#id || 'unknown'} lastActionWasTravel set to ${normalized ? 'true' : 'false'} (location: ${locationLabel})`);
         }
         this.#lastActionWasTravel = normalized;
+        if (normalized) {
+            this.#consecutiveTravelActions = previous ? this.#consecutiveTravelActions + 1 : 1;
+        } else {
+            this.#consecutiveTravelActions = 0;
+        }
+    }
+
+    get consecutiveTravelActions() {
+        return this.#consecutiveTravelActions;
     }
 
     static updatePreviousLocationsForAll() {
@@ -2981,7 +2992,10 @@ class Player {
             experience: this.#experience,
             currency: this.#currency,
             needBars: this.getNeedBars(),
-            importantMemories: this.importantMemories
+            importantMemories: this.importantMemories,
+            previousLocationId: this.#previousLocationId,
+            lastActionWasTravel: this.#lastActionWasTravel,
+            consecutiveTravelActions: this.#consecutiveTravelActions
         };
     }
 
@@ -3027,6 +3041,16 @@ class Player {
 
         player.#createdAt = data.createdAt;
         player.#lastUpdated = data.lastUpdated;
+        if (data.previousLocationId) {
+            player.#previousLocationId = data.previousLocationId;
+        }
+        if (typeof data.lastActionWasTravel === 'boolean') {
+            player.#lastActionWasTravel = data.lastActionWasTravel;
+        }
+        const travelCount = Number(data.consecutiveTravelActions);
+        if (Number.isFinite(travelCount) && travelCount > 0) {
+            player.#consecutiveTravelActions = Math.floor(travelCount);
+        }
         return player;
     }
 
