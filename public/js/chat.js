@@ -1696,9 +1696,8 @@ class AIRPGChat {
             },
             consume_item: (entries) => {
                 entries.forEach((entry) => {
-                    const user = safeName(entry?.user);
-                    const item = safeItem(entry?.item);
-                    this.addEventSummary('🧪', `${user} consumed ${item}.`);
+                    const item = safeItem(entry?.item, 'An item');
+                    this.addEventSummary('🧪', `${item} was consumed.`);
                 });
             },
             death_incapacitation: (entries) => {
