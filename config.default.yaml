@@ -96,5 +96,5 @@ summaries:
   batch_size: 30
   summary_word_length: 12
   max_unsummarized_log_entries: 100
-generate_memory_interval: 10
-max_memories_to_recall: 10
+party_generate_memory_interval: 25
+# extra_system_instructions:

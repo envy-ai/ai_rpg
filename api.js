@@ -2052,6 +2052,11 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
+            const shouldRunFullAttackCheck = await runAttackPrecheck({ actionText });
+            if (!shouldRunFullAttackCheck) {
+                return null;
+            }
+
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride: locationOverride || null });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
@@ -2114,6 +2119,107 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Attack check failed:', error.message);
                 return null;
+            }
+        }
+
+        async function runAttackPrecheck({ actionText }) {
+            if (!actionText || !actionText.trim()) {
+                return true;
+            }
+
+            const endpoint = config?.ai?.endpoint;
+            const apiKey = config?.ai?.apiKey;
+            const model = config?.ai?.model;
+            if (!endpoint || !apiKey || !model) {
+                return true;
+            }
+
+            try {
+                const renderedTemplate = promptEnv.render('attack_precheck.xml.njk', {
+                    actionText
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Attack precheck template missing prompts, skipping precheck.');
+                    return true;
+                }
+
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+
+                const chatEndpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`;
+
+                const requestData = {
+                    model,
+                    messages,
+                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 50,
+                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0
+                };
+
+                const response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: baseTimeoutMilliseconds
+                });
+
+                const raw = response.data?.choices?.[0]?.message?.content || '';
+
+                logAttackPrecheck({
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    responseText: raw
+                });
+
+                if (!raw.trim()) {
+                    return true;
+                }
+
+                const normalized = raw.toLowerCase();
+                if (normalized.includes('<response>no</response>')) {
+                    return false;
+                }
+                if (normalized.includes('<response>yes</response>')) {
+                    return true;
+                }
+
+                return true;
+            } catch (error) {
+                console.warn('Attack precheck failed:', error.message);
+                return true;
+            }
+        }
+
+        function logAttackPrecheck({ systemPrompt, generationPrompt, responseText }) {
+            try {
+                const logDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `attack_precheck_${timestamp}.log`);
+                const parts = [
+                    '=== ATTACK PRECHECK SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    '',
+                    '=== ATTACK PRECHECK GENERATION PROMPT ===',
+                    generationPrompt || '(none)',
+                    '',
+                    '=== ATTACK PRECHECK RESPONSE ===',
+                    responseText || '(no response)',
+                    ''
+                ];
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log attack precheck:', error.message);
             }
         }
 
@@ -3764,7 +3870,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function generateNpcMemoriesForLocationChange({ previousLocationId, newLocationId, player } = {}) {
+        async function generateNpcMemoriesForLocationChange({ previousLocationId, newLocationId, player, isNonEventTravel = true } = {}) {
             if (!previousLocationId || !player) {
                 return;
             }
@@ -3788,22 +3894,25 @@ module.exports = function registerApiRoutes(scope) {
             const npcIds = Array.isArray(previousLocation.npcIds)
                 ? previousLocation.npcIds.slice(0)
                 : [];
-            const partyMemberIds = typeof player.getPartyMembers === 'function'
-                ? player.getPartyMembers()
-                : [];
-
             const candidateIds = new Set();
             npcIds.forEach(id => { if (id) candidateIds.add(id); });
-            if (Array.isArray(partyMemberIds)) {
-                partyMemberIds.forEach(id => {
-                    if (id && id !== player.id) {
-                        candidateIds.add(id);
-                    }
-                });
-            }
 
-            if (!candidateIds.size) {
-                return;
+            let partyMemberIds = [];
+            let removedPartyMemberIds = [];
+            let partyInterval = null;
+
+            if (isNonEventTravel) {
+                partyMemberIds = typeof player.getPartyMembers === 'function'
+                    ? player.getPartyMembers()
+                    : [];
+                removedPartyMemberIds = typeof player.getPartyMembersRemovedThisTurn === 'function'
+                    ? Array.from(player.getPartyMembersRemovedThisTurn())
+                    : [];
+
+                const partyIntervalRaw = Number(config?.party_generate_memory_interval);
+                partyInterval = Number.isInteger(partyIntervalRaw) && partyIntervalRaw > 0
+                    ? partyIntervalRaw
+                    : null;
             }
 
             const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
@@ -3836,23 +3945,12 @@ module.exports = function registerApiRoutes(scope) {
             const lowercaseCache = new Map();
 
             const memoryTasks = [];
-            const totalCandidates = candidateIds.size;
+            const totalCandidates = candidateIds.size
+                + (isNonEventTravel && Array.isArray(partyMemberIds) ? partyMemberIds.length : 0)
+                + (isNonEventTravel ? removedPartyMemberIds.length : 0);
 
-            for (const actorId of candidateIds) {
-                const actor = players.get(actorId);
-                if (!actor) {
-                    continue;
-                }
-
-                const actorName = typeof actor.name === 'string' ? actor.name.trim() : '';
-                if (!actorName) {
-                    continue;
-                }
-
-                const actorLower = lowercaseCache.get(actorName) || actorName.toLowerCase();
-                lowercaseCache.set(actorName, actorLower);
-
-                const filteredHistory = [];
+            const buildFilteredHistory = actorLower => {
+                const filtered = [];
                 for (const entry of recentHistoryEntries) {
                     if (!entry || entry.travel) {
                         continue;
@@ -3871,8 +3969,26 @@ module.exports = function registerApiRoutes(scope) {
                     if (!matches) {
                         continue;
                     }
-                    filteredHistory.push(entry);
+                    filtered.push(entry);
                 }
+                return filtered;
+            };
+
+            for (const actorId of candidateIds) {
+                const actor = players.get(actorId);
+                if (!actor) {
+                    continue;
+                }
+
+                const actorName = typeof actor.name === 'string' ? actor.name.trim() : '';
+                if (!actorName) {
+                    continue;
+                }
+
+                const actorLower = lowercaseCache.get(actorName) || actorName.toLowerCase();
+                lowercaseCache.set(actorName, actorLower);
+
+                const filteredHistory = buildFilteredHistory(actorLower);
 
                 if (!filteredHistory.length) {
                     continue;
@@ -3903,8 +4019,353 @@ module.exports = function registerApiRoutes(scope) {
                 })());
             }
 
+            if (Array.isArray(partyMemberIds) && partyMemberIds.length && partyInterval) {
+                for (const memberId of partyMemberIds) {
+                    const member = players.get(memberId);
+                    if (!member || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
+                        continue;
+                    }
+
+                    const memberName = typeof member.name === 'string' ? member.name.trim() : '';
+                    if (!memberName) {
+                        continue;
+                    }
+
+                    const updatedTurns = member.incrementTurnsSincePartyMemoryGeneration();
+                    console.log(`🧠 [party-memory] ${member.name || member.id || 'Unknown NPC'} turnsSincePartyMemoryGeneration=${updatedTurns}`);
+
+                    const memberLower = memberName.toLowerCase();
+                    const memberHistory = buildFilteredHistory(memberLower);
+
+                    if (typeof member.addPartyMemoryHistorySegment === 'function') {
+                        member.addPartyMemoryHistorySegment(memberHistory, partyInterval);
+                    }
+
+                    const turns = member.turnsSincePartyMemoryGeneration || updatedTurns || 0;
+                    const membershipChanged = Boolean(member.partyMembershipChangedThisTurn);
+                    const shouldGenerate = membershipChanged || turns >= partyInterval;
+
+                    if (!shouldGenerate) {
+                        if (membershipChanged) {
+                            console.log(`🧠 [party-memory] ${member.name || member.id || 'Unknown NPC'} membership changed but no history to process yet.`);
+                        }
+                        continue;
+                    }
+
+                    console.log(`🧠 [party-memory] Triggering memory generation for ${member.name || member.id || 'Unknown NPC'} (turns=${turns}, membershipChanged=${membershipChanged})`);
+
+                    const historySegments = typeof member.getPartyMemoryHistorySegments === 'function'
+                        ? member.getPartyMemoryHistorySegments(partyInterval)
+                        : [];
+                    const combinedHistory = Array.isArray(historySegments) && historySegments.length
+                        ? historySegments.flat().filter(Boolean)
+                        : memberHistory;
+
+                    if (!combinedHistory || !combinedHistory.length) {
+                        if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                            member.resetTurnsSincePartyMemoryGeneration();
+                        }
+                        if (typeof member.clearPartyMemoryHistory === 'function') {
+                            member.clearPartyMemoryHistory();
+                        }
+                        continue;
+                    }
+
+                    memoryTasks.push((async () => {
+                        try {
+                            const result = await runNpcMemoriesPrompt({
+                                npc: member,
+                                historyEntries: combinedHistory,
+                                locationOverride: previousLocation,
+                                totalPrompts: totalCandidates
+                            });
+
+                            if (result?.memory) {
+                                const added = typeof member.addImportantMemory === 'function'
+                                    ? member.addImportantMemory(result.memory)
+                                    : false;
+                                if (added) {
+                                    console.log(`🧠 Added memory for ${member.name}: ${result.memory}`);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Error while generating party memories for ${member.name}:`, error.message);
+                        } finally {
+                            if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                                member.resetTurnsSincePartyMemoryGeneration();
+                            }
+                            if (typeof member.clearPartyMemoryHistory === 'function') {
+                                member.clearPartyMemoryHistory();
+                            }
+                        }
+                    })());
+                }
+            }
+
+            if (isNonEventTravel && Array.isArray(removedPartyMemberIds) && removedPartyMemberIds.length && partyInterval) {
+                for (const memberId of removedPartyMemberIds) {
+                    const member = players.get(memberId);
+                    if (!member || !member.partyMembershipChangedThisTurn) {
+                        continue;
+                    }
+
+                    const historySegments = typeof member.getPartyMemoryHistorySegments === 'function'
+                        ? member.getPartyMemoryHistorySegments(partyInterval)
+                        : [];
+                    const combinedHistory = Array.isArray(historySegments) && historySegments.length
+                        ? historySegments.flat().filter(Boolean)
+                        : [];
+
+                    if (!combinedHistory.length) {
+                        if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                            member.resetTurnsSincePartyMemoryGeneration();
+                        }
+                        if (typeof member.clearPartyMemoryHistory === 'function') {
+                            member.clearPartyMemoryHistory();
+                        }
+                        continue;
+                    }
+
+                    console.log(`🧠 [party-memory] Triggering memory generation for departed member ${member.name || member.id || 'Unknown NPC'}`);
+
+                    memoryTasks.push((async () => {
+                        try {
+                            const result = await runNpcMemoriesPrompt({
+                                npc: member,
+                                historyEntries: combinedHistory,
+                                locationOverride: previousLocation,
+                                totalPrompts: totalCandidates
+                            });
+
+                            if (result?.memory) {
+                                const added = typeof member.addImportantMemory === 'function'
+                                    ? member.addImportantMemory(result.memory)
+                                    : false;
+                                if (added) {
+                                    console.log(`🧠 Added memory for ${member.name}: ${result.memory}`);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Error while generating memories for departed party member ${member.name}:`, error.message);
+                        } finally {
+                            if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                                member.resetTurnsSincePartyMemoryGeneration();
+                            }
+                            if (typeof member.clearPartyMemoryHistory === 'function') {
+                                member.clearPartyMemoryHistory();
+                            }
+                        }
+                    })());
+                }
+            }
+
             if (memoryTasks.length) {
                 await Promise.allSettled(memoryTasks);
+            }
+
+            if (typeof player.clearPartyMembershipChangeTracking === 'function') {
+                player.clearPartyMembershipChangeTracking();
+            }
+        }
+
+        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null } = {}) {
+            if (!player) {
+                return;
+            }
+
+            const partyMemberIds = typeof player.getPartyMembers === 'function'
+                ? player.getPartyMembers()
+                : [];
+            const removedPartyMemberIds = typeof player.getPartyMembersRemovedThisTurn === 'function'
+                ? Array.from(player.getPartyMembersRemovedThisTurn())
+                : [];
+
+            const partyIntervalRaw = Number(config?.party_generate_memory_interval);
+            const partyInterval = Number.isInteger(partyIntervalRaw) && partyIntervalRaw > 0
+                ? partyIntervalRaw
+                : null;
+
+            if ((!Array.isArray(partyMemberIds) || partyMemberIds.length === 0) && removedPartyMemberIds.length === 0) {
+                if (typeof player.clearPartyMembershipChangeTracking === 'function') {
+                    player.clearPartyMembershipChangeTracking();
+                }
+                return;
+            }
+
+            if (!partyInterval) {
+                if (typeof player.clearPartyMembershipChangeTracking === 'function') {
+                    player.clearPartyMembershipChangeTracking();
+                }
+                return;
+            }
+
+            const historyList = Array.isArray(historyEntries) ? historyEntries : [];
+            const lowercaseCache = new Map();
+
+            const totalCandidates = (Array.isArray(partyMemberIds) ? partyMemberIds.length : 0) + removedPartyMemberIds.length;
+            const memoryTasks = [];
+
+            const buildTurnHistory = (actorLower) => {
+                const filtered = [];
+                for (const entry of historyList) {
+                    if (!entry || entry.travel) {
+                        continue;
+                    }
+                    const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
+                    const npcNames = Array.isArray(metadata?.npcNames) ? metadata.npcNames : null;
+                    if (!npcNames || !npcNames.length) {
+                        continue;
+                    }
+                    const matches = npcNames.some(name => {
+                        if (typeof name !== 'string') {
+                            return false;
+                        }
+                        return name.trim().toLowerCase() === actorLower;
+                    });
+                    if (!matches) {
+                        continue;
+                    }
+                    filtered.push(entry);
+                }
+                return filtered;
+            };
+
+            if (isNonEventTravel && partyInterval && Array.isArray(partyMemberIds)) {
+                for (const memberId of partyMemberIds) {
+                    const member = players.get ? players.get(memberId) : null;
+                    if (!member || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
+                        continue;
+                    }
+
+                    const memberName = typeof member.name === 'string' ? member.name.trim() : '';
+                    if (!memberName) {
+                        continue;
+                    }
+
+                    const memberLower = lowercaseCache.get(memberName) || memberName.toLowerCase();
+                    lowercaseCache.set(memberName, memberLower);
+
+                    const memberTurnHistory = buildTurnHistory(memberLower);
+                    if (typeof member.addPartyMemoryHistorySegment === 'function') {
+                        member.addPartyMemoryHistorySegment(memberTurnHistory, partyInterval);
+                    }
+
+                    const updatedTurns = member.incrementTurnsSincePartyMemoryGeneration();
+                    console.log(`🧠 [party-memory] ${memberName} turnsSincePartyMemoryGeneration=${updatedTurns}`);
+
+                    const turns = member.turnsSincePartyMemoryGeneration || updatedTurns || 0;
+                    const membershipChanged = Boolean(member.partyMembershipChangedThisTurn);
+                    const shouldGenerate = membershipChanged || turns >= partyInterval;
+
+                    if (!shouldGenerate) {
+                        continue;
+                    }
+
+                    const historySegments = typeof member.getPartyMemoryHistorySegments === 'function'
+                        ? member.getPartyMemoryHistorySegments(partyInterval)
+                        : [];
+                    const combinedHistory = Array.isArray(historySegments) && historySegments.length
+                        ? historySegments.flat().filter(Boolean)
+                        : memberTurnHistory;
+
+                    if (!combinedHistory || !combinedHistory.length) {
+                        console.log(`🧠 [party-memory] ${memberName} reached interval but has no history to generate from.`);
+                        if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                            member.resetTurnsSincePartyMemoryGeneration();
+                        }
+                        continue;
+                    }
+
+                    console.log(`🧠 [party-memory] Triggering memory generation for ${memberName} (turns=${turns}, membershipChanged=${membershipChanged})`);
+
+                    memoryTasks.push((async () => {
+                        try {
+                            const result = await runNpcMemoriesPrompt({
+                                npc: member,
+                                historyEntries: combinedHistory,
+                                locationOverride,
+                                totalPrompts: totalCandidates
+                            });
+
+                            if (result?.memory) {
+                                const added = typeof member.addImportantMemory === 'function'
+                                    ? member.addImportantMemory(result.memory)
+                                    : false;
+                                if (added) {
+                                    console.log(`🧠 Added memory for ${memberName}: ${result.memory}`);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Error while generating party memories for ${memberName}:`, error.message);
+                        } finally {
+                            if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                                member.resetTurnsSincePartyMemoryGeneration();
+                            }
+                        }
+                    })());
+                }
+            }
+
+            if (partyInterval && Array.isArray(removedPartyMemberIds) && removedPartyMemberIds.length) {
+                for (const memberId of removedPartyMemberIds) {
+                    const member = players.get ? players.get(memberId) : null;
+                    if (!member || typeof member.getPartyMemoryHistorySegments !== 'function') {
+                        continue;
+                    }
+
+                    const memberName = typeof member.name === 'string' ? member.name.trim() : '';
+                    if (!memberName) {
+                        continue;
+                    }
+
+                    const historySegments = member.getPartyMemoryHistorySegments(partyInterval);
+                    const combinedHistory = Array.isArray(historySegments) && historySegments.length
+                        ? historySegments.flat().filter(Boolean)
+                        : [];
+
+                    if (!combinedHistory.length) {
+                        if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                            member.resetTurnsSincePartyMemoryGeneration();
+                        }
+                        continue;
+                    }
+
+                    console.log(`🧠 [party-memory] Triggering memory generation for departed member ${memberName}`);
+
+                    memoryTasks.push((async () => {
+                        try {
+                            const result = await runNpcMemoriesPrompt({
+                                npc: member,
+                                historyEntries: combinedHistory,
+                                locationOverride,
+                                totalPrompts: totalCandidates
+                            });
+
+                            if (result?.memory) {
+                                const added = typeof member.addImportantMemory === 'function'
+                                    ? member.addImportantMemory(result.memory)
+                                    : false;
+                                if (added) {
+                                    console.log(`🧠 Added memory for ${memberName}: ${result.memory}`);
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
+                        } finally {
+                            if (typeof member.resetTurnsSincePartyMemoryGeneration === 'function') {
+                                member.resetTurnsSincePartyMemoryGeneration();
+                            }
+                        }
+                    })());
+                }
+            }
+
+            if (memoryTasks.length) {
+                await Promise.allSettled(memoryTasks);
+            }
+
+            if (typeof player.clearPartyMembershipChangeTracking === 'function') {
+                player.clearPartyMembershipChangeTracking();
             }
         }
 
@@ -4363,7 +4824,8 @@ module.exports = function registerApiRoutes(scope) {
                     await generateNpcMemoriesForLocationChange({
                         previousLocationId: initialPlayerLocationId,
                         newLocationId: currentLocationId,
-                        player
+                        player,
+                        isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
                     });
                 } catch (error) {
                     console.warn('Failed to update NPC memories after travel:', error.message || error);
@@ -4375,6 +4837,19 @@ module.exports = function registerApiRoutes(scope) {
                     await processLocationChangeMemoriesIfNeeded();
                 } catch (error) {
                     console.warn('Failed during post-turn memory update:', error.message || error);
+                }
+
+                const skipPartyMemoryProcessing = currentActionIsTravel && !travelMetadataIsEventDriven;
+                if (!skipPartyMemoryProcessing) {
+                    try {
+                        await processPartyMemoriesForCurrentTurn({
+                            player: currentPlayer,
+                            historyEntries: newChatEntries,
+                            locationOverride: location
+                        });
+                    } catch (error) {
+                        console.warn('Failed during party memory interval processing:', error.message || error);
+                    }
                 }
 
                 if (currentPlayer) {

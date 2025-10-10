@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
-
 let CachedLocationModule = null;
 function getLocationModule() {
     if (!CachedLocationModule) {
@@ -53,6 +52,12 @@ class Player {
     #previousLocationId = null; // For tracking location changes. This is the location at the beginning of the turn.
     #lastActionWasTravel = false;
     #consecutiveTravelActions = 0;
+    #turnsSincePartyMemoryGeneration = 0;
+    #pendingPartyMemoryHistory = [];
+    #partyMembershipChangedThisTurn = false;
+    #isInPlayerParty = false;
+    #partyMembersAddedThisTurn = new Set();
+    #partyMembersRemovedThisTurn = new Set();
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -435,6 +440,22 @@ class Player {
     static getCurrentPlayerId() {
         const player = this.getCurrentPlayer();
         return player && typeof player.id === 'string' ? player.id : null;
+    }
+
+    static getById(playerId) {
+        if (typeof playerId !== 'string') {
+            return null;
+        }
+        const trimmed = playerId.trim();
+        if (!trimmed) {
+            return null;
+        }
+        for (const player of this.#instances) {
+            if (player?.id === trimmed) {
+                return player;
+            }
+        }
+        return null;
     }
 
     static resolvePlayerId(playerLike) {
@@ -848,6 +869,52 @@ class Player {
         if (this.#isHostile) {
             this.#applyHostileDispositionsToCurrentPlayer();
         }
+        if (this.#partyMembers.size) {
+            for (const memberId of this.#partyMembers) {
+                const member = Player.getById(memberId);
+                if (member && typeof member.setInPlayerParty === 'function') {
+                    member.setInPlayerParty(true);
+                }
+            }
+        }
+        const turnsSincePartyMemoryGeneration = Number(options.turnsSincePartyMemoryGeneration);
+        if (Number.isFinite(turnsSincePartyMemoryGeneration) && turnsSincePartyMemoryGeneration > 0) {
+            this.#turnsSincePartyMemoryGeneration = Math.floor(turnsSincePartyMemoryGeneration);
+        }
+
+        this.#pendingPartyMemoryHistory = Array.isArray(options.partyMemoryHistorySegments)
+            ? options.partyMemoryHistorySegments
+                .map(segment => (Array.isArray(segment)
+                    ? segment
+                        .filter(entry => entry && typeof entry === 'object')
+                        .map(entry => ({
+                            role: entry.role || null,
+                            content: entry.content || '',
+                            summary: entry.summary || null,
+                            metadata: entry.metadata && typeof entry.metadata === 'object'
+                                ? {
+                                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
+                                    locationId: entry.metadata.locationId || null
+                                }
+                                : undefined
+                        }))
+                    : null))
+                .filter(Boolean)
+            : [];
+
+        this.#partyMembershipChangedThisTurn = Boolean(options.partyMembershipChangedThisTurn);
+        this.#isInPlayerParty = Boolean(options.isInPlayerParty);
+
+        const addedThisTurn = Array.isArray(options.partyMembersAddedThisTurn)
+            ? options.partyMembersAddedThisTurn.filter(id => typeof id === 'string')
+            : [];
+        this.#partyMembersAddedThisTurn = new Set(addedThisTurn);
+
+        const removedThisTurn = Array.isArray(options.partyMembersRemovedThisTurn)
+            ? options.partyMembersRemovedThisTurn.filter(id => typeof id === 'string')
+            : [];
+        this.#partyMembersRemovedThisTurn = new Set(removedThisTurn);
+
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
@@ -1468,6 +1535,22 @@ class Player {
         this.#lastUpdated = new Date().toISOString();
     }
 
+    get turnsSincePartyMemoryGeneration() {
+        return this.#turnsSincePartyMemoryGeneration;
+    }
+
+    incrementTurnsSincePartyMemoryGeneration() {
+        this.#turnsSincePartyMemoryGeneration += 1;
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    resetTurnsSincePartyMemoryGeneration() {
+        if (this.#turnsSincePartyMemoryGeneration !== 0) {
+            this.#turnsSincePartyMemoryGeneration = 0;
+            this.#lastUpdated = new Date().toISOString();
+        }
+    }
+
     get importantMemories() {
         return Array.from(this.#importantMemories);
     }
@@ -1645,6 +1728,17 @@ class Player {
         const before = this.#partyMembers.size;
         this.#partyMembers.add(trimmed);
         if (this.#partyMembers.size !== before) {
+            this.#partyMembersAddedThisTurn.add(trimmed);
+            this.#partyMembersRemovedThisTurn.delete(trimmed);
+            const member = Player.getById(trimmed);
+            if (member) {
+                if (typeof member.setInPlayerParty === 'function') {
+                    member.setInPlayerParty(true);
+                }
+                if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
+                    member.markPartyMembershipChangedThisTurn();
+                }
+            }
             this.#lastUpdated = new Date().toISOString();
             return true;
         }
@@ -1659,8 +1753,20 @@ class Player {
         if (typeof memberId !== 'string' || !memberId.trim()) {
             return false;
         }
-        const removed = this.#partyMembers.delete(memberId.trim());
+        const trimmed = memberId.trim();
+        const removed = this.#partyMembers.delete(trimmed);
         if (removed) {
+            this.#partyMembersRemovedThisTurn.add(trimmed);
+            this.#partyMembersAddedThisTurn.delete(trimmed);
+            const member = Player.getById(trimmed);
+            if (member) {
+                if (typeof member.setInPlayerParty === 'function') {
+                    member.setInPlayerParty(false);
+                }
+                if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
+                    member.markPartyMembershipChangedThisTurn();
+                }
+            }
             this.#lastUpdated = new Date().toISOString();
         }
         return removed;
@@ -1670,12 +1776,124 @@ class Player {
         if (this.#partyMembers.size === 0) {
             return;
         }
+        const removedIds = Array.from(this.#partyMembers);
+        for (const memberId of removedIds) {
+            this.#partyMembersRemovedThisTurn.add(memberId);
+            this.#partyMembersAddedThisTurn.delete(memberId);
+            const member = Player.getById(memberId);
+            if (member) {
+                if (typeof member.setInPlayerParty === 'function') {
+                    member.setInPlayerParty(false);
+                }
+                if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
+                    member.markPartyMembershipChangedThisTurn();
+                }
+            }
+        }
         this.#partyMembers.clear();
         this.#lastUpdated = new Date().toISOString();
     }
 
     getPartyMembers() {
         return Array.from(this.#partyMembers);
+    }
+
+    get turnsSincePartyMemoryGeneration() {
+        return this.#turnsSincePartyMemoryGeneration;
+    }
+
+    incrementTurnsSincePartyMemoryGeneration() {
+        this.#turnsSincePartyMemoryGeneration += 1;
+        return this.#turnsSincePartyMemoryGeneration;
+    }
+
+    resetTurnsSincePartyMemoryGeneration() {
+        this.#turnsSincePartyMemoryGeneration = 0;
+        this.#partyMembershipChangedThisTurn = false;
+        this.clearPartyMemoryHistory();
+    }
+
+    addPartyMemoryHistorySegment(entries = [], limit = null) {
+        if (!Array.isArray(entries) || !entries.length) {
+            return;
+        }
+
+        const maxSegments = Number.isInteger(limit) && limit > 0 ? limit : null;
+        const segment = entries
+            .filter(entry => entry && typeof entry === 'object')
+            .map(entry => ({
+                role: entry.role || null,
+                content: entry.content || '',
+                summary: entry.summary || null,
+                metadata: entry.metadata && typeof entry.metadata === 'object'
+                    ? {
+                        npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
+                        locationId: entry.metadata.locationId || null
+                    }
+                    : undefined
+            }));
+
+        if (!segment.length) {
+            return;
+        }
+
+        this.#pendingPartyMemoryHistory.push(segment);
+        if (maxSegments !== null) {
+            while (this.#pendingPartyMemoryHistory.length > maxSegments) {
+                this.#pendingPartyMemoryHistory.shift();
+            }
+        }
+    }
+
+    getPartyMemoryHistorySegments(limit = null) {
+        const segments = (!Number.isInteger(limit) || limit <= 0)
+            ? this.#pendingPartyMemoryHistory.slice()
+            : this.#pendingPartyMemoryHistory.slice(-limit);
+
+        return segments.map(segment => segment.map(entry => ({
+            role: entry.role,
+            content: entry.content,
+            summary: entry.summary,
+            metadata: entry.metadata && typeof entry.metadata === 'object'
+                ? {
+                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
+                    locationId: entry.metadata.locationId || null
+                }
+                : undefined
+        })));
+    }
+
+    clearPartyMemoryHistory() {
+        this.#pendingPartyMemoryHistory = [];
+    }
+
+    markPartyMembershipChangedThisTurn() {
+        this.#partyMembershipChangedThisTurn = true;
+    }
+
+    get partyMembershipChangedThisTurn() {
+        return this.#partyMembershipChangedThisTurn;
+    }
+
+    setInPlayerParty(value) {
+        this.#isInPlayerParty = Boolean(value);
+    }
+
+    get isInPlayerParty() {
+        return this.#isInPlayerParty;
+    }
+
+    getPartyMembersAddedThisTurn() {
+        return new Set(this.#partyMembersAddedThisTurn);
+    }
+
+    getPartyMembersRemovedThisTurn() {
+        return new Set(this.#partyMembersRemovedThisTurn);
+    }
+
+    clearPartyMembershipChangeTracking() {
+        this.#partyMembersAddedThisTurn.clear();
+        this.#partyMembersRemovedThisTurn.clear();
     }
 
     getDisposition(targetId, type = 'default') {
@@ -2470,6 +2688,10 @@ class Player {
         }
 
         return {
+            actorId: this.#id,
+            actorName: this.#name || null,
+            needBarId: bar.id,
+            needBarName: bar.name,
             id: bar.id,
             name: bar.name,
             direction,
@@ -3023,7 +3245,13 @@ class Player {
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
             lastActionWasTravel: this.#lastActionWasTravel,
-            consecutiveTravelActions: this.#consecutiveTravelActions
+            consecutiveTravelActions: this.#consecutiveTravelActions,
+            turnsSincePartyMemoryGeneration: this.#turnsSincePartyMemoryGeneration,
+            partyMemoryHistorySegments: this.#pendingPartyMemoryHistory,
+            partyMembershipChangedThisTurn: this.#partyMembershipChangedThisTurn,
+            isInPlayerParty: this.#isInPlayerParty,
+            partyMembersAddedThisTurn: Array.from(this.#partyMembersAddedThisTurn),
+            partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn)
         };
     }
 
@@ -3079,6 +3307,48 @@ class Player {
         if (Number.isFinite(travelCount) && travelCount > 0) {
             player.#consecutiveTravelActions = Math.floor(travelCount);
         }
+        const turnsSincePartyMemory = Number(data.turnsSincePartyMemoryGeneration);
+        if (Number.isFinite(turnsSincePartyMemory) && turnsSincePartyMemory > 0) {
+            player.#turnsSincePartyMemoryGeneration = Math.floor(turnsSincePartyMemory);
+        }
+
+        if (Array.isArray(data.partyMemoryHistorySegments)) {
+            player.#pendingPartyMemoryHistory = data.partyMemoryHistorySegments
+                .map(segment => (Array.isArray(segment)
+                    ? segment
+                        .filter(entry => entry && typeof entry === 'object')
+                        .map(entry => ({
+                            role: entry.role || null,
+                            content: entry.content || '',
+                            summary: entry.summary || null,
+                            metadata: entry.metadata && typeof entry.metadata === 'object'
+                                ? {
+                                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
+                                    locationId: entry.metadata.locationId || null
+                                }
+                                : undefined
+                        }))
+                    : null))
+                .filter(Boolean);
+        }
+
+        if (typeof data.partyMembershipChangedThisTurn === 'boolean') {
+            player.#partyMembershipChangedThisTurn = data.partyMembershipChangedThisTurn;
+        }
+        if (typeof data.isInPlayerParty === 'boolean') {
+            player.#isInPlayerParty = data.isInPlayerParty;
+        }
+        if (Array.isArray(data.partyMembersAddedThisTurn)) {
+            player.#partyMembersAddedThisTurn = new Set(
+                data.partyMembersAddedThisTurn.filter(id => typeof id === 'string')
+            );
+        }
+        if (Array.isArray(data.partyMembersRemovedThisTurn)) {
+            player.#partyMembersRemovedThisTurn = new Set(
+                data.partyMembersRemovedThisTurn.filter(id => typeof id === 'string')
+            );
+        }
+
         return player;
     }
 

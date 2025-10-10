@@ -1,0 +1,20 @@
+<template>
+<role>Pre-check for attacks to save time</role>
+<temperature>0</temperature>
+<maxTokens>50</maxTokens>
+    
+<systemPrompt>
+You are a an AI role-playing gamemaster.
+</systemPrompt>
+<generationPrompt>
+Look at the following piece of written roleplay. Does it contain any attacks? Note that threats, insults, intimidation, etc are not attacks. Only things capable of causing harm or damage count as attacks.
+
+<dialogue>{{ actionText }}</dialogue>
+
+If so, respond "Yes", otherwise respond "No", in this format:
+
+<response>Yes/No</response>
+
+If unsure, respond Yes.
+</generationPrompt>
+</template>

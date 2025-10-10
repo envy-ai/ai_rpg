@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { DOMParser, XMLSerializer } = require('xmldom');
 const Utils = require('./Utils.js');
+const Globals = require('./Globals.js');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -69,6 +70,7 @@ let config;
 try {
     const configFile = fs.readFileSync(path.join(__dirname, 'config.yaml'), 'utf8');
     config = yaml.load(configFile);
+    Globals.config = config;
 } catch (error) {
     console.error('Error loading config.yaml:', error.message);
     process.exit(1);
