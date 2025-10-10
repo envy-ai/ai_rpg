@@ -4,9 +4,9 @@ class SanitizedStringMap extends Map {
       throw new TypeError('SanitizedStringMap only accepts string keys.');
     }
     return key
-      .trim()
       .replace(/[^\w\s]|_/g, ' ')
       .replace(/\s+/g, ' ')
+      .trim()
       .toLowerCase();
   }
 

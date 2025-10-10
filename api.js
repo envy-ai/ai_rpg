@@ -303,8 +303,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            if (currentPlayer && Array.isArray(currentPlayer.party)) {
-                currentPlayer.party.forEach(addNpcId);
+            if (currentPlayer) {
+                const partyMembers = typeof currentPlayer.getPartyMembers === 'function'
+                    ? currentPlayer.getPartyMembers()
+                    : (Array.isArray(currentPlayer.party) ? currentPlayer.party : []);
+
+                if (Array.isArray(partyMembers)) {
+                    partyMembers.forEach(addNpcId);
+                } else if (partyMembers && typeof partyMembers.forEach === 'function') {
+                    partyMembers.forEach(addNpcId);
+                }
             }
 
             return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -3800,6 +3808,31 @@ module.exports = function registerApiRoutes(scope) {
 
             const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
 
+            let recentHistoryEntries = historyEntries;
+            if (historyEntries.length) {
+                let lastTravelIndex = -1;
+                for (let i = historyEntries.length - 1; i >= 0; i -= 1) {
+                    if (historyEntries[i]?.travel) {
+                        lastTravelIndex = i;
+                        break;
+                    }
+                }
+
+                if (lastTravelIndex !== -1) {
+                    let previousTravelIndex = -1;
+                    for (let i = lastTravelIndex - 1; i >= 0; i -= 1) {
+                        if (historyEntries[i]?.travel) {
+                            previousTravelIndex = i;
+                            break;
+                        }
+                    }
+
+                    const sliceStart = previousTravelIndex >= 0 ? previousTravelIndex + 1 : 0;
+                    const sliceEnd = Math.max(sliceStart, lastTravelIndex);
+                    recentHistoryEntries = historyEntries.slice(sliceStart, sliceEnd);
+                }
+            }
+
             const lowercaseCache = new Map();
 
             const memoryTasks = [];
@@ -3820,7 +3853,7 @@ module.exports = function registerApiRoutes(scope) {
                 lowercaseCache.set(actorName, actorLower);
 
                 const filteredHistory = [];
-                for (const entry of historyEntries) {
+                for (const entry of recentHistoryEntries) {
                     if (!entry || entry.travel) {
                         continue;
                     }
