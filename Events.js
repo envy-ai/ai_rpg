@@ -16,8 +16,8 @@ const EVENT_PROMPT_ORDER = [
     { key: 'consume_item', prompt: `Were any items consumed, either by being used as components in crafting, by being eaten or drunk, or by being destroyed or otherwise removed from the scene or any inventory? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
     { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
-    { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
     { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
+    { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
     { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
     { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, or other resource nodes) appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
@@ -523,6 +523,8 @@ class Events {
         const suppressedNpc = omitNpcGeneration ? new Set(['npc_arrival_departure', 'alter_npc']) : null;
         const suppressedItems = omitItemGeneration ? new Set(['item_appear', 'scenery_appear', 'harvestable_resource_appear', 'alter_item']) : null;
 
+        /* Keeping this here for reference in case we want to backtrack. */
+        /*
         const executionOrder = [
             'new_exit_discovered',
             'alter_location',
@@ -550,6 +552,10 @@ class Events {
             'experience_check',
             'move_location'
         ];
+        */
+
+        // Get executionOrder from EVENT_PROMPT_ORDER to ensure consistency
+        const executionOrder = EVENT_PROMPT_ORDER.map(def => def.key);
 
         const parsedMap = parsedEvents.parsed;
         const seen = new Set();
@@ -1221,14 +1227,21 @@ class Events {
                     await Promise.all(generationTasks);
                 }
             },
-            pick_up_item: function (entries = [], context = {}) {
+            pick_up_item: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
                 const { findThingByName, findActorByName } = this._deps;
                 for (const entry of entries) {
-                    const thing = findThingByName?.(entry.item);
+                    let thing = findThingByName?.(entry.item);
                     const actor = findActorByName?.(entry.name);
+                    if (!thing) {
+                        await this._ensureItemsExist([entry.item], context.location, {
+                            allowObtained: true,
+                            recordNewItems: false
+                        });
+                        thing = findThingByName?.(entry.item);
+                    }
                     if (!thing || !actor || typeof actor.addInventoryItem !== 'function') {
                         continue;
                     }
@@ -1266,17 +1279,7 @@ class Events {
                     return;
                 }
 
-                try {
-                    await this._generateItemsIntoWorld(items, context.location);
-                } catch (error) {
-                    console.warn('Failed to generate items:', error.message);
-                }
-
-                for (const item of items) {
-                    if (typeof item === 'string' && item.trim()) {
-                        this.newItems.add(item);
-                    }
-                }
+                await this._ensureItemsExist(items, context.location);
             },
             scenery_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -1580,6 +1583,46 @@ class Events {
 
         const locationCandidate = this.resolveLocationCandidate(location) || location;
         return generateItemsByNames({ itemNames: names, location: locationCandidate, options });
+    }
+
+    static async _ensureItemsExist(rawNames = [], location = null, { allowObtained = false, recordNewItems = true } = {}) {
+        if (!Array.isArray(rawNames) || !rawNames.length) {
+            return [];
+        }
+
+        const names = [];
+        for (const raw of rawNames) {
+            if (typeof raw !== 'string') {
+                continue;
+            }
+            const trimmed = raw.trim();
+            if (!trimmed) {
+                continue;
+            }
+            if (!allowObtained && this.obtainedItems.has(trimmed)) {
+                continue;
+            }
+            names.push(trimmed);
+        }
+
+        if (!names.length) {
+            return [];
+        }
+
+        try {
+            await this._generateItemsIntoWorld(names, location);
+        } catch (error) {
+            console.warn('Failed to generate items:', error.message);
+            return [];
+        }
+
+        if (recordNewItems) {
+            for (const name of names) {
+                this.newItems.add(name);
+            }
+        }
+
+        return names;
     }
 
     static _removeItemFromInventories(thing) {
