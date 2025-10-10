@@ -8085,6 +8085,85 @@ function npcNameContainsBannedWord(name, bannedWords = getBannedNpcWords()) {
     return false;
 }
 
+function normalizeNpcName(name) {
+    return typeof name === 'string' ? name.trim() : '';
+}
+
+function normalizeNameForComparison(name) {
+    const normalized = normalizeNpcName(name);
+    return normalized ? normalized.toLowerCase() : '';
+}
+
+function isNpcNameAllowed(name, { bannedWords = getBannedNpcWords(), forbiddenNames = null } = {}) {
+    const normalized = normalizeNpcName(name);
+    if (!normalized) {
+        return false;
+    }
+
+    if (npcNameContainsBannedWord(normalized, bannedWords)) {
+        return false;
+    }
+
+    if (forbiddenNames instanceof Set) {
+        const comparison = normalized.toLowerCase();
+        if (comparison && forbiddenNames.has(comparison)) {
+            return false;
+        }
+    } else if (Array.isArray(forbiddenNames)) {
+        const comparison = normalized.toLowerCase();
+        for (const entry of forbiddenNames) {
+            if (typeof entry === 'string' && entry.trim().toLowerCase() === comparison) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+function applyNpcNameTemplate(template, name) {
+    if (typeof template !== 'string' || !template.trim()) {
+        return null;
+    }
+    return template.includes('%NAME%')
+        ? template.split('%NAME%').join(name)
+        : template;
+}
+
+function pullRegeneratedNpcEntry(mapping, name) {
+    if (!mapping || typeof mapping.get !== 'function') {
+        return null;
+    }
+    const key = normalizeNameForComparison(name);
+    if (!key) {
+        return null;
+    }
+    const bucket = mapping.get(key);
+    if (!Array.isArray(bucket) || bucket.length === 0) {
+        return null;
+    }
+    const entry = bucket.shift();
+    if (!bucket.length) {
+        mapping.delete(key);
+    }
+    return entry;
+}
+
+function selectFirstAllowedNpcName(candidates, { bannedWords = getBannedNpcWords(), forbiddenNames = null } = {}) {
+    if (!Array.isArray(candidates) || !candidates.length) {
+        return null;
+    }
+    for (const candidate of candidates) {
+        if (!candidate) {
+            continue;
+        }
+        if (isNpcNameAllowed(candidate, { bannedWords, forbiddenNames })) {
+            return normalizeNpcName(candidate);
+        }
+    }
+    return null;
+}
+
 function formatDurationLine(durationSeconds) {
     if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds)) {
         return `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`;
@@ -8235,13 +8314,45 @@ function parseNpcNameRegenResponse(xmlContent) {
         const mapping = new Map();
         const npcNodes = Array.from(doc.getElementsByTagName('npc'));
         for (const node of npcNodes) {
-            const oldName = node.getElementsByTagName('oldName')[0]?.textContent?.trim();
-            const newName = node.getElementsByTagName('name')[0]?.textContent?.trim();
+            const oldNameRaw = node.getElementsByTagName('oldName')[0]?.textContent;
+            const oldName = normalizeNpcName(oldNameRaw);
+            if (!oldName) {
+                continue;
+            }
+
+            const candidateNodes = Array.from(node.getElementsByTagName('name')).filter(nameNode => {
+                if (!nameNode || !nameNode.parentNode) {
+                    return false;
+                }
+                if (nameNode.parentNode !== node) {
+                    return false;
+                }
+                return true;
+            });
+
+            const candidates = candidateNodes
+                .map(candidateNode => normalizeNpcName(candidateNode?.textContent))
+                .filter(Boolean);
+
+            if (!candidates.length) {
+                continue;
+            }
+
             const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
             const description = node.getElementsByTagName('description')[0]?.textContent?.trim() || '';
-            if (oldName && newName) {
-                mapping.set(oldName, { newName, shortDescription, description });
+
+            const entry = {
+                oldName,
+                candidates,
+                shortTemplate: shortDescription,
+                descriptionTemplate: description
+            };
+
+            const key = normalizeNameForComparison(oldName);
+            if (!mapping.has(key)) {
+                mapping.set(key, []);
             }
+            mapping.get(key).push(entry);
         }
         return mapping;
     } catch (error) {
@@ -8270,47 +8381,73 @@ async function enforceBannedNpcNames({
     const workingList = npcDataList.map(npc => ({ ...npc }));
     const messages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
 
+    const globalForbiddenNames = new Set();
+    const addForbiddenName = (value) => {
+        const normalized = normalizeNameForComparison(value);
+        if (normalized) {
+            globalForbiddenNames.add(normalized);
+        }
+    };
+
+    if (Array.isArray(existingNpcSummaries)) {
+        for (const summary of existingNpcSummaries) {
+            addForbiddenName(summary?.name);
+        }
+    }
+
+    Player.getAll().forEach(npc => {
+        if (!npc || !npc.isNPC) {
+            return;
+        }
+        addForbiddenName(npc.name);
+    });
+
+    for (const npc of workingList) {
+        if (isNpcNameAllowed(npc?.name, { bannedWords })) {
+            addForbiddenName(npc.name);
+        }
+    }
+
     let attempts = 0;
     while (attempts < 3) {
-        const offenders = workingList
-            .filter(npc => npc && npc.name && npcNameContainsBannedWord(npc.name, bannedWords))
-            .map(npc => ({
-                name: npc.name,
-                shortDescription: npc.shortDescription || '',
-                detailedDescription: npc.description || ''
-            }));
-
+        const offenders = workingList.filter(npc => !isNpcNameAllowed(npc?.name, { bannedWords }));
         if (!offenders.length) {
             break;
         }
+
+        const offenderSummaries = offenders.map(npc => ({
+            name: npc.name,
+            shortDescription: npc.shortDescription || '',
+            detailedDescription: npc.description || ''
+        }));
 
         const contextMap = new Map();
         const addToContext = summary => {
             if (!summary || !summary.name) {
                 return;
             }
-            const key = summary.name.toLowerCase();
+            const key = normalizeNameForComparison(summary.name);
+            if (!key) {
+                return;
+            }
             if (!contextMap.has(key)) {
                 contextMap.set(key, summary);
             }
         };
 
-        for (const summary of existingNpcSummaries || []) {
-            addToContext(summary);
+        if (Array.isArray(existingNpcSummaries)) {
+            existingNpcSummaries.forEach(addToContext);
         }
 
-        for (const npc of workingList) {
-            const derived = {
-                name: npc.name,
-                shortDescription: npc.shortDescription || '',
-                detailedDescription: npc.description || ''
-            };
-            addToContext(derived);
-        }
+        workingList.forEach(npc => addToContext({
+            name: npc?.name,
+            shortDescription: npc?.shortDescription || '',
+            detailedDescription: npc?.description || ''
+        }));
 
         const prompt = renderNpcNameRegenPrompt({
             existingNpcSummaries: Array.from(contextMap.values()),
-            regenerationCandidates: offenders
+            regenerationCandidates: offenderSummaries
         });
 
         if (!prompt) {
@@ -8363,23 +8500,59 @@ async function enforceBannedNpcNames({
             continue;
         }
 
+        const offenderSet = new Set(offenders);
+        const iterationForbidden = new Set(globalForbiddenNames);
         for (const npc of workingList) {
-            if (!npc || !npc.name) {
+            if (!npc || offenderSet.has(npc)) {
                 continue;
             }
-            const replacement = mapping.get(npc.name) || mapping.get(npc.name.trim());
-            if (replacement) {
-                npc.name = replacement.newName;
-                if (replacement.shortDescription) {
-                    npc.shortDescription = replacement.shortDescription;
-                }
-                if (replacement.description) {
-                    npc.description = replacement.description;
-                }
+            const normalized = normalizeNameForComparison(npc.name);
+            if (normalized) {
+                iterationForbidden.add(normalized);
             }
         }
 
-        attempts += 1;
+        let retryRequired = false;
+
+        for (const offender of offenders) {
+            const entry = pullRegeneratedNpcEntry(mapping, offender.name);
+            if (!entry) {
+                retryRequired = true;
+                continue;
+            }
+
+            const candidate = selectFirstAllowedNpcName(entry.candidates, {
+                bannedWords,
+                forbiddenNames: iterationForbidden
+            });
+
+            if (!candidate) {
+                retryRequired = true;
+                continue;
+            }
+
+            const shortDescription = applyNpcNameTemplate(entry.shortTemplate, candidate);
+            const description = applyNpcNameTemplate(entry.descriptionTemplate, candidate);
+
+            offender.name = candidate;
+            if (shortDescription) {
+                offender.shortDescription = shortDescription;
+            }
+            if (description) {
+                offender.description = description;
+            }
+
+            const normalizedCandidate = normalizeNameForComparison(candidate);
+            if (normalizedCandidate) {
+                iterationForbidden.add(normalizedCandidate);
+                globalForbiddenNames.add(normalizedCandidate);
+            }
+        }
+
+        if (retryRequired) {
+            attempts += 1;
+            continue;
+        }
     }
 
     return workingList;
@@ -8408,6 +8581,7 @@ async function ensureUniqueNpcNames({
     const workingList = npcDataList.map(npc => ({ ...npc }));
 
     const baseMessages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
+    const bannedWords = getBannedNpcWords();
 
     const rebuildNameSet = () => {
         const nameSet = new Map();
@@ -8539,41 +8713,70 @@ async function ensureUniqueNpcNames({
             continue;
         }
 
+        const baseForbiddenNames = new Set();
+        existingNameSet.forEach((_, key) => {
+            if (key) {
+                baseForbiddenNames.add(key);
+            }
+        });
         for (const npc of workingList) {
-            if (!npc || typeof npc.name !== 'string') {
+            const normalized = normalizeNameForComparison(npc?.name);
+            if (normalized) {
+                baseForbiddenNames.add(normalized);
+            }
+        }
+
+        let retryRequired = false;
+
+        for (const npc of duplicates) {
+            const entry = pullRegeneratedNpcEntry(mapping, npc.name);
+            if (!entry) {
+                retryRequired = true;
                 continue;
             }
-            const currentName = npc.name.trim();
-            if (!currentName) {
+
+            const candidate = selectFirstAllowedNpcName(entry.candidates, {
+                bannedWords,
+                forbiddenNames: baseForbiddenNames
+            });
+
+            if (!candidate) {
+                retryRequired = true;
                 continue;
             }
-            const replacement = mapping.get(currentName) || mapping.get(currentName.toLowerCase());
-            if (replacement && replacement.newName) {
-                npc.name = replacement.newName;
-                if (replacement.shortDescription) {
-                    npc.shortDescription = replacement.shortDescription;
-                }
-                if (replacement.description) {
-                    npc.description = replacement.description;
-                }
+
+            const shortDescription = applyNpcNameTemplate(entry.shortTemplate, candidate);
+            const description = applyNpcNameTemplate(entry.descriptionTemplate, candidate);
+
+            npc.name = candidate;
+            if (shortDescription) {
+                npc.shortDescription = shortDescription;
+            }
+            if (description) {
+                npc.description = description;
+            }
+
+            const normalizedCandidate = normalizeNameForComparison(candidate);
+            if (normalizedCandidate) {
+                baseForbiddenNames.add(normalizedCandidate);
             }
         }
 
         existingNameSet = rebuildNameSet();
         workingList.forEach(npc => {
-            if (!npc || typeof npc.name !== 'string') {
+            const normalized = normalizeNameForComparison(npc?.name);
+            if (!normalized) {
                 return;
             }
-            const key = npc.name.trim().toLowerCase();
-            if (!key) {
-                return;
-            }
-            if (!existingNameSet.has(key)) {
-                existingNameSet.set(key, [npc.name]);
+            if (!existingNameSet.has(normalized)) {
+                existingNameSet.set(normalized, [npc.name]);
             }
         });
 
-        attempts += 1;
+        if (retryRequired) {
+            attempts += 1;
+            continue;
+        }
     }
 
     return workingList;

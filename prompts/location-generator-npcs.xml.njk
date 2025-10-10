@@ -17,12 +17,12 @@ Here's a list of existing NPCs in other locations in this region:
 {% for npc in existingNpcsInOtherLocations %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 
-Here's a list of existing NPCs in this location:
+Here's a list of existing NPCs already present in this location:
 {% for npc in existingNpcsInThisLocation %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 </context>
 
-Generate {{ numNpcs }} NPCs and {{ numHostiles }} hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
+Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
 
 <npcs>
 <npc>

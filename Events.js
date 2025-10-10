@@ -8,7 +8,7 @@ const DEFAULT_STATUS_DURATION = 3;
 const MAJOR_STATUS_DURATION = 5;
 
 const EVENT_PROMPT_ORDER = [
-    { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, or block a path, exit, or vehicle to another region? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. Note that the difference between a location and a region is that a location is a specific place (like a building, room, or landmark) while a region is a broader area (like a neighborhood, district, or zone). Consider whether you're conceptually entering a different region (anything with multiple locations, such as a building, town, biome, planet, etc), or part of the current one (which would be a location). An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player, still list it here.  For example, a train to townsville would appear as "Townsville -> region -> train -> A bustling town known for its markets and friendly locals." An adjacent forest would appear as "Whispering Woods -> location -> none -> A dense forest filled with towering trees and the sound of rustling leaves."` },
+    { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, unblock, discover, or create an exit or vehicle to another region? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. Note that the difference between a location and a region is that a location is a specific place (like a building, room, or landmark) while a region is a broader area (like a neighborhood, district, or zone). Consider whether you're conceptually entering a different region (anything with multiple locations, such as a building, town, biome, planet, etc), or part of the current one (which would be a location). An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player, still list it here.  For example, a train to townsville would appear as "Townsville -> region -> train -> A bustling town known for its markets and friendly locals." An adjacent forest would appear as "Whispering Woods -> location -> none -> A dense forest filled with towering trees and the sound of rustling leaves."` },
     { key: 'move_location', prompt: `Did the player travel to or end up in a different location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
     { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.` },
     { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
@@ -980,7 +980,7 @@ class Events {
                                 descriptionHint: entry.description || `A path leading to ${exitName}.`,
                                 vehicleType: entry.vehicleType || null,
                                 isVehicle: Boolean(entry.vehicleType),
-                                expandStub: !isRegion
+                                expandStub: false
                             });
                         } catch (error) {
                             throw new Error(`[new_exit_discovered] Failed to create destination "${exitName}": ${error.message}`);
@@ -1104,13 +1104,27 @@ class Events {
                 const alteredSummaries = [];
 
                 for (const entry of entries) {
-                    if (!entry || !entry.description) {
+                    if (!entry) {
                         continue;
+                    }
+
+                    const changeDescription = typeof entry.description === 'string'
+                        ? entry.description.trim()
+                        : '';
+                    if (!changeDescription) {
+                        entry.description = '';
+                        entry.changeDescription = '';
+                        continue;
+                    }
+
+                    entry.description = changeDescription;
+                    entry.changeDescription = changeDescription;
+                    if (!entry.name) {
+                        entry.name = entry.newName || entry.currentName || location.name || baseSnapshot.name;
                     }
 
                     try {
                         const baseContext = await prepareBasePromptContext({ locationOverride: location });
-                        const changeDescription = entry.description || '';
                         const oldName = entry.currentName || location.name || baseSnapshot.name;
                         const desiredName = entry.newName || location.name || baseSnapshot.name;
 
@@ -1215,6 +1229,16 @@ class Events {
 
                         if (summary) {
                             alteredSummaries.push(summary);
+
+                            entry.changeDescription = summary.changeDescription || changeDescription;
+                            entry.description = entry.changeDescription;
+                            entry.name = summary.newName || summary.originalName || entry.name;
+                            if (summary.originalName && !entry.currentName) {
+                                entry.currentName = summary.originalName;
+                            }
+                            if (summary.newName) {
+                                entry.newName = summary.newName;
+                            }
 
                             baseSnapshot.name = location.name || baseSnapshot.name;
                             baseSnapshot.description = location.description || baseSnapshot.description;
@@ -1583,18 +1607,20 @@ class Events {
                 const { findActorByName, ensureNpcByName } = this._deps;
                 for (const entry of entries) {
                     const name = normalizeString(entry.name);
-                    if (!name) {
+                    if (!name || this.arrivedCharacters.has(name) || this.newCharacters.has(name)) {
                         continue;
                     }
-                    if (entry.action === 'arrived') {
-                        if (typeof ensureNpcByName === 'function') {
-                            ensureNpcByName(name, context).catch(error => {
-                                console.warn('Failed to ensure NPC arrival:', error.message);
-                            });
-                        }
-                        this.arrivedCharacters.add(name);
-                        if (entry.firstAppearance) {
+                    const isFirstAppearance = Boolean(entry.firstAppearance);
+                    if (entry.action === 'arrived' || isFirstAppearance) {
+                        let newName = ensureNpcByName(name, context).catch(error => {
+                            console.warn('Failed to ensure NPC arrival:', error.message);
+                        });
+                        if (isFirstAppearance) {
                             this.newCharacters.add(name);
+                            this.newCharacters.add(newName);
+                            name = newName;
+                        } else {
+                            this.arrivedCharacters.add(name);
                         }
                     }
                     const npc = findActorByName?.(name);

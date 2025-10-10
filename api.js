@@ -4783,6 +4783,8 @@ module.exports = function registerApiRoutes(scope) {
             let playerActionStreamSent = false;
             const newChatEntries = [];
 
+            let location = null;
+
             let travelMetadata = null;
             let travelMetadataNormalizationError = null;
 
@@ -5037,7 +5039,6 @@ module.exports = function registerApiRoutes(scope) {
 
                 stream.status('player_action:context', 'Preparing game state for action.');
 
-                let location = null;
                 let plausibilityInfo = null;
                 let attackCheckInfo = null;
                 let attackContextForPlausibility = null;
