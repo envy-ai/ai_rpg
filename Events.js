@@ -1048,6 +1048,7 @@ class Events {
                     }
                     const item = findThingByName(itemName);
                     if (!item) {
+                        console.debug(`[consume_item] Unable to locate item "${itemName}" for consumption.`);
                         continue;
                     }
                     this._removeItemFromInventories(item);
