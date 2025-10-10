@@ -3943,6 +3943,23 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     ensureExitConnection(originLocation, regionEntryStub, exitOptions);
 
+    let resolvedOriginDirection = directionKey;
+    if (typeof originLocation.getAvailableDirections === 'function'
+        && typeof originLocation.getExit === 'function') {
+        const directions = originLocation.getAvailableDirections();
+        const matchedDirection = directions.find(dir => {
+            const exit = originLocation.getExit(dir);
+            return exit && exit.destination === regionEntryStub.id;
+        });
+        if (matchedDirection) {
+            resolvedOriginDirection = matchedDirection;
+        }
+    }
+
+    if (resolvedOriginDirection && resolvedOriginDirection !== directionKey) {
+        stubMetadata.originDirection = resolvedOriginDirection;
+    }
+
     pendingRegionStubs.set(newRegionId, {
         id: newRegionId,
         name: trimmedName,
@@ -3953,6 +3970,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         sourceRegionId: currentRegion?.id || null,
         exitLocationId: originLocation.id,
         entranceStubId: regionEntryStub.id,
+        originDirection: stubMetadata.originDirection,
         createdAt: new Date().toISOString()
     });
 
