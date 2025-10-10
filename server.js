@@ -1609,6 +1609,25 @@ function findActorByName(name) {
     return null;
 }
 
+function findActorById(id) {
+    if (!id || typeof id !== 'string') {
+        return null;
+    }
+
+    if (currentPlayer && currentPlayer.id === id) {
+        return currentPlayer;
+    }
+
+    if (players instanceof Map) {
+        const actor = players.get(id);
+        if (actor) {
+            return actor;
+        }
+    }
+
+    return null;
+}
+
 async function ensureNpcByName(name, context = {}) {
     const existing = findActorByName(name);
     if (existing) {
@@ -13138,6 +13157,7 @@ Events.initialize({
     promptEnv,
     parseXMLTemplate,
     findActorByName,
+    findActorById,
     findThingByName,
     findLocationByNameLoose,
     findRegionByNameLoose,

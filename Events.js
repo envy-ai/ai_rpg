@@ -1050,6 +1050,8 @@ class Events {
                     if (!item) {
                         console.debug(`[consume_item] Unable to locate item "${itemName}" for consumption.`);
                         continue;
+                    } else {
+                        console.debug(`[consume_item] Consuming item "${itemName}".`);
                     }
                     this._removeItemFromInventories(item);
                     this._detachThingFromWorld(item);
@@ -1632,8 +1634,15 @@ class Events {
         if (metadata.ownerId && typeof findActorById === 'function') {
             const owner = findActorById(metadata.ownerId);
             if (owner && typeof owner.removeInventoryItem === 'function') {
+                console.debug(`[consume_item] Removing ${thing.name || thing.id} from owner ${owner.name || owner.id}.`);
                 owner.removeInventoryItem(thing);
+            } else if (owner) {
+                console.debug(`[consume_item] Owner ${owner.name || owner.id} lacks removeInventoryItem.`);
+            } else {
+                console.debug(`[consume_item] Owner with id ${metadata.ownerId} not found.`);
             }
+        } else if (metadata.ownerId) {
+            console.debug(`[consume_item] Cannot resolve owner ${metadata.ownerId} for ${thing.name || thing.id}.`);
         }
     }
 
