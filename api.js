@@ -369,6 +369,56 @@ module.exports = function registerApiRoutes(scope) {
             return normalized;
         };
 
+        const normalizeTravelMetadata = (input) => {
+            if (input === null || input === undefined) {
+                return null;
+            }
+            if (typeof input !== 'object') {
+                throw new Error('Travel metadata must be an object.');
+            }
+
+            const exit = input.exit;
+            if (!exit || typeof exit !== 'object') {
+                throw new Error('Travel metadata is missing exit details.');
+            }
+
+            const sanitizeString = value => {
+                if (typeof value !== 'string') {
+                    return null;
+                }
+                const trimmed = value.trim();
+                return trimmed.length ? trimmed : null;
+            };
+
+            const normalizedMode = sanitizeString(input.mode);
+            const normalized = {
+                mode: normalizedMode ? normalizedMode.toLowerCase() : null,
+                eventDriven: Boolean(input.eventDriven === true || (normalizedMode && normalizedMode.toLowerCase() === 'event')),
+                exit: {
+                    exitId: sanitizeString(exit.exitId),
+                    direction: sanitizeString(exit.direction),
+                    originLocationId: sanitizeString(exit.originLocationId),
+                    destinationId: sanitizeString(exit.destinationId),
+                    destinationRegionId: sanitizeString(exit.destinationRegionId),
+                    destinationIsStub: Boolean(exit.destinationIsStub),
+                    destinationIsRegionEntryStub: Boolean(exit.destinationIsRegionEntryStub),
+                    isVehicle: Boolean(exit.isVehicle),
+                    vehicleType: sanitizeString(exit.vehicleType),
+                    destinationName: sanitizeString(exit.destinationName),
+                    regionName: sanitizeString(exit.regionName)
+                }
+            };
+
+            if (!normalized.exit.destinationId) {
+                throw new Error('Travel metadata is missing a destinationId.');
+            }
+            if (!normalized.exit.originLocationId) {
+                throw new Error('Travel metadata is missing an originLocationId.');
+            }
+
+            return normalized;
+        };
+
         const emitAiUsageMetrics = (response, { label = 'chat_completion', streamEmitter = null } = {}) => {
             if (!response || !response.data || typeof response.data !== 'object') {
                 return null;
@@ -4215,7 +4265,8 @@ module.exports = function registerApiRoutes(scope) {
                 messages,
                 clientId: rawClientId,
                 requestId: rawRequestId,
-                travel: rawTravelFlag
+                travel: rawTravelFlag,
+                travelMetadata: rawTravelMetadata
             } = requestBody;
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
             let corpseProcessingRan = false;
@@ -4237,6 +4288,9 @@ module.exports = function registerApiRoutes(scope) {
             };
             let playerActionStreamSent = false;
             const newChatEntries = [];
+
+            let travelMetadata = null;
+            let travelMetadataNormalizationError = null;
 
             const initialPlayerLocationId = currentPlayer?.currentLocation || null;
             let locationMemoriesProcessed = false;
@@ -4302,6 +4356,100 @@ module.exports = function registerApiRoutes(scope) {
                 return res.json(payload);
             };
 
+            try {
+                travelMetadata = normalizeTravelMetadata(rawTravelMetadata);
+            } catch (error) {
+                travelMetadataNormalizationError = error;
+            }
+
+            if (travelMetadataNormalizationError) {
+                const message = travelMetadataNormalizationError.message || 'Invalid travel metadata.';
+                stream.error({ message });
+                stream.complete({ aborted: true });
+                return respond({ error: message }, 400);
+            }
+
+            const travelMetadataIsEventDriven = Boolean(travelMetadata?.eventDriven);
+            const travelFailureDegrees = new Set([
+                'critical_failure',
+                'major_failure',
+                'minor_failure',
+                'barely_failed',
+                'implausible_failure'
+            ]);
+            let resolvedTravelContext = null;
+
+            const resolveTravelContext = () => {
+                if (!travelMetadata || !travelMetadata.exit) {
+                    return null;
+                }
+                if (resolvedTravelContext) {
+                    return resolvedTravelContext;
+                }
+
+                const { originLocationId, exitId, direction, destinationId } = travelMetadata.exit;
+                const normalizedOriginId = requireLocationId(originLocationId, 'travel origin');
+                const normalizedDestinationId = requireLocationId(destinationId, 'travel destination');
+
+                if (initialPlayerLocationId && normalizedOriginId !== initialPlayerLocationId) {
+                    throw new Error(`Travel origin mismatch (expected '${initialPlayerLocationId}', received '${normalizedOriginId}').`);
+                }
+
+                const originLocation = gameLocations.get(normalizedOriginId)
+                    || Location.get(normalizedOriginId);
+                if (!originLocation) {
+                    throw new Error(`Origin location '${normalizedOriginId}' not found for travel.`);
+                }
+
+                const availableDirections = typeof originLocation.getAvailableDirections === 'function'
+                    ? originLocation.getAvailableDirections()
+                    : [];
+                const normalizedDirection = direction ? direction.toLowerCase() : null;
+
+                let matchedExit = null;
+                for (const availableDirection of availableDirections) {
+                    const exitCandidate = originLocation.getExit(availableDirection);
+                    if (!exitCandidate) {
+                        continue;
+                    }
+                    if (exitId && exitCandidate.id === exitId) {
+                        matchedExit = exitCandidate;
+                        break;
+                    }
+                    if (!matchedExit && normalizedDirection && availableDirection.toLowerCase() === normalizedDirection) {
+                        matchedExit = exitCandidate;
+                    }
+                    if (!matchedExit && exitCandidate.destination === normalizedDestinationId) {
+                        matchedExit = exitCandidate;
+                    }
+                }
+
+                if (!matchedExit && exitId && gameLocationExits?.has(exitId)) {
+                    matchedExit = gameLocationExits.get(exitId) || null;
+                }
+
+                if (!matchedExit) {
+                    throw new Error('Travel exit could not be resolved from the current location.');
+                }
+
+                if (matchedExit.destination !== normalizedDestinationId) {
+                    throw new Error('Travel exit destination does not match the provided destinationId.');
+                }
+
+                const destinationLocation = gameLocations.get(normalizedDestinationId)
+                    || Location.get(normalizedDestinationId);
+                if (!destinationLocation) {
+                    throw new Error(`Destination location '${normalizedDestinationId}' not found.`);
+                }
+
+                resolvedTravelContext = {
+                    originLocation,
+                    exit: matchedExit,
+                    destinationLocation
+                };
+                return resolvedTravelContext;
+            };
+
             const stripStreamedEventArtifacts = (payload) => {
                 if (!payload || typeof payload !== 'object') {
                     return;
@@ -4334,6 +4482,17 @@ module.exports = function registerApiRoutes(scope) {
                 if (userMessage && userMessage.role === 'user') {
                     const isTravelMessage = rawTravelFlag === true;
                     currentActionIsTravel = isTravelMessage;
+
+                    if (travelMetadataIsEventDriven && currentActionIsTravel) {
+                        try {
+                            resolveTravelContext();
+                        } catch (error) {
+                            const message = error.message || 'Failed to resolve travel metadata.';
+                            stream.error({ message });
+                            stream.complete({ aborted: true });
+                            return respond({ error: message }, 400);
+                        }
+                    }
 
                     let priorEntry = null;
                     if (Array.isArray(chatHistory) && chatHistory.length > 0) {
@@ -5150,6 +5309,96 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (Array.isArray(eventResult.needBarChanges) && eventResult.needBarChanges.length) {
                             responseData.needBarChanges = eventResult.needBarChanges;
+                        }
+                    }
+
+                    if (travelMetadataIsEventDriven && currentActionIsTravel) {
+                        let travelAttemptSucceeded = false;
+                        if (plausibilityType === 'trivial') {
+                            travelAttemptSucceeded = true;
+                        } else if (plausibilityType === 'plausible') {
+                            if (!actionResolution || !actionResolution.degree) {
+                                travelAttemptSucceeded = true;
+                            } else {
+                                const normalizedDegree = actionResolution.degree.toLowerCase();
+                                travelAttemptSucceeded = !travelFailureDegrees.has(normalizedDegree);
+                            }
+                        }
+
+                        if (travelAttemptSucceeded) {
+                            try {
+                                const travelContext = resolveTravelContext();
+                                if (travelContext) {
+                                    let destinationLocation = travelContext.destinationLocation;
+
+                                    if (destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub) {
+                                        try {
+                                            const expanded = await expandRegionEntryStub(destinationLocation);
+                                            if (!expanded) {
+                                                throw new Error('Expansion returned no location.');
+                                            }
+                                            destinationLocation = expanded;
+                                            travelContext.destinationLocation = expanded;
+                                        } catch (expansionError) {
+                                            const message = expansionError?.message || String(expansionError);
+                                            throw new Error(`Failed to expand region entry stub for destination '${destinationLocation?.id || travelMetadata.exit.destinationId}': ${message}`);
+                                        }
+                                    }
+
+                                    const destinationName = destinationLocation?.name
+                                        || travelMetadata.exit.destinationName
+                                        || travelMetadata.exit.destinationId
+                                        || destinationLocation?.id;
+
+                                    if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
+                                        currentPlayer.setLocation(destinationLocation);
+                                    }
+
+                                    const normalizedName = typeof destinationName === 'string' && destinationName.trim()
+                                        ? destinationName.trim()
+                                        : (destinationLocation?.id || travelMetadata.exit.destinationId);
+
+                                    if (normalizedName) {
+                                        const eventsPayload = responseData.events
+                                            || (eventResult ? eventResult.structured : null)
+                                            || { parsed: {}, rawEntries: {} };
+
+                                        const parsedEvents = Array.isArray(eventsPayload.parsed?.move_location)
+                                            ? eventsPayload.parsed
+                                            : { ...eventsPayload.parsed };
+
+                                        const moveEntries = Array.isArray(parsedEvents.move_location)
+                                            ? parsedEvents.move_location.slice()
+                                            : [];
+
+                                        const alreadyListed = moveEntries.some(entry => (
+                                            typeof entry === 'string'
+                                            && entry.trim().toLowerCase() === normalizedName.toLowerCase()
+                                        ));
+
+                                        if (!alreadyListed) {
+                                            moveEntries.push(normalizedName);
+                                        }
+
+                                        parsedEvents.move_location = moveEntries;
+
+                                        const updatedRawEntries = eventsPayload.rawEntries
+                                            ? { ...eventsPayload.rawEntries }
+                                            : {};
+                                        updatedRawEntries.move_location = moveEntries.join(' | ');
+
+                                        eventsPayload.parsed = parsedEvents;
+                                        eventsPayload.rawEntries = updatedRawEntries;
+
+                                        responseData.events = eventsPayload;
+                                        if (eventResult && eventResult.structured !== eventsPayload) {
+                                            eventResult.structured = eventsPayload;
+                                        }
+                                    }
+                                }
+                            } catch (travelEnforcementError) {
+                                console.warn('Failed to enforce travel movement:', travelEnforcementError.message);
+                            }
                         }
                     }
 

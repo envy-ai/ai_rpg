@@ -890,39 +890,96 @@ class Events {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { Location, findRegionByLocationId } = this._deps;
-                if (!Location || typeof Location.get !== 'function') {
-                    return;
-                }
+                const {
+                    Location,
+                    findLocationByNameLoose,
+                    createLocationFromEvent,
+                    createRegionStubFromEvent,
+                    ensureExitConnection
+                } = this._deps;
+
                 const location = context.location;
-                if (!location) {
+                if (!location || typeof Location?.get !== 'function' || typeof ensureExitConnection !== 'function') {
                     return;
                 }
+
                 for (const entry of entries) {
-                    const normalizedName = entry.name;
-                    if (!normalizedName) {
+                    const exitName = typeof entry.name === 'string' ? entry.name.trim() : '';
+                    if (!exitName) {
                         continue;
                     }
-                    this.movedLocations.add(normalizedName);
-                    if (typeof location.addExit === 'function') {
-                        const payload = {
-                            name: normalizedName,
-                            description: entry.description,
-                            isVehicle: Boolean(entry.vehicleType),
-                            vehicleType: entry.vehicleType || null,
-                            kind: entry.kind
-                        };
+
+                    let destination = null;
+                    let createdRegionStub = false;
+                    if (typeof findLocationByNameLoose === 'function') {
+                        destination = findLocationByNameLoose(exitName) || null;
+                    }
+                    if (!destination && typeof Location.findByName === 'function') {
                         try {
-                            location.addExit(payload);
-                        } catch (error) {
-                            console.warn('Failed to add exit:', error.message);
+                            destination = Location.findByName(exitName);
+                        } catch (_) {
+                            destination = null;
                         }
                     }
-                    if (entry.kind === 'region' && typeof findRegionByLocationId === 'function') {
+
+                    const isRegion = entry.kind === 'region';
+
+                    if (!destination && isRegion && typeof createRegionStubFromEvent === 'function') {
                         try {
-                            findRegionByLocationId(location.id, { ensureRegion: normalizedName });
-                        } catch (_) {
-                            // ignore inability to ensure region
+                            destination = createRegionStubFromEvent({
+                                name: exitName,
+                                originLocation: location,
+                                description: entry.description || `Entrance to ${exitName}.`,
+                                vehicleType: entry.vehicleType || null,
+                                isVehicle: Boolean(entry.vehicleType)
+                            }) || null;
+                            createdRegionStub = Boolean(destination);
+                        } catch (error) {
+                            throw new Error(`[new_exit_discovered] Failed to create region stub for "${exitName}": ${error.message}`);
+                        }
+                    }
+
+                    if (!destination && typeof createLocationFromEvent === 'function') {
+                        try {
+                            destination = await createLocationFromEvent({
+                                name: exitName,
+                                originLocation: location,
+                                descriptionHint: entry.description || `A path leading to ${exitName}.`,
+                                vehicleType: entry.vehicleType || null,
+                                isVehicle: Boolean(entry.vehicleType),
+                                expandStub: !isRegion
+                            });
+                        } catch (error) {
+                            throw new Error(`[new_exit_discovered] Failed to create destination "${exitName}": ${error.message}`);
+                        }
+                    }
+
+                    if (!destination) {
+                        throw new Error(`[new_exit_discovered] Unable to resolve destination for exit "${exitName}".`);
+                    }
+
+                    let destinationRegion = undefined;
+                    if (isRegion) {
+                        destinationRegion = destination?.stubMetadata?.regionId
+                            || destination?.stubMetadata?.targetRegionId
+                            || destination?.regionId
+                            || null;
+                        if (!destinationRegion) {
+                            throw new Error(`[new_exit_discovered] Destination region metadata missing for exit "${exitName}".`);
+                        }
+                    }
+
+                    if (!createdRegionStub) {
+                        try {
+                            ensureExitConnection(location, destination, {
+                                description: entry.description || `Path to ${destination.name || exitName}`,
+                                bidirectional: !isRegion,
+                                destinationRegion,
+                                isVehicle: Boolean(entry.vehicleType),
+                                vehicleType: entry.vehicleType || null
+                            });
+                        } catch (error) {
+                            throw new Error(`[new_exit_discovered] Failed to ensure exit connection to "${destination.name || exitName}": ${error.message}`);
                         }
                     }
                 }
@@ -1552,23 +1609,37 @@ class Events {
                     return;
                 }
                 const player = context.player || this.currentPlayer;
-                const { Location } = this._deps;
+                const { Location, findLocationByNameLoose } = this._deps;
                 if (!player || typeof player.setLocation !== 'function' || !Location || typeof Location.get !== 'function') {
                     return;
                 }
-                const destinationName = entries[entries.length - 1];
+                const destinationInput = entries[entries.length - 1];
+                const destinationName = typeof destinationInput === 'string' ? destinationInput.trim() : '';
                 if (!destinationName) {
                     return;
                 }
                 try {
-                    const destination = Location.get(destinationName);
-                    if (destination) {
-                        player.setLocation(destination.id);
-                        context.location = destination;
-                        this.movedLocations.add(destination.name || destinationName);
+                    let destination = Location.get(destinationName);
+                    if (!destination && typeof Location.findByName === 'function') {
+                        try {
+                            destination = Location.findByName(destinationName);
+                        } catch (_) {
+                            destination = null;
+                        }
                     }
+                    if (!destination && typeof findLocationByNameLoose === 'function') {
+                        destination = findLocationByNameLoose(destinationName) || null;
+                    }
+
+                    if (!destination) {
+                        throw new Error(`[move_location] Unable to resolve destination "${destinationName}".`);
+                    }
+
+                    player.setLocation(destination.id);
+                    context.location = destination;
+                    this.movedLocations.add(destination.name || destinationName);
                 } catch (error) {
-                    console.warn('Failed to move player location:', error.message);
+                    throw new Error(`Failed to move player location to "${destinationName}": ${error.message}`);
                 }
             }
         };

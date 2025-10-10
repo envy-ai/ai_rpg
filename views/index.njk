@@ -10944,7 +10944,11 @@
                                 const destinationIsStub = Boolean(exit.destinationIsStub);
                                 const isExplored = !destinationIsStub && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
                                 travelButton.classList.add(isExplored ? 'exit-button--explored' : 'exit-button--unexplored');
-                                travelButton.addEventListener('click', () => moveToLocation(exit));
+                                travelButton.addEventListener('click', () => moveToLocation({
+                                    exit,
+                                    direction: key,
+                                    originLocationId: location.id
+                                }));
                                 container.appendChild(travelButton);
 
                                 if (exitId) {
@@ -11258,10 +11262,18 @@
                 }
             });
 
-            async function moveToLocation(exit) {
+            async function moveToLocation(moveRequest) {
+                const exit = moveRequest?.exit;
                 if (!exit || !exit.destination) {
                     return;
                 }
+
+                const originLocationId = (moveRequest && typeof moveRequest.originLocationId === 'string')
+                    ? moveRequest.originLocationId
+                    : null;
+                const directionKey = (moveRequest && typeof moveRequest.direction === 'string' && moveRequest.direction.trim())
+                    ? moveRequest.direction.trim()
+                    : null;
 
                 const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
                 const regionName = exit.destinationRegion ? (exit.destinationRegionName || baseName) : null;
@@ -11286,8 +11298,29 @@
                         alert('Unable to queue move command via chat.');
                         return;
                     }
+
+                    const travelMetadata = {
+                        mode: 'event',
+                        eventDriven: true,
+                        exit: {
+                            exitId: (typeof exit.id === 'string' && exit.id.trim()) ? exit.id.trim() : null,
+                            originLocationId: originLocationId || null,
+                            direction: directionKey,
+                            destinationId: exit.destination || null,
+                            destinationRegionId: exit.destinationRegion || null,
+                            destinationIsStub: Boolean(exit.destinationIsStub),
+                            destinationIsRegionEntryStub: Boolean(exit.destinationIsRegionEntryStub),
+                            isVehicle: Boolean(exit.isVehicle),
+                            vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : null,
+                            destinationName: typeof baseName === 'string' ? baseName.trim() || null : null,
+                            regionName: typeof regionName === 'string' ? regionName.trim() || null : null
+                        }
+                    };
                     try {
-                        await window.AIRPG_CHAT.dispatchAutomatedMessage(message, { travel: true });
+                        await window.AIRPG_CHAT.dispatchAutomatedMessage(message, {
+                            travel: true,
+                            travelMetadata
+                        });
                     } catch (error) {
                         console.error('Failed to dispatch move via chat:', error);
                         hideLocationOverlay();

@@ -88,7 +88,7 @@ You are an AI role-playing gamemaster responsible for expanding a living world. 
 {% set includeConnections = mode != 'locations' %}
 
 {% if isStub %}
-You are expanding the existing region described above. Invent **new** locations that fit naturally within this region, without duplicating existing locations. Use judgments on how many new locations are appropriate (generally between {{ minLocations }} and {{ maxLocations }}). Respect the established tone, geography, and level range. Describe how each new location connects to other locations in this region, explaining why those exits make sense. After defining the new locations, consider how this region links to other regions and propose any notable connected regions.
+You are creating the region "{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}" described briefly below. Invent **new** locations that fit naturally within this region, without duplicating existing locations. Use judgments on how many new locations are appropriate (generally between {{ minLocations }} and {{ maxLocations }}). Respect the established tone, geography, and level range. Describe how each new location connects to other locations in this region, explaining why those exits make sense. After defining the new locations, consider how this region links to other regions and propose any notable connected regions. If the region is not a building, ensure there are at least {{ minRegionExits }} non-'within' regionExit(s) among the locations.
 {% elseif mode == 'exits' %}
 You are analysing the current region and proposing meaningful connected regions that can be reached from it. Use the existing locations and themes to pick sensible exit points. Each connected region must include a description, a relative difficulty, the relationship (Within, Contains, Adjacent), and the location that serves as the exit.
 {% else %}
@@ -109,15 +109,16 @@ Guidelines:
 
 * Furniture and workstations are not locations. These should be mentioned in the description, but will be generated as scenery later. For example, a "blacksmith's forge" is not a location, but a "blacksmith's workshop" is.
 
-{% if currentRegion.name %}Create the following XML for the region named "{{ currentRegion.name }}".{% elseif regionName %}Create the following XML for a new region named "{{ regionName }}".{% else %}Create a region using the following XML format.{% endif %}
+{% if currentRegion.name %}Output XML in the following format for the region named "{{ currentRegion.name }}".{% elseif regionName %}Output XML in the following format for a new region named "{{ regionName }}".{% else %}Create a region using the following XML format.{% endif %}
 {% if currentRegion.description %}The design notes for this region are: "{{ currentRegion.description }}".{% endif %}
 
 {% if minRegionExits %}Provide at least {{ minRegionExits }} non-'within' regionExit(s) among the locations.{% endif %}
 
 {% if includeLocations %}
 <region>
+  <!-- strictly retain this exact region name: -->
   <regionName>{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}</regionName>
-  <regionDescription><!-- Three sentences that describe this region. }}--></regionDescription>
+  <regionDescription><!-- Three sentences that describe this region. --></regionDescription>
   <relativeLevel>{% if isStub and currentRegion.relativeLevel is defined %}{{ currentRegion.relativeLevel }}{% else %}0{% endif %}</relativeLevel>
   <locations>
 {% if isStub %}
