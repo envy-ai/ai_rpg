@@ -1,3 +1,4 @@
+const { DOMParser } = require('xmldom');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
@@ -1336,23 +1337,11 @@ class Events {
                     }
                 }
             },
-            alter_npc: function (entries = [], context = {}) {
-                const { findActorByName } = this._deps;
+            alter_npc: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                for (const entry of entries) {
-                    const npc = findActorByName?.(entry.name);
-                    if (!npc) {
-                        continue;
-                    }
-                    if (entry.description && typeof npc.addStatusEffect === 'function') {
-                        npc.addStatusEffect(makeStatusEffect(entry.description, null));
-                    }
-                    if (entry.name) {
-                        this.alteredCharacters.add(entry.name);
-                    }
-                }
+                await this._handleAlterNpcEvents(entries, context);
             },
             npc_arrival_departure: function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -1603,6 +1592,713 @@ class Events {
                 }
             }
         };
+    }
+
+    static async _handleAlterNpcEvents(entries, context = {}) {
+        const {
+            findActorByName,
+            promptEnv,
+            parseXMLTemplate,
+            axios,
+            prepareBasePromptContext,
+            Location,
+            findRegionByLocationId,
+            findThingByName,
+            fs,
+            path,
+            baseDir,
+            generatedImages
+        } = this._deps;
+
+        if (typeof findActorByName !== 'function') {
+            throw new Error('alter_npc handler requires findActorByName dependency.');
+        }
+        if (typeof promptEnv?.render !== 'function') {
+            throw new Error('alter_npc handler requires promptEnv.render dependency.');
+        }
+        if (typeof parseXMLTemplate !== 'function') {
+            throw new Error('alter_npc handler requires parseXMLTemplate dependency.');
+        }
+        if (typeof axios?.post !== 'function') {
+            throw new Error('alter_npc handler requires axios.post dependency.');
+        }
+        if (typeof prepareBasePromptContext !== 'function') {
+            throw new Error('alter_npc handler requires prepareBasePromptContext dependency.');
+        }
+
+        const config = this.config || {};
+        const endpoint = config?.ai?.endpoint;
+        const apiKey = config?.ai?.apiKey;
+        const model = config?.ai?.model;
+
+        if (!endpoint || !apiKey || !model) {
+            throw new Error('AI configuration missing; cannot process alter_npc events.');
+        }
+
+        const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
+        const defaultTemperature = typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.6;
+
+        const summaries = [];
+
+        for (const entry of entries) {
+            if (!entry || typeof entry.name !== 'string' || !entry.name.trim()) {
+                throw new Error('alter_npc entry is missing a character name.');
+            }
+
+            const npcName = entry.name.trim();
+            const npc = findActorByName(npcName);
+            if (!npc) {
+                throw new Error(`alter_npc entry references unknown character "${npcName}".`);
+            }
+
+            let location = context.location || null;
+            if (!location && npc.currentLocation && Location && typeof Location.get === 'function') {
+                try {
+                    location = Location.get(npc.currentLocation) || null;
+                } catch (error) {
+                    location = null;
+                }
+            }
+
+            if (!context.location && location) {
+                context.location = location;
+            }
+
+            let region = context.region || null;
+            if (!region && location && typeof findRegionByLocationId === 'function') {
+                try {
+                    region = findRegionByLocationId(location.id) || null;
+                } catch (error) {
+                    region = null;
+                }
+            }
+
+            if (!context.region && region) {
+                context.region = region;
+            }
+
+            const baseContext = await prepareBasePromptContext({ locationOverride: location });
+            const npcStatus = typeof npc.getStatus === 'function'
+                ? npc.getStatus()
+                : (typeof npc.toJSON === 'function' ? npc.toJSON() : {});
+
+            const attributeSnapshot = {};
+            const attributeDefinitions = npc.attributeDefinitions || {};
+            for (const attrName of Object.keys(attributeDefinitions)) {
+                if (!attrName) {
+                    continue;
+                }
+                if (typeof npc.getAttributeTextValue === 'function') {
+                    attributeSnapshot[attrName] = npc.getAttributeTextValue(attrName);
+                } else {
+                    const info = npcStatus?.attributeInfo?.[attrName];
+                    attributeSnapshot[attrName] = info?.modifiedValue ?? info?.value ?? '';
+                }
+            }
+
+            const existingAbilities = Array.isArray(npcStatus?.abilities)
+                ? npcStatus.abilities
+                : (typeof npc.getAbilities === 'function' ? npc.getAbilities() : []);
+            const existingStatusEffects = Array.isArray(npcStatus?.statusEffects)
+                ? npcStatus.statusEffects
+                : (typeof npc.getStatusEffects === 'function' ? npc.getStatusEffects() : []);
+            const existingInventory = Array.isArray(npcStatus?.inventory)
+                ? npcStatus.inventory.map(item => item?.name || item)
+                : (typeof npc.getInventoryItems === 'function'
+                    ? npc.getInventoryItems().map(item => item?.name || item?.id)
+                    : []);
+
+            const alteredCharacter = {
+                name: npc.name,
+                description: npc.description,
+                shortDescription: npc.shortDescription,
+                role: npcStatus?.role || npcStatus?.class || '',
+                class: npcStatus?.class || npc.class,
+                race: npcStatus?.race || npc.race,
+                relativeLevel: npcStatus?.relativeLevel ?? null,
+                currency: typeof npc.getCurrency === 'function' ? npc.getCurrency() : npcStatus?.currency ?? null,
+                attributes: attributeSnapshot,
+                personality: {
+                    type: npc.personalityType,
+                    traits: npc.personalityTraits,
+                    notes: npc.personalityNotes
+                },
+                statusEffects: existingStatusEffects,
+                abilities: existingAbilities,
+                inventory: existingInventory
+            };
+
+            const characterSeed = {
+                name: npc.name,
+                description: npc.description,
+                shortDescription: npc.shortDescription,
+                role: alteredCharacter.role,
+                class: npc.class,
+                race: npc.race,
+                relativeLevel: alteredCharacter.relativeLevel,
+                currency: alteredCharacter.currency,
+                personality: {
+                    type: npc.personalityType,
+                    traits: npc.personalityTraits,
+                    notes: npc.personalityNotes
+                }
+            };
+
+            const changeDescription = entry.description || entry.changeDescription || '';
+            const promptPayload = {
+                ...baseContext,
+                promptType: 'character-alter',
+                changeDescription,
+                alteredCharacter,
+                characterSeed
+            };
+
+            let promptData;
+            try {
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', promptPayload);
+                promptData = parseXMLTemplate(renderedTemplate);
+            } catch (error) {
+                throw new Error(`Failed to render character alteration template for "${npcName}": ${error.message}`);
+            }
+
+            if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                throw new Error(`Character alteration template for "${npcName}" did not produce prompts.`);
+            }
+
+            const messages = [
+                { role: 'system', content: promptData.systemPrompt },
+                { role: 'user', content: promptData.generationPrompt }
+            ];
+
+            const requestData = {
+                model,
+                messages,
+                max_tokens: promptData.maxTokens || config.ai.maxTokens || 700,
+                temperature: typeof promptData.temperature === 'number' ? promptData.temperature : defaultTemperature
+            };
+
+            let response;
+            const requestStarted = Date.now();
+            try {
+                response = await axios.post(chatEndpoint, requestData, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: this._baseTimeout
+                });
+            } catch (error) {
+                throw new Error(`Alter NPC request failed for "${npcName}": ${error.message}`);
+            }
+
+            const aiContent = response?.data?.choices?.[0]?.message?.content || '';
+            if (!aiContent.trim()) {
+                throw new Error(`Alter NPC response for "${npcName}" was empty.`);
+            }
+
+            const parsedCharacter = this._parseCharacterAlterXml(aiContent);
+            if (!parsedCharacter) {
+                throw new Error(`Failed to parse character alteration response for "${npcName}".`);
+            }
+
+            if (fs && path) {
+                try {
+                    const logsDir = path.join(baseDir || process.cwd(), 'logs');
+                    if (!fs.existsSync(logsDir)) {
+                        fs.mkdirSync(logsDir, { recursive: true });
+                    }
+                    const safeName = (npc.name || 'npc').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'npc';
+                    const durationSeconds = (Date.now() - requestStarted) / 1000;
+                    const logPath = path.join(logsDir, `alter_npc_${Date.now()}_${safeName}.log`);
+                    const logLines = [
+                        `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===`,
+                        '=== ALTER NPC SYSTEM PROMPT ===',
+                        promptData.systemPrompt,
+                        '',
+                        '=== ALTER NPC GENERATION PROMPT ===',
+                        promptData.generationPrompt,
+                        '',
+                        '=== ALTER NPC RESPONSE ===',
+                        aiContent.trim() || '(empty response)',
+                        ''
+                    ];
+                    fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+                } catch (error) {
+                    console.warn('Failed to log NPC alteration prompt:', error.message);
+                }
+            }
+
+            const summary = this._applyCharacterAlteration({
+                npc,
+                entry: { ...entry, changeDescription },
+                parsedCharacter,
+                location,
+                region,
+                generatedImages,
+                findThingByName
+            });
+
+            summaries.push(summary);
+            if (summary.name) {
+                this.alteredCharacters.add(summary.name);
+            }
+        }
+
+        if (summaries.length) {
+            if (!Array.isArray(context.alteredCharacters)) {
+                context.alteredCharacters = [];
+            }
+            context.alteredCharacters.push(...summaries);
+        }
+    }
+
+    static _applyCharacterAlteration({
+        npc,
+        entry,
+        parsedCharacter,
+        location,
+        region,
+        generatedImages,
+        findThingByName
+    }) {
+        if (!npc || !parsedCharacter) {
+            throw new Error('applyCharacterAlteration requires an NPC and parsed character data.');
+        }
+
+        const summary = {
+            npcId: npc.id,
+            originalName: npc.name,
+            name: npc.name,
+            changeDescription: entry?.changeDescription || ''
+        };
+
+        let activeLocation = location;
+        if (!activeLocation) {
+            const { Location } = this._deps;
+            if (Location && typeof Location.get === 'function' && npc.currentLocation) {
+                try {
+                    activeLocation = Location.get(npc.currentLocation) || null;
+                } catch (error) {
+                    activeLocation = null;
+                }
+            }
+        }
+
+        if (activeLocation) {
+            this._clearLocationImage(activeLocation, generatedImages);
+        }
+
+        if (npc.imageId) {
+            if (generatedImages instanceof Map) {
+                generatedImages.delete(npc.imageId);
+            } else if (generatedImages && typeof generatedImages === 'object') {
+                delete generatedImages[npc.imageId];
+            }
+            try {
+                npc.imageId = null;
+            } catch (error) {
+                // Ignore immutable imageId setters
+            }
+        }
+
+        if (parsedCharacter.name && parsedCharacter.name.trim() && parsedCharacter.name.trim() !== npc.name) {
+            if (typeof npc.setName !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot be renamed; missing setName method.`);
+            }
+            npc.setName(parsedCharacter.name.trim());
+            summary.name = npc.name;
+        }
+
+        if (parsedCharacter.description && parsedCharacter.description.trim()) {
+            npc.description = parsedCharacter.description.trim();
+        }
+
+        if (parsedCharacter.shortDescription && parsedCharacter.shortDescription.trim()) {
+            npc.shortDescription = parsedCharacter.shortDescription.trim();
+        }
+
+        if (parsedCharacter.class && parsedCharacter.class.trim()) {
+            npc.class = parsedCharacter.class.trim();
+        } else if (parsedCharacter.role && parsedCharacter.role.trim()) {
+            npc.class = parsedCharacter.role.trim();
+        }
+
+        if (parsedCharacter.race && parsedCharacter.race.trim()) {
+            npc.race = parsedCharacter.race.trim();
+        }
+
+        if (parsedCharacter.personality) {
+            if (parsedCharacter.personality.type && parsedCharacter.personality.type.trim()) {
+                npc.personalityType = parsedCharacter.personality.type.trim();
+            }
+            if (typeof parsedCharacter.personality.traits === 'string') {
+                npc.personalityTraits = parsedCharacter.personality.traits.trim();
+            }
+            if (typeof parsedCharacter.personality.notes === 'string') {
+                npc.personalityNotes = parsedCharacter.personality.notes.trim();
+            }
+        }
+
+        if (Number.isFinite(parsedCharacter.currency)) {
+            if (typeof npc.setCurrency === 'function') {
+                npc.setCurrency(parsedCharacter.currency);
+            } else if ('currency' in npc) {
+                npc.currency = parsedCharacter.currency;
+            } else {
+                throw new Error(`NPC "${npc.name}" cannot update currency.`);
+            }
+        }
+
+        if (parsedCharacter.attributes && typeof parsedCharacter.attributes === 'object') {
+            if (typeof npc.setAttribute !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot update attributes; setAttribute missing.`);
+            }
+            for (const [attributeName, rawValue] of Object.entries(parsedCharacter.attributes)) {
+                if (!attributeName) {
+                    continue;
+                }
+                const numeric = this._mapAttributeRatingToValue(rawValue);
+                if (!Number.isFinite(numeric)) {
+                    continue;
+                }
+                npc.setAttribute(attributeName, numeric);
+            }
+        }
+
+        if (Array.isArray(parsedCharacter.statusEffects)) {
+            if (typeof npc.setStatusEffects !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot update status effects; setStatusEffects missing.`);
+            }
+            const normalizedEffects = parsedCharacter.statusEffects
+                .filter(effect => effect && (effect.description || typeof effect === 'string'))
+                .map(effect => {
+                    if (typeof effect === 'string') {
+                        return { description: effect, duration: null };
+                    }
+                    const duration = Number(effect.duration);
+                    return {
+                        description: effect.description || String(effect).trim(),
+                        duration: Number.isFinite(duration)
+                            ? duration
+                            : (effect.duration === null || effect.duration === undefined ? null : effect.duration)
+                    };
+                });
+            npc.setStatusEffects(normalizedEffects);
+        }
+
+        if (Array.isArray(parsedCharacter.abilities)) {
+            if (typeof npc.setAbilities !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot update abilities; setAbilities missing.`);
+            }
+            const abilities = parsedCharacter.abilities
+                .filter(ability => ability && ability.name)
+                .map(ability => ({
+                    name: ability.name,
+                    description: ability.description || '',
+                    type: ability.type || '',
+                    level: Number.isFinite(Number(ability.level)) ? Number(ability.level) : undefined
+                }));
+            npc.setAbilities(abilities);
+        }
+
+        const desiredInventory = Array.isArray(parsedCharacter.inventory)
+            ? parsedCharacter.inventory.map(item => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+            : null;
+
+        const droppedItems = [];
+        if (desiredInventory) {
+            if (typeof npc.getInventoryItems !== 'function' || typeof npc.addInventoryItem !== 'function' || typeof npc.removeInventoryItem !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot update inventory; inventory methods missing.`);
+            }
+            if (typeof findThingByName !== 'function') {
+                throw new Error('alter_npc handler requires findThingByName dependency for inventory updates.');
+            }
+
+            const beforeItems = npc.getInventoryItems();
+            const beforeById = new Map(beforeItems.map(item => [item.id, item]));
+            const desiredById = new Map();
+
+            for (const itemName of desiredInventory) {
+                const thing = findThingByName(itemName);
+                if (!thing) {
+                    throw new Error(`Unable to locate item "${itemName}" while updating inventory for "${npc.name}".`);
+                }
+                desiredById.set(thing.id, thing);
+                if (!beforeById.has(thing.id)) {
+                    npc.addInventoryItem(thing);
+                    const metadata = { ...(thing.metadata || {}) };
+                    if (metadata.locationId) {
+                        this.removeThingFromLocation(thing, metadata.locationId);
+                    }
+                    metadata.ownerId = npc.id;
+                    delete metadata.locationId;
+                    thing.metadata = metadata;
+                }
+            }
+
+            const shouldDrop = desiredInventory.length === 0 || desiredById.size > 0;
+            if (shouldDrop) {
+                for (const [id, thing] of beforeById) {
+                    if (desiredById.has(id)) {
+                        continue;
+                    }
+                    npc.removeInventoryItem(thing);
+                    const metadata = { ...(thing.metadata || {}) };
+                    delete metadata.ownerId;
+                    if (activeLocation) {
+                        metadata.locationId = activeLocation.id;
+                        thing.metadata = metadata;
+                        this.addThingToLocation(thing, activeLocation);
+                        droppedItems.push(thing.name || thing.id);
+                    } else {
+                        thing.metadata = metadata;
+                    }
+                }
+            }
+        }
+
+        if (Number.isFinite(parsedCharacter.relativeLevel)) {
+            if (typeof npc.setLevel !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot update level; setLevel missing.`);
+            }
+            const baseReference = this._resolveNpcBaseLevelReference({ npc, location: activeLocation, region });
+            const targetLevel = this._clampLevel(baseReference + parsedCharacter.relativeLevel, baseReference);
+            npc.setLevel(targetLevel);
+            summary.relativeLevelAfter = parsedCharacter.relativeLevel;
+            summary.levelAfter = targetLevel;
+        }
+
+        if (droppedItems.length) {
+            summary.droppedItems = droppedItems;
+        }
+
+        summary.name = npc.name;
+        if (activeLocation) {
+            summary.locationId = activeLocation.id;
+            summary.locationName = activeLocation.name;
+        }
+
+        return summary;
+    }
+
+    static _parseCharacterAlterXml(xmlContent) {
+        if (typeof xmlContent !== 'string' || !xmlContent.trim()) {
+            return null;
+        }
+
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlContent, 'text/xml');
+
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent || 'Unknown XML parsing error');
+            }
+
+            const npcNode = doc.getElementsByTagName('npc')[0];
+            if (!npcNode) {
+                return null;
+            }
+
+            const getText = tag => npcNode.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+
+            const relativeLevelRaw = getText('relativeLevel');
+            const relativeLevel = Number(relativeLevelRaw);
+            const currencyRaw = getText('currency');
+            const currency = Number(currencyRaw);
+
+            const attributes = {};
+            const attributeNodes = Array.from(npcNode.getElementsByTagName('attribute'));
+            for (const node of attributeNodes) {
+                const name = node.getAttribute('name') || node.getElementsByTagName('name')[0]?.textContent?.trim();
+                if (!name) {
+                    continue;
+                }
+                const valueNode = node.getElementsByTagName('value')[0];
+                const textContent = valueNode ? valueNode.textContent : node.textContent;
+                const value = textContent ? textContent.trim() : '';
+                attributes[name] = value;
+            }
+
+            const personalityNode = npcNode.getElementsByTagName('personality')[0];
+            const personality = personalityNode
+                ? {
+                    type: personalityNode.getElementsByTagName('type')[0]?.textContent?.trim() || '',
+                    traits: personalityNode.getElementsByTagName('traits')[0]?.textContent?.trim() || '',
+                    notes: personalityNode.getElementsByTagName('notes')[0]?.textContent?.trim() || ''
+                }
+                : null;
+
+            const statusEffects = [];
+            const statusParent = npcNode.getElementsByTagName('statusEffects')[0];
+            if (statusParent) {
+                const effectNodes = Array.from(statusParent.getElementsByTagName('effect'));
+                for (const effectNode of effectNodes) {
+                    const description = effectNode.getElementsByTagName('description')[0]?.textContent?.trim()
+                        || effectNode.textContent?.trim()
+                        || '';
+                    if (!description) {
+                        continue;
+                    }
+                    const durationText = effectNode.getElementsByTagName('duration')[0]?.textContent?.trim() || '';
+                    const duration = Number(durationText);
+                    statusEffects.push({
+                        description,
+                        duration: Number.isFinite(duration)
+                            ? duration
+                            : (durationText.toLowerCase() === 'permanent' ? null : durationText || null)
+                    });
+                }
+            }
+
+            const abilities = [];
+            const abilitiesParent = npcNode.getElementsByTagName('abilities')[0];
+            if (abilitiesParent) {
+                const abilityNodes = Array.from(abilitiesParent.getElementsByTagName('ability'));
+                for (const abilityNode of abilityNodes) {
+                    const name = abilityNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                    if (!name) {
+                        continue;
+                    }
+                    const description = abilityNode.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+                    const type = abilityNode.getElementsByTagName('type')[0]?.textContent?.trim() || '';
+                    const levelRaw = abilityNode.getElementsByTagName('level')[0]?.textContent?.trim() || '';
+                    const level = Number(levelRaw);
+                    abilities.push({
+                        name,
+                        description,
+                        type,
+                        level: Number.isFinite(level) ? level : null
+                    });
+                }
+            }
+
+            const inventory = [];
+            const inventoryParent = npcNode.getElementsByTagName('inventory')[0];
+            if (inventoryParent) {
+                const itemNodes = Array.from(inventoryParent.getElementsByTagName('item'));
+                for (const itemNode of itemNodes) {
+                    const itemName = itemNode.textContent?.trim();
+                    if (itemName) {
+                        inventory.push(itemName);
+                    }
+                }
+            }
+
+            return {
+                name: getText('name') || null,
+                description: getText('description') || '',
+                shortDescription: getText('shortDescription') || '',
+                role: getText('role') || '',
+                class: getText('class') || '',
+                race: getText('race') || '',
+                relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+                currency: Number.isFinite(currency) ? currency : null,
+                personality,
+                attributes,
+                statusEffects,
+                abilities,
+                inventory
+            };
+        } catch (error) {
+            console.warn('Failed to parse altered character XML:', error.message);
+            return null;
+        }
+    }
+
+    static _mapAttributeRatingToValue(raw) {
+        if (raw === null || raw === undefined) {
+            return null;
+        }
+
+        if (Number.isFinite(raw)) {
+            return this._clampAttributeValue(raw);
+        }
+
+        const text = String(raw).trim();
+        if (!text) {
+            return null;
+        }
+
+        const normalized = text.toLowerCase();
+        const mapping = [
+            ['terrible', 2],
+            ['awful', 2],
+            ['poor', 4],
+            ['weak', 4],
+            ['frail', 4],
+            ['below average', 7],
+            ['average', 10],
+            ['mediocre', 10],
+            ['above average', 13],
+            ['strong', 13],
+            ['tough', 13],
+            ['excellent', 16],
+            ['mighty', 16],
+            ['heroic', 16],
+            ['legendary', 19],
+            ['mythic', 19]
+        ];
+
+        for (const [keyword, value] of mapping) {
+            if (normalized.includes(keyword)) {
+                return this._clampAttributeValue(value);
+            }
+        }
+
+        const numeric = Number(text);
+        if (Number.isFinite(numeric)) {
+            return this._clampAttributeValue(numeric);
+        }
+
+        return null;
+    }
+
+    static _clampAttributeValue(value) {
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        return Math.max(1, Math.min(20, Math.round(value)));
+    }
+
+    static _clampLevel(value, fallback = 1) {
+        const base = Number.isFinite(value) ? value : (Number.isFinite(fallback) ? fallback : 1);
+        return Math.max(1, Math.min(20, Math.round(base)));
+    }
+
+    static _clearLocationImage(location, generatedImages) {
+        if (!location) {
+            return;
+        }
+        const previousId = typeof location.imageId === 'string' ? location.imageId : null;
+        if (previousId) {
+            if (generatedImages instanceof Map) {
+                generatedImages.delete(previousId);
+            } else if (generatedImages && typeof generatedImages === 'object') {
+                delete generatedImages[previousId];
+            }
+        }
+        try {
+            location.imageId = null;
+        } catch (error) {
+            // Ignore immutable setters
+        }
+    }
+
+    static _resolveNpcBaseLevelReference({ npc, location = null, region = null }) {
+        if (location && Number.isFinite(location.baseLevel)) {
+            return location.baseLevel;
+        }
+        if (region && Number.isFinite(region.averageLevel)) {
+            return region.averageLevel;
+        }
+        if (Number.isFinite(npc.level)) {
+            return npc.level;
+        }
+        if (Number.isFinite(this.currentPlayer?.level)) {
+            return this.currentPlayer.level;
+        }
+        return 1;
     }
 
     static _generateItemsIntoWorld(names = [], location = null, options = {}) {
