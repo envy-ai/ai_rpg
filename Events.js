@@ -223,19 +223,30 @@ class Events {
             if (!Array.isArray(parsedEntries[key])) {
                 return;
             }
-            parsedEntries[key] = parsedEntries[key].filter(entry => {
-                const name = entry?.item;
-                if (!name) {
-                    return Boolean(entry);
-                }
-                return !shouldSkip(name);
-            });
+            if (key === 'consume_item') {
+                parsedEntries[key] = parsedEntries[key].filter(entry => {
+                    const name = entry?.item;
+                    if (!name) {
+                        return Boolean(entry);
+                    }
+                    return !this.alteredItems.has(name);
+                });
+            } else {
+                parsedEntries[key] = parsedEntries[key].filter(entry => {
+                    const name = entry?.item;
+                    if (!name) {
+                        return Boolean(entry);
+                    }
+                    return !shouldSkip(name);
+                });
+            }
         };
 
         filterByItem('transfer_item');
         filterByItem('harvest_gather');
         filterByItem('pick_up_item');
         filterByItem('drop_item');
+        filterByItem('consume_item');
 
         if (Array.isArray(parsedEntries.item_appear)) {
             parsedEntries.item_appear = parsedEntries.item_appear.filter(itemName => !shouldSkip(itemName));
