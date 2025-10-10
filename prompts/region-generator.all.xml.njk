@@ -112,7 +112,7 @@ Guidelines:
 {% if currentRegion.name %}Output XML in the following format for the region named "{{ currentRegion.name }}".{% elseif regionName %}Output XML in the following format for a new region named "{{ regionName }}".{% else %}Create a region using the following XML format.{% endif %}
 {% if currentRegion.description %}The design notes for this region are: "{{ currentRegion.description }}".{% endif %}
 
-{% if minRegionExits %}Provide at least {{ minRegionExits }} non-'within' regionExit(s) among the locations.{% endif %}
+{% if minRegionExits %}If this region isn't a building, provide at least {{ minRegionExits }} non-'within' regionExit(s) among the locations, with at least {{ minNewRegionExits }} of them being exits to entirely new regions.{% endif %}
 
 {% if includeLocations %}
 <region>

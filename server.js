@@ -4328,6 +4328,20 @@ async function expandRegionEntryStub(stubLocation) {
                 console.warn('Failed to instantiate region from stub:', instantiationError.message);
             }
 
+            try {
+                await generateRegionNPCs({
+                    region,
+                    systemPrompt: stubPrompt.systemPrompt,
+                    generationPrompt: stubPrompt.generationPrompt,
+                    aiResponse: stubResponse,
+                    chatEndpoint,
+                    model,
+                    apiKey
+                });
+            } catch (npcError) {
+                console.warn('Failed to generate important NPCs for region stub:', npcError.message);
+            }
+
             const entranceInfo = await chooseRegionEntrance({
                 region,
                 stubMap,
@@ -10710,9 +10724,10 @@ function renderRegionGeneratorPrompt(options = {}) {
         };
     }
 
-    let minRegionExits = null;
+    let minRegionExits = 4;
+    let minNewRegionExits = 3;
     // Always make sure there are stub regions that can be explored.
-    if (Region.stubRegionCount <= 2) minRegionExits = 1;
+    //if (Region.stubRegionCount <= 2) minRegionExits = 1;
 
     const variables = {
         setting: settingContext,
@@ -10722,6 +10737,7 @@ function renderRegionGeneratorPrompt(options = {}) {
         minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
         maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
         minRegionExits: minRegionExits,
+        minNewRegionExits: minNewRegionExits,
         currentPlayer: currentPlayer,
         mode: 'full',
         config: config
