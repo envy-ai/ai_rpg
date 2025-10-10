@@ -1126,46 +1126,7 @@ class Events {
                 }
 
                 if (typeof alterThingByPrompt !== 'function') {
-                    // fall back to simple rename/status effect handling if prompt helper missing
-                    for (const entry of entries) {
-                        if (!entry) {
-                            continue;
-                        }
-                        const originalName = entry.originalName || entry.from || null;
-                        const newName = entry.newName || entry.to || null;
-                        const changeDescription = entry.changeDescription || entry.description || null;
-
-                        const lookupCandidates = [originalName, newName].filter(candidate => typeof candidate === 'string' && candidate.trim());
-                        let thing = null;
-                        for (const candidate of lookupCandidates) {
-                            thing = findThingByName(candidate);
-                            if (thing) {
-                                break;
-                            }
-                        }
-                        if (!thing) {
-                            continue;
-                        }
-                        if (changeDescription && typeof thing.addStatusEffect === 'function') {
-                            thing.addStatusEffect(makeStatusEffect(changeDescription, null));
-                        }
-                        if (originalName && newName && newName !== originalName && typeof thing.rename === 'function') {
-                            thing.rename(newName);
-                        }
-                        if (originalName) {
-                            this.alteredItems.add(originalName);
-                        }
-                        if (newName) {
-                            this.alteredItems.add(newName);
-                        }
-                        entry.originalName = originalName || null;
-                        entry.newName = newName || null;
-                        entry.changeDescription = changeDescription || null;
-                        entry.description = changeDescription || entry.description || null;
-                        entry.from = entry.originalName;
-                        entry.to = entry.newName;
-                    }
-                    return;
+                    throw new Error('alter_item handler requires alterThingByPrompt dependency.');
                 }
 
                 const tasks = [];
@@ -1418,12 +1379,9 @@ class Events {
                     if (!npc) {
                         continue;
                     }
-                    if (entry.action === 'left' && typeof npc.setLocation === 'function') {
-                        npc.setLocation(null);
+                    if (entry.action === 'left') {
+                        npc.setLocationByName(entry.destination);
                         this.departedCharacters.add(name);
-                    }
-                    if (entry.destination && typeof npc.setDestination === 'function') {
-                        npc.setDestination(entry.destination);
                     }
                 }
             },
@@ -1433,18 +1391,16 @@ class Events {
                 }
                 const player = context.player || this.currentPlayer;
                 const { findActorByName } = this._deps;
-                if (!player || typeof player.addAlly !== 'function' || typeof player.removeAlly !== 'function') {
-                    return;
-                }
+
                 for (const entry of entries) {
                     const npc = findActorByName?.(entry.name);
                     if (!npc) {
                         continue;
                     }
                     if (entry.action === 'joined') {
-                        player.addAlly(npc);
+                        player.addPartyMember(npc.id);
                     } else if (entry.action === 'left') {
-                        player.removeAlly(npc.id);
+                        player.removePartyMember(npc.id);
                     }
                 }
             },
@@ -1494,10 +1450,14 @@ class Events {
                 }
                 for (const entry of entries) {
                     const actor = findActorByName?.(entry.character);
-                    if (!actor || typeof actor.adjustNeedBar !== 'function') {
+                    if (!actor || typeof actor.applyNeedBarChange !== 'function') {
                         continue;
                     }
-                    const change = actor.adjustNeedBar(entry.bar, entry.direction, entry.magnitude);
+                    const change = actor.applyNeedBarChange(entry.bar, {
+                        direction: entry.direction,
+                        magnitude: entry.magnitude,
+                        reason: entry.reason
+                    });
                     if (change) {
                         context.needBarChanges.push(change);
                     }

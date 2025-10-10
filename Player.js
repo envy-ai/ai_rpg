@@ -1633,6 +1633,11 @@ class Player {
     }
 
     addPartyMember(memberId) {
+        // Resolve player objects passed as memberId if type is Player
+        if (memberId instanceof Player) {
+            memberId = memberId.id;
+        }
+
         if (typeof memberId !== 'string' || !memberId.trim()) {
             return false;
         }
@@ -1647,6 +1652,10 @@ class Player {
     }
 
     removePartyMember(memberId) {
+        if (memberId instanceof Player) {
+            memberId = memberId.id;
+        }
+
         if (typeof memberId !== 'string' || !memberId.trim()) {
             return false;
         }
@@ -2643,6 +2652,25 @@ class Player {
     setMaxHealth(maxHealth) {
         console.warn('setMaxHealth is deprecated: max health is derived from attributes and level.');
         return this.maxHealth;
+    }
+
+    setLocationByName(locationName) {
+        if (!locationName || typeof locationName !== 'string') {
+            throw new Error('Location name must be a non-empty string');
+        }
+
+        const Location = getLocationModule();
+        if (!Location || typeof Location.findByName !== 'function') {
+            throw new Error('Location module is not available or does not support findByName');
+        }
+
+        const location = Location.getByName(locationName.trim());
+        if (!location) {
+            throw new Error(`Location with name '${locationName}' not found`);
+        }
+
+        this.setLocation(location);
+        return this.#currentLocation;
     }
 
     /**
