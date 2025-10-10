@@ -1,40 +1,42 @@
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
+const Thing = require('./Thing.js');
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
 const MAJOR_STATUS_DURATION = 5;
 
 const EVENT_PROMPT_ORDER = [
-    { key: 'new_exit_discovered' },
-    { key: 'move_location' },
-    { key: 'alter_location' },
-    { key: 'currency' },
-    { key: 'item_to_npc' },
-    { key: 'alter_item' },
-    { key: 'consume_item' },
-    { key: 'transfer_item' },
-    { key: 'harvest_gather' },
-    { key: 'item_appear' },
-    { key: 'pick_up_item' },
-    { key: 'drop_item' },
-    { key: 'scenery_appear' },
-    { key: 'harvestable_resource_appear' },
-    { key: 'alter_npc' },
-    { key: 'status_effect_change' },
-    { key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
-    { key: 'npc_arrival_departure', postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
-    { key: 'npc_first_appearance' },
-    { key: 'party_change' },
-    { key: 'environmental_status_damage' },
-    { key: 'heal_recover' },
-    { key: 'needbar_change' },
-    { key: 'attack_damage' },
-    { key: 'death_incapacitation' },
-    { key: 'defeated_enemy' },
-    { key: 'experience_check' },
+    { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, or block a path, exit, or vehicle to another region? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. Note that the difference between a location and a region is that a location is a specific place (like a building, room, or landmark) while a region is a broader area (like a neighborhood, district, or zone). Consider whether you're conceptually entering a different region (anything with multiple locations, such as a building, town, biome, planet, etc), or part of the current one (which would be a location). An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player, still list it here.  For example, a train to townsville would appear as "Townsville -> region -> train -> A bustling town known for its markets and friendly locals." An adjacent forest would appear as "Whispering Woods -> location -> none -> A dense forest filled with towering trees and the sound of rustling leaves."` },
+    { key: 'move_location', prompt: `Did the player travel to or end up in a different location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
+    { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A.` },
+    { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
+    { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, or machinery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
+    { key: 'alter_item', prompt: `Was an item in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name.` },
+    { key: 'consume_item', prompt: `Were any items consumed, either by being used as components in crafting, by being eaten or drunk, or by being destroyed or otherwise removed from the scene or any inventory? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+    { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
+    { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
+    { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
+    { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
+    { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
+    { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+    { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, or other resource nodes) appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+    { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
+    { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.` },
+    { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] left -> [exact name of the location they went to]". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
+    { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
+    { key: 'npc_first_appearance', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+    { key: 'party_change', prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.` },
+    { key: 'environmental_status_damage', prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
+    { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
+    { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [small|medium|large|all] | ..." for each adjustment, separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Otherwise, answer N/A.` },
+    { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
+    { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
+    { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
+    { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
 ];
 
+const EVENT_CHECK_QUESTIONS = EVENT_PROMPT_ORDER.map(def => def.prompt);
 const NO_EVENT_TOKENS = new Set(['n/a', 'na', 'none', 'nothing']);
 
 function isBlank(value) {
@@ -317,7 +319,8 @@ class Events {
         const rendered = promptEnv.render('base-context.xml.njk', {
             ...baseContext,
             promptType: 'event-checks',
-            textToCheck
+            textToCheck,
+            eventQuestions: EVENT_CHECK_QUESTIONS
         });
 
         const parsedTemplate = parseXMLTemplate(rendered);
@@ -1046,37 +1049,73 @@ class Events {
                     this.destroyedItems.add(itemName);
                 }
             },
-            alter_item: function (entries = [], context = {}) {
+            alter_item: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findThingByName } = this._deps;
+
+                const { findThingByName, alterThingByPrompt } = this._deps;
                 if (typeof findThingByName !== 'function') {
                     throw new Error('alter_item handler requires findThingByName dependency.');
                 }
+
+                if (typeof alterThingByPrompt !== 'function') {
+                    // fall back to simple rename/status effect handling if prompt helper missing
+                    for (const entry of entries) {
+                        if (!entry) {
+                            continue;
+                        }
+                        const originalName = entry.originalName || entry.from || null;
+                        const newName = entry.newName || entry.to || null;
+                        const changeDescription = entry.changeDescription || entry.description || null;
+
+                        const lookupCandidates = [originalName, newName].filter(candidate => typeof candidate === 'string' && candidate.trim());
+                        let thing = null;
+                        for (const candidate of lookupCandidates) {
+                            thing = findThingByName(candidate);
+                            if (thing) {
+                                break;
+                            }
+                        }
+                        if (!thing) {
+                            continue;
+                        }
+                        if (changeDescription && typeof thing.addStatusEffect === 'function') {
+                            thing.addStatusEffect(makeStatusEffect(changeDescription, null));
+                        }
+                        if (originalName && newName && newName !== originalName && typeof thing.rename === 'function') {
+                            thing.rename(newName);
+                        }
+                        if (originalName) {
+                            this.alteredItems.add(originalName);
+                        }
+                        if (newName) {
+                            this.alteredItems.add(newName);
+                        }
+                        entry.originalName = originalName || null;
+                        entry.newName = newName || null;
+                        entry.changeDescription = changeDescription || null;
+                        entry.description = changeDescription || entry.description || null;
+                        entry.from = entry.originalName;
+                        entry.to = entry.newName;
+                    }
+                    return;
+                }
+
+                const tasks = [];
+
                 for (const entry of entries) {
                     if (!entry) {
                         continue;
                     }
 
                     const originalName = entry.originalName || entry.from || null;
-                    const newName = entry.newName || entry.to || null;
+                    const targetName = entry.newName || entry.to || null;
                     const changeDescription = entry.changeDescription || entry.description || null;
 
-                    if (originalName && !entry.from) {
-                        entry.from = originalName;
-                    }
-                    if (newName && !entry.to) {
-                        entry.to = newName;
-                    }
-                    if (changeDescription && !entry.description) {
-                        entry.description = changeDescription;
-                    }
-                    if (!originalName && !newName) {
-                        continue;
-                    }
+                    const lookupCandidates = [originalName, targetName]
+                        .filter(candidate => typeof candidate === 'string' && candidate.trim());
 
-                    const lookupCandidates = [originalName, newName].filter(candidate => typeof candidate === 'string' && candidate.trim());
                     let thing = null;
                     for (const candidate of lookupCandidates) {
                         thing = findThingByName(candidate);
@@ -1086,24 +1125,40 @@ class Events {
                     }
 
                     if (!thing) {
+                        thing = this._createPlaceholderThingForAlter(entry, context);
+                    }
+
+                    if (!thing) {
                         continue;
                     }
 
-                    if (changeDescription && typeof thing.addStatusEffect === 'function') {
-                        thing.addStatusEffect(makeStatusEffect(changeDescription, null));
-                    }
-                    if (originalName && newName && newName !== originalName && typeof thing.rename === 'function') {
-                        thing.rename(newName);
-                    }
-                    if (originalName) {
-                        this.alteredItems.add(originalName);
-                    }
-                    if (newName) {
-                        this.alteredItems.add(newName);
-                    }
-                    entry.originalName = originalName || null;
-                    entry.newName = newName || null;
-                    entry.changeDescription = changeDescription || null;
+                    tasks.push((async () => {
+                        const outcome = await alterThingByPrompt({
+                            thing,
+                            changeDescription,
+                            newName: targetName,
+                            location: context.location || null,
+                            owner: context.player || this.currentPlayer || null
+                        });
+
+                        if (outcome?.originalName) {
+                            this.alteredItems.add(outcome.originalName);
+                        }
+                        if (outcome?.newName) {
+                            this.alteredItems.add(outcome.newName);
+                        }
+
+                        entry.originalName = outcome?.originalName || originalName || null;
+                        entry.newName = outcome?.newName || targetName || null;
+                        entry.changeDescription = outcome?.changeDescription || changeDescription || null;
+                        entry.description = entry.changeDescription;
+                        entry.from = entry.originalName;
+                        entry.to = entry.newName;
+                    })());
+                }
+
+                if (tasks.length) {
+                    await Promise.all(tasks);
                 }
             },
             transfer_item: function (entries = [], context = {}) {
@@ -1711,6 +1766,66 @@ class Events {
 
     static get things() {
         return this._deps.things;
+    }
+
+    static _createPlaceholderThingForAlter(entry = {}, context = {}) {
+        const { things } = this._deps;
+
+        const candidateName = (typeof entry.newName === 'string' && entry.newName.trim())
+            ? entry.newName.trim()
+            : (typeof entry.originalName === 'string' && entry.originalName.trim() ? entry.originalName.trim() : null);
+
+        if (!candidateName) {
+            return null;
+        }
+
+        const description = entry.changeDescription && entry.changeDescription.trim()
+            ? entry.changeDescription.trim()
+            : `An item named ${candidateName}.`;
+
+        const ownerCandidate = context.player && typeof context.player.addInventoryItem === 'function'
+            ? context.player
+            : null;
+
+        let locationCandidate = context.location || null;
+        if (!locationCandidate && ownerCandidate?.currentLocation) {
+            locationCandidate = ownerCandidate.currentLocation;
+        }
+
+        const metadata = {};
+        if (ownerCandidate && typeof ownerCandidate.id === 'string') {
+            metadata.ownerId = ownerCandidate.id;
+        } else {
+            const resolvedLocation = this.resolveLocationCandidate(locationCandidate) || this.resolveLocationCandidate(this.currentPlayer?.currentLocation);
+            if (resolvedLocation) {
+                metadata.locationId = resolvedLocation.id;
+                metadata.locationName = resolvedLocation.name || resolvedLocation.id;
+            }
+        }
+
+        const thing = new Thing({
+            name: candidateName,
+            description,
+            thingType: 'item',
+            rarity: Thing.getDefaultRarityLabel(),
+            metadata
+        });
+
+        if (things instanceof Map) {
+            things.set(thing.id, thing);
+        }
+
+        if (metadata.ownerId && ownerCandidate) {
+            try {
+                ownerCandidate.addInventoryItem?.(thing);
+            } catch (error) {
+                console.warn(`Failed to add placeholder item ${candidateName} to owner:`, error.message);
+            }
+        } else if (metadata.locationId) {
+            this.addThingToLocation(thing, metadata.locationId);
+        }
+
+        return thing;
     }
 }
 

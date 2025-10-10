@@ -19,7 +19,11 @@
 {% include "_includes/item.njk" %}
 </items>
 
+{% if thingSeed.rarity %}
 The item's rarity is {{ thingSeed.rarity }}: {{ thingSeed.rarityDescription }}
+{% else %}
+Choose the item's rarity from the defined rarity levels.
+{% endif %}
 
 Note that bonuses will be normalized to the rarity after generation, so use the full range of bonuses (-4 to +4) as needed.
 

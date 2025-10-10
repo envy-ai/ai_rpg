@@ -5498,6 +5498,433 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     }
 }
 
+function buildThingPromptItem(thing) {
+    if (!thing || typeof thing !== 'object') {
+        throw new Error('buildThingPromptItem requires a valid Thing instance.');
+    }
+
+    const metadata = thing.metadata || {};
+    const rawSlot = typeof thing.slot === 'string'
+        ? thing.slot
+        : (typeof metadata.slot === 'string' ? metadata.slot : null);
+    const cleanedSlot = rawSlot && rawSlot.trim().toLowerCase() !== 'n/a'
+        ? rawSlot.trim()
+        : null;
+
+    const normalizeBonuses = entries => (
+        Array.isArray(entries)
+            ? entries
+                .map(entry => {
+                    if (!entry) {
+                        return null;
+                    }
+                    if (typeof entry === 'object') {
+                        const attribute = typeof entry.attribute === 'string'
+                            ? entry.attribute.trim()
+                            : (typeof entry.name === 'string' ? entry.name.trim() : '');
+                        if (!attribute) {
+                            return null;
+                        }
+                        const parsed = Number(entry.bonus ?? entry.value);
+                        return {
+                            attribute,
+                            bonus: Number.isFinite(parsed) ? parsed : 0
+                        };
+                    }
+                    if (typeof entry === 'string') {
+                        const trimmed = entry.trim();
+                        if (!trimmed) {
+                            return null;
+                        }
+                        return { attribute: trimmed, bonus: 0 };
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+            : []
+    );
+
+    const itemOrScenery = thing.thingType === 'scenery' ? 'scenery' : 'item';
+    const rarity = thing.rarity || metadata.rarity || getDefaultRarityLabel();
+
+    return {
+        name: thing.name,
+        description: thing.description || '',
+        itemOrScenery,
+        type: thing.itemTypeDetail
+            || metadata.itemTypeDetail
+            || metadata.itemType
+            || (itemOrScenery === 'scenery' ? 'scenery' : 'item'),
+        slot: cleanedSlot ? [cleanedSlot] : [],
+        rarity,
+        value: metadata.value ?? '',
+        weight: metadata.weight ?? '',
+        relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
+        isVehicle: Boolean(metadata.isVehicle),
+        attributeBonuses: normalizeBonuses(
+            Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
+                ? thing.attributeBonuses
+                : metadata.attributeBonuses
+        ),
+        causeStatusEffect: thing.causeStatusEffect || metadata.causeStatusEffect || null,
+        properties: metadata.properties || ''
+    };
+}
+
+async function alterThingByPrompt({
+    thing,
+    changeDescription = '',
+    newName = null,
+    location = null,
+    owner = null
+} = {}) {
+    if (!thing || typeof thing !== 'object' || typeof thing.name !== 'string') {
+        throw new Error('alterThingByPrompt requires a valid Thing instance.');
+    }
+
+    const metadata = thing.metadata || {};
+
+    let resolvedOwner = owner || null;
+    if (!resolvedOwner && metadata.ownerId) {
+        resolvedOwner = players.get(metadata.ownerId) || null;
+    }
+
+    let resolvedLocation = location || null;
+    if (!resolvedLocation && metadata.locationId) {
+        try {
+            resolvedLocation = Location.get(metadata.locationId);
+        } catch (_) {
+            resolvedLocation = null;
+        }
+    }
+    if (!resolvedLocation && resolvedOwner?.currentLocation) {
+        try {
+            resolvedLocation = Location.get(resolvedOwner.currentLocation);
+        } catch (_) {
+            resolvedLocation = null;
+        }
+    }
+
+    const resolvedRegion = resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null;
+
+    const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
+    const itemForPrompt = buildThingPromptItem(thing);
+    const originalState = thing.toJSON();
+
+    const targetName = typeof newName === 'string' && newName.trim() ? newName.trim() : thing.name;
+
+    const thingSeed = {
+        name: targetName,
+        description: itemForPrompt.description,
+        itemOrScenery: itemForPrompt.itemOrScenery,
+        type: itemForPrompt.type,
+        slot: itemForPrompt.slot.length ? itemForPrompt.slot[0] : 'N/A',
+        rarity: itemForPrompt.rarity,
+        value: itemForPrompt.value,
+        weight: itemForPrompt.weight,
+        relativeLevel: itemForPrompt.relativeLevel ?? 0,
+        isVehicle: itemForPrompt.isVehicle ? 'true' : 'false',
+        properties: itemForPrompt.properties,
+        attributeBonuses: itemForPrompt.attributeBonuses,
+        causeStatusEffect: itemForPrompt.causeStatusEffect
+    };
+
+    const rarityDefinitionForSeed = Thing.getRarityDefinition(thingSeed.rarity, { fallbackToDefault: true });
+    thingSeed.rarityDescription = rarityDefinitionForSeed
+        ? (rarityDefinitionForSeed.description || `A ${rarityDefinitionForSeed.label} item.`)
+        : `A ${thingSeed.rarity || getDefaultRarityLabel()} item.`;
+
+    const promptTemplateBase = {
+        ...baseContext,
+        promptType: 'thing-alter',
+        changeDescription: changeDescription || 'Describe how this item has been altered.',
+        thingSeed,
+        item: itemForPrompt
+    };
+
+    const endpoint = config?.ai?.endpoint;
+    const apiKey = config?.ai?.apiKey;
+    const model = config?.ai?.model;
+
+    if (!endpoint || !apiKey || !model) {
+        throw new Error('AI configuration missing; cannot alter item.');
+    }
+
+    const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
+    let renderedTemplate;
+    try {
+        renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
+    } catch (renderError) {
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const debugPath = path.join(logDir, `event_item_alter_render_error_${Date.now()}.log`);
+            const debugPayload = {
+                message: renderError.message,
+                stack: renderError.stack,
+                promptTemplateBase
+            };
+            fs.writeFileSync(debugPath, JSON.stringify(debugPayload, null, 2), 'utf8');
+        } catch (logError) {
+            console.warn('Failed to log item alteration render error:', logError.message);
+        }
+        throw renderError;
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Thing alteration template did not produce prompts.');
+    }
+
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
+
+    const requestData = {
+        model,
+        messages,
+        max_tokens: parsedTemplate.maxTokens || 600,
+        temperature: typeof parsedTemplate.temperature === 'number'
+            ? parsedTemplate.temperature
+            : (config.ai.temperature || 0.7)
+    };
+
+    const requestStart = Date.now();
+    const response = await axios.post(chatEndpoint, requestData, {
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        timeout: baseTimeoutMilliseconds
+    });
+
+    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+    const aiResponse = response.data?.choices?.[0]?.message?.content;
+
+    if (!aiResponse || !aiResponse.trim()) {
+        throw new Error('Empty item alteration response from AI.');
+    }
+
+    const parsedItems = parseInventoryItems(aiResponse);
+    if (!Array.isArray(parsedItems) || !parsedItems.length) {
+        throw new Error('Thing alteration response did not include an item definition.');
+    }
+
+    const updatedItem = parsedItems[0];
+    const originalName = thing.name;
+    const updatedName = typeof updatedItem.name === 'string' && updatedItem.name.trim()
+        ? updatedItem.name.trim()
+        : targetName;
+    const normalizedType = (updatedItem.itemOrScenery || thing.thingType || 'item').trim().toLowerCase() === 'scenery'
+        ? 'scenery'
+        : 'item';
+
+    const previousMetadata = { ...metadata };
+    const previousOwnerId = previousMetadata.ownerId || null;
+    const previousLocationId = previousMetadata.locationId || null;
+
+    const ownerCandidate = resolvedOwner || (previousOwnerId ? players.get(previousOwnerId) || null : null);
+
+    if (ownerCandidate && ownerCandidate !== resolvedOwner) {
+        resolvedOwner = ownerCandidate;
+    }
+
+    const relativeLevelRaw = Number(updatedItem.relativeLevel);
+    const relativeLevel = Number.isFinite(relativeLevelRaw)
+        ? Math.max(-10, Math.min(10, Math.round(relativeLevelRaw)))
+        : (previousMetadata.relativeLevel ?? thing.relativeLevel ?? 0);
+
+    const baseReference = (() => {
+        if (resolvedOwner && Number.isFinite(resolvedOwner.level)) {
+            return resolvedOwner.level;
+        }
+        if (resolvedLocation && Number.isFinite(resolvedLocation.baseLevel)) {
+            return resolvedLocation.baseLevel;
+        }
+        if (resolvedRegion && Number.isFinite(resolvedRegion.averageLevel)) {
+            return resolvedRegion.averageLevel;
+        }
+        if (Number.isFinite(previousMetadata.level)) {
+            return previousMetadata.level;
+        }
+        if (Number.isFinite(thing.level)) {
+            return thing.level;
+        }
+        return currentPlayer?.level || 1;
+    })();
+
+    const computedLevel = clampLevel(
+        (Number.isFinite(baseReference) ? baseReference : 1) + (Number.isFinite(relativeLevel) ? relativeLevel : 0),
+        baseReference
+    );
+
+    const rarity = updatedItem.rarity || thing.rarity || getDefaultRarityLabel();
+    const slotValue = updatedItem.slot && typeof updatedItem.slot === 'string'
+        && updatedItem.slot.trim().toLowerCase() !== 'n/a'
+        ? updatedItem.slot.trim()
+        : null;
+
+    const scaledAttributeBonuses = normalizedType === 'item'
+        ? scaleAttributeBonusesForItem(updatedItem.attributeBonuses || [], {
+            level: computedLevel,
+            rarity
+        })
+        : [];
+
+    const updatedMetadata = {
+        ...previousMetadata,
+        rarity,
+        itemType: updatedItem.type || previousMetadata.itemType || null,
+        itemTypeDetail: updatedItem.type || previousMetadata.itemTypeDetail || null,
+        value: updatedItem.value ?? previousMetadata.value,
+        weight: updatedItem.weight ?? previousMetadata.weight,
+        properties: updatedItem.properties ?? previousMetadata.properties,
+        causeStatusEffect: normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null,
+        attributeBonuses: normalizedType === 'item' ? scaledAttributeBonuses : undefined,
+        relativeLevel,
+        level: computedLevel
+    };
+
+    if (normalizedType === 'scenery') {
+        delete updatedMetadata.ownerId;
+        if (resolvedLocation) {
+            updatedMetadata.locationId = resolvedLocation.id;
+            updatedMetadata.locationName = resolvedLocation.name || resolvedLocation.id;
+        }
+    } else if (resolvedOwner && typeof resolvedOwner.id === 'string') {
+        updatedMetadata.ownerId = resolvedOwner.id;
+        delete updatedMetadata.locationId;
+        delete updatedMetadata.locationName;
+    } else if (resolvedLocation) {
+        updatedMetadata.locationId = resolvedLocation.id;
+        updatedMetadata.locationName = resolvedLocation.name || resolvedLocation.id;
+    }
+
+    const sanitizedMetadata = sanitizeMetadataObject(updatedMetadata);
+
+    const previousOwner = previousOwnerId ? players.get(previousOwnerId) || null : null;
+    const previousLocation = previousLocationId ? (() => {
+        try {
+            return Location.get(previousLocationId);
+        } catch (_) {
+            return null;
+        }
+    })() : null;
+
+    if (previousOwner && previousOwner !== resolvedOwner && typeof previousOwner.removeInventoryItem === 'function') {
+        try {
+            previousOwner.removeInventoryItem(thing);
+        } catch (error) {
+            console.warn(`Failed to remove ${originalName} from ${previousOwner.name || previousOwner.id}:`, error.message);
+        }
+    }
+
+    const newLocationId = sanitizedMetadata.locationId || null;
+    if (previousLocation && previousLocation.id !== newLocationId && typeof previousLocation.removeThingId === 'function') {
+        try {
+            previousLocation.removeThingId(thing.id);
+        } catch (error) {
+            console.warn(`Failed to detach ${thing.id} from location ${previousLocation.id}:`, error.message);
+        }
+    }
+
+    if (resolvedOwner && typeof resolvedOwner.addInventoryItem === 'function' && sanitizedMetadata.ownerId === resolvedOwner.id) {
+        try {
+            resolvedOwner.addInventoryItem(thing);
+        } catch (error) {
+            console.warn(`Failed to add ${thing.name} to ${resolvedOwner.name || resolvedOwner.id}:`, error.message);
+        }
+    }
+
+    if (newLocationId) {
+        try {
+            const locationCandidate = Location.get(newLocationId);
+            if (locationCandidate && typeof locationCandidate.addThingId === 'function') {
+                locationCandidate.addThingId(thing.id);
+            }
+        } catch (error) {
+            console.warn(`Failed to attach ${thing.id} to location ${newLocationId}:`, error.message);
+        }
+    }
+
+    thing.thingType = normalizedType;
+    thing.name = updatedName;
+    thing.description = updatedItem.description || thing.description;
+    thing.itemTypeDetail = updatedItem.type || null;
+    thing.rarity = rarity;
+    thing.slot = slotValue;
+    thing.attributeBonuses = normalizedType === 'item' ? scaledAttributeBonuses : [];
+    thing.causeStatusEffect = normalizedType === 'item' ? updatedItem.causeStatusEffect || null : null;
+    thing.level = computedLevel;
+    thing.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
+    thing.metadata = sanitizedMetadata;
+
+    if (normalizedType === 'scenery') {
+        thing.slot = null;
+        thing.attributeBonuses = [];
+        thing.causeStatusEffect = null;
+    }
+
+    if (thing.imageId) {
+        thing.imageId = null;
+    }
+
+    if (ensureUniqueThingNames) {
+        try {
+            await ensureUniqueThingNames({
+                things: [thing],
+                location: sanitizedMetadata.locationId ? Location.get(sanitizedMetadata.locationId) || null : resolvedLocation,
+                owner: resolvedOwner || null
+            });
+        } catch (error) {
+            console.warn('Failed to enforce unique thing names after alteration:', error.message);
+        }
+    }
+
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        const safeName = (thing.name || targetName || 'item')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'item';
+        const logPath = path.join(logDir, `event_item_alter_${Date.now()}_${safeName}.log`);
+        const logParts = [
+            formatDurationLine(apiDurationSeconds),
+            '=== ITEM ALTERATION SYSTEM PROMPT ===',
+            parsedTemplate.systemPrompt,
+            '',
+            '=== ITEM ALTERATION PROMPT ===',
+            parsedTemplate.generationPrompt,
+            '',
+            '=== ITEM ALTERATION RESPONSE ===',
+            aiResponse,
+            '',
+            '=== ORIGINAL ITEM STATE ===',
+            JSON.stringify(originalState, null, 2),
+            '',
+            '=== UPDATED ITEM ===',
+            JSON.stringify(thing.toJSON(), null, 2),
+            ''
+        ];
+        fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+    } catch (logError) {
+        console.warn('Failed to log item alteration:', logError.message);
+    }
+
+    return {
+        originalName,
+        newName: thing.name,
+        changeDescription: changeDescription || ''
+    };
+}
+
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
@@ -12733,6 +13160,7 @@ Events.initialize({
     createRegionStubFromEvent,
     generatedImages,
     pendingRegionStubs,
+    alterThingByPrompt,
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseTimeoutMilliseconds,

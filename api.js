@@ -871,7 +871,7 @@ module.exports = function registerApiRoutes(scope) {
                             entries.forEach(entry => {
                                 const user = safeSummaryName(entry?.user);
                                 const item = safeSummaryItem(entry?.item);
-                                add('🧪', `${user} consumed ${item}.`);
+                                add('🧪', `${item} was consumed or destroyed.`);
                             });
                             break;
                         case 'death_incapacitation':
