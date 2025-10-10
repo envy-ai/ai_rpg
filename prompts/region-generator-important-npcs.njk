@@ -1,9 +1,3 @@
-<template>
-    <comment>This prompt runs after the location generator prompt, with the context from the location generator still included, hence the lack of a system prompt and other context.</comment>
-    <role>Location NPC generator</role>
-    <generationPrompt>
-
-<context>
 Here is a list of all character attributes:
 {% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }} 
 {% endfor %}
@@ -66,5 +60,3 @@ Generate 0 or more (up to 6) important or prominent NPCs appropriate for the reg
 [… more NPCs …]
 
 </npcs>
-    </generationPrompt>
-</template>
