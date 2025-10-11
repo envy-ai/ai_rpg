@@ -931,6 +931,60 @@ class Thing {
     }
   }
 
+  // Remove this thing from all locations and inventories
+  removeFromWorld() {
+    const Player = require('./Player.js');
+    const Location = require('./Location.js');
+
+    for (const player of Player.getAll()) {
+      if (player.hasEquippedThing(this.#id)) {
+        player.unequipThing(this.#id);
+      }
+      if (player.hasInInventory(this.#id)) {
+        player.removeFromInventory(this.#id);
+      }
+    }
+
+    for (const location of Location.getAll()) {
+      if (location.hasThing(this.#id)) {
+        location.removeThing(this.#id);
+      }
+    }
+  }
+
+  removeFromWorldById(thingId) {
+    const thing = Thing.getById(thingId);
+    if (thing) {
+      thing.removeFromWorld();
+    }
+  }
+
+  // Remove from all inventories and place in the current location
+  drop() {
+    const Location = require('./Location.js');
+
+    for (const player of Player.getAll()) {
+      if (player.hasEquippedThing(this.#id)) {
+        player.unequipThing(this.#id);
+      }
+      if (player.hasInInventory(this.#id)) {
+        player.removeFromInventory(this.#id);
+        const location = Location.getById(player.locationId);
+        if (location) {
+          location.addThingId(this.#id);
+          break;
+        }
+      }
+    }
+  }
+
+  dropById(thingId) {
+    const thing = Thing.getById(thingId);
+    if (thing) {
+      thing.drop();
+    }
+  }
+
   // Helper method to check if thing is a specific type
   isType(type) {
     return this.#thingType === type.toLowerCase();

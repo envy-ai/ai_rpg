@@ -685,10 +685,11 @@ class Location {
     if (!id || typeof id !== 'string') {
       return;
     }
-    if (!this.#thingIds.includes(id)) {
-      this.#thingIds.push(id);
-      this.#lastUpdated = new Date();
-    }
+
+    const Thing = require('./Thing.js');
+    Thing.removeFromWorldById(id);
+    this.#thingIds.push(id);
+    this.#lastUpdated = new Date();
   }
 
   removeThingId(id) {

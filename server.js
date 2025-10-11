@@ -8028,6 +8028,7 @@ function parseInventoryItems(xmlContent) {
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
                 relativeLevel,
                 thingType: itemOrScenery,
+                itemOrScenery,
                 attributeBonuses,
                 attributeBonuses,
                 causeStatusEffect
