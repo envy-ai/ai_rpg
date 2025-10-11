@@ -41,6 +41,8 @@ const OpenAIImageClient = require('./OpenAIImageClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 
+Globals.baseDir = __dirname;
+
 attachAxiosMetricsLogger(axios);
 
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');

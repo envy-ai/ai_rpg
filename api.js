@@ -5,6 +5,7 @@ const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
+const Globals = require('./Globals.js');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -568,6 +569,47 @@ module.exports = function registerApiRoutes(scope) {
             return result;
         };
 
+        function logSummaryBatchPrompt({ systemPrompt, generationPrompt, entries, responseText, durationSeconds }) {
+            try {
+                const logDir = path.join(Globals.baseDir || __dirname, 'logs');
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const logPath = path.join(logDir, `summary_batch_${timestamp}.log`);
+                const resolvedEntries = Array.isArray(entries)
+                    ? entries.map((item, index) => {
+                        const content = typeof item?.content === 'string' ? item.content.trim() : '';
+                        const label = String(index + 1).padStart(2, '0');
+                        return `[${label}] ${content || '(no content)'}`;
+                    })
+                    : [];
+
+                const parts = [
+                    formatDurationLabel(durationSeconds),
+                    `Entries: ${resolvedEntries.length}`,
+                    '=== SUMMARY SYSTEM PROMPT ===',
+                    systemPrompt || '(none)',
+                    ''
+                ];
+
+                if (generationPrompt) {
+                    parts.push('=== SUMMARY GENERATION PROMPT ===', generationPrompt, '');
+                }
+
+                if (resolvedEntries.length) {
+                    parts.push('=== SUMMARY ENTRIES ===', ...resolvedEntries, '');
+                }
+
+                parts.push('=== SUMMARY RESPONSE ===', responseText || '(none)', '');
+
+                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+            } catch (error) {
+                console.warn('Failed to log summary batch prompt:', error.message);
+            }
+        }
+
         const runSummaryBatch = async (batch, { wordLength }) => {
             if (!Array.isArray(batch) || !batch.length) {
                 return true;
@@ -625,12 +667,13 @@ module.exports = function registerApiRoutes(scope) {
             const requestData = {
                 model,
                 messages,
-                max_tokens: parsedTemplate.maxTokens || 600,
+                max_tokens: Globals.config.ai.maxTokens || 4000,
                 temperature: typeof parsedTemplate.temperature === 'number'
                     ? parsedTemplate.temperature
                     : 0.2
             };
 
+            const requestStart = Date.now();
             try {
                 const response = await axios.post(chatEndpoint, requestData, {
                     headers: {
@@ -640,7 +683,15 @@ module.exports = function registerApiRoutes(scope) {
                     timeout: baseTimeoutMilliseconds
                 });
 
+                const durationSeconds = (Date.now() - requestStart) / 1000;
                 const summaryResponse = response.data?.choices?.[0]?.message?.content || '';
+                logSummaryBatchPrompt({
+                    systemPrompt: messages[0]?.content || parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    entries: batch,
+                    responseText: summaryResponse,
+                    durationSeconds
+                });
                 const parsedSummaries = parseBatchSummaryResponse(summaryResponse, batch.length);
 
                 batch.forEach((item, index) => {
@@ -787,6 +838,62 @@ module.exports = function registerApiRoutes(scope) {
 
             if (Utils.getChatSummaryQueueLength() > 0) {
                 await processSummaryQueue({ flushRemainder: true });
+            }
+        };
+
+        const summarizePendingEntriesIfThresholdReached = async () => {
+            if (!summariesEnabled()) {
+                return;
+            }
+
+            const batchSize = getSummaryBatchSize();
+            if (batchSize <= 0 || !Array.isArray(chatHistory)) {
+                return;
+            }
+
+            const queueSnapshot = new Set(
+                Utils.peekChatSummaryQueue().map(item => item?.entryId).filter(Boolean)
+            );
+
+            const pendingEntries = [];
+
+            for (const entry of chatHistory) {
+                if (!entry || !shouldSummarizeEntry(entry)) {
+                    continue;
+                }
+
+                const storedSummary = entry.id ? Utils.getChatSummary(entry.id) : null;
+                if (storedSummary?.summary) {
+                    if (!entry.summary) {
+                        entry.summary = storedSummary.summary;
+                    }
+                    continue;
+                }
+
+                if (typeof entry.summary === 'string' && entry.summary.trim().length) {
+                    continue;
+                }
+
+                if (!entry.id || typeof entry.content !== 'string' || !entry.content.trim()) {
+                    continue;
+                }
+
+                pendingEntries.push(entry);
+
+                if (!queueSnapshot.has(entry.id)) {
+                    Utils.enqueueChatSummaryCandidate({
+                        entryId: entry.id,
+                        content: entry.content,
+                        locationId: entry.locationId || null,
+                        type: entry.type || (entry.randomEvent ? 'random-event' : 'general'),
+                        timestamp: entry.timestamp || null
+                    });
+                    queueSnapshot.add(entry.id);
+                }
+            }
+
+            if (pendingEntries.length >= batchSize) {
+                await processSummaryQueue();
             }
         };
 
@@ -1419,7 +1526,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const baseDir = path.resolve(__dirname);
+                const baseDir = path.resolve(Globals.baseDir);
                 const filePath = path.join(baseDir, 'random_events', `${normalized}.txt`);
                 if (!fs.existsSync(filePath)) {
                     console.warn(`Random event list not found for type "${normalized}": ${filePath}`);
@@ -1503,7 +1610,7 @@ module.exports = function registerApiRoutes(scope) {
 
         function logRandomEventPrompt({ rarity, eventText, systemPrompt, generationPrompt, responseText, durationSeconds }) {
             try {
-                const logsDir = path.join(baseDir, 'logs');
+                const logsDir = path.join(Globals.baseDir, 'logs');
                 if (!fs.existsSync(logsDir)) {
                     fs.mkdirSync(logsDir, { recursive: true });
                 }
@@ -6028,6 +6135,12 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (npcTurnError) {
                         console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
+                    }
+
+                    try {
+                        await summarizePendingEntriesIfThresholdReached();
+                    } catch (summaryBatchError) {
+                        console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
                     }
 
                     if (stream.isEnabled && !playerActionStreamSent) {
