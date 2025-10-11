@@ -1612,16 +1612,14 @@ class Events {
                     }
                     const isFirstAppearance = Boolean(entry.firstAppearance);
                     if (entry.action === 'arrived' || isFirstAppearance) {
-                        let newName = ensureNpcByName(name, context).catch(error => {
+                        let newNpc = ensureNpcByName(name, context).catch(error => {
                             console.warn('Failed to ensure NPC arrival:', error.message);
                         });
-                        if (isFirstAppearance) {
-                            this.newCharacters.add(name);
-                            this.newCharacters.add(newName);
-                            name = newName;
-                        } else {
-                            this.arrivedCharacters.add(name);
-                        }
+                        this.newCharacters.add(name);
+                        this.newCharacters.add(newNpc.name);
+                        this.arrivedCharacters.add(name);
+                        this.arrivedCharacters.add(newNpc.name);
+                        name = newNpc.name;
                     }
                     const npc = findActorByName?.(name);
                     if (!npc) {

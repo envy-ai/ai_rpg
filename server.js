@@ -1646,6 +1646,10 @@ async function ensureNpcByName(name, context = {}) {
     }
 
     const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
+    const existingNpcSummaries = collectNpcSummariesForNameEnforcement({
+        location: resolvedLocation,
+        region: resolvedRegion
+    });
 
     const generated = await generateNpcFromEvent({
         name,
@@ -1654,22 +1658,18 @@ async function ensureNpcByName(name, context = {}) {
         oldItem: context.oldItem || null
     });
 
-    if (generated) {
-        return generated;
+    if (!generated) {
+        throw new Error(`Failed to generate NPC: ${name}`);
     }
 
-    const fallbackNpc = new Player({
-        name,
-        description: `${name} emerges in the scene.`,
-        level: 1,
-        location: resolvedLocation?.id || null,
-        isNPC: true
+    await enforceBannedNpcNameForPlayer({
+        npc: generated,
+        location: resolvedLocation,
+        region: resolvedRegion,
+        existingNpcSummaries
     });
-    players.set(fallbackNpc.id, fallbackNpc);
-    if (resolvedLocation && typeof resolvedLocation.addNpcId === 'function') {
-        resolvedLocation.addNpcId(fallbackNpc.id);
-    }
-    return fallbackNpc;
+
+    return generated;
 }
 
 function findThingByName(name) {
@@ -8556,6 +8556,163 @@ async function enforceBannedNpcNames({
     }
 
     return workingList;
+}
+
+function collectNpcSummariesForNameEnforcement({ location = null, region = null, excludeNpcIds = [] } = {}) {
+    const summaries = [];
+    const exclusionSet = new Set();
+
+    if (Array.isArray(excludeNpcIds)) {
+        for (const id of excludeNpcIds) {
+            if (id) {
+                exclusionSet.add(id);
+            }
+        }
+    } else if (excludeNpcIds) {
+        exclusionSet.add(excludeNpcIds);
+    }
+
+    const seenIds = new Set(exclusionSet);
+    const addNpcById = (npcId) => {
+        if (!npcId || seenIds.has(npcId)) {
+            return;
+        }
+        const npc = players.get(npcId);
+        if (!npc || !npc.isNPC) {
+            return;
+        }
+        seenIds.add(npcId);
+        const summary = summarizeNpcForNameRegen(npc);
+        if (summary) {
+            summaries.push(summary);
+        }
+    };
+
+    if (location && Array.isArray(location.npcIds)) {
+        location.npcIds.forEach(addNpcById);
+    }
+
+    if (region && Array.isArray(region.locationIds)) {
+        for (const locId of region.locationIds) {
+            if (location && locId === location.id) {
+                continue;
+            }
+            const loc = gameLocations.get(locId);
+            if (!loc || !Array.isArray(loc.npcIds)) {
+                continue;
+            }
+            loc.npcIds.forEach(addNpcById);
+        }
+    }
+
+    return summaries;
+}
+
+async function enforceBannedNpcNameForPlayer({
+    npc,
+    location = null,
+    region = null,
+    existingNpcSummaries = null,
+    conversationMessages = [],
+    chatEndpoint = null,
+    model = null,
+    apiKey = null
+} = {}) {
+    if (!npc || typeof npc !== 'object' || typeof npc.name !== 'string') {
+        throw new Error('NPC instance with a valid name is required for banned name enforcement');
+    }
+
+    if (!npc.isNPC) {
+        return npc;
+    }
+
+    const bannedWords = getBannedNpcWords();
+    if (!bannedWords.length) {
+        return npc;
+    }
+
+    if (isNpcNameAllowed(npc.name, { bannedWords })) {
+        return npc;
+    }
+
+    const resolvedConversation = Array.isArray(conversationMessages) ? conversationMessages : [];
+
+    const aiConfig = config?.ai || {};
+    const resolvedModel = model || aiConfig.model;
+    const resolvedApiKey = apiKey || aiConfig.apiKey;
+    const endpoint = aiConfig.endpoint;
+    const resolvedEndpoint = chatEndpoint || (typeof endpoint === 'string'
+        ? (endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`)
+        : null);
+
+    if (!resolvedEndpoint || !resolvedModel || !resolvedApiKey) {
+        throw new Error('Missing AI configuration for NPC name enforcement');
+    }
+
+    let summaries = Array.isArray(existingNpcSummaries)
+        ? existingNpcSummaries.filter(Boolean)
+        : null;
+
+    if (!summaries || !summaries.length) {
+        summaries = collectNpcSummariesForNameEnforcement({
+            location,
+            region,
+            excludeNpcIds: [npc.id]
+        });
+    }
+
+    if (!summaries.length) {
+        Player.getAll().forEach(existing => {
+            if (!existing || !existing.isNPC || existing.id === npc.id) {
+                return;
+            }
+            const summary = summarizeNpcForNameRegen(existing);
+            if (summary) {
+                summaries.push(summary);
+            }
+        });
+    }
+
+    const npcDataList = [{
+        name: npc.name,
+        shortDescription: typeof npc.shortDescription === 'string' ? npc.shortDescription : '',
+        description: typeof npc.description === 'string' ? npc.description : '',
+        role: typeof npc.role === 'string' ? npc.role : (typeof npc.class === 'string' ? npc.class : ''),
+        class: typeof npc.class === 'string' ? npc.class : '',
+        race: typeof npc.race === 'string' ? npc.race : ''
+    }];
+
+    const [result] = await enforceBannedNpcNames({
+        npcDataList,
+        existingNpcSummaries: summaries,
+        conversationMessages: resolvedConversation,
+        chatEndpoint: resolvedEndpoint,
+        model: resolvedModel,
+        apiKey: resolvedApiKey
+    });
+
+    if (!result || typeof result.name !== 'string' || !result.name.trim()) {
+        throw new Error(`NPC name enforcement failed for ${npc.name}`);
+    }
+
+    if (!isNpcNameAllowed(result.name, { bannedWords })) {
+        throw new Error(`NPC name enforcement produced another banned name for ${npc.name}`);
+    }
+
+    const trimmedName = result.name.trim();
+    if (trimmedName !== npc.name) {
+        npc.setName(trimmedName);
+    }
+
+    if (typeof result.shortDescription === 'string' && result.shortDescription.trim()) {
+        npc.shortDescription = result.shortDescription.trim();
+    }
+
+    if (typeof result.description === 'string' && result.description.trim()) {
+        npc.description = result.description.trim();
+    }
+
+    return npc;
 }
 
 async function ensureUniqueNpcNames({
