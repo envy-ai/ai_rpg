@@ -36,10 +36,10 @@ model_swap_options:
 
 imagegen:
   enabled: true
-  #engine: comfyui
+  # engine can currently be "comfyui", "nanogpt", or "openai"
   engine: nanogpt
 
-  # api_template is still used to build comfyui prompts and can be ignored for others
+  # api_template is still used to build comfyui prompts and can be ignored for others. Uncomment one of the below lines as needed.
   #api_template: sdxl_illustrious.json.njk
   api_template: qwen_image.json.njk
 
@@ -50,10 +50,10 @@ imagegen:
   #host: localhost
   #port: 8188
 
-  # When engine is "nanogpt", the following fields are required:
+  # When engine is "nanogpt" or "openai", the following fields are required:
   # api_template is still used to build prompts
-  # model: "nano/image-xxxx"
-  # endpoint: "https://..." (leave blank for nano hosted endpoint)
+  # model: model name from your image generation host
+  # endpoint: "https://..." (leave blank for the engine's default hosted endpoint)
   # apiKey: "..."
   apiKey: "YOUR API KEY HERE"
   endpoint:
