@@ -1567,25 +1567,8 @@ class Events {
                         entry.from = entry.originalName;
                         entry.to = entry.newName;
 
-                        const ownerId = thing?.metadata?.ownerId;
-                        let owner = null;
-                        if (ownerId) {
-                            if (typeof findActorById === 'function') {
-                                owner = findActorById(ownerId) || null;
-                            }
-                            if (!owner && this.players instanceof Map && this.players.has(ownerId)) {
-                                owner = this.players.get(ownerId);
-                            }
-                        }
-
-                        if (!owner) {
-                            let targetLocation = this.resolveLocationCandidate(context.location)
-                                || (thing?.metadata?.locationId ? this.resolveLocationCandidate(thing.metadata.locationId) : null)
-                                || (this.currentPlayer?.currentLocation ? this.resolveLocationCandidate(this.currentPlayer.currentLocation) : null);
-
-                            if (targetLocation && typeof this.addThingToLocation === 'function') {
-                                this.addThingToLocation(thing, targetLocation);
-                            }
+                        if (outcome.thing.thingType === 'scenery') {
+                            thing.drop();
                         }
                     })());
                 }

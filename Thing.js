@@ -938,21 +938,22 @@ class Thing {
 
     for (const player of Player.getAll()) {
       if (player.hasEquippedThing(this.#id)) {
-        player.unequipThing(this.#id);
+        player.unequipItemId(this.#id);
       }
-      if (player.hasInInventory(this.#id)) {
-        player.removeFromInventory(this.#id);
+      if (player.hasInventoryItem(this.#id)) {
+        player.removeInventoryItem(this.#id);
       }
     }
 
     for (const location of Location.getAll()) {
-      if (location.hasThing(this.#id)) {
-        location.removeThing(this.#id);
+      const thingIds = Array.isArray(location.thingIds) ? location.thingIds : (typeof location.thingIds === 'function' ? location.thingIds() : []);
+      if (Array.isArray(thingIds) && thingIds.includes(this.#id) && typeof location.removeThingId === 'function') {
+        location.removeThingId(this.#id);
       }
     }
   }
 
-  removeFromWorldById(thingId) {
+  static removeFromWorldById(thingId) {
     const thing = Thing.getById(thingId);
     if (thing) {
       thing.removeFromWorld();
@@ -961,27 +962,52 @@ class Thing {
 
   // Remove from all inventories and place in the current location
   drop() {
+    console.log(`Dropping thing ${this.#name} (${this.#id}) from world`);
     const Location = require('./Location.js');
-
-    for (const player of Player.getAll()) {
-      if (player.hasEquippedThing(this.#id)) {
-        player.unequipThing(this.#id);
-      }
-      if (player.hasInInventory(this.#id)) {
-        player.removeFromInventory(this.#id);
-        const location = Location.getById(player.locationId);
-        if (location) {
-          location.addThingId(this.#id);
-          break;
-        }
-      }
-    }
+    const location = Location.get(locationId);
+    location.addThingId(this.#id);
   }
 
-  dropById(thingId) {
+  static dropById(thingId) {
     const thing = Thing.getById(thingId);
     if (thing) {
       thing.drop();
+    }
+  }
+
+  putInLocation(locationId) {
+    const Location = require('./Location.js');
+    const location = Location.get(locationId);
+    if (!location) {
+      throw new Error(`Location with ID ${locationId} does not exist`);
+    }
+
+    // location.addThingId calls removeFromWorld internally
+    location.addThingId(this.#id);
+  }
+
+  static putInLocationById(thingId, locationId) {
+    const thing = Thing.getById(thingId);
+    if (thing) {
+      thing.putInLocation(locationId);
+    }
+  }
+
+  putInInventory(playerId) {
+    const Player = require('./Player.js');
+    const player = Player.getById(playerId);
+    if (!player) {
+      throw new Error(`Player with ID ${playerId} does not exist`);
+    }
+
+    // player.addToInventory calls removeFromWorld internally
+    player.addToInventory(this.#id);
+  }
+
+  static putInInventoryById(thingId, playerId) {
+    const thing = Thing.getById(thingId);
+    if (thing) {
+      thing.putInInventory(playerId);
     }
   }
 

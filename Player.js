@@ -1228,6 +1228,7 @@ class Player {
         }
 
         const previousSize = this.#inventory.size;
+        resolved.removeFromWorld();
         this.#inventory.add(resolved);
 
         const added = this.#inventory.size !== previousSize;

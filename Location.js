@@ -305,6 +305,10 @@ class Location {
     return Location.#indexByID.get(locationId) || null;
   }
 
+  static getAll() {
+    return Array.from(Location.#indexByID.values());
+  }
+
   static findByName(name) {
     if (!name || typeof name !== 'string') {
       return null;

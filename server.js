@@ -5974,7 +5974,8 @@ async function alterThingByPrompt({
     return {
         originalName,
         newName: thing.name,
-        changeDescription: changeDescription || ''
+        changeDescription: changeDescription || '',
+        thing: thing
     };
 }
 
