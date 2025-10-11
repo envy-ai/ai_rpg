@@ -37,6 +37,7 @@ const Region = require('./Region.js');
 // Import image generation clients
 const ComfyUIClient = require('./ComfyUIClient.js');
 const NanoGPTImageClient = require('./NanoGPTImageClient.js');
+const OpenAIImageClient = require('./OpenAIImageClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 
@@ -669,9 +670,9 @@ async function processImageGeneration(job) {
         }
     }
 
-    if (engine === 'nanogpt') {
+    if (engine === 'nanogpt' || engine === 'openai') {
         job.progress = 30;
-        job.message = 'Requesting NanoGPT image...';
+        job.message = `Requesting ${engine === 'nanogpt' ? 'NanoGPT' : 'OpenAI'} image...`;
 
         const generationResult = await withRetry(async () => {
             return await comfyUIClient.generateImage({
@@ -684,11 +685,11 @@ async function processImageGeneration(job) {
         });
 
         if (!generationResult || !generationResult.imageBuffer) {
-            throw new Error('NanoGPT image response missing data');
+            throw new Error(`${engine === 'nanogpt' ? 'NanoGPT' : 'OpenAI'} image response missing data`);
         }
 
         job.progress = 70;
-        job.message = 'Saving NanoGPT image...';
+        job.message = `Saving ${engine === 'nanogpt' ? 'NanoGPT' : 'OpenAI'} image...`;
 
         const saveResult = await comfyUIClient.saveImage(
             generationResult.imageBuffer,
@@ -704,7 +705,8 @@ async function processImageGeneration(job) {
             size: saveResult.size
         });
         job.progress = 90;
-        job.message = 'NanoGPT image saved.';
+        job.message = `${engine === 'nanogpt' ? 'NanoGPT' : 'OpenAI'} image saved.`;
+        comfyQueueId = generationResult.requestId;
     } else {
         job.progress = 20;
         job.message = 'Rendering workflow template...';
@@ -826,7 +828,13 @@ async function validateConfiguration() {
             if (!config.imagegen.model) {
                 validationErrors.push('Image generation: imagegen.model is required for NanoGPT engine');
             }
-
+        } else if (config.imagegen.engine === 'openai') {
+            if (!config.imagegen.apiKey && !process.env.OPENAI_API_KEY) {
+                validationErrors.push('Image generation: imagegen.apiKey (or OPENAI_API_KEY env) is required for OpenAI engine');
+            }
+            if (!config.imagegen.model) {
+                validationErrors.push('Image generation: imagegen.model is required for OpenAI engine');
+            }
         } else if (config.imagegen.engine === 'comfyui' || !config.imagegen.engine) {
             if (!config.imagegen.server) {
                 validationErrors.push('Image generation: server configuration missing');
@@ -943,6 +951,13 @@ async function initializeImageEngine() {
             console.log('🎨 NanoGPT image client initialized.');
         } catch (error) {
             throw new Error(`NanoGPT initialization failed: ${error.message}`);
+        }
+    } else if (engine === 'openai') {
+        try {
+            comfyUIClient = new OpenAIImageClient(config);
+            console.log('🎨 OpenAI image client initialized.');
+        } catch (error) {
+            throw new Error(`OpenAI initialization failed: ${error.message}`);
         }
     } else {
         throw new Error(`Unknown image generation engine '${engine}'`);

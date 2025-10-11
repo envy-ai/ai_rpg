@@ -38,7 +38,10 @@ imagegen:
   enabled: true
   #engine: comfyui
   engine: nanogpt
-  api_template: sdxl_illustrious.json.njk
+
+  # api_template is still used to build comfyui prompts and can be ignored for others
+  #api_template: sdxl_illustrious.json.njk
+  api_template: qwen_image.json.njk
 
   # Checkpoint is relative to the ComfyUI models/
   # Required for ComfyUI engine
