@@ -4167,7 +4167,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null, isNonEventTravel } = {}) {
+        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null, isNonEventTravel = true } = {}) {
             if (!player) {
                 return;
             }
@@ -4229,7 +4229,7 @@ module.exports = function registerApiRoutes(scope) {
                 return filtered;
             };
 
-            if (isNonEventTravel && partyInterval && Array.isArray(partyMemberIds)) {
+            if (Array.isArray(partyMemberIds) && partyMemberIds.length) {
                 for (const memberId of partyMemberIds) {
                     const member = players.get ? players.get(memberId) : null;
                     if (!member || typeof member.incrementTurnsSincePartyMemoryGeneration !== 'function') {
@@ -4249,12 +4249,21 @@ module.exports = function registerApiRoutes(scope) {
                         member.addPartyMemoryHistorySegment(memberTurnHistory, partyInterval);
                     }
 
-                    const updatedTurns = member.incrementTurnsSincePartyMemoryGeneration();
-                    console.log(`🧠 [party-memory] ${memberName} turnsSincePartyMemoryGeneration=${updatedTurns}`);
+                    const turnsBefore = Number.isFinite(member.turnsSincePartyMemoryGeneration)
+                        ? member.turnsSincePartyMemoryGeneration
+                        : 0;
 
-                    const turns = member.turnsSincePartyMemoryGeneration || updatedTurns || 0;
+                    if (isNonEventTravel) {
+                        member.incrementTurnsSincePartyMemoryGeneration();
+                    }
+
+                    const turnsAfter = Number.isFinite(member.turnsSincePartyMemoryGeneration)
+                        ? member.turnsSincePartyMemoryGeneration
+                        : turnsBefore;
+                    console.log(`🧠 [party-memory] ${memberName} turnsSincePartyMemoryGeneration=${turnsAfter}`);
+
                     const membershipChanged = Boolean(member.partyMembershipChangedThisTurn);
-                    const shouldGenerate = membershipChanged || turns >= partyInterval;
+                    const shouldGenerate = membershipChanged || (partyInterval && turnsAfter >= partyInterval);
 
                     if (!shouldGenerate) {
                         continue;

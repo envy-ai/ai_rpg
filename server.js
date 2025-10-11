@@ -34,8 +34,9 @@ const SettingInfo = require('./SettingInfo.js');
 // Import Region class
 const Region = require('./Region.js');
 
-// Import ComfyUI client
+// Import image generation clients
 const ComfyUIClient = require('./ComfyUIClient.js');
+const NanoGPTImageClient = require('./NanoGPTImageClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 
@@ -655,58 +656,11 @@ async function processImageGeneration(job) {
         negative_prompt: effectiveNegativePrompt
     };
 
-    job.progress = 20;
-    job.message = 'Rendering workflow template...';
-
-    // Render ComfyUI workflow template with error handling
-    let workflowJson;
-    try {
-        workflowJson = await withRetry(() => {
-            return imagePromptEnv.render(config.imagegen.api_template, templateVars);
-        });
-    } catch (error) {
-        throw new Error(`Template rendering failed: ${error.message}`);
-    }
-
-    let workflow;
-    try {
-        workflow = JSON.parse(workflowJson);
-    } catch (parseError) {
-        throw new Error(`Invalid workflow JSON: ${parseError.message}`);
-    }
-
-    job.progress = 30;
-    job.message = 'Submitting to ComfyUI...';
-
-    // Queue the prompt with retry logic
-    const queueResult = await withRetry(async () => {
-        return await comfyUIClient.queuePrompt(workflow);
-    });
-
-    if (!queueResult.success) {
-        throw new Error(`Failed to queue prompt: ${queueResult.error}`);
-    }
-
-    job.progress = 50;
-    job.message = 'Waiting for generation to complete...';
-
-    // Wait for completion with enhanced error handling
-    const completionResult = await withRetry(async () => {
-        return await comfyUIClient.waitForCompletion(queueResult.promptId);
-    });
-
-    if (!completionResult.success) {
-        throw new Error(`Generation failed: ${completionResult.error}`);
-    }
-
-    job.progress = 80;
-    job.message = 'Downloading and saving images...';
-
-    // Download and save images with error handling
+    const engine = config.imagegen?.engine || 'comfyui';
     const savedImages = [];
     const saveDirectory = path.join(__dirname, 'public', 'generated-images');
+    let comfyQueueId = null;
 
-    // Ensure directory exists
     if (!fs.existsSync(saveDirectory)) {
         try {
             fs.mkdirSync(saveDirectory, { recursive: true });
@@ -715,41 +669,124 @@ async function processImageGeneration(job) {
         }
     }
 
-    for (const imageInfo of completionResult.images) {
-        try {
-            // Download image from ComfyUI with retry
-            const imageData = await withRetry(async () => {
-                return await comfyUIClient.getImage(
-                    imageInfo.filename,
-                    imageInfo.subfolder,
-                    imageInfo.type
-                );
+    if (engine === 'nanogpt') {
+        job.progress = 30;
+        job.message = 'Requesting NanoGPT image...';
+
+        const generationResult = await withRetry(async () => {
+            return await comfyUIClient.generateImage({
+                prompt: templateVars.image.prompt,
+                negativePrompt: templateVars.negative_prompt,
+                width: templateVars.image.width,
+                height: templateVars.image.height,
+                seed: templateVars.image.seed
             });
+        });
 
-            // Save image with unique ID
-            const saveResult = await comfyUIClient.saveImage(
-                imageData,
-                imageId,
-                imageInfo.filename,
-                saveDirectory
-            );
-
-            if (saveResult.success) {
-                savedImages.push({
-                    imageId: imageId,
-                    filename: saveResult.filename,
-                    url: `/generated-images/${saveResult.filename}`,
-                    size: saveResult.size
-                });
-            }
-        } catch (imageError) {
-            console.error(`Failed to process image ${imageInfo.filename}:`, imageError.message);
-            // Continue with other images rather than failing completely
+        if (!generationResult || !generationResult.imageBuffer) {
+            throw new Error('NanoGPT image response missing data');
         }
-    }
 
-    if (savedImages.length === 0) {
-        throw new Error('No images were successfully saved');
+        job.progress = 70;
+        job.message = 'Saving NanoGPT image...';
+
+        const saveResult = await comfyUIClient.saveImage(
+            generationResult.imageBuffer,
+            imageId,
+            `${generationResult.requestId}.png`,
+            saveDirectory
+        );
+
+        savedImages.push({
+            imageId,
+            filename: saveResult.filename,
+            url: `/generated-images/${saveResult.filename}`,
+            size: saveResult.size
+        });
+        job.progress = 90;
+        job.message = 'NanoGPT image saved.';
+    } else {
+        job.progress = 20;
+        job.message = 'Rendering workflow template...';
+
+        let workflowJson;
+        try {
+            workflowJson = await withRetry(() => {
+                return imagePromptEnv.render(config.imagegen.api_template, templateVars);
+            });
+        } catch (error) {
+            throw new Error(`Template rendering failed: ${error.message}`);
+        }
+
+        let workflow;
+        try {
+            workflow = JSON.parse(workflowJson);
+        } catch (parseError) {
+            throw new Error(`Invalid workflow JSON: ${parseError.message}`);
+        }
+
+        job.progress = 30;
+        job.message = 'Submitting to ComfyUI...';
+
+        const queueResult = await withRetry(async () => {
+            return await comfyUIClient.queuePrompt(workflow);
+        });
+
+        if (!queueResult.success) {
+            throw new Error(`Failed to queue prompt: ${queueResult.error}`);
+        }
+
+        comfyQueueId = queueResult.promptId;
+
+        job.progress = 50;
+        job.message = 'Waiting for generation to complete...';
+
+        const completionResult = await withRetry(async () => {
+            return await comfyUIClient.waitForCompletion(queueResult.promptId);
+        });
+
+        if (!completionResult.success) {
+            throw new Error(`Generation failed: ${completionResult.error}`);
+        }
+
+        job.progress = 80;
+        job.message = 'Downloading and saving images...';
+
+        for (const imageInfo of completionResult.images) {
+            try {
+                const imageData = await withRetry(async () => {
+                    return await comfyUIClient.getImage(
+                        imageInfo.filename,
+                        imageInfo.subfolder,
+                        imageInfo.type
+                    );
+                });
+
+                const saveResult = await comfyUIClient.saveImage(
+                    imageData,
+                    imageId,
+                    imageInfo.filename,
+                    saveDirectory
+                );
+
+                if (saveResult.success) {
+                    savedImages.push({
+                        imageId: imageId,
+                        filename: saveResult.filename,
+                        url: `/generated-images/${saveResult.filename}`,
+                        size: saveResult.size
+                    });
+                }
+            } catch (imageError) {
+                console.error(`Failed to process image ${imageInfo.filename}:`, imageError.message);
+            }
+        }
+
+        if (savedImages.length === 0) {
+            throw new Error('No images were successfully saved');
+        }
+        job.progress = 90;
+        job.message = 'Images saved successfully.';
     }
 
     // Store image metadata
@@ -761,7 +798,7 @@ async function processImageGeneration(job) {
         height: templateVars.image.height,
         seed: templateVars.image.seed,
         createdAt: new Date().toISOString(),
-        comfyUIPromptId: queueResult.promptId,
+        comfyUIPromptId: comfyQueueId,
         images: savedImages
     };
 
@@ -782,16 +819,27 @@ async function validateConfiguration() {
     if (config.imagegen && config.imagegen.enabled) {
         console.log('🔍 Validating image generation configuration...');
 
-        // Check required configuration fields
-        if (!config.imagegen.server) {
-            validationErrors.push('Image generation: server configuration missing');
+        if (config.imagegen.engine === 'nanogpt') {
+            if (!config.imagegen.apiKey && !process.env.NANOGPT_API_KEY) {
+                validationErrors.push('Image generation: imagegen.apiKey (or NANOGPT_API_KEY env) is required for NanoGPT engine');
+            }
+            if (!config.imagegen.model) {
+                validationErrors.push('Image generation: imagegen.model is required for NanoGPT engine');
+            }
+
+        } else if (config.imagegen.engine === 'comfyui' || !config.imagegen.engine) {
+            if (!config.imagegen.server) {
+                validationErrors.push('Image generation: server configuration missing');
+            } else {
+                if (!config.imagegen.server.host) {
+                    validationErrors.push('Image generation: server host not specified');
+                }
+                if (!config.imagegen.server.port) {
+                    validationErrors.push('Image generation: server port not specified');
+                }
+            }
         } else {
-            if (!config.imagegen.server.host) {
-                validationErrors.push('Image generation: server host not specified');
-            }
-            if (!config.imagegen.server.port) {
-                validationErrors.push('Image generation: server port not specified');
-            }
+            validationErrors.push(`Image generation: unknown engine '${config.imagegen.engine}'`);
         }
 
         // Check template file exists
@@ -863,34 +911,41 @@ async function validateConfiguration() {
 }
 
 // Async function to initialize ComfyUI with connectivity test
-async function initializeComfyUI() {
+async function initializeImageEngine() {
     if (!config.imagegen || !config.imagegen.enabled) {
         console.log('🎨 Image generation disabled in configuration');
-        return true;
+        return;
     }
 
-    try {
-        comfyUIClient = new ComfyUIClient(config);
-        console.log(`🎨 ComfyUI client initialized for ${config.imagegen.server.host}:${config.imagegen.server.port}`);
+    const engine = config.imagegen.engine || 'comfyui';
 
-        // Test connectivity to ComfyUI server
-        console.log('🔌 Testing ComfyUI server connectivity...');
-        const testResponse = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
-            timeout: baseTimeoutMilliseconds // 15 second timeout
-        });
+    if (engine === 'comfyui') {
+        try {
+            comfyUIClient = new ComfyUIClient(config);
+            console.log(`🎨 ComfyUI client initialized for ${config.imagegen.server.host}:${config.imagegen.server.port}`);
 
-        if (testResponse.status === 200) {
-            console.log('✅ ComfyUI server is accessible');
-            return true;
-        } else {
-            console.log('⚠️  ComfyUI server returned unexpected status:', testResponse.status);
-            return false;
+            console.log('🔌 Testing ComfyUI server connectivity...');
+            const testResponse = await axios.get(`http://${config.imagegen.server.host}:${config.imagegen.server.port}/queue`, {
+                timeout: baseTimeoutMilliseconds
+            });
+
+            if (testResponse.status === 200) {
+                console.log('✅ ComfyUI server is accessible');
+            } else {
+                throw new Error(`ComfyUI returned status ${testResponse.status}`);
+            }
+        } catch (error) {
+            throw new Error(`ComfyUI initialization failed: ${error.message}`);
         }
-
-    } catch (error) {
-        console.error('❌ ComfyUI server connectivity test failed:', error.message);
-        console.log('💡 Image generation will be unavailable until ComfyUI server is running');
-        return false;
+    } else if (engine === 'nanogpt') {
+        try {
+            comfyUIClient = new NanoGPTImageClient(config);
+            console.log('🎨 NanoGPT image client initialized.');
+        } catch (error) {
+            throw new Error(`NanoGPT initialization failed: ${error.message}`);
+        }
+    } else {
+        throw new Error(`Unknown image generation engine '${engine}'`);
     }
 }
 
@@ -11195,7 +11250,7 @@ async function generatePlayerImage(player, options = {}) {
         }
 
         if (!comfyUIClient) {
-            console.log('ComfyUI client not initialized, skipping player portrait generation');
+            console.log('Image generation client not initialized, skipping player portrait generation');
             return {
                 success: false,
                 skipped: true,
@@ -11414,7 +11469,7 @@ async function generateLocationImage(location, options = {}) {
         }
 
         if (!comfyUIClient) {
-            console.log('ComfyUI client not initialized, skipping location scene generation');
+            console.log('Image generation client not initialized, skipping location scene generation');
             return {
                 success: false,
                 skipped: true,
@@ -11578,7 +11633,7 @@ async function generateLocationExitImage(locationExit, options = {}) {
         }
 
         if (!comfyUIClient) {
-            console.log('ComfyUI client not initialized, skipping location exit passage generation');
+            console.log('Image generation client not initialized, skipping location exit passage generation');
             return {
                 success: false,
                 skipped: true,
@@ -11681,7 +11736,7 @@ async function generateThingImage(thing, options = {}) {
         }
 
         if (!comfyUIClient) {
-            console.log('ComfyUI client not initialized, skipping thing image generation');
+            console.log('Image generation client not initialized, skipping thing image generation');
             return {
                 success: false,
                 skipped: true,
@@ -13753,11 +13808,11 @@ async function startServer() {
     }
 
     // Step 2: Initialize ComfyUI client
-    const comfyUIReady = await initializeComfyUI();
-    if (!comfyUIReady && config.imagegen && config.imagegen.enabled) {
-        console.log('⚠️  Continuing without ComfyUI - image generation will be disabled');
-        // Don't exit, just disable the client
-        comfyUIClient = null;
+    try {
+        await initializeImageEngine();
+    } catch (error) {
+        console.error('❌ Failed to initialize image engine:', error.message);
+        throw error;
     }
 
     // Step 3: Prepare realtime hub and start the server
@@ -13775,9 +13830,13 @@ async function startServer() {
 
         if (config.imagegen && config.imagegen.enabled) {
             if (comfyUIClient) {
-                console.log(`🎨 Image generation ready (ComfyUI: ${config.imagegen.server.host}:${config.imagegen.server.port})`);
+                if ((config.imagegen.engine || 'comfyui') === 'nanogpt') {
+                    console.log('🎨 Image generation ready (NanoGPT)');
+                } else {
+                    console.log(`🎨 Image generation ready (ComfyUI: ${config.imagegen.server.host}:${config.imagegen.server.port})`);
+                }
             } else {
-                console.log(`🎨 Image generation disabled (ComfyUI not available)`);
+                console.log('🎨 Image generation disabled (engine unavailable)');
             }
         } else {
             console.log(`🎨 Image generation disabled in configuration`);
