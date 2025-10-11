@@ -1668,8 +1668,11 @@ class Events {
             },
             drop_item: function (entries = [], context = {}) {
                 const location = context.location;
-                if (!location || !Array.isArray(entries) || !entries.length) {
-                    throw new Error('drop_item events require a valid location and at least one entry.');
+                if (!entries.length) {
+                    return;
+                }
+                if (!location) {
+                    throw new Error('drop_item events require a valid location.');
                 }
                 const { findThingByName, findActorByName } = this._deps;
                 for (const entry of entries) {
@@ -1682,18 +1685,6 @@ class Events {
                     thing.drop();
                     entry.character = holders[0].name;
                     this.droppedItems.add(entry.item);
-
-                    /*
-                    if (stream && stream.isEnabled && Array.isArray(holders) && holders.length) {
-                        if (holderNames.length) {
-                            stream.status('item_drop', {
-                                itemName: thing.name,
-                                holders: holder[0].name,
-                                locationName: location?.name || location?.id || 'Unknown Location'
-                            });
-                        }
-                    }
-                    */
                 }
             },
             item_appear: async function (items = [], context = {}) {
