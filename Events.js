@@ -1680,8 +1680,8 @@ class Events {
 
                     const holders = thing.whoseInventory();
                     thing.drop();
+                    entry.character = holders[0].name;
                     this.droppedItems.add(entry.item);
-                    entry.name = holders[0].name;
 
                     /*
                     if (stream && stream.isEnabled && Array.isArray(holders) && holders.length) {

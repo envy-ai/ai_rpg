@@ -4167,7 +4167,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null } = {}) {
+        async function processPartyMemoriesForCurrentTurn({ player, historyEntries, locationOverride = null, isNonEventTravel } = {}) {
             if (!player) {
                 return;
             }
@@ -4840,19 +4840,20 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed during post-turn memory update:', error.message || error);
                 }
 
-                const skipPartyMemoryProcessing = currentActionIsTravel && !travelMetadataIsEventDriven;
-                if (!skipPartyMemoryProcessing) {
-                    try {
-                        await processPartyMemoriesForCurrentTurn({
-                            player: currentPlayer,
-                            historyEntries: newChatEntries,
-                            locationOverride: location
-                        });
-                    } catch (error) {
-                        console.warn('Failed during party memory interval processing:', error.message || error);
-                        console.debug(error);
-                    }
+                const isNonEventTravel = currentActionIsTravel && !travelMetadataIsEventDriven;
+
+                try {
+                    await processPartyMemoriesForCurrentTurn({
+                        player: currentPlayer,
+                        historyEntries: newChatEntries,
+                        locationOverride: location,
+                        isNonEventTravel
+                    });
+                } catch (error) {
+                    console.warn('Failed during party memory interval processing:', error.message || error);
+                    console.debug(error);
                 }
+
 
                 if (currentPlayer) {
                     currentPlayer.lastActionWasTravel = currentActionIsTravel;
