@@ -1901,7 +1901,9 @@ class Events {
                     return;
                 }
                 const { findActorByName } = this._deps;
+                console.log('Processing status_effect_change entries:', entries);
                 for (const entry of entries) {
+                    entry.description = entry.detail;
                     if (entry.entity) {
                         this.alteredCharacters.add(entry.entity);
                     }

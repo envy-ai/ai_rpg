@@ -1109,11 +1109,11 @@ module.exports = function registerApiRoutes(scope) {
                                 const description = entry?.description ? String(entry.description).trim() : 'a status effect';
                                 const action = (entry?.action || '').trim().toLowerCase();
                                 if (action === 'gained' || action === 'added' || action === 'applied') {
-                                    add('🌀', `${entity} gained ${description}.`);
+                                    add('🌀', `${entity} gained status: "${description}".`);
                                 } else if (action === 'lost' || action === 'removed') {
-                                    add('🌀', `${entity} lost ${description}.`);
+                                    add('🌀', `${entity} lost status: "${description}".`);
                                 } else {
-                                    add('🌀', `${entity} changed status: ${description}.`);
+                                    add('🌀', `${entity} changed status: "${description}".`);
                                 }
                             });
                             break;
