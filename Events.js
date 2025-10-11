@@ -20,7 +20,7 @@ const EVENT_PROMPT_ORDER = [
     { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
     { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
     { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
-    { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
+    { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
     { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those pieces of scenery (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
@@ -36,6 +36,7 @@ const EVENT_PROMPT_ORDER = [
     { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
     { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
     { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
+    { key: 'disposition_check', prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.` }
 ];
 
 const EVENT_CHECK_QUESTIONS = EVENT_PROMPT_ORDER.map(def => def.prompt);
@@ -796,6 +797,8 @@ class Events {
                 await handler.call(this, entries, context, parsedEvents.rawEntries[key]);
             } catch (error) {
                 console.warn(`Failed to apply ${key} events:`, error.message);
+                // log error trace
+                console.debug(error);
             }
         }
 
@@ -1666,22 +1669,31 @@ class Events {
             drop_item: function (entries = [], context = {}) {
                 const location = context.location;
                 if (!location || !Array.isArray(entries) || !entries.length) {
-                    return;
+                    throw new Error('drop_item events require a valid location and at least one entry.');
                 }
                 const { findThingByName, findActorByName } = this._deps;
                 for (const entry of entries) {
                     const thing = findThingByName?.(entry.item);
-                    const actor = findActorByName?.(entry.name);
                     if (!thing) {
                         continue;
                     }
-                    if (actor && typeof actor.removeInventoryItem === 'function') {
-                        actor.removeInventoryItem(thing);
+
+                    const holders = thing.whoseInventory();
+                    thing.drop();
+                    this.droppedItems.add(entry.item);
+                    entry.name = holders[0].name;
+
+                    /*
+                    if (stream && stream.isEnabled && Array.isArray(holders) && holders.length) {
+                        if (holderNames.length) {
+                            stream.status('item_drop', {
+                                itemName: thing.name,
+                                holders: holder[0].name,
+                                locationName: location?.name || location?.id || 'Unknown Location'
+                            });
+                        }
                     }
-                    this.addThingToLocation(thing, location);
-                    if (entry.item) {
-                        this.droppedItems.add(entry.item);
-                    }
+                    */
                 }
             },
             item_appear: async function (items = [], context = {}) {

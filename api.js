@@ -4,7 +4,6 @@ const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
-const console = require('console');
 const Location = require('./Location.js');
 
 module.exports = function registerApiRoutes(scope) {
@@ -4851,6 +4850,7 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     } catch (error) {
                         console.warn('Failed during party memory interval processing:', error.message || error);
+                        console.debug(error);
                     }
                 }
 

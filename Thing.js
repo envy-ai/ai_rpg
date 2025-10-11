@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { count } = require('console');
 
 /**
  * Thing class for AI RPG
@@ -837,6 +838,19 @@ class Thing {
     return normalized;
   }
 
+  whoseInventory() {
+    const Player = require('./Player.js');
+    return Player.getAll().filter(player => player.hasInventoryItem(this.#id));
+  }
+
+  static whoseInventoryById(thingId) {
+    const thing = Thing.getById(thingId);
+    if (!thing) {
+      return [];
+    }
+    return thing.whoseInventory();
+  }
+
   getStatusEffects() {
     return this.#statusEffects.map(effect => ({ ...effect }));
   }
@@ -963,6 +977,34 @@ class Thing {
   // Remove from all inventories and place in the current location
   drop() {
     console.log(`Dropping thing ${this.#name} (${this.#id}) from world`);
+    // set locationId to the current location
+    const equippedPlayer = this.equippedBy;
+    if (equippedPlayer) {
+      equippedPlayer.unequipItemId(this.#id);
+    }
+
+    const owners = this.whoseInventory();
+    if (owners.length > 1) {
+      console.warn(`Thing ${this.#name} (${this.#id}) is in multiple inventories (${owners.length}). Removing from all.`);
+      console.trace();
+    }
+
+    if (count(owners) === 0) {
+      console.warn(`Thing ${this.#name} (${this.#id}) is not in any inventory. Cannot determine location to drop into.`);
+      console.trace();
+      return;
+    } else {
+      for (const player of owners) {
+        player.removeInventoryItem(this.#id);
+      }
+    }
+
+    let locationId = owners[0].currentLocation;
+    console.log("Current Location", owners[0].currentLocation);
+    if (!locationId) {
+      throw new Error(`Player ${owners[0].name} (${owners[0].id}) does not have a valid locationId`);
+    }
+
     const Location = require('./Location.js');
     const location = Location.get(locationId);
     location.addThingId(this.#id);

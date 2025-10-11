@@ -1,0 +1,24 @@
+🧺 Skipping player inventory generation - no active setting configured.
+🎲 Created default player "Adventurer" with default stats
+🔧 Starting server initialization...
+🔍 Validating image generation configuration...
+✅ Template file found: qwen_image.json.njk
+✅ Images directory exists: /home/bart/ai_rpg/public/generated-images
+✅ Configuration validation passed
+🎨 ComfyUI client initialized for shodan:8188
+🔌 Testing ComfyUI server connectivity...
+❌ ComfyUI server connectivity test failed: Error
+💡 Image generation will be unavailable until ComfyUI server is running
+⚠️  Continuing without ComfyUI - image generation will be disabled
+📡 RealtimeHub listening on path /ws
+RealtimeHub server error: Error: listen EPERM: operation not permitted 0.0.0.0:7777
+    at Server.setupListenHandle [as _listen2] (node:net:1885:21)
+    at listenInCluster (node:net:1964:12)
+    at node:net:2170:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 7777
+}
