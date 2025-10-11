@@ -556,7 +556,8 @@ class Events {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: this._baseTimeout
+            timeout: this._baseTimeout,
+            metadata: { aiMetricsLabel: 'event_checks' }
         });
 
         const responseText = response.data?.choices?.[0]?.message?.content || '';
@@ -1318,7 +1319,8 @@ class Events {
                                     'Authorization': `Bearer ${apiKey}`,
                                     'Content-Type': 'application/json'
                                 },
-                                timeout: this._baseTimeout
+                                timeout: this._baseTimeout,
+                                metadata: { aiMetricsLabel: 'alter_location' }
                             });
                         } catch (requestError) {
                             console.warn('Alter location request failed:', requestError.message);
@@ -2270,7 +2272,8 @@ class Events {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: this._baseTimeout
+                    timeout: this._baseTimeout,
+                    metadata: { aiMetricsLabel: 'alter_npc' }
                 });
             } catch (error) {
                 throw new Error(`Alter NPC request failed for "${npcName}": ${error.message}`);

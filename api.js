@@ -680,7 +680,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'summarize_batch' }
                 });
 
                 const durationSeconds = (Date.now() - requestStart) / 1000;
@@ -1706,7 +1707,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: (config.ai.baseTimeoutMilliseconds ? config.ai.baseTimeoutMilliseconds * 1000 : 60000)
+                    timeout: (config.ai.baseTimeoutMilliseconds ? config.ai.baseTimeoutMilliseconds * 1000 : 60000),
+                    metadata: { aiMetricsLabel: 'random_event' }
                 });
                 const durationSeconds = (Date.now() - start) / 1000;
 
@@ -2201,7 +2203,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'attack_check' }
                 });
 
                 const attackResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -2272,7 +2275,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'attack_precheck' }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3292,7 +3296,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'next_npc_list' }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3539,7 +3544,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'disposition_check' }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3766,7 +3772,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'npc_plausibility' }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -3937,7 +3944,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds * (Number.isFinite(totalPrompts) && totalPrompts > 0 ? totalPrompts : 1)
+                    timeout: baseTimeoutMilliseconds * (Number.isFinite(totalPrompts) && totalPrompts > 0 ? totalPrompts : 1),
+                    metadata: { aiMetricsLabel: 'npc_memories' }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -4576,12 +4584,15 @@ module.exports = function registerApiRoutes(scope) {
                     temperature: config.ai.temperature || 0.7
                 };
 
+                const aiMetricsLabel = actor.isNPC ? 'npc_action' : 'player_action';
+
                 const response = await axios.post(chatEndpoint, requestData, {
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel }
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
@@ -5104,6 +5115,9 @@ module.exports = function registerApiRoutes(scope) {
                 stream.status('player_action:received', 'Processing player action.');
                 Player.updatePreviousLocationsForAll();
 
+                const newTurnToken = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+                currentTurnToken = newTurnToken;
+
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
                 if (userMessage && userMessage.role === 'user') {
@@ -5577,30 +5591,23 @@ module.exports = function registerApiRoutes(scope) {
                             generationPrompt: promptData.generationPrompt || null
                         });
 
-                        const systemMessage = {
-                            role: 'system',
-                            content: String(promptData.systemPrompt).trim()
-                        };
+                        const trimmedSystemPrompt = String(promptData.systemPrompt).trim();
+                        const templateGenerationPrompt = promptData.generationPrompt
+                            ? String(promptData.generationPrompt)
+                            : null;
 
-                        // Replace any existing system message or add new one
-                        const nonSystemMessages = messages
-                            .filter(msg => msg.role !== 'system')
-                            .map(msg => {
-                                if (isCreativeModeAction && msg === userMessage) {
-                                    return { ...msg, content: creativeActionText || '' };
-                                }
-                                return msg;
-                            });
-
-                        finalMessages = [systemMessage, ...nonSystemMessages];
-
-                        // Append promptData.generationPrompt to finalMessages
-                        if (promptData.generationPrompt) {
-                            finalMessages.push({
-                                role: 'user',
-                                content: promptData.generationPrompt
-                            });
+                        const rebuiltMessages = [];
+                        if (trimmedSystemPrompt) {
+                            rebuiltMessages.push({ role: 'system', content: trimmedSystemPrompt });
                         }
+
+                        if (templateGenerationPrompt && templateGenerationPrompt.trim()) {
+                            rebuiltMessages.push({ role: 'user', content: templateGenerationPrompt.trim() });
+                        } else if (typeof sanitizedUserContent === 'string' && sanitizedUserContent.trim()) {
+                            rebuiltMessages.push({ role: 'user', content: sanitizedUserContent.trim() });
+                        }
+
+                        finalMessages = rebuiltMessages;
 
                         // Store debug information
                         debugInfo = {
@@ -5609,7 +5616,7 @@ module.exports = function registerApiRoutes(scope) {
                             usedCreativeTemplate: isCreativeModeAction,
                             playerName: currentPlayer.name,
                             playerDescription: currentPlayer.description,
-                            systemMessage: systemMessage.content,
+                            systemMessage: trimmedSystemPrompt,
                             generationPrompt: promptData.generationPrompt || null,
                             rawTemplate: renderedPrompt
                         };
@@ -5807,7 +5814,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds // 60 second timeout
+                    timeout: baseTimeoutMilliseconds, // 60 second timeout
+                    metadata: { aiMetricsLabel: 'player_action' }
                 });
 
                 const usageMetrics = emitAiUsageMetrics(response, { label: 'player_action', streamEmitter: stream });
@@ -11679,7 +11687,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'setting_autofill' }
                 });
 
                 const aiMessage = aiResponse?.data?.choices?.[0]?.message?.content;
@@ -12880,7 +12889,8 @@ module.exports = function registerApiRoutes(scope) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds // 30 second timeout for test
+                    timeout: baseTimeoutMilliseconds, // 30 second timeout for test
+                    metadata: { aiMetricsLabel: 'config_test' }
                 });
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {

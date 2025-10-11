@@ -23,7 +23,15 @@ function attachAxiosMetricsLogger(axiosInstance, { logPrefix = DEFAULT_LOG_PREFI
     }
 
     const usage = response.data?.usage || {};
-    const totalTokens = Number.isFinite(Number(usage.total_tokens)) ? Number(usage.total_tokens) : null;
+    const promptTokens = Number.isFinite(Number(usage.prompt_tokens ?? usage.promptTokens))
+      ? Number(usage.prompt_tokens ?? usage.promptTokens)
+      : null;
+    const completionTokens = Number.isFinite(Number(usage.completion_tokens ?? usage.completionTokens))
+      ? Number(usage.completion_tokens ?? usage.completionTokens)
+      : null;
+    const totalTokens = Number.isFinite(Number(usage.total_tokens ?? usage.totalTokens))
+      ? Number(usage.total_tokens ?? usage.totalTokens)
+      : (promptTokens !== null && completionTokens !== null ? promptTokens + completionTokens : null);
     const cachedTokensCandidate = usage.cached_tokens ?? usage.prompt_tokens_cached ?? usage.prompt_tokens_cache ?? null;
     const cachedTokens = Number.isFinite(Number(cachedTokensCandidate)) ? Number(cachedTokensCandidate) : null;
 
@@ -36,11 +44,26 @@ function attachAxiosMetricsLogger(axiosInstance, { logPrefix = DEFAULT_LOG_PREFI
 
     const url = response.config.url || response.config.baseURL || 'unknown-endpoint';
     const method = (response.config.method || 'GET').toUpperCase();
+    const label = response.config.metadata?.aiMetricsLabel
+      || response.config.aiMetricsLabel
+      || null;
 
     const parts = [
       isError ? '⚠️ AI metrics (error)' : logPrefix,
       `${method} ${url}`
     ];
+
+    if (label) {
+      parts.push(`label=${label}`);
+    }
+
+    if (promptTokens !== null) {
+      parts.push(`prompt=${promptTokens}`);
+    }
+
+    if (completionTokens !== null) {
+      parts.push(`completion=${completionTokens}`);
+    }
 
     if (totalTokens !== null) {
       parts.push(`total=${totalTokens}`);

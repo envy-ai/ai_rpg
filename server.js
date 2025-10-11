@@ -968,6 +968,7 @@ async function initializeImageEngine() {
 
 // In-memory chat history storage
 let chatHistory = [];
+let currentTurnToken = null;
 
 let baseContextMemoryCache = {
     turnKey: null,
@@ -2592,6 +2593,11 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 }
 
 function getBaseContextTurnKey() {
+    const playerId = currentPlayer?.id || 'no-player';
+    if (currentTurnToken) {
+        return `${playerId}:${currentTurnToken}`;
+    }
+
     const lastEntry = Array.isArray(chatHistory) && chatHistory.length
         ? chatHistory[chatHistory.length - 1]
         : null;
@@ -2599,7 +2605,6 @@ function getBaseContextTurnKey() {
         || lastEntry?.timestamp
         || lastEntry?.id
         || '';
-    const playerId = currentPlayer?.id || 'no-player';
     return `${playerId}:${chatHistory.length}:${marker}`;
 }
 
@@ -2899,7 +2904,8 @@ async function populateNpcSelectedMemories(baseContext) {
                         'Authorization': `Bearer ${config.ai.apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'choose_important_memories' }
                 });
 
                 const responseText = response.data?.choices?.[0]?.message?.content || '';
@@ -3453,7 +3459,8 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'plausibility_check' }
         });
 
         const plausibilityResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -4345,7 +4352,8 @@ async function expandRegionEntryStub(stubLocation) {
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'region_stub_locations' }
                 });
 
                 stubResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -5006,7 +5014,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: requestTimeout
+            timeout: requestTimeout,
+            metadata: { aiMetricsLabel: 'inventory_generation' }
         });
 
         const inventoryContent = response.data?.choices?.[0]?.message?.content;
@@ -5433,7 +5442,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                         'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json'
                     },
-                    timeout: baseTimeoutMilliseconds
+                    timeout: baseTimeoutMilliseconds,
+                    metadata: { aiMetricsLabel: 'thing_generation' }
                 });
 
                 const inventoryContent = response.data?.choices?.[0]?.message?.content;
@@ -5824,7 +5834,8 @@ async function alterThingByPrompt({
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
         },
-        timeout: baseTimeoutMilliseconds
+        timeout: baseTimeoutMilliseconds,
+        metadata: { aiMetricsLabel: 'alter_thing' }
     });
 
     const apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -6347,7 +6358,8 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'npc_generation_single' }
         });
 
         const npcResponse = response.data?.choices?.[0]?.message?.content;
@@ -6865,7 +6877,8 @@ async function equipBestGearForCharacter({
                 'Authorization': `Bearer ${resolvedApiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: requestTimeout
+            timeout: requestTimeout,
+            metadata: { aiMetricsLabel: 'equip_best' }
         });
         equipResponse = response.data?.choices?.[0]?.message?.content || '';
     } catch (error) {
@@ -7328,7 +7341,8 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: requestTimeout
+            timeout: requestTimeout,
+            metadata: { aiMetricsLabel: 'npc_skill_assignments' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -7567,7 +7581,8 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: requestTimeout
+            timeout: requestTimeout,
+            metadata: { aiMetricsLabel: 'npc_ability_assignments' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -7899,7 +7914,8 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: baseTimeoutMilliseconds
+                timeout: baseTimeoutMilliseconds,
+                metadata: { aiMetricsLabel: 'levelup_abilities' }
             });
             if (!response.data?.choices?.length) {
                 console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
@@ -8546,7 +8562,8 @@ async function enforceBannedNpcNames({
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: baseTimeoutMilliseconds
+                timeout: baseTimeoutMilliseconds,
+                metadata: { aiMetricsLabel: 'npc_name_regen' }
             });
             regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -8918,7 +8935,8 @@ async function ensureUniqueNpcNames({
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: baseTimeoutMilliseconds
+                timeout: baseTimeoutMilliseconds,
+                metadata: { aiMetricsLabel: 'npc_name_regen_duplicate' }
             });
             regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -9313,7 +9331,8 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
             'Authorization': `Bearer ${resolvedApiKey}`,
             'Content-Type': 'application/json'
         },
-        timeout: baseTimeoutMilliseconds
+        timeout: baseTimeoutMilliseconds,
+        metadata: { aiMetricsLabel: 'location_things_generation' }
     });
 
     const aiResponse = response.data?.choices?.[0]?.message?.content;
@@ -9802,7 +9821,8 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
                 'Authorization': `Bearer ${config.ai.apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'thing_name_regen' }
         });
         responseText = response.data?.choices?.[0]?.message?.content || '';
         durationSeconds = (Date.now() - requestStart) / 1000;
@@ -9947,7 +9967,8 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'skill_generation' }
         });
 
         const skillResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -10054,7 +10075,8 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'skill_generation_by_name' }
         });
 
         const skillResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -10186,7 +10208,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * npcCountHint)
+            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * npcCountHint),
+            metadata: { aiMetricsLabel: 'location_npc_generation' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -10512,7 +10535,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * Math.max(1, regionLocations.length || 1))
+            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * Math.max(1, regionLocations.length || 1)),
+            metadata: { aiMetricsLabel: 'region_npc_generation' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -11433,7 +11457,8 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds // 60 second timeout
+            timeout: baseTimeoutMilliseconds, // 60 second timeout
+            metadata: { aiMetricsLabel: 'image_prompt_generation' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -12163,7 +12188,8 @@ async function generateLocationFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds // 60 second timeout
+            timeout: baseTimeoutMilliseconds, // 60 second timeout
+            metadata: { aiMetricsLabel: 'location_generation' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -12466,7 +12492,8 @@ async function chooseExistingRegionExit({
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'existing_region_exit' }
         });
 
         const aiResponse = response.data?.choices?.[0]?.message?.content || '';
@@ -13279,7 +13306,8 @@ async function chooseRegionEntrance({
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'region_entrance_selection' }
         });
 
         const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
@@ -13373,7 +13401,8 @@ async function generateRegionFromPrompt(options = {}) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            timeout: baseTimeoutMilliseconds
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'region_generation' }
         });
 
         if (!response.data || !response.data.choices || response.data.choices.length === 0) {
@@ -13761,6 +13790,7 @@ defineApiStateProperty('currentSetting', () => currentSetting, value => { curren
 defineApiStateProperty('comfyUIClient', () => comfyUIClient, value => { comfyUIClient = value; });
 defineApiStateProperty('chatHistory', () => chatHistory, value => { chatHistory = value; });
 defineApiStateProperty('isProcessingJob', () => isProcessingJob, value => { isProcessingJob = value; });
+defineApiStateProperty('currentTurnToken', () => currentTurnToken, value => { currentTurnToken = value; });
 
 const registerApiRoutes = require('./api');
 registerApiRoutes(apiScope);
