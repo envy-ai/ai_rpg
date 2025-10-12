@@ -1194,46 +1194,6 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
 
         // Add debug information if available (for AI responses)
-        if (debugInfo && sender === 'ai') {
-            const debugDetails = document.createElement('details');
-            debugDetails.className = 'debug-details';
-
-            const debugSummary = document.createElement('summary');
-            debugSummary.className = 'debug-summary';
-            debugSummary.textContent = '🔍 Debug: View AI Prompt';
-
-            const debugContent = document.createElement('div');
-            debugContent.className = 'debug-content';
-
-            if (debugInfo.usedPlayerTemplate) {
-                debugContent.innerHTML = `
-                    <div class="debug-section">
-                        <strong>Player Context:</strong> ${debugInfo.playerName}<br>
-                        <em>${debugInfo.playerDescription}</em>
-                    </div>
-                    <div class="debug-section">
-                        <strong>System Prompt Sent to AI:</strong>
-                        <pre class="debug-prompt">${this.escapeHtml(debugInfo.systemMessage)}</pre>
-                    </div>
-                    <div class="debug-section">
-                        <strong>Full AI Prompt Sent:</strong>
-                        <pre class="debug-prompt">${this.escapeHtml(debugInfo.generationPrompt)}</pre>
-                    </div>
-                `;
-            } else {
-                debugContent.innerHTML = `
-                    <div class="debug-section">
-                        <strong>No Player Template Used</strong><br>
-                        Reason: ${debugInfo.reason || debugInfo.error || 'Unknown'}
-                    </div>
-                `;
-            }
-
-            debugDetails.appendChild(debugSummary);
-            debugDetails.appendChild(debugContent);
-            messageDiv.appendChild(debugDetails);
-        }
-
         messageDiv.appendChild(timestampDiv);
         this.chatLog.appendChild(messageDiv);
 
@@ -1269,40 +1229,6 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    addEventMessage(contentHtml) {
-        if (!contentHtml) {
-            return;
-        }
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-message';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '📊 Event Checks';
-
-        const contentDiv = document.createElement('div');
-        const details = document.createElement('details');
-        const summaryEl = document.createElement('summary');
-        summaryEl.textContent = 'Event Checks';
-        details.appendChild(summaryEl);
-        const detailsBody = document.createElement('div');
-        detailsBody.innerHTML = contentHtml;
-        details.appendChild(detailsBody);
-        contentDiv.appendChild(details);
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
-    }
 
     addEventSummary(icon, summaryText) {
         if (!summaryText) {
