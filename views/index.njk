@@ -2767,6 +2767,23 @@
             teleportLocationOptionsCache = null;
         }
 
+        async function applyTeleportLocationUpdate(locationPayload) {
+            if (!locationPayload || !locationPayload.id) {
+                return false;
+            }
+            if (!window.lastRenderedLocation || window.lastRenderedLocation.id !== locationPayload.id) {
+                return false;
+            }
+            try {
+                await window.updateLocationDisplay?.(locationPayload);
+                window.lastRenderedLocation = JSON.parse(JSON.stringify(locationPayload));
+                return true;
+            } catch (error) {
+                console.warn('Failed to apply location update after teleport:', error);
+                return false;
+            }
+        }
+
         async function teleportThingToLocation(thing, destinationLocationId, { context = 'general', card = null, npcId = null, originLocationId = null } = {}) {
             if (!thing || !thing.id) {
                 throw new Error('Missing item information.');
@@ -2858,32 +2875,22 @@
                 }
             }
 
-            const applyLocationUpdate = async (locationPayload) => {
-                if (!locationPayload || !locationPayload.id) {
-                    return false;
-                }
-                if (!window.lastRenderedLocation || window.lastRenderedLocation.id !== locationPayload.id) {
-                    return false;
-                }
-                try {
-                    await window.updateLocationDisplay?.(locationPayload);
-                    window.lastRenderedLocation = JSON.parse(JSON.stringify(locationPayload));
-                    return true;
-                } catch (error) {
-                    console.warn('Failed to apply location update after teleport:', error);
-                    return false;
-                }
-            };
-
             let applied = false;
             if (result.previousLocation) {
-                applied = await applyLocationUpdate(result.previousLocation) || applied;
+                applied = await applyTeleportLocationUpdate(result.previousLocation) || applied;
             }
             if (result.destination) {
-                applied = await applyLocationUpdate(result.destination) || applied;
+                applied = await applyTeleportLocationUpdate(result.destination) || applied;
             }
 
-            if (!applied && originLocationId && window.lastRenderedLocation && window.lastRenderedLocation.id === originLocationId) {
+            const currentLocationId = window.lastRenderedLocation?.id || null;
+            const destinationId = result.destination?.id || null;
+            const shouldReload = (!applied && (
+                (originLocationId && originLocationId === currentLocationId)
+                || (destinationId && destinationId === currentLocationId)
+            ));
+
+            if (shouldReload) {
                 try {
                     await window.loadCurrentLocation?.();
                 } catch (error) {
@@ -2908,7 +2915,70 @@
             return result;
         }
 
-        async function showTeleportLocationModal(thing, { context = 'general', card = null, locationId = null, npcId = null } = {}) {
+        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null } = {}) {
+            if (!npc || !npc.id) {
+                throw new Error('Missing character information.');
+            }
+            if (!destinationLocationId) {
+                throw new Error('Destination location is required.');
+            }
+
+            const npcId = npc.id;
+            const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/teleport`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ locationId: destinationLocationId })
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+
+            const updatedNpc = result.npc || npc;
+            if (window.currentNpcData instanceof Map) {
+                window.currentNpcData.set(updatedNpc.id, cloneActorRecord(updatedNpc) || { ...updatedNpc });
+            }
+
+            const destinationId = result.destination?.id || null;
+            const currentLocationId = window.lastRenderedLocation?.id || null;
+            if (card && card.parentElement) {
+                if (!destinationId || destinationId !== currentLocationId) {
+                    card.remove();
+                }
+            }
+
+            let applied = false;
+            if (result.previousLocation) {
+                applied = await applyTeleportLocationUpdate(result.previousLocation) || applied;
+            }
+            if (result.destination) {
+                applied = await applyTeleportLocationUpdate(result.destination) || applied;
+            }
+
+            const shouldReload = (!applied && (
+                (originLocationId && originLocationId === currentLocationId)
+                || (destinationId && destinationId === currentLocationId)
+            ));
+
+            if (shouldReload && typeof window.loadCurrentLocation === 'function') {
+                try {
+                    await window.loadCurrentLocation();
+                } catch (error) {
+                    console.warn('Failed to refresh current location after teleporting NPC:', error);
+                }
+            }
+
+            try {
+                await window.refreshParty?.();
+            } catch (error) {
+                console.warn('Failed to refresh party after teleporting NPC:', error);
+            }
+
+            return result;
+        }
+
+        async function showTeleportLocationModal(thing, { context = 'general', card = null, locationId = null, npcId = null, npc = null } = {}) {
             const options = await loadTeleportLocationOptions();
             if (!Array.isArray(options) || !options.length) {
                 alert('No named locations are currently available to teleport to.');
@@ -2927,7 +2997,7 @@
             const header = document.createElement('div');
             header.className = 'npc-selection-header';
             const title = document.createElement('h2');
-            title.textContent = 'Teleport Item';
+            title.textContent = npcId ? 'Teleport Character' : 'Teleport Item';
             header.appendChild(title);
 
             const closeBtn = document.createElement('button');
@@ -3020,22 +3090,48 @@
                     triggerButton.disabled = true;
                 }
 
+                let overlayVisible = false;
                 try {
-                    await teleportThingToLocation(thing, targetLocationId, {
-                        context,
-                        card,
-                        npcId,
-                        originLocationId: locationId || (window.lastRenderedLocation?.id || null)
-                    });
+                    showLocationOverlay('Teleporting...');
+                    overlayVisible = true;
+                } catch (_) {
+                    // ignore overlay errors
+                }
+
+                try {
+                    if (npcId) {
+                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                        const resolvedNpc = npc
+                            || (npcDataCache ? (npcDataCache.get(npcId) || null) : null)
+                            || { id: npcId };
+
+                        await teleportNpcToLocation(resolvedNpc, targetLocationId, {
+                            card,
+                            originLocationId: locationId || (window.lastRenderedLocation?.id || null)
+                        });
+                    } else {
+                        if (!thing || !thing.id) {
+                            throw new Error('Item data unavailable for teleportation.');
+                        }
+                        await teleportThingToLocation(thing, targetLocationId, {
+                            context,
+                            card,
+                            npcId,
+                            originLocationId: locationId || (window.lastRenderedLocation?.id || null)
+                        });
+                    }
                     cleanup();
                 } catch (error) {
-                    console.warn('Failed to teleport item:', error);
-                    alert(`Failed to teleport item: ${error?.message || error}`);
+                    console.warn('Failed to teleport entity:', error);
+                    alert(`Failed to teleport ${npcId ? 'character' : 'item'}: ${error?.message || error}`);
                     if (triggerButton) {
                         triggerButton.disabled = false;
                     }
                 } finally {
                     isProcessing = false;
+                    if (overlayVisible) {
+                        hideLocationOverlay();
+                    }
                 }
             };
 
@@ -9354,10 +9450,17 @@
                 needsButton.textContent = 'Needs';
                 menu.appendChild(needsButton);
 
+                let teleportButton = null;
                 let memoriesButton = null;
                 let dispositionButton = null;
                 let deleteButton = null;
                 if (npc && npc.isNPC) {
+                    teleportButton = document.createElement('button');
+                    teleportButton.type = 'button';
+                    teleportButton.className = 'npc-card-menu-item';
+                    teleportButton.textContent = 'Teleport';
+                    menu.appendChild(teleportButton);
+
                     memoriesButton = document.createElement('button');
                     memoriesButton.type = 'button';
                     memoriesButton.className = 'npc-card-menu-item';
@@ -9517,6 +9620,25 @@
                         console.warn('Failed to open needs editor:', error);
                     }
                 });
+
+                if (teleportButton) {
+                    teleportButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        try {
+                            const latestNpc = npcDataCache.get(npc.id) || npc;
+                            await showTeleportLocationModal(null, {
+                                npcId: latestNpc.id,
+                                npc: latestNpc,
+                                card,
+                                locationId: window.lastRenderedLocation?.id || null
+                            });
+                        } catch (error) {
+                            console.warn('Failed to open teleport modal:', error);
+                            alert(`Unable to teleport character: ${error?.message || error}`);
+                        }
+                    });
+                }
 
                 if (memoriesButton) {
                     memoriesButton.addEventListener('click', (event) => {
@@ -10217,43 +10339,14 @@
             }
 
             try {
-                const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/teleport`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ locationId: lastRenderedLocation.id })
+                const optionEntry = summonNpcOptionIndex.get(npcId);
+                const npcRecord = optionEntry?.raw
+                    ? (cloneActorRecord(optionEntry.raw) || { ...optionEntry.raw })
+                    : { id: npcId };
+
+                await teleportNpcToLocation(npcRecord, lastRenderedLocation.id, {
+                    originLocationId: optionEntry?.locationId || null
                 });
-                const data = await response.json().catch(() => ({}));
-                if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
-                }
-
-                const npcPayload = data.npc || summonNpcOptionIndex.get(npcId)?.raw || null;
-                if (window.currentNpcData instanceof Map && npcPayload) {
-                    const cloned = cloneActorRecord(npcPayload) || { ...npcPayload };
-                    window.currentNpcData.set(npcId, cloned);
-                }
-
-                let applied = false;
-                if (data.previousLocation) {
-                    applied = await applySummonLocationUpdate(data.previousLocation) || applied;
-                }
-                if (data.destination) {
-                    applied = await applySummonLocationUpdate(data.destination) || applied;
-                }
-
-                if (!applied && window.loadCurrentLocation) {
-                    try {
-                        await window.loadCurrentLocation();
-                    } catch (error) {
-                        console.warn('Failed to refresh current location after NPC summon:', error);
-                    }
-                }
-
-                try {
-                    await window.refreshParty?.();
-                } catch (partyError) {
-                    console.warn('Failed to refresh party after NPC summon:', partyError);
-                }
 
                 closeSummonNpcModal();
             } catch (error) {
