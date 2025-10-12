@@ -102,6 +102,10 @@ locations:
   maxItems: 4
   maxScenery: 4
   levelVariation: 3
+npc_turns:
+  enabled: true
+  maxNpcsToAct: 1
+  npcTurnFrequency: 0.3
 
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.

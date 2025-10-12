@@ -25,3 +25,4 @@ An NPC offers a really good deal on a high quality item.
 An NPC offers a really good deal on a high quality item that turns out to be junk.
 An NPC offers to buy an item in the player's inventory for more than it's worth.
 An NPC gives the player a fetch quest and offers a nice reward.
+Something really weird happens.

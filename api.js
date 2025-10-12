@@ -6,7 +6,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
-
+const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -1647,7 +1647,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function generateRandomEventNarrative({ eventText, rarity, locationOverride = null, stream = null } = {}) {
+        async function generateRandomEventNarrative({ eventText, rarity, locationOverride = null, stream = null, entryCollector = null } = {}) {
             if (!eventText || !eventText.trim()) {
                 return null;
             }
@@ -1663,6 +1663,7 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
+                const location = locationOverride || baseContext?.currentLocation || null;
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'random-event',
@@ -1732,6 +1733,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const randomEventLocationId = requireLocationId(location?.id, 'random event entry');
+                if (!Array.isArray(entryCollector)) {
+                    throw new Error('generateRandomEventNarrative requires an entryCollector array.');
+                }
+
                 const randomEventEntry = pushChatEntry({
                     role: 'assistant',
                     content: narrativeText,
@@ -1740,7 +1745,7 @@ module.exports = function registerApiRoutes(scope) {
                     rarity: rarity || 'common',
                     type: 'random-event',
                     locationId: randomEventLocationId
-                }, null, randomEventLocationId);
+                }, entryCollector, randomEventLocationId);
                 const randomEventTimestamp = randomEventEntry?.timestamp || new Date().toISOString();
 
                 let eventChecks = null;
@@ -1796,7 +1801,7 @@ module.exports = function registerApiRoutes(scope) {
                     timestamp: summary.timestamp,
                     parentId: randomEventEntry?.id || null,
                     locationId: randomEventLocationId
-                });
+                }, entryCollector);
 
                 return summary;
             } finally {
@@ -1809,7 +1814,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function maybeTriggerRandomEvent({ stream = null, locationOverride = null } = {}) {
+        async function maybeTriggerRandomEvent({ stream = null, locationOverride = null, entryCollector = null } = {}) {
             const frequencyConfig = config?.random_event_frequency || {};
             const commonChance = Number(frequencyConfig.common);
             const rareChance = Number(frequencyConfig.rare);
@@ -1835,7 +1840,8 @@ module.exports = function registerApiRoutes(scope) {
                 eventText: seedText,
                 rarity,
                 locationOverride,
-                stream
+                stream,
+                entryCollector
             });
         }
 
@@ -4412,7 +4418,7 @@ module.exports = function registerApiRoutes(scope) {
                         continue;
                     }
 
-                    console.log(`🧠 [party-memory] Triggering memory generation for ${memberName} (turns=${turns}, membershipChanged=${membershipChanged})`);
+                    console.log(`🧠 [party-memory] Triggering memory generation for ${memberName} (turns=${turnsAfter}, membershipChanged=${membershipChanged})`);
 
                     memoryTasks.push((async () => {
                         try {
@@ -4881,12 +4887,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 try {
-                    const randomEventResult = await maybeTriggerRandomEvent({ stream, locationOverride: location });
+                    const randomEventResult = await maybeTriggerRandomEvent({ stream, locationOverride: location, entryCollector });
                     if (randomEventResult) {
                         results.push(randomEventResult);
                     }
                 } catch (randomEventError) {
                     console.warn('Failed to process random event:', randomEventError.message);
+                    console.debug(randomEventError);
                 }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
@@ -6131,7 +6138,38 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
-                        const skipNpcEvents = Boolean(isForcedEventAction);
+                        let skipNpcEvents = Boolean(isForcedEventAction);
+
+                        const takeNpcTurns = Globals.config.npc_turns?.enabled !== false;
+                        let maxNpcsToAct = Number.isInteger(Globals.config.npc_turns?.maxNpcsToAct) && Globals.config.npc_turns.maxNpcsToAct > 0
+                            ? Globals.config.npc_turns.maxNpcsToAct
+                            : 1;
+                        let npcTurnFrequency = typeof Globals.config.npc_turns?.npcTurnFrequency === 'number' && Globals.config.npc_turns.npcTurnFrequency >= 0 && Globals.config.npc_turns.npcTurnFrequency <= 1 ? Globals.config.npc_turns.npcTurnFrequency : 1;
+
+                        console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
+
+                        if (!takeNpcTurns) {
+                            console.log('NPC turns are disabled in configuration.');
+                            skipNpcEvents = true;
+                        } else if (maxNpcsToAct <= 0) {
+                            console.log('NPC turns are disabled (maxNpcsToAct is 0).');
+                            skipNpcEvents = true;
+                        } else if (npcTurnFrequency <= 0) {
+                            console.log('NPC turns are disabled (npcTurnFrequency is 0).');
+                            skipNpcEvents = true;
+                        } else if (npcTurnFrequency < 1) {
+                            const roll = Math.random();
+                            console.log(`NPC turn frequency check: rolled ${roll.toFixed(3)} for frequency ${npcTurnFrequency}`);
+                            if (roll > npcTurnFrequency) {
+                                skipNpcEvents = true;
+                                console.log('Skipping NPC turns this round due to frequency check.');
+                            }
+                        } else if (skipNpcEvents) {
+                            console.log('Skipping NPC turns due to forced event.');
+                        } else {
+                            console.log('NPC turns will be processed this round.');
+                        }
+
                         stream.status('npc_turns:pending', skipNpcEvents
                             ? 'Forced event detected; skipping NPC turns and random events.'
                             : 'Resolving NPC turns.');
