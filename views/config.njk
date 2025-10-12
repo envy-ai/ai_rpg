@@ -88,11 +88,21 @@
                 </div>
                 
                 <!-- Status Messages -->
-                {% set hasMessage = savedMessage or errorMessage %}
-                {% set statusClass = savedMessage ? 'status-message success' : (errorMessage ? 'status-message error' : 'status-message') %}
+                {% if savedMessage %}
+                    {% set statusClass = 'status-message success' %}
+                {% elif errorMessage %}
+                    {% set statusClass = 'status-message error' %}
+                {% else %}
+                    {% set statusClass = 'status-message' %}
+                {% endif %}
+                {% if savedMessage or errorMessage %}
+                    {% set statusDisplay = 'block' %}
+                {% else %}
+                    {% set statusDisplay = 'none' %}
+                {% endif %}
                 <div id="status-message"
                      class="{{ statusClass }}"
-                     style="display: {{ hasMessage ? 'block' : 'none' }};">
+                     style="display: {{ statusDisplay }};">
                     {% if savedMessage %}
                         {{ savedMessage }}
                     {% elif errorMessage %}
