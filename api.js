@@ -6,9 +6,6 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
-const Globals = require('./Globals.js');
-const { glob } = require('fs');
-const Globals = require('./Globals.js');
 
 
 module.exports = function registerApiRoutes(scope) {
@@ -3170,7 +3167,7 @@ module.exports = function registerApiRoutes(scope) {
                         fatalError: () => { }
                     }
                 });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+                doc = parser.parseFromString(trimmed, 'text/xml');
             } catch (_) {
                 console.warn('Failed to parse NPC queue response as XML.');
                 console.error('Error details:', _);
@@ -4630,12 +4627,15 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null }) {
             if (skipNpcEvents) {
                 if (stream && stream.isEnabled) {
                     stream.status('npc_turns:skipped', 'Skipping NPC and random events due to forced action.');
                 }
                 return [];
+            }
+            if (!Array.isArray(entryCollector)) {
+                throw new Error('executeNpcTurnsAfterPlayer requires an entryCollector array when NPC turns are processed.');
             }
             const results = [];
 
@@ -4779,7 +4779,7 @@ module.exports = function registerApiRoutes(scope) {
                         actor: npc.name || null,
                         isNpcTurn: true,
                         locationId: npcTurnLocationId
-                    }, newChatEntries, npcTurnLocationId);
+                    }, entryCollector, npcTurnLocationId);
                     const npcTurnTimestamp = npcTurnEntry?.timestamp || new Date().toISOString();
 
                     const npcTurnResult = {
@@ -4818,7 +4818,7 @@ module.exports = function registerApiRoutes(scope) {
                         timestamp: npcTurnTimestamp,
                         parentId: npcTurnEntry?.id || null,
                         locationId: npcTurnLocationId
-                    }, newChatEntries);
+                    }, entryCollector);
 
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
@@ -4830,7 +4830,7 @@ module.exports = function registerApiRoutes(scope) {
                             timestamp: npcTurnTimestamp,
                             parentId: npcTurnEntry?.id || null,
                             locationId: npcTurnLocationId
-                        }, newChatEntries);
+                        }, entryCollector);
                     }
 
                     if (isAttack) {
@@ -4842,7 +4842,7 @@ module.exports = function registerApiRoutes(scope) {
                                 timestamp: npcTurnTimestamp,
                                 parentId: npcTurnEntry?.id || null,
                                 locationId: npcTurnLocationId
-                            }, newChatEntries);
+                            }, entryCollector);
                         }
                         if (attackDamageApplication) {
                             npcTurnResult.attackDamage = attackDamageApplication;
@@ -6138,7 +6138,8 @@ module.exports = function registerApiRoutes(scope) {
                         const npcTurns = await executeNpcTurnsAfterPlayer({
                             location,
                             stream,
-                            skipNpcEvents
+                            skipNpcEvents,
+                            entryCollector: newChatEntries
                         });
                         if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
