@@ -6,6 +6,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
+const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -1124,7 +1125,11 @@ module.exports = function registerApiRoutes(scope) {
                                     : null;
 
                                 if (action === 'arrived') {
-                                    if (destinationText != initialPlayerLocationName) { // Avoid redundant "arrived" messages if player is already there
+                                    const currentLocation = Globals.currentPlayer.getCurrentLocationName();
+                                    console.log("Arrival message")
+                                    console.log(entry);
+                                    console.log(`Destination text: ${destinationText} | Current location: ${currentLocation}`);
+                                    if (destinationText != currentLocation) { // Avoid redundant "arrived" messages if player is already there
                                         add('🙋', `${name} arrived`);
                                     }
                                 } else if (action === 'left') {
@@ -4947,6 +4952,7 @@ module.exports = function registerApiRoutes(scope) {
 
             const initialPlayerLocationId = currentPlayer?.currentLocation || null;
             const initialPlayerLocationName = currentPlayer?.getCurrentLocationName() || null;
+            Globals.currentPlayer = currentPlayer;
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
@@ -5538,16 +5544,16 @@ module.exports = function registerApiRoutes(scope) {
                             const exitNames = currentLocation.exits
                                 .map(exit => (exit && typeof exit.name === 'string' ? exit.name.trim() : ''))
                                 .filter(name => !!name);
-                            console.log('found exits:', exitNames);
-                            console.log('action text:', actionText);
+                            //console.log('found exits:', exitNames);
+                            //console.log('action text:', actionText);
                             if (exitNames.length && actionText && typeof actionText === 'string') {
                                 const actionLower = actionText.toLowerCase();
                                 for (const exitName of exitNames) {
-                                    console.log('checking exit:', exitName);
+                                    //console.log('checking exit:', exitName);
                                     const exitLower = exitName.toLowerCase();
                                     if (actionLower.includes(exitLower)) {
                                         const matchedLocation = Location.findByName(exitName) || null;
-                                        console.log('matched location:', matchedLocation.name);
+                                        //console.log('matched location:', matchedLocation.name);
                                         if (matchedLocation) {
                                             const stubDescription = matchedLocation.isStub
                                                 ? (typeof matchedLocation.stubMetadata?.shortDescription === 'string' && matchedLocation.stubMetadata.shortDescription.trim()
@@ -5945,6 +5951,7 @@ module.exports = function registerApiRoutes(scope) {
                             eventResult = await Events.runEventChecks({ textToCheck: aiResponse, stream });
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
+                            console.debug(eventError);
                         }
                     }
 

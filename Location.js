@@ -632,6 +632,16 @@ class Location {
     return npcs;
   }
 
+  getNPCNames() {
+    const names = [];
+    let npcs = this.getNPCs();
+    npcs = npcs.filter(npc => npc && npc.name);
+    for (const npc of npcs) {
+      names.push(npc.name);
+    }
+    return names;
+  }
+
   /**
    * Convert location to JSON representation
    * @returns {Object} - JSON-serializable object

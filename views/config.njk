@@ -88,7 +88,17 @@
                 </div>
                 
                 <!-- Status Messages -->
-                <div id="status-message" class="status-message" style="display: none;"></div>
+                {% set hasMessage = savedMessage or errorMessage %}
+                {% set statusClass = savedMessage ? 'status-message success' : (errorMessage ? 'status-message error' : 'status-message') %}
+                <div id="status-message"
+                     class="{{ statusClass }}"
+                     style="display: {{ hasMessage ? 'block' : 'none' }};">
+                    {% if savedMessage %}
+                        {{ savedMessage }}
+                    {% elif errorMessage %}
+                        {{ errorMessage }}
+                    {% endif %}
+                </div>
             </form>
         </div>
     </div>

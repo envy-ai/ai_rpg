@@ -2,6 +2,7 @@ const { DOMParser } = require('xmldom');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
+const Globals = require('./Globals.js');
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -678,7 +679,13 @@ class Events {
             if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
                 parsedEntries.npc_arrival_departure = [];
             }
-            parsedEntries.npc_arrival_departure.push(...arrivals);
+
+            // Check if the NPC already exists and is in this location (see Player.js and Location.js)
+            // so we can avoid redundant arrivals
+            const existingNames = Globals.currentPlayer.currentLocationObject.getNPCNames();
+            const uniqueArrivals = arrivals.filter(entry => !existingNames.includes(entry.name));
+
+            parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
         }
 
         this._trackItemsFromParsing(parsedEntries);

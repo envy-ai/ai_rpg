@@ -149,6 +149,8 @@ class ConfigManager {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'fetch'
                 },
                 body: new URLSearchParams(data)
             });

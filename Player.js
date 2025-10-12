@@ -577,6 +577,23 @@ class Player {
         return null;
     }
 
+    static getById(id) {
+        if (!id) {
+            return null;
+        }
+        for (const player of this.#instances) {
+            if (player.id === id) {
+                return player;
+            }
+        }
+        return null;
+    }
+
+    //Just an alias
+    static get(id) {
+        return this.getById(id);
+    }
+
     static #notifyNpcInventoryChange(player, payload) {
         if (!player || !player.isNPC || !this.#npcInventoryChangeHandler) {
             return;
@@ -2991,6 +3008,11 @@ class Player {
     getCurrentLocationName() {
         const Location = getLocationModule();
         return Location.get(this.#currentLocation).name;
+    }
+
+    get currentLocationObject() {
+        const Location = getLocationModule();
+        return Location.get(this.#currentLocation);
     }
 
     /**

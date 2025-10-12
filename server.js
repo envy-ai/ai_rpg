@@ -13575,10 +13575,19 @@ app.get('/new-game', (req, res) => {
 
 // Configuration page routes
 app.get('/config', (req, res) => {
+    const savedMessage = req.query.saved === '1'
+        ? 'Configuration saved successfully! Restart the server for all changes to take effect.'
+        : null;
+    const errorMessage = typeof req.query.error === 'string' && req.query.error.trim()
+        ? req.query.error.trim()
+        : null;
+
     res.render('config.njk', {
         title: 'AI RPG Configuration',
         config: config,
-        currentPage: 'config'
+        currentPage: 'config',
+        savedMessage,
+        errorMessage
     });
 });
 
@@ -13646,17 +13655,34 @@ app.post('/config', (req, res) => {
         // Update in-memory config
         config = updatedConfig;
 
-        res.json({
-            success: true,
-            message: 'Configuration saved successfully! Restart the server for all changes to take effect.'
-        });
+        const wantsJson = req.xhr
+            || (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'))
+            || req.headers['x-requested-with'] === 'fetch';
+
+        if (wantsJson) {
+            return res.json({
+                success: true,
+                message: 'Configuration saved successfully! Restart the server for all changes to take effect.'
+            });
+        }
+
+        return res.redirect('/config?saved=1');
 
     } catch (error) {
         console.error('Error saving configuration:', error);
-        res.status(500).json({
-            success: false,
-            message: `Error saving configuration: ${error.message}`
-        });
+        const wantsJson = req.xhr
+            || (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'))
+            || req.headers['x-requested-with'] === 'fetch';
+
+        if (wantsJson) {
+            return res.status(500).json({
+                success: false,
+                message: `Error saving configuration: ${error.message}`
+            });
+        }
+
+        const encodedError = encodeURIComponent(error.message || 'Unknown error');
+        return res.redirect(`/config?error=${encodedError}`);
     }
 });
 
