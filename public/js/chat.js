@@ -3361,7 +3361,7 @@ class AIRPGChat {
 
     async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null } = {}) {
         await this.submitChatMessage(message, {
-            setButtonLoading: false,
+            setButtonLoading: Boolean(travel),
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null
         });
