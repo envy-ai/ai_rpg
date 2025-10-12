@@ -3245,6 +3245,7 @@ class AIRPGChat {
         this.showLoading(requestId);
 
         let shouldRefreshLocation = false;
+        let finalizeMode = 'none';
 
         try {
             await this.waitForWebSocketReady(1000);
@@ -3268,22 +3269,22 @@ class AIRPGChat {
             if (data.error) {
                 this.hideLoading(requestId);
                 this.addMessage('system', `Error: ${data.error}`, true);
-                this.finalizeChatRequest(requestId);
+                finalizeMode = 'immediate';
             } else {
                 const result = this.processChatPayload(requestId, data, { fromStream: false });
                 shouldRefreshLocation = result.shouldRefreshLocation || shouldRefreshLocation;
 
                 if (!context.streamMeta || context.streamMeta.enabled === false) {
-                    this.finalizeChatRequest(requestId);
+                    finalizeMode = 'afterRefresh';
                 } else if (context.streamComplete) {
-                    this.finalizeChatRequest(requestId);
+                    finalizeMode = 'afterRefresh';
                 }
             }
         } catch (error) {
             this.hideLoading(requestId);
             this.addMessage('system', `Connection error: ${error.message}`, true);
             context.httpResolved = true;
-            this.finalizeChatRequest(requestId);
+            finalizeMode = 'immediate';
         }
 
         if (shouldRefreshLocation) {
@@ -3292,6 +3293,10 @@ class AIRPGChat {
             } catch (refreshError) {
                 console.warn('Failed to refresh location after chat response:', refreshError);
             }
+        }
+
+        if (finalizeMode === 'immediate' || finalizeMode === 'afterRefresh') {
+            this.finalizeChatRequest(requestId);
         }
 
         await this.refreshChatHistory();

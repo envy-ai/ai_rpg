@@ -11,12 +11,12 @@ const MAJOR_STATUS_DURATION = 5;
 const EVENT_PROMPT_ORDER = [
     { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, unblock, discover, or create an exit or vehicle to another region? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. Note that the difference between a location and a region is that a location is a specific place (like a building, room, or landmark) while a region is a broader area (like a neighborhood, district, or zone). Consider whether you're conceptually entering a different region (anything with multiple locations, such as a building, town, biome, planet, etc), or part of the current one (which would be a location). An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player, still list it here.  For example, a train to townsville would appear as "Townsville -> region -> train -> A bustling town known for its markets and friendly locals." An adjacent forest would appear as "Meiling Woods -> location -> none -> A dense forest filled with towering trees and the sound of rustling leaves."` },
     { key: 'move_new_location', prompt: `Did the player or party discover or create a brand new exit and then immediately travel through it? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A.` },
-    { key: 'move_new_location', prompt: `Did the player or party move within the current location? If so, come up with an appropriate sub-location and reply in the form [new sublocation name] -> [the word "location"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. If unsure if this is a new sublocation or a new location, assume it's a new sublocaiton and answer this question.` },
+    { key: 'move_new_location', prompt: `Did the player or party move within the current location? If so, come up with an appropriate sub-location (make up a new, different name) and reply in the form [new sublocation name] -> [the word "location"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. Otherwise answer N/A. The new sublocation should have a new name that differs from the current location's name. If unsure if this is a new sublocation or a new location, assume it's a new sublocation and answer this question.` },
     { key: 'move_location', prompt: `Did the player travel to or end up in a different location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
     { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.` },
     { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
     { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
-    { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name.` },
+    { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration.` },
     { key: 'consume_item', prompt: `Were any items or pieces of scenery completely consumed (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being destroyed or otherwise removed from the scene or any inventory? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
     { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
@@ -173,6 +173,16 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
 
         if (!destination) {
             throw new Error(`[${eventLabel}] Unable to resolve destination for exit "${exitName}".`);
+        }
+
+        if (destination?.id && originLocation?.id && destination.id === originLocation.id) {
+            if (movePlayer) {
+                await movePlayerToDestination(eventsInstance, destination, context, {
+                    fallbackName: exitName,
+                    label: moveLabel
+                });
+            }
+            continue;
         }
 
         let destinationRegion = undefined;
@@ -935,47 +945,15 @@ class Events {
                 if (typeof entry !== 'string') {
                     return null;
                 }
-                const trimmedEntry = entry.trim();
-                if (!trimmedEntry) {
+                const [item, reason] = splitArrowParts(entry.trim(), 2);
+                if (!item) {
                     return null;
                 }
-
-                const parts = splitArrowParts(trimmedEntry, 4);
-                if (!Array.isArray(parts) || parts.length === 0) {
-                    return null;
+                const record = { item: item.trim() };
+                if (reason) {
+                    record.reason = reason.trim();
                 }
-
-                const sanitize = value => (typeof value === 'string' ? value.trim() : '');
-
-                if (parts.length === 1) {
-                    const itemOnly = sanitize(parts[0]);
-                    return itemOnly ? { item: itemOnly } : null;
-                }
-
-                const first = sanitize(parts[0]);
-                const second = sanitize(parts[1]);
-                const third = sanitize(parts[2]);
-                const fourth = sanitize(parts[3]);
-
-                const record = {};
-
-                if (second) {
-                    if (first) {
-                        record.user = first;
-                    }
-                    record.item = second;
-                } else if (first) {
-                    record.item = first;
-                }
-
-                if (third) {
-                    record.reason = third;
-                }
-                if (fourth) {
-                    record.detail = fourth;
-                }
-
-                return record.item ? record : null;
+                return record;
             }).filter(Boolean),
             alter_item: raw => splitPipeList(raw).map(entry => {
                 const parts = splitArrowParts(entry, 3);
@@ -2444,6 +2422,11 @@ class Events {
             const npc = findActorByName(npcName);
             if (!npc) {
                 throw new Error(`alter_npc entry references unknown character "${npcName}".`);
+            }
+            const isNpcEntity = typeof npc.isNPC === 'function' ? npc.isNPC() : Boolean(npc.isNPC);
+            if (!isNpcEntity) {
+                console.log("Skipping alteration of player character:", npcName);
+                continue;
             }
 
             let location = context.location || null;
