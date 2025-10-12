@@ -2122,7 +2122,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function logPlayerActionPrompt({ systemPrompt, generationPrompt }) {
+        function logPlayerActionPrompt({ systemPrompt, generationPrompt, responseText = null }) {
             try {
                 const logDir = path.join(__dirname, 'logs');
                 if (!fs.existsSync(logDir)) {
@@ -2139,6 +2139,11 @@ module.exports = function registerApiRoutes(scope) {
                     generationPrompt || '(none)',
                     ''
                 ];
+                if (responseText !== null) {
+                    parts.push('=== PLAYER ACTION RESPONSE ===');
+                    parts.push(responseText || '(empty response)');
+                    parts.push('');
+                }
                 fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
             } catch (error) {
                 console.warn('Failed to log player action prompt:', error.message);
@@ -4578,6 +4583,7 @@ module.exports = function registerApiRoutes(scope) {
                 const trimmedSystemPrompt = String(parsedTemplate.systemPrompt).trim();
                 const generationPrompt = parsedTemplate.generationPrompt || null;
 
+                let playerPromptLog = null;
                 if (actor.isNPC) {
                     logNpcActionPrompt({
                         npcName: actor.name || null,
@@ -4585,10 +4591,12 @@ module.exports = function registerApiRoutes(scope) {
                         generationPrompt
                     });
                 } else {
-                    logPlayerActionPrompt({
+                    playerPromptLog = {
                         systemPrompt: trimmedSystemPrompt,
-                        generationPrompt
-                    });
+                        generationPrompt: generationPrompt && generationPrompt.trim()
+                            ? generationPrompt.trim()
+                            : null
+                    };
                 }
 
                 const systemMessage = {
@@ -4629,6 +4637,12 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 const raw = response.data?.choices?.[0]?.message?.content || '';
+                if (!actor.isNPC && playerPromptLog) {
+                    logPlayerActionPrompt({
+                        ...playerPromptLog,
+                        responseText: raw
+                    });
+                }
                 const debug = {
                     actorId: actor.id || null,
                     actorName: actor.name || null,
@@ -5319,6 +5333,7 @@ module.exports = function registerApiRoutes(scope) {
                     usedForcedEventAction: Boolean(isForcedEventAction)
                 };
                 let debugInfo = null;
+                let playerActionLogPayload = null;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
                 if (currentPlayer && currentPlayer.currentLocation) {
@@ -5637,15 +5652,18 @@ module.exports = function registerApiRoutes(scope) {
                             throw new Error('Action template missing system prompt.');
                         }
 
-                        logPlayerActionPrompt({
-                            systemPrompt: String(promptData.systemPrompt).trim(),
-                            generationPrompt: promptData.generationPrompt || null
-                        });
-
                         const trimmedSystemPrompt = String(promptData.systemPrompt).trim();
                         const templateGenerationPrompt = promptData.generationPrompt
                             ? String(promptData.generationPrompt)
                             : null;
+                        const generationPromptForLog = templateGenerationPrompt && templateGenerationPrompt.trim()
+                            ? templateGenerationPrompt.trim()
+                            : null;
+
+                        playerActionLogPayload = {
+                            systemPrompt: trimmedSystemPrompt,
+                            generationPrompt: generationPromptForLog
+                        };
 
                         const rebuiltMessages = [];
                         if (trimmedSystemPrompt) {
@@ -5880,6 +5898,21 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (response.data && response.data.choices && response.data.choices.length > 0) {
                     const aiResponse = response.data.choices[0].message.content;
+
+                    if (playerActionLogPayload) {
+                        logPlayerActionPrompt({
+                            systemPrompt: playerActionLogPayload.systemPrompt || null,
+                            generationPrompt: playerActionLogPayload.generationPrompt || null,
+                            responseText: aiResponse
+                        });
+                        playerActionLogPayload = null;
+                    } else if (debugInfo?.systemMessage || debugInfo?.generationPrompt) {
+                        logPlayerActionPrompt({
+                            systemPrompt: debugInfo.systemMessage || null,
+                            generationPrompt: debugInfo.generationPrompt || null,
+                            responseText: aiResponse
+                        });
+                    }
 
                     if (config.omit_npc_generation) {
                         stream.status('player_action:llm_complete', 'Skipping disposition checks (NPC generation disabled).');

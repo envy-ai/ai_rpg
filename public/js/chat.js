@@ -3220,6 +3220,14 @@ class AIRPGChat {
         if (this.pendingRequests.size === 0) {
             this.setSendButtonLoading(false);
             this.messageInput?.focus();
+            if (this.pendingMoveOverlay) {
+                try {
+                    window.hideLocationOverlay?.();
+                } catch (_) {
+                    // ignore overlay errors
+                }
+                this.pendingMoveOverlay = false;
+            }
         }
     }
 
@@ -3358,7 +3366,8 @@ class AIRPGChat {
         } catch (error) {
             console.log('Could not check location update:', error);
         } finally {
-            if (overlayWasRequested) {
+            const hasPendingChat = this.pendingRequests && this.pendingRequests.size > 0;
+            if (overlayWasRequested && !hasPendingChat) {
                 try {
                     window.hideLocationOverlay?.();
                 } catch (_) {

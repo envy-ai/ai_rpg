@@ -255,6 +255,24 @@ function clearEntityJob(type, id, jobId = null) {
     entityImageJobs.delete(key);
 }
 
+function getWorldOutline() {
+    // We need to populate worldOutline with regions and their locations
+    let worldOutline = {
+        regions: {}
+    };
+
+    // Iterate all regions
+    let regionMap = Region.getIndexByName();
+    // Get name of each region
+    for (const [regionName, regionObj] of regionMap) {
+        worldOutline.regions[regionObj.name] = [];
+        for (const locationObj of regionObj.locations) {
+            worldOutline.regions[regionObj.name].push(locationObj.name);
+        }
+    }
+    return worldOutline;
+}
+
 function hasActiveImageJob(imageId) {
     if (!imageId) {
         return false;
@@ -2051,20 +2069,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     {% endfor %}
     </worldOutline> */
 
-    // We need to populate worldOutline with regions and their locations
-    let worldOutline = {
-        regions: {}
-    };
-
-    // Iterate all regions
-    let regionMap = Region.getIndexByName();
-    // Get name of each region
-    for (const [regionName, regionObj] of regionMap) {
-        worldOutline.regions[regionObj.name] = [];
-        for (const locationObj of regionObj.locations) {
-            worldOutline.regions[regionObj.name].push(locationObj.name);
-        }
-    }
+    let worldOutline = getWorldOutline();
 
     if (regionStatus && Array.isArray(regionStatus.locationIds)) {
         for (const locId of regionStatus.locationIds) {
@@ -9661,6 +9666,30 @@ function logThingNameRegeneration({ prompt, responseText, durationSeconds }) {
     }
 }
 
+function logLocationNameRegeneration({ prompt, responseText, durationSeconds }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `location_name_regen_${timestamp}.log`);
+        const parts = [
+            formatDurationLine(durationSeconds),
+            '=== LOCATION NAME REGEN PROMPT ===',
+            prompt || '(none)',
+            '',
+            '=== LOCATION NAME REGEN RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log location name regeneration:', error.message);
+    }
+}
+
 function logChooseImportantMemories({ prompt, responseText, durationSeconds }) {
     try {
         const logDir = path.join(__dirname, 'logs');
@@ -9719,6 +9748,37 @@ function parseThingNameRegenResponse(xmlContent) {
     }
 
     return mapping;
+}
+
+function parseLocationNameRegenResponse(xmlContent) {
+    const names = [];
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return names;
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent || 'Unknown XML parsing error');
+        }
+
+        const locationNodes = Array.from(doc.getElementsByTagName('locationNames'));
+        for (const group of locationNodes) {
+            const candidateNodes = Array.from(group.getElementsByTagName('name'));
+            for (const node of candidateNodes) {
+                const value = node?.textContent?.trim();
+                if (value) {
+                    names.push(value);
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to parse location name regeneration response:', error.message);
+    }
+
+    return names;
 }
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
@@ -9899,6 +9959,186 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
             console.warn(`Failed to apply regenerated name to thing ${thing.id}:`, error.message);
         }
     }
+}
+
+async function regenerateLocationName(location) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('regenerateLocationName requires a location object.');
+    }
+
+    const aiConfig = config?.ai || {};
+    if (!aiConfig.endpoint || !aiConfig.apiKey || !aiConfig.model) {
+        throw new Error('AI configuration missing for location name regeneration.');
+    }
+
+    const worldOutline = getWorldOutline();
+    const regionName = (() => {
+        if (location.regionId) {
+            try {
+                const region = Region.get(location.regionId);
+                if (region?.name) {
+                    return region.name;
+                }
+            } catch (_) {
+                // ignore resolution errors
+            }
+        }
+        if (location.stubMetadata?.regionName) {
+            return location.stubMetadata.regionName;
+        }
+        return 'Unknown Region';
+    })();
+
+    const baseLevel = Number.isFinite(location.baseLevel)
+        ? Number(location.baseLevel)
+        : (Number.isFinite(location.stubMetadata?.computedBaseLevel)
+            ? Number(location.stubMetadata.computedBaseLevel)
+            : 1);
+
+    const locationContext = {
+        name: location.name || 'Unnamed Location',
+        description: location.description
+            || location.stubMetadata?.shortDescription
+            || location.stubMetadata?.blueprintDescription
+            || 'No description provided.',
+        region: regionName,
+        baseLevel
+    };
+
+    let renderedTemplate;
+    try {
+        renderedTemplate = promptEnv.render('location_name_regen.xml.njk', {
+            worldOutline,
+            location: locationContext
+        });
+    } catch (error) {
+        throw new Error(`Failed to render location name regeneration template: ${error.message}`);
+    }
+
+    let parsedTemplate;
+    try {
+        parsedTemplate = parseXMLTemplate(renderedTemplate);
+    } catch (error) {
+        throw new Error(`Failed to parse location name regeneration template: ${error.message}`);
+    }
+
+    const systemPrompt = parsedTemplate?.systemPrompt;
+    const generationPrompt = parsedTemplate?.generationPrompt;
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Location name regeneration template missing prompts.');
+    }
+
+    const endpoint = aiConfig.endpoint;
+    const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
+    const requestData = {
+        model: aiConfig.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ],
+        max_tokens: parsedTemplate.maxTokens || aiConfig.maxTokens || 400,
+        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
+    };
+
+    let responseText = '';
+    let durationSeconds = null;
+    try {
+        const requestStarted = Date.now();
+        const response = await axios.post(chatEndpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${aiConfig.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'location_name_regen' }
+        });
+        responseText = response.data?.choices?.[0]?.message?.content || '';
+        durationSeconds = (Date.now() - requestStarted) / 1000;
+    } catch (error) {
+        throw new Error(`Location name regeneration request failed: ${error.message}`);
+    }
+
+    if (!responseText.trim()) {
+        throw new Error('Location name regeneration returned an empty response.');
+    }
+
+    try {
+        logLocationNameRegeneration({
+            prompt: generationPrompt,
+            responseText,
+            durationSeconds
+        });
+    } catch (error) {
+        console.warn('Failed to log location name regeneration:', error.message);
+    }
+
+    const candidateNames = parseLocationNameRegenResponse(responseText);
+    if (!candidateNames.length) {
+        throw new Error('Location name regeneration did not produce any candidates.');
+    }
+
+    const usedNames = new Set();
+    for (const locations of Object.values(worldOutline?.regions || {})) {
+        if (!Array.isArray(locations)) {
+            continue;
+        }
+        for (const name of locations) {
+            if (typeof name !== 'string') {
+                continue;
+            }
+            const normalized = name.trim().toLowerCase();
+            if (normalized) {
+                usedNames.add(normalized);
+            }
+        }
+    }
+
+    const selectUniqueName = () => {
+        for (const candidate of candidateNames) {
+            if (!candidate || typeof candidate !== 'string') {
+                continue;
+            }
+            const trimmed = candidate.trim();
+            if (!trimmed) {
+                continue;
+            }
+            const normalized = trimmed.toLowerCase();
+            if (!usedNames.has(normalized)) {
+                return trimmed;
+            }
+        }
+        return null;
+    };
+
+    let selectedName = selectUniqueName();
+
+    if (!selectedName) {
+        const baseCandidate = candidateNames[0] && typeof candidateNames[0] === 'string'
+            ? candidateNames[0].trim()
+            : null;
+        if (baseCandidate) {
+            for (let suffix = 2; suffix <= 100; suffix += 1) {
+                const attempt = `${baseCandidate} ${suffix}`;
+                if (!usedNames.has(attempt.toLowerCase())) {
+                    selectedName = attempt;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!selectedName) {
+        throw new Error('Unable to determine a unique location name from regeneration results.');
+    }
+
+    return {
+        name: selectedName,
+        candidates: candidateNames
+    };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports.regenerateLocationName = regenerateLocationName;
 }
 
 function buildFallbackSkills({ count, attributes }) {
@@ -13735,6 +13975,7 @@ Events.initialize({
     generatedImages,
     pendingRegionStubs,
     alterThingByPrompt,
+    regenerateLocationName,
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseTimeoutMilliseconds,

@@ -1715,8 +1715,6 @@ class Player {
         return this.#currentLocation;
     }
 
-
-
     get isNPC() {
         return this.#isNPC;
     }
