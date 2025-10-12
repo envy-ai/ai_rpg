@@ -1612,6 +1612,24 @@ class AIRPGChat {
         ]);
         let shouldRefreshLocation = false;
 
+        const handleMoveLocation = (entries) => {
+            if (Array.isArray(entries) && entries.length) {
+                if (!this.pendingMoveOverlay) {
+                    this.pendingMoveOverlay = true;
+                    const overlayDestination = safeItem(entries[0], 'a new location');
+                    try {
+                        window.showLocationOverlay?.(`Moving to ${overlayDestination}...`);
+                    } catch (error) {
+                        console.debug([error]);
+                    }
+                }
+            }
+            entries.forEach((location) => {
+                const destination = safeItem(location, 'a new location');
+                this.addEventSummary('🚶', `Travelled to ${destination}.`);
+            });
+        };
+
         const handlers = {
             attack_damage: (entries) => {
                 entries.forEach((entry) => {
@@ -1717,22 +1735,17 @@ class AIRPGChat {
                     this.addEventSummary('✨', `${itemName} appeared in the scene.`);
                 });
             },
-            move_location: (entries) => {
-                if (Array.isArray(entries) && entries.length) {
-                    if (!this.pendingMoveOverlay) {
-                        this.pendingMoveOverlay = true;
-                        const overlayDestination = safeItem(entries[0], 'a new location');
-                        try {
-                            window.showLocationOverlay?.(`Moving to ${overlayDestination}...`);
-                        } catch (_) {
-                            // Overlay helpers might not be ready; ignore.
-                        }
-                    }
+            move_location: handleMoveLocation,
+            move_new_location: (entries) => {
+                const normalized = Array.isArray(entries)
+                    ? entries
+                        .map(entry => (entry && typeof entry === 'object' && entry.name) ? entry.name : entry)
+                        .filter(value => typeof value === 'string' && value.trim().length)
+                    : [];
+                if (!normalized.length) {
+                    return;
                 }
-                entries.forEach((location) => {
-                    const destination = safeItem(location, 'a new location');
-                    this.addEventSummary('🚶', `Travelled to ${destination}.`);
-                });
+                handleMoveLocation(normalized.map(value => value.trim()));
             },
             new_exit_discovered: (entries) => {
                 entries.forEach((description) => {

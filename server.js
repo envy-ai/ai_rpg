@@ -3649,6 +3649,13 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     const fromLabel = `${fromLocation.name || fromLocation.id || 'unknown'} (${fromLocation.id || 'no-id'})`;
     const toLabel = `${toLocation.name || toLocation.id || 'unknown'} (${toLocation.id || 'no-id'})`;
 
+    if (fromLocation.id && toLocation.id && fromLocation.id === toLocation.id) {
+        const error = new Error(`Refusing to create self-referential exit for ${fromLabel}.`);
+        console.warn(`[ensureExitConnection] ${error.message}`);
+        console.debug([error]);
+        throw error;
+    }
+
     //console.log(`🧭 ensureExitConnection: ${fromLabel} -> ${toLabel} | requested bidirectional=${Boolean(bidirectional)} isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')} destinationRegion=${destinationRegion || 'null'}`);
     //console.trace();
 
