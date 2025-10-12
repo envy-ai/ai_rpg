@@ -6,6 +6,10 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
+const Globals = require('./Globals.js');
+const { glob } = require('fs');
+const Globals = require('./Globals.js');
+
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -3145,12 +3149,15 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function parseNpcQueueResponse(responseText) {
+            console.log("Parsing NPC queue response...");
             if (!responseText || typeof responseText !== 'string') {
+                console.warn('Invalid NPC queue response: not a string.');
                 return [];
             }
 
             const trimmed = responseText.trim();
             if (!trimmed) {
+                console.warn('Empty NPC queue response.');
                 return [];
             }
 
@@ -3165,20 +3172,29 @@ module.exports = function registerApiRoutes(scope) {
                 });
                 doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
+                console.warn('Failed to parse NPC queue response as XML.');
+                console.error('Error details:', _);
+                console.error('Response text:', responseText);
+                console.debug(_);
                 return [];
             }
 
             if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+                console.log('NPC queue response XML contained parser errors.');
+                console.debug('Response text:', responseText);
                 return [];
             }
 
             const root = doc.documentElement;
             if (!root || root.tagName?.toLowerCase() !== 'npcs') {
+                console.warn('Unexpected XML structure: missing <npcs> root element.');
+                console.log('Response text:', responseText);
                 return [];
             }
 
             const npcNodes = Array.from(doc.getElementsByTagName('npc'));
             if (!npcNodes.length) {
+                console.warn('No <npc> elements found in NPC queue response.');
                 return [];
             }
 
@@ -4624,8 +4640,11 @@ module.exports = function registerApiRoutes(scope) {
             const results = [];
 
             try {
+                console.log("Processing NPC turns")
                 const npcQueue = await runNextNpcListPrompt({ locationOverride: location });
                 const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
+
+                console.log(`NPC turn queue: ${npcNames.length} NPCs to process.`);
 
                 if (stream && stream.isEnabled && npcNames.length) {
                     stream.status('npc_turns:start', {
@@ -4636,6 +4655,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let npcTurnIndex = 0;
                 for (const npcName of npcNames) {
+                    console.log(`Processing turn for NPC: ${npcName}`);
                     const npc = typeof findActorByName === 'function' ? findActorByName(npcName) : null;
                     if (!npc || !npc.isNPC || npc.isDead) {
                         continue;
@@ -4659,7 +4679,10 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn(`Failed to tick status effects for NPC ${npc.name}:`, error.message);
                     }
 
+                    console.log(`Running plausibility check for NPC: ${npc.name || npcName}`);
+
                     const plausibilityResult = await runNpcPlausibilityPrompt({ npc, locationOverride: npcLocation });
+                    console.log('Plausibility result:', plausibilityResult); 0
                     const plan = plausibilityResult.structured;
                     if (!plan || !plan.description) {
                         continue;
@@ -4867,6 +4890,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
+                console.debug(error);
                 if (stream && stream.isEnabled) {
                     stream.error({
                         scope: 'npc_turns',
@@ -12532,6 +12556,7 @@ module.exports = function registerApiRoutes(scope) {
 
         // Load game state from a save
         app.post('/api/load', async (req, res) => {
+            Globals.gameLoaded = false;
             try {
                 const { saveName } = req.body;
 
@@ -12755,7 +12780,7 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     message: `Game loaded successfully from: ${saveName}`
                 });
-
+                Globals.gameLoaded = true;
             } catch (error) {
                 console.error('Error loading game:', error);
                 res.status(500).json({

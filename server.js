@@ -2786,7 +2786,7 @@ function parseChooseImportantMemoriesResponse(responseText, maxCount) {
 }
 
 async function populateNpcSelectedMemories(baseContext) {
-    if (!baseContext || !config) {
+    if (!baseContext || !config || !Globals.gameLoaded) {
         return;
     }
 
