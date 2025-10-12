@@ -4634,9 +4634,7 @@ module.exports = function registerApiRoutes(scope) {
 
         async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null }) {
             if (skipNpcEvents) {
-                if (stream && stream.isEnabled) {
-                    stream.status('npc_turns:skipped', 'Skipping NPC and random events due to forced action.');
-                }
+
                 return [];
             }
             if (!Array.isArray(entryCollector)) {
