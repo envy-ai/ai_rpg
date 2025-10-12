@@ -11288,10 +11288,18 @@
                     ? `${playerName} took the ${vehicleType} to ${targetName}.`
                     : `${playerName} moved to ${targetName}.`;
 
+                let overlayShown = false;
+                const showMoveOverlay = () => {
+                    if (!overlayShown) {
+                        overlayShown = true;
+                        showLocationOverlay(`Moving to ${targetName}...`);
+                    }
+                };
+
         const useEventMove = shouldUseEventMove(exit);
 
         if (useEventMove) {
-            showLocationOverlay(`Moving to ${targetName}...`);
+            showMoveOverlay();
             if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
                         console.error('AIRPG chat client not available; cannot dispatch move command.');
                         hideLocationOverlay();
@@ -11317,6 +11325,7 @@
                         }
                     };
                     try {
+                        showMoveOverlay();
                         await window.AIRPG_CHAT.dispatchAutomatedMessage(message, {
                             travel: true,
                             travelMetadata
@@ -11330,7 +11339,15 @@
         }
 
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
-            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, { travel: true });
+            try {
+                showMoveOverlay();
+                await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, { travel: true });
+            } catch (error) {
+                console.error('Failed to dispatch move via chat:', error);
+                hideLocationOverlay();
+                alert('Failed to queue move command via chat.');
+                return;
+            }
         }
 
         await performDirectMove(exit.destination, targetName);
