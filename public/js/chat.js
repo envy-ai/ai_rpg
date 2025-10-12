@@ -2831,6 +2831,10 @@ class AIRPGChat {
 
         let shouldRefreshLocation = false;
 
+        if (payload.locationRefreshRequested) {
+            shouldRefreshLocation = true;
+        }
+
         if (payload.response && (!context || !context.playerActionRendered)) {
             this.hideLoading(requestId);
             this.addMessage('ai', payload.response, false, payload.debug);
@@ -2841,10 +2845,6 @@ class AIRPGChat {
                     context.streamed.playerAction = context.streamed.playerAction || fromStream;
                 }
             }
-        }
-
-        if (payload.eventChecks) {
-            this.addEventMessage(payload.eventChecks);
         }
 
         if (payload.actionResolution && payload.actionResolution.roll !== null && payload.actionResolution.roll !== undefined) {
@@ -2936,9 +2936,6 @@ class AIRPGChat {
 
         this.addNpcMessage(turn.name || 'NPC', turn.response);
 
-        if (turn.eventChecks) {
-            this.addEventMessage(turn.eventChecks);
-        }
         if (turn.events) {
             this.addEventSummaries(turn.events);
         }

@@ -622,6 +622,22 @@ class Events {
             console.warn('Failed to apply event outcomes:', error.message);
         }
 
+        const addedCharacters = Array.from(this.newCharacters);
+        const departedCharacters = Array.from(this.departedCharacters);
+        const movedLocationNames = Array.from(this.movedLocations);
+
+        const npcUpdates = {
+            added: addedCharacters,
+            departed: departedCharacters,
+            movedLocations: movedLocationNames
+        };
+
+        const locationRefreshRequested = Boolean(
+            (addedCharacters && addedCharacters.length)
+            || (departedCharacters && departedCharacters.length)
+            || (movedLocationNames && movedLocationNames.length)
+        );
+
         return {
             raw: cleaned,
             html,
@@ -629,7 +645,9 @@ class Events {
             experienceAwards,
             currencyChanges,
             environmentalDamageEvents,
-            needBarChanges
+            needBarChanges,
+            npcUpdates,
+            locationRefreshRequested
         };
     }
 

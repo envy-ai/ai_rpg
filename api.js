@@ -1775,6 +1775,13 @@ module.exports = function registerApiRoutes(scope) {
                     events: eventChecks?.structured || null
                 };
 
+                if (eventChecks?.npcUpdates) {
+                    summary.npcUpdates = eventChecks.npcUpdates;
+                }
+                if (eventChecks?.locationRefreshRequested) {
+                    summary.locationRefreshRequested = true;
+                }
+
                 if (Array.isArray(eventChecks?.experienceAwards) && eventChecks.experienceAwards.length) {
                     summary.experienceAwards = eventChecks.experienceAwards;
                 }
@@ -4817,6 +4824,12 @@ module.exports = function registerApiRoutes(scope) {
                     if (Array.isArray(npcEventResult?.needBarChanges) && npcEventResult.needBarChanges.length) {
                         npcTurnResult.needBarChanges = npcEventResult.needBarChanges;
                     }
+                    if (npcEventResult?.npcUpdates) {
+                        npcTurnResult.npcUpdates = npcEventResult.npcUpdates;
+                    }
+                    if (npcEventResult?.locationRefreshRequested) {
+                        npcTurnResult.locationRefreshRequested = true;
+                    }
 
                     const npcNameLabel = safeSummaryName(npc?.name || npcName || 'NPC');
                     recordEventSummaryEntry({
@@ -5741,6 +5754,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(forcedEventResult.needBarChanges) && forcedEventResult.needBarChanges.length) {
                             responseData.needBarChanges = forcedEventResult.needBarChanges;
                         }
+                        if (forcedEventResult.npcUpdates) {
+                            responseData.npcUpdates = forcedEventResult.npcUpdates;
+                        }
+                        if (forcedEventResult.locationRefreshRequested) {
+                            responseData.locationRefreshRequested = true;
+                        }
                     }
 
                     const forcedEventLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'forced event entry');
@@ -5984,6 +6003,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (Array.isArray(eventResult.needBarChanges) && eventResult.needBarChanges.length) {
                             responseData.needBarChanges = eventResult.needBarChanges;
                         }
+                        if (eventResult.npcUpdates) {
+                            responseData.npcUpdates = eventResult.npcUpdates;
+                        }
+                        if (eventResult.locationRefreshRequested) {
+                            responseData.locationRefreshRequested = true;
+                        }
                     }
 
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
@@ -6194,12 +6219,26 @@ module.exports = function registerApiRoutes(scope) {
 
                             const aggregatedCountdowns = [];
                             const aggregatedRemovals = [];
+                            const aggregatedAdded = [];
+                            const aggregatedDeparted = [];
+                            const aggregatedMovedLocations = [];
                             for (const turn of npcTurns) {
                                 if (Array.isArray(turn?.corpseCountdownUpdates)) {
                                     aggregatedCountdowns.push(...turn.corpseCountdownUpdates);
                                 }
                                 if (Array.isArray(turn?.corpseRemovals)) {
                                     aggregatedRemovals.push(...turn.corpseRemovals);
+                                }
+                                if (turn?.npcUpdates) {
+                                    if (Array.isArray(turn.npcUpdates.added)) {
+                                        aggregatedAdded.push(...turn.npcUpdates.added);
+                                    }
+                                    if (Array.isArray(turn.npcUpdates.departed)) {
+                                        aggregatedDeparted.push(...turn.npcUpdates.departed);
+                                    }
+                                    if (Array.isArray(turn.npcUpdates.movedLocations)) {
+                                        aggregatedMovedLocations.push(...turn.npcUpdates.movedLocations);
+                                    }
                                 }
                             }
                             if (aggregatedCountdowns.length) {
@@ -6211,6 +6250,26 @@ module.exports = function registerApiRoutes(scope) {
                                 responseData.corpseRemovals = Array.isArray(responseData.corpseRemovals)
                                     ? responseData.corpseRemovals.concat(aggregatedRemovals)
                                     : aggregatedRemovals;
+                            }
+
+                            if (npcTurns.some(turn => turn?.locationRefreshRequested)) {
+                                responseData.locationRefreshRequested = true;
+                            }
+
+                            const normalizeUnique = (values = []) => Array.from(new Set(values.filter(value => typeof value === 'string' && value.trim())));
+                            const mergedNpcUpdates = {
+                                added: normalizeUnique(aggregatedAdded),
+                                departed: normalizeUnique(aggregatedDeparted),
+                                movedLocations: normalizeUnique(aggregatedMovedLocations)
+                            };
+
+                            if (mergedNpcUpdates.added.length || mergedNpcUpdates.departed.length || mergedNpcUpdates.movedLocations.length) {
+                                const existingUpdates = responseData.npcUpdates || { added: [], departed: [], movedLocations: [] };
+                                responseData.npcUpdates = {
+                                    added: normalizeUnique([...(existingUpdates.added || []), ...mergedNpcUpdates.added]),
+                                    departed: normalizeUnique([...(existingUpdates.departed || []), ...mergedNpcUpdates.departed]),
+                                    movedLocations: normalizeUnique([...(existingUpdates.movedLocations || []), ...mergedNpcUpdates.movedLocations])
+                                };
                             }
                         }
                     } catch (npcTurnError) {
