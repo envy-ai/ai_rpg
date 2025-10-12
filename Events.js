@@ -10,13 +10,14 @@ const MAJOR_STATUS_DURATION = 5;
 
 const EVENT_PROMPT_ORDER = [
     { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, unblock, discover, or create an exit or vehicle to another region? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. Note that the difference between a location and a region is that a location is a specific place (like a building, room, or landmark) while a region is a broader area (like a neighborhood, district, or zone). Consider whether you're conceptually entering a different region (anything with multiple locations, such as a building, town, biome, planet, etc), or part of the current one (which would be a location). An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player, still list it here.  For example, a train to townsville would appear as "Townsville -> region -> train -> A bustling town known for its markets and friendly locals." An adjacent forest would appear as "Meiling Woods -> location -> none -> A dense forest filled with towering trees and the sound of rustling leaves."` },
-    { key: 'move_new_location', prompt: `Did the player discover or create a brand new exit and then immediately travel through it? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A.` },
+    { key: 'move_new_location', prompt: `Did the player or party discover or create a brand new exit and then immediately travel through it? If so, reply in the form [new location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A.` },
+    { key: 'move_new_location', prompt: `Did the player or party move within the current location? If so, come up with an appropriate sub-location and reply in the form [new sublocation name] -> [the word "location"] -> [type of vehicle or "none"] -> [description of the destination in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. If unsure if this is a new sublocation or a new location, assume it's a new sublocaiton and answer this question.` },
     { key: 'move_location', prompt: `Did the player travel to or end up in a different location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
     { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.` },
     { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
     { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
     { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name.` },
-    { key: 'consume_item', prompt: `Were any items or pieces of scenery completely consumed (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being destroyed or otherwise removed from the scene or any inventory? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+    { key: 'consume_item', prompt: `Were any items or pieces of scenery completely consumed (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being destroyed or otherwise removed from the scene or any inventory? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
     { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
     { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
@@ -38,7 +39,8 @@ const EVENT_PROMPT_ORDER = [
     { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
     { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
     { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
-    { key: 'disposition_check', prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.` }
+    { key: 'disposition_check', prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.` },
+    { key: 'time_passed', prompt: `In decimal hours, how much time has passed since the last turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.` }
 ];
 
 const EVENT_CHECK_QUESTIONS = EVENT_PROMPT_ORDER.map(def => def.prompt);
@@ -906,20 +908,50 @@ class Events {
                 };
             }).filter(Boolean),
             consume_item: raw => splitPipeList(raw).map(entry => {
-                if (typeof entry !== 'string' || !entry.trim()) {
+                if (typeof entry !== 'string') {
                     return null;
                 }
-                const arrowParts = splitArrowParts(entry, 2);
-                if (arrowParts.length === 2) {
-                    const [user, item] = arrowParts;
-                    if (user && item) {
-                        return {
-                            user: user.trim(),
-                            item: item.trim()
-                        };
-                    }
+                const trimmedEntry = entry.trim();
+                if (!trimmedEntry) {
+                    return null;
                 }
-                return { item: entry.trim() };
+
+                const parts = splitArrowParts(trimmedEntry, 4);
+                if (!Array.isArray(parts) || parts.length === 0) {
+                    return null;
+                }
+
+                const sanitize = value => (typeof value === 'string' ? value.trim() : '');
+
+                if (parts.length === 1) {
+                    const itemOnly = sanitize(parts[0]);
+                    return itemOnly ? { item: itemOnly } : null;
+                }
+
+                const first = sanitize(parts[0]);
+                const second = sanitize(parts[1]);
+                const third = sanitize(parts[2]);
+                const fourth = sanitize(parts[3]);
+
+                const record = {};
+
+                if (second) {
+                    if (first) {
+                        record.user = first;
+                    }
+                    record.item = second;
+                } else if (first) {
+                    record.item = first;
+                }
+
+                if (third) {
+                    record.reason = third;
+                }
+                if (fourth) {
+                    record.detail = fourth;
+                }
+
+                return record.item ? record : null;
             }).filter(Boolean),
             alter_item: raw => splitPipeList(raw).map(entry => {
                 const parts = splitArrowParts(entry, 3);
@@ -1161,6 +1193,23 @@ class Events {
             consume_item: list => {
                 const entries = flattenAndFilter(list);
                 const normalized = [];
+
+                const copyKnownFields = (source, target) => {
+                    for (const [key, value] of Object.entries(source)) {
+                        if (value === null || value === undefined) {
+                            continue;
+                        }
+                        if (typeof value === 'string') {
+                            const trimmed = value.trim();
+                            if (trimmed) {
+                                target[key] = trimmed;
+                            }
+                        } else if (typeof value === 'number') {
+                            target[key] = value;
+                        }
+                    }
+                };
+
                 for (const entry of entries) {
                     if (!entry) {
                         continue;
@@ -1173,12 +1222,32 @@ class Events {
                         continue;
                     }
                     if (typeof entry === 'object') {
-                        const itemName = entry.item ? String(entry.item).trim() : '';
-                        if (!itemName) {
+                        const normalizedEntry = {};
+                        copyKnownFields(entry, normalizedEntry);
+
+                        if (!normalizedEntry.item && typeof entry.name === 'string') {
+                            const nameTrimmed = entry.name.trim();
+                            if (nameTrimmed) {
+                                normalizedEntry.item = nameTrimmed;
+                            }
+                        }
+
+                        if (!normalizedEntry.item && typeof entry.item === 'string') {
+                            const itemTrimmed = entry.item.trim();
+                            if (itemTrimmed) {
+                                normalizedEntry.item = itemTrimmed;
+                            }
+                        }
+
+                        if (!normalizedEntry.item) {
                             continue;
                         }
-                        const userName = entry.user ? String(entry.user).trim() : '';
-                        normalized.push(userName ? { user: userName, item: itemName } : { item: itemName });
+
+                        if (normalizedEntry.user) {
+                            normalizedEntry.user = normalizedEntry.user.trim();
+                        }
+
+                        normalized.push(normalizedEntry);
                     }
                 }
                 return normalized;

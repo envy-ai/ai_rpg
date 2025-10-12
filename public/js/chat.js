@@ -1632,10 +1632,22 @@ class AIRPGChat {
                             ? safeName(rawUser)
                             : null;
                         const itemName = safeItem(entry.item, 'An item');
+                        const extraDetails = [];
+                        const detailKeys = ['reason', 'detail', 'context', 'note', 'notes', 'usage', 'usedFor', 'method', 'result', 'effect'];
+                        detailKeys.forEach(key => {
+                            const value = entry[key];
+                            if (typeof value === 'string') {
+                                const trimmed = value.trim();
+                                if (trimmed) {
+                                    extraDetails.push(trimmed);
+                                }
+                            }
+                        });
+                        const detailText = extraDetails.length ? ` (${extraDetails.join('; ')})` : '';
                         if (consumer) {
-                            this.addEventSummary('🧪', `${consumer} consumed ${itemName}.`);
+                            this.addEventSummary('🧪', `${consumer} consumed ${itemName}.${detailText}`);
                         } else {
-                            this.addEventSummary('🧪', `${itemName} was consumed or destroyed.`);
+                            this.addEventSummary('🧪', `${itemName} was consumed or destroyed.${detailText}`);
                         }
                     } else {
                         const itemName = safeItem(entry, 'An item');

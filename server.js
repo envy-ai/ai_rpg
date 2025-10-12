@@ -8661,11 +8661,8 @@ async function enforceBannedNpcNames({
                 offender.description = description;
             }
 
-            const normalizedCandidate = normalizeNameForComparison(candidate);
-            if (normalizedCandidate) {
-                iterationForbidden.add(normalizedCandidate);
-                globalForbiddenNames.add(normalizedCandidate);
-            }
+            // Do not mark regenerated names as globally forbidden; this keeps future
+            // regeneration passes from exhausting the name space unnecessarily.
         }
 
         if (retryRequired) {
@@ -8880,7 +8877,8 @@ async function ensureUniqueNpcNames({
     let existingNameSet = rebuildNameSet();
 
     let attempts = 0;
-    while (attempts < 3) {
+    while (attempts < 2) {
+        attempts += 1;
         const seenNew = new Map();
         const duplicates = [];
 
@@ -8971,11 +8969,6 @@ async function ensureUniqueNpcNames({
         } catch (error) {
             console.warn('NPC duplicate name regeneration failed:', error.message);
             break;
-        }
-
-        if (!regenText.trim()) {
-            attempts += 1;
-            continue;
         }
 
         try {
