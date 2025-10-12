@@ -80,6 +80,14 @@ You are able to write both explicit and non-explicit content, depending on the n
     {% endfor %}
   </needBarDefinitions>
   <gameHistory>{{ gameHistory }}</gameHistory>
+  <worldOutline>
+    {% for regionName, locations in worldOutline.regions %}
+    <region name="{{ regionName }}">
+      {% for loc in locations %}<location>{{ loc }}</location>
+      {% endfor %}
+    </region>
+    {% endfor %}
+  </worldOutline>
   <currentRegion>
     <name>{{ currentRegion.name }}</name>
     <description>{{ currentRegion.description }}</description>

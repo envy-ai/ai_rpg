@@ -2039,6 +2039,33 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const regionStatus = region && typeof region.toJSON === 'function' ? region.toJSON() : null;
     const regionLocations = [];
 
+    /*  <worldOutline>
+    {% for region in worldOutline.regions %}
+    <region name="{{ region.name }}">
+      <name>{{ region.name }}</name>
+      <locations>
+        {% for loc in region.locations %}<name>{{ loc.name }}</name>
+        {% endfor %}
+      </locations>
+    </region>
+    {% endfor %}
+    </worldOutline> */
+
+    // We need to populate worldOutline with regions and their locations
+    let worldOutline = {
+        regions: {}
+    };
+
+    // Iterate all regions
+    let regionMap = Region.getIndexByName();
+    // Get name of each region
+    for (const [regionName, regionObj] of regionMap) {
+        worldOutline.regions[regionObj.name] = [];
+        for (const locationObj of regionObj.locations) {
+            worldOutline.regions[regionObj.name].push(locationObj.name);
+        }
+    }
+
     if (regionStatus && Array.isArray(regionStatus.locationIds)) {
         for (const locId of regionStatus.locationIds) {
             if (!locId) continue;
@@ -2584,7 +2611,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         attributeDefinitions: attributeDefinitionsForPrompt,
         rarityDefinitions: Thing.getAllRarityDefinitions(),
         experiencePointValues,
-        generatedThingRarity
+        generatedThingRarity,
+        worldOutline
     };
 
     populateNpcSelectedMemoriesSync(context);

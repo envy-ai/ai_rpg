@@ -138,6 +138,14 @@ class Region {
     Region.#indexByName.clear();
   }
 
+  static getIndexById() {
+    return new Map(Region.#indexById);
+  }
+
+  static getIndexByName() {
+    return new Map(Region.#indexByName);
+  }
+
   static fromJSON(data = {}) {
     return new Region({
       id: data.id,

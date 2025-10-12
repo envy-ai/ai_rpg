@@ -2913,7 +2913,7 @@ class Player {
         } else if (typeof location === 'object' && location.id) {
             // Store Location object or just its ID
             this.#currentLocation = location.id || location;
-            location.visited = true;
+            if (!this.#isNPC) location.visited = true;
         } else {
             throw new Error('Location must be a string ID, Location object with ID, or null');
         }

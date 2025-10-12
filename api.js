@@ -6,7 +6,6 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
-const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -5706,6 +5705,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (forcedEventError) {
                         console.warn('Failed to run forced event checks:', forcedEventError.message);
+                        console.debug(forcedEventError);
                     }
                 }
 

@@ -25,7 +25,7 @@ const EVENT_PROMPT_ORDER = [
     { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those pieces of scenery (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
     { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML.` },
-    { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] left -> [exact name of the location they went to]". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
+    { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
     { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
     { key: 'npc_first_appearance', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
     { key: 'party_change', prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.` },
@@ -979,25 +979,53 @@ class Events {
                 };
             }).filter(Boolean),
             npc_arrival_departure: raw => splitPipeList(raw).map(entry => {
-                const parts = splitArrowParts(entry, 3);
-                if (!parts.length) {
+                const rawParts = entry
+                    .split('->')
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!rawParts.length) {
                     return null;
                 }
-                if (parts.length === 1) {
-                    const match = parts[0].match(/^(.*)\s+(arrived|left)$/i);
-                    if (!match) {
-                        return null;
+
+                let primary = rawParts.shift();
+                const match = primary.match(/^(.*)\s+(arrived|left)$/i);
+
+                let name = null;
+                let action = null;
+
+                if (match) {
+                    name = match[1].trim();
+                    action = match[2].trim().toLowerCase();
+                } else {
+                    name = primary.trim();
+                    if (rawParts.length) {
+                        action = rawParts.shift().trim().toLowerCase();
                     }
-                    return { name: match[1].trim(), action: match[2].toLowerCase(), destination: null };
                 }
-                const [name, action, destination] = parts;
+
                 if (!name || !action) {
                     return null;
                 }
+
+                let destinationRegion = null;
+                let destinationLocation = null;
+
+                if (rawParts.length === 1) {
+                    destinationLocation = rawParts[0].trim();
+                } else if (rawParts.length >= 2) {
+                    destinationRegion = rawParts[0].trim() || null;
+                    destinationLocation = rawParts[1].trim() || null;
+                }
+
+                const destination = destinationLocation || destinationRegion || null;
+
                 return {
-                    name: name.trim(),
-                    action: action.trim().toLowerCase(),
-                    destination: destination ? destination.trim() : null
+                    name,
+                    action,
+                    destination,
+                    destinationRegion,
+                    destinationLocation
                 };
             }).filter(Boolean),
             npc_first_appearance: raw => splitPipeList(raw).map(entry => entry.trim()).filter(Boolean),
@@ -1740,7 +1768,16 @@ class Events {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findActorByName, findActorById, ensureNpcByName } = this._deps;
+                const {
+                    findActorByName,
+                    findActorById,
+                    ensureNpcByName,
+                    findLocationByNameLoose,
+                    findRegionByNameLoose,
+                    Location,
+                    regions,
+                    gameLocations
+                } = this._deps;
                 const suppressedIndexes = new Set();
                 const processedNames = new SanitizedStringSet();
                 const partyExcludedNames = new SanitizedStringSet();
@@ -1793,6 +1830,118 @@ class Events {
                 if (currentPlayer && currentPlayer !== context.player) {
                     collectPartyNames(currentPlayer);
                 }
+
+                const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
+
+                const lookupRegionByName = (name) => {
+                    const trimmed = normalize(name);
+                    if (!trimmed) {
+                        return null;
+                    }
+                    if (typeof findRegionByNameLoose === 'function') {
+                        const region = findRegionByNameLoose(trimmed);
+                        if (region) {
+                            return region;
+                        }
+                    }
+                    if (regions instanceof Map) {
+                        const lower = trimmed.toLowerCase();
+                        for (const region of regions.values()) {
+                            if (region && typeof region.name === 'string' && region.name.trim().toLowerCase() === lower) {
+                                return region;
+                            }
+                        }
+                    }
+                    return null;
+                };
+
+                const lookupLocationByName = (name) => {
+                    const trimmed = normalize(name);
+                    if (!trimmed) {
+                        return null;
+                    }
+                    let location = null;
+                    if (Location && typeof Location.findByName === 'function') {
+                        try {
+                            location = Location.findByName(trimmed);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+                    if (!location && Location && typeof Location.getByName === 'function') {
+                        try {
+                            location = Location.getByName(trimmed);
+                        } catch (_) {
+                            location = null;
+                        }
+                    }
+                    if (!location && typeof findLocationByNameLoose === 'function') {
+                        location = findLocationByNameLoose(trimmed) || null;
+                    }
+                    return location;
+                };
+
+                const doesLocationMatchRegion = (location, regionName) => {
+                    const trimmedRegion = normalize(regionName);
+                    if (!location || !trimmedRegion) {
+                        return !trimmedRegion;
+                    }
+                    const regionId = location.regionId
+                        || location.stubMetadata?.regionId
+                        || location.stubMetadata?.targetRegionId
+                        || null;
+                    if (!regionId) {
+                        return false;
+                    }
+                    if (regions instanceof Map) {
+                        const regionRecord = regions.get(regionId);
+                        if (regionRecord && typeof regionRecord.name === 'string') {
+                            if (regionRecord.name.trim().toLowerCase() === trimmedRegion.toLowerCase()) {
+                                return true;
+                            }
+                        }
+                    }
+                    const looseRegion = lookupRegionByName(trimmedRegion);
+                    if (!looseRegion) {
+                        return false;
+                    }
+                    if (looseRegion.id && looseRegion.id === regionId) {
+                        return true;
+                    }
+                    if (typeof looseRegion.name === 'string' && looseRegion.name.trim().toLowerCase() === trimmedRegion.toLowerCase()) {
+                        return true;
+                    }
+                    return false;
+                };
+
+                const resolveLocationWithinRegion = (regionName, locationName) => {
+                    const trimmedRegion = normalize(regionName);
+                    const trimmedLocation = normalize(locationName);
+                    if (!trimmedRegion || !trimmedLocation) {
+                        return null;
+                    }
+                    const region = lookupRegionByName(trimmedRegion);
+                    if (!region) {
+                        return null;
+                    }
+                    const locationIds = Array.isArray(region.locationIds) ? region.locationIds : [];
+                    for (const locationId of locationIds) {
+                        let candidate = null;
+                        if (Location && typeof Location.get === 'function') {
+                            candidate = Location.get(locationId);
+                        }
+                        if (!candidate && gameLocations instanceof Map) {
+                            candidate = gameLocations.get(locationId) || null;
+                        }
+                        if (!candidate || typeof candidate.name !== 'string') {
+                            continue;
+                        }
+                        if (candidate.name.trim().toLowerCase() === trimmedLocation.toLowerCase()) {
+                            return candidate;
+                        }
+                    }
+                    return null;
+                };
 
                 for (let index = 0; index < entries.length; index += 1) {
                     const entry = entries[index];
@@ -1866,8 +2015,48 @@ class Events {
                         continue;
                     }
                     if (action === 'left') {
-                        npc.setLocationByName(entry.destination);
-                        this.departedCharacters.add(finalizedName);
+                        console.log(`Processing departure of NPC: ${finalizedName} to ${entry.destination || '<unspecified>'}`);
+                        const destinationLocationName = normalize(entry.destinationLocation) || normalize(entry.destination);
+                        const destinationRegionName = normalize(entry.destinationRegion);
+
+                        let targetLocation = lookupLocationByName(destinationLocationName);
+                        console.log(`  Initial resolved location: ${targetLocation ? targetLocation.name : '<none>'}`);
+
+                        if (targetLocation && destinationRegionName && !doesLocationMatchRegion(targetLocation, destinationRegionName)) {
+                            targetLocation = null;
+                        }
+
+                        if (!targetLocation && destinationRegionName && destinationLocationName) {
+                            targetLocation = resolveLocationWithinRegion(destinationRegionName, destinationLocationName);
+                        }
+
+                        if (!targetLocation) {
+                            console.warn(`NPC departure destination not found for ${finalizedName}: region='${destinationRegionName || ''}', location='${destinationLocationName || ''}'`);
+                            continue;
+                        }
+
+                        try {
+                            const originLocation = npc.location || context.location || null;
+                            if (originLocation && typeof originLocation.removeNpcId === 'function') {
+                                originLocation.removeNpcId(npc.id);
+                            }
+                            if (typeof npc.setLocation === 'function') {
+                                npc.setLocation(targetLocation);
+                                console.log(`  NPC ${finalizedName} moved to ${targetLocation.name}`);
+                            } else if (typeof npc.setLocationByName === 'function') {
+                                npc.setLocationByName(targetLocation.name || destinationLocationName);
+                                console.log(`  NPC ${finalizedName} moved to ${targetLocation.name || destinationLocationName}`);
+                            } else {
+                                console.warn(`NPC ${finalizedName} cannot move: missing setLocation method.`);
+                                continue;
+                            }
+                            if (targetLocation && typeof targetLocation.addNpcId === 'function') {
+                                targetLocation.addNpcId(npc.id);
+                            }
+                            this.departedCharacters.add(finalizedName);
+                        } catch (error) {
+                            console.warn(`Failed to move NPC ${finalizedName} to destination '${targetLocation?.name || destinationLocationName}':`, error.message);
+                        }
                     }
                 }
 
