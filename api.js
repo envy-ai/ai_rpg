@@ -1122,8 +1122,11 @@ module.exports = function registerApiRoutes(scope) {
                                 const destinationText = destination
                                     ? safeSummaryItem(destination, 'another location')
                                     : null;
+
                                 if (action === 'arrived') {
-                                    add('🙋', `${name} arrived at the location.`);
+                                    if (destinationText != initialPlayerLocationName) { // Avoid redundant "arrived" messages if player is already there
+                                        add('🙋', `${name} arrived`);
+                                    }
                                 } else if (action === 'left') {
                                     const detail = destinationText ? ` for ${destinationText}` : '';
                                     add('🏃', `${name} left the area${detail}.`);
@@ -4943,6 +4946,7 @@ module.exports = function registerApiRoutes(scope) {
             let travelMetadataNormalizationError = null;
 
             const initialPlayerLocationId = currentPlayer?.currentLocation || null;
+            const initialPlayerLocationName = currentPlayer?.getCurrentLocationName() || null;
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;

@@ -2988,6 +2988,11 @@ class Player {
         };
     }
 
+    getCurrentLocationName() {
+        const Location = getLocationModule();
+        return Location.get(this.#currentLocation).name;
+    }
+
     /**
      * Get information about the current location
      * @param {Map|Object} locationMap - Map or object containing location ID -> Location mappings
