@@ -8527,7 +8527,9 @@ async function enforceBannedNpcNames({
     }
 
     let attempts = 0;
-    while (attempts < 3) {
+    while (attempts < 2) {
+        attempts += 1;
+        console.log(`🔄 NPC Name Regeneration Attempt ${attempts}`);
         const offenders = workingList.filter(npc => !isNpcNameAllowed(npc?.name, { bannedWords }));
         if (!offenders.length) {
             break;
@@ -8615,7 +8617,6 @@ async function enforceBannedNpcNames({
 
         const mapping = parseNpcNameRegenResponse(regenText);
         if (!mapping.size) {
-            attempts += 1;
             continue;
         }
 

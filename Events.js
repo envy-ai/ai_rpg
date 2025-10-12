@@ -218,7 +218,7 @@ async function movePlayerToDestination(eventsInstance, destination, context = {}
     label = 'move_location'
 } = {}) {
     const player = context.player || eventsInstance.currentPlayer;
-    const { Location, findLocationByNameLoose } = eventsInstance._deps || {};
+    const { Location, findLocationByNameLoose, createLocationFromEvent } = eventsInstance._deps || {};
 
     if (!player || typeof player.setLocation !== 'function' || !Location || typeof Location.get !== 'function') {
         return;
@@ -260,8 +260,32 @@ async function movePlayerToDestination(eventsInstance, destination, context = {}
             }
         }
 
-        if (!destinationObject && typeof findLocationByNameLoose === 'function') {
+        if (!destinationObject) {
             destinationObject = findLocationByNameLoose(destinationName) || null;
+        }
+
+        if (!destinationObject) {
+            let originLocation = context.location || null;
+            if (!originLocation && player?.currentLocation) {
+                try {
+                    originLocation = Location.get(player.currentLocation) || null;
+                } catch (_) {
+                    originLocation = null;
+                }
+            }
+            if (!originLocation) {
+                throw new Error(`[${label}] Unable to resolve destination "${destinationName}" and origin location is unknown.`);
+            }
+            try {
+                destinationObject = await createLocationFromEvent({
+                    name: destinationName,
+                    originLocation,
+                    descriptionHint: `Path leading from ${originLocation.name || originLocation.id} toward ${destinationName}.`,
+                    expandStub: false
+                });
+            } catch (error) {
+                throw new Error(`[${label}] Failed to create destination "${destinationName}": ${error.message}`);
+            }
         }
     }
 
