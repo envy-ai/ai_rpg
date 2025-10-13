@@ -6225,21 +6225,25 @@ function normalizeNpcPromptSeed(seed = {}) {
     return normalized;
 }
 
-function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [], oldItem = null } = {}) {
+async function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [], oldItem = null } = {}) {
     try {
+        const baseContext = await prepareBasePromptContext({ locationOverride: location || null });
+
         const safeRegion = region ? {
             name: region.name || 'Unknown Region',
             description: region.description || 'No description provided.'
-        } : { name: 'Unknown Region', description: 'No description provided.' };
+        } : {
+            name: baseContext.currentRegion?.name || location?.stubMetadata?.regionName || 'Unknown Region',
+            description: baseContext.currentRegion?.description || location?.stubMetadata?.regionDescription || 'No description provided.'
+        };
 
         const safeLocation = location ? {
             name: location.name || 'Unknown Location',
             description: location.description || location.stubMetadata?.blueprintDescription || 'No description provided.'
-        } : { name: 'Unknown Location', description: 'No description provided.' };
-
-        const activeSetting = settingSnapshot || getActiveSettingSnapshot();
-        const settingDescription = describeSettingForPrompt(activeSetting);
-        const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+        } : {
+            name: baseContext.currentLocation?.name || 'Unknown Location',
+            description: baseContext.currentLocation?.description || 'No description provided.'
+        };
 
         const npcSeed = normalizeNpcPromptSeed(npc || {});
 
@@ -6262,14 +6266,16 @@ function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, r
             };
         })();
 
-        return promptEnv.render('npc-generator-single.xml.njk', {
-            setting: settingContext,
+        return promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'npc-generator-single',
             region: safeRegion,
             location: safeLocation,
             existingNpcSummaries: existingNpcSummaries || [],
             npc: npcSeed,
-            attributeDefinitions: attributeDefinitionsForPrompt,
-            oldItem: oldItemContext
+            attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+            oldItem: oldItemContext,
+            setting: baseContext.setting
         });
     } catch (error) {
         console.error('Error rendering single NPC template:', error);
@@ -6352,7 +6358,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
 
         const npcSeed = normalizeNpcPromptSeed({ ...seedSource, name: trimmedName });
 
-        const renderedTemplate = renderSingleNpcPrompt({
+        const renderedTemplate = await renderSingleNpcPrompt({
             npc: npcSeed,
             settingSnapshot,
             location: resolvedLocation,
