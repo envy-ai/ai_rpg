@@ -2245,6 +2245,45 @@ class Events {
                     if (!npc) {
                         continue;
                     }
+                    if (action === 'arrived' || isFirstAppearance) {
+                        const targetLocation = context.location || null;
+                        if (targetLocation) {
+                            try {
+                                const currentLocationId = typeof npc.currentLocation === 'string' ? npc.currentLocation : null;
+                                if (currentLocationId && currentLocationId !== targetLocation.id) {
+                                    let currentLocation = null;
+                                    try {
+                                        currentLocation = Location.get(currentLocationId);
+                                    } catch (_) {
+                                        currentLocation = null;
+                                    }
+                                    if (!currentLocation && gameLocations instanceof Map) {
+                                        currentLocation = gameLocations.get(currentLocationId) || null;
+                                    }
+                                    if (currentLocation && typeof currentLocation.removeNpcId === 'function') {
+                                        currentLocation.removeNpcId(npc.id);
+                                    }
+                                }
+
+                                if (typeof npc.setLocation === 'function') {
+                                    npc.setLocation(targetLocation.id || targetLocation);
+                                } else if (typeof npc.setLocationByName === 'function') {
+                                    npc.setLocationByName(targetLocation.name || targetLocation.id);
+                                }
+
+                                if (typeof targetLocation.addNpcId === 'function') {
+                                    targetLocation.addNpcId(npc.id);
+                                }
+
+                                if (gameLocations instanceof Map && targetLocation?.id) {
+                                    gameLocations.set(targetLocation.id, targetLocation);
+                                }
+                            } catch (error) {
+                                console.warn(`Failed to place arriving NPC "${finalizedName}" in current location:`, error.message);
+                                console.debug([error]);
+                            }
+                        }
+                    }
                     if (action === 'left') {
                         console.log(`Processing departure of NPC: ${finalizedName} to ${entry.destination || '<unspecified>'}`);
                         const destinationLocationName = normalize(entry.destinationLocation) || normalize(entry.destination);

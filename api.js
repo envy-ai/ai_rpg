@@ -7990,12 +7990,14 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const npc = players.get(npcId);
-                if (!npc || !npc.isNPC) {
+                if (!npc) {
                     return res.status(404).json({
                         success: false,
-                        error: `NPC with ID '${npcId}' not found`
+                        error: `Character with ID '${npcId}' not found`
                     });
                 }
+
+                const isNpc = Boolean(npc.isNPC);
 
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
@@ -8045,7 +8047,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const originLocation = resolveLocationById(originLocationId);
 
-                if (originLocation) {
+                if (originLocation && isNpc) {
                     if (typeof originLocation.removeNpcId === 'function') {
                         originLocation.removeNpcId(npcId);
                     } else if (Array.isArray(originLocation.npcIds)) {
@@ -8057,11 +8059,13 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (typeof destinationLocation.addNpcId === 'function') {
-                    destinationLocation.addNpcId(npcId);
-                } else if (Array.isArray(destinationLocation.npcIds)) {
-                    if (!destinationLocation.npcIds.includes(npcId)) {
-                        destinationLocation.npcIds.push(npcId);
+                if (isNpc) {
+                    if (typeof destinationLocation.addNpcId === 'function') {
+                        destinationLocation.addNpcId(npcId);
+                    } else if (Array.isArray(destinationLocation.npcIds)) {
+                        if (!destinationLocation.npcIds.includes(npcId)) {
+                            destinationLocation.npcIds.push(npcId);
+                        }
                     }
                 }
 
@@ -8102,7 +8106,7 @@ module.exports = function registerApiRoutes(scope) {
                         destinationLocation.id,
                         originLocation?.id || null
                     ].filter(Boolean))),
-                    message: `${npc.name || 'NPC'} summoned successfully.`
+                    message: `${npc.name || (isNpc ? 'NPC' : 'Player')} teleported successfully.`
                 };
 
                 res.json(responsePayload);
