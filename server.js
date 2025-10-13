@@ -1594,6 +1594,7 @@ function serializeNpcForClient(npc, options = {}) {
         healthAttribute: npc.healthAttribute,
         imageId: npc.imageId,
         isNPC: Boolean(npc.isNPC),
+        isPlayer: !Boolean(npc.isNPC),
         isHostile: Boolean(npc.isHostile),
         isDead: Boolean(npc.isDead),
         isHostileToPlayer: hostileToPlayer,

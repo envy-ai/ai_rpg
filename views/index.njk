@@ -1761,6 +1761,10 @@
                 : null;
 
             const cloned = cloneActorRecord(source) || { ...source };
+            if (cloned) {
+                cloned.isPlayer = true;
+                cloned.isNPC = false;
+            }
             const data = cloned;
             window.currentPlayerData = data;
 
@@ -2889,7 +2893,7 @@
                 }
             }
 
-            if (card && card.parentElement && !['location', 'npc-equipment', 'npc-inventory'].includes(activeContext)) {
+            if (npc?.isNPC && card && card.parentElement && !['location', 'npc-equipment', 'npc-inventory'].includes(activeContext)) {
                 card.remove();
             }
 
@@ -2972,7 +2976,7 @@
 
             const destinationId = result.destination?.id || null;
             const currentLocationId = window.lastRenderedLocation?.id || null;
-            if (card && card.parentElement) {
+            if (npc?.isNPC && card && card.parentElement) {
                 if (!destinationId || destinationId !== currentLocationId) {
                     card.remove();
                 }
@@ -3003,6 +3007,23 @@
                 await window.refreshParty?.();
             } catch (error) {
                 console.warn('Failed to refresh party after teleporting NPC:', error);
+            }
+
+            if (updatedNpc && !updatedNpc.isNPC) {
+                if (result.destination) {
+                    try {
+                        await window.updateLocationDisplay?.(result.destination);
+                        window.lastRenderedLocation = JSON.parse(JSON.stringify(result.destination));
+                    } catch (error) {
+                        console.warn('Failed to refresh destination location after teleporting player:', error);
+                    }
+                } else {
+                    try {
+                        await window.loadCurrentLocation?.();
+                    } catch (error) {
+                        console.warn('Failed to load current location after teleporting player:', error);
+                    }
+                }
             }
 
             invalidateTeleportLocationCache();
@@ -9486,7 +9507,13 @@
                 let memoriesButton = null;
                 let dispositionButton = null;
                 let deleteButton = null;
-                if (npc && npc.isNPC) {
+                if (npc && npc.isPlayer) {
+                    teleportButton = document.createElement('button');
+                    teleportButton.type = 'button';
+                    teleportButton.className = 'npc-card-menu-item';
+                    teleportButton.textContent = 'Teleport';
+                    menu.appendChild(teleportButton);
+                } else if (npc && npc.isNPC) {
                     teleportButton = document.createElement('button');
                     teleportButton.type = 'button';
                     teleportButton.className = 'npc-card-menu-item';

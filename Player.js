@@ -58,6 +58,7 @@ class Player {
     #isInPlayerParty = false;
     #partyMembersAddedThisTurn = new Set();
     #partyMembersRemovedThisTurn = new Set();
+    #elapsedTime = 0;
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -873,6 +874,9 @@ class Player {
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
         this.#isHostile = this.#isNPC && Boolean(options.isHostile);
+        this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
+            ? Math.floor(options.elapsedTime)
+            : 0;
 
         const personalityOption = options.personality && typeof options.personality === 'object'
             ? options.personality
@@ -1697,6 +1701,25 @@ class Player {
 
     get imageId() {
         return this.#imageId;
+    }
+
+    get elapsedTime() {
+        // Error out if called for an NPC
+        if (this.#isNPC) {
+            throw new Error('Elapsed time is not tracked for NPCs');
+        }
+        return this.#elapsedTime;
+    }
+
+    set elapsedTime(value) {
+        if (this.#isNPC) {
+            throw new Error('Elapsed time cannot be set for NPCs');
+        }
+        if (!Number.isFinite(value) || value < 0) {
+            throw new Error('Elapsed time must be a non-negative number');
+        }
+        this.#elapsedTime = value;
+        this.#lastUpdated = new Date().toISOString();
     }
 
     set imageId(newImageId) {
