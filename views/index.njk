@@ -6251,7 +6251,11 @@
                     ? timestamp.toLocaleString()
                     : 'Unknown time';
                 const prefix = currentLoadGameSource === 'autosaves' ? 'Autosave' : 'Save';
-                option.textContent = `${prefix}: ${playerName} (Level ${levelLabel}) • ${timestampLabel}`;
+                const locationName = typeof save.currentLocationName === 'string'
+                    ? save.currentLocationName.trim()
+                    : '';
+                const locationSuffix = locationName ? ` @ ${locationName}` : '';
+                option.textContent = `${prefix}: ${playerName} (Level ${levelLabel})${locationSuffix} • ${timestampLabel}`;
                 if (index === 0) {
                     option.selected = true;
                 }

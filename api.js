@@ -1152,6 +1152,13 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                             });
                             break;
+                        case 'harvest_gather':
+                            entries.forEach(entry => {
+                                const actor = safeSummaryName(entry?.harvester);
+                                const itemName = safeSummaryItem(entry?.item);
+                                add('🌾', `${actor} harvested ${itemName}.`);
+                            });
+                            break;
                         case 'pick_up_item':
                             entries.forEach(entry => {
                                 const actor = safeSummaryName(entry?.name);

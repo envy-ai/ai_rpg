@@ -1783,6 +1783,13 @@ class AIRPGChat {
                     }
                 });
             },
+            harvest_gather: (entries) => {
+                entries.forEach((entry) => {
+                    const actor = safeName(entry?.harvester);
+                    const itemName = safeItem(entry?.item);
+                    this.addEventSummary('🌾', `${actor} harvested ${itemName}.`);
+                });
+            },
             pick_up_item: (entries) => {
                 entries.forEach((entry) => {
                     const actor = safeName(entry?.name);
