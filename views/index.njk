@@ -646,7 +646,14 @@
                 </button>
             </header>
             <div class="modal__body load-game-body">
-                <label for="loadGameSelect" class="load-game-label">Choose a saved game</label>
+                <div class="load-game-source-control">
+                    <label for="loadGameSourceSelect" class="load-game-label">Save type</label>
+                    <select id="loadGameSourceSelect" class="load-game-source-select" aria-label="Select save list">
+                        <option value="saves">Manual saves</option>
+                        <option value="autosaves">Autosaves</option>
+                    </select>
+                </div>
+                <label for="loadGameSelect" class="load-game-label">Choose a game</label>
                 <select id="loadGameSelect" class="load-game-select" size="6" aria-describedby="loadGameStatus"></select>
                 <div id="loadGameStatus" class="load-game-status" role="status" aria-live="polite"></div>
             </div>
@@ -2358,6 +2365,8 @@
         let gearSlotTypesLoaded = availableSlotTypes.size > 0;
         let gearSlotTypesPromise = null;
         let loadGameSaves = [];
+        let loadGameFetchToken = 0;
+        let currentLoadGameSource = 'saves';
         let loadGameTriggerButton = null;
 
         function ensureGearSlotTypes() {
@@ -3983,6 +3992,7 @@
         const addThingButton = document.getElementById('addThingButton');
         const loadGameModal = document.getElementById('loadGameModal');
         const loadGameSelect = document.getElementById('loadGameSelect');
+        const loadGameSourceSelect = document.getElementById('loadGameSourceSelect');
         const loadGameStatus = document.getElementById('loadGameStatus');
         const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
         const loadGameConfirmBtn = document.getElementById('loadGameConfirmBtn');
@@ -6199,7 +6209,15 @@
             }
         }
 
-        function populateLoadGameOptions(saves = []) {
+        function getLoadGameSourceLabel({ source = currentLoadGameSource, plural = false } = {}) {
+            const normalizedSource = source === 'autosaves' ? 'autosaves' : 'saves';
+            if (plural) {
+                return normalizedSource === 'autosaves' ? 'autosaves' : 'saved games';
+            }
+            return normalizedSource === 'autosaves' ? 'autosave' : 'saved game';
+        }
+
+        function populateLoadGameOptions(saves = [], { emptyLabel = null } = {}) {
             if (!loadGameSelect) {
                 return;
             }
@@ -6209,7 +6227,7 @@
             if (!Array.isArray(saves) || saves.length === 0) {
                 const option = document.createElement('option');
                 option.value = '';
-                option.textContent = 'No saves available';
+                option.textContent = emptyLabel || `No ${getLoadGameSourceLabel({ plural: true })} available`;
                 option.disabled = true;
                 loadGameSelect.appendChild(option);
                 loadGameSelect.disabled = true;
@@ -6223,8 +6241,17 @@
             saves.forEach((save, index) => {
                 const option = document.createElement('option');
                 option.value = save.saveName;
+                option.dataset.source = save.source === 'autosaves' ? 'autosaves' : currentLoadGameSource;
                 const timestamp = new Date(save.timestamp);
-                option.textContent = `${save.playerName} (Level ${save.playerLevel ?? '?'} · ${timestamp.toLocaleString()})`;
+                const playerName = save.playerName || 'Unknown';
+                const levelLabel = save.playerLevel !== undefined && save.playerLevel !== null
+                    ? save.playerLevel
+                    : '?';
+                const timestampLabel = Number.isFinite(timestamp.getTime())
+                    ? timestamp.toLocaleString()
+                    : 'Unknown time';
+                const prefix = currentLoadGameSource === 'autosaves' ? 'Autosave' : 'Save';
+                option.textContent = `${prefix}: ${playerName} (Level ${levelLabel}) • ${timestampLabel}`;
                 if (index === 0) {
                     option.selected = true;
                 }
@@ -6236,17 +6263,99 @@
             }
         }
 
-        function openLoadGameModal(saves = []) {
+        async function refreshLoadGameList(source = 'saves') {
+            const normalizedSource = source === 'autosaves' ? 'autosaves' : 'saves';
+            currentLoadGameSource = normalizedSource;
+
+            if (loadGameSourceSelect && loadGameSourceSelect.value !== normalizedSource) {
+                loadGameSourceSelect.value = normalizedSource;
+            }
+
+            const requestId = ++loadGameFetchToken;
+            const pluralLabel = getLoadGameSourceLabel({ source: normalizedSource, plural: true });
+
+            if (loadGameSelect) {
+                loadGameSelect.innerHTML = '';
+                const loadingOption = document.createElement('option');
+                loadingOption.value = '';
+                loadingOption.textContent = `Loading ${pluralLabel}…`;
+                loadingOption.disabled = true;
+                loadingOption.selected = true;
+                loadGameSelect.appendChild(loadingOption);
+                loadGameSelect.disabled = true;
+            }
+
+            if (loadGameConfirmBtn) {
+                loadGameConfirmBtn.disabled = true;
+            }
+
+            setLoadGameStatus(`Loading ${pluralLabel}…`, 'info');
+
+            try {
+                const response = await fetch(`/api/saves?type=${normalizedSource}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const result = await response.json().catch(() => ({}));
+                const rawSaves = Array.isArray(result?.saves) ? result.saves : [];
+
+                if (requestId !== loadGameFetchToken) {
+                    return;
+                }
+
+                const safeParseTimestamp = (value) => {
+                    const parsed = new Date(value || '').getTime();
+                    return Number.isFinite(parsed) ? parsed : 0;
+                };
+
+                loadGameSaves = [...rawSaves].sort((a, b) => {
+                    return safeParseTimestamp(b.timestamp) - safeParseTimestamp(a.timestamp);
+                });
+
+                populateLoadGameOptions(loadGameSaves, {
+                    emptyLabel: `No ${getLoadGameSourceLabel({ source: normalizedSource, plural: true })} available`
+                });
+
+                if (loadGameSaves.length) {
+                    setLoadGameStatus('', null);
+                    if (loadGameSelect && !loadGameSelect.disabled) {
+                        loadGameSelect.focus();
+                    }
+                } else {
+                    setLoadGameStatus(`No ${getLoadGameSourceLabel({ source: normalizedSource, plural: true })} available.`, 'info');
+                }
+            } catch (error) {
+                if (requestId !== loadGameFetchToken) {
+                    return;
+                }
+
+                loadGameSaves = [];
+                populateLoadGameOptions([], {
+                    emptyLabel: `Unable to load ${getLoadGameSourceLabel({ source: normalizedSource, plural: true })}`
+                });
+                setLoadGameStatus(`Failed to load ${getLoadGameSourceLabel({ source: normalizedSource, plural: true })}: ${error.message}`, 'error');
+            }
+        }
+
+        function openLoadGameModal({ initialSource = 'saves' } = {}) {
             if (!loadGameModal || !npcModalBackdrop) {
                 return;
             }
 
-            loadGameSaves = Array.isArray(saves)
-                ? [...saves].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-                : [];
-
-            populateLoadGameOptions(loadGameSaves);
-            setLoadGameStatus(loadGameSaves.length ? '' : 'No saved games available.', loadGameSaves.length ? null : 'info');
+            loadGameSaves = [];
+            currentLoadGameSource = initialSource === 'autosaves' ? 'autosaves' : 'saves';
+            if (loadGameSourceSelect) {
+                loadGameSourceSelect.value = currentLoadGameSource;
+            }
+            if (loadGameSelect) {
+                loadGameSelect.innerHTML = '';
+                loadGameSelect.disabled = true;
+            }
+            if (loadGameConfirmBtn) {
+                loadGameConfirmBtn.disabled = true;
+            }
+            setLoadGameStatus('', null);
 
             npcModalBackdrop.removeAttribute('hidden');
             loadGameModal.removeAttribute('hidden');
@@ -6268,6 +6377,8 @@
                 return;
             }
 
+            loadGameFetchToken += 1;
+            currentLoadGameSource = 'saves';
             loadGameModal.setAttribute('aria-hidden', 'true');
             loadGameModal.setAttribute('hidden', '');
             setLoadGameStatus('');
@@ -6275,6 +6386,9 @@
             if (loadGameSelect) {
                 loadGameSelect.innerHTML = '';
                 loadGameSelect.disabled = false;
+            }
+            if (loadGameSourceSelect) {
+                loadGameSourceSelect.value = 'saves';
             }
             if (loadGameConfirmBtn) {
                 loadGameConfirmBtn.disabled = false;
@@ -7330,6 +7444,13 @@
             });
         }
 
+        if (loadGameSourceSelect) {
+            loadGameSourceSelect.addEventListener('change', (event) => {
+                const selectedSource = event.target.value === 'autosaves' ? 'autosaves' : 'saves';
+                refreshLoadGameList(selectedSource);
+            });
+        }
+
         if (loadGameSelect && loadGameConfirmBtn) {
             loadGameSelect.addEventListener('dblclick', () => {
                 if (!loadGameConfirmBtn.disabled) {
@@ -7349,22 +7470,28 @@
         if (loadGameConfirmBtn) {
             loadGameConfirmBtn.addEventListener('click', async () => {
                 if (!loadGameSelect || loadGameSelect.disabled) {
-                    setLoadGameStatus('No saved games available.', 'error');
+                    setLoadGameStatus(`No ${getLoadGameSourceLabel({ plural: true })} available.`, 'error');
                     return;
                 }
 
                 const saveName = loadGameSelect.value;
                 if (!saveName) {
-                    setLoadGameStatus('Select a saved game to load.', 'error');
+                    setLoadGameStatus(`Select a ${getLoadGameSourceLabel()} to load.`, 'error');
                     loadGameSelect.focus();
                     return;
                 }
 
                 const selectedSave = loadGameSaves.find(save => save.saveName === saveName);
                 if (!selectedSave) {
-                    setLoadGameStatus('Selected save could not be found.', 'error');
+                    setLoadGameStatus(`Selected ${getLoadGameSourceLabel()} could not be found.`, 'error');
                     return;
                 }
+
+                const selectedOption = loadGameSelect.selectedOptions ? loadGameSelect.selectedOptions[0] : null;
+                const optionSource = selectedOption?.dataset?.source === 'autosaves' ? 'autosaves' : null;
+                const saveSource = optionSource
+                    || (selectedSave?.source === 'autosaves' ? 'autosaves' : (currentLoadGameSource === 'autosaves' ? 'autosaves' : 'saves'));
+                const singularLabel = getLoadGameSourceLabel({ source: saveSource, plural: false });
 
                 const originalLabel = loadGameConfirmBtn.textContent;
                 try {
@@ -7373,12 +7500,12 @@
                     if (loadGameCancelBtn) {
                         loadGameCancelBtn.disabled = true;
                     }
-                    setLoadGameStatus('Loading save…', 'info');
+                    setLoadGameStatus(`Loading ${singularLabel}…`, 'info');
 
                     const loadResponse = await fetch('/api/load', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ saveName })
+                        body: JSON.stringify({ saveName, saveType: saveSource })
                     });
 
                     const loadResult = await loadResponse.json().catch(() => ({}));
@@ -11950,25 +12077,14 @@
             });
 
             loadGameBtn.addEventListener('click', async function() {
+                this.disabled = true;
+                this.innerHTML = '<span>⏳</span> Loading...';
+                loadGameTriggerButton = this;
                 try {
-                    this.disabled = true;
-                    this.innerHTML = '<span>⏳</span> Loading...';
-
-                    const response = await fetch('/api/saves');
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    const result = await response.json().catch(() => ({}));
-
-                    if (!result?.success || !Array.isArray(result.saves) || result.saves.length === 0) {
-                        alert('No saves found!');
-                        return;
-                    }
-
-                    loadGameTriggerButton = this;
-                    openLoadGameModal(result.saves);
+                    openLoadGameModal({ initialSource: 'saves' });
+                    await refreshLoadGameList('saves');
                 } catch (error) {
-                    alert(`Load failed: ${error.message}`);
+                    setLoadGameStatus(`Failed to load ${getLoadGameSourceLabel({ source: 'saves', plural: true })}: ${error.message}`, 'error');
                 } finally {
                     this.disabled = false;
                     this.innerHTML = '<span>📂</span> Load Game';

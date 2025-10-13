@@ -12736,6 +12736,29 @@ module.exports = function registerApiRoutes(scope) {
             return `${settingSegment}-${playerSegment}-${locationSegment}-${uniqueSegment}`;
         };
 
+        const resolveBaseDirectory = () => (Globals?.baseDir ? path.resolve(Globals.baseDir) : __dirname);
+
+        const resolveSaveRootPath = (rootOption, baseDirectory = null) => {
+            const baseDir = baseDirectory || resolveBaseDirectory();
+            if (rootOption === null || rootOption === undefined) {
+                return path.join(baseDir, 'saves');
+            }
+            if (typeof rootOption !== 'string') {
+                const error = new Error('Save root must be a string path when provided');
+                error.code = 'INVALID_SAVE_ROOT';
+                throw error;
+            }
+            const trimmed = rootOption.trim();
+            if (!trimmed) {
+                const error = new Error('Save root cannot be an empty path');
+                error.code = 'INVALID_SAVE_ROOT';
+                throw error;
+            }
+            return path.isAbsolute(trimmed)
+                ? trimmed
+                : path.join(baseDir, trimmed);
+        };
+
         function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player to save');
@@ -12743,28 +12766,8 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
 
-            const baseDir = Globals?.baseDir ? path.resolve(Globals.baseDir) : __dirname;
-            const resolveSaveRoot = (rootOption) => {
-                if (rootOption === null || rootOption === undefined) {
-                    return path.join(baseDir, 'saves');
-                }
-                if (typeof rootOption !== 'string') {
-                    const error = new Error('Save root must be a string path when provided');
-                    error.code = 'INVALID_SAVE_ROOT';
-                    throw error;
-                }
-                const trimmed = rootOption.trim();
-                if (!trimmed) {
-                    const error = new Error('Save root cannot be an empty path');
-                    error.code = 'INVALID_SAVE_ROOT';
-                    throw error;
-                }
-                return path.isAbsolute(trimmed)
-                    ? trimmed
-                    : path.join(baseDir, trimmed);
-            };
-
-            const saveRootPath = resolveSaveRoot(saveRoot);
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
             const saveName = requestedSaveName
                 ? sanitizeSaveNameSegment(requestedSaveName, null)
                 : buildDefaultSaveName();
@@ -12811,13 +12814,14 @@ module.exports = function registerApiRoutes(scope) {
                 : null;
             metadata.currentLocationId = currentLocationId || metadata.currentLocationId || null;
             metadata.currentLocationName = currentLocation?.name || metadata.currentLocationName || null;
+            metadata.source = path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves';
 
             Utils.writeSerializedGameState(saveDir, serialized);
 
             return { saveName, saveDir, metadata };
         }
 
-        async function performGameLoad(requestedSaveName, { skipSummary = false } = {}) {
+        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null } = {}) {
             const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
             if (!normalizedName) {
                 const error = new Error('Save name is required');
@@ -12825,10 +12829,12 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
 
-            const baseDir = Globals?.baseDir ? path.resolve(Globals.baseDir) : __dirname;
-            const saveDir = path.join(baseDir, 'saves', normalizedName);
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
+            const saveDir = path.join(saveRootPath, normalizedName);
             if (!fs.existsSync(saveDir)) {
-                const error = new Error(`Save '${normalizedName}' not found`);
+                const directoryLabel = path.basename(saveRootPath) || 'saves';
+                const error = new Error(`Save '${normalizedName}' not found in ${directoryLabel}`);
                 error.code = 'SAVE_NOT_FOUND';
                 throw error;
             }
@@ -12864,6 +12870,7 @@ module.exports = function registerApiRoutes(scope) {
                 metadata = {};
             }
             metadata.saveName = metadata.saveName || normalizedName;
+            metadata.source = metadata.source || (path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves');
 
             const loadedSetting = hydrationResult.setting || null;
             if (loadedSetting) {
@@ -13074,11 +13081,15 @@ module.exports = function registerApiRoutes(scope) {
         // Load game state from a save
         app.post('/api/load', async (req, res) => {
             try {
-                const { saveName } = req.body || {};
-                const result = await performGameLoad(saveName);
+                const { saveName, saveType } = req.body || {};
+                const normalizedType = typeof saveType === 'string' && saveType.toLowerCase() === 'autosaves'
+                    ? 'autosaves'
+                    : 'saves';
+                const result = await performGameLoad(saveName, { saveRoot: normalizedType });
                 res.json({
                     success: true,
                     saveName: result.saveName,
+                    source: normalizedType,
                     metadata: result.metadata,
                     loadedData: result.loadedData,
                     message: `Game loaded successfully from: ${result.saveName}`
@@ -13103,50 +13114,81 @@ module.exports = function registerApiRoutes(scope) {
         // List available saves
         app.get('/api/saves', (req, res) => {
             try {
-                const savesDir = path.join(__dirname, 'saves');
+                let requestedType = req.query?.type;
+                if (Array.isArray(requestedType)) {
+                    requestedType = requestedType[0];
+                }
+                const normalizedType = typeof requestedType === 'string'
+                    ? requestedType.toLowerCase()
+                    : 'saves';
+
+                if (normalizedType !== 'saves' && normalizedType !== 'autosaves') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid save type requested'
+                    });
+                }
+
+                const directoryName = normalizedType === 'autosaves' ? 'autosaves' : 'saves';
+                const savesDir = path.join(__dirname, directoryName);
 
                 if (!fs.existsSync(savesDir)) {
                     return res.json({
                         success: true,
+                        type: normalizedType,
                         saves: [],
-                        message: 'No saves directory found'
+                        count: 0,
+                        message: `No ${normalizedType === 'autosaves' ? 'autosaves' : 'saves'} directory found`
                     });
                 }
 
                 const saveDirectories = fs.readdirSync(savesDir)
                     .filter(item => {
                         const itemPath = path.join(savesDir, item);
-                        return fs.statSync(itemPath).isDirectory();
+                        try {
+                            return fs.statSync(itemPath).isDirectory();
+                        } catch (_) {
+                            return false;
+                        }
                     });
 
                 const saves = saveDirectories.map(saveName => {
                     const saveDir = path.join(savesDir, saveName);
                     const metadataPath = path.join(saveDir, 'metadata.json');
 
-                    let metadata = {
+                    const metadata = {
                         saveName: saveName,
                         timestamp: 'Unknown',
                         playerName: 'Unknown',
-                        playerLevel: 'Unknown'
+                        playerLevel: 'Unknown',
+                        source: normalizedType,
+                        isAutosave: normalizedType === 'autosaves'
                     };
 
                     if (fs.existsSync(metadataPath)) {
                         try {
                             const metadataContent = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-                            metadata = { ...metadata, ...metadataContent };
+                            Object.assign(metadata, metadataContent);
                         } catch (error) {
-                            console.error(`Error reading metadata for save ${saveName}:`, error);
+                            console.error(`Error reading metadata for ${directoryName.slice(0, -1)} ${saveName}:`, error);
                         }
                     }
 
                     return metadata;
-                }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by newest first
+                }).sort((a, b) => {
+                    const safeTime = (value) => {
+                        const parsed = new Date(value || '').getTime();
+                        return Number.isFinite(parsed) ? parsed : 0;
+                    };
+                    return safeTime(b.timestamp) - safeTime(a.timestamp);
+                });
 
                 res.json({
                     success: true,
-                    saves: saves,
+                    type: normalizedType,
+                    saves,
                     count: saves.length,
-                    message: `Found ${saves.length} save(s)`
+                    message: `Found ${saves.length} ${normalizedType === 'autosaves' ? 'autosave(s)' : 'save(s)'}`
                 });
 
             } catch (error) {

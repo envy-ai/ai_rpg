@@ -22,12 +22,15 @@ need_bars:
       - hearty snack, light meal, small meal
     large_increase:
       - a normal meal
+      - eating an uncommon or better snack or light meal
     fill_completely:
       - feast, large meal, hearty meal
+      - eating a rare or better food item of any size
     small_decrease:
       - light activity
     large_decrease:
       - strenuous activity
+      - vomiting
     effect_thresholds:
       0:
         name: Starving
