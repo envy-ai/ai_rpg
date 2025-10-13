@@ -7,3 +7,14 @@ Something happens that causes a small amount of damage to the player.
 A hostile NPC appears and attacks another NPC.
 A monster appears and attacks.
 Something supernatural happens.
+An NPC the player trusts is revealed to be hiding something huge, can be positive, negative or neutral.
+An NPC is found dead under suspicious circumstances.
+A hidden door or passage opens unexpectedly in a familiar location.
+An NPC begins muttering incomprehensible words.
+A strange broadcast or message interrupts normal activity.
+A wounded creature from another zone stumbles into the area.
+A mysterious illness begins spreading among NPCs.
+A wanted poster with the player’s face (or a striking resemblance) is seen on a nearby wall.
+A powerful NPC or entity challenges the player’s presence in the region.
+A forgotten memory suddenly returns to the player’s mind.
+A legendary NPC appears briefly.

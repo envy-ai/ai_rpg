@@ -26,3 +26,40 @@ An NPC offers a really good deal on a high quality item that turns out to be jun
 An NPC offers to buy an item in the player's inventory for more than it's worth.
 An NPC gives the player a fetch quest and offers a nice reward.
 Something really weird happens.
+An NPC asks the player for directions or information.
+An animal (or creature) steals something shiny.
+If applicable The weather shifts drastically (e.g, heavy rain, fog, sudden wind gust).
+The weather shifts subtly (e.g., wind picks up, temperature drops, distant thunder).
+A street performer or bard draws a small crowd.
+An NPC is seen quietly crying in a corner.
+A child or small creature bumps into the player and runs off.
+Two NPCs are whispering and suddenly stop when the player approaches.
+A drunk NPC mistakes the player for someone else.
+A small tremor shakes the ground briefly.
+A distant explosion or loud sound echoes from afar.
+A piece of equipment malfunctions or breaks temporarily.
+A rumor spreads through the area—NPCs whisper about a local mystery or scandal.
+The player overhears a fragment of a conversation that hints at a larger plot.
+An NPC is trying to sell counterfeit goods.
+A lost traveler asks for help finding their way.
+The player spots a strange symbol carved or painted somewhere.
+A merchant shouts about a flash sale or limited-time deal.
+A small group is praying, chanting, or meditating together.
+The player accidentally eavesdrops on a confession.
+A shooting star (or aerial phenomenon) is seen in the sky.
+An NPC offers to tell a story or a rumor for a price.
+A street brawl breaks out between locals.
+A messenger rushes by, dropping a sealed envelope.
+A strange animal crosses the player’s path and stares for a moment before leaving.
+A minor environmental change occurs (a door creaks open, a painting tilts, a candle goes out).
+A random bystander gives the player unsolicited advice.
+The player finds a coin or trinket engraved with unfamiliar markings.
+A traveling caravan or group passes through.
+A nearby light source flickers and reveals something odd for a moment.
+Two NPCs share a secret glance or coded gesture.
+An NPC hums a tune or sings softly to themselves.
+A pet or stray animal wanders into the scene and interacts with an NPC or the player.
+An NPC tries to sell the player a “lucky charm” or trinket with a dubious backstory.
+An NPC drops a small, non-valuable item (a button, a coin, a crumpled note) and walks away.
+An NPC performs a small ritual or superstitious habit (knocking on wood, crossing fingers, etc).
+An NPC is seen reading a letter or book with intense focus, oblivious to surroundings.
