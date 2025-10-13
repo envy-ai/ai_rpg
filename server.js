@@ -10077,6 +10077,9 @@ async function regenerateLocationName(location) {
         throw new Error('Location name regeneration did not produce any candidates.');
     }
 
+    // Shift the first name off of the beginning and stick it on the end to get rid of the most obvious one.
+    candidateNames.push(candidateNames.shift());
+
     const usedNames = new Set();
     for (const locations of Object.values(worldOutline?.regions || {})) {
         if (!Array.isArray(locations)) {

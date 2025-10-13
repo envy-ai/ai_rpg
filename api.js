@@ -6,7 +6,6 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
-const console = require('console');
 
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
@@ -4953,6 +4952,7 @@ module.exports = function registerApiRoutes(scope) {
             } = requestBody;
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
             let corpseProcessingRan = false;
+            Globals.processedMove = false;
 
             res.on('finish', () => {
                 if (corpseProcessingRan) {

@@ -131,6 +131,8 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
     const processedDestinations = new SanitizedStringSet();
 
     for (const entry of entries) {
+        console.log(`Processing exit discovery entry: ${entry.name}`);
+        console.trace();
         let exitName = typeof entry?.name === 'string' ? entry.name.trim() : '';
         if (!exitName) {
             continue;
@@ -274,6 +276,7 @@ async function movePlayerToDestination(eventsInstance, destination, context = {}
     fallbackName = null,
     label = 'move_location'
 } = {}) {
+    Globals.processedMove = true;
     const player = context.player || eventsInstance.currentPlayer;
     const { Location, findLocationByNameLoose, createLocationFromEvent } = eventsInstance._deps || {};
 
@@ -935,7 +938,12 @@ class Events {
             }
         });
 
+        let processedKeys = new Set();
         for (const key of orderedKeys) {
+            if (processedKeys.has(key)) {
+                continue;
+            }
+            processedKeys.add(key);
             if (suppressedNpc?.has(key) || suppressedItems?.has(key)) {
                 continue;
             }
@@ -974,6 +982,10 @@ class Events {
             }).filter(Boolean),
             move_new_location: raw => splitPipeList(raw).map(entry => {
                 if (typeof entry !== 'string') {
+                    return null;
+                }
+
+                if (Globals.processedMove) {
                     return null;
                 }
 
@@ -1290,6 +1302,9 @@ class Events {
             }).filter(Boolean),
             move_location: raw => splitPipeList(raw).map(entry => {
                 if (typeof entry !== 'string') {
+                    return null;
+                }
+                if (Globals.processedMove) {
                     return null;
                 }
                 const parts = entry.split('->').map(segment => segment.trim());
