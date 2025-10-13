@@ -89,7 +89,15 @@ class LocationExit {
   }
 
   get destinationRegion() {
-    return this.#destinationRegion;
+    const Location = require('./Location');
+    const location = Location.get(this.#destination);
+    if (location && location.regionId) {
+      return location.regionId;
+    } else {
+      console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination}`);
+      console.trace();
+      return null;
+    }
   }
 
   get bidirectional() {
@@ -134,11 +142,16 @@ class LocationExit {
   }
 
   set destinationRegion(regionId) {
+    /*
     if (regionId !== null && typeof regionId !== 'string') {
       throw new Error('Destination region must be a string or null');
     }
     this.#destinationRegion = regionId ? regionId.trim() || null : null;
     this.#lastUpdated = new Date();
+    */
+    // Destination region is now derived from the destination location, so this setter does nothing
+    console.warn('Warning: destinationRegion is now derived from the destination location and cannot be set directly.');
+    console.trace();
   }
 
   set bidirectional(isBidirectional) {
@@ -226,9 +239,6 @@ class LocationExit {
     }
     if (destination !== undefined) {
       this.destination = destination;
-    }
-    if (destinationRegion !== undefined) {
-      this.destinationRegion = destinationRegion;
     }
     if (bidirectional !== undefined) {
       this.bidirectional = bidirectional;
