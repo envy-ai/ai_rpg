@@ -63,3 +63,4 @@ An NPC tries to sell the player a “lucky charm” or trinket with a dubious ba
 An NPC drops a small, non-valuable item (a button, a coin, a crumpled note) and walks away.
 An NPC performs a small ritual or superstitious habit (knocking on wood, crossing fingers, etc).
 An NPC is seen reading a letter or book with intense focus, oblivious to surroundings.
+An NPC the player knows stops by for a visit.

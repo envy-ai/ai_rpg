@@ -131,6 +131,15 @@ function splitArrowParts(raw, expectedParts) {
     return parts;
 }
 
+function stripAfterFirstArrow(raw) {
+    if (typeof raw !== 'string') {
+        return '';
+    }
+    const arrowIndex = raw.indexOf('->');
+    const segment = arrowIndex === -1 ? raw : raw.slice(0, arrowIndex);
+    return segment.trim();
+}
+
 async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
     movePlayer = false,
     eventLabel = 'new_exit_discovered',
@@ -1272,7 +1281,10 @@ class Events {
                     destinationLocation
                 };
             }).filter(Boolean),
-            npc_first_appearance: raw => splitPipeList(raw).map(entry => entry.trim()).filter(Boolean),
+            npc_first_appearance: raw => splitPipeList(raw)
+                .map(stripAfterFirstArrow)
+                .map(entry => entry.trim())
+                .filter(Boolean),
             party_change: raw => splitPipeList(raw).map(entry => {
                 const [name, action] = splitArrowParts(entry, 2);
                 if (!name || !action) {

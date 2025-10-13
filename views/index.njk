@@ -180,10 +180,6 @@
                                                 <span class="chat-player-action-icon" aria-hidden="true">🎒</span>
                                                 <span class="chat-player-action-label">Inventory</span>
                                             </button>
-                                            <button type="button" class="chat-player-action-button" id="chatPlayerTeleportButton" disabled>
-                                                <span class="chat-player-action-icon" aria-hidden="true">🌀</span>
-                                                <span class="chat-player-action-label">Teleport</span>
-                                            </button>
                                         </div>
                                         <div class="chat-player-details">
                                             <div class="chat-player-meta">
@@ -1684,7 +1680,6 @@
             needBars: document.getElementById('chatPlayerNeedBars'),
             viewButton: document.getElementById('chatPlayerViewButton'),
             inventoryButton: document.getElementById('chatPlayerInventoryButton'),
-            teleportButton: document.getElementById('chatPlayerTeleportButton'),
             name: document.getElementById('chatPlayerName'),
             level: document.getElementById('chatPlayerLevel'),
             archetype: document.getElementById('chatPlayerArchetype'),
@@ -1734,25 +1729,6 @@
                     showNpcInventoryModal(playerData);
                 } catch (error) {
                     console.warn('Failed to open player inventory modal:', error);
-                }
-            });
-        }
-
-        if (chatSidebarElements.teleportButton) {
-            chatSidebarElements.teleportButton.addEventListener('click', async () => {
-                const playerData = getLatestPlayerData();
-                if (!playerData || !playerData.id) {
-                    return;
-                }
-                try {
-                    await showTeleportLocationModal(null, {
-                        npcId: playerData.id,
-                        npc: { ...playerData, isNPC: false },
-                        locationId: playerData.currentLocation || playerData.locationId || null
-                    });
-                } catch (error) {
-                    console.warn('Failed to open teleport modal:', error);
-                    alert(`Unable to teleport player: ${error?.message || error}`);
                 }
             });
         }
@@ -1886,9 +1862,6 @@
             }
             if (chatSidebarElements.inventoryButton) {
                 chatSidebarElements.inventoryButton.disabled = !data || !data.id;
-            }
-            if (chatSidebarElements.teleportButton) {
-                chatSidebarElements.teleportButton.disabled = !data || !data.id;
             }
         }
 
