@@ -11171,137 +11171,152 @@
                         addThingButton.disabled = false;
                     }
                     if (locationExitsList) {
-                        const exitEntries = Object.entries(location.exits || {});
-                        if (exitEntries.length === 0) {
+                        const rawExitEntries = Object.entries(location.exits || {});
+                        if (rawExitEntries.length === 0) {
                             locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                         } else {
-                            locationExitsList.innerHTML = '';
                             const currentRegionId = location.regionId
                                 || location.stubMetadata?.regionId
                                 || null;
-                            exitEntries.forEach(([key, exit]) => {
+
+                            const localExitEntries = [];
+                            const regionExitEntries = [];
+
+                            rawExitEntries.forEach(([key, exit]) => {
                                 if (!exit || !exit.destination) {
                                     return;
                                 }
 
-                                const exitId = typeof exit.id === 'string' && exit.id.trim() ? exit.id.trim() : null;
-                                const container = document.createElement('div');
-                                container.className = 'exit-item';
-                                container.dataset.direction = key;
-                                if (exitId) {
-                                    container.dataset.exitId = exitId;
-                                }
-
-                                const travelButton = document.createElement('button');
-                                travelButton.type = 'button';
-                                travelButton.className = 'exit-button';
-                                const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
-                                const isVehicle = Boolean(exit.isVehicle);
-                                const vehiclePrefix = isVehicle
-                                    ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
-                                    : '';
-                                const vehicleLabel = `${vehiclePrefix}${baseName}`;
                                 const destinationRegionId = exit.destinationRegion || null;
                                 const regionMatchesCurrent = Boolean(destinationRegionId && currentRegionId && destinationRegionId === currentRegionId);
                                 const isRegionExit = Boolean(destinationRegionId && !regionMatchesCurrent);
-
-                                if (isRegionExit) {
-                                    travelButton.classList.add('region-exit');
-                                    const regionName = exit.destinationRegionName || baseName || 'Unknown region';
-                                    const locationName = baseName;
-                                    if (exit.destinationRegionExpanded) {
-                                        travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
-                                        travelButton.classList.add('region-exit-expanded');
-                                    } else {
-                                        travelButton.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
-                                        travelButton.classList.add('region-exit-unexplored');
-                                    }
-                                    if (exit.destinationRegion) {
-                                        travelButton.dataset.regionId = exit.destinationRegion;
-                                    }
-                                } else {
-                                    travelButton.textContent = vehicleLabel;
-                                }
-
-                                travelButton.dataset.destinationId = exit.destination;
-                                const destinationIsStub = Boolean(exit.destinationIsStub);
-                                const isExplored = !destinationIsStub && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
-                                travelButton.classList.add(isExplored ? 'exit-button--explored' : 'exit-button--unexplored');
-                                travelButton.addEventListener('click', () => moveToLocation({
-                                    exit,
-                                    direction: key,
-                                    originLocationId: location.id
-                                }));
-                                container.appendChild(travelButton);
-
-                                if (exitId) {
-                                    const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
-
-                                    const editButton = document.createElement('button');
-                                    editButton.type = 'button';
-                                    editButton.className = 'exit-edit-button';
-                                    editButton.textContent = '✏️';
-                                    editButton.setAttribute('aria-label', `Edit exit: ${friendlyName}`);
-                                    editButton.title = `Edit exit: ${friendlyName}`;
-
-                                    editButton.addEventListener('click', (event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        openNewExitModal({
-                                            mode: 'edit',
-                                            exit: { ...exit },
-                                            exitId,
-                                            direction: key,
-                                            locationId: location.id
-                                        });
-                                    });
-
-                                    container.appendChild(editButton);
-
-                                    const deleteButton = document.createElement('button');
-                                    deleteButton.type = 'button';
-                                    deleteButton.className = 'exit-delete-button';
-                                    deleteButton.textContent = '🗑️';
-
-                                    deleteButton.setAttribute('aria-label', `Delete exit: ${friendlyName}`);
-                                    deleteButton.title = `Delete exit: ${friendlyName}`;
-
-                                    deleteButton.addEventListener('click', async (event) => {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-
-                                        const confirmed = window.confirm(`Delete exit "${friendlyName}"? This cannot be undone.`);
-                                        if (!confirmed) {
-                                            return;
-                                        }
-
-                                        deleteButton.disabled = true;
-                                        try {
-                                            const response = await fetch(`/api/locations/${encodeURIComponent(location.id)}/exits/${encodeURIComponent(exitId)}`, {
-                                                method: 'DELETE',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
-                                            });
-                                            const data = await response.json().catch(() => null);
-                                            if (!response.ok || !data?.success) {
-                                                throw new Error(data?.error || `HTTP ${response.status}`);
-                                            }
-                                            if (data.location && typeof window.updateLocationDisplay === 'function') {
-                                                await window.updateLocationDisplay(data.location);
-                                            }
-                                        } catch (error) {
-                                            console.warn('Failed to delete exit:', error);
-                                            alert(`Failed to delete exit: ${error.message || error}`);
-                                        } finally {
-                                            deleteButton.disabled = false;
-                                        }
-                                    });
-
-                                    container.appendChild(deleteButton);
-                                }
-
-                                locationExitsList.appendChild(container);
+                                const targetList = isRegionExit ? regionExitEntries : localExitEntries;
+                                targetList.push({ key, exit, destinationRegionId, isRegionExit });
                             });
+
+                            const orderedExitEntries = [...localExitEntries, ...regionExitEntries];
+
+                            if (!orderedExitEntries.length) {
+                                locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
+                            } else {
+                                locationExitsList.innerHTML = '';
+                                orderedExitEntries.forEach(({ key, exit, destinationRegionId, isRegionExit }) => {
+                                    const exitId = typeof exit.id === 'string' && exit.id.trim() ? exit.id.trim() : null;
+                                    const container = document.createElement('div');
+                                    container.className = 'exit-item';
+                                    container.dataset.direction = key;
+                                    if (exitId) {
+                                        container.dataset.exitId = exitId;
+                                    }
+
+                                    const travelButton = document.createElement('button');
+                                    travelButton.type = 'button';
+                                    travelButton.className = 'exit-button';
+                                    const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                                    const isVehicle = Boolean(exit.isVehicle);
+                                    const vehiclePrefix = isVehicle
+                                        ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
+                                        : '';
+                                    const vehicleLabel = `${vehiclePrefix}${baseName}`;
+
+                                    if (isRegionExit) {
+                                        travelButton.classList.add('region-exit');
+                                        const regionName = exit.destinationRegionName || baseName || 'Unknown region';
+                                        const locationName = baseName;
+                                        if (exit.destinationRegionExpanded) {
+                                            travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
+                                            travelButton.classList.add('region-exit-expanded');
+                                        } else {
+                                            travelButton.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
+                                            travelButton.classList.add('region-exit-unexplored');
+                                        }
+                                        if (destinationRegionId) {
+                                            travelButton.dataset.regionId = destinationRegionId;
+                                        }
+                                    } else {
+                                        travelButton.textContent = vehicleLabel;
+                                    }
+
+                                    travelButton.dataset.destinationId = exit.destination;
+                                    const destinationIsStub = Boolean(exit.destinationIsStub);
+                                    const isExplored = !destinationIsStub && (!isRegionExit || Boolean(exit.destinationRegionExpanded));
+                                    travelButton.classList.add(isExplored ? 'exit-button--explored' : 'exit-button--unexplored');
+                                    travelButton.addEventListener('click', () => moveToLocation({
+                                        exit,
+                                        direction: key,
+                                        originLocationId: location.id
+                                    }));
+                                    container.appendChild(travelButton);
+
+                                    if (exitId) {
+                                        const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
+
+                                        const editButton = document.createElement('button');
+                                        editButton.type = 'button';
+                                        editButton.className = 'exit-edit-button';
+                                        editButton.textContent = '✏️';
+                                        editButton.setAttribute('aria-label', `Edit exit: ${friendlyName}`);
+                                        editButton.title = `Edit exit: ${friendlyName}`;
+
+                                        editButton.addEventListener('click', (event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            openNewExitModal({
+                                                mode: 'edit',
+                                                exit: { ...exit },
+                                                exitId,
+                                                direction: key,
+                                                locationId: location.id
+                                            });
+                                        });
+
+                                        container.appendChild(editButton);
+
+                                        const deleteButton = document.createElement('button');
+                                        deleteButton.type = 'button';
+                                        deleteButton.className = 'exit-delete-button';
+                                        deleteButton.textContent = '🗑️';
+
+                                        deleteButton.setAttribute('aria-label', `Delete exit: ${friendlyName}`);
+                                        deleteButton.title = `Delete exit: ${friendlyName}`;
+
+                                        deleteButton.addEventListener('click', async (event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+
+                                            const confirmed = window.confirm(`Delete exit "${friendlyName}"? This cannot be undone.`);
+                                            if (!confirmed) {
+                                                return;
+                                            }
+
+                                            deleteButton.disabled = true;
+                                            try {
+                                                const response = await fetch(`/api/locations/${encodeURIComponent(location.id)}/exits/${encodeURIComponent(exitId)}`, {
+                                                    method: 'DELETE',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
+                                                });
+                                                const data = await response.json().catch(() => null);
+                                                if (!response.ok || !data?.success) {
+                                                    throw new Error(data?.error || `HTTP ${response.status}`);
+                                                }
+                                                if (data.location && typeof window.updateLocationDisplay === 'function') {
+                                                    await window.updateLocationDisplay(data.location);
+                                                }
+                                            } catch (error) {
+                                                console.warn('Failed to delete exit:', error);
+                                                alert(`Failed to delete exit: ${error.message || error}`);
+                                            } finally {
+                                                deleteButton.disabled = false;
+                                            }
+                                        });
+
+                                        container.appendChild(deleteButton);
+                                    }
+
+                                    locationExitsList.appendChild(container);
+                                });
+                            }
                         }
                     }
 
