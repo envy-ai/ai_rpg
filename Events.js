@@ -28,10 +28,10 @@ const EVENT_PROMPT_ORDER = [
         { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
         { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
         { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
-        { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
+        { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
         { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
-        { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
-        { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list the exact names of those pieces of scenery (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
+        { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
+        { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
         //],
         // NPC stuff
         //[
@@ -841,6 +841,23 @@ class Events {
             parsedEntries[key] = combined;
         }
 
+        const itemAndSceneryNames = this.extractItemAndSceneryNames(rawEntries);
+        if (itemAndSceneryNames instanceof SanitizedStringSet) {
+            const filterOutItems = (entries, pickName) => {
+                if (!Array.isArray(entries)) {
+                    return entries;
+                }
+                return entries.filter(entry => {
+                    const candidate = pickName(entry);
+                    return !itemAndSceneryNames.has(candidate);
+                });
+            };
+
+            parsedEntries.new_exit_discovered = filterOutItems(parsedEntries.new_exit_discovered, entry => entry?.name);
+            parsedEntries.move_new_location = filterOutItems(parsedEntries.move_new_location, entry => entry?.name);
+            parsedEntries.move_location = filterOutItems(parsedEntries.move_location, entry => entry);
+        }
+
         const firstAppearance = parsedEntries.npc_first_appearance || [];
         if (firstAppearance.length) {
             const arrivals = firstAppearance
@@ -1175,9 +1192,18 @@ class Events {
                 }
                 return { name: name.trim(), item: item.trim() };
             }).filter(Boolean),
-            item_appear: raw => splitPipeList(raw).map(entry => entry.trim()).filter(Boolean),
-            scenery_appear: raw => splitPipeList(raw).map(entry => entry.trim()).filter(Boolean),
-            harvestable_resource_appear: raw => splitPipeList(raw).map(entry => entry.trim()).filter(Boolean),
+            item_appear: raw => splitPipeList(raw).map(entry => {
+                const [name] = splitArrowParts(entry, 2);
+                return name ? name.trim() : null;
+            }).filter(Boolean),
+            scenery_appear: raw => splitPipeList(raw).map(entry => {
+                const [name] = splitArrowParts(entry, 2);
+                return name ? name.trim() : null;
+            }).filter(Boolean),
+            harvestable_resource_appear: raw => splitPipeList(raw).map(entry => {
+                const [name] = splitArrowParts(entry, 2);
+                return name ? name.trim() : null;
+            }).filter(Boolean),
             alter_npc: raw => splitPipeList(raw).map(entry => {
                 const [name, description] = splitArrowParts(entry, 2);
                 if (!name) {
@@ -1354,6 +1380,88 @@ class Events {
         };
     }
 
+    static extractItemAndSceneryNames(rawEvents = {}) {
+        const results = new SanitizedStringSet();
+
+        if (!rawEvents || typeof rawEvents !== 'object') {
+            return results;
+        }
+
+        const parsers = this._buildParsers();
+        const keys = [
+            'harvest_gather',
+            'pick_up_item',
+            'drop_item',
+            'item_appear',
+            'scenery_appear',
+            'harvestable_resource_appear'
+        ];
+
+        const addName = (name) => {
+            results.add(name);
+        };
+
+        const normalizeInput = (parserFn, value) => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (Array.isArray(value)) {
+                return value.flatMap(item => normalizeInput(parserFn, item));
+            }
+            if (typeof value === 'string') {
+                try {
+                    const parsed = parserFn(value);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (error) {
+                    console.debug('Failed to parse event entries', { error: error?.message || error, value });
+                    return [];
+                }
+            }
+            if (typeof value === 'object') {
+                return [value];
+            }
+            return [];
+        };
+
+        for (const key of keys) {
+            const parserFn = typeof parsers[key] === 'function' ? parsers[key] : null;
+            if (!parserFn) {
+                continue;
+            }
+
+            const rawValue = rawEvents[key];
+            if (rawValue === undefined) {
+                continue;
+            }
+
+            const parsedEntries = normalizeInput(parserFn, rawValue);
+            if (!Array.isArray(parsedEntries) || !parsedEntries.length) {
+                continue;
+            }
+
+            switch (key) {
+                case 'harvest_gather':
+                case 'pick_up_item':
+                case 'drop_item':
+                    parsedEntries.forEach(entry => {
+                        if (entry && typeof entry === 'object') {
+                            addName(entry.item);
+                        }
+                    });
+                    break;
+                case 'item_appear':
+                case 'scenery_appear':
+                case 'harvestable_resource_appear':
+                    parsedEntries.forEach(addName);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return results;
+    }
+
     static _buildAggregators() {
         return {
             currency: list => {
@@ -1449,6 +1557,12 @@ class Events {
                     return;
                 }
 
+                const currentLocationName = Globals.location.name;
+                const validEntries = entries.filter(entry => entry?.currentName === currentLocationName);
+                if (!validEntries.length) {
+                    return;
+                }
+
                 const {
                     Location,
                     promptEnv,
@@ -1461,18 +1575,16 @@ class Events {
                     generatedImages
                 } = this._deps;
 
-                const fallbackApply = entry => {
-                    const location = context.location;
-                    if (!location || !entry?.description) {
-                        return;
+                const warnSkippedAlteration = (entry, reason) => {
+                    console.warn(`[alter_location] ${reason}`);
+                    if (entry) {
+                        console.warn('[alter_location] entry:', entry);
                     }
-                    if (typeof location.addStatusEffect === 'function') {
-                        location.addStatusEffect(makeStatusEffect(entry.description, null));
-                    }
+                    console.trace();
                 };
 
                 if (!context.location) {
-                    entries.forEach(entry => fallbackApply(entry));
+                    validEntries.forEach(entry => warnSkippedAlteration(entry, 'No context.location available.'));
                     return;
                 }
 
@@ -1480,7 +1592,7 @@ class Events {
                     || typeof parseXMLTemplate !== 'function'
                     || typeof axios?.post !== 'function'
                     || typeof prepareBasePromptContext !== 'function') {
-                    entries.forEach(entry => fallbackApply(entry));
+                    validEntries.forEach(entry => warnSkippedAlteration(entry, 'Missing required prompt dependencies.'));
                     return;
                 }
 
@@ -1490,7 +1602,7 @@ class Events {
                 const model = config?.ai?.model;
 
                 if (!endpoint || !apiKey || !model) {
-                    entries.forEach(entry => fallbackApply(entry));
+                    validEntries.forEach(entry => warnSkippedAlteration(entry, 'AI configuration incomplete.'));
                     return;
                 }
 
@@ -1511,7 +1623,7 @@ class Events {
                 }
 
                 if (!location) {
-                    entries.forEach(entry => fallbackApply(entry));
+                    validEntries.forEach(entry => warnSkippedAlteration(entry, 'Unable to resolve current location object.'));
                     return;
                 }
 
@@ -1530,7 +1642,7 @@ class Events {
 
                 const alteredSummaries = [];
 
-                for (const entry of entries) {
+                for (const entry of validEntries) {
                     if (!entry) {
                         continue;
                     }
@@ -1575,7 +1687,7 @@ class Events {
                             renderedTemplate = promptEnv.render('base-context.xml.njk', promptPayload);
                         } catch (renderError) {
                             console.warn('Failed to render location alteration prompt:', renderError.message);
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Template rendering failed.');
                             continue;
                         }
 
@@ -1584,13 +1696,13 @@ class Events {
                             parsedTemplate = parseXMLTemplate(renderedTemplate);
                         } catch (templateError) {
                             console.warn('Failed to parse location alteration template:', templateError.message);
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Template parsing failed.');
                             continue;
                         }
 
                         if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                             console.warn('Alter location template missing prompts.');
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Template missing prompts.');
                             continue;
                         }
 
@@ -1620,7 +1732,7 @@ class Events {
                             });
                         } catch (requestError) {
                             console.warn('Alter location request failed:', requestError.message);
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'AI request failed.');
                             continue;
                         }
 
@@ -1638,13 +1750,13 @@ class Events {
                         });
 
                         if (!aiContent.trim()) {
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Empty AI response.');
                             continue;
                         }
 
                         const parsedLocation = this._parseLocationAlterXml(aiContent);
                         if (!parsedLocation) {
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Failed to parse AI response.');
                             continue;
                         }
 
@@ -1675,11 +1787,11 @@ class Events {
                                 ? location.getStatusEffects()
                                 : baseSnapshot.statusEffects;
                         } else {
-                            fallbackApply(entry);
+                            warnSkippedAlteration(entry, 'Failed to apply location alteration summary.');
                         }
                     } catch (error) {
                         console.warn('Failed to process alter_location entry:', error.message);
-                        fallbackApply(entry);
+                        warnSkippedAlteration(entry, 'Unexpected error during alteration processing.');
                     }
                 }
 

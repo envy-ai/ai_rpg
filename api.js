@@ -7,6 +7,11 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 
+let eventsProcessedThisTurn = false;
+function markEventsProcessed() {
+    eventsProcessedThisTurn = true;
+}
+
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
         throw new Error('registerApiRoutes requires a scope object containing an Express app');
@@ -4995,7 +5000,7 @@ module.exports = function registerApiRoutes(scope) {
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
-            let eventsProcessedThisTurn = false;
+            eventsProcessedThisTurn = false;
 
             if (typeof rawTravelFlag !== 'undefined') {
                 console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
@@ -5037,10 +5042,6 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to update NPC memories after travel:', error.message || error);
                 }
             };
-
-            function markEventsProcessed() {
-                eventsProcessedThisTurn = true;
-            }
 
             const runAutosaveIfEnabled = async () => {
                 if (!eventsProcessedThisTurn) {
