@@ -3,6 +3,7 @@ const { DOMParser, XMLSerializer } = require('xmldom');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
 const Region = require('./Region.js');
+const Globals = require('./Globals.js');
 
 
 /**
@@ -29,7 +30,8 @@ class Location {
   #thingIds;
   #generationHints;
   #regionId;
-  static #indexByID = new Map();
+  #lastVisitedTime = null; // Decimal hour timestamp of last visit by player
+  static #indexById = new Map();
   static #indexByName = new Map();
 
   // Static private method for generating unique IDs
@@ -47,7 +49,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, regionId = null, checkRegionId = true } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, regionId = null, checkRegionId = true, lastVisitedTime = null } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -95,9 +97,10 @@ class Location {
       : [];
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#generationHints = Location.#normalizeGenerationHints(generationHints);
+    this.#lastVisitedTime = Number.isFinite(lastVisitedTime) ? lastVisitedTime : null;
 
     // Index by ID and name if provided
-    Location.#indexByID.set(this.#id, this);
+    Location.#indexById.set(this.#id, this);
     if (this.#name) {
       Location.#indexByName.set(this.#name.toLowerCase(), this);
     }
@@ -302,11 +305,19 @@ class Location {
     if (!locationId || typeof locationId !== 'string') {
       return null;
     }
-    return Location.#indexByID.get(locationId) || null;
+    return Location.#indexById.get(locationId) || null;
+  }
+
+  static get indexById() {
+    return new Map(Location.#indexById);
+  }
+
+  static get indexByName() {
+    return new Map(Location.#indexByName);
   }
 
   static getAll() {
-    return Array.from(Location.#indexByID.values());
+    return Array.from(Location.#indexById.values());
   }
 
   static findByName(name) {
@@ -323,6 +334,33 @@ class Location {
 
   get name() {
     return this.#name;
+  }
+
+  set lastVisitedTime(value) {
+    if (value === null || value === undefined) {
+      this.#lastVisitedTime = null;
+      this.#lastUpdated = new Date().toISOString();
+      return;
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) {
+      throw new Error('Location lastVisitedTime must be a non-negative number or null');
+    }
+    this.#lastVisitedTime = num;
+    this.region.lastVisitedTime = num;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get lastVisitedTime() {
+    return this.#lastVisitedTime;
+  }
+
+  hoursSinceLastVisit(currentTime = null) {
+    const lastVisited = this.#lastVisitedTime;
+    if (lastVisited === null) {
+      return null;
+    }
+    return Globals.elapsedTime - lastVisited;
   }
 
   get description() {

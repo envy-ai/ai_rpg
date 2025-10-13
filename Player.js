@@ -59,6 +59,7 @@ class Player {
     #partyMembersAddedThisTurn = new Set();
     #partyMembersRemovedThisTurn = new Set();
     #elapsedTime = 0;
+    #lastVisitedTime = 0; // Decimal hours since last visit by player.
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -1677,6 +1678,15 @@ class Player {
         }
         this.#shortDescription = newShortDescription.trim();
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    set lastVisitedTime(time) {
+        this.#lastVisitedTime = time;
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    get lastVisitedTime() {
+        return this.#lastVisitedTime;
     }
 
     setHealthAttribute(attributeName) {
@@ -3300,7 +3310,8 @@ class Player {
             partyMembershipChangedThisTurn: this.#partyMembershipChangedThisTurn,
             isInPlayerParty: this.#isInPlayerParty,
             partyMembersAddedThisTurn: Array.from(this.#partyMembersAddedThisTurn),
-            partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn)
+            partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn),
+            elapsedTime: this.#elapsedTime
         };
     }
 
@@ -3343,6 +3354,12 @@ class Player {
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : []
         });
+
+        if (Number.isFinite(data.elapsedTime)) {
+            player.#elapsedTime = Math.max(0, Math.floor(data.elapsedTime));
+        } else {
+            player.#elapsedTime = 0;
+        }
 
         player.#createdAt = data.createdAt;
         player.#lastUpdated = data.lastUpdated;

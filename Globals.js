@@ -40,6 +40,72 @@ class Globals {
     }
     Globals.currentPlayer.elapsedTime = value;
   }
+
+  static get locationsById() {
+    if (!Globals.config) {
+      console.warn('Globals.locationsById accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Location = require('./Location.js');
+    return Location.indexById;
+  }
+
+  static get regionsById() {
+    if (!Globals.config) {
+      console.warn('Globals.regionsById accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Region = require('./Region.js');
+    return Region.indexById;
+  }
+
+  static get locationsByName() {
+    if (!Globals.config) {
+      console.warn('Globals.locationsByName accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Location = require('./Location.js');
+    return Location.indexByName;
+  }
+
+  static get regionsByName() {
+    if (!Globals.config) {
+      console.warn('Globals.regionsByName accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Region = require('./Region.js');
+    return Region.indexByName;
+  }
+
+  static get playersById() {
+    if (!Globals.config) {
+      console.warn('Globals.playersById accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Player = require('./Player.js');
+    return Player.indexById;
+  }
+
+  static get playersByName() {
+    if (!Globals.config) {
+      console.warn('Globals.playersByName accessed before config was set.');
+      console.trace();
+      return new Map();
+    }
+
+    const Player = require('./Player.js');
+    return Player.indexByName;
+  }
 }
 
 module.exports = Globals;

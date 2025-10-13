@@ -66,6 +66,33 @@ function normalizeString(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+function parsePositiveDecimal(value) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value <= 0) {
+            return null;
+        }
+        return value;
+    }
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return null;
+    }
+    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) {
+        return null;
+    }
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return null;
+    }
+    return numeric;
+}
+
 function splitPipeList(raw) {
     if (isBlank(raw)) {
         return [];
@@ -1051,6 +1078,10 @@ class Events {
                 const amount = extractInteger(raw);
                 return Number.isFinite(amount) ? amount : null;
             },
+            time_passed: raw => {
+                const value = parsePositiveDecimal(raw);
+                return value !== null ? value : null;
+            },
             item_to_npc: raw => splitPipeList(raw).map(entry => {
                 const [item, npc, description] = splitArrowParts(entry, 3);
                 if (!npc) {
@@ -1668,6 +1699,17 @@ class Events {
                 player.adjustCurrency(delta);
                 const after = typeof player.getCurrency === 'function' ? player.getCurrency() : Number(player.currency) || 0;
                 context.currencyChanges.push({ amount: delta, before, after });
+            },
+            time_passed: function (value, context = {}) {
+                const amount = Number(value);
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    console.warn('Invalid time_passed value:', value);
+                    console.trace()
+                    return;
+                }
+                Globals.elapsedTime += amount;
+
+                context.timeProgress.push({ amount, total: Globals.elapsedTime });
             },
             item_to_npc: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {

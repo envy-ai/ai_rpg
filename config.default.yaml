@@ -118,10 +118,6 @@ check_move_plausibility: unexplored_locations
 # Jailbreak? Put it here.
 # extra_system_instructions:
 
-# Mostly to speed up testing and development - prevent certain types of generation
-omit_npc_generation: false
-omit_item_generation: false
-deduplicate_item_names: true
 summaries:
   enabled: true
   summarize_on_load: false
@@ -129,3 +125,11 @@ summaries:
   summary_word_length: 12
   max_unsummarized_log_entries: 100
 party_generate_memory_interval: 25
+
+# Set to 0 to disable autosaves (not recommended). Default is 20 if omitted.
+autosaves_to_retain: 20
+
+# Mostly to speed up testing and development - prevent certain types of generation
+omit_npc_generation: false
+omit_item_generation: false
+deduplicate_item_names: true

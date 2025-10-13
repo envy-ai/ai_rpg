@@ -23,7 +23,7 @@ class Region {
   #statusEffects;
   #averageLevel;
   #relativeLevel;
-
+  #lastVisitedTime = null;  // Decimal hours since last visit by player.
   static #indexById = new Map();
   static #indexByName = new Map();
 
@@ -33,7 +33,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -58,11 +58,11 @@ class Region {
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
+    this.#lastVisitedTime = lastVisitedTime;
     this.#averageLevel = Number.isFinite(averageLevel)
       ? Math.max(1, Math.min(20, Math.round(averageLevel)))
       : null;
     this.#relativeLevel = null; // to be set externally if needed
-
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
   }
@@ -133,6 +133,14 @@ class Region {
     return Array.from(Region.#indexById.values());
   }
 
+  static get indexById() {
+    return new Map(Region.#indexById);
+  }
+
+  static get indexByName() {
+    return new Map(Region.#indexByName);
+  }
+
   static clear() {
     Region.#indexById.clear();
     Region.#indexByName.clear();
@@ -156,7 +164,8 @@ class Region {
       entranceLocationId: data.entranceLocationId || null,
       parentRegionId: data.parentRegionId || null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
-      averageLevel: data.averageLevel || null
+      averageLevel: data.averageLevel || null,
+      lastVisitedTime: data.lastVisitedTime || null
     });
   }
 
@@ -381,6 +390,32 @@ class Region {
 
   get relativeLevel() {
     return this.#relativeLevel;
+  }
+
+  set lastVisitedTime(value) {
+    if (value === null || value === undefined) {
+      this.#lastVisitedTime = null;
+      this.#lastUpdated = new Date().toISOString();
+      return;
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) {
+      throw new Error('Region lastVisitedTime must be a non-negative number or null');
+    }
+    this.#lastVisitedTime = num;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get lastVisitedTime() {
+    return this.#lastVisitedTime;
+  }
+
+  hoursSinceLastVisit(currentTime = null) {
+    const lastVisited = this.#lastVisitedTime;
+    if (lastVisited === null) {
+      return null;
+    }
+    return Globals.elapsedTime - lastVisited;
   }
 
   set relativeLevel(level) {

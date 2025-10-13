@@ -4844,6 +4844,10 @@ module.exports = function registerApiRoutes(scope) {
                         npcTurnResult.locationRefreshRequested = true;
                     }
 
+                    if (npcEventResult) {
+                        markEventsProcessed();
+                    }
+
                     const npcNameLabel = safeSummaryName(npc?.name || npcName || 'NPC');
                     recordEventSummaryEntry({
                         label: `📋 Events – NPC Turn (${npcNameLabel})`,
@@ -4921,6 +4925,7 @@ module.exports = function registerApiRoutes(scope) {
                     const randomEventResult = await maybeTriggerRandomEvent({ stream, locationOverride: location, entryCollector });
                     if (randomEventResult) {
                         results.push(randomEventResult);
+                        markEventsProcessed();
                     }
                 } catch (randomEventError) {
                     console.warn('Failed to process random event:', randomEventError.message);
@@ -4983,6 +4988,7 @@ module.exports = function registerApiRoutes(scope) {
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
+            let eventsProcessedThisTurn = false;
 
             if (typeof rawTravelFlag !== 'undefined') {
                 console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
@@ -5025,6 +5031,81 @@ module.exports = function registerApiRoutes(scope) {
                 }
             };
 
+            function markEventsProcessed() {
+                eventsProcessedThisTurn = true;
+            }
+
+            const runAutosaveIfEnabled = async () => {
+                if (!eventsProcessedThisTurn) {
+                    return;
+                }
+                if (!currentPlayer) {
+                    return;
+                }
+
+                const config = Globals?.config || {};
+                let retention = config?.autosaves_to_retain;
+                if (retention === null || retention === undefined) {
+                    retention = 20;
+                }
+
+                const numericRetention = Number(retention);
+                if (!Number.isFinite(numericRetention)) {
+                    retention = 20;
+                } else {
+                    retention = Math.floor(numericRetention);
+                }
+
+                if (retention <= 0) {
+                    return;
+                }
+
+                try {
+                    const autosaveResult = performGameSave({ saveRoot: 'autosaves' });
+                    const autosaveRoot = path.dirname(autosaveResult.saveDir);
+
+                    if (!fs.existsSync(autosaveRoot)) {
+                        return;
+                    }
+
+                    const dirEntries = fs.readdirSync(autosaveRoot, { withFileTypes: true });
+                    const autosaveDirs = dirEntries
+                        .filter(entry => entry.isDirectory())
+                        .map(entry => {
+                            const fullPath = path.join(autosaveRoot, entry.name);
+                            let stats;
+                            try {
+                                stats = fs.statSync(fullPath);
+                            } catch (error) {
+                                console.warn('Failed to stat autosave directory:', fullPath, error?.message || error);
+                                return null;
+                            }
+                            return {
+                                name: entry.name,
+                                path: fullPath,
+                                mtime: stats?.mtimeMs ?? stats?.mtime?.getTime?.() ?? 0
+                            };
+                        })
+                        .filter(Boolean)
+                        .sort((a, b) => a.mtime - b.mtime);
+
+                    while (autosaveDirs.length > retention) {
+                        const oldest = autosaveDirs.shift();
+                        try {
+                            fs.rmSync(oldest.path, { recursive: true, force: true });
+                        } catch (error) {
+                            console.warn('Failed to remove old autosave:', oldest.path, error?.message || error);
+                        }
+                    }
+                } catch (error) {
+                    if (error?.code === 'NO_PLAYER') {
+                        console.warn('Autosave skipped: no current player to save.');
+                        return;
+                    }
+                    console.warn('Autosave failed:', error?.message || error);
+                }
+            };
+
             const respond = async (payload, statusCode = 200) => {
                 try {
                     await processLocationChangeMemoriesIfNeeded();
@@ -5056,6 +5137,13 @@ module.exports = function registerApiRoutes(scope) {
                 if (statusCode !== 200) {
                     return res.status(statusCode).json(payload);
                 }
+
+                try {
+                    await runAutosaveIfEnabled();
+                } catch (autosaveError) {
+                    console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
+                }
+
                 return res.json(payload);
             };
 
@@ -5754,6 +5842,7 @@ module.exports = function registerApiRoutes(scope) {
                     };
 
                     if (forcedEventResult) {
+                        markEventsProcessed();
                         if (forcedEventResult.html) {
                             responseData.eventChecks = forcedEventResult.html;
                         }
@@ -6008,6 +6097,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (eventResult) {
+                        markEventsProcessed();
                         if (eventResult.html) {
                             responseData.eventChecks = eventResult.html;
                         }
@@ -12611,87 +12701,370 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== SAVE/LOAD FUNCTIONALITY ====================
 
+        const sanitizeSaveNameSegment = (value, fallback) => {
+            const source = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+            if (!source) {
+                throw new Error('Unable to derive a valid save name segment');
+            }
+            return source
+                .replace(/[^a-zA-Z0-9_-]/g, '_')
+                .replace(/_{2,}/g, '_')
+                .replace(/^_+|_+$/g, '')
+                || fallback;
+        };
+
+        const buildDefaultSaveName = () => {
+            const settingSegment = sanitizeSaveNameSegment(currentSetting?.name, 'Setting');
+            const playerSegment = sanitizeSaveNameSegment(currentPlayer.name, currentPlayer.id || 'Player');
+            const currentLocationId = currentPlayer.currentLocation || null;
+            const currentLocation = currentLocationId
+                ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
+                : null;
+            const locationSegment = sanitizeSaveNameSegment(
+                currentLocation?.name
+                || currentLocation?.description
+                || currentLocationId
+                || 'Location',
+                'Location'
+            );
+            const timestampFragment = Date.now().toString(36);
+            const baseIdFragment = currentPlayer.id || timestampFragment;
+            const uniqueSegment = sanitizeSaveNameSegment(
+                `${baseIdFragment}-${timestampFragment}`,
+                `Save-${timestampFragment}`
+            );
+            return `${settingSegment}-${playerSegment}-${locationSegment}-${uniqueSegment}`;
+        };
+
+        function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
+            if (!currentPlayer) {
+                const error = new Error('No current player to save');
+                error.code = 'NO_PLAYER';
+                throw error;
+            }
+
+            const baseDir = Globals?.baseDir ? path.resolve(Globals.baseDir) : __dirname;
+            const resolveSaveRoot = (rootOption) => {
+                if (rootOption === null || rootOption === undefined) {
+                    return path.join(baseDir, 'saves');
+                }
+                if (typeof rootOption !== 'string') {
+                    const error = new Error('Save root must be a string path when provided');
+                    error.code = 'INVALID_SAVE_ROOT';
+                    throw error;
+                }
+                const trimmed = rootOption.trim();
+                if (!trimmed) {
+                    const error = new Error('Save root cannot be an empty path');
+                    error.code = 'INVALID_SAVE_ROOT';
+                    throw error;
+                }
+                return path.isAbsolute(trimmed)
+                    ? trimmed
+                    : path.join(baseDir, trimmed);
+            };
+
+            const saveRootPath = resolveSaveRoot(saveRoot);
+            const saveName = requestedSaveName
+                ? sanitizeSaveNameSegment(requestedSaveName, null)
+                : buildDefaultSaveName();
+
+            if (!saveName) {
+                const error = new Error('Failed to resolve a valid save name');
+                error.code = 'INVALID_SAVE_NAME';
+                throw error;
+            }
+
+            const saveDir = path.join(saveRootPath, saveName);
+            const serialized = Utils.serializeGameState({
+                currentPlayer,
+                gameLocations,
+                gameLocationExits,
+                regions,
+                chatHistory,
+                generatedImages,
+                things,
+                players,
+                skills,
+                currentSetting
+            });
+
+            const metadata = serialized.metadata || {};
+            serialized.metadata = metadata;
+            metadata.saveName = saveName;
+            metadata.timestamp = metadata.timestamp || new Date().toISOString();
+            metadata.totalPlayers = players.size;
+            metadata.totalThings = things.size;
+            metadata.totalLocations = gameLocations.size;
+            metadata.totalLocationExits = gameLocationExits.size;
+            metadata.totalRegions = regions.size;
+            metadata.chatHistoryLength = Array.isArray(chatHistory)
+                ? chatHistory.length
+                : (metadata.chatHistoryLength || 0);
+            metadata.totalGeneratedImages = generatedImages.size;
+            metadata.totalSkills = skills.size;
+            metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
+            metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+            const currentLocationId = currentPlayer.currentLocation || null;
+            const currentLocation = currentLocationId
+                ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
+                : null;
+            metadata.currentLocationId = currentLocationId || metadata.currentLocationId || null;
+            metadata.currentLocationName = currentLocation?.name || metadata.currentLocationName || null;
+
+            Utils.writeSerializedGameState(saveDir, serialized);
+
+            return { saveName, saveDir, metadata };
+        }
+
+        async function performGameLoad(requestedSaveName, { skipSummary = false } = {}) {
+            const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
+            if (!normalizedName) {
+                const error = new Error('Save name is required');
+                error.code = 'SAVE_NAME_REQUIRED';
+                throw error;
+            }
+
+            const baseDir = Globals?.baseDir ? path.resolve(Globals.baseDir) : __dirname;
+            const saveDir = path.join(baseDir, 'saves', normalizedName);
+            if (!fs.existsSync(saveDir)) {
+                const error = new Error(`Save '${normalizedName}' not found`);
+                error.code = 'SAVE_NOT_FOUND';
+                throw error;
+            }
+
+            Globals.gameLoaded = false;
+
+            const serialized = Utils.loadSerializedGameState(saveDir);
+
+            jobQueue.length = 0;
+            imageJobs.clear();
+            pendingLocationImages.clear();
+            generatedImages.clear();
+            npcGenerationPromises.clear();
+            isProcessingJob = false;
+
+            const hydrationResult = Utils.hydrateGameState(serialized, {
+                gameLocations,
+                gameLocationExits,
+                regions,
+                chatHistoryRef: chatHistory,
+                generatedImages,
+                things,
+                players,
+                skills,
+                jobQueue,
+                imageJobs,
+                pendingLocationImages,
+                npcGenerationPromises
+            });
+
+            let metadata = hydrationResult.metadata || {};
+            if (!metadata || typeof metadata !== 'object') {
+                metadata = {};
+            }
+            metadata.saveName = metadata.saveName || normalizedName;
+
+            const loadedSetting = hydrationResult.setting || null;
+            if (loadedSetting) {
+                if (currentSetting && typeof currentSetting.updateFromJSON === 'function') {
+                    try {
+                        currentSetting.updateFromJSON(loadedSetting);
+                    } catch (settingError) {
+                        console.warn('Failed to apply loaded setting:', settingError.message);
+                    }
+                } else if (typeof SettingInfo?.fromJSON === 'function') {
+                    try {
+                        currentSetting = SettingInfo.fromJSON(loadedSetting);
+                    } catch (settingError) {
+                        console.warn('Failed to instantiate setting from save:', settingError.message);
+                        currentSetting = loadedSetting;
+                    }
+                } else {
+                    currentSetting = loadedSetting;
+                }
+            } else {
+                currentSetting = null;
+            }
+
+            let resolvedPlayer = null;
+            if (metadata.playerId && players.has(metadata.playerId)) {
+                resolvedPlayer = players.get(metadata.playerId);
+            }
+            if (!resolvedPlayer) {
+                const iterator = players.values();
+                resolvedPlayer = iterator.next().value || null;
+            }
+            if (!resolvedPlayer) {
+                const error = new Error('No players found in save file');
+                error.code = 'PLAYER_NOT_FOUND';
+                throw error;
+            }
+
+            currentPlayer = resolvedPlayer;
+            scope.currentPlayer = currentPlayer;
+            if (typeof Player.setCurrentPlayer === 'function') {
+                Player.setCurrentPlayer(currentPlayer);
+            }
+            if (typeof Player.register === 'function') {
+                Player.register(currentPlayer);
+            }
+
+            const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+            const hasImage = (imageId) => {
+                if (!imageId) {
+                    return false;
+                }
+                if (generatedImages.has(imageId)) {
+                    return true;
+                }
+                const imagesDir = path.join(baseDir, 'public', 'generated-images');
+                return KNOWN_EXTENSIONS.some(ext => fs.existsSync(path.join(imagesDir, `${imageId}${ext}`)));
+            };
+
+            const ensureInventoryImages = (character) => {
+                if (!character || typeof character.getInventoryItems !== 'function') {
+                    return;
+                }
+                const items = character.getInventoryItems();
+                if (!Array.isArray(items)) {
+                    return;
+                }
+                for (const item of items) {
+                    if (!item) {
+                        continue;
+                    }
+                    if (item.imageId && !hasImage(item.imageId)) {
+                        item.imageId = null;
+                    }
+                }
+            };
+
+            for (const thing of things.values()) {
+                if (thing && thing.imageId && !hasImage(thing.imageId)) {
+                    thing.imageId = null;
+                }
+            }
+
+            for (const player of players.values()) {
+                if (!player) {
+                    continue;
+                }
+                if (player.imageId && !hasImage(player.imageId)) {
+                    player.imageId = null;
+                }
+                ensureInventoryImages(player);
+            }
+
+            if (currentPlayer) {
+                if (currentPlayer.imageId && !hasImage(currentPlayer.imageId)) {
+                    currentPlayer.imageId = null;
+                }
+                ensureInventoryImages(currentPlayer);
+            }
+
+            const currentLocationId = currentPlayer?.currentLocation || null;
+            if (currentLocationId && gameLocations.has(currentLocationId)) {
+                const location = gameLocations.get(currentLocationId);
+                try {
+                    queueNpcAssetsForLocation(location);
+                } catch (npcQueueError) {
+                    console.warn('Failed to queue NPC assets after load:', npcQueueError.message);
+                }
+                try {
+                    queueLocationThingImages(location);
+                } catch (thingQueueError) {
+                    console.warn('Failed to queue location thing images after load:', thingQueueError.message);
+                }
+
+                const npcIds = Array.isArray(location.npcIds) ? location.npcIds : [];
+                for (const npcId of npcIds) {
+                    const npc = players.get(npcId);
+                    if (!npc) {
+                        continue;
+                    }
+                    if (npc.imageId && !hasImage(npc.imageId)) {
+                        npc.imageId = null;
+                    }
+                    ensureInventoryImages(npc);
+                }
+            }
+
+            metadata.playerId = metadata.playerId || currentPlayer.id;
+            metadata.playerName = metadata.playerName || currentPlayer.name;
+            try {
+                if (typeof currentPlayer.getCurrentLocation === 'function') {
+                    const locationId = currentPlayer.currentLocation;
+                    if (locationId && gameLocations.has(locationId)) {
+                        scope.currentLocation = gameLocations.get(locationId);
+                    }
+                }
+            } catch (locationError) {
+                console.warn('Failed to resolve current location after load:', locationError.message);
+            }
+
+            metadata.playerLevel = metadata.playerLevel || currentPlayer.level;
+            metadata.timestamp = metadata.timestamp || new Date().toISOString();
+            metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
+            metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+            metadata.totalPlayers = players.size;
+            metadata.totalThings = things.size;
+            metadata.totalLocations = gameLocations.size;
+            metadata.totalLocationExits = gameLocationExits.size;
+            metadata.totalRegions = regions.size;
+            metadata.chatHistoryLength = Array.isArray(chatHistory)
+                ? chatHistory.length
+                : (metadata.chatHistoryLength || 0);
+            metadata.totalGeneratedImages = generatedImages.size;
+            metadata.totalSkills = skills.size;
+
+            if (!skipSummary) {
+                const summaryConfig = getSummaryConfig();
+                if (summaryConfig.summarize_on_load !== false) {
+                    await summarizeChatBacklog(chatHistory);
+                }
+            }
+
+            Globals.gameLoaded = true;
+
+            const loadedData = {
+                currentPlayer: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
+                totalPlayers: players.size,
+                totalThings: things.size,
+                totalLocations: gameLocations.size,
+                totalLocationExits: gameLocationExits.size,
+                chatHistoryLength: Array.isArray(chatHistory) ? chatHistory.length : 0,
+                totalGeneratedImages: generatedImages.size,
+                currentSetting: currentSetting && typeof currentSetting.toJSON === 'function'
+                    ? currentSetting.toJSON()
+                    : (currentSetting || null)
+            };
+
+            return {
+                saveName: normalizedName,
+                metadata,
+                loadedData
+            };
+        }
+
+        scope.performGameSave = performGameSave;
+        scope.performGameLoad = performGameLoad;
+
         // Save current game state
         app.post('/api/save', (req, res) => {
             try {
-                if (!currentPlayer) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'No current player to save'
-                    });
-                }
-
-                const sanitizeSegment = (value, fallback) => {
-                    const source = typeof value === 'string' && value.trim() ? value.trim() : fallback;
-                    return source
-                        .replace(/[^a-zA-Z0-9_-]/g, '_')
-                        .replace(/_{2,}/g, '_')
-                        .replace(/^_+|_+$/g, '')
-                        || fallback;
-                };
-
-                const settingSegment = sanitizeSegment(currentSetting?.name, 'Setting');
-                const playerSegment = sanitizeSegment(currentPlayer.name, currentPlayer.id || 'Player');
-                const currentLocationId = currentPlayer.currentLocation || null;
-                const currentLocation = currentLocationId
-                    ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
-                    : null;
-                const locationSegment = sanitizeSegment(
-                    currentLocation?.name
-                    || currentLocation?.description
-                    || currentLocationId
-                    || 'Location',
-                    'Location'
-                );
-                const timestampFragment = Date.now().toString(36);
-                const baseIdFragment = currentPlayer.id || timestampFragment;
-                const uniqueSegment = sanitizeSegment(`${baseIdFragment}-${timestampFragment}`, `Save-${timestampFragment}`);
-                const saveName = `${settingSegment}-${playerSegment}-${locationSegment}-${uniqueSegment}`;
-                const saveDir = path.join(__dirname, 'saves', saveName);
-
-                const serialized = Utils.serializeGameState({
-                    currentPlayer,
-                    gameLocations,
-                    gameLocationExits,
-                    regions,
-                    chatHistory,
-                    generatedImages,
-                    things,
-                    players,
-                    skills,
-                    currentSetting
-                });
-
-                const metadata = serialized.metadata || {};
-                serialized.metadata = metadata;
-                metadata.saveName = saveName;
-                metadata.timestamp = metadata.timestamp || new Date().toISOString();
-                metadata.totalPlayers = players.size;
-                metadata.totalThings = things.size;
-                metadata.totalLocations = gameLocations.size;
-                metadata.totalLocationExits = gameLocationExits.size;
-                metadata.totalRegions = regions.size;
-                metadata.chatHistoryLength = Array.isArray(chatHistory) ? chatHistory.length : (metadata.chatHistoryLength || 0);
-                metadata.totalGeneratedImages = generatedImages.size;
-                metadata.totalSkills = skills.size;
-                metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
-                metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
-                metadata.currentLocationId = currentLocationId || metadata.currentLocationId || null;
-                metadata.currentLocationName = currentLocation?.name || metadata.currentLocationName || null;
-
-                Utils.writeSerializedGameState(saveDir, serialized);
-
+                const result = performGameSave();
                 res.json({
                     success: true,
-                    saveName: saveName,
-                    saveDir: saveDir,
-                    metadata: metadata,
-                    message: `Game saved successfully as: ${saveName}`
+                    saveName: result.saveName,
+                    saveDir: result.saveDir,
+                    metadata: result.metadata,
+                    message: `Game saved successfully as: ${result.saveName}`
                 });
-
             } catch (error) {
                 console.error('Error saving game:', error);
-                res.status(500).json({
+                const statusCode = (error.code === 'NO_PLAYER' || error.code === 'INVALID_SAVE_ROOT') ? 400 : 500;
+                res.status(statusCode).json({
                     success: false,
                     error: error.message
                 });
@@ -12700,234 +13073,27 @@ module.exports = function registerApiRoutes(scope) {
 
         // Load game state from a save
         app.post('/api/load', async (req, res) => {
-            Globals.gameLoaded = false;
             try {
-                const { saveName } = req.body;
-
-                if (!saveName) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Save name is required'
-                    });
-                }
-
-                const saveDir = path.join(__dirname, 'saves', saveName);
-
-                // Check if save directory exists
-                if (!fs.existsSync(saveDir)) {
-                    return res.status(404).json({
-                        success: false,
-                        error: `Save '${saveName}' not found`
-                    });
-                }
-
-                const serialized = Utils.loadSerializedGameState(saveDir);
-
-                jobQueue.length = 0;
-                imageJobs.clear();
-                pendingLocationImages.clear();
-                generatedImages.clear();
-                npcGenerationPromises.clear();
-                isProcessingJob = false;
-
-                const hydrationResult = Utils.hydrateGameState(serialized, {
-                    gameLocations,
-                    gameLocationExits,
-                    regions,
-                    chatHistoryRef: chatHistory,
-                    generatedImages,
-                    things,
-                    players,
-                    skills,
-                    jobQueue,
-                    imageJobs,
-                    pendingLocationImages,
-                    npcGenerationPromises
-                });
-
-                let metadata = hydrationResult.metadata || {};
-                if (!metadata || typeof metadata !== 'object') {
-                    metadata = {};
-                }
-                metadata.saveName = metadata.saveName || saveName;
-
-                const loadedSetting = hydrationResult.setting || null;
-                if (loadedSetting) {
-                    if (currentSetting && typeof currentSetting.updateFromJSON === 'function') {
-                        try {
-                            currentSetting.updateFromJSON(loadedSetting);
-                        } catch (settingError) {
-                            console.warn('Failed to apply loaded setting:', settingError.message);
-                        }
-                    } else if (typeof SettingInfo?.fromJSON === 'function') {
-                        try {
-                            currentSetting = SettingInfo.fromJSON(loadedSetting);
-                        } catch (settingError) {
-                            console.warn('Failed to instantiate setting from save:', settingError.message);
-                            currentSetting = loadedSetting;
-                        }
-                    } else {
-                        currentSetting = loadedSetting;
-                    }
-                } else {
-                    currentSetting = null;
-                }
-
-                let resolvedPlayer = null;
-                if (metadata.playerId && players.has(metadata.playerId)) {
-                    resolvedPlayer = players.get(metadata.playerId);
-                }
-                if (!resolvedPlayer) {
-                    const iterator = players.values();
-                    resolvedPlayer = iterator.next().value || null;
-                }
-                if (!resolvedPlayer) {
-                    return res.status(404).json({
-                        success: false,
-                        error: 'No players found in save file'
-                    });
-                }
-
-                currentPlayer = resolvedPlayer;
-                this.currentPlayer = currentPlayer;
-                Player.setCurrentPlayer?.(currentPlayer);
-                if (typeof Player.register === 'function') {
-                    Player.register(currentPlayer);
-                }
-
-                const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
-                const hasImage = (imageId) => {
-                    if (!imageId) {
-                        return false;
-                    }
-                    if (generatedImages.has(imageId)) {
-                        return true;
-                    }
-                    const imagesDir = path.join(__dirname, 'public', 'generated-images');
-                    return KNOWN_EXTENSIONS.some(ext => fs.existsSync(path.join(imagesDir, `${imageId}${ext}`)));
-                };
-
-                const ensureInventoryImages = (character) => {
-                    if (!character || typeof character.getInventoryItems !== 'function') {
-                        return;
-                    }
-                    const items = character.getInventoryItems();
-                    if (!Array.isArray(items)) {
-                        return;
-                    }
-                    for (const item of items) {
-                        if (!item) {
-                            continue;
-                        }
-                        if (item.imageId && !hasImage(item.imageId)) {
-                            item.imageId = null;
-                        }
-                    }
-                };
-
-                for (const thing of things.values()) {
-                    if (thing && thing.imageId && !hasImage(thing.imageId)) {
-                        thing.imageId = null;
-                    }
-                }
-
-                for (const player of players.values()) {
-                    if (!player) {
-                        continue;
-                    }
-                    if (player.imageId && !hasImage(player.imageId)) {
-                        player.imageId = null;
-                    }
-                    ensureInventoryImages(player);
-                }
-
-                if (currentPlayer) {
-                    if (currentPlayer.imageId && !hasImage(currentPlayer.imageId)) {
-                        currentPlayer.imageId = null;
-                    }
-                    ensureInventoryImages(currentPlayer);
-                }
-
-                const currentLocationId = currentPlayer?.currentLocation || null;
-                if (currentLocationId && gameLocations.has(currentLocationId)) {
-                    const location = gameLocations.get(currentLocationId);
-                    try {
-                        queueNpcAssetsForLocation(location);
-                    } catch (npcQueueError) {
-                        console.warn('Failed to queue NPC assets after load:', npcQueueError.message);
-                    }
-                    try {
-                        queueLocationThingImages(location);
-                    } catch (thingQueueError) {
-                        console.warn('Failed to queue location thing images after load:', thingQueueError.message);
-                    }
-
-                    const npcIds = Array.isArray(location.npcIds) ? location.npcIds : [];
-                    for (const npcId of npcIds) {
-                        const npc = players.get(npcId);
-                        if (!npc) {
-                            continue;
-                        }
-                        if (npc.imageId && !hasImage(npc.imageId)) {
-                            npc.imageId = null;
-                        }
-                        ensureInventoryImages(npc);
-                    }
-                }
-
-                metadata.playerId = metadata.playerId || currentPlayer.id;
-                metadata.playerName = metadata.playerName || currentPlayer.name;
-                try {
-                    if (typeof currentPlayer.getCurrentLocation === 'function') {
-                        const locationId = currentPlayer.currentLocation;
-                        if (locationId && gameLocations.has(locationId)) {
-                            this.currentLocation = gameLocations.get(locationId);
-                        }
-                    }
-                } catch (locationError) {
-                    console.warn('Failed to resolve current location after load:', locationError.message);
-                }
-
-                metadata.playerLevel = metadata.playerLevel || currentPlayer.level;
-                metadata.timestamp = metadata.timestamp || new Date().toISOString();
-                metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
-                metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
-                metadata.totalPlayers = players.size;
-                metadata.totalThings = things.size;
-                metadata.totalLocations = gameLocations.size;
-                metadata.totalLocationExits = gameLocationExits.size;
-                metadata.totalRegions = regions.size;
-                metadata.chatHistoryLength = Array.isArray(chatHistory) ? chatHistory.length : (metadata.chatHistoryLength || 0);
-                metadata.totalGeneratedImages = generatedImages.size;
-                metadata.totalSkills = skills.size;
-
-                const summaryConfig = getSummaryConfig();
-                if (summaryConfig.summarize_on_load !== false) {
-                    await summarizeChatBacklog(chatHistory);
-                }
-
+                const { saveName } = req.body || {};
+                const result = await performGameLoad(saveName);
                 res.json({
                     success: true,
-                    saveName: saveName,
-                    metadata: metadata,
-                    loadedData: {
-                        currentPlayer: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
-                        totalPlayers: players.size,
-                        totalThings: things.size,
-                        totalLocations: gameLocations.size,
-                        totalLocationExits: gameLocationExits.size,
-                        chatHistoryLength: chatHistory.length,
-                        totalGeneratedImages: generatedImages.size,
-                        currentSetting: currentSetting && typeof currentSetting.toJSON === 'function'
-                            ? currentSetting.toJSON()
-                            : (currentSetting || null)
-                    },
-                    message: `Game loaded successfully from: ${saveName}`
+                    saveName: result.saveName,
+                    metadata: result.metadata,
+                    loadedData: result.loadedData,
+                    message: `Game loaded successfully from: ${result.saveName}`
                 });
-                Globals.gameLoaded = true;
             } catch (error) {
                 console.error('Error loading game:', error);
-                res.status(500).json({
+                let statusCode = 500;
+                if (error.code === 'SAVE_NAME_REQUIRED') {
+                    statusCode = 400;
+                } else if (error.code === 'SAVE_NOT_FOUND') {
+                    statusCode = 404;
+                } else if (error.code === 'PLAYER_NOT_FOUND') {
+                    statusCode = 404;
+                }
+                res.status(statusCode).json({
                     success: false,
                     error: error.message
                 });

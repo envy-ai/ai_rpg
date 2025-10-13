@@ -7,3 +7,5 @@ public/generated-images/*
 logs/*
 logs_prev/*
 prompt_overrides/*
+autosaves/*
+temp/*

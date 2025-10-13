@@ -14101,6 +14101,11 @@ defineApiStateProperty('currentTurnToken', () => currentTurnToken, value => { cu
 const registerApiRoutes = require('./api');
 registerApiRoutes(apiScope);
 
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
+    module.exports.performGameLoad = (...args) => apiScope.performGameLoad(...args);
+}
+
 function generateImageId() {
     const now = new Date();
     const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/T/, '_').replace(/\..+/, '');
