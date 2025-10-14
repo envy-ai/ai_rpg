@@ -12,6 +12,58 @@ function markEventsProcessed() {
     eventsProcessedThisTurn = true;
 }
 
+let aiDebugInterceptorInstalled = false;
+function maybeInstallAiDebugInterceptor(axiosInstance) {
+    if (aiDebugInterceptorInstalled) {
+        return;
+    }
+    if (!axiosInstance || typeof axiosInstance.interceptors?.request?.use !== 'function') {
+        return;
+    }
+    const debugEnabled = Boolean(Globals?.config?.ai?.debug);
+    if (!debugEnabled) {
+        return;
+    }
+
+    try {
+        axiosInstance.interceptors.request.use((config) => {
+            try {
+                const label = typeof config?.metadata?.aiMetricsLabel === 'string'
+                    ? config.metadata.aiMetricsLabel
+                    : null;
+                const url = typeof config?.url === 'string' ? config.url : '';
+                const isAiRequest = Boolean(label) || url.includes('/chat/completions') || url.includes('/v1/chat');
+                if (isAiRequest) {
+                    const method = (config?.method || 'POST').toUpperCase();
+                    console.debug(`[AI DEBUG] ${method} ${url}`);
+                    if (config?.headers) {
+                        console.debug('[AI DEBUG] Headers:', config.headers);
+                    }
+                    if (config?.data !== undefined) {
+                        let payload;
+                        if (typeof config.data === 'string') {
+                            payload = config.data;
+                        } else {
+                            try {
+                                payload = JSON.stringify(config.data, null, 2);
+                            } catch (_) {
+                                payload = config.data;
+                            }
+                        }
+                        console.debug('[AI DEBUG] Body:', payload);
+                    }
+                }
+            } catch (loggingError) {
+                console.warn('Failed to log AI debug payload:', loggingError?.message || loggingError);
+            }
+            return config;
+        });
+        aiDebugInterceptorInstalled = true;
+    } catch (error) {
+        console.warn('Failed to install AI debug interceptor:', error?.message || error);
+    }
+}
+
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
         throw new Error('registerApiRoutes requires a scope object containing an Express app');
@@ -25,6 +77,10 @@ module.exports = function registerApiRoutes(scope) {
     }
 
     with (scope) {
+        if (typeof axios !== 'undefined') {
+            maybeInstallAiDebugInterceptor(axios);
+        }
+
         // Log all API requests with received/finished timestamps
         app.use((req, res, next) => {
             if (!req.path || !req.path.startsWith('/api')) {
