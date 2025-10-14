@@ -15,7 +15,22 @@ AI RPG Server turns an OpenAI-compatible language model into a solo tabletop gam
 - Node.js 18 or later
 - npm 9 or later
 - Access to an OpenAI-compatible API endpoint and key
+- An LLM with a minimum of 32k of context that can consistently output valid XML.
 - _(Optional)_ Running ComfyUI instance if you plan to keep `imagegen.enabled: true` (see [comfy.org](https://comfy.org) for installation instructions)
+
+### Recommended specs
+
+- A large, sophisticated model such as GLM 4.6 or Deepseek 3.1 Terminus (in non-thinking mode)
+- qwen-image, either through an API or on ComfyUI.
+- 128k+ of LLM context
+
+### Known working LLMs
+
+- GLM 4.6
+- Deepseek 3.1 Terminus
+- <a href='https://huggingface.co/mradermacher/Circuitry_24B_V.2-GGUF'>Circuitry 24B Q_6</a>
+- <a href='https://huggingface.co/TheDrummer/Gemma-3-R1-12B-v1-GGUF'>TheDrummer's Gemma 3 12B</a>
+- <a href='https://huggingface.co/bartowski/Goekdeniz-Guelmez_Josiefied-Qwen3-8B-abliterated-v1-GGUF'>Josiefied-Qwen3-8B-abliterated-v1 by Goekdeniz-Guelmez</a> in a pinch. It didn't really "get" region generation when I tested it.
 
 ## Installation
 
