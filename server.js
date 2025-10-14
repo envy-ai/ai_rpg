@@ -3736,13 +3736,6 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         } catch (_) {
             exit.update({ bidirectional: Boolean(bidirectional) });
         }
-        if (destinationRegion !== undefined) {
-            try {
-                exit.destinationRegion = destinationRegion;
-            } catch (_) {
-                exit.destinationRegion = destinationRegion;
-            }
-        }
         console.log(`  ↳ reusing existing exit ${exit.id} on direction "${directionKey}"`);
     }
 

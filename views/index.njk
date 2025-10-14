@@ -7165,8 +7165,8 @@
                             ? data.location.exits
                             : Object.values(data.location.exits || {});
                         exits.forEach(exit => {
-                            if (exit && exit.destination && exit.destinationName) {
-                                locationCache[exit.destination] = exit.destinationName;
+                            if (exit && exit.destination && typeof exit.destinationName === 'string' && exit.destinationName.trim()) {
+                                locationCache[exit.destination] = exit.destinationName.trim();
                             }
                         });
                         await window.updateLocationDisplay(data.location);
@@ -9485,6 +9485,26 @@
         function initLocationDisplay() {
             // Function to update location display
         const locationCache = {};
+
+        function resolveDestinationNameStrict(exit) {
+            if (!exit) {
+                throw new Error('resolveDestinationNameStrict requires an exit object.');
+            }
+
+            const direct = typeof exit.destinationName === 'string' ? exit.destinationName.trim() : '';
+            if (direct) {
+                return direct;
+            }
+
+            const cached = exit.destination && typeof locationCache[exit.destination] === 'string'
+                ? locationCache[exit.destination].trim()
+                : '';
+            if (cached) {
+                return cached;
+            }
+
+            throw new Error(`Exit ${exit.id || exit.destination || '<unknown>'} is missing a destination name.`);
+        }
         const MOVE_PLAUSIBILITY_POLICY = (window.CHECK_MOVE_PLAUSIBILITY || 'never').toLowerCase();
 
         function isUnexploredRegionExit(exit) {
@@ -11233,17 +11253,18 @@
                                     const travelButton = document.createElement('button');
                                     travelButton.type = 'button';
                                     travelButton.className = 'exit-button';
-                                    const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
+                                    const destinationName = resolveDestinationNameStrict(exit);
                                     const isVehicle = Boolean(exit.isVehicle);
                                     const vehiclePrefix = isVehicle
                                         ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
                                         : '';
-                                    const vehicleLabel = `${vehiclePrefix}${baseName}`;
 
                                     if (isRegionExit) {
                                         travelButton.classList.add('region-exit');
-                                        const regionName = exit.destinationRegionName || baseName || 'Unknown region';
-                                        const locationName = baseName;
+                                        const regionName = (typeof exit.destinationRegionName === 'string' && exit.destinationRegionName.trim())
+                                            ? exit.destinationRegionName.trim()
+                                            : destinationName;
+                                        const locationName = destinationName;
                                         if (exit.destinationRegionExpanded) {
                                             travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
                                             travelButton.classList.add('region-exit-expanded');
@@ -11255,7 +11276,7 @@
                                             travelButton.dataset.regionId = destinationRegionId;
                                         }
                                     } else {
-                                        travelButton.textContent = vehicleLabel;
+                                        travelButton.textContent = destinationName;
                                     }
 
                                     travelButton.dataset.destinationId = exit.destination;
@@ -11270,7 +11291,7 @@
                                     container.appendChild(travelButton);
 
                                     if (exitId) {
-                                        const friendlyName = (travelButton.textContent || baseName || key || '').trim() || 'this exit';
+                                        const friendlyName = destinationName;
 
                                         const editButton = document.createElement('button');
                                         editButton.type = 'button';
@@ -11594,24 +11615,22 @@
                     ? moveRequest.direction.trim()
                     : null;
 
-                const baseName = exit.destinationName || locationCache[exit.destination] || exit.description || exit.destination;
-                const regionName = exit.destinationRegion ? (exit.destinationRegionName || baseName) : null;
-                const targetName = (regionName || baseName || 'the destination').toString().trim() || 'the destination';
-                const vehicleType = typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : '';
+                const destinationName = resolveDestinationNameStrict(exit);
+                const regionName = exit.destinationRegion
+                    ? (typeof exit.destinationRegionName === 'string' ? exit.destinationRegionName.trim() || null : null)
+                    : null;
                 const playerName = (window.currentPlayerData?.name || '').toString().trim();
                 if (!playerName) {
                     throw new Error('Player name is missing when preparing travel narration for exit traversal.');
                 }
 
-                const message = vehicleType
-                    ? `${playerName} took the ${vehicleType} to ${targetName}.`
-                    : `${playerName} moved to ${targetName}.`;
+                const message = `${playerName} moved to ${destinationName}.`;
 
                 let overlayShown = false;
                 const showMoveOverlay = () => {
                     if (!overlayShown) {
                         overlayShown = true;
-                        showLocationOverlay(`Moving to ${targetName}...`);
+                        showLocationOverlay(`Moving to ${destinationName}...`);
                     }
                 };
 
@@ -11639,8 +11658,8 @@
                             destinationIsRegionEntryStub: Boolean(exit.destinationIsRegionEntryStub),
                             isVehicle: Boolean(exit.isVehicle),
                             vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType.trim() : null,
-                            destinationName: typeof baseName === 'string' ? baseName.trim() || null : null,
-                            regionName: typeof regionName === 'string' ? regionName.trim() || null : null
+                            destinationName,
+                            regionName
                         }
                     };
                     try {
@@ -11669,15 +11688,20 @@
             }
         }
 
-        await performDirectMove(exit.destination, targetName);
+        await performDirectMove(exit.destination, destinationName);
     }
 
-            async function performDirectMove(destinationId, targetName) {
+            async function performDirectMove(destinationId, destinationName) {
                 if (!destinationId) {
                     return;
                 }
 
-                showLocationOverlay(`Moving to ${targetName || 'the destination'}...`);
+                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || null;
+                if (!resolvedDestinationName) {
+                    throw new Error('Destination name is required for direct move.');
+                }
+
+                showLocationOverlay(`Moving to ${resolvedDestinationName}...`);
                 try {
                     const response = await fetch('/api/player/move', {
                         method: 'POST',
@@ -11687,19 +11711,19 @@
 
                     const result = await response.json();
                     if (result.success && result.location) {
-                        if (result.location.name) {
-                            locationCache[result.location.id] = result.location.name;
+                        if (typeof result.location.name === 'string' && result.location.name.trim()) {
+                            locationCache[result.location.id] = result.location.name.trim();
                         }
                         if (Array.isArray(result.location.exits)) {
                             result.location.exits.forEach(exit => {
-                                if (exit.destination && exit.destinationName) {
-                                    locationCache[exit.destination] = exit.destinationName;
+                                if (exit.destination && typeof exit.destinationName === 'string' && exit.destinationName.trim()) {
+                                    locationCache[exit.destination] = exit.destinationName.trim();
                                 }
                             });
                         } else if (result.location.exits) {
                             Object.values(result.location.exits).forEach(exit => {
-                                if (exit?.destination && exit.destinationName) {
-                                    locationCache[exit.destination] = exit.destinationName;
+                                if (exit?.destination && typeof exit.destinationName === 'string' && exit.destinationName.trim()) {
+                                    locationCache[exit.destination] = exit.destinationName.trim();
                                 }
                             });
                         }
