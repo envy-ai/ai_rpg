@@ -8,7 +8,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
-const console = require('console');
+const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -286,10 +286,6 @@ module.exports = function registerApiRoutes(scope) {
                 const previousCountdown = Number.isFinite(npc?.corpseCountdown)
                     ? npc.corpseCountdown
                     : null;
-
-                if (typeof npc.updateCorpseCountdown === 'function') {
-                    npc.updateCorpseCountdown();
-                }
 
                 const currentCountdown = Number.isFinite(npc?.corpseCountdown)
                     ? npc.corpseCountdown
@@ -4995,6 +4991,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     results.push(npcTurnResult);
 
+                    /*
                     const { removed: corpseRemovals, countdownUpdates } = processNpcCorpses({ reason: 'npc-turn' });
                     if (countdownUpdates.length) {
                         npcTurnResult.corpseCountdownUpdates = countdownUpdates;
@@ -5002,6 +4999,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (corpseRemovals.length) {
                         npcTurnResult.corpseRemovals = corpseRemovals;
                     }
+                    */
 
                     if (stream && stream.isEnabled) {
                         stream.npcTurn({
@@ -6040,6 +6038,7 @@ module.exports = function registerApiRoutes(scope) {
                         stripStreamedEventArtifacts(responseData);
                     }
 
+                    /*
                     const { removed: corpseRemovals, countdownUpdates } = processNpcCorpses({ reason: 'player-action' });
                     corpseProcessingRan = true;
                     if (countdownUpdates.length) {
@@ -6048,8 +6047,10 @@ module.exports = function registerApiRoutes(scope) {
                     if (corpseRemovals.length) {
                         responseData.corpseRemovals = corpseRemovals;
                     }
+                    */
 
                     responseData.messages = newChatEntries;
+
                     return respond(responseData);
                 }
 
@@ -6403,11 +6404,12 @@ module.exports = function registerApiRoutes(scope) {
 
                         let npcTurnFrequency = typeof Globals.config.npc_turns?.npcTurnFrequency === 'number' && Globals.config.npc_turns.npcTurnFrequency >= 0 && Globals.config.npc_turns.npcTurnFrequency <= 1 ? Globals.config.npc_turns.npcTurnFrequency : 1;
 
-                        if (Globals.inCombat) {
+                        if (Globals.isInCombat()) {
                             if (Globals.config.combat_npc_turns?.enabled === false) {
                                 console.log('Combat NPC turns are disabled in configuration.');
                                 skipNpcEvents = true;
                             } else {
+                                console.log('Using combat NPC turns configuration.');
                                 maxNpcsToAct = Number.isInteger(Globals.config.combat_npc_turns?.maxFriendlyNpcsToAct) && Globals.config.combat_npc_turns.maxFriendlyNpcsToAct > 0
                                     ? Globals.config.combat_npc_turns.maxFriendlyNpcsToAct
                                     : maxNpcsToAct;
@@ -6420,7 +6422,7 @@ module.exports = function registerApiRoutes(scope) {
                             }
                         }
 
-                        console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
+                        console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
 
                         if (!takeNpcTurns) {
                             console.log('NPC turns are disabled in configuration.');
@@ -6522,6 +6524,13 @@ module.exports = function registerApiRoutes(scope) {
                         await summarizePendingEntriesIfThresholdReached();
                     } catch (summaryBatchError) {
                         console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
+                    }
+
+                    console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
+                    const playersById = Globals.playersById;
+                    for (const player of playersById.values()) {
+                        console.log(` - Finalizing turn for player ${player.name} (${player.id})`);
+                        player.finalizeTurn();
                     }
 
                     if (stream.isEnabled && !playerActionStreamSent) {
@@ -13335,15 +13344,10 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({ success: false, error: 'Command name is required.' });
                 }
 
-                const normalizedName = command.trim().toLowerCase();
-                const commandPath = path.join(__dirname, 'slashcommands', `${normalizedName}.js`);
-                if (!fs.existsSync(commandPath)) {
-                    return res.status(404).json({ success: false, error: `Slash command '${normalizedName}' not found.` });
-                }
-
-                const CommandModule = require(commandPath);
-                if (!CommandModule || typeof CommandModule.execute !== 'function') {
-                    return res.status(500).json({ success: false, error: `Slash command '${normalizedName}' is not executable.` });
+                const trimmedCommand = command.trim();
+                const CommandModule = SlashCommandRegistry.getSlashCommandModule(trimmedCommand);
+                if (!CommandModule) {
+                    return res.status(404).json({ success: false, error: `Slash command '${trimmedCommand}' not found.` });
                 }
 
                 const providedArgs = (args && typeof args === 'object') ? { ...args } : {};

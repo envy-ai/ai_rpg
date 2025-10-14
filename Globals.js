@@ -6,6 +6,16 @@ class Globals {
   static processedMove = false;
   static inCombat = false;
 
+  static setInCombat(value) {
+    console.log(`Globals.setInCombat(${value}) called.`);
+    Globals.inCombat = value;
+  }
+
+  static isInCombat() {
+    console.log(`Globals.isInCombat() => ${Globals.inCombat}`);
+    return Globals.inCombat;
+  }
+
   static get location() {
     if (!Globals.currentPlayer) {
       console.warn('Globals.location accessed before currentPlayer was set.');

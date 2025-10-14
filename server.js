@@ -20,6 +20,7 @@ const LocationExit = require('./LocationExit.js');
 
 // Import Thing class
 const Thing = require('./Thing.js');
+const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 
 function getDefaultRarityLabel() {
     return Thing.getDefaultRarityLabel();
@@ -101,6 +102,29 @@ try {
     console.error('Error loading configuration:', error.message);
     process.exit(1);
 }
+
+function resolveMaxTokens(...values) {
+    let candidate = 0;
+    for (const value of values) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric) && numeric > 0) {
+            candidate = Math.max(candidate, numeric);
+        }
+    }
+
+    const configured = Number(config?.ai?.maxTokens);
+    if (Number.isFinite(configured) && configured > 0) {
+        candidate = Math.max(candidate, configured);
+    }
+
+    if (candidate > 0) {
+        return candidate;
+    }
+
+    return 512;
+}
+
+SlashCommandRegistry.initializeSlashCommands();
 
 const resolveBaseTimeoutMilliseconds = () => {
     if (config?.ai?.baseTimeoutSeconds) {
@@ -2950,7 +2974,7 @@ async function populateNpcSelectedMemories(baseContext) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    max_tokens: config.ai.maxTokens || 200,
+                    max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 200),
                     temperature: typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.2
                 };
 
@@ -3505,7 +3529,7 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
         const requestData = {
             model: config.ai.model,
             messages,
-            max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
+            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 200),
             temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
         };
 
@@ -4396,7 +4420,7 @@ async function expandRegionEntryStub(stubLocation) {
             const requestData = {
                 model,
                 messages,
-                max_tokens: 4000,
+                max_tokens: resolveMaxTokens(stubPrompt?.maxTokens, 4000),
                 temperature: config.ai.temperature || 0.7
             };
 
@@ -5060,7 +5084,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         const requestData = {
             model: resolvedModel,
             messages,
-            max_tokens: 1200,
+            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 1200),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -5486,7 +5510,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const requestData = {
                     model: config.ai.model,
                     messages,
-                    max_tokens: parsedTemplate.maxTokens || 600,
+                    max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
                     temperature: typeof parsedTemplate.temperature === 'number'
                         ? parsedTemplate.temperature
                         : temperature
@@ -5878,7 +5902,7 @@ async function alterThingByPrompt({
     const requestData = {
         model,
         messages,
-        max_tokens: parsedTemplate.maxTokens || 600,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
         temperature: typeof parsedTemplate.temperature === 'number'
             ? parsedTemplate.temperature
             : (config.ai.temperature || 0.7)
@@ -6410,7 +6434,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
         const requestData = {
             model,
             messages,
-            max_tokens: 1600,
+            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 1600),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -6927,7 +6951,7 @@ async function equipBestGearForCharacter({
     const requestData = {
         model: resolvedModel,
         messages,
-        max_tokens: 600,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
         temperature: config.ai.temperature || 0.7
     };
 
@@ -7393,7 +7417,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
         const requestData = {
             model,
             messages,
-            max_tokens: 1200,
+            max_tokens: resolveMaxTokens(1200),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -7633,7 +7657,7 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
         const requestData = {
             model,
             messages,
-            max_tokens: 1600,
+            max_tokens: resolveMaxTokens(1600),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -7980,7 +8004,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
         const requestData = {
             model,
             messages,
-            max_tokens: parsedTemplate.maxTokens || 5000,
+            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 5000),
             temperature: typeof parsedTemplate.temperature === 'number'
                 ? parsedTemplate.temperature
                 : (config.ai.temperature || 0.7)
@@ -8635,7 +8659,7 @@ async function enforceBannedNpcNames({
         const requestData = {
             model,
             messages: regenMessages,
-            max_tokens: 600,
+            max_tokens: resolveMaxTokens(600),
             temperature: 0.5
         };
 
@@ -9005,7 +9029,7 @@ async function ensureUniqueNpcNames({
         const requestData = {
             model,
             messages: regenMessages,
-            max_tokens: 600,
+            max_tokens: resolveMaxTokens(600),
             temperature: 0.5
         };
 
@@ -9397,7 +9421,7 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
     const requestData = {
         model: resolvedModel,
         messages,
-        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
         temperature: typeof parsedTemplate.temperature === 'number'
             ? parsedTemplate.temperature
             : (config.ai.temperature || 0.6)
@@ -9939,7 +9963,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
             { role: 'system', content: parsedTemplate.systemPrompt },
             { role: 'user', content: parsedTemplate.generationPrompt }
         ],
-        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 400,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 400),
         temperature: typeof parsedTemplate.temperature === 'number'
             ? parsedTemplate.temperature
             : 0.4
@@ -10080,7 +10104,7 @@ async function regenerateLocationName(location) {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: generationPrompt }
         ],
-        max_tokens: parsedTemplate.maxTokens || aiConfig.maxTokens || 400,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, aiConfig?.maxTokens, 400),
         temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
     };
 
@@ -10272,7 +10296,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     const requestData = {
         model,
         messages,
-        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
         temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
     };
 
@@ -10380,7 +10404,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
     const requestData = {
         model,
         messages,
-        max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 600,
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
         temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
     };
 
@@ -10507,7 +10531,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const requestData = {
             model,
             messages,
-            max_tokens: 2000,
+            max_tokens: resolveMaxTokens(2000),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -10840,7 +10864,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const requestData = {
             model,
             messages,
-            max_tokens: 2500,
+            max_tokens: resolveMaxTokens(2500),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -11761,7 +11785,7 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         const requestData = {
             model: model,
             messages: messages,
-            max_tokens: config.ai.maxTokens || 500,
+            max_tokens: resolveMaxTokens(prompts?.maxTokens, 500),
             temperature: config.ai.temperature || 0.3  // Lower temperature for more consistent output
         };
 
@@ -12490,7 +12514,7 @@ async function generateLocationFromPrompt(options = {}) {
         const requestData = {
             model: model,
             messages: messages,
-            max_tokens: config.ai.maxTokens || 1000,
+            max_tokens: resolveMaxTokens(templateOverrides?.maxTokens, 1000),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -12798,7 +12822,7 @@ async function chooseExistingRegionExit({
     const requestData = {
         model,
         messages,
-        max_tokens: 300,
+        max_tokens: resolveMaxTokens(300),
         temperature: config.ai.temperature || 0.4
     };
 
@@ -13612,7 +13636,7 @@ async function chooseRegionEntrance({
         const entranceRequest = {
             model,
             messages: entranceMessages,
-            max_tokens: 200,
+            max_tokens: resolveMaxTokens(200),
             temperature: config.ai.temperature || 0.7
         };
 
@@ -13706,7 +13730,7 @@ async function generateRegionFromPrompt(options = {}) {
         const requestData = {
             model,
             messages,
-            max_tokens: 6000,
+            max_tokens: resolveMaxTokens(6000),
             temperature: config.ai.temperature || 0.7
         };
 

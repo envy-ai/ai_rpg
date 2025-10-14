@@ -4,6 +4,7 @@ const path = require('path');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
+const { findPackageJSON } = require('module');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -63,6 +64,8 @@ class Player {
     #elapsedTime = 0;
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
     #inCombat = false;
+    #checkEquipment = false;
+
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
 
@@ -609,7 +612,7 @@ class Player {
         return this.getById(id);
     }
 
-    static #notifyNpcInventoryChange(player, payload) {
+    static #notifyNpcInventoryChange(player, payload = {}) {
         if (!player || !player.isNPC || !this.#npcInventoryChangeHandler) {
             return;
         }
@@ -1277,7 +1280,7 @@ class Player {
         }
 
         if (added && !suppressNpcEquip) {
-            Player.#notifyNpcInventoryChange(this, { changeType: 'add', item: resolved });
+            this.#checkEquipment = true;
         }
 
         return true;
@@ -1296,7 +1299,7 @@ class Player {
                 this.#lastUpdated = new Date().toISOString();
             }
             if (!suppressNpcEquip) {
-                Player.#notifyNpcInventoryChange(this, { changeType: 'remove', item: resolved });
+                this.#checkEquipment = true;
             }
         }
         return removed;
@@ -4005,6 +4008,26 @@ class Player {
             .join(' ');
 
         return `${statusEmoji} ${this.#name} (Lvl ${this.#level}) HP:${this.#health}/${this.maxHealth} [${attrs}]`;
+    }
+
+    finalizeTurn() {
+        console.log(`Finalizing turn for player ${this.#name} (${this.#id})`);
+        // Handle corpse countdown if dead
+        if (this.#isDead && this.#corpseCountdown > 0) {
+            this.#corpseCountdown -= 1;
+        }
+
+        if (this.#checkEquipment) {
+            Player.#notifyNpcInventoryChange(this);
+        }
+        this.#checkEquipment = false;
+
+        // Reset turn-based flags
+        this.#lastActionWasTravel = false;
+        this.#partyMembershipChangedThisTurn = false;
+        this.#partyMembersAddedThisTurn.clear();
+        this.#partyMembersRemovedThisTurn.clear();
+        this.#lastUpdated = new Date().toISOString();
     }
 }
 

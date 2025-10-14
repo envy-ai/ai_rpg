@@ -1,5 +1,4 @@
-const fs = require('fs');
-const path = require('path');
+const { getRegisteredSlashCommands } = require('./SlashCommandRegistry.js');
 
 class SlashCommandBase {
   static get name() {
@@ -79,34 +78,44 @@ class SlashCommandBase {
   }
 
   static listCommands() {
-    const directory = path.join(__dirname, 'slashcommands');
-    let files;
-    try {
-      files = fs.readdirSync(directory, { withFileTypes: true });
-    } catch (error) {
-      throw new Error(`Failed to enumerate slash commands: ${error.message}`);
-    }
-
     const commands = [];
-    for (const entry of files) {
-      if (!entry.isFile() || !entry.name.endsWith('.js')) {
+    const entries = getRegisteredSlashCommands();
+    for (const entry of entries) {
+      if (!entry || entry.isAlias) {
         continue;
       }
-      const commandPath = path.join(directory, entry.name);
-      let CommandModule;
+
+      const CommandModule = entry.module;
+      if (!CommandModule) {
+        continue;
+      }
+
+      const commandName = typeof entry.canonicalName === 'string' && entry.canonicalName.trim()
+        ? entry.canonicalName.trim()
+        : (typeof CommandModule.name === 'string' ? CommandModule.name : null);
+      if (!commandName) {
+        continue;
+      }
+
+      let description = '';
       try {
-        CommandModule = require(commandPath);
-      } catch (error) {
-        console.warn(`Failed to load slash command '${entry.name}':`, error.message);
-        continue;
+        const rawDescription = CommandModule.description;
+        description = typeof rawDescription === 'string' ? rawDescription : '';
+      } catch (_) {
+        description = '';
       }
-      if (!CommandModule || typeof CommandModule.name !== 'string' || typeof CommandModule.usage !== 'string') {
-        continue;
+
+      let usage;
+      try {
+        usage = typeof CommandModule.usage === 'string' ? CommandModule.usage : `/${commandName}`;
+      } catch (_) {
+        usage = `/${commandName}`;
       }
+
       commands.push({
-        name: CommandModule.name,
-        description: typeof CommandModule.description === 'string' ? CommandModule.description : '',
-        usage: CommandModule.usage
+        name: commandName,
+        description,
+        usage
       });
     }
 

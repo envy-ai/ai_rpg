@@ -46,7 +46,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'party_change', prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.` },
         { key: 'environmental_status_damage', prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
-        { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [small|medium|large|all] | ..." for each adjustment, separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. If no changes to need bars, answer N/A.` },
+        { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [small|medium|large|all] | ..." for each adjustment, separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Report these events strictly based on how things affect the need bar and not the need bar's current level (for instance, large increases are fine even if the need bar is currently full). If no changes to need bars, answer N/A.` },
         { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
@@ -1004,22 +1004,6 @@ class Events {
             if (suppressedNpc?.has(key) || suppressedItems?.has(key)) {
                 continue;
             }
-            /*
-            if (key === 'in_combat') {
-                console.log(`Processing in_combat event: ${JSON.stringify(entries)}`);
-                const answer = Array.isArray(entries) ? entries[entries.length - 1] : entries;
-                if (typeof answer === 'string') {
-                    console.log(`Raw in_combat answer: "${answer}"`);
-
-                    const normalized = answer.trim().toLowerCase();
-                    Globals.inCombat = normalized === 'yes';
-                } else {
-                    Globals.inCombat = Boolean(answer);
-                }
-                console.log(`Set Globals.inCombat = ${Globals.inCombat}`);
-                continue;
-            }
-            */
             const handler = this._handlers[key];
             if (typeof handler !== 'function') {
                 continue;
@@ -1139,13 +1123,8 @@ class Events {
                     return null;
                 }
                 const normalized = raw.trim().toLowerCase();
-                if (['yes', 'no'].includes(normalized)) {
-                    return normalized;
-                }
-                if (['true', 'false'].includes(normalized)) {
-                    return normalized === 'true' ? 'yes' : 'no';
-                }
-                return null;
+
+                return (normalized === 'yes' || normalized === 'true');
             },
             item_to_npc: raw => splitPipeList(raw).map(entry => {
                 const [item, npc, description] = splitArrowParts(entry, 3);
@@ -1877,7 +1856,7 @@ class Events {
             },
             time_passed: function (value, context = {}) {
                 const amount = Number(value);
-                if (!Number.isFinite(amount) || amount <= 0) {
+                if (!Number.isFinite(amount) || amount < 0) {
                     console.warn('Invalid time_passed value:', value);
                     console.trace()
                     return;
@@ -1887,7 +1866,11 @@ class Events {
                 context.timeProgress = { amount, total: Globals.elapsedTime };
             },
             in_combat: function (flag, context = {}) {
-                Globals.inCombat = Boolean(flag);
+                //console.log(`Processing in_combat event: ${JSON.stringify(flag)}`);
+                const normalizedFlag = Array.isArray(flag) ? flag[flag.length - 1] : flag;
+                //console.log(`Normalized in_combat flag: ${JSON.stringify(normalizedFlag)}`);
+                //console.log(`Boolean value: ${Boolean(normalizedFlag)}`);
+                Globals.setInCombat(Boolean(normalizedFlag));
                 context.inCombat = Globals.inCombat;
             },
             item_to_npc: async function (entries = [], context = {}) {
