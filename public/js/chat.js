@@ -3339,6 +3339,17 @@ class AIRPGChat {
         }
 
         this.messageInput.value = '';
+        const trimmed = rawInput.trim();
+        if (trimmed.startsWith('/')) {
+            try {
+                await this.executeSlashCommand(trimmed);
+            } catch (error) {
+                console.error('Slash command failed:', error);
+                this.addMessage('system', `Slash command error: ${error.message || error}`, true);
+            }
+            return;
+        }
+
         await this.submitChatMessage(rawInput, { setButtonLoading: true, travel: false });
     }
 
@@ -3348,6 +3359,133 @@ class AIRPGChat {
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null
         });
+    }
+
+    parseSlashArgs(argsText) {
+        const result = {};
+        if (!argsText || !argsText.trim()) {
+            return result;
+        }
+
+        const pattern = /([a-zA-Z0-9_]+)=([^\s"]+|"[^"]*")/g;
+        let match;
+        while ((match = pattern.exec(argsText)) !== null) {
+            const keyRaw = match[1];
+            let valueRaw = match[2] || '';
+            if (valueRaw.startsWith('"') && valueRaw.endsWith('"')) {
+                valueRaw = valueRaw.slice(1, -1);
+            }
+
+            let value = valueRaw;
+            const lower = valueRaw.trim().toLowerCase();
+            if (/^-?\d+$/.test(valueRaw)) {
+                value = Number.parseInt(valueRaw, 10);
+            } else if (lower === 'true' || lower === 'false') {
+                value = lower === 'true';
+            }
+
+            result[keyRaw.toLowerCase()] = value;
+        }
+
+        const remainder = argsText.replace(/([a-zA-Z0-9_]+)=([^\s"]+|"[^"]*")/g, '').trim();
+        if (remainder) {
+            result._ = remainder;
+        }
+
+        return result;
+    }
+
+    async executeSlashCommand(rawCommand) {
+        const trimmed = rawCommand.startsWith('/') ? rawCommand.slice(1).trim() : rawCommand.trim();
+        if (!trimmed) {
+            throw new Error('Slash command is empty.');
+        }
+
+        const firstSpaceIndex = trimmed.indexOf(' ');
+        const commandName = firstSpaceIndex === -1 ? trimmed : trimmed.slice(0, firstSpaceIndex);
+        if (!commandName) {
+            throw new Error('Slash command name is missing.');
+        }
+
+        const argsText = firstSpaceIndex === -1 ? '' : trimmed.slice(firstSpaceIndex + 1);
+        const args = this.parseSlashArgs(argsText);
+
+        this.addMessage('user', `/${trimmed}`, false);
+
+        const requestBody = {
+            command: commandName,
+            args,
+            argsText,
+            userId: window.currentPlayerData?.id || null
+        };
+
+        this.setSendButtonLoading(true);
+
+        let overlayTimer = null;
+        const showOverlayAfterDelay = () => {
+            overlayTimer = window.setTimeout(() => {
+                try {
+                    window.showLocationOverlay?.('Executing command...');
+                } catch (error) {
+                    console.warn('Failed to show overlay for slash command:', error);
+                }
+            }, 500);
+        };
+        showOverlayAfterDelay();
+
+        try {
+            const response = await fetch('/api/slash-command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok || !data?.success) {
+                const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
+                    || `HTTP ${response.status}`;
+                throw new Error(errorText);
+            }
+
+            const replies = Array.isArray(data.replies) ? data.replies : [];
+            if (!replies.length) {
+                this.addMessage('system', `Command '${commandName}' executed.`, false);
+            } else {
+                replies.forEach(reply => {
+                    if (!reply || typeof reply.content !== 'string') {
+                        return;
+                    }
+                    const message = reply.content.trim();
+                    if (!message) {
+                        return;
+                    }
+                    const isError = Boolean(reply.ephemeral);
+                    this.addMessage('system', message, isError);
+                });
+            }
+
+            try {
+                await this.checkLocationUpdate();
+            } catch (error) {
+                console.warn('Failed to refresh after slash command:', error);
+            }
+        } finally {
+            if (overlayTimer) {
+                window.clearTimeout(overlayTimer);
+            }
+            try {
+                window.hideLocationOverlay?.();
+            } catch (_) {
+                // ignore
+            }
+            this.setSendButtonLoading(false);
+        }
     }
 
     async checkLocationUpdate() {

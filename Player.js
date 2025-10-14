@@ -2212,9 +2212,10 @@ class Player {
     /**
      * Level up the player
      */
-    levelUp() {
+    levelUp(count = 1) {
+        console.log(`⬆️ DING! Leveling up player ${this.#name || this.#id || 'unknown'} from level ${this.#level} to level ${this.#level + count}`);
         const previousLevel = this.#level;
-        this.#level += 1;
+        this.#level += count;
 
         this.#health = this.#calculateBaseHealth();
         const pointsPerLevel = this.#skillPointsPerLevel();
@@ -2241,13 +2242,13 @@ class Player {
         }
     }
 
-    addExperience(amount) {
+    addExperience(amount, raw = false) {
         if (!Number.isFinite(amount)) {
             return this.#experience;
         }
 
         this.#experience = Math.max(0, this.#experience + Number(amount));
-        this.#processExperienceOverflow();
+        this.#processExperienceOverflow(raw);
         this.#lastUpdated = new Date().toISOString();
 
         // If this player is not an NPC, iterate through their party and award the same exp to all members.
@@ -2264,13 +2265,7 @@ class Player {
     }
 
     addRawExperience(amount) {
-        if (!Number.isFinite(amount)) {
-            return this.#experience;
-        }
-
-        this.#experience = this.#experience + Number(amount);
-        this.#lastUpdated = new Date().toISOString();
-        return this.#experience;
+        return this.addExperience(amount, true);
     }
 
     setExperience(value) {
@@ -3974,15 +3969,24 @@ class Player {
         return newAttributes;
     }
 
-    #processExperienceOverflow() {
+    #processExperienceOverflow(raw = false) {
         const threshold = Player.#experienceThreshold;
         const multiplier = Player.#experienceRolloverMultiplier;
 
-        while (this.#experience > threshold) {
-            this.levelUp();
+        let levels = 0;
+        while (this.#experience >= threshold) {
+            levels += 1;
             const excess = Math.max(0, this.#experience - threshold);
-            this.#experience = excess * multiplier;
+            if (!raw) {
+                this.#experience = excess * multiplier;
+            } else {
+                this.#experience = excess;
+            }
         }
+        if (levels > 0) {
+            this.levelUp(levels);
+        }
+        return levels;
     }
 
     /**

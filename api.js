@@ -1,5 +1,7 @@
 const { randomUUID } = require('crypto');
 const { DOMParser } = require('xmldom');
+const fs = require('fs');
+const path = require('path');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
@@ -13296,6 +13298,105 @@ module.exports = function registerApiRoutes(scope) {
                     success: false,
                     error: error.message
                 });
+            }
+        });
+
+        app.post('/api/slash-command', async (req, res) => {
+            try {
+                const { command, args, argsText, userId } = req.body || {};
+                if (typeof command !== 'string' || !command.trim()) {
+                    return res.status(400).json({ success: false, error: 'Command name is required.' });
+                }
+
+                const normalizedName = command.trim().toLowerCase();
+                const commandPath = path.join(__dirname, 'slashcommands', `${normalizedName}.js`);
+                if (!fs.existsSync(commandPath)) {
+                    return res.status(404).json({ success: false, error: `Slash command '${normalizedName}' not found.` });
+                }
+
+                const CommandModule = require(commandPath);
+                if (!CommandModule || typeof CommandModule.execute !== 'function') {
+                    return res.status(500).json({ success: false, error: `Slash command '${normalizedName}' is not executable.` });
+                }
+
+                const providedArgs = (args && typeof args === 'object') ? { ...args } : {};
+
+                const argDefinitions = Array.isArray(CommandModule.args) ? CommandModule.args : [];
+                if (argsText && argDefinitions.length) {
+                    const tokens = [];
+                    const regex = /"([^"]*)"|(\S+)/g;
+                    let match;
+                    while ((match = regex.exec(argsText)) !== null) {
+                        const value = match[1] !== undefined ? match[1] : match[2];
+                        if (value !== undefined) {
+                            tokens.push(value);
+                        }
+                    }
+
+                    for (const definition of argDefinitions) {
+                        const argName = definition?.name;
+                        if (!argName) {
+                            continue;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(providedArgs, argName)) {
+                            continue;
+                        }
+                        if (!tokens.length) {
+                            break;
+                        }
+                        const rawToken = tokens.shift();
+                        let parsedValue = rawToken;
+                        switch ((definition.type || '').toLowerCase()) {
+                            case 'integer': {
+                                const numeric = Number.parseInt(rawToken, 10);
+                                if (!Number.isInteger(numeric)) {
+                                    throw new Error(`Argument "${argName}" must be an integer.`);
+                                }
+                                parsedValue = numeric;
+                                break;
+                            }
+                            case 'boolean': {
+                                const lower = rawToken.trim().toLowerCase();
+                                if (lower === 'true') {
+                                    parsedValue = true;
+                                } else if (lower === 'false') {
+                                    parsedValue = false;
+                                } else {
+                                    throw new Error(`Argument "${argName}" must be a boolean.`);
+                                }
+                                break;
+                            }
+                            case 'string':
+                            default:
+                                parsedValue = rawToken;
+                                break;
+                        }
+                        providedArgs[argName] = parsedValue;
+                    }
+                }
+
+                const validationErrors = typeof CommandModule.validateArgs === 'function'
+                    ? CommandModule.validateArgs(providedArgs)
+                    : [];
+                if (validationErrors.length) {
+                    return res.status(400).json({ success: false, errors: validationErrors });
+                }
+
+                const replies = [];
+                const interaction = {
+                    user: { id: typeof userId === 'string' ? userId : null },
+                    reply(payload) {
+                        replies.push(payload);
+                        return Promise.resolve();
+                    }
+                };
+
+                await CommandModule.execute(interaction, providedArgs);
+
+                return res.json({ success: true, replies });
+            } catch (error) {
+                console.error('Slash command execution failed:', error);
+                return res.status(500).json({ success: false, error: error.message });
             }
         });
 

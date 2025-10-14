@@ -7805,8 +7805,11 @@ function collectNpcSummariesForLevelUp({ character, locationObj, regionObj, prev
 
 async function generateLevelUpAbilitiesForCharacter(character, { previousLevel = null, newLevel = null } = {}) {
     if (!character || typeof character.name !== 'string') {
+        console.error('generateLevelUpAbilitiesForCharacter: Invalid character object.');
         return null;
     }
+
+    console.log(`Generating level-up abilities for ${character.name}...`);
 
     const trimmedName = character.name.trim();
     if (!trimmedName) {
@@ -7890,18 +7893,31 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             race: ''
         };
 
-        const templateVars = {
-            setting: settingContext,
+        const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
+
+        const promptTemplateBase = {
+            ...baseContext,
+            promptType: 'npc-generate-abilities-levelup',
             gameHistory,
-            region: regionContext,
-            location: locationContext,
             existingNpcSummaries,
+            levelUpSummary: levelUpLine,
+            character: {
+                id: character.id || null,
+                name: trimmedName,
+                description: character.description || '',
+                race: character.race || '',
+                class: character.class || '',
+                level: Number.isFinite(currentLevel) ? currentLevel : null,
+                previousLevel: Number.isFinite(priorLevel) ? priorLevel : null
+            },
+            locationContext,
+            regionContext,
             currentPlayer: currentPlayerContext
         };
 
         let renderedTemplate;
         try {
-            renderedTemplate = promptEnv.render('npc-generate-abilities-levelup.xml.njk', templateVars);
+            renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
         } catch (error) {
             console.warn(`Failed to render level-up ability template for ${trimmedName}:`, error?.message || error);
             return;
@@ -7942,8 +7958,10 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
         const requestData = {
             model,
             messages,
-            max_tokens: 1600,
-            temperature: config.ai.temperature || 0.7
+            max_tokens: parsedTemplate.maxTokens || 5000,
+            temperature: typeof parsedTemplate.temperature === 'number'
+                ? parsedTemplate.temperature
+                : (config.ai.temperature || 0.7)
         };
 
         const requestStart = Date.now();
@@ -8071,7 +8089,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             character.setAbilities(mergedAbilities);
             const addedCount = additions.length;
             const levelLabel = Number.isFinite(currentLevel) ? currentLevel : character.level;
-            console.log(`🎓 Added ${addedCount} new ability${addedCount === 1 ? '' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
+            console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
         }
     })();
 
@@ -8079,6 +8097,10 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 
     try {
         await abilityPromise;
+        console.log(`Completed level-up ability generation for ${trimmedName}.`);
+    } catch (error) {
+        console.warn(`Error during level-up ability generation for ${trimmedName}:`, error?.message || error);
+        console.debug(error);
     } finally {
         levelUpAbilityPromises.delete(characterKey);
     }

@@ -1,6 +1,13 @@
+const fs = require('fs');
+const path = require('path');
+
 class SlashCommandBase {
   static get name() {
     throw new Error('Name not implemented');
+  }
+
+  static get aliases() {
+    return [];
   }
 
   static get description() {
@@ -69,6 +76,42 @@ class SlashCommandBase {
     }
 
     return errors;
+  }
+
+  static listCommands() {
+    const directory = path.join(__dirname, 'slashcommands');
+    let files;
+    try {
+      files = fs.readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      throw new Error(`Failed to enumerate slash commands: ${error.message}`);
+    }
+
+    const commands = [];
+    for (const entry of files) {
+      if (!entry.isFile() || !entry.name.endsWith('.js')) {
+        continue;
+      }
+      const commandPath = path.join(directory, entry.name);
+      let CommandModule;
+      try {
+        CommandModule = require(commandPath);
+      } catch (error) {
+        console.warn(`Failed to load slash command '${entry.name}':`, error.message);
+        continue;
+      }
+      if (!CommandModule || typeof CommandModule.name !== 'string' || typeof CommandModule.usage !== 'string') {
+        continue;
+      }
+      commands.push({
+        name: CommandModule.name,
+        description: typeof CommandModule.description === 'string' ? CommandModule.description : '',
+        usage: CommandModule.usage
+      });
+    }
+
+    commands.sort((a, b) => a.name.localeCompare(b.name));
+    return commands;
   }
 }
 
