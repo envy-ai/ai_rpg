@@ -4,11 +4,32 @@ AI RPG Server turns an OpenAI-compatible language model into a solo tabletop gam
 
 ## Features
 
-- **AI-first orchestration** – Uses configurable Nunjucks prompt templates to describe players, regions, locations, and encounters before calling any OpenAI-compatible chat completion API.
-- **Rich world state** – Manages players, NPCs, items, exits, and regions entirely in memory with helpers in `Player`, `Region`, `Location`, `Thing`, and related classes.
-- **Browser control panel** – Ships Nunjucks views and vanilla JS for chat, new-game onboarding, settings, configuration editing, and debug dashboards (with Cytoscape-powered maps).
-- **Optional art generation** – Integrates with ComfyUI to queue portraits, locations, exits, and item renders using customizable workflow JSON templates.
-- **Persistent saves and logs** – Stores save-game snapshots, prompt transcripts, and generated images on disk so you can resume or debug any adventure.
+- A rich, structured region and location generation system for coherent locations.
+- Visual region maps using node graphs.
+- Tracking of NPCs and items.
+- Multiple party members can accompany you and act independently.
+- Levels, classes, stats, skills, and abilities.
+- The ability to create your own world setting, with or without help from the AI
+- A detailed NPC memory system that keeps track of important memories of individual NPCs.
+- Numerical skill and ability checks with real RNG and AI-generated circumstance bonuses to ensure fair action resolution
+- A modifiable needs system that tracks, by default, food, rest, and mana.
+- A detailed under-the-hood disposition system that tracks separate axes for platonic friendship, romantic interest, trust, respect, etc, and moves slowly over time so you can get that "slow burn" feeling.
+- Detailed AI event processing so that the program can understand basically any action you throw at it.
+- Probably some more stuff I don't remember right now
+
+## Tips
+
+- Type whatever action you want to take!
+- NPC and item images have a small '...' menu in the upper right corner. Access some "creative mode" stuff there.
+- If you want to bypass plausibility checking, precede what you type with '!'. You can control the gane world and other characters this way, do things that are implausible, and bypass skill checks.
+- If you want to bypass the AI interpreting what you typed in prose along with bypassing plausibility checking, precede what you type with '!!'.
+- If you want to enter something into the chat log without affecting anything or having events called, precede what you type with '#'.
+- Preliminary support for slash commands is available and there are a few implemented. Type /help for details.
+- Regions are pre-generated when you move into them and filled with location "stubs". Moving into a new region can take a long time, so be patient. Moving into a new stub location takes a while too -- about half as long as a new region. Moving to explored locations without taking any actions there skips the AI by default, so it's basically instantaneous.
+
+## Caution
+
+This is still in alpha! Expect bugs! If you want to help, when you find something that doesn't work right, come up with a test case so we can debug.
 
 ## Prerequisites
 
@@ -32,6 +53,8 @@ AI RPG Server turns an OpenAI-compatible language model into a solo tabletop gam
 - <a href='https://huggingface.co/TheDrummer/Gemma-3-R1-12B-v1-GGUF'>TheDrummer's Gemma 3 12B</a>
 - <a href='https://huggingface.co/bartowski/Goekdeniz-Guelmez_Josiefied-Qwen3-8B-abliterated-v1-GGUF'>Josiefied-Qwen3-8B-abliterated-v1 by Goekdeniz-Guelmez</a> in a pinch. It didn't really "get" region generation when I tested it.
 
+Plenty of other LLMs will work as well. Some will not. Drop by the Discord and let us know what does and doesn't work!
+
 ## Installation
 
 1. Install dependencies:
@@ -43,9 +66,9 @@ AI RPG Server turns an OpenAI-compatible language model into a solo tabletop gam
    cp config.default.yaml config.yaml
    ```
 3. Edit `config.yaml`:
-   - Set `ai.endpoint`, `ai.apiKey`, and `ai.model` to match your provider.
+   - Set `ai.endpoint`, `ai.apiKey`, and `ai.model` to match your provider. You can use local programs like KoboldCPP that support the OpenAI API as well as any external provider that does so.
    - Adjust `server.port`/`server.host` if you do not want the default `0.0.0.0:7777` binding.
-   - Toggle `imagegen.enabled` or update the ComfyUI settings under `imagegen.server`.
+   - Toggle `imagegen.enabled` or update the ComfyUI settings under `imagegen.server`. You can also set up external image generation that supports the OpenAI image generation API.
 
 > ⚠️ Never commit real API keys. Treat `config.yaml` as a secret.
 
@@ -80,10 +103,17 @@ The front end talks to the JSON API defined in `server.js`. Key routes cover cha
 └── tests/                 # Node scripts to exercise parsers and API flows manually
 ```
 
+## Technical Features
+
+- **AI-first orchestration** – Uses configurable Nunjucks prompt templates to describe players, regions, locations, and encounters before calling any OpenAI-compatible chat completion API.
+- **Rich world state** – Manages players, NPCs, items, exits, and regions entirely in memory with helpers in `Player`, `Region`, `Location`, `Thing`, and related classes.
+- **Browser control panel** – Ships Nunjucks views and vanilla JS for chat, new-game onboarding, settings, configuration editing, and debug dashboards (with Cytoscape-powered maps).
+- **Optional art generation** – Integrates with ComfyUI to queue portraits, locations, exits, and item renders using customizable workflow JSON templates.
+- **Persistent saves and logs** – Stores save-game snapshots, prompt transcripts, and generated images on disk so you can resume or debug any adventure.
+
 ## Development Tips
 
 - When image generation is disabled the game continues without art; re-enable it after your ComfyUI host is healthy.
-- The `tests/` folder contains standalone scripts (`node tests/<name>.js`) you can run against a live server for quick regression checks.
 - Logs rotate into `logs_prev/` on startup so you can compare the previous session with the current one.
 
 ## Community
