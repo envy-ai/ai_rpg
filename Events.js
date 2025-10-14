@@ -982,10 +982,6 @@ class Events {
         const seen = new Set();
         const orderedKeys = [];
 
-        if (!Object.prototype.hasOwnProperty.call(parsedMap, 'in_combat')) {
-            Globals.inCombat = false;
-        }
-
         executionOrder.forEach(key => {
             if (Object.prototype.hasOwnProperty.call(parsedMap, key)) {
                 orderedKeys.push(key);
@@ -1008,6 +1004,22 @@ class Events {
             if (suppressedNpc?.has(key) || suppressedItems?.has(key)) {
                 continue;
             }
+            /*
+            if (key === 'in_combat') {
+                console.log(`Processing in_combat event: ${JSON.stringify(entries)}`);
+                const answer = Array.isArray(entries) ? entries[entries.length - 1] : entries;
+                if (typeof answer === 'string') {
+                    console.log(`Raw in_combat answer: "${answer}"`);
+
+                    const normalized = answer.trim().toLowerCase();
+                    Globals.inCombat = normalized === 'yes';
+                } else {
+                    Globals.inCombat = Boolean(answer);
+                }
+                console.log(`Set Globals.inCombat = ${Globals.inCombat}`);
+                continue;
+            }
+            */
             const handler = this._handlers[key];
             if (typeof handler !== 'function') {
                 continue;
@@ -1019,16 +1031,6 @@ class Events {
                 console.warn(`Failed to apply ${key} events:`, error.message);
                 // log error trace
                 console.debug(error);
-            }
-
-            if (key === 'in_combat') {
-                const answer = Array.isArray(entries) ? entries[entries.length - 1] : entries;
-                if (typeof answer === 'string') {
-                    const normalized = answer.trim().toLowerCase();
-                    Globals.inCombat = normalized === 'yes';
-                } else {
-                    Globals.inCombat = Boolean(answer);
-                }
             }
         }
 
@@ -1131,6 +1133,19 @@ class Events {
             time_passed: raw => {
                 const value = parsePositiveDecimal(raw);
                 return value !== null ? value : null;
+            },
+            in_combat: raw => {
+                if (typeof raw !== 'string') {
+                    return null;
+                }
+                const normalized = raw.trim().toLowerCase();
+                if (['yes', 'no'].includes(normalized)) {
+                    return normalized;
+                }
+                if (['true', 'false'].includes(normalized)) {
+                    return normalized === 'true' ? 'yes' : 'no';
+                }
+                return null;
             },
             item_to_npc: raw => splitPipeList(raw).map(entry => {
                 const [item, npc, description] = splitArrowParts(entry, 3);
@@ -1870,6 +1885,10 @@ class Events {
                 Globals.elapsedTime += amount;
 
                 context.timeProgress = { amount, total: Globals.elapsedTime };
+            },
+            in_combat: function (flag, context = {}) {
+                Globals.inCombat = Boolean(flag);
+                context.inCombat = Globals.inCombat;
             },
             item_to_npc: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {

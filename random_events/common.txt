@@ -64,3 +64,5 @@ An NPC drops a small, non-valuable item (a button, a coin, a crumpled note) and 
 An NPC performs a small ritual or superstitious habit (knocking on wood, crossing fingers, etc).
 An NPC is seen reading a letter or book with intense focus, oblivious to surroundings.
 An NPC the player knows stops by for a visit.
+A hostile NPC takes an action.
+A hostile NPC attacks.

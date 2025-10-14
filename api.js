@@ -8,6 +8,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -3395,11 +3396,13 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function runNextNpcListPrompt({ locationOverride = null } = {}) {
+        async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct } = {}) {
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
+                    maxFriendlyNpcsToAct,
+                    maxHostileNpcsToAct,
                     promptType: 'next-npc-list'
                 });
 
@@ -4756,7 +4759,8 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null, maxFriendlyNpcsToAct = 1, maxHostileNpcsToAct = 0 }) {
+            console.log(`Executing NPC turns after player at location: ${location?.name || 'Unknown Location'}: skipNpcEvents=${skipNpcEvents}, maxFriendlyNpcsToAct=${maxFriendlyNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}`);
             if (skipNpcEvents) {
 
                 return [];
@@ -4768,7 +4772,7 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 console.log("Processing NPC turns")
-                const npcQueue = await runNextNpcListPrompt({ locationOverride: location });
+                const npcQueue = await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct });
                 const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
                 console.log(`NPC turn queue: ${npcNames.length} NPCs to process.`);
@@ -6390,10 +6394,31 @@ module.exports = function registerApiRoutes(scope) {
                         let skipNpcEvents = Boolean(isForcedEventAction);
 
                         const takeNpcTurns = Globals.config.npc_turns?.enabled !== false;
+
                         let maxNpcsToAct = Number.isInteger(Globals.config.npc_turns?.maxNpcsToAct) && Globals.config.npc_turns.maxNpcsToAct > 0
                             ? Globals.config.npc_turns.maxNpcsToAct
                             : 1;
+
+                        let maxHostileNpcsToAct = 0;
+
                         let npcTurnFrequency = typeof Globals.config.npc_turns?.npcTurnFrequency === 'number' && Globals.config.npc_turns.npcTurnFrequency >= 0 && Globals.config.npc_turns.npcTurnFrequency <= 1 ? Globals.config.npc_turns.npcTurnFrequency : 1;
+
+                        if (Globals.inCombat) {
+                            if (Globals.config.combat_npc_turns?.enabled === false) {
+                                console.log('Combat NPC turns are disabled in configuration.');
+                                skipNpcEvents = true;
+                            } else {
+                                maxNpcsToAct = Number.isInteger(Globals.config.combat_npc_turns?.maxFriendlyNpcsToAct) && Globals.config.combat_npc_turns.maxFriendlyNpcsToAct > 0
+                                    ? Globals.config.combat_npc_turns.maxFriendlyNpcsToAct
+                                    : maxNpcsToAct;
+                                maxHostileNpcsToAct = Number.isInteger(Globals.config.combat_npc_turns?.maxHostileNpcsToAct) && Globals.config.combat_npc_turns.maxHostileNpcsToAct > 0
+                                    ? Globals.config.combat_npc_turns.maxHostileNpcsToAct
+                                    : maxHostileNpcsToAct;
+                                npcTurnFrequency = typeof Globals.config.combat_npc_turns?.npcTurnFrequency === 'number' && Globals.config.combat_npc_turns.npcTurnFrequency >= 0 && Globals.config.combat_npc_turns.npcTurnFrequency <= 1
+                                    ? Globals.config.combat_npc_turns.npcTurnFrequency
+                                    : npcTurnFrequency;
+                            }
+                        }
 
                         console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
 
@@ -6426,7 +6451,9 @@ module.exports = function registerApiRoutes(scope) {
                             location,
                             stream,
                             skipNpcEvents,
-                            entryCollector: newChatEntries
+                            entryCollector: newChatEntries,
+                            maxFriendlyNpcsToAct: maxNpcsToAct,
+                            maxHostileNpcsToAct
                         });
                         if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
