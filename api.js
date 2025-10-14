@@ -37,7 +37,27 @@ function maybeInstallAiDebugInterceptor(axiosInstance) {
                     const method = (config?.method || 'POST').toUpperCase();
                     console.debug(`[AI DEBUG] ${method} ${url}`);
                     if (config?.headers) {
-                        console.debug('[AI DEBUG] Headers:', config.headers);
+                        const sanitizedHeaders = { ...config.headers };
+                        const authHeaderKeys = Object.keys(sanitizedHeaders)
+                            .filter(key => key.toLowerCase() === 'authorization');
+                        for (const key of authHeaderKeys) {
+                            const value = sanitizedHeaders[key];
+                            if (typeof value === 'string') {
+                                const trimmed = value.trim();
+                                if (trimmed.toLowerCase().startsWith('bearer ')) {
+                                    const token = trimmed.slice(7).trim();
+                                    const replacement = token ? 'Bearer [REDACTED]' : 'Bearer [EMPTY]';
+                                    sanitizedHeaders[key] = replacement;
+                                } else if (trimmed) {
+                                    sanitizedHeaders[key] = '[REDACTED]';
+                                } else {
+                                    sanitizedHeaders[key] = '[EMPTY]';
+                                }
+                            } else {
+                                sanitizedHeaders[key] = '[REDACTED]';
+                            }
+                        }
+                        console.debug('[AI DEBUG] Headers:', sanitizedHeaders);
                     }
                     if (config?.data !== undefined) {
                         let payload;

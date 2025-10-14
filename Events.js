@@ -1147,8 +1147,12 @@ class Events {
                 }
 
                 const originalName = parts[0] ? parts[0].trim() : '';
-                const newNameInput = parts.length > 1 ? parts[1].trim() : '';
+                let newNameInput = parts.length > 1 ? parts[1].trim() : '';
                 const description = parts.length > 2 ? parts[2].trim() : '';
+
+                if (newNameInput && newNameInput.toLowerCase() === 'n/a') {
+                    newNameInput = '';
+                }
 
                 if (!originalName && !newNameInput) {
                     return null;
