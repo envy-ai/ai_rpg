@@ -6342,7 +6342,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         stream.status('npc_turns:pending', skipNpcEvents
-                            ? 'Forced event detected; skipping NPC turns and random events.'
+                            ? 'Skipping NPC turns and random events.'
                             : 'Resolving NPC turns.');
                         const npcTurns = await executeNpcTurnsAfterPlayer({
                             location,
