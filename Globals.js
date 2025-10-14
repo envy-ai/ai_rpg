@@ -4,6 +4,7 @@ class Globals {
   static baseDir;
   static gameLoaded = false;
   static processedMove = false;
+  static inCombat = false;
 
   static get location() {
     if (!Globals.currentPlayer) {

@@ -982,6 +982,10 @@ class Events {
         const seen = new Set();
         const orderedKeys = [];
 
+        if (!Object.prototype.hasOwnProperty.call(parsedMap, 'in_combat')) {
+            Globals.inCombat = false;
+        }
+
         executionOrder.forEach(key => {
             if (Object.prototype.hasOwnProperty.call(parsedMap, key)) {
                 orderedKeys.push(key);
@@ -1015,6 +1019,16 @@ class Events {
                 console.warn(`Failed to apply ${key} events:`, error.message);
                 // log error trace
                 console.debug(error);
+            }
+
+            if (key === 'in_combat') {
+                const answer = Array.isArray(entries) ? entries[entries.length - 1] : entries;
+                if (typeof answer === 'string') {
+                    const normalized = answer.trim().toLowerCase();
+                    Globals.inCombat = normalized === 'yes';
+                } else {
+                    Globals.inCombat = Boolean(answer);
+                }
             }
         }
 

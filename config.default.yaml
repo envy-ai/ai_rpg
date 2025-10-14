@@ -107,6 +107,10 @@ npc_turns:
   enabled: true
   maxNpcsToAct: 1
   npcTurnFrequency: 0.3
+combat_npc_turns:
+  enabled: true
+  maxNpcsToAct: 2
+  npcTurnFrequency: 1
 
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.

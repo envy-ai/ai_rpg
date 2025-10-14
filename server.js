@@ -72,11 +72,33 @@ fs.readdirSync(logsDir)
 // Load configuration
 let config;
 try {
-    const configFile = fs.readFileSync(path.join(__dirname, 'config.yaml'), 'utf8');
-    config = yaml.load(configFile);
+    const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
+    const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
+    const defaultConfig = yaml.load(defaultConfigRaw) || {};
+
+    const configPath = path.join(__dirname, 'config.yaml');
+    const configRaw = fs.readFileSync(configPath, 'utf8');
+    const overrideConfig = yaml.load(configRaw) || {};
+
+    const mergeDeep = (target, source) => {
+        if (!source || typeof source !== 'object') {
+            return target;
+        }
+        const output = { ...target };
+        for (const [key, value] of Object.entries(source)) {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                output[key] = mergeDeep(target[key] && typeof target[key] === 'object' ? target[key] : {}, value);
+            } else {
+                output[key] = value;
+            }
+        }
+        return output;
+    };
+
+    config = mergeDeep(defaultConfig, overrideConfig);
     Globals.config = config;
 } catch (error) {
-    console.error('Error loading config.yaml:', error.message);
+    console.error('Error loading configuration:', error.message);
     process.exit(1);
 }
 
