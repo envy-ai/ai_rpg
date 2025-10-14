@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
+const SanitizedStringMap = require('./SanitizedStringMap.js');
+
 let CachedLocationModule = null;
 function getLocationModule() {
     if (!CachedLocationModule) {
@@ -61,6 +63,8 @@ class Player {
     #elapsedTime = 0;
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
     #inCombat = false;
+    static #indexById = new Map();
+    static #indexByName = new SanitizedStringMap();
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -487,6 +491,14 @@ class Player {
             throw new Error('Level-up handler must be a function');
         }
         this.#levelUpHandler = handler || null;
+    }
+
+    static get indexByName() {
+        return this.#indexByName;
+    }
+
+    static get indexById() {
+        return this.#indexById;
     }
 
     static get needBarDefinitions() {
@@ -968,6 +980,9 @@ class Player {
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
         this.#lastUpdated = options.lastUpdated || this.#createdAt;
+
+        Player.#indexById.set(this.#id, this);
+        Player.#indexByName.set(this.#name.toLowerCase(), this);
 
         Player.#instances.add(this);
     }
@@ -2234,6 +2249,27 @@ class Player {
         this.#experience = Math.max(0, this.#experience + Number(amount));
         this.#processExperienceOverflow();
         this.#lastUpdated = new Date().toISOString();
+
+        // If this player is not an NPC, iterate through their party and award the same exp to all members.
+        if (!this.#isNPC && this.#partyMembers.size) {
+            for (const memberId of this.#partyMembers) {
+                const member = Player.getById(memberId);
+                if (member && member instanceof Player && member.id !== this.id) {
+                    member.addExperience(amount);
+                }
+            }
+        }
+
+        return this.#experience;
+    }
+
+    addRawExperience(amount) {
+        if (!Number.isFinite(amount)) {
+            return this.#experience;
+        }
+
+        this.#experience = this.#experience + Number(amount);
+        this.#lastUpdated = new Date().toISOString();
         return this.#experience;
     }
 
@@ -2862,10 +2898,13 @@ class Player {
      * Set player name
      */
     setName(name) {
+        // remove from name index
+        Player.#indexByName.delete(this.#name);
         if (!name || typeof name !== 'string') {
             throw new Error('Player name must be a non-empty string');
         }
         this.#name = name.trim();
+        Player.#indexByName.set(this.#name, this);
         this.#lastUpdated = new Date().toISOString();
         return this.#name;
     }
