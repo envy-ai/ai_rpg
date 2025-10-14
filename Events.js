@@ -45,7 +45,8 @@ const EVENT_PROMPT_ORDER = [
         { key: 'environmental_status_damage', prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [small|medium|large|all] | ..." for each adjustment, separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. If no changes to need bars, answer N/A.` },
-        { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
+        { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
+        { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
         { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
@@ -1218,6 +1219,14 @@ class Events {
                 if (!name) {
                     return null;
                 }
+
+                // Remove any where the name is "you", "your character", "player", "the player", or the player's name
+                const lowerName = name.trim().toLowerCase();
+                const playerName = (Globals.currentPlayer?.name || '').toLowerCase();
+                if (['you', 'your character', 'player', 'the player', playerName].includes(lowerName)) {
+                    return null;
+                }
+
                 return { name: name.trim(), description: description ? description.trim() : null };
             }).filter(Boolean),
             status_effect_change: raw => splitPipeList(raw).map(entry => {
@@ -1839,7 +1848,7 @@ class Events {
                 }
                 Globals.elapsedTime += amount;
 
-                context.timeProgress.push({ amount, total: Globals.elapsedTime });
+                context.timeProgress = { amount, total: Globals.elapsedTime };
             },
             item_to_npc: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
@@ -2639,6 +2648,7 @@ class Events {
                     }
                     if (entry.status === 'dead') {
                         actor.modifyHealth(-Infinity, 'Killed');
+                        actor.isDead = true;
                         if (typeof actor.addStatusEffect === 'function') {
                             actor.addStatusEffect(makeStatusEffect('Deceased', null));
                         }

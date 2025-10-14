@@ -155,7 +155,12 @@ async function runEventTests() {
             command: 'Unit 734 takes a plasma burst and crashes to the deck, completely incapacitated.',
             validate(structured) {
                 const entries = structured.parsed.death_incapacitation || [];
-                assert(Array.isArray(entries) && entries.includes('Unit 734'), 'Unit 734 incapacitation not detected');
+                assert(Array.isArray(entries) && entries.length > 0, 'No death_incapacitation entries parsed');
+                const match = entries.find(entry => {
+                    const candidate = typeof entry === 'string' ? entry : entry?.name;
+                    return candidate && `${candidate}`.toLowerCase().includes('unit 734');
+                });
+                assert(match, 'Unit 734 incapacitation not detected');
             }
         },
         {

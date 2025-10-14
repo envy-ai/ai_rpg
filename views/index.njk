@@ -9610,6 +9610,7 @@
                 let teleportButton = null;
                 let memoriesButton = null;
                 let dispositionButton = null;
+                let killButton = null;
                 let deleteButton = null;
                 if (npc && npc.isPlayer) {
                     teleportButton = document.createElement('button');
@@ -9635,6 +9636,12 @@
                     dispositionButton.className = 'npc-card-menu-item';
                     dispositionButton.textContent = 'Dispositions';
                     menu.appendChild(dispositionButton);
+
+                    killButton = document.createElement('button');
+                    killButton.type = 'button';
+                    killButton.className = 'npc-card-menu-item npc-card-menu-item--danger';
+                    killButton.textContent = 'Kill';
+                    menu.appendChild(killButton);
 
                     deleteButton = document.createElement('button');
                     deleteButton.type = 'button';
@@ -9818,6 +9825,47 @@
                         closeNpcContextMenu();
                         const latestNpc = npcDataCache.get(npc.id) || npc;
                         await showNpcDispositionModal(latestNpc);
+                    });
+                }
+
+                if (killButton) {
+                    killButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+
+                        const cachedNpc = npcDataCache.get(npc.id) || npc;
+                        const npcName = cachedNpc?.name || 'this NPC';
+                        const confirmation = window.confirm(`Kill ${npcName}? This will set their health to zero and mark them as dead.`);
+                        if (!confirmation) {
+                            return;
+                        }
+
+                        showLocationOverlay('Killing character...');
+                        try {
+                            const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ health: 0, isDead: true })
+                            });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok || !result?.success) {
+                                throw new Error(result?.error || `HTTP ${response.status}`);
+                            }
+
+                            const updatedNpc = result?.npc || { ...(cachedNpc || {}), health: 0, isDead: true };
+                            npcDataCache.set(npc.id, updatedNpc);
+                            card?.classList.add('is-dead');
+
+                            window.refreshParty?.();
+                            if (typeof window.loadCurrentLocation === 'function') {
+                                await window.loadCurrentLocation();
+                            }
+                        } catch (error) {
+                            console.warn('Failed to kill NPC:', error);
+                            alert(`Failed to kill NPC: ${error?.message || 'Unknown error'}`);
+                        } finally {
+                            hideLocationOverlay();
+                        }
                     });
                 }
 

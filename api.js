@@ -1045,8 +1045,14 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             break;
                         case 'death_incapacitation':
-                            entries.forEach(name => {
-                                add('☠️', `${safeSummaryName(name)} was incapacitated.`);
+                            entries.forEach(entry => {
+                                const status = typeof entry?.status === 'string' ? entry.status.trim().toLowerCase() : null;
+                                const label = safeSummaryName(entry?.name ?? entry);
+                                if (status === 'dead') {
+                                    add('☠️', `${label} was killed.`);
+                                } else {
+                                    add('☠️', `${label} was incapacitated.`);
+                                }
                             });
                             break;
                         case 'drop_item':
@@ -7499,7 +7505,8 @@ module.exports = function registerApiRoutes(scope) {
                     abilities,
                     unspentSkillPoints,
                     currency,
-                    experience
+                    experience,
+                    isDead
                 } = req.body || {};
 
                 if (typeof name === 'string' && name.trim()) {
@@ -7533,6 +7540,14 @@ module.exports = function registerApiRoutes(scope) {
                     const parsedHealth = Number.parseInt(health, 10);
                     if (Number.isFinite(parsedHealth) && parsedHealth >= 0) {
                         npc.setHealth(parsedHealth);
+                    }
+                }
+
+                if (isDead !== undefined) {
+                    try {
+                        npc.isDead = Boolean(isDead);
+                    } catch (deadError) {
+                        console.warn(`Failed to set isDead for NPC ${npcId}:`, deadError.message);
                     }
                 }
 

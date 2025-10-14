@@ -1580,6 +1580,16 @@ class AIRPGChat {
         }
 
         const safeName = (value) => {
+            if (value && typeof value === 'object') {
+                const candidateKeys = ['name', 'label', 'title', 'text'];
+                for (const key of candidateKeys) {
+                    const candidate = value[key];
+                    if (typeof candidate === 'string' && candidate.trim()) {
+                        return safeName(candidate);
+                    }
+                }
+                return 'Someone';
+            }
             if (!value && value !== 0) return 'Someone';
             const text = String(value).trim();
             if (!text) {
@@ -1674,9 +1684,14 @@ class AIRPGChat {
                 });
             },
             death_incapacitation: (entries) => {
-                entries.forEach((name) => {
-                    const target = safeName(name);
-                    this.addEventSummary('☠️', `${target} was incapacitated.`);
+                entries.forEach((entry) => {
+                    const status = typeof entry?.status === 'string' ? entry.status.trim().toLowerCase() : null;
+                    const target = safeName(entry?.name ?? entry);
+                    if (status === 'dead') {
+                        this.addEventSummary('☠️', `${target} was killed.`);
+                    } else {
+                        this.addEventSummary('☠️', `${target} was incapacitated.`);
+                    }
                 });
             },
             drop_item: (entries) => {

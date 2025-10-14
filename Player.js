@@ -60,6 +60,7 @@ class Player {
     #partyMembersRemovedThisTurn = new Set();
     #elapsedTime = 0;
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
+    #inCombat = false;
 
     static #npcInventoryChangeHandler = null;
     static #levelUpHandler = null;
@@ -859,6 +860,7 @@ class Player {
         this.#class = options.class ?? "person";
         this.#race = options.race ?? "human";
         this.#isDead = options.isDead ?? false;
+        this.#inCombat = options.inCombat ?? false;
         this.#corpseCountdown = Number.isFinite(options.corpseCountdown) ? options.corpseCountdown : null;
 
         const seedMemories = Array.isArray(options.importantMemories)
@@ -1487,6 +1489,15 @@ class Player {
 
     get isDisabled() {
         return this.#isDead || (this.#health <= 0);
+    }
+
+    get inCombat() {
+        return this.#inCombat;
+    }
+
+    set inCombat(value) {
+        this.#inCombat = Boolean(value);
+        this.#lastUpdated = new Date().toISOString();
     }
 
     set isDead(value) {
