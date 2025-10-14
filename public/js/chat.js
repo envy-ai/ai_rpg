@@ -1132,6 +1132,8 @@ class AIRPGChat {
             if (contentDiv) {
                 contentDiv.textContent = message;
             }
+            this.chatLog.appendChild(element);
+            this.scrollToBottom();
         }
     }
 
