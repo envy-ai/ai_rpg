@@ -169,46 +169,11 @@ You are able to write both explicit and non-explicit content, depending on the n
       {% for bar in currentPlayer.needBars %}
       <needBar>
         <name>{{ bar.name }}</name>
-        <description>{{ bar.description }}</description>
-        <value>{{ bar.value | default('', true) }}</value>
-        <min>{{ bar.min | default('', true) }}</min>
-        <max>{{ bar.max | default('', true) }}</max>
-        <changePerTurn>{{ bar.changePerTurn | default(0) }}</changePerTurn>
-        <playerOnly>{{ bar.playerOnly | default(false) }}</playerOnly>
-        <relatedAttribute>{{ bar.relatedAttribute | default('', true) }}</relatedAttribute>
         <currentThreshold>
           <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
           <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
           <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
         </currentThreshold>
-        <effectThresholds>
-          {% for threshold in bar.effectThresholds %}
-          <threshold>
-            <value>{{ threshold.threshold | default('', true) }}</value>
-            <name>{{ threshold.name | default('', true) }}</name>
-            <effect>{{ threshold.effect | default('', true) }}</effect>
-          </threshold>
-          {% endfor %}
-        </effectThresholds>
-        <increases>
-          <small>
-            {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-          </small>
-          <large>
-            {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-          </large>
-          <fill>
-            {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
-          </fill>
-        </increases>
-        <decreases>
-          <small>
-            {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-          </small>
-          <large>
-            {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-          </large>
-        </decreases>
       </needBar>
       {% endfor %}
     </needBars>
@@ -272,46 +237,11 @@ You are able to write both explicit and non-explicit content, depending on the n
         {% for bar in npc.needBars %}
         <needBar>
           <name>{{ bar.name }}</name>
-          <description>{{ bar.description }}</description>
-          <value>{{ bar.value | default('', true) }}</value>
-          <min>{{ bar.min | default('', true) }}</min>
-          <max>{{ bar.max | default('', true) }}</max>
-          <changePerTurn>{{ bar.changePerTurn | default(0) }}</changePerTurn>
-          <playerOnly>{{ bar.playerOnly | default(false) }}</playerOnly>
-          <relatedAttribute>{{ bar.relatedAttribute | default('', true) }}</relatedAttribute>
           <currentThreshold>
             <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
             <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
             <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
           </currentThreshold>
-          <effectThresholds>
-            {% for threshold in bar.effectThresholds %}
-            <threshold>
-              <value>{{ threshold.threshold | default('', true) }}</value>
-              <name>{{ threshold.name | default('', true) }}</name>
-              <effect>{{ threshold.effect | default('', true) }}</effect>
-            </threshold>
-            {% endfor %}
-          </effectThresholds>
-          <increases>
-            <small>
-              {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-            </small>
-            <large>
-              {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-            </large>
-            <fill>
-              {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
-            </fill>
-          </increases>
-          <decreases>
-            <small>
-              {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-            </small>
-            <large>
-              {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-            </large>
-          </decreases>
         </needBar>
         {% endfor %}
       </needBars>
@@ -377,46 +307,11 @@ You are able to write both explicit and non-explicit content, depending on the n
         {% for bar in member.needBars %}
         <needBar>
           <name>{{ bar.name }}</name>
-          <description>{{ bar.description }}</description>
-          <value>{{ bar.value | default('', true) }}</value>
-          <min>{{ bar.min | default('', true) }}</min>
-          <max>{{ bar.max | default('', true) }}</max>
-          <changePerTurn>{{ bar.changePerTurn | default(0) }}</changePerTurn>
-          <playerOnly>{{ bar.playerOnly | default(false) }}</playerOnly>
-          <relatedAttribute>{{ bar.relatedAttribute | default('', true) }}</relatedAttribute>
           <currentThreshold>
             <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
             <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
             <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
           </currentThreshold>
-          <effectThresholds>
-            {% for threshold in bar.effectThresholds %}
-            <threshold>
-              <value>{{ threshold.threshold | default('', true) }}</value>
-              <name>{{ threshold.name | default('', true) }}</name>
-              <effect>{{ threshold.effect | default('', true) }}</effect>
-            </threshold>
-            {% endfor %}
-          </effectThresholds>
-          <increases>
-            <small>
-              {% for item in bar.increases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-            </small>
-            <large>
-              {% for item in bar.increases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-            </large>
-            <fill>
-              {% for item in bar.increases.fill %}<trigger>{{ item }}</trigger>{% endfor %}
-            </fill>
-          </increases>
-          <decreases>
-            <small>
-              {% for item in bar.decreases.small %}<trigger>{{ item }}</trigger>{% endfor %}
-            </small>
-            <large>
-              {% for item in bar.decreases.large %}<trigger>{{ item }}</trigger>{% endfor %}
-            </large>
-          </decreases>
         </needBar>
         {% endfor %}
       </needBars>

@@ -2543,6 +2543,10 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const maxUnsummarizedEntries = Number.isInteger(rawMaxUnsummarized) && rawMaxUnsummarized > 0
         ? rawMaxUnsummarized
         : 0;
+    const rawMaxSummarized = Number(summaryConfig.max_summarized_log_entries);
+    const maxSummarizedEntries = Number.isInteger(rawMaxSummarized) && rawMaxSummarized > 0
+        ? rawMaxSummarized
+        : 0;
 
     const formatSeenBySuffix = (entry) => {
         if (!entry || entry.travel) {
@@ -2599,12 +2603,20 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
     const relevantHistory = historyEntries.filter(entry => entry && (entry.content || entry.summary));
 
-    const tailEntries = maxUnsummarizedEntries > 0
-        ? relevantHistory.slice(-maxUnsummarizedEntries)
+    const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
+    const limitedHistory = totalHistoryLimit > 0
+        ? relevantHistory.slice(-totalHistoryLimit)
         : [];
-    const summaryCandidates = maxUnsummarizedEntries > 0
-        ? relevantHistory.slice(0, -maxUnsummarizedEntries)
-        : relevantHistory;
+
+    const tailCount = maxUnsummarizedEntries > 0
+        ? Math.min(maxUnsummarizedEntries, limitedHistory.length)
+        : 0;
+    const tailEntries = tailCount > 0
+        ? limitedHistory.slice(-tailCount)
+        : [];
+    const summaryCandidates = tailCount > 0
+        ? limitedHistory.slice(0, -tailCount)
+        : limitedHistory;
 
     const summaryLines = [];
     for (const entry of summaryCandidates) {

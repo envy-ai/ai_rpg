@@ -26,6 +26,7 @@ need_bars:
     fill_completely:
       - feast, large meal, hearty meal
       - eating a rare or better food item of any size
+      - eating until fully satisfied
     small_decrease:
       - light activity
     large_decrease:
@@ -67,14 +68,18 @@ need_bars:
     relative_to_level: false
     small_increase:
       - short rest
-      - nap
+      - <2 hours of sleep
+      - 1-3 hours of low activity or rest
       - took minor stimulant
       - light meditation
     large_increase:
-      - restless night's sleep
+      - 2-5 hours of sleep
+      - 4+ hours of low activity or rest
       - took strong stimulant
     fill_completely:
-      - restful night's sleep
+      - 6+ hours of sleep
+      - resting or sleeping until fully recovered
+      - took a powerful stimulant
     small_decrease:
       - light activity
     large_decrease:
@@ -129,6 +134,7 @@ need_bars:
       - full magical recharge
       - used a powerful mana potion
       - restful night's sleep
+      - resting, sleeping, or meditating until fully recovered
     small_decrease:
       - cast minor spell
       - used minor magical ability
