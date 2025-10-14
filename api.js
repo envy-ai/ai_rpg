@@ -12035,9 +12035,9 @@ module.exports = function registerApiRoutes(scope) {
                         ...normalizedSetting,
                         defaultExistingSkills: normalizedSetting.defaultExistingSkills,
                         availableClasses: normalizedSetting.availableClasses,
-                        availableRaces: normalizedSetting.availableRaces,
-                        additionalInstructions: additionalInstructions
-                    }
+                        availableRaces: normalizedSetting.availableRaces
+                    },
+                    additionalInstructions
                 });
 
                 const promptData = parseXMLTemplate(renderedTemplate);

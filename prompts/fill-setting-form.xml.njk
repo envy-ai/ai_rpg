@@ -2,7 +2,7 @@
 <role>Takes a list of user form inputs about a game setting in xml format and fills in the empty fields.</role>
     
 <systemPrompt>
-You are a specialized prompt generator for creating fantasy RPG game settings. You will be provided with an XML structure representing a game setting, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.
+You are a specialized prompt generator for creating interesting and unique roleplaying game worlds of all kinds. You will be provided with an XML structure representing a game setting, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.
 </systemPrompt>
 
 <generationPrompt>
@@ -22,10 +22,6 @@ Here is the XML structure representing the game setting:
   <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
   <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
   <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
-  <imagePromptPrefixCharacter>{{ setting.imagePromptPrefixCharacter }}</imagePromptPrefixCharacter>
-  <imagePromptPrefixLocation>{{ setting.imagePromptPrefixLocation }}</imagePromptPrefixLocation>
-  <imagePromptPrefixItem>{{ setting.imagePromptPrefixItem }}</imagePromptPrefixItem>
-  <imagePromptPrefixScenery>{{ setting.imagePromptPrefixScenery }}</imagePromptPrefixScenery>
   <playerStartingLevel>{{ setting.playerStartingLevel }}</playerStartingLevel>
   <defaultPlayerName>{{ setting.defaultPlayerName }}</defaultPlayerName>
   <defaultPlayerDescription>{{ setting.defaultPlayerDescription }}</defaultPlayerDescription>

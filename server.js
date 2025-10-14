@@ -3335,7 +3335,7 @@ function resolveActionOutcome({ plausibility, player }) {
 
     if (normalizedType === 'implausible') {
         return {
-            label: 'critical failure',
+            label: 'failure - implausible',
             degree: 'implausible_failure',
             type: type,
             reason: plausibility.reason || null,
