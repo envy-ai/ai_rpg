@@ -4988,8 +4988,9 @@ function renderPlayerPortraitPrompt(player) {
         const variables = {
             setting: settingDescription,
             characterDescription,
-            characterClass: player.class || 'Adventurer',
-            characterRace: player.race || 'Human'
+            characterClass: player.class || '',
+            characterRace: player.race || '',
+            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.character || ''
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);
@@ -11169,7 +11170,8 @@ function renderLocationImagePrompt(location) {
             locationId: location.id,
             locationDescription: location.description,
             locationBaseLevel: location.baseLevel,
-            locationExits: location.exits ? Object.fromEntries(location.exits) : {}
+            locationExits: location.exits ? Object.fromEntries(location.exits) : {},
+            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.location || ''
         };
 
         // Render the template
@@ -11254,6 +11256,13 @@ function renderThingImagePrompt(thing) {
         const location = locationId ? gameLocations.get(locationId) || null : null;
         const region = location ? findRegionByLocationId(location.id) || null : null;
 
+        let additionalInstructions = '';
+        if (thing.thingType === 'item') {
+            additionalInstructions = Globals.config.imagegen?.image_prompt_instructions?.item || '';
+        } else if (thing.thingType === 'scenery') {
+            additionalInstructions = Globals.config.imagegen?.image_prompt_instructions?.scenery || '';
+        }
+
         const variables = {
             setting: {
                 name: settingSnapshot?.name || '',
@@ -11271,7 +11280,8 @@ function renderThingImagePrompt(thing) {
             thingName: thing.name,
             thingType: metadata.itemType || thing.itemTypeDetail || thing.thingType,
             thingDescription: thing.description,
-            thingRarity: metadata.rarity || thing.rarity || getDefaultRarityLabel()
+            thingRarity: metadata.rarity || thing.rarity || getDefaultRarityLabel(),
+            additionalInstructions
         };
 
         console.log(`Rendering ${thing.thingType} image template for ${thing.id}: ${thing.name}`);
