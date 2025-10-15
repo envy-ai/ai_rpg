@@ -3332,7 +3332,7 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+            const npcNodes = Array.from(npcsElement.getElementsByTagName('npc'));
             if (!npcNodes.length) {
                 console.warn('No <npc> elements found in NPC queue response.');
                 return [];
@@ -5120,6 +5120,12 @@ module.exports = function registerApiRoutes(scope) {
             let previousActionWasTravel = false;
             eventsProcessedThisTurn = false;
 
+            try {
+                await runAutosaveIfEnabled();
+            } catch (autosaveError) {
+                console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
+            }
+
             if (typeof rawTravelFlag !== 'undefined') {
                 console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
             }
@@ -5427,12 +5433,6 @@ module.exports = function registerApiRoutes(scope) {
                             if (lastCollectorEntry && priorEntry && lastCollectorEntry.id === priorEntry.id) {
                                 newChatEntries.pop();
                             }
-                        }
-                    } else {
-                        try {
-                            await runAutosaveIfEnabled();
-                        } catch (autosaveError) {
-                            console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
                         }
                     }
 

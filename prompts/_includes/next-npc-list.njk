@@ -7,9 +7,9 @@ Otherwise, follow the instuctions below.
 First, make a list of NPCs who have already acted during currentTurn. Then, from among the NPCs present in currentLocation and in the player's party, select {{ maxFriendlyNpcsToAct }} friendly NPC(s) and {{ maxHostileNpcsToAct }} hostile NPC(s) that have not already acted during currentTurn and should act next, based on their personalities, the situation, and how long it's been since they last acted. Deceased and unconscious NPCs will never act. Consider that some NPCs may be more likely to act sooner due to their traits or the current context. NPCs that don't have any particular interest in the player should not act unless they have a reason to do so. Provide only the exact names of the selected NPCs, in order of who should act. In combat, faster NPCs tend to act first. Do not include any additional text or explanation, in this format:
 
 <alreadyActed>
-  <npc>Exact name of an npc that has already acted in currentTurn. Omit if no one has acted yet.</npc>
-  <npc>Exact name of another npc that has already acted in currentTurn. Omit if no one has acted yet.</npc>
-  ... up to the number of npcs that have already acted in currentTurn ...
+  <npc>Exact name of an npc that has already acted or spoken in currentTurn. Omit if no one has acted yet.</npc>
+  <npc>Exact name of another npc that has already acted or spoken in currentTurn. Omit if no one has acted yet.</npc>
+  ... up to the number of npcs that have already acted or spoken in currentTurn ...
 </alreadyActed>
 
 <npcs>
