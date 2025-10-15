@@ -3275,6 +3275,8 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
+            const wrappedResponse = `<response>${trimmed}</response>`;
+
             let doc;
             try {
                 const parser = new DOMParser({
@@ -3284,25 +3286,49 @@ module.exports = function registerApiRoutes(scope) {
                         fatalError: () => { }
                     }
                 });
-                doc = parser.parseFromString(trimmed, 'text/xml');
+                doc = parser.parseFromString(wrappedResponse, 'text/xml');
             } catch (_) {
                 console.warn('Failed to parse NPC queue response as XML.');
                 console.error('Error details:', _);
-                console.error('Response text:', responseText);
+                console.error('Response text:', wrappedResponse);
                 console.debug(_);
                 return [];
             }
 
             if (!doc || doc.getElementsByTagName('parsererror')?.length) {
                 console.log('NPC queue response XML contained parser errors.');
-                console.debug('Response text:', responseText);
+                console.debug('Response text:', wrappedResponse);
                 return [];
             }
 
-            const root = doc.documentElement;
-            if (!root || root.tagName?.toLowerCase() !== 'npcs') {
-                console.warn('Unexpected XML structure: missing <npcs> root element.');
-                console.log('Response text:', responseText);
+            // Recursively search for the <npcs> element anywhere in the document
+            function findNpcsElement(node) {
+                if (!node) {
+                    return null;
+                }
+                const tagName = node.tagName || node.nodeName || '';
+                console.log(`Visiting node: ${tagName}`);
+                if (tagName.toLowerCase() === 'npcs') {
+                    return node;
+                }
+                if (node.childNodes && node.childNodes.length) {
+                    for (const child of Array.from(node.childNodes)) {
+                        if (!child || child.nodeType !== 1) {
+                            continue;
+                        }
+                        const found = findNpcsElement(child);
+                        if (found) {
+                            return found;
+                        }
+                    }
+                }
+                return null;
+            }
+            let root = doc.documentElement;
+            let npcsElement = findNpcsElement(root);
+            if (!npcsElement) {
+                console.warn('Could not find <npcs> element in NPC queue response.');
+                console.log('Response text:', wrappedResponse);
                 return [];
             }
 
@@ -3326,6 +3352,9 @@ module.exports = function registerApiRoutes(scope) {
                 seen.add(lowered);
                 names.push(value);
             }
+
+            console.log(`Parsed ${names.length} NPC names from response.`);
+            console.debug('NPC names:', names);
 
             return names;
         }
@@ -3392,13 +3421,14 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct } = {}) {
+        async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog } = {}) {
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     maxFriendlyNpcsToAct,
                     maxHostileNpcsToAct,
+                    currentTurnLog,
                     promptType: 'next-npc-list'
                 });
 
@@ -4755,7 +4785,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null, maxFriendlyNpcsToAct = 1, maxHostileNpcsToAct = 0 }) {
+        async function executeNpcTurnsAfterPlayer({ location, stream = null, skipNpcEvents = false, entryCollector = null, maxFriendlyNpcsToAct = 1, maxHostileNpcsToAct = 0, currentTurnLog }) {
             console.log(`Executing NPC turns after player at location: ${location?.name || 'Unknown Location'}: skipNpcEvents=${skipNpcEvents}, maxFriendlyNpcsToAct=${maxFriendlyNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}`);
             if (skipNpcEvents) {
 
@@ -4768,7 +4798,7 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 console.log("Processing NPC turns")
-                const npcQueue = await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct });
+                const npcQueue = await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog });
                 const npcNames = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
                 console.log(`NPC turn queue: ${npcNames.length} NPCs to process.`);
@@ -5056,6 +5086,8 @@ module.exports = function registerApiRoutes(scope) {
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
             let corpseProcessingRan = false;
             Globals.processedMove = false;
+            let currentUserMessage = null;
+            let currentTurnLog = [];
 
             res.on('finish', () => {
                 if (corpseProcessingRan) {
@@ -5232,12 +5264,6 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(statusCode).json(payload);
                 }
 
-                try {
-                    await runAutosaveIfEnabled();
-                } catch (autosaveError) {
-                    console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
-                }
-
                 return res.json(payload);
             };
 
@@ -5367,6 +5393,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
+                currentUserMessage = userMessage;
                 if (userMessage && userMessage.role === 'user') {
                     const isTravelMessage = rawTravelFlag === true;
                     currentActionIsTravel = isTravelMessage;
@@ -5400,6 +5427,12 @@ module.exports = function registerApiRoutes(scope) {
                             if (lastCollectorEntry && priorEntry && lastCollectorEntry.id === priorEntry.id) {
                                 newChatEntries.pop();
                             }
+                        }
+                    } else {
+                        try {
+                            await runAutosaveIfEnabled();
+                        } catch (autosaveError) {
+                            console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
                         }
                     }
 
@@ -6114,6 +6147,7 @@ module.exports = function registerApiRoutes(scope) {
                         type: 'player-action',
                         locationId: aiResponseLocationId
                     }, newChatEntries, aiResponseLocationId);
+                    currentTurnLog.push(aiResponse);
 
                     try {
                         await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
@@ -6455,7 +6489,8 @@ module.exports = function registerApiRoutes(scope) {
                             skipNpcEvents,
                             entryCollector: newChatEntries,
                             maxFriendlyNpcsToAct: maxNpcsToAct,
-                            maxHostileNpcsToAct
+                            maxHostileNpcsToAct,
+                            currentTurnLog
                         });
                         if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
