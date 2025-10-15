@@ -5120,61 +5120,7 @@ module.exports = function registerApiRoutes(scope) {
             let previousActionWasTravel = false;
             eventsProcessedThisTurn = false;
 
-            try {
-                await runAutosaveIfEnabled();
-            } catch (autosaveError) {
-                console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
-            }
-
-            if (typeof rawTravelFlag !== 'undefined') {
-                console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
-            }
-
-            const processLocationChangeMemoriesIfNeeded = async () => {
-                if (locationMemoriesProcessed) {
-                    return;
-                }
-                locationMemoriesProcessed = true;
-
-                previousActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
-                if (currentPlayer) {
-                    console.log(`🧠 Memory check: currentActionIsTravel=${currentActionIsTravel}, previousActionWasTravel=${previousActionWasTravel}`);
-                }
-
-                if (currentActionIsTravel && previousActionWasTravel) {
-                    return;
-                }
-
-                const player = currentPlayer || null;
-                if (!player || !initialPlayerLocationId) {
-                    return;
-                }
-
-                const currentLocationId = player.currentLocation || null;
-                if (!currentLocationId || currentLocationId === initialPlayerLocationId) {
-                    return;
-                }
-
-                try {
-                    await generateNpcMemoriesForLocationChange({
-                        previousLocationId: initialPlayerLocationId,
-                        newLocationId: currentLocationId,
-                        player,
-                        isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
-                    });
-                } catch (error) {
-                    console.warn('Failed to update NPC memories after travel:', error.message || error);
-                }
-            };
-
             const runAutosaveIfEnabled = async () => {
-                if (!eventsProcessedThisTurn) {
-                    return;
-                }
-                if (!currentPlayer) {
-                    return;
-                }
-
                 const config = Globals?.config || {};
                 let retention = config?.autosaves_to_retain;
                 if (retention === null || retention === undefined) {
@@ -5235,6 +5181,54 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
                     console.warn('Autosave failed:', error?.message || error);
+                }
+            };
+
+            try {
+                await runAutosaveIfEnabled();
+            } catch (autosaveError) {
+                console.warn('Autosave processing failed:', autosaveError?.message || autosaveError);
+                console.debug(autosaveError);
+            }
+
+            if (typeof rawTravelFlag !== 'undefined') {
+                console.log(`🧭 Incoming player action travel flag: ${rawTravelFlag === true ? 'true' : 'false'}`);
+            }
+
+            const processLocationChangeMemoriesIfNeeded = async () => {
+                if (locationMemoriesProcessed) {
+                    return;
+                }
+                locationMemoriesProcessed = true;
+
+                previousActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);
+                if (currentPlayer) {
+                    console.log(`🧠 Memory check: currentActionIsTravel=${currentActionIsTravel}, previousActionWasTravel=${previousActionWasTravel}`);
+                }
+
+                if (currentActionIsTravel && previousActionWasTravel) {
+                    return;
+                }
+
+                const player = currentPlayer || null;
+                if (!player || !initialPlayerLocationId) {
+                    return;
+                }
+
+                const currentLocationId = player.currentLocation || null;
+                if (!currentLocationId || currentLocationId === initialPlayerLocationId) {
+                    return;
+                }
+
+                try {
+                    await generateNpcMemoriesForLocationChange({
+                        previousLocationId: initialPlayerLocationId,
+                        newLocationId: currentLocationId,
+                        player,
+                        isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
+                    });
+                } catch (error) {
+                    console.warn('Failed to update NPC memories after travel:', error.message || error);
                 }
             };
 
@@ -6458,6 +6452,12 @@ module.exports = function registerApiRoutes(scope) {
 
                         console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
 
+                        const playerMovedThisTurn = Boolean(Globals.processedMove);
+                        if (playerMovedThisTurn) {
+                            console.log('Skipping NPC turns because the player moved this turn.');
+                            skipNpcEvents = true;
+                        }
+
                         if (!takeNpcTurns) {
                             console.log('NPC turns are disabled in configuration.');
                             skipNpcEvents = true;
@@ -6483,15 +6483,19 @@ module.exports = function registerApiRoutes(scope) {
                         stream.status('npc_turns:pending', skipNpcEvents
                             ? 'Skipping NPC turns and random events.'
                             : 'Resolving NPC turns.');
-                        const npcTurns = await executeNpcTurnsAfterPlayer({
-                            location,
-                            stream,
-                            skipNpcEvents,
-                            entryCollector: newChatEntries,
-                            maxFriendlyNpcsToAct: maxNpcsToAct,
-                            maxHostileNpcsToAct,
-                            currentTurnLog
-                        });
+
+                        let npcTurns = null;
+                        if (!skipNpcEvents) {
+                            npcTurns = await executeNpcTurnsAfterPlayer({
+                                location,
+                                stream,
+                                skipNpcEvents,
+                                entryCollector: newChatEntries,
+                                maxFriendlyNpcsToAct: maxNpcsToAct,
+                                maxHostileNpcsToAct,
+                                currentTurnLog
+                            });
+                        }
                         if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
                             streamState.npcTurns = npcTurns.length;

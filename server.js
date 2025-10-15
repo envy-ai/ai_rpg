@@ -9248,6 +9248,10 @@ function parseLocationThingsXml(xmlContent) {
         }
 
         const itemNodes = Array.from(doc.getElementsByTagName('item'));
+        // Also accept 'thing' and 'scenery' as top-level tags
+        itemNodes.push(...Array.from(doc.getElementsByTagName('thing')));
+        itemNodes.push(...Array.from(doc.getElementsByTagName('scenery')));
+
         const items = [];
 
         for (const node of itemNodes) {

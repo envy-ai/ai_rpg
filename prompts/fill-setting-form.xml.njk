@@ -29,7 +29,7 @@ Here is the XML structure representing the game setting:
   <defaultStartingCurrency>{{ setting.defaultStartingCurrency }}</defaultStartingCurrency>
   <defaultNumSkills>{{ setting.defaultNumSkills }}</defaultNumSkills>
   <defaultExistingSkills>
-    <!-- A list of skills that the player starts with. These should be appropriate to the setting and the player's starting class and background. Names only, inside <skill></skill> tags-->
+    <!-- A list of 20-30 skills that the player can choose from. These should be appropriate to the setting, and also include general skills that are common and necessary across all RPGs (combat, survival, social skills, crafting, stealth, etc). Names only, inside <skill></skill> tags-->
 {% for skill in setting.defaultExistingSkills %}
     <skill>{{ skill }}</skill>
 {% endfor %}
