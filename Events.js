@@ -2713,7 +2713,7 @@ class Events {
                     return;
                 }
                 const player = context.player || this.currentPlayer;
-                if (!player || typeof player.addExperience !== 'function') {
+                if (this.defeatedEnemies.size) {
                     return;
                 }
                 if (!Array.isArray(context.experienceAwards)) {

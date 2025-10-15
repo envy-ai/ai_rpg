@@ -57,5 +57,8 @@ Focus on the item's:
 - Functional aspects
 
 Generate a detailed image prompt that captures the essence of this item, maintaining consistency with the setting aesthetics while highlighting the unique characteristics described. The item should be shown on a simple grey background.
+
+{% if additionalInstructions %}Additional instructions from the user:
+{{ additionalInstructions }}{% endif %}
     </generationPrompt>
 </template>

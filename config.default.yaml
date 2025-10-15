@@ -87,6 +87,13 @@ imagegen:
     image:
       width: 1280
       height: 720
+
+  #Additional user instructions to include in the image prompt generation
+  image_prompt_instructions:
+    character:
+    item:
+    location:
+    scenery:
 random_event_frequency:
   common: 0.04
   rare: 0.01
