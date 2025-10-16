@@ -61,15 +61,26 @@ Plenty of other LLMs will work as well. Some will not. Drop by the <a href='http
 
 1. Install <a href='https://nodejs.org/en/download/'>Node.js</a> if you don't already have it.
 
-2. Install dependencies:
+2. Install <a href='https://git-scm.com/downloads/win'>Git for Windows</a> if you don't alreayd have it.
+
+3. Open your windows command line and do the following.
+
+   ```
+   mkdir airpg
+   cd airpg
+   git clone https://github.com/envy-ai/ai_rpg .
+   git checkout 1.0-alpha3
+   ```
+
+4. Install dependencies:
    ```bash
    npm install
    ```
-3. Copy the sample configuration and make it your own:
+5. Copy the sample configuration and make it your own:
    ```bash
    cp config.default.yaml config.yaml
    ```
-4. Edit `config.yaml`:
+6. Edit `config.yaml`:
    - Set `ai.endpoint`, `ai.apiKey`, and `ai.model` to match your provider. You can use local programs like KoboldCPP that support the OpenAI API as well as any external provider that does so.
    - Adjust `server.port`/`server.host` if you do not want the default `0.0.0.0:7777` binding.
    - Toggle `imagegen.enabled` or update the ComfyUI settings under `imagegen.server`. You can also set up external image generation that supports the OpenAI image generation API.
