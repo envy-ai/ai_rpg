@@ -55,7 +55,7 @@ This is still in alpha! Expect bugs! If you want to help, when you find somethin
 - <a href='https://huggingface.co/TheDrummer/Gemma-3-R1-12B-v1-GGUF'>TheDrummer's Gemma 3 12B</a>
 - <a href='https://huggingface.co/bartowski/Goekdeniz-Guelmez_Josiefied-Qwen3-8B-abliterated-v1-GGUF'>Josiefied-Qwen3-8B-abliterated-v1 by Goekdeniz-Guelmez</a> in a pinch. It didn't really "get" region generation when I tested it.
 
-Plenty of other LLMs will work as well. Some will not. Drop by the Discord and let us know what does and doesn't work!
+Plenty of other LLMs will work as well. Some will not. Drop by the <a href='https://discord.gg/XNGHc7b5Vs'>Discord</a> or the <a href='https://reddit.com/r/aiRPGofficial'>subreddit</a> and let us know what does and doesn't work!
 
 ## Installation
 
