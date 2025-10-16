@@ -115,13 +115,22 @@ The front end talks to the JSON API defined in `server.js`. Key routes cover cha
 - **Optional art generation** – Integrates with ComfyUI to queue portraits, locations, exits, and item renders using customizable workflow JSON templates.
 - **Persistent saves and logs** – Stores save-game snapshots, prompt transcripts, and generated images on disk so you can resume or debug any adventure.
 
+## Future plans
+
+Near future:
+
+- Quests
+- Character goals
+- Elapsed in-game time, day/night cycle, seasons, etc
+- Configure multiple AIs for different types of prompts so you can throw character prose at the big ones and have the little ones handle housekeeping for speed.
+
 ## Development Tips
 
 - When image generation is disabled the game continues without art; re-enable it after your ComfyUI host is healthy.
-- Logs rotate into `logs_prev/` on startup so you can compare the previous session with the current one.
+- Logs are made in `./logs/` and rotate into `./logs_prev/` on startup so you can compare the previous session with the current one. If you have problems, keep those around because they help to diagnose things.
 
 ## Community
 
-Questions, feedback, or want to share your campaign? Join the Discord: https://discord.gg/XNGHc7b5Vs
+Questions, feedback, or want to share your campaign? Join the Discord: https://discord.gg/XNGHc7b5Vs or visit our <a href='https://reddit.com/r/aiRPGofficial'>subreddit</a>.
 
 Happy adventuring!
