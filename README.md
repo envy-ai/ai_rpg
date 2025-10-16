@@ -1,5 +1,7 @@
 # AI RPG Server
 
+<img src='screenshots/Screenshot 2025-10-15 at 08-11-17 AI RPG Chat Interface.png' style='width: 80%; margin: auto; height: auto'>
+
 AI RPG Server turns an OpenAI-compatible language model into a solo tabletop game master. The Node.js application keeps track of players, locations, regions, and items; renders structured prompts with Nunjucks; and optionally drives a ComfyUI image pipeline so every scene can ship with fresh artwork. A lightweight browser UI and JSON API sit on top, letting you explore the world, tweak settings, and review logs without leaving the app.
 
 ## Features
