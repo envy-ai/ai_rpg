@@ -14,7 +14,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'dummy_event', prompt: `Did the text reveal, unlock, unblock, or otherwise create a new exit?` },
         { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.` },
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
-        { key: 'dummy_event', prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible', or 'moved to different existing location'. If the player did not physically move, answer N/A.` },
+        { key: 'dummy_event', prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible', 'moved to different existing location', 'sitting down or resting'. If the player did not physically move, answer N/A.` },
         { key: 'dummy_event', prompt: `Did you answer question 3 with 'moved within location to somewhere fully visible'? If so, give the exact name of the scenery.` },
         { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered 'moved to new region' or 'moved to new location' to question 3, come up with a new location name and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The new location may not have the same name as the current location. A "region" on this context is any group of locations that share a common theme or purpose, such as a building interior, a town, a biome, a planet, etc. Otherwise answer N/A.` },
         { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered question 3 with 'moved within location to somewhere not fully visible', come up with an appropriate sub-location and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The sublocation may not have the same name as the current location. Otherwise answer N/A. If unsure if this is a new sublocation or a new location, assume it's a new sublocation and answer this question.` },
@@ -1037,45 +1037,46 @@ class Events {
                     description: description.trim()
                 };
             }).filter(Boolean),
-            move_new_location: raw => splitPipeList(raw).map(entry => {
-                if (typeof entry !== 'string') {
-                    return null;
-                }
-
+            move_new_location: raw => {
                 if (Globals.processedMove) {
-                    return null;
+                    return [];
                 }
+                return splitPipeList(raw).map(entry => {
+                    if (typeof entry !== 'string') {
+                        return null;
+                    }
 
-                const rawParts = entry.split('->').map(part => part.trim()).filter(Boolean);
-                if (!rawParts.length) {
-                    return null;
-                }
+                    const rawParts = entry.split('->').map(part => part.trim()).filter(Boolean);
+                    if (!rawParts.length) {
+                        return null;
+                    }
 
-                let origin = null;
-                let parts = rawParts;
-                if (parts.length === 5) {
-                    origin = parts.shift();
-                }
+                    let origin = null;
+                    let parts = rawParts;
+                    if (parts.length === 5) {
+                        origin = parts.shift();
+                    }
 
-                if (parts.length < 4) {
-                    return null;
-                }
+                    if (parts.length < 4) {
+                        return null;
+                    }
 
-                const [name, kind, vehicle, ...descriptionParts] = parts;
-                const normalizedKind = (kind || '').toLowerCase();
-                if (!name || !descriptionParts.length || (normalizedKind !== 'location' && normalizedKind !== 'region')) {
-                    return null;
-                }
+                    const [name, kind, vehicle, ...descriptionParts] = parts;
+                    const normalizedKind = (kind || '').toLowerCase();
+                    if (!name || !descriptionParts.length || (normalizedKind !== 'location' && normalizedKind !== 'region')) {
+                        return null;
+                    }
 
-                const vehicleType = normalizeString(vehicle);
-                return {
-                    origin: origin ? origin.trim() : null,
-                    name: name.trim(),
-                    kind: normalizedKind,
-                    vehicleType: vehicleType && vehicleType.toLowerCase() !== 'none' ? vehicleType : null,
-                    description: descriptionParts.join(' -> ').trim()
-                };
-            }).filter(Boolean),
+                    const vehicleType = normalizeString(vehicle);
+                    return {
+                        origin: origin ? origin.trim() : null,
+                        name: name.trim(),
+                        kind: normalizedKind,
+                        vehicleType: vehicleType && vehicleType.toLowerCase() !== 'none' ? vehicleType : null,
+                        description: descriptionParts.join(' -> ').trim()
+                    };
+                }).filter(Boolean);
+            },
             alter_location: raw => {
                 if (Globals.processedMove) {
                     return [];
@@ -1399,20 +1400,22 @@ class Events {
                 }
                 return { amount: value, reason: reason ? reason.trim() : '' };
             }).filter(Boolean),
-            move_location: raw => splitPipeList(raw).map(entry => {
-                if (typeof entry !== 'string') {
-                    return null;
-                }
+            move_location: raw => {
                 if (Globals.processedMove) {
-                    return null;
+                    return [];
                 }
-                const parts = entry.split('->').map(segment => segment.trim());
-                if (parts.length === 5) {
-                    parts.shift();
-                    return parts.join(' -> ').trim();
-                }
-                return entry.trim();
-            }).filter(Boolean)
+                return splitPipeList(raw).map(entry => {
+                    if (typeof entry !== 'string') {
+                        return null;
+                    }
+                    const parts = entry.split('->').map(segment => segment.trim());
+                    if (parts.length === 5) {
+                        parts.shift();
+                        return parts.join(' -> ').trim();
+                    }
+                    return entry.trim();
+                }).filter(Boolean);
+            }
         };
     }
 

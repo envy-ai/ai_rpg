@@ -2367,6 +2367,33 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         return parts.join(', ');
     }
 
+    function collectPersonalityGoals(value) {
+        const goals = [];
+        const visit = (entry) => {
+            if (entry === null || entry === undefined) {
+                return;
+            }
+            if (typeof entry === 'string') {
+                const trimmed = entry.trim();
+                if (trimmed && !goals.includes(trimmed)) {
+                    goals.push(trimmed);
+                }
+                return;
+            }
+            if (Array.isArray(entry)) {
+                entry.forEach(visit);
+                return;
+            }
+            if (typeof entry === 'object') {
+                for (const value of Object.values(entry)) {
+                    visit(value);
+                }
+            }
+        };
+        visit(value);
+        return goals;
+    }
+
     function extractPersonality(primary = null, fallback = null) {
         const primaryObj = primary && typeof primary === 'object' ? primary : null;
         const fallbackObj = fallback && typeof fallback === 'object' ? fallback : null;
@@ -2390,7 +2417,15 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             ?? fallbackObj?.personalityNotes
         );
 
-        return { type, traits, notes };
+        const goals = collectPersonalityGoals(
+            personalitySource?.goals
+            ?? primaryObj?.goals
+            ?? primaryObj?.personalityGoals
+            ?? fallbackObj?.personality?.goals
+            ?? fallbackObj?.goals
+        );
+
+        return { type, traits, notes, goals };
     }
 
     function computeDispositionsTowardsPlayer(actor) {
@@ -6275,6 +6310,45 @@ function normalizeNpcPromptSeed(seed = {}) {
         }
     }
 
+    const resolveGoals = (value) => {
+        const goals = [];
+        const add = (entry) => {
+            if (typeof entry !== 'string') {
+                return;
+            }
+            const trimmed = entry.trim();
+            if (trimmed && !goals.includes(trimmed)) {
+                goals.push(trimmed);
+            }
+        };
+        const walk = (input) => {
+            if (input === null || input === undefined) {
+                return;
+            }
+            if (typeof input === 'string') {
+                add(input);
+                return;
+            }
+            if (Array.isArray(input)) {
+                input.forEach(walk);
+                return;
+            }
+            if (typeof input === 'object') {
+                for (const entry of Object.values(input)) {
+                    walk(entry);
+                }
+            }
+        };
+        walk(value);
+        return goals;
+    };
+
+    const rawGoals = seed.goals ?? seed.personality?.goals;
+    const normalizedGoals = resolveGoals(rawGoals);
+    if (normalizedGoals.length) {
+        normalized.goals = normalizedGoals;
+    }
+
     return normalized;
 }
 
@@ -6577,7 +6651,8 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             healthAttribute: npcData?.healthAttribute,
             personalityType: npcData?.personalityType || null,
             personalityTraits: npcData?.personalityTraits || null,
-            personalityNotes: npcData?.personalityNotes || null
+            personalityNotes: npcData?.personalityNotes || null,
+            goals: Array.isArray(npcData?.goals) ? npcData.goals : null
         });
 
         const locationBaseLevel = Number.isFinite(resolvedLocation?.baseLevel)
@@ -7145,10 +7220,12 @@ function parseLocationNpcs(xmlContent) {
             let personalityType = null;
             let personalityTraits = null;
             let personalityNotes = null;
+            let goals = [];
             if (personalityNode) {
                 const typeNode = personalityNode.getElementsByTagName('type')[0];
                 const traitsNode = personalityNode.getElementsByTagName('traits')[0];
                 const notesNode = personalityNode.getElementsByTagName('notes')[0];
+                const goalsNode = personalityNode.getElementsByTagName('goals')[0];
                 if (typeNode && typeof typeNode.textContent === 'string') {
                     const value = typeNode.textContent.trim();
                     if (value) {
@@ -7166,6 +7243,14 @@ function parseLocationNpcs(xmlContent) {
                     if (value) {
                         personalityNotes = value;
                     }
+                }
+                if (goalsNode) {
+                    const goalNodes = Array.from(goalsNode.getElementsByTagName('goal'));
+                    goals = goalNodes
+                        .map(goalNode => (goalNode && typeof goalNode.textContent === 'string'
+                            ? goalNode.textContent.trim()
+                            : ''))
+                        .filter(Boolean);
                 }
             }
 
@@ -7195,6 +7280,7 @@ function parseLocationNpcs(xmlContent) {
                     personalityType,
                     personalityTraits,
                     personalityNotes,
+                    goals,
                     isHostile
                 });
             }
@@ -7269,10 +7355,12 @@ function parseRegionNpcs(xmlContent) {
             let personalityType = null;
             let personalityTraits = null;
             let personalityNotes = null;
+            let goals = [];
             if (personalityNode) {
                 const typeNode = personalityNode.getElementsByTagName('type')[0];
                 const traitsNode = personalityNode.getElementsByTagName('traits')[0];
                 const notesNode = personalityNode.getElementsByTagName('notes')[0];
+                const goalsNode = personalityNode.getElementsByTagName('goals')[0];
 
                 if (typeNode && typeof typeNode.textContent === 'string') {
                     const value = typeNode.textContent.trim();
@@ -7292,6 +7380,14 @@ function parseRegionNpcs(xmlContent) {
                         personalityNotes = value;
                     }
                 }
+                if (goalsNode) {
+                    const goalNodes = Array.from(goalsNode.getElementsByTagName('goal'));
+                    goals = goalNodes
+                        .map(goalNode => (goalNode && typeof goalNode.textContent === 'string'
+                            ? goalNode.textContent.trim()
+                            : ''))
+                        .filter(Boolean);
+                }
             }
 
             npcs.push({
@@ -7309,6 +7405,7 @@ function parseRegionNpcs(xmlContent) {
                 personalityType,
                 personalityTraits,
                 personalityNotes,
+                goals,
                 isHostile
             });
         }
@@ -10699,7 +10796,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
-                personalityNotes: npcData.personalityNotes || null
+                personalityNotes: npcData.personalityNotes || null,
+                goals: Array.isArray(npcData.goals) ? npcData.goals : null
             });
 
             if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {
@@ -11044,7 +11142,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 healthAttribute: npcData.healthAttribute,
                 personalityType: npcData.personalityType || null,
                 personalityTraits: npcData.personalityTraits || null,
-                personalityNotes: npcData.personalityNotes || null
+                personalityNotes: npcData.personalityNotes || null,
+                goals: Array.isArray(npcData.goals) ? npcData.goals : null
             });
 
             if (Number.isFinite(npcData.currency) && npcData.currency >= 0 && typeof npc.setCurrency === 'function') {

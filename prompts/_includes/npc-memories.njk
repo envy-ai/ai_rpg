@@ -6,6 +6,10 @@
   <personality>
     <type>{{ currentNpc.personality.type | default('Unknown', true) }}</type>
     <traits>{{ currentNpc.personality.traits | default('None', true) }}</traits>
+    <goals>
+      {% for goal in currentNpc.personality.goals %}<goal>{{ goal }}</goal>
+      {% endfor %}
+    </goals>
     <notes>{{ currentNpc.personality.notes | default('', true) }}</notes>
   </personality>
   <health>{{ currentNpc.health | default('unknown') }}</health>
@@ -165,10 +169,25 @@
   {%- endif -%}
 </recentNpcHistory>
 
-Consider whether the NPC above would think of any of the above events as an important moment in their life. If so, create a concise memory of the event from the NPC's perspective, in the style of a diary entry or personal note. The memory should be no more than 2 sentences long. If none of the events would be significant enough to remember, return an empty element. Don't return a memory that's very similar to something already listed among their memories. Omit anything that's outside of the recentNpcHistory block. Output in this format:
+Step 1: Consider the NPC's current list of goals, and whether any of the recent events would cause them to add a new goal or change an existing goal. If so, update the NPC's goals accordingly. If not, return the existing goals unchanged. Omit anything that's outside of the recentNpcHistory block. If removing or completing one or more goals, always add enough new ones that they have a total of 4. Ensure that they have a mix of short- and long-term goals. Output in this format:
+
+<goals>
+  <completed>[exact text of goal to mark completed, if any]</completed> <!-- Omit this line if no goals are completed -->
+  <remove>[exact text of goal to remove, if any]</remove> <!-- Omit this line if no goals are removed -->
+  <add>[exact text of goal to add, if any]</add> <!-- Omit this line if no goals are added -->
+</goals>
+
+Step 2: Consider whether the NPC above would think of any of the above events as an important moment in their life. If so, create a concise memory of the event from the NPC's perspective, in the style of a diary entry or personal note. The memory should be no more than 2 sentences long. If none of the events would be significant enough to remember, return an empty element. Don't return a memory that's very similar to something already listed among their memories. Omit anything that's outside of the recentNpcHistory block. Output in this format:
 
 If no memories are generated, return:
 <memory></memory>
 
 Otherwise, return:
 <memory>[1-2 sentece memory as described above]</memory>
+
+Your final response should be the combined output of Step 1 followed by Step 2, in that order, with no additional commentary or text, wrapped in a response tag, like this:
+
+<response>
+<goals> ... </goals>
+<memory> ... </memory>
+</response>

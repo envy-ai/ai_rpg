@@ -36,6 +36,13 @@
     <type>{{ alteredCharacter.personality.type or alteredCharacter.personality }}</type>
     <traits>{{ alteredCharacter.personality.traits }}</traits>
     <notes>{{ alteredCharacter.personality.notes }}</notes>
+    <goals>
+      {%- if alteredCharacter.personality.goals -%}
+        {% for goal in alteredCharacter.personality.goals %}
+        <goal>{{ goal }}</goal>
+        {% endfor %}
+      {%- endif -%}
+    </goals>
   </personality>
   <statusEffects>
     {% if alteredCharacter.statusEffects %}

@@ -48,6 +48,7 @@ class Player {
     #personalityType;
     #personalityTraits;
     #personalityNotes;
+    #goals = [];
     #isHostile;
     #isDead;
     #corpseCountdown;
@@ -65,7 +66,6 @@ class Player {
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
     #inCombat = false;
     #checkEquipment = false;
-    #goals = [];
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -86,6 +86,44 @@ class Player {
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
+
+    static #normalizeGoalList(source) {
+        const goals = [];
+        const append = (value) => {
+            if (typeof value !== 'string') {
+                return;
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return;
+            }
+            if (!goals.includes(trimmed)) {
+                goals.push(trimmed);
+            }
+        };
+
+        const walk = (value) => {
+            if (value === null || value === undefined) {
+                return;
+            }
+            if (typeof value === 'string') {
+                append(value);
+                return;
+            }
+            if (Array.isArray(value)) {
+                value.forEach(walk);
+                return;
+            }
+            if (typeof value === 'object') {
+                for (const entry of Object.values(value)) {
+                    walk(entry);
+                }
+            }
+        };
+
+        walk(source);
+        return goals;
+    }
 
     static #normalizeNeedBarChangeList(source) {
         if (!source) {
@@ -903,6 +941,7 @@ class Player {
         this.#personalityType = Player.#sanitizePersonalityValue(options.personalityType ?? personalityOption?.type);
         this.#personalityTraits = Player.#sanitizePersonalityValue(options.personalityTraits ?? personalityOption?.traits);
         this.#personalityNotes = Player.#sanitizePersonalityValue(options.personalityNotes ?? personalityOption?.notes);
+        this.#goals = Player.#normalizeGoalList(options.goals ?? personalityOption?.goals ?? []);
 
         this.#partyMembers = new Set(Array.isArray(options.partyMembers) ? options.partyMembers.filter(id => typeof id === 'string') : []);
         this.#dispositions = this.#initializeDispositions(options.dispositions);
@@ -1429,7 +1468,7 @@ class Player {
     }
 
     get goals() {
-        return this.#goals;
+        return this.#goals.slice();
     }
 
     addGoal(goal) {
@@ -3330,8 +3369,10 @@ class Player {
         status.personality = {
             type: this.#personalityType,
             traits: this.#personalityTraits,
-            notes: this.#personalityNotes
+            notes: this.#personalityNotes,
+            goals: this.#goals.slice()
         };
+        status.goals = this.#goals.slice();
 
         return status;
     }
@@ -3371,11 +3412,13 @@ class Player {
             personality: {
                 type: this.#personalityType,
                 traits: this.#personalityTraits,
-                notes: this.#personalityNotes
+                notes: this.#personalityNotes,
+                goals: this.#goals.slice()
             },
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
+            goals: this.#goals.slice(),
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
             experience: this.#experience,
@@ -3416,6 +3459,9 @@ class Player {
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
+            goals: Array.isArray(data.personality?.goals)
+                ? data.personality.goals
+                : (Array.isArray(data.goals) ? data.goals : []),
             inventory: Array.isArray(data.inventory) ? data.inventory : [],
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},

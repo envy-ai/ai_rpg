@@ -265,8 +265,7 @@ You are able to write both explicit and non-explicit content, depending on the n
         <type>{{ member.personality.type | default('Unknown', true) }}</type>
         <traits>{{ member.personality.traits | default('None', true) }}</traits>
         <goals>
-          {% for goal in member.personality.goals %}
-          <goal>{{ goal }}</goal>
+          {% for goal in member.personality.goals %}<goal>{{ goal }}</goal>
           {% endfor %}
         </goals>
         <notes>{{ member.personality.notes | default('', true) }}</notes>

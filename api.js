@@ -3954,16 +3954,48 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        const applyGoalUpdatesToActor = (actor, goalsUpdate) => {
+            if (!actor || !goalsUpdate || typeof goalsUpdate !== 'object') {
+                return;
+            }
+
+            const applyList = (list, handler) => {
+                if (!Array.isArray(list) || !list.length || typeof handler !== 'function') {
+                    return;
+                }
+                for (const entry of list) {
+                    const value = typeof entry === 'string' ? entry.trim() : '';
+                    if (!value) {
+                        continue;
+                    }
+                    try {
+                        handler(value);
+                    } catch (goalError) {
+                        console.warn(`Failed to update goal "${value}" for ${actor.name || actor.id || 'unknown'}:`, goalError?.message || goalError);
+                    }
+                }
+            };
+
+            if (typeof actor.removeGoal === 'function') {
+                applyList(goalsUpdate.completed, goal => actor.removeGoal(goal));
+                applyList(goalsUpdate.removed, goal => actor.removeGoal(goal));
+            }
+
+            if (typeof actor.addGoal === 'function') {
+                applyList(goalsUpdate.added, goal => actor.addGoal(goal));
+            }
+        };
+
         async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null, totalPrompts = 1 } = {}) {
             if (!npc || !Array.isArray(historyEntries) || !historyEntries.length) {
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
 
             const endpoint = config?.ai?.endpoint;
             const apiKey = config?.ai?.apiKey;
             const model = config?.ai?.model;
             if (!endpoint || !apiKey || !model) {
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
 
             let baseContext;
@@ -4013,7 +4045,8 @@ module.exports = function registerApiRoutes(scope) {
                     personality: {
                         type: npc.personalityType || '',
                         traits: npc.personalityTraits || '',
-                        notes: npc.personalityNotes || ''
+                        notes: npc.personalityNotes || '',
+                        goals: Array.isArray(npc.goals) ? npc.goals.slice(0) : []
                     },
                     health: npc.health ?? 'unknown',
                     maxHealth: npc.maxHealth ?? 'unknown',
@@ -4030,8 +4063,11 @@ module.exports = function registerApiRoutes(scope) {
                 currentNpcContext.personality = {
                     type: npc.personalityType || '',
                     traits: npc.personalityTraits || '',
-                    notes: npc.personalityNotes || ''
+                    notes: npc.personalityNotes || '',
+                    goals: Array.isArray(npc.goals) ? npc.goals.slice(0) : []
                 };
+            } else if (!Array.isArray(currentNpcContext.personality.goals)) {
+                currentNpcContext.personality.goals = Array.isArray(npc.goals) ? npc.goals.slice(0) : [];
             }
 
             const existingMemories = Array.isArray(npc.importantMemories) ? npc.importantMemories : [];
@@ -4058,7 +4094,7 @@ module.exports = function registerApiRoutes(scope) {
                 .filter(Boolean);
 
             if (!sanitizedHistoryEntries.length) {
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
 
             const templatePayload = {
@@ -4076,12 +4112,12 @@ module.exports = function registerApiRoutes(scope) {
                     ? nunjucks.lib.prettifyError(error)
                     : error;
                 console.warn('Failed to render npc-memories template:', prettyError);
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
 
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
 
             const chatEndpoint = endpoint.endsWith('/')
@@ -4113,15 +4149,39 @@ module.exports = function registerApiRoutes(scope) {
                 const raw = response.data?.choices?.[0]?.message?.content || '';
 
                 let memoryText = '';
+                let goalsUpdate = null;
                 try {
                     const parser = new DOMParser();
                     const sanitized = sanitizeForXml(raw || '');
                     const doc = parser.parseFromString(sanitized, 'text/xml');
                     const parseError = doc.getElementsByTagName('parsererror')[0];
                     if (!parseError) {
-                        const memoryNode = doc.getElementsByTagName('memory')[0];
+                        const responseNode = doc.getElementsByTagName('response')[0] || doc.documentElement;
+
+                        const memoryNode = responseNode?.getElementsByTagName('memory')?.[0]
+                            || doc.getElementsByTagName('memory')[0];
                         if (memoryNode && typeof memoryNode.textContent === 'string') {
                             memoryText = memoryNode.textContent.trim();
+                        }
+
+                        const goalsNode = responseNode?.getElementsByTagName('goals')?.[0]
+                            || doc.getElementsByTagName('goals')[0];
+                        if (goalsNode) {
+                            const extractValues = (tagName) => Array.from(goalsNode.getElementsByTagName(tagName))
+                                .map(node => (node && typeof node.textContent === 'string' ? node.textContent.trim() : ''))
+                                .filter(Boolean);
+
+                            const completed = extractValues('completed');
+                            const removed = extractValues('remove');
+                            const added = extractValues('add');
+
+                            if (completed.length || removed.length || added.length) {
+                                goalsUpdate = {
+                                    completed,
+                                    removed,
+                                    added
+                                };
+                            }
                         }
                     }
                 } catch (parseError) {
@@ -4138,11 +4198,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 return {
                     raw,
-                    memory: memoryText ? memoryText : null
+                    memory: memoryText ? memoryText : null,
+                    goals: goalsUpdate
                 };
             } catch (error) {
                 console.warn(`Failed to run npc-memories prompt for ${npc.name || 'NPC'}:`, error.message);
-                return { raw: '', memory: null };
+                return { raw: '', memory: null, goals: null };
             }
         }
 
@@ -4287,6 +4348,10 @@ module.exports = function registerApiRoutes(scope) {
                                 console.log(`🧠 Added memory for ${actor.name}: ${result.memory}`);
                             }
                         }
+
+                        if (result?.goals) {
+                            applyGoalUpdatesToActor(actor, result.goals);
+                        }
                     } catch (error) {
                         console.warn(`Error while generating memories for ${actor.name}:`, error.message);
                         console.log(actor);
@@ -4364,6 +4429,10 @@ module.exports = function registerApiRoutes(scope) {
                                     console.log(`🧠 Added memory for ${member.name}: ${result.memory}`);
                                 }
                             }
+
+                            if (result?.goals) {
+                                applyGoalUpdatesToActor(member, result.goals);
+                            }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${member.name}:`, error.message);
                         } finally {
@@ -4420,6 +4489,10 @@ module.exports = function registerApiRoutes(scope) {
                                 if (added) {
                                     console.log(`🧠 Added memory for ${member.name}: ${result.memory}`);
                                 }
+                            }
+
+                            if (result?.goals) {
+                                applyGoalUpdatesToActor(member, result.goals);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${member.name}:`, error.message);
@@ -4580,6 +4653,10 @@ module.exports = function registerApiRoutes(scope) {
                                     console.log(`🧠 Added memory for ${memberName}: ${result.memory}`);
                                 }
                             }
+
+                            if (result?.goals) {
+                                applyGoalUpdatesToActor(member, result.goals);
+                            }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${memberName}:`, error.message);
                         } finally {
@@ -4633,6 +4710,10 @@ module.exports = function registerApiRoutes(scope) {
                                 if (added) {
                                     console.log(`🧠 Added memory for ${memberName}: ${result.memory}`);
                                 }
+                            }
+
+                            if (result?.goals) {
+                                applyGoalUpdatesToActor(member, result.goals);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
@@ -6418,6 +6499,9 @@ module.exports = function registerApiRoutes(scope) {
                             streamState.playerAction = true;
                         }
                     }
+
+                    // Set this to true so NPCs don't hijack player movement.
+                    Globals.processedMove = true;
 
                     try {
                         let skipNpcEvents = Boolean(isForcedEventAction);
