@@ -65,6 +65,7 @@ class Player {
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
     #inCombat = false;
     #checkEquipment = false;
+    #goals = [];
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -1425,6 +1426,37 @@ class Player {
     get previousLocation() {
         const Location = getLocationModule();
         return Location.get(this.#previousLocationId) || null;
+    }
+
+    get goals() {
+        return this.#goals;
+    }
+
+    addGoal(goal) {
+        if (typeof goal !== 'string' || !goal.trim()) {
+            return false;
+        }
+        const trimmed = goal.trim();
+        if (this.#goals.includes(trimmed)) {
+            return false;
+        }
+        this.#goals.push(trimmed);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
+    removeGoal(goal) {
+        if (typeof goal !== 'string' || !goal.trim()) {
+            return false;
+        }
+        const trimmed = goal.trim();
+        const index = this.#goals.indexOf(trimmed);
+        if (index === -1) {
+            return false;
+        }
+        this.#goals.splice(index, 1);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
     }
 
     updatePreviousLocation() {
