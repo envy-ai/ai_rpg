@@ -14,9 +14,10 @@ const EVENT_PROMPT_ORDER = [
         { key: 'dummy_event', prompt: `Did the text reveal, unlock, unblock, or otherwise create a new exit?` },
         { key: 'new_exit_discovered', prompt: `Did the text reveal, unlock, unblock, or otherwise discover a new exit or vehicle to another region or location (Note: roads, trails, paths, doors, portals, etc are exits and not scenery)? Or, did the player or any other entity create a new exit, clear a path, make a door, etc? If so, reply in the form [destination location or region name] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of the location or region in 1-2 sentences]. In case of more than one, separate them with vertical bars. Otherwise answer N/A. An exit to a region may take the form of a vehicle to that region. If the new location or region is already known to the player or if it isn't, list it here. The exit may be to an existing location, but an exit to that new location may not already exist in this current location.` },
         // This dummy event gets the LLM to choose between mutually exclusive types of movement.
-        { key: 'dummy_event', prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible', 'moved to different existing location', 'sitting down or resting'. If the player did not physically move, answer N/A.` },
+        { key: 'dummy_event', prompt: `Did the player or party move at all? If so, give the most appropriate answer.  It should be one of: 'moved to new region', 'moved to new location', 'moved within location to somewhere fully visible', 'moved within location to somewhere not fully visible', 'moved to different existing location', 'sitting down or resting' or 'hiding/taking cover in this location'. If the player did not physically move, answer N/A.` },
         { key: 'dummy_event', prompt: `Did you answer question 3 with 'moved within location to somewhere fully visible'? If so, give the exact name of the scenery.` },
-        { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered 'moved to new region' or 'moved to new location' to question 3, come up with a new location name and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The new location may not have the same name as the current location. A "region" on this context is any group of locations that share a common theme or purpose, such as a building interior, a town, a biome, a planet, etc. Otherwise answer N/A.` },
+        { key: 'dummy_event', prompt: `Did you answer question 3 with 'hiding/taking cover in this location'? If so, give the exact name of the scenery they used to hide/take cover.` },
+        { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered 'moved to new region' or 'moved to new location' to question 3, come up with a new location name and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location" or "region"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The new location/region may not have the same name as the current one.` },
         { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered question 3 with 'moved within location to somewhere not fully visible', come up with an appropriate sub-location and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "location"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The sublocation may not have the same name as the current location. Otherwise answer N/A. If unsure if this is a new sublocation or a new location, assume it's a new sublocation and answer this question.` },
         { key: 'move_location', prompt: `The starting location is %CURRENT_LOCATION%. Did the player travel to or end up in a different existing location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
         { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.` },
@@ -37,7 +38,8 @@ const EVENT_PROMPT_ORDER = [
         //],
         // NPC stuff
         //[
-        { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
+        { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
+        { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
         { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML.` },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
@@ -47,7 +49,6 @@ const EVENT_PROMPT_ORDER = [
         { key: 'environmental_status_damage', prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. If no changes to need bars, answer N/A.` },
-        { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
@@ -316,8 +317,12 @@ async function movePlayerToDestination(eventsInstance, destination, context = {}
     fallbackName = null,
     label = 'move_location'
 } = {}) {
-    Globals.processedMove = true;
     const player = context.player || eventsInstance.currentPlayer;
+
+    if (!player.IsNPC) {
+        Globals.processedMove = true;
+    }
+
     const { Location, findLocationByNameLoose, createLocationFromEvent } = eventsInstance._deps || {};
 
     if (!player || typeof player.setLocation !== 'function' || !Location || typeof Location.get !== 'function') {
@@ -610,6 +615,8 @@ class Events {
         const prepareBasePromptContext = this._deps.prepareBasePromptContext;
         const Location = this._deps.Location;
         const findRegionByLocationId = this._deps.findRegionByLocationId;
+
+        const PlayerLevel = Globals.currentPlayer?.level;
 
         if (typeof promptEnv?.render !== 'function') {
             throw new Error('promptEnv.render dependency is not configured.');
@@ -2656,6 +2663,7 @@ class Events {
                 }
             },
             attack_damage: function (entries = []) {
+                /*
                 const { findActorByName } = this._deps;
                 for (const entry of entries) {
                     const victim = findActorByName?.(entry.target);
@@ -2664,6 +2672,7 @@ class Events {
                     }
                     victim.modifyHealth(-5, entry.attacker ? `Attacked by ${entry.attacker}` : 'Attacked');
                 }
+                */
             },
             death_incapacitation: function (entries = []) {
                 const { findActorByName } = this._deps;
@@ -2902,6 +2911,7 @@ class Events {
                     notes: npc.personalityNotes
                 }
             };
+
 
             const changeDescription = entry.description || entry.changeDescription || '';
             const promptPayload = {

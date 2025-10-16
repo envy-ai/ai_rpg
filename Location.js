@@ -623,7 +623,7 @@ class Location {
         id: exit.id,
         description: exit.description || 'No description',
         destination: exit.destination,
-        destinationRegion: exit.destinationRegion || null,
+        destinationRegion: Globals.locationById(exit.destination)?.region?.id,
         bidirectional: exit.bidirectional !== false,
         isVehicle: Boolean(exit.isVehicle),
         vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null

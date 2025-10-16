@@ -1066,6 +1066,21 @@
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
         window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
         window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
+        window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
+        const __knownSkillNameSet = new Set(
+            (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
+                .map(skill => {
+                    if (!skill || typeof skill.name !== 'string') {
+                        return null;
+                    }
+                    const trimmed = skill.name.trim();
+                    return trimmed ? trimmed.toLowerCase() : null;
+                })
+                .filter(Boolean)
+        );
+        window.getKnownSkillNameSet = function () {
+            return __knownSkillNameSet;
+        };
         // Initialize with system prompt from server
         document.addEventListener('DOMContentLoaded', () => {
             //window.systemPrompt = {{ systemPrompt | dump | safe }};
@@ -7921,8 +7936,33 @@
                 }
                 payload.abilities = abilityEntries;
 
+                const knownSkillSet = typeof window.getKnownSkillNameSet === 'function'
+                    ? window.getKnownSkillNameSet()
+                    : new Set();
+                const unseenSkillKeys = new Set();
+                for (const skillName of Object.keys(skills)) {
+                    if (typeof skillName !== 'string') {
+                        continue;
+                    }
+                    const normalized = skillName.trim().toLowerCase();
+                    if (normalized && !knownSkillSet.has(normalized)) {
+                        unseenSkillKeys.add(normalized);
+                    }
+                }
+
+                const shouldGenerateSkillDetails = unseenSkillKeys.size > 0;
+                let reloadTriggered = false;
+
                 try {
-                    updateNpcEditStatus('Saving changes...');
+                    if (shouldGenerateSkillDetails) {
+                        updateNpcEditStatus('Generating skill details...');
+                        if (typeof showLocationOverlay === 'function') {
+                            showLocationOverlay('Generating skill details...');
+                        }
+                    } else {
+                        updateNpcEditStatus('Saving changes...');
+                    }
+
                     if (npcEditSaveBtn) {
                         npcEditSaveBtn.disabled = true;
                     }
@@ -7938,6 +7978,13 @@
                         throw new Error(result?.error || 'Failed to update NPC');
                     }
 
+                    if (shouldGenerateSkillDetails) {
+                        updateNpcEditStatus('Skills updated. Refreshing...', 'success');
+                        reloadTriggered = true;
+                        window.location.reload();
+                        return;
+                    }
+
                     updateNpcEditStatus('Changes saved.', 'success');
 
                     if (typeof window.loadCurrentLocation === 'function') {
@@ -7948,9 +7995,15 @@
                     closeNpcEditModal();
                 } catch (error) {
                     updateNpcEditStatus(error?.message || 'Failed to update NPC.', 'error');
+                    if (shouldGenerateSkillDetails && typeof hideLocationOverlay === 'function') {
+                        hideLocationOverlay();
+                    }
                 } finally {
-                    if (npcEditSaveBtn) {
+                    if (npcEditSaveBtn && !reloadTriggered) {
                         npcEditSaveBtn.disabled = false;
+                    }
+                    if (shouldGenerateSkillDetails && !reloadTriggered && typeof hideLocationOverlay === 'function') {
+                        hideLocationOverlay();
                     }
                 }
             });

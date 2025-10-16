@@ -9,7 +9,6 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
-
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
     eventsProcessedThisTurn = true;
@@ -5502,11 +5501,16 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (isTravelMessage && priorWasTravel) {
-                        chatHistory.pop();
-                        if (Array.isArray(newChatEntries) && newChatEntries.length > 0) {
-                            const lastCollectorEntry = newChatEntries[newChatEntries.length - 1];
-                            if (lastCollectorEntry && priorEntry && lastCollectorEntry.id === priorEntry.id) {
-                                newChatEntries.pop();
+                        const destinationIsNew = Boolean(travelMetadata?.exit?.destinationIsStub
+                            || travelMetadata?.exit?.destinationIsRegionEntryStub);
+
+                        if (!destinationIsNew) {
+                            chatHistory.pop();
+                            if (Array.isArray(newChatEntries) && newChatEntries.length > 0) {
+                                const lastCollectorEntry = newChatEntries[newChatEntries.length - 1];
+                                if (lastCollectorEntry && priorEntry && lastCollectorEntry.id === priorEntry.id) {
+                                    newChatEntries.pop();
+                                }
                             }
                         }
                     }
@@ -6500,9 +6504,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    // Set this to true so NPCs don't hijack player movement.
-                    Globals.processedMove = true;
-
                     try {
                         let skipNpcEvents = Boolean(isForcedEventAction);
 
@@ -6536,6 +6537,8 @@ module.exports = function registerApiRoutes(scope) {
 
                         console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
 
+                        console.log(Boolean(Globals.processedMove));
+                        console.log(Globals.processedMove);
                         const playerMovedThisTurn = Boolean(Globals.processedMove);
                         if (playerMovedThisTurn) {
                             console.log('Skipping NPC turns because the player moved this turn.');
@@ -6567,6 +6570,9 @@ module.exports = function registerApiRoutes(scope) {
                         stream.status('npc_turns:pending', skipNpcEvents
                             ? 'Skipping NPC turns and random events.'
                             : 'Resolving NPC turns.');
+
+                        // Set this to true so NPCs don't hijack player movement.
+                        Globals.processedMove = true;
 
                         let npcTurns = null;
                         if (!skipNpcEvents) {
@@ -7716,7 +7722,7 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Update an NPC's core data (experimental editing UI)
-        app.put('/api/npcs/:id', (req, res) => {
+        app.put('/api/npcs/:id', async (req, res) => {
             try {
                 const npcId = req.params.id;
                 if (!npcId || typeof npcId !== 'string') {
@@ -7811,14 +7817,107 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (skillValues && typeof skillValues === 'object') {
+                    if (!(skills instanceof Map)) {
+                        throw new Error('Skill registry is unavailable; cannot update NPC skills.');
+                    }
+                    if (!(Player.availableSkills instanceof Map)) {
+                        throw new Error('Player.availableSkills is not initialized; cannot update NPC skills.');
+                    }
+
+                    const canonicalSkillNames = new Map();
+                    const existingSkillLookup = new Map();
+                    for (const existingName of skills.keys()) {
+                        if (typeof existingName !== 'string') {
+                            continue;
+                        }
+                        const trimmedExisting = existingName.trim();
+                        if (!trimmedExisting) {
+                            continue;
+                        }
+                        const loweredExisting = trimmedExisting.toLowerCase();
+                        if (!existingSkillLookup.has(loweredExisting)) {
+                            existingSkillLookup.set(loweredExisting, trimmedExisting);
+                        }
+                    }
+
+                    const pendingSkillGenerations = new Map(); // lowerName -> requestedName
+                    for (const rawName of Object.keys(skillValues)) {
+                        if (typeof rawName !== 'string') {
+                            continue;
+                        }
+                        const trimmed = rawName.trim();
+                        if (!trimmed) {
+                            continue;
+                        }
+                        const lowered = trimmed.toLowerCase();
+                        let canonicalName = existingSkillLookup.get(lowered) || null;
+
+                        if (!canonicalName) {
+                            pendingSkillGenerations.set(lowered, trimmed);
+                            canonicalName = trimmed;
+                        } else if (!Player.availableSkills.has(canonicalName)) {
+                            const existingSkill = skills.get(canonicalName);
+                            if (existingSkill) {
+                                Player.availableSkills.set(canonicalName, existingSkill);
+                            }
+                        }
+
+                        canonicalSkillNames.set(rawName, canonicalName);
+                    }
+
+                    if (pendingSkillGenerations.size) {
+                        const requestedSkillNames = Array.from(pendingSkillGenerations.values());
+                        let generatedSkills = [];
+                        try {
+                            const settingSnapshot = typeof getActiveSettingSnapshot === 'function'
+                                ? getActiveSettingSnapshot()
+                                : currentSetting || null;
+                            const settingDescription = describeSettingForPrompt(settingSnapshot);
+                            generatedSkills = await generateSkillsByNames({
+                                skillNames: requestedSkillNames,
+                                settingDescription
+                            });
+                        } catch (generationError) {
+                            console.warn('Failed to generate metadata for new skills:', generationError.message);
+                            generatedSkills = [];
+                        }
+
+                        const generationNameMap = new Map(); // requested lower name -> canonical output name
+                        for (let index = 0; index < requestedSkillNames.length; index += 1) {
+                            const requestedName = requestedSkillNames[index];
+                            const loweredRequested = requestedName.toLowerCase();
+                            const generatedSkill = Array.isArray(generatedSkills) ? generatedSkills[index] : null;
+                            const skillInstance = (generatedSkill && generatedSkill.name)
+                                ? generatedSkill
+                                : new Skill({ name: requestedName, description: '', attribute: '' });
+                            const canonical = (skillInstance.name && skillInstance.name.trim()) || requestedName;
+                            generationNameMap.set(loweredRequested, canonical);
+                            existingSkillLookup.set(loweredRequested, canonical);
+                            existingSkillLookup.set(canonical.toLowerCase(), canonical);
+                            skills.set(canonical, skillInstance);
+                            Player.availableSkills.set(canonical, skillInstance);
+                        }
+
+                        for (const [rawName, provisional] of canonicalSkillNames.entries()) {
+                            if (typeof provisional !== 'string') {
+                                continue;
+                            }
+                            const loweredProvisional = provisional.trim().toLowerCase();
+                            if (generationNameMap.has(loweredProvisional)) {
+                                canonicalSkillNames.set(rawName, generationNameMap.get(loweredProvisional));
+                            }
+                        }
+                    }
+
                     for (const [skillName, value] of Object.entries(skillValues)) {
+                        const canonicalName = canonicalSkillNames.get(skillName) || skillName;
                         const numeric = Number(value);
                         if (!Number.isFinite(numeric)) {
                             continue;
                         }
-                        const updated = npc.setSkillValue(skillName, numeric);
+                        const updated = npc.setSkillValue(canonicalName, numeric);
                         if (updated === false) {
-                            console.warn(`Failed to set skill '${skillName}' for NPC ${npcId}`);
+                            console.warn(`Failed to set skill '${canonicalName}' for NPC ${npcId}`);
                         }
                     }
                 }

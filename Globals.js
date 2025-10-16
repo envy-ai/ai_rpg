@@ -3,8 +3,19 @@ class Globals {
   static currentPlayer;
   static baseDir;
   static gameLoaded = false;
-  static processedMove = false;
+  static _processedMove = false;
   static inCombat = false;
+
+  static set processedMove(value) {
+    console.log(`Globals.processedMove set to ${value}`);
+    console.trace();
+    Globals._processedMove = value;
+  }
+
+  static get processedMove() {
+    console.log(`Globals.processedMove accessed, value is ${Globals._processedMove}`);
+    return Globals._processedMove;
+  }
 
   static setInCombat(value) {
     console.log(`Globals.setInCombat(${value}) called.`);
@@ -50,6 +61,26 @@ class Globals {
       return;
     }
     Globals.currentPlayer.elapsedTime = value;
+  }
+
+  static locationById(id) {
+    if (!Globals.config) {
+      console.warn('Globals.locationById accessed before config was set.');
+      console.trace();
+      return null;
+    }
+    const Location = require('./Location.js');
+    return Location.get(id);
+  }
+
+  static regionsById(id) {
+    if (!Globals.config) {
+      console.warn('Globals.regionsById accessed before config was set.');
+      console.trace();
+      return null;
+    }
+    const Region = require('./Region.js');
+    return Region.get(id);
   }
 
   static get locationsById() {

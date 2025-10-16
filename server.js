@@ -2256,7 +2256,16 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
 
-            const skillDef = skills.get(skillName) || skills.get(skillName.toLowerCase());
+            let skillDef = skills.get(skillName);
+            if (!skillDef && typeof skillName === 'string') {
+                const normalized = skillName.trim().toLowerCase();
+                for (const [name, definition] of skills.entries()) {
+                    if (typeof name === 'string' && name.trim().toLowerCase() === normalized) {
+                        skillDef = definition;
+                        break;
+                    }
+                }
+            }
             const description = skillDef?.description || skillDef?.details || '';
             entries.push({
                 name: skillName,
@@ -10367,6 +10376,10 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
             name,
             description: info?.description || info?.label || name
         }));
+
+    if (safeCount === 0) {
+        return [];
+    }
 
     const renderedTemplate = renderSkillsPrompt({
         settingDescription: settingDescription || 'A vibrant world of adventure.',
