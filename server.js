@@ -12089,6 +12089,25 @@ function renderLocationGeneratorPrompt(options = {}) {
             ? 'location-generator.stub.xml.njk'
             : 'location-generator.full.xml.njk';
 
+        let entryProse = '';
+
+        // Set to latest chat prose from last 10 entries of chatHistory    
+        if (Array.isArray(chatHistory)) {
+            // Only consider the last 10 entries in chatHistory for stub expansion prose
+            const startIdx = Math.max(0, chatHistory.length - 10);
+            for (let i = chatHistory.length - 1; i >= startIdx; i--) {
+                const entry = chatHistory[i];
+
+                if (entry && entry.role === 'assistant' && typeof entry.content === 'string' && entry.type === 'player-action' && entry.content.trim()) {
+                    entryProse = entry.content.trim();
+                    break;
+                }
+            }
+        } else {
+            console.warn('No chat history available for location stub expansion prompt');
+            console.trace();
+        }
+
         const normalizeRegionContext = (region) => {
             const fallback = {
                 name: 'Unknown Region',
@@ -12168,7 +12187,8 @@ function renderLocationGeneratorPrompt(options = {}) {
             locationPurpose: options.locationPurpose || null,
             relativeLevel: options.relativeLevel ?? null,
             regionAverageLevel: options.regionAverageLevel ?? null,
-            config: config
+            config: config,
+            entryProse: entryProse,
         };
 
         const variables = isStubExpansion
@@ -12178,7 +12198,7 @@ function renderLocationGeneratorPrompt(options = {}) {
                 originDescription: options.originDescription || null,
                 originDirection: options.originDirection || null,
                 stubName: options.stubName || null,
-                stubId: options.stubId || null
+                stubId: options.stubId || null,
             }
             : baseVariables;
 

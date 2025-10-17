@@ -99,6 +99,11 @@ Design a brand new region for the setting above. Propose between 1 and {{ maxLoc
 For context, this region is being entered from {{ currentPlayer.previousLocation.name }} in {{ currentPlayer.previousLocation.region.name }}.
 {% endif %}
 
+{% if entryProse %}Here is how the region was described upon entry:
+<entryProse>
+{{ entryProse }}
+</entryProse>{% endif %}
+
 
 Guidelines: 
 * Note that "region" is defined loosely as a set of related locations. Examples of regions can be a building, a city, a biome, a town, a dungeon, a cave system, a mountain range, etc. Regions can contain other regions or be adjacent to them. As a general rule, a building should have a location for the exterior and a regionExit for the interior. Regions can be as small as a single room building or vastly larger than that. Note that it is not necessary to generate a regionExit to the parent region, as it will already be connected; however, you may generate a regionExit to the parent region if it makes sense to have more than one.

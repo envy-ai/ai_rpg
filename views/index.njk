@@ -1082,8 +1082,27 @@
             return __knownSkillNameSet;
         };
         // Initialize with system prompt from server
-        document.addEventListener('DOMContentLoaded', () => {
+        async function fetchLocationImageGenerationFlag() {
+            try {
+                const response = await fetch('/api/features/location-image-generation', { cache: 'no-store' });
+                if (!response.ok) {
+                    return;
+                }
+                const data = await response.json().catch(() => null);
+                if (data && typeof data.enabled === 'boolean') {
+                    locationImageGenerationEnabled = data.enabled;
+                    window.locationImageGenerationEnabled = locationImageGenerationEnabled;
+                }
+            } catch (error) {
+                console.warn('Failed to load location image generation flag:', error);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
             //window.systemPrompt = {{ systemPrompt | dump | safe }};
+            window.locationImageGenerationEnabled = locationImageGenerationEnabled;
+            await fetchLocationImageGenerationFlag();
+
             new AIRPGChat();
             
             // Add save/load functionality
@@ -4797,6 +4816,7 @@
         let currentNpcMemoriesName = '';
         let npcMemoriesDirty = false;
         let draggedNpcMemoryRow = null;
+        let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
         let currentThingEditId = null;
         let currentThingEditContext = null;
@@ -11181,16 +11201,24 @@
                     }
                     if (locationHint) {
                         const awaitingImage = !location.imageId;
-                        locationHint.textContent = awaitingImage
-                            ? 'Generating location image...'
-                            : (location.description ? 'Hover over the location image for a description.' : 'No description available for this location yet.');
+                        if (awaitingImage) {
+                            locationHint.textContent = locationImageGenerationEnabled
+                                ? 'Generating location image...'
+                                : 'Location image generation is disabled.';
+                        } else {
+                            locationHint.textContent = location.description
+                                ? 'Hover over the location image for a description.'
+                                : 'No description available for this location yet.';
+                        }
                     }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
                     locationCache[location.id] = location.name || location.description || location.id;
                     
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        const placeholderMarkup = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
+                        const placeholderMarkup = locationImageGenerationEnabled
+                            ? '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>'
+                            : '<div class="location-placeholder"></div>';
 
                         const finalizeTooltip = () => {
                             if (existingTooltip && !existingTooltip.isConnected) {
@@ -11607,7 +11635,9 @@
                     locationLevel.textContent = 'Level: ?';
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
-                        locationImage.innerHTML = '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>';
+                        locationImage.innerHTML = locationImageGenerationEnabled
+                            ? '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>'
+                            : '<div class="location-placeholder"></div>';
                         if (existingTooltip) {
                             locationImage.appendChild(existingTooltip);
                         }

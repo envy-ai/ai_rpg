@@ -6739,6 +6739,16 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Chat history API endpoint
+        app.get('/api/features/location-image-generation', (req, res) => {
+            try {
+                const enabled = Boolean(config?.imagegen?.enabled);
+                res.json({ enabled });
+            } catch (error) {
+                console.warn('Failed to resolve image generation feature flag:', error?.message || error);
+                res.status(500).json({ error: 'Failed to resolve image generation flag.' });
+            }
+        });
+
         app.get('/api/chat/history', (req, res) => {
             res.json({
                 history: chatHistory,
