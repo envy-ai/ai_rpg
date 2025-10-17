@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const Utils = require('./Utils.js');
 const { count } = require('console');
 
 /**
@@ -322,7 +323,7 @@ class Thing {
 
     // Initialize private fields
     this.#id = id || Thing.#generateId();
-    this.#name = name.trim();
+    this.#name = Utils.capitalizeProperNoun(name.trim());
     this.#description = description.trim();
     this.#thingType = thingType.toLowerCase();
     this.#imageId = imageId;
@@ -543,7 +544,7 @@ class Thing {
     // Remove from name index with old name
     Thing.#indexByName.delete(this.#name.toLowerCase());
 
-    this.#name = newName.trim();
+    this.#name = Utils.capitalizeProperNoun(newName.trim());
     this.#lastUpdated = new Date().toISOString();
 
     // Add to name index with new name

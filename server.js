@@ -704,7 +704,7 @@ async function processJobQueue() {
 
 // Process a single image generation job
 async function processImageGeneration(job) {
-    const { prompt, width, height, seed, negative_prompt, megapixels } = job.payload;
+    const { prompt, width, height, steps, seed, negative_prompt, megapixels } = job.payload;
 
     // Generate unique image ID
     const imageId = generateImageId();
@@ -718,6 +718,7 @@ async function processImageGeneration(job) {
             prompt: prompt.trim(),
             width: width || config.imagegen.default_settings.image.width || 1024,
             height: height || config.imagegen.default_settings.image.height || 1024,
+            steps: steps || config.imagegen.default_settings.image.steps || 20,
             seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000),
             negativePrompt: effectiveNegativePrompt,
             megapixels: effectiveMegapixels
@@ -4082,10 +4083,10 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
 
         if (exit.destinationRegion) {
             const pending = pendingRegionStubs.get(exit.destinationRegion);
-        const pendingName = pending ? (pending.originalName || pending.name) : null;
-        if (pendingName && pendingName.trim().toLowerCase() === normalizedTargetName) {
-            return true;
-        }
+            const pendingName = pending ? (pending.originalName || pending.name) : null;
+            if (pendingName && pendingName.trim().toLowerCase() === normalizedTargetName) {
+                return true;
+            }
             const destinationRegion = regions.get(exit.destinationRegion);
             if (destinationRegion?.name?.trim().toLowerCase() === normalizedTargetName) {
                 return true;
@@ -9633,10 +9634,6 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         return [];
     }
 
-    if (Array.isArray(location.thingIds) && location.thingIds.length > 0) {
-        return [];
-    }
-
     if (!config.ai || !config.ai.endpoint || !config.ai.apiKey || !config.ai.model) {
         return [];
     }
@@ -12221,8 +12218,9 @@ async function generatePlayerImage(player, options = {}) {
         const portraitNegative = buildNegativePrompt('blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions');
         const payload = {
             prompt: finalImagePrompt,
-            width: config.imagegen.default_settings.image.width || 1024,
-            height: config.imagegen.default_settings.image.height || 1024,
+            width: config.imagegen.character_settings?.image?.width,
+            height: config.imagegen.character_settings?.image?.height,
+            steps: config.imagegen.character_settings?.sampling?.steps,
             seed: Math.floor(Math.random() * 1000000),
             negative_prompt: portraitNegative,
             megapixels: getDefaultMegapixels(),
@@ -12507,6 +12505,7 @@ async function generateLocationImage(location, options = {}) {
             width: locationImageSettings.width || defaultImageSettings.width || 1024,
             height: locationImageSettings.height || defaultImageSettings.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
+            steps: config.imagegen.location_settings?.sampling?.steps,
             negative_prompt: locationNegative,
             megapixels: resolveMegapixels(locationImageSettings.megapixels),
             // Track which location this image is for
