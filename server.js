@@ -2021,7 +2021,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
-    const locationDetails = location ? location.getDetails?.() : null;
+    const locationDetails = location ? location.getDetails() : null;
     const playerStatus = currentPlayer && typeof currentPlayer.getStatus === 'function'
         ? currentPlayer.getStatus()
         : null;
@@ -2087,8 +2087,10 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             if (!exitInfo) {
                 continue;
             }
-            const label = exitInfo.description
-                || (typeof directionKey === 'string' && directionKey.trim() ? directionKey.trim() : 'Unknown Exit');
+
+            console.log('Exit info:', directionKey, exitInfo);
+
+            const label = exitInfo.name;
             exitSummaries.push({
                 name: label,
                 isVehicle: Boolean(exitInfo.isVehicle),

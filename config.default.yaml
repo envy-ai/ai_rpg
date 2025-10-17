@@ -10,19 +10,14 @@ max_memories_to_recall: 10
 # OpenAI-compatible API configuration
 ai:
   # API endpoint URL (examples):
-  # OpenAI: "https://api.openai.com/v1"
-  # LocalAI: "http://localhost:8080/v1"
-  # Ollama: "http://localhost:11434/v1"
-  # nano-gpt: "https://nano-gpt.com/api/v1"
+  # OpenAI - "https://api.openai.com/v1"
+  # LocalAI - "http://localhost:8080/v1"
+  # Ollama - "http://localhost:11434/v1"
+  # nano-gpt - "https://nano-gpt.com/api/v1"
   endpoint: "https://nano-gpt.com/api/v1"
 
   # Your API key (keep this secure!)
   apiKey: "your-api-key-here"
-
-  # Model to use (examples):
-  # OpenAI: "gpt-3.5-turbo", "gpt-4"
-  # LocalAI: depends on your models
-  # Ollama: "llama2", "mistral", etc.
   model: "zai-org/GLM-4.5-FP8"
 
   # Optional: Additional parameters

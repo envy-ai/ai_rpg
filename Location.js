@@ -626,7 +626,9 @@ class Location {
         destinationRegion: Globals.locationById(exit.destination)?.region?.id,
         bidirectional: exit.bidirectional !== false,
         isVehicle: Boolean(exit.isVehicle),
-        vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null
+        name: exit.name,
+        vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null,
+        exitObject: exit.toJSON()
       };
     }
 

@@ -1097,10 +1097,10 @@ p:not(:last-child) {
 }
 
 .exit-button.region-exit.region-exit-unexplored {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(96, 165, 250, 0.55);
-  border-style: dashed;
-  color: #e0f2fe;
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.35);
+  border-style: solid;
+  color: #e2e8f0;
 }
 
 .exit-button.region-exit.region-exit-expanded {
@@ -1114,8 +1114,8 @@ p:not(:last-child) {
 }
 
 .exit-button.region-exit.region-exit-unexplored:hover {
-  background: rgba(59, 130, 246, 0.28);
-  border-color: rgba(96, 165, 250, 0.75);
+  background: rgba(148, 163, 184, 0.32);
+  border-color: rgba(148, 163, 184, 0.45);
 }
 
 .no-exits {

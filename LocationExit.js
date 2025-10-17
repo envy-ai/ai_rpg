@@ -100,6 +100,256 @@ class LocationExit {
     }
   }
 
+  /**
+   * Attempt to resolve any pending region stub that this exit points to.
+   * Uses the same matching heuristics as the server when wiring exits:
+   *   1. Direct pending region id match (destinationRegion / stub id)
+   *   2. Entrance stub id match
+   *   3. Name-based matching against targetRegionName / originalName values
+   * @returns {object|null} Pending stub record if one is found, otherwise null.
+   */
+  get associatedRegionStub() {
+    try {
+      // Lazy-load server state to avoid circular dependency issues at module load time.
+      const serverExports = require('./server');
+      const pendingRegionStubs = serverExports?.pendingRegionStubs;
+      const gameLocations = serverExports?.gameLocations;
+
+      if (!(pendingRegionStubs instanceof Map) || pendingRegionStubs.size === 0) {
+        return null;
+      }
+
+      const directRegionId = this.#destinationRegion;
+      if (directRegionId && pendingRegionStubs.has(directRegionId)) {
+        return pendingRegionStubs.get(directRegionId);
+      }
+
+      const destinationLocation = (gameLocations && typeof gameLocations.get === 'function')
+        ? gameLocations.get(this.#destination)
+        : null;
+
+      if (destinationLocation) {
+        const entry = Array.from(pendingRegionStubs.values()).find(stub => stub?.entranceStubId === destinationLocation.id);
+        if (entry) {
+          return entry;
+        }
+      }
+
+      const normalize = value => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+
+      const candidateNames = new Set();
+      if (destinationLocation) {
+        const meta = destinationLocation.stubMetadata || {};
+        const locationNames = [meta.targetRegionName, meta.originalName, destinationLocation.name, meta.regionName];
+        locationNames.map(normalize).filter(Boolean).forEach(name => candidateNames.add(name));
+      }
+
+      if (candidateNames.size === 0) {
+        return null;
+      }
+
+      for (const stub of pendingRegionStubs.values()) {
+        if (!stub) {
+          continue;
+        }
+
+        const stubNames = [
+          stub.originalName,
+          stub.name,
+          stub.targetRegionName,
+          stub.targetRegionDescription,
+          stub.description
+        ].map(normalize).filter(Boolean);
+
+        if (stubNames.some(name => candidateNames.has(name))) {
+          return stub;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(`Failed to resolve associated region stub for exit ${this.#id}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the region object this exit ultimately leads to. Falls back to the
+   * pending region stub definition if the destination region has not been
+   * generated yet.
+   * @returns {object|null} Region instance when available, otherwise the
+   *          pending stub record, or null if neither can be resolved.
+   */
+  get region() {
+    try {
+      const Location = require('./Location');
+      const Region = require('./Region');
+
+      const destinationLocation = Location.get(this.#destination);
+      if (destinationLocation) {
+        const region = destinationLocation.region
+          || (destinationLocation.regionId ? Region.get(destinationLocation.regionId) : null);
+        if (region) {
+          return region;
+        }
+      }
+
+      if (this.#destinationRegion) {
+        const region = Region.get(this.#destinationRegion) || null;
+        if (region) {
+          return region;
+        }
+      }
+
+      return this.associatedRegionStub || null;
+    } catch (error) {
+      console.warn(`Failed to resolve region for exit ${this.#id}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the destination location object for this exit. Attempts to locate a
+   * fully instantiated Location first, and falls back to any pending stub
+   * definition when necessary.
+   * @returns {object|null} Location instance when available, otherwise a pending
+   *          stub record (if one can be inferred), or null.
+   */
+  get location() {
+    try {
+      const Location = require('./Location');
+      let destinationLocation = Location.get(this.#destination);
+      if (destinationLocation) {
+        return destinationLocation;
+      }
+
+      const serverExports = require('./server');
+      const gameLocations = serverExports?.gameLocations;
+
+      if (gameLocations && typeof gameLocations.get === 'function') {
+        destinationLocation = gameLocations.get(this.#destination);
+        if (destinationLocation) {
+          return destinationLocation;
+        }
+      }
+
+      const stub = this.associatedRegionStub;
+      if (stub) {
+        const candidateIds = [
+          stub.entranceStubId,
+          stub.entranceLocationId,
+          stub.targetLocationId,
+          stub.exitLocationId
+        ].filter(id => typeof id === 'string' && id.trim());
+
+        for (const candidateId of candidateIds) {
+          const locationViaId = Location.get(candidateId)
+            || (gameLocations && typeof gameLocations.get === 'function' ? gameLocations.get(candidateId) : null);
+          if (locationViaId) {
+            return locationViaId;
+          }
+        }
+
+        if (gameLocations && typeof gameLocations.values === 'function') {
+          const normalize = value => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+          const candidateNames = new Set([
+            normalize(stub.originalName),
+            normalize(stub.name),
+            normalize(stub.targetRegionName),
+            normalize(stub.description)
+          ].filter(Boolean));
+
+          if (candidateNames.size) {
+            for (const locationCandidate of gameLocations.values()) {
+              if (!locationCandidate) {
+                continue;
+              }
+              const meta = locationCandidate.stubMetadata || {};
+              const locationNames = [
+                locationCandidate.name,
+                meta.targetRegionName,
+                meta.originalName,
+                meta.regionName,
+                meta.shortDescription
+              ].map(normalize).filter(Boolean);
+              if (locationNames.some(name => candidateNames.has(name))) {
+                return locationCandidate;
+              }
+            }
+          }
+        }
+
+        return stub;
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(`Failed to resolve destination location for exit ${this.#id}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a human-readable name for this exit's destination. Prefers region
+   * names when the exit leads to another region stub or fully realized region,
+   * otherwise falls back to the destination location's name.
+   * @returns {string|null}
+   */
+  get name() {
+    const pickName = (entity) => {
+      if (!entity || typeof entity !== 'object') {
+        return null;
+      }
+      const candidates = [
+        entity.name,
+        entity.originalName,
+        entity.targetRegionName,
+        entity.description,
+        entity.shortDescription,
+        entity.stubMetadata?.targetRegionName,
+        entity.stubMetadata?.shortDescription
+      ];
+      for (const value of candidates) {
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed) {
+            return trimmed;
+          }
+        }
+      }
+      return null;
+    };
+
+    try {
+      const region = this.region;
+      const regionName = pickName(region);
+      if (regionName) {
+        return regionName;
+      }
+
+      const location = this.location;
+      const locationName = pickName(location);
+      if (locationName) {
+        return locationName;
+      }
+
+      if (typeof this.#description === 'string' && this.#description.trim()) {
+        return this.#description.trim();
+      }
+
+      if (typeof this.#destination === 'string' && this.#destination.trim()) {
+        return this.#destination.trim();
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(`Failed to resolve destination name for exit ${this.#id}:`, error.message);
+      return typeof this.#description === 'string' && this.#description.trim()
+        ? this.#description.trim()
+        : (this.#destination || null);
+    }
+  }
+
   get bidirectional() {
     return this.#bidirectional;
   }
@@ -256,18 +506,7 @@ class LocationExit {
    * @returns {Object} - Exit summary object
    */
   getSummary() {
-    return {
-      id: this.#id,
-      description: this.#description,
-      destination: this.#destination,
-      destinationRegion: this.#destinationRegion,
-      bidirectional: this.#bidirectional,
-      imageId: this.#imageId,
-      isVehicle: this.#isVehicle,
-      vehicleType: this.#vehicleType,
-      createdAt: this.#createdAt.toISOString(),
-      lastUpdated: this.#lastUpdated.toISOString()
-    };
+    return this.getDetails();
   }
 
   /**
@@ -280,6 +519,7 @@ class LocationExit {
       description: this.#description,
       destination: this.#destination,
       destinationRegion: this.#destinationRegion,
+      name: this.name,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
       isVehicle: this.#isVehicle,

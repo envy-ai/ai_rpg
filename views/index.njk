@@ -11281,8 +11281,11 @@
                                     return;
                                 }
 
+                                console.log(exit);
+
                                 const destinationRegionId = exit.destinationRegion || null;
                                 const regionMatchesCurrent = Boolean(destinationRegionId && currentRegionId && destinationRegionId === currentRegionId);
+
                                 const isRegionExit = Boolean(destinationRegionId && !regionMatchesCurrent);
                                 const targetList = isRegionExit ? regionExitEntries : localExitEntries;
                                 targetList.push({ key, exit, destinationRegionId, isRegionExit });
@@ -11312,7 +11315,7 @@
                                         ? `${exit.vehicleType ? `${exit.vehicleType}` : 'Vehicle'} to `
                                         : '';
 
-                                    if (isRegionExit) {
+                                    if (isRegionExit || exit.destinationIsRegionEntryStub) {
                                         travelButton.classList.add('region-exit');
                                         const regionName = (typeof exit.destinationRegionName === 'string' && exit.destinationRegionName.trim())
                                             ? exit.destinationRegionName.trim()
@@ -11322,7 +11325,7 @@
                                             travelButton.textContent = `${vehiclePrefix}${regionName}: ${locationName}`;
                                             travelButton.classList.add('region-exit-expanded');
                                         } else {
-                                            travelButton.textContent = `${vehiclePrefix}Unexplored region: ${regionName}`;
+                                            travelButton.textContent = `${vehiclePrefix}Unexplored Region: ${regionName}`;
                                             travelButton.classList.add('region-exit-unexplored');
                                         }
                                         if (destinationRegionId) {
