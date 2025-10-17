@@ -4455,11 +4455,14 @@ async function expandRegionEntryStub(stubLocation) {
             const regionDescription = pendingInfo?.description || metadata.targetRegionDescription || 'No description available.';
             const parentRegionId = pendingInfo?.parentRegionId || metadata.targetRegionParentId || null;
 
+            console.log(`🌐 Beginning region stub expansion for ${regionName} (${regionDescription})...`);
+
             stubPrompt = renderRegionStubPrompt({
                 settingDescription,
+                regionNotes: regionDescription,
                 region: {
                     name: regionName,
-                    description: regionDescription
+                    regionNotes: regionDescription
                 },
                 previousRegion: currentPlayer.currentLocation.region
             });
@@ -13230,6 +13233,7 @@ function renderRegionStubPrompt({ settingDescription, region, previousRegion }) 
         const variables = {
             setting: currentSetting,
             currentRegion: region,
+            regionNotes: region.regionNotes,
             previousRegion: currentPlayer.previousLocation.region,
             currentLocation: currentPlayer.location,
             minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,

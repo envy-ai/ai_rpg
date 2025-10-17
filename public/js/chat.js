@@ -234,9 +234,9 @@ class AIRPGChat {
             const placeholder = document.createElement('div');
             placeholder.className = 'message ai-message';
             placeholder.innerHTML = `
-                <div class="message-sender">🤖 AI Game Master</div>\                
+                <div class="message-sender">🤖 AI Game Master</div>
                 <div class="message-actions" hidden></div>
-                <div>Welcome to the AI RPG! I\'m your Game Master. Configure your AI settings above and then describe what kind of adventure you\'d like to embark on.</div>
+                <div>Welcome to the AI RPG! I\'m your Game Master. Configure your AI settings above, then click Game Settings to set up your world, and finally click New Game.</div>
             `;
             this.chatLog.appendChild(placeholder);
         } else {

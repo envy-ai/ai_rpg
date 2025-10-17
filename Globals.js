@@ -7,23 +7,23 @@ class Globals {
   static inCombat = false;
 
   static set processedMove(value) {
-    console.log(`Globals.processedMove set to ${value}`);
-    console.trace();
+    //console.log(`Globals.processedMove set to ${value}`);
+    //console.trace();
     Globals._processedMove = value;
   }
 
   static get processedMove() {
-    console.log(`Globals.processedMove accessed, value is ${Globals._processedMove}`);
+    //console.log(`Globals.processedMove accessed, value is ${Globals._processedMove}`);
     return Globals._processedMove;
   }
 
   static setInCombat(value) {
-    console.log(`Globals.setInCombat(${value}) called.`);
+    //console.log(`Globals.setInCombat(${value}) called.`);
     Globals.inCombat = value;
   }
 
   static isInCombat() {
-    console.log(`Globals.isInCombat() => ${Globals.inCombat}`);
+    //console.log(`Globals.isInCombat() => ${Globals.inCombat}`);
     return Globals.inCombat;
   }
 

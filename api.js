@@ -10748,7 +10748,7 @@ module.exports = function registerApiRoutes(scope) {
                     setting: describeSettingForPrompt(activeSetting),
                     regionName: regionName && regionName.trim() ? regionName.trim() : null,
                     regionDescription: regionDescription || null,
-                    regionNotes: regionNotes || null,
+                    regionNotes: regionDescription || null,
                     report: (stage, info = {}) => {
                         const message = info.message || `Stage: ${stage}`;
                         stream.emit('generation_status', {
@@ -10758,6 +10758,8 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                 };
+
+                console.log('🏗️  Starting region generation with options derived from current setting:', options);
 
                 const result = await generateRegionFromPrompt(options);
 
@@ -12905,8 +12907,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 const regionOptions = {
                     setting: settingDescription,
-                    regionName: resolvedStartingLocation ? `${resolvedStartingLocation}` : defaultRegionName,
-                    regionNotes: startingLocationStyle || null,
+                    regionNotes: resolvedStartingLocation ? `${resolvedStartingLocation}` : defaultRegionName,
+                    //regionNotes: startingLocationStyle || null,
                     report: (stage, info = {}) => {
                         const detail = regionStageDetails[stage] || null;
                         const targetStage = detail?.stage || 'new_game:region';
@@ -12914,6 +12916,8 @@ module.exports = function registerApiRoutes(scope) {
                         report(targetStage, message);
                     }
                 };
+
+                console.log('🏗️  Starting region generation with regionOptions:', regionOptions);
 
                 const regionResult = await generateRegionFromPrompt(regionOptions);
                 const region = regionResult.region;
