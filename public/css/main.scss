@@ -649,6 +649,12 @@ p:not(:last-child) {
 
   #mapContainer {
     flex: 1 1 auto;
+    min-height: 320px;
+  }
+}
+
+.map-panel #mapContainer {
+  @media (min-width: 769px) {
     min-height: 0;
   }
 }
