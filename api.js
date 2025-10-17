@@ -9760,7 +9760,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    const regionStub = createRegionStubFromEvent({
+                    const regionStub = await createRegionStubFromEvent({
                         name: resolvedName,
                         description: resolvedDescription,
                         originLocation,

@@ -47,7 +47,9 @@ Globals.baseDir = __dirname;
 attachAxiosMetricsLogger(axios);
 
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
+const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 let cachedBannedNpcWords = null;
+let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 
 // On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
@@ -3952,12 +3954,18 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
     gameLocations.set(stub.id, stub);
 
+    try {
+        await ensureLocationNameAllowed(stub);
+    } catch (error) {
+        console.warn(`Failed to ensure location name for event-created stub ${stub.id}:`, error.message);
+    }
+
     if (originLocation) {
         const destinationRegionForExit = effectiveRegionId && originRegion?.id !== effectiveRegionId
             ? effectiveRegionId
             : null;
         const exitOptions = {
-            description: descriptionHint || `${trimmedName}`,
+            description: descriptionHint || `${stub.name || trimmedName}`,
             bidirectional: false,
             destinationRegion: destinationRegionForExit
         };
@@ -4000,7 +4008,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -4047,10 +4055,11 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
     }
 
     for (const pending of pendingRegionStubs.values()) {
-        if (!pending || !pending.name) {
+        const pendingNameSource = pending ? (pending.originalName || pending.name) : null;
+        if (!pendingNameSource) {
             continue;
         }
-        if (pending.name.trim().toLowerCase() !== normalizedTargetName) {
+        if (pendingNameSource.trim().toLowerCase() !== normalizedTargetName) {
             continue;
         }
 
@@ -4073,9 +4082,10 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
         if (exit.destinationRegion) {
             const pending = pendingRegionStubs.get(exit.destinationRegion);
-            if (pending?.name && pending.name.trim().toLowerCase() === normalizedTargetName) {
-                return true;
-            }
+        const pendingName = pending ? (pending.originalName || pending.name) : null;
+        if (pendingName && pendingName.trim().toLowerCase() === normalizedTargetName) {
+            return true;
+        }
             const destinationRegion = regions.get(exit.destinationRegion);
             if (destinationRegion?.name?.trim().toLowerCase() === normalizedTargetName) {
                 return true;
@@ -4147,8 +4157,14 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     gameLocations.set(regionEntryStub.id, regionEntryStub);
 
+    try {
+        await ensureLocationNameAllowed(regionEntryStub);
+    } catch (error) {
+        console.warn(`Failed to ensure location name for region stub ${regionEntryStub.id}:`, error.message);
+    }
+
     const exitOptions = {
-        description: description || `${trimmedName}`,
+        description: description || `${regionEntryStub.name || trimmedName}`,
         bidirectional: false,
         destinationRegion: newRegionId
     };
@@ -4179,8 +4195,9 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
 
     pendingRegionStubs.set(newRegionId, {
         id: newRegionId,
-        name: trimmedName,
-        description: descriptionText,
+        name: regionEntryStub.name || trimmedName,
+        originalName: trimmedName,
+        description: regionEntryStub.stubMetadata?.targetRegionDescription || descriptionText,
         relationship: 'Adjacent',
         relativeLevel: 0,
         parentRegionId: parentRegionId || null,
@@ -4191,7 +4208,7 @@ function createRegionStubFromEvent({ name, originLocation = null, description = 
         createdAt: new Date().toISOString()
     });
 
-    console.log(`🌐 Created region stub "${trimmedName}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
+    console.log(`🌐 Created region stub "${regionEntryStub.name}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
 
     return regionEntryStub;
 }
@@ -4212,7 +4229,7 @@ function pickAvailableDirections(location, exclude = []) {
     return PRIMARY_DIRECTIONS.filter(direction => !exclusions.has(direction));
 }
 
-function createStubNeighbors(location, context = {}) {
+async function createStubNeighbors(location, context = {}) {
     if (!location || typeof location.id !== 'string') {
         return [];
     }
@@ -4262,6 +4279,11 @@ function createStubNeighbors(location, context = {}) {
         });
 
         gameLocations.set(stub.id, stub);
+        try {
+            await ensureLocationNameAllowed(stub);
+        } catch (error) {
+            console.warn(`Failed to ensure location name for stub neighbor ${stub.id}:`, error.message);
+        }
         const exitDescription = `Unexplored path leading ${direction} toward ${stub.name}`;
         ensureExitConnection(location, stub, { description: exitDescription, bidirectional: false });
 
@@ -8437,6 +8459,104 @@ function getBannedNpcWords() {
     return cachedBannedNpcWords;
 }
 
+function getBannedLocationNameSet() {
+    if (cachedBannedLocationNames instanceof Set) {
+        return cachedBannedLocationNames;
+    }
+
+    try {
+        const raw = fs.readFileSync(BANNED_LOCATION_NAMES_PATH, 'utf8');
+        const parsed = yaml.load(raw) || {};
+        const names = Array.isArray(parsed.banned_location_names)
+            ? parsed.banned_location_names
+            : [];
+        cachedBannedLocationNames = new Set(
+            names
+                .map(entry => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+                .filter(Boolean)
+        );
+    } catch (error) {
+        console.warn('Failed to load banned location names:', error.message);
+        cachedBannedLocationNames = new Set();
+    }
+
+    return cachedBannedLocationNames;
+}
+
+function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet()) {
+    if (!name || typeof name !== 'string' || !(bannedSet instanceof Set) || bannedSet.size === 0) {
+        return false;
+    }
+    return bannedSet.has(name.trim().toLowerCase());
+}
+
+async function ensureLocationNameAllowed(location, { maxAttempts = 3 } = {}) {
+    if (!location || typeof location !== 'object') {
+        return;
+    }
+
+    const bannedSet = getBannedLocationNameSet();
+    if (!(bannedSet instanceof Set) || bannedSet.size === 0) {
+        return;
+    }
+
+    const originalName = typeof location.name === 'string' ? location.name : '';
+    let attempts = 0;
+    while (attempts < maxAttempts && isLocationNameBanned(location.name, bannedSet)) {
+        attempts += 1;
+        try {
+            await regenerateLocationName(location);
+        } catch (error) {
+            console.warn(`Failed to regenerate name for location ${location.name || location.id}:`, error.message);
+            break;
+        }
+    }
+
+    if (isLocationNameBanned(location.name, bannedSet)) {
+        console.warn(`Location "${location.name}" (${location.id || 'unknown id'}) remains on the banned list after ${attempts} attempt(s).`);
+    }
+
+    if (location.stubMetadata && typeof location.stubMetadata === 'object'
+        && location.stubMetadata.targetRegionName
+        && typeof location.name === 'string'
+        && location.name !== originalName) {
+        location.stubMetadata.targetRegionName = location.name;
+    }
+}
+
+async function ensureRegionNameAllowed(region, { maxAttempts = 3 } = {}) {
+    if (!region || typeof region !== 'object') {
+        return;
+    }
+
+    const bannedSet = getBannedLocationNameSet();
+    if (!(bannedSet instanceof Set) || bannedSet.size === 0) {
+        return;
+    }
+
+    let attempts = 0;
+    while (attempts < maxAttempts && isLocationNameBanned(region.name, bannedSet)) {
+        attempts += 1;
+        try {
+            await regenerateRegionName(region);
+        } catch (error) {
+            console.warn(`Failed to regenerate name for region ${region.name || region.id}:`, error.message);
+            break;
+        }
+    }
+
+    if (isLocationNameBanned(region.name, bannedSet)) {
+        console.warn(`Region "${region.name}" (${region.id || 'unknown id'}) remains on the banned list after ${attempts} attempt(s).`);
+    }
+
+    if (pendingRegionStubs.has(region.id)) {
+        const pending = pendingRegionStubs.get(region.id);
+        if (pending && typeof region.name === 'string') {
+            pending.name = region.name;
+        }
+    }
+}
+
 function npcNameContainsBannedWord(name, bannedWords = getBannedNpcWords()) {
     if (!name || typeof name !== 'string' || !bannedWords.length) {
         return false;
@@ -9939,6 +10059,30 @@ function logLocationNameRegeneration({ prompt, responseText, durationSeconds }) 
     }
 }
 
+function logRegionNameRegeneration({ prompt, responseText, durationSeconds }) {
+    try {
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const logPath = path.join(logDir, `region_name_regen_${timestamp}.log`);
+        const parts = [
+            formatDurationLine(durationSeconds),
+            '=== REGION NAME REGEN PROMPT ===',
+            prompt || '(none)',
+            '',
+            '=== REGION NAME REGEN RESPONSE ===',
+            responseText || '(no response)',
+            ''
+        ];
+        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
+    } catch (error) {
+        console.warn('Failed to log region name regeneration:', error.message);
+    }
+}
+
 function logChooseImportantMemories({ prompt, responseText, durationSeconds }) {
     try {
         const logDir = path.join(__dirname, 'logs');
@@ -10389,8 +10533,181 @@ async function regenerateLocationName(location) {
     };
 }
 
+function parseRegionNameRegenResponse(responseText) {
+    if (!responseText || typeof responseText !== 'string') {
+        return [];
+    }
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(`<root>${responseText}</root>`, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent || 'Parser error');
+        }
+
+        const names = [];
+        const containers = Array.from(doc.getElementsByTagName('regionNames'));
+
+        for (const container of containers) {
+            const nameNodes = Array.from(container.getElementsByTagName('name'));
+            for (const node of nameNodes) {
+                const indexAttr = node.getAttribute('index');
+                if (!indexAttr) {
+                    continue;
+                }
+                const value = node.textContent ? node.textContent.trim() : '';
+                if (value) {
+                    names.push(value);
+                }
+            }
+        }
+
+        if (!names.length) {
+            const fallback = responseText
+                .split(/\r?\n|,/)
+                .map(entry => entry.trim())
+                .filter(Boolean);
+            names.push(...fallback);
+        }
+
+        return names;
+    } catch (error) {
+        console.warn('Failed to parse region name regeneration response:', error.message);
+        return [];
+    }
+}
+
+async function regenerateRegionName(region) {
+    if (!region || typeof region !== 'object') {
+        throw new Error('regenerateRegionName requires a region object.');
+    }
+
+    const aiConfig = config?.ai || {};
+    if (!aiConfig.endpoint || !aiConfig.apiKey || !aiConfig.model) {
+        throw new Error('AI configuration missing for region name regeneration.');
+    }
+
+    const worldOutline = getWorldOutline();
+    const regionContext = {
+        name: region.name || 'Unnamed region',
+        description: region.description || 'No description provided.'
+    };
+
+    let renderedTemplate;
+    try {
+        renderedTemplate = promptEnv.render('region_name_regen.xml.njk', {
+            worldOutline,
+            region: regionContext
+        });
+    } catch (error) {
+        throw new Error(`Failed to render region name regeneration template: ${error.message}`);
+    }
+
+    let parsedTemplate;
+    try {
+        parsedTemplate = parseXMLTemplate(renderedTemplate);
+    } catch (error) {
+        throw new Error(`Failed to parse region name regeneration template: ${error.message}`);
+    }
+
+    const systemPrompt = parsedTemplate?.systemPrompt;
+    const generationPrompt = parsedTemplate?.generationPrompt;
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Region name regeneration template missing prompts.');
+    }
+
+    const endpoint = aiConfig.endpoint.endsWith('/')
+        ? `${aiConfig.endpoint}chat/completions`
+        : `${aiConfig.endpoint}/chat/completions`;
+
+    const requestData = {
+        model: aiConfig.model,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ],
+        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, aiConfig?.maxTokens, 400),
+        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.5
+    };
+
+    let responseText = '';
+    let durationSeconds = null;
+    try {
+        const requestStarted = Date.now();
+        const response = await axios.post(endpoint, requestData, {
+            headers: {
+                'Authorization': `Bearer ${aiConfig.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: baseTimeoutMilliseconds,
+            metadata: { aiMetricsLabel: 'region_name_regen' }
+        });
+        responseText = response.data?.choices?.[0]?.message?.content || '';
+        durationSeconds = (Date.now() - requestStarted) / 1000;
+    } catch (error) {
+        throw new Error(`Region name regeneration request failed: ${error.message}`);
+    }
+
+    if (!responseText.trim()) {
+        throw new Error('Region name regeneration returned an empty response.');
+    }
+
+    logRegionNameRegeneration({
+        prompt: generationPrompt,
+        responseText,
+        durationSeconds
+    });
+
+    const bannedSet = getBannedLocationNameSet();
+    const candidates = parseRegionNameRegenResponse(responseText);
+    if (!candidates.length) {
+        throw new Error('Region name regeneration did not produce any candidates.');
+    }
+
+    const tried = new Set();
+    const originalLower = region.name ? region.name.trim().toLowerCase() : '';
+    if (originalLower) {
+        tried.add(originalLower);
+    }
+
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'string') {
+            continue;
+        }
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const lower = trimmed.toLowerCase();
+        if (tried.has(lower)) {
+            continue;
+        }
+        tried.add(lower);
+
+        if (lower === originalLower) {
+            continue;
+        }
+        if (isLocationNameBanned(trimmed, bannedSet)) {
+            continue;
+        }
+        if (typeof Region.getByName === 'function') {
+            const existing = Region.getByName(trimmed);
+            if (existing && existing !== region) {
+                continue;
+            }
+        }
+
+        region.name = trimmed;
+        return trimmed;
+    }
+
+    throw new Error('Region name regeneration did not produce a usable replacement.');
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.regenerateLocationName = regenerateLocationName;
+    module.exports.regenerateRegionName = regenerateRegionName;
 }
 
 function buildFallbackSkills({ count, attributes }) {
@@ -12805,8 +13122,6 @@ async function generateLocationFromPrompt(options = {}) {
             throw new Error('Failed to parse location from AI response');
         }
 
-        console.log(`🏗️  Successfully generated location: ${location.name || location.id}`);
-
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
@@ -12831,6 +13146,15 @@ async function generateLocationFromPrompt(options = {}) {
 
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
+
+        try {
+            await ensureLocationNameAllowed(location);
+        } catch (error) {
+            console.warn(`Failed to ensure location name for generated location ${location.id}:`, error.message);
+        }
+
+        console.log(`🏗️  Successfully generated location: ${location.name || location.id}`);
+
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
         try {
@@ -12881,7 +13205,7 @@ async function generateLocationFromPrompt(options = {}) {
                 }
             }
 
-            newlyCreatedStubs.push(...createStubNeighbors(location, {
+            newlyCreatedStubs.push(...await createStubNeighbors(location, {
                 excludeDirections,
                 ...stubCreationContext
             }));
@@ -13433,7 +13757,7 @@ async function generateRegionExitStubs({
                 }
                 if (exit.destinationRegion) {
                     const pending = pendingRegionStubs.get(exit.destinationRegion);
-                    if (pending && normalizeRegionLocationName(pending.name) === normalizedTargetName) {
+                    if (pending && normalizeRegionLocationName(pending.originalName || pending.name) === normalizedTargetName) {
                         return true;
                     }
                 }
@@ -13531,7 +13855,21 @@ async function generateRegionExitStubs({
         });
 
         gameLocations.set(regionEntryStub.id, regionEntryStub);
-        stubMap.set(normalizeRegionLocationName(regionEntryStub.name), regionEntryStub);
+        try {
+            await ensureLocationNameAllowed(regionEntryStub);
+        } catch (error) {
+            console.warn(`Failed to ensure location name for region entry stub ${regionEntryStub.id}:`, error.message);
+        }
+
+        const stubAliases = new Set([
+            normalizeRegionLocationName(regionEntryStub.name),
+            normalizeRegionLocationName(stubName)
+        ]);
+        stubAliases.forEach(alias => {
+            if (alias) {
+                stubMap.set(alias, regionEntryStub);
+            }
+        });
 
         const exitDescription = `${definition.name}`;
         ensureExitConnection(sourceLocation, regionEntryStub, {
@@ -13544,7 +13882,8 @@ async function generateRegionExitStubs({
 
         pendingRegionStubs.set(newRegionId, {
             id: newRegionId,
-            name: definition.name,
+            name: regionEntryStub.name || definition.name,
+            originalName: definition.name,
             description: definition.description,
             relationship: definition.relationship,
             relativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
@@ -13555,7 +13894,7 @@ async function generateRegionExitStubs({
             createdAt: new Date().toISOString()
         });
 
-        console.log(`🌐 Created pending region stub for "${definition.name}" linked to ${region.name}.`);
+        console.log(`🌐 Created pending region stub for "${regionEntryStub.name || definition.name}" linked to ${region.name}.`);
     }
 }
 
@@ -13705,7 +14044,11 @@ async function instantiateRegionLocations({
 
         gameLocations.set(stub.id, stub);
         region.addLocationId(stub.id);
+
+        await ensureLocationNameAllowed(stub);
+
         const aliases = new Set();
+        aliases.add(normalizeRegionLocationName(stub.name));
         aliases.add(normalizeRegionLocationName(blueprint.name));
         if (Array.isArray(blueprint.aliases)) {
             blueprint.aliases.forEach(alias => aliases.add(normalizeRegionLocationName(alias)));
@@ -14011,6 +14354,7 @@ async function generateRegionFromPrompt(options = {}) {
         }
 
         const region = Region.fromXMLSnippet(aiResponse);
+        await ensureRegionNameAllowed(region);
         const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+<role>Location Name Regenerator</role>
+    
+<systemPrompt>
+You are a specialized prompt generator for creating RPG location names.
+</systemPrompt>
+
+<generationPrompt>
+
+<context>
+<worldOutline>
+{% for regionName, locations in worldOutline.regions %}
+  <region name="{{ regionName }}">
+    {% for loc in locations %}<location>{{ loc }}</location>
+    {% endfor %}
+  </region>
+  {% endfor %}
+</worldOutline>
+
+Region Information:
+<region>
+  <name>{{ region.name }}</name>
+  <description>{{ region.description }}</description>
+</region>
+</context>
+
+Based on the provided context, generate a list of 10 potential names for the location description. Consider the setting, region, and any relevant details to create fitting names.
+
+Provide the names in this format:
+
+<regionNames>
+  <originalName>{{ region.name }}</originalName>
+  <name index="1">...</name>
+  <name index="2">...</name>
+  [ ... 10 names total ... ]
+</regionNames>
+
+</generationPrompt>
+</template>

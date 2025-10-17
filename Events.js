@@ -233,7 +233,7 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
 
         if (!destination && isRegion && typeof createRegionStubFromEvent === 'function') {
             try {
-                destination = createRegionStubFromEvent({
+                destination = await createRegionStubFromEvent({
                     name: exitName,
                     originLocation,
                     description: entry?.description || `Entrance to ${exitName}.`,
