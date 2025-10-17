@@ -2191,7 +2191,7 @@ p:not(:last-child) {
   max-width: calc(50% - 8px);
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 900px) {
   .adventure-content {
     flex-direction: column;
   }

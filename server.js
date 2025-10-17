@@ -2088,7 +2088,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
 
-            console.log('Exit info:', directionKey, exitInfo);
+            //console.log('Exit info:', directionKey, exitInfo);
 
             const label = exitInfo.name;
             exitSummaries.push({
