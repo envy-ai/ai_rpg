@@ -24,6 +24,7 @@ Here's a list of existing NPCs already present in this location:
 
 Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
 
+<response>
 <npcs>
 <npc>
 <name>Full name of the NPC</name>
@@ -56,4 +57,11 @@ Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} 
 [… more NPCs …]
 
 </npcs>
-
+<memories>
+    <npcMemories npc ="Exact name of the NPC">
+        <memory>Short memory of a significant recent event from the NPC's perspective, in the style of a diary entry or personal note. No more than 2 sentences long. Memories should include interactions with other NPCs, places, things, etc.</memory>
+        [... total of 3 memories ...]
+    </npcMemories>
+    [... an npcMemories record for each generated NPC ...]
+</memories>
+</response>

@@ -1,0 +1,120 @@
+<template>
+<role>NPC Memory Generator</role>
+    
+<systemPrompt>
+You are a specialized prompt generator for creating RPG character memories.
+</systemPrompt>
+
+<generationPrompt>
+<context>
+<setting>
+  <name>{{ setting.name }}</name>
+  <description>{{ setting.description }}</description>
+  <theme>{{ setting.theme }}</theme>
+  <genre>{{ setting.genre }}</genre>
+  <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+  <magicLevel>{{ setting.magicLevel }}</magicLevel>
+  <techLevel>{{ setting.techLevel }}</techLevel>
+  <tone>{{ setting.tone }}</tone>
+  <difficulty>{{ setting.difficulty }}</difficulty>
+  <currencyName>{{ setting.currencyName }}</currencyName>
+  <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+  <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+  <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <races>{{ (setting.races or []) | join(', ') }}</races>
+</setting>
+<worldOutline>
+{% for regionName, locations in worldOutline.regions %}
+  <region name="{{ regionName }}">
+    {% for loc in locations %}<location>{{ loc }}</location>
+    {% endfor %}
+  </region>
+{% endfor %}
+</worldOutline>
+
+Region and Location Information:
+<currentRegion>
+  <name>{{ region.name }}</name>
+  <description>{{ region.description }}</description>
+  <locations>
+    {% for loc in region.locations %}
+      <location>
+        <name>{{ loc.name }}</name>
+        <description>{{ loc.description }}</description>
+        <characters>
+          {% for npc in loc.npcs %}
+          <character>
+            <id>{{ npc.id | default('unknown', true) }}</id>
+            <name>{{ npc.name }}</name>
+            <description>{{ npc.description }}</description>
+            <class>{{ npc.class | default('Unknown') }}</class>
+            <race>{{ npc.race | default('Unknown') }}</race>
+            <personality>
+              <type>{{ npc.personality.type | default('Unknown', true) }}</type>
+              <traits>{{ npc.personality.traits | default('None', true) }}</traits>
+              <goals>
+                  {% for goal in npc.personality.goals %}
+                  <goal>{{ goal }}</goal>
+                  {% endfor %}
+              </goals>
+              <notes>{{ npc.personality.notes | default('', true) }}</notes>
+            </personality>
+            <health>{{ npc.health | default('unknown') }}</health>
+            <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
+            <dispositionsTowardsPlayer>
+              {% for disposition in npc.dispositionsTowardsPlayer %}
+              <dispositionTowardsPlayer>
+                <type>{{ disposition.type }}</type>
+                <intensity>{{ disposition.intensityName }}</intensity>
+              </dispositionTowardsPlayer>
+              {% endfor %}
+            </dispositionsTowardsPlayer>
+            <importantMemories>
+              {% for entry in npc.selectedImportantMemories %}
+              <memory>{{ entry.memory }}</memory>
+              {% endfor %}
+            </importantMemories>
+            <inventory>
+              {% for item in npc.inventory %}<item>
+                <name>{{ item.name }}</name>
+                <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+              </item>
+            {% endfor %}</inventory>
+            <skills>
+              {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+            </skills>
+            <abilities>
+              {% for ability in npc.abilities %}
+              <ability>
+                <name>{{ ability.name }}</name>
+                <description>{{ ability.description }}</description>
+                <type>{{ ability.type }}</type>
+                <level>{{ ability.level }}</level>
+              </ability>
+              {% endfor %}
+            </abilities>
+          </character>
+          {% endfor %}
+        </characters>
+      </location>
+    {% endfor %}
+  </locations>
+</currentRegion>
+</context>
+
+<task>Your task is to assign 3 memories to each character in the current region that are significant to them and would likely be recalled in conversation. These memories should be relevant to the character's personality, goals, and experiences, and should help flesh out their character and backstory along with the backstory of the region and locations. Characters should remember interactions other characters, places, and things in their region, with them more likely to know other characters in the same location. The memories should be concise but evocative, providing insight into the character's life and motivations.</task>
+
+For each character, output their memories in this format:
+<characters>
+  <character>
+    <name>Exact name of the character</name>
+    <memories>
+      <memory index="1">First memory</memory>
+      <memory index="2">Second memory</memory>
+      <memory index="3">Third memory</memory>
+    </memories>
+  </character>
+  [... more characters ...]
+</characters>
+</generationPrompt>
+</template>

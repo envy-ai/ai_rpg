@@ -6570,7 +6570,9 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             console.warn('Failed to log single NPC generation:', logError.message);
         }
 
-        const parsedNpcs = parseLocationNpcs(npcResponse);
+        const parsedResult = parseLocationNpcs(npcResponse);
+        const parsedNpcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
+        const generatedMemories = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
         const baseConversation = [
             ...messages,
             { role: 'assistant', content: npcResponse }
@@ -6693,6 +6695,17 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             const abilityEntry = abilityAssignments.get(normalizedNpcName);
             if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
                 applyNpcAbilities(npc, abilityEntry.abilities);
+            }
+        }
+
+        if (normalizedNpcName && generatedMemories instanceof Map) {
+            const memoryEntry = generatedMemories.get(normalizedNpcName);
+            if (Array.isArray(memoryEntry) && memoryEntry.length) {
+                try {
+                    npc.importantMemories = memoryEntry.slice(0);
+                } catch (memoryError) {
+                    console.warn(`Failed to assign generated memories to NPC ${npc.name}:`, memoryError.message);
+                }
             }
         }
 
@@ -7186,6 +7199,11 @@ function parseIntegerFromText(value) {
 }
 
 function parseLocationNpcs(xmlContent) {
+    const result = { npcs: [], memories: new Map() };
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return result;
+    }
+
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(xmlContent, 'text/xml');
@@ -7195,8 +7213,25 @@ function parseLocationNpcs(xmlContent) {
             throw new Error(parserError.textContent);
         }
 
-        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
-        const npcs = [];
+        const responseRoot = doc.getElementsByTagName('response')[0] || doc;
+        const npcContainer = responseRoot.getElementsByTagName('npcs')[0] || responseRoot;
+
+        const memoryNodes = Array.from(responseRoot.getElementsByTagName('npcMemories'));
+        for (const memoryNode of memoryNodes) {
+            const rawName = memoryNode.getAttribute('npc') || memoryNode.getAttribute('name') || '';
+            const normalizedName = rawName ? rawName.trim().toLowerCase() : '';
+            if (!normalizedName) {
+                continue;
+            }
+            const memoryEntries = Array.from(memoryNode.getElementsByTagName('memory'))
+                .map(entry => (entry.textContent || '').trim())
+                .filter(Boolean);
+            if (memoryEntries.length) {
+                result.memories.set(normalizedName, memoryEntries.slice(0, 3));
+            }
+        }
+
+        const npcNodes = Array.from(npcContainer.getElementsByTagName('npc'));
 
         for (const node of npcNodes) {
             const nameNode = node.getElementsByTagName('name')[0];
@@ -7275,7 +7310,7 @@ function parseLocationNpcs(xmlContent) {
             }
 
             if (name) {
-                npcs.push({
+                result.npcs.push({
                     name,
                     description,
                     shortDescription,
@@ -7294,15 +7329,19 @@ function parseLocationNpcs(xmlContent) {
                 });
             }
         }
-
-        return npcs;
     } catch (error) {
         console.warn('Failed to parse NPC XML:', error.message);
-        return [];
     }
+
+    return result;
 }
 
 function parseRegionNpcs(xmlContent) {
+    const result = { npcs: [], memories: new Map() };
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return result;
+    }
+
     try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(xmlContent, 'text/xml');
@@ -7312,8 +7351,25 @@ function parseRegionNpcs(xmlContent) {
             throw new Error(parserError.textContent);
         }
 
-        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
-        const npcs = [];
+        const responseRoot = doc.getElementsByTagName('response')[0] || doc;
+        const npcContainer = responseRoot.getElementsByTagName('npcs')[0] || responseRoot;
+
+        const memoryNodes = Array.from(responseRoot.getElementsByTagName('npcMemories'));
+        for (const memoryNode of memoryNodes) {
+            const rawName = memoryNode.getAttribute('npc') || memoryNode.getAttribute('name') || '';
+            const normalizedName = rawName ? rawName.trim().toLowerCase() : '';
+            if (!normalizedName) {
+                continue;
+            }
+            const memoryEntries = Array.from(memoryNode.getElementsByTagName('memory'))
+                .map(entry => (entry.textContent || '').trim())
+                .filter(Boolean);
+            if (memoryEntries.length) {
+                result.memories.set(normalizedName, memoryEntries.slice(0, 3));
+            }
+        }
+
+        const npcNodes = Array.from(npcContainer.getElementsByTagName('npc'));
 
         for (const node of npcNodes) {
             const nameNode = node.getElementsByTagName('name')[0];
@@ -7399,7 +7455,7 @@ function parseRegionNpcs(xmlContent) {
                 }
             }
 
-            npcs.push({
+            result.npcs.push({
                 name,
                 description,
                 shortDescription,
@@ -7418,12 +7474,11 @@ function parseRegionNpcs(xmlContent) {
                 isHostile
             });
         }
-
-        return npcs;
     } catch (error) {
         console.warn('Failed to parse region NPC XML:', error.message);
-        return [];
     }
+
+    return result;
 }
 
 function renderNpcSkillsPrompt(skills = []) {
@@ -10700,7 +10755,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             console.warn('Failed to write NPC log:', logErr.message);
         }
 
-        let npcs = parseLocationNpcs(npcResponse);
+        const parsedResult = parseLocationNpcs(npcResponse);
+        let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
+        let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npcTimeoutMultiplier = Math.max(1, npcs.length || npcCountHint);
 
@@ -10726,6 +10783,10 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             });
 
             npcRenameMap = computeNpcRenameMap(originalNpcNames, npcs);
+        }
+
+        if (npcMemoryMap instanceof Map && npcRenameMap && npcRenameMap.size) {
+            npcMemoryMap = rekeyNpcLookupMap(npcMemoryMap, npcRenameMap) || npcMemoryMap;
         }
 
         let npcSkillAssignments = new Map();
@@ -10849,6 +10910,17 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
             const descriptor = { role: npcData.role, class: npcData.class, race: npcData.race };
             npcContexts.push({ npc, descriptor, name: npcData.name || npc.id });
+
+            if (npcMemoryMap instanceof Map) {
+                const memoryEntry = npcMemoryMap.get((npcData.name || '').trim().toLowerCase());
+                if (Array.isArray(memoryEntry) && memoryEntry.length) {
+                    try {
+                        npc.importantMemories = memoryEntry.slice(0);
+                    } catch (memoryError) {
+                        console.warn(`Failed to assign memories to location NPC ${npc.name}:`, memoryError.message);
+                    }
+                }
+            }
         }
 
         const inventoryTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
@@ -11033,7 +11105,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             console.warn('Failed to write region NPC log:', logErr.message);
         }
 
-        let parsedNpcs = parseRegionNpcs(npcResponse);
+        const parsedRegionResult = parseRegionNpcs(npcResponse);
+        let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
+        let regionNpcMemories = parsedRegionResult?.memories instanceof Map ? parsedRegionResult.memories : new Map();
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npcTimeoutMultiplier = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
 
@@ -11059,6 +11133,10 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             });
 
             regionNpcRenameMap = computeNpcRenameMap(originalRegionNpcNames, parsedNpcs);
+        }
+
+        if (regionNpcMemories instanceof Map && regionNpcRenameMap && regionNpcRenameMap.size) {
+            regionNpcMemories = rekeyNpcLookupMap(regionNpcMemories, regionNpcRenameMap) || regionNpcMemories;
         }
 
         let regionNpcSkillAssignments = new Map();
@@ -11208,6 +11286,17 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 targetLocation,
                 name: npcData.name || npc.id
             });
+
+            if (regionNpcMemories instanceof Map) {
+                const memoryEntry = regionNpcMemories.get((npcData.name || '').trim().toLowerCase());
+                if (Array.isArray(memoryEntry) && memoryEntry.length) {
+                    try {
+                        npc.importantMemories = memoryEntry.slice(0);
+                    } catch (memoryError) {
+                        console.warn(`Failed to assign memories to region NPC ${npc.name}:`, memoryError.message);
+                    }
+                }
+            }
         }
 
         const inventoryTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {

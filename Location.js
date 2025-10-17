@@ -692,6 +692,10 @@ class Location {
     return [...this.#npcIds];
   }
 
+  get npcs() {
+    return this.getNPCs();
+  }
+
   get thingIds() {
     return [...this.#thingIds];
   }
