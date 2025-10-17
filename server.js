@@ -718,7 +718,7 @@ async function processImageGeneration(job) {
             prompt: prompt.trim(),
             width: width || config.imagegen.default_settings.image.width || 1024,
             height: height || config.imagegen.default_settings.image.height || 1024,
-            steps: steps || config.imagegen.default_settings.image.steps || 20,
+            steps: steps || config.imagegen.default_settings.sampling.steps || 20,
             seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000),
             negativePrompt: effectiveNegativePrompt,
             megapixels: effectiveMegapixels
@@ -8488,7 +8488,22 @@ function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet()) {
     if (!name || typeof name !== 'string' || !(bannedSet instanceof Set) || bannedSet.size === 0) {
         return false;
     }
-    return bannedSet.has(name.trim().toLowerCase());
+
+    const normalizedName = name.trim().toLowerCase();
+    if (!normalizedName) {
+        return false;
+    }
+
+    for (const banned of bannedSet) {
+        if (!banned) {
+            continue;
+        }
+        if (normalizedName.includes(banned)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 async function ensureLocationNameAllowed(location, { maxAttempts = 3 } = {}) {
@@ -10104,6 +10119,19 @@ function logChooseImportantMemories({ prompt, responseText, durationSeconds }) {
     }
 }
 
+function rotateNameCandidates(names, rotationCount = 3) {
+    if (!Array.isArray(names) || names.length === 0) {
+        return Array.isArray(names) ? names.slice() : [];
+    }
+
+    const effectiveRotation = Math.min(Math.max(rotationCount, 0), names.length);
+    if (effectiveRotation === 0 || effectiveRotation === names.length) {
+        return names.slice();
+    }
+
+    return names.slice(effectiveRotation).concat(names.slice(0, effectiveRotation));
+}
+
 function parseThingNameRegenResponse(xmlContent) {
     const mapping = new Map();
     if (!xmlContent || typeof xmlContent !== 'string') {
@@ -10168,7 +10196,7 @@ function parseLocationNameRegenResponse(xmlContent) {
         console.warn('Failed to parse location name regeneration response:', error.message);
     }
 
-    return names;
+    return rotateNameCandidates(names);
 }
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
@@ -10467,9 +10495,6 @@ async function regenerateLocationName(location) {
         throw new Error('Location name regeneration did not produce any candidates.');
     }
 
-    // Shift the first name off of the beginning and stick it on the end to get rid of the most obvious one.
-    candidateNames.push(candidateNames.shift());
-
     const usedNames = new Set();
     for (const locations of Object.values(worldOutline?.regions || {})) {
         if (!Array.isArray(locations)) {
@@ -10524,6 +10549,14 @@ async function regenerateLocationName(location) {
         throw new Error('Unable to determine a unique location name from regeneration results.');
     }
 
+    if (location && typeof location === 'object') {
+        try {
+            location.name = selectedName;
+        } catch (error) {
+            console.warn(`Failed to assign regenerated location name "${selectedName}":`, error.message);
+        }
+    }
+
     return {
         name: selectedName,
         candidates: candidateNames
@@ -10543,41 +10576,132 @@ function parseRegionNameRegenResponse(responseText) {
             throw new Error(parserError.textContent || 'Parser error');
         }
 
-        const names = [];
         const containers = Array.from(doc.getElementsByTagName('regionNames'));
+        const results = [];
 
         for (const container of containers) {
             const nameNodes = Array.from(container.getElementsByTagName('name'));
-            for (const node of nameNodes) {
-                const indexAttr = node.getAttribute('index');
-                if (!indexAttr) {
-                    continue;
-                }
-                const value = node.textContent ? node.textContent.trim() : '';
-                if (value) {
-                    names.push(value);
+            const names = nameNodes
+                .map(node => (node?.textContent || '').trim())
+                .filter(Boolean);
+
+            const regionIdNode = container.getElementsByTagName('regionId')[0] || null;
+            const regionIndexNode = container.getElementsByTagName('regionIndex')[0] || null;
+            const originalNameNode = container.getElementsByTagName('originalName')[0] || null;
+
+            if (!names.length) {
+                continue;
+            }
+
+            let regionIndex = null;
+            if (regionIndexNode && typeof regionIndexNode.textContent === 'string') {
+                const parsedIndex = Number.parseInt(regionIndexNode.textContent.trim(), 10);
+                if (Number.isFinite(parsedIndex)) {
+                    regionIndex = parsedIndex;
                 }
             }
+
+            results.push({
+                regionId: regionIdNode && regionIdNode.textContent
+                    ? regionIdNode.textContent.trim() || null
+                    : null,
+                regionIndex,
+                originalName: originalNameNode && originalNameNode.textContent
+                    ? originalNameNode.textContent.trim() || null
+                    : null,
+                names: rotateNameCandidates(names)
+            });
         }
 
-        if (!names.length) {
-            const fallback = responseText
-                .split(/\r?\n|,/)
-                .map(entry => entry.trim())
-                .filter(Boolean);
-            names.push(...fallback);
+        if (results.length) {
+            return results;
         }
 
-        return names;
+        const fallbackNames = responseText
+            .split(/\r?\n|,/)
+            .map(entry => entry.trim())
+            .filter(Boolean);
+
+        return fallbackNames.length
+            ? [{ regionId: null, regionIndex: null, originalName: null, names: rotateNameCandidates(fallbackNames) }]
+            : [];
     } catch (error) {
         console.warn('Failed to parse region name regeneration response:', error.message);
         return [];
     }
 }
 
-async function regenerateRegionName(region) {
+function chooseRegionName({
+    region,
+    candidateNames,
+    bannedSet,
+    usedNames,
+    regionLabel
+}) {
     if (!region || typeof region !== 'object') {
-        throw new Error('regenerateRegionName requires a region object.');
+        throw new Error('chooseRegionName requires a region object.');
+    }
+    if (!Array.isArray(candidateNames) || !candidateNames.length) {
+        throw new Error(`No candidate names provided for region "${regionLabel || region.name || region.id || 'unknown'}".`);
+    }
+
+    const sharedUsedNames = usedNames instanceof Set ? usedNames : null;
+    const tried = new Set();
+    const originalLower = typeof region.name === 'string'
+        ? region.name.trim().toLowerCase()
+        : '';
+
+    if (originalLower) {
+        tried.add(originalLower);
+    }
+    if (sharedUsedNames && originalLower) {
+        sharedUsedNames.add(originalLower);
+    }
+
+    for (const candidate of candidateNames) {
+        if (!candidate || typeof candidate !== 'string') {
+            continue;
+        }
+        const trimmed = candidate.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const lower = trimmed.toLowerCase();
+        if (tried.has(lower) || (sharedUsedNames && sharedUsedNames.has(lower))) {
+            continue;
+        }
+        tried.add(lower);
+
+        if (lower === originalLower) {
+            continue;
+        }
+        if (isLocationNameBanned(trimmed, bannedSet)) {
+            continue;
+        }
+        if (typeof Region.getByName === 'function') {
+            const existing = Region.getByName(trimmed);
+            if (existing && existing !== region) {
+                continue;
+            }
+        }
+
+        if (sharedUsedNames) {
+            sharedUsedNames.add(lower);
+        }
+
+        region.name = trimmed;
+        return {
+            selectedName: trimmed,
+            candidates: candidateNames.slice()
+        };
+    }
+
+    throw new Error(`Region name regeneration did not produce a usable replacement for "${regionLabel || region.name || region.id || 'unknown'}".`);
+}
+
+async function regenerateRegionNames(regions) {
+    if (!Array.isArray(regions) || !regions.length) {
+        throw new Error('regenerateRegionNames requires a non-empty array of region objects.');
     }
 
     const aiConfig = config?.ai || {};
@@ -10586,16 +10710,41 @@ async function regenerateRegionName(region) {
     }
 
     const worldOutline = getWorldOutline();
-    const regionContext = {
-        name: region.name || 'Unnamed region',
-        description: region.description || 'No description provided.'
-    };
+
+    const regionEntries = regions.map((region, index) => {
+        if (!region || typeof region !== 'object') {
+            throw new Error('regenerateRegionNames received an invalid region entry.');
+        }
+
+        const timestamp = Date.now();
+        const contextId = typeof region.id === 'string' && region.id.trim()
+            ? region.id.trim()
+            : `generated-region-${timestamp}-${index}`;
+        const contextName = typeof region.name === 'string' && region.name.trim()
+            ? region.name.trim()
+            : `Unnamed Region ${index + 1}`;
+        const description = typeof region.description === 'string' && region.description.trim()
+            ? region.description.trim()
+            : 'No description provided.';
+
+        return {
+            region,
+            contextId,
+            contextName,
+            description,
+            index
+        };
+    });
 
     let renderedTemplate;
     try {
         renderedTemplate = promptEnv.render('region_name_regen.xml.njk', {
             worldOutline,
-            region: regionContext
+            regions: regionEntries.map(entry => ({
+                id: entry.contextId,
+                name: entry.contextName,
+                description: entry.description
+            }))
         });
     } catch (error) {
         throw new Error(`Failed to render region name regeneration template: ${error.message}`);
@@ -10656,50 +10805,65 @@ async function regenerateRegionName(region) {
         durationSeconds
     });
 
-    const bannedSet = getBannedLocationNameSet();
-    const candidates = parseRegionNameRegenResponse(responseText);
-    if (!candidates.length) {
+    const groups = parseRegionNameRegenResponse(responseText);
+    if (!groups.length) {
         throw new Error('Region name regeneration did not produce any candidates.');
     }
 
-    const tried = new Set();
-    const originalLower = region.name ? region.name.trim().toLowerCase() : '';
-    if (originalLower) {
-        tried.add(originalLower);
-    }
+    const bannedSet = getBannedLocationNameSet();
+    const usedNames = new Set();
+    const results = [];
 
-    for (const candidate of candidates) {
-        if (!candidate || typeof candidate !== 'string') {
-            continue;
-        }
-        const trimmed = candidate.trim();
-        if (!trimmed) {
-            continue;
-        }
-        const lower = trimmed.toLowerCase();
-        if (tried.has(lower)) {
-            continue;
-        }
-        tried.add(lower);
+    for (const entry of regionEntries) {
+        const contextId = entry.contextId;
+        const contextNameLower = entry.contextName.toLowerCase();
 
-        if (lower === originalLower) {
-            continue;
-        }
-        if (isLocationNameBanned(trimmed, bannedSet)) {
-            continue;
-        }
-        if (typeof Region.getByName === 'function') {
-            const existing = Region.getByName(trimmed);
-            if (existing && existing !== region) {
-                continue;
+        const group = groups.find(candidate => {
+            if (candidate.regionId && candidate.regionId.trim() === contextId) {
+                return true;
             }
+            if (Number.isInteger(candidate.regionIndex) && candidate.regionIndex === entry.index) {
+                return true;
+            }
+            if (candidate.originalName && candidate.originalName.trim().toLowerCase() === contextNameLower) {
+                return true;
+            }
+            return false;
+        }) || null;
+
+        if (!group) {
+            throw new Error(`Region name regeneration response missing candidates for region "${entry.contextName}".`);
         }
 
-        region.name = trimmed;
-        return trimmed;
+        const selection = chooseRegionName({
+            region: entry.region,
+            candidateNames: group.names,
+            bannedSet,
+            usedNames,
+            regionLabel: entry.contextName
+        });
+
+        results.push({
+            region: entry.region,
+            selectedName: selection.selectedName,
+            candidates: selection.candidates
+        });
     }
 
-    throw new Error('Region name regeneration did not produce a usable replacement.');
+    return results;
+}
+
+async function regenerateRegionName(region) {
+    if (!region || typeof region !== 'object') {
+        throw new Error('regenerateRegionName requires a region object.');
+    }
+
+    const results = await regenerateRegionNames([region]);
+    const selection = results[0] || null;
+    if (!selection || !selection.selectedName) {
+        throw new Error('Region name regeneration did not return a usable result.');
+    }
+    return selection.selectedName;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -13705,6 +13869,31 @@ async function generateRegionExitStubs({
     if (!definitions.length) {
         console.warn(`No connected region definitions supplied for region "${region?.name || region?.id || 'unknown'}"; skipping exit stub generation.`);
         return;
+    }
+
+    const bannedSet = getBannedLocationNameSet();
+    const renameTargets = definitions.filter(definition => {
+        if (!definition || typeof definition.name !== 'string' || !definition.name.trim()) {
+            return false;
+        }
+        if (!isLocationNameBanned(definition.name, bannedSet)) {
+            return false;
+        }
+        if (typeof Region.getByName === 'function') {
+            const existingRegion = Region.getByName(definition.name);
+            if (existingRegion) {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    if (renameTargets.length) {
+        try {
+            await regenerateRegionNames(renameTargets);
+        } catch (error) {
+            throw new Error(`Failed to regenerate banned region stub names: ${error.message}`);
+        }
     }
 
     for (const definition of definitions) {
