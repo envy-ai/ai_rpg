@@ -13,7 +13,7 @@ body {
   overflow: hidden;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   body {
     min-height: 100vh;
     height: auto;
@@ -541,7 +541,6 @@ p:not(:last-child) {
 
 .location-block {
   flex: 0 0 25%;
-  min-width: 320px;
   max-width: 420px;
   display: flex;
   flex-direction: column;
@@ -2213,7 +2212,7 @@ p:not(:last-child) {
     max-width: none;
   }
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .location-block {
     min-width: 0;
   }
