@@ -66,6 +66,7 @@ class Player {
     #lastVisitedTime = 0; // Decimal hours since last visit by player.
     #inCombat = false;
     #checkEquipment = false;
+    #characterArc = { shortTerm: '', longTerm: '' };
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -123,6 +124,25 @@ class Player {
 
         walk(source);
         return goals;
+    }
+
+    static #normalizeCharacterArc(source) {
+        const empty = { shortTerm: '', longTerm: '' };
+        if (!source) {
+            return { ...empty };
+        }
+        if (typeof source === 'string') {
+            const trimmed = source.trim();
+            return { shortTerm: trimmed, longTerm: '' };
+        }
+        if (typeof source !== 'object') {
+            return { ...empty };
+        }
+
+        const shortTerm = typeof source.shortTerm === 'string' ? source.shortTerm.trim() : '';
+        const longTerm = typeof source.longTerm === 'string' ? source.longTerm.trim() : '';
+
+        return { shortTerm, longTerm };
     }
 
     static #normalizeNeedBarChangeList(source) {
@@ -915,6 +935,7 @@ class Player {
         this.#race = options.race ?? "human";
         this.#isDead = options.isDead ?? false;
         this.#inCombat = options.inCombat ?? false;
+        this.#characterArc = Player.#normalizeCharacterArc(options.characterArc);
         this.#corpseCountdown = Number.isFinite(options.corpseCountdown) ? options.corpseCountdown : null;
 
         const seedMemories = Array.isArray(options.importantMemories)
@@ -1469,6 +1490,36 @@ class Player {
 
     get goals() {
         return this.#goals.slice();
+    }
+
+    get characterArc() {
+        return { ...this.#characterArc };
+    }
+
+    setShortTermCharacterArc(arc) {
+        if (typeof arc !== 'string') {
+            return false;
+        }
+        const trimmed = arc.trim();
+        if (this.#characterArc.shortTerm === trimmed) {
+            return false;
+        }
+        this.#characterArc.shortTerm = trimmed;
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
+    setLongTermCharacterArc(arc) {
+        if (typeof arc !== 'string') {
+            return false;
+        }
+        const trimmed = arc.trim();
+        if (this.#characterArc.longTerm === trimmed) {
+            return false;
+        }
+        this.#characterArc.longTerm = trimmed;
+        this.#lastUpdated = new Date().toISOString();
+        return true;
     }
 
     addGoal(goal) {
@@ -3370,9 +3421,11 @@ class Player {
             type: this.#personalityType,
             traits: this.#personalityTraits,
             notes: this.#personalityNotes,
-            goals: this.#goals.slice()
+            goals: this.#goals.slice(),
+            characterArc: this.characterArc
         };
         status.goals = this.#goals.slice();
+        status.characterArc = this.characterArc;
 
         return status;
     }
@@ -3413,12 +3466,14 @@ class Player {
                 type: this.#personalityType,
                 traits: this.#personalityTraits,
                 notes: this.#personalityNotes,
-                goals: this.#goals.slice()
+                goals: this.#goals.slice(),
+                characterArc: this.characterArc
             },
             personalityType: this.#personalityType,
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
             goals: this.#goals.slice(),
+            characterArc: this.characterArc,
             createdAt: this.#createdAt,
             lastUpdated: this.#lastUpdated,
             experience: this.#experience,
@@ -3478,7 +3533,11 @@ class Player {
             needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
             isDead: data.isDead,
             corpseCountdown: data.corpseCountdown,
-            importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : []
+            importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],
+            characterArc: Player.#normalizeCharacterArc(
+                data.characterArc
+                ?? data.personality?.characterArc
+            )
         });
 
         if (Number.isFinite(data.elapsedTime)) {

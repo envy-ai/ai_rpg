@@ -5451,17 +5451,6 @@ module.exports = function registerApiRoutes(scope) {
                         count: results.length
                     });
                 }
-
-                try {
-                    const randomEventResult = await maybeTriggerRandomEvent({ stream, locationOverride: location, entryCollector });
-                    if (randomEventResult) {
-                        results.push(randomEventResult);
-                        markEventsProcessed();
-                    }
-                } catch (randomEventError) {
-                    console.warn('Failed to process random event:', randomEventError.message);
-                    console.debug(randomEventError);
-                }
             } catch (error) {
                 console.warn('Failed to execute NPC turns:', error.message);
                 console.debug(error);
@@ -5474,6 +5463,13 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return results;
+        }
+
+        async function processRandomEvents({ stream = null, locationOverride = null, entryCollector = null, forceType = null } = {}) {
+            if (!Array.isArray(entryCollector)) {
+                throw new Error('processRandomEvents requires an entryCollector array.');
+            }
+            return maybeTriggerRandomEvent({ stream, locationOverride, entryCollector, forceType });
         }
 
         // Chat API endpoint
@@ -6916,15 +6912,40 @@ module.exports = function registerApiRoutes(scope) {
 
                         let npcTurns = null;
                         if (!skipNpcEvents) {
-                            npcTurns = await executeNpcTurnsAfterPlayer({
-                                location,
-                                stream,
-                                skipNpcEvents,
-                                entryCollector: newChatEntries,
-                                maxFriendlyNpcsToAct: maxNpcsToAct,
-                                maxHostileNpcsToAct,
-                                currentTurnLog
-                            });
+
+                            const roll = Math.random();
+                            console.log(`NPC turn frequency check: rolled ${roll.toFixed(3)} for frequency ${npcTurnFrequency}`);
+                            if (roll < npcTurnFrequency) {
+
+                                npcTurns = await executeNpcTurnsAfterPlayer({
+                                    location,
+                                    stream,
+                                    skipNpcEvents,
+                                    entryCollector: newChatEntries,
+                                    maxFriendlyNpcsToAct: maxNpcsToAct,
+                                    maxHostileNpcsToAct,
+                                    currentTurnLog
+                                });
+                            }
+
+
+                            try {
+                                const randomEventResult = await processRandomEvents({
+                                    stream,
+                                    locationOverride: location,
+                                    entryCollector: newChatEntries
+                                });
+                                if (randomEventResult) {
+                                    if (!Array.isArray(npcTurns)) {
+                                        npcTurns = [];
+                                    }
+                                    npcTurns.push(randomEventResult);
+                                    markEventsProcessed();
+                                }
+                            } catch (randomEventError) {
+                                console.warn('Failed to process random event:', randomEventError.message);
+                                console.debug(randomEventError);
+                            }
                         }
                         if (!skipNpcEvents && npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;

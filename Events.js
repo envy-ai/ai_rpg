@@ -27,7 +27,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
         { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
         { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration.` },
-        { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A.` },
+        { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Picking up an item does NOT consume it.` },
         { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
         { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
         { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
@@ -50,6 +50,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. If no changes to need bars, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
+        { key: 'received_quest', prompt: `Did the player receive a quest or task this turn? Answer Yes or No, with no other information.` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
         { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
@@ -2119,26 +2120,121 @@ class Events {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findThingByName, findActorByName } = this._deps;
-                for (const entry of entries) {
-                    let thing = findThingByName?.(entry.item);
-                    const actor = findActorByName?.(entry.name);
-                    if (!thing) {
-                        await this._ensureItemsExist([entry.item], context.location, {
-                            allowObtained: true,
-                            recordNewItems: false
-                        });
-                        thing = findThingByName?.(entry.item);
+
+                const { findThingByName, findActorByName, things } = this._deps;
+
+                const resolveAvailableThing = (itemName) => {
+                    const normalized = typeof itemName === 'string' ? itemName.trim().toLowerCase() : '';
+                    if (!normalized) {
+                        return null;
                     }
-                    if (!thing || !actor || typeof actor.addInventoryItem !== 'function') {
+
+                    if (things instanceof Map) {
+                        for (const candidate of things.values()) {
+                            if (!candidate?.name || candidate.name.trim().toLowerCase() !== normalized) {
+                                continue;
+                            }
+                            const owners = typeof candidate.whoseInventory === 'function'
+                                ? candidate.whoseInventory()
+                                : [];
+                            if (owners.length > 0) {
+                                continue;
+                            }
+                            return candidate;
+                        }
+                    }
+
+                    if (typeof findThingByName === 'function') {
+                        const candidate = findThingByName(itemName);
+                        const owners = typeof candidate?.whoseInventory === 'function'
+                            ? candidate.whoseInventory()
+                            : [];
+                        if (candidate && owners.length === 0) {
+                            return candidate;
+                        }
+                    }
+
+                    return null;
+                };
+
+                const createDuplicateThing = (itemName) => {
+                    const template = typeof findThingByName === 'function' ? findThingByName(itemName) : null;
+
+                    const metadata = template?.metadata || {};
+                    const baseMetadata = { ...metadata };
+                    delete baseMetadata.ownerId;
+                    delete baseMetadata.locationId;
+
+                    const duplicate = new Thing({
+                        name: itemName,
+                        description: template?.description || `An item named ${itemName}.`,
+                        thingType: template?.thingType || 'item',
+                        imageId: template?.imageId || null,
+                        rarity: template?.rarity || null,
+                        itemTypeDetail: template?.itemTypeDetail || null,
+                        metadata: baseMetadata,
+                        statusEffects: typeof template?.getStatusEffects === 'function'
+                            ? template.getStatusEffects()
+                            : [],
+                        slot: template?.slot ?? null,
+                        attributeBonuses: Array.isArray(template?.attributeBonuses)
+                            ? template.attributeBonuses
+                            : null,
+                        causeStatusEffect: template?.causeStatusEffect ?? null,
+                        level: template?.level ?? null,
+                        relativeLevel: template?.relativeLevel ?? null
+                    });
+
+                    if (things instanceof Map) {
+                        things.set(duplicate.id, duplicate);
+                    }
+
+                    return duplicate;
+                };
+
+                for (const entry of entries) {
+                    if (!entry) {
                         continue;
                     }
+
+                    const itemName = typeof entry.item === 'string' ? entry.item.trim() : '';
+                    if (!itemName) {
+                        continue;
+                    }
+
+                    if (this.obtainedItems.has(itemName)) {
+                        continue;
+                    }
+
+                    const actor = typeof findActorByName === 'function' ? findActorByName(entry.name) : null;
+                    if (!actor || typeof actor.addInventoryItem !== 'function') {
+                        continue;
+                    }
+
+                    let thing = resolveAvailableThing(itemName);
+
+                    if (!thing) {
+                        await this._ensureItemsExist([itemName], context.location, {
+                            allowObtained: false,
+                            recordNewItems: false
+                        });
+                        thing = resolveAvailableThing(itemName);
+                    }
+
+                    /*
+                    if (!thing) {
+                        thing = createDuplicateThing(itemName);
+                    }
+                    */
+
+                    if (!thing) {
+                        throw new Error(`Unable to resolve or create item "${itemName}" for pick_up_item.`);
+                    }
+
                     this._detachThingFromKnownLocation(thing);
                     actor.addInventoryItem(thing);
                     thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
-                    if (entry.item) {
-                        this.obtainedItems.add(entry.item);
-                    }
+                    this.obtainedItems.add(itemName);
                 }
             },
             drop_item: function (entries = [], context = {}) {

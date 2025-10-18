@@ -1179,6 +1179,34 @@ class AIRPGChat {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
         });
+
+        document.addEventListener('keydown', (event) => {
+            if (!event || typeof event.key !== 'string') {
+                return;
+            }
+
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+                return;
+            }
+
+            if (event.key.toLowerCase() !== 'i') {
+                return;
+            }
+
+            const activeElement = document.activeElement;
+            const isTypingContext = activeElement instanceof HTMLElement
+                && (activeElement.closest('input, textarea, select, [contenteditable="true"]')
+                    || activeElement.classList.contains('chat-edit-modal__textarea'));
+            if (isTypingContext) {
+                return;
+            }
+
+            const inventoryButton = document.getElementById('chatPlayerInventoryButton');
+            if (inventoryButton) {
+                event.preventDefault();
+                inventoryButton.click();
+            }
+        });
     }
 
     addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
@@ -1907,6 +1935,8 @@ class AIRPGChat {
             }
         };
 
+        /*
+        // Don't parse these for now.
         Object.entries(parsed).forEach(([eventType, entries]) => {
             if (!entries || (Array.isArray(entries) && entries.length === 0)) {
                 return;
@@ -1924,6 +1954,7 @@ class AIRPGChat {
                 shouldRefreshLocation = true;
             }
         });
+        */
 
         if (shouldRefreshLocation) {
             if (this.activeEventBundle) {
