@@ -9,6 +9,8 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
+
+
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
     eventsProcessedThisTurn = true;
@@ -193,6 +195,168 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*br\s*>/gi, '<br/>')
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         }
+
+        function extractRandomEventSeeds(responseText) {
+            if (!responseText || typeof responseText !== 'string') {
+                return [];
+            }
+
+            try {
+                const parser = new DOMParser({
+                    errorHandler: {
+                        warning: () => { },
+                        error: () => { },
+                        fatalError: () => { }
+                    }
+                });
+                const doc = parser.parseFromString(sanitizeForXml(responseText), 'text/xml');
+                const seedsNode = doc.getElementsByTagName('randomStoryEvents')[0] || null;
+                if (!seedsNode) {
+                    return [];
+                }
+                return Array.from(seedsNode.getElementsByTagName('event'))
+                    .map(node => (node.textContent || '').trim())
+                    .filter(entry => entry.length > 0);
+            } catch (error) {
+                console.warn('Failed to parse random event seed response:', error?.message || error);
+                return [];
+            }
+        }
+
+        async function generateRandomEventSeeds({ mode, locationOverride = null, baseContext = null } = {}) {
+            if (!mode || (mode !== 'location' && mode !== 'region')) {
+                throw new Error(`generateRandomEventSeeds received unsupported mode '${mode}'.`);
+            }
+
+            const activeLocation = locationOverride || Globals.location;
+
+            let resolvedBaseContext = baseContext;
+            if (!resolvedBaseContext) {
+                resolvedBaseContext = await prepareBasePromptContext({ locationOverride: activeLocation });
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...resolvedBaseContext,
+                promptType: 'generate-random-events',
+                mode
+            });
+
+            if (!renderedTemplate || !renderedTemplate.trim()) {
+                throw new Error(`Random event generation template rendered empty content for mode '${mode}'.`);
+            }
+
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error(`Random event generation template missing prompts for mode '${mode}'.`);
+            }
+
+            const aiConfig = config?.ai;
+            if (!aiConfig) {
+                throw new Error('AI configuration missing; cannot generate random event seeds.');
+            }
+
+            const { endpoint, apiKey, model } = aiConfig;
+            if (!endpoint || !apiKey || !model) {
+                throw new Error('AI configuration missing; cannot generate random event seeds.');
+            }
+
+            const messages = [
+                { role: 'system', content: String(parsedTemplate.systemPrompt).trim() }
+            ];
+            if (parsedTemplate.generationPrompt) {
+                messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
+            }
+
+            const chatEndpoint = endpoint.endsWith('/')
+                ? `${endpoint}chat/completions`
+                : `${endpoint}/chat/completions`;
+
+            const requestData = {
+                model,
+                messages,
+                max_tokens: parsedTemplate.maxTokens || aiConfig.maxTokens || 400,
+                temperature: typeof parsedTemplate.temperature === 'number'
+                    ? parsedTemplate.temperature
+                    : (aiConfig.temperature ?? 0.7)
+            };
+
+            const response = await axios.post(chatEndpoint, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: baseTimeoutMilliseconds,
+                metadata: { aiMetricsLabel: `random_event_seed_${mode}` }
+            });
+
+            const responseText = response.data?.choices?.[0]?.message?.content || '';
+            const seeds = extractRandomEventSeeds(responseText);
+            if (!seeds.length) {
+                throw new Error(`Random event seed generation for ${mode} returned no events.`);
+            }
+
+            return seeds;
+        }
+
+        async function ensureRandomEventSeedsForArea(location) {
+            if (!location || typeof location !== 'object') {
+                return;
+            }
+
+            const region = location.region
+                || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
+                || (typeof findRegionByLocationId === 'function' ? findRegionByLocationId(location.id) : null)
+                || null;
+
+            if (location.isStub || (region && region.isStub)) {
+                return;
+            }
+
+            const locationSeedList = location.randomEvents;
+            const existingLocationSeeds = Array.isArray(locationSeedList)
+                ? locationSeedList.filter(entry => typeof entry === 'string' && entry.trim())
+                : [];
+            const regionSeedList = region ? region.randomEvents : null;
+            const existingRegionSeeds = region && Array.isArray(regionSeedList)
+                ? regionSeedList.filter(entry => typeof entry === 'string' && entry.trim())
+                : [];
+
+            const needsLocationSeeds = existingLocationSeeds.length === 0;
+            const needsRegionSeeds = region ? existingRegionSeeds.length === 0 : false;
+
+            if (!needsLocationSeeds && !needsRegionSeeds) {
+                return;
+            }
+
+            const baseContext = await prepareBasePromptContext({ locationOverride: location });
+
+            if (needsLocationSeeds) {
+                const locationSeeds = await generateRandomEventSeeds({
+                    mode: 'location',
+                    locationOverride: location,
+                    baseContext
+                });
+                location.randomEvents = locationSeeds;
+            }
+
+            if (needsRegionSeeds && region) {
+                const regionSeeds = await generateRandomEventSeeds({
+                    mode: 'region',
+                    locationOverride: location,
+                    baseContext
+                });
+                region.randomEvents = regionSeeds;
+            }
+        }
+
+        Globals.triggerRandomEvent = async ({ type = null, locationOverride = null, entryCollector = [] } = {}) => {
+            const collector = Array.isArray(entryCollector) ? entryCollector : [];
+            const result = await maybeTriggerRandomEvent({ forceType: type, locationOverride, entryCollector: collector });
+            return {
+                result,
+                entries: collector
+            };
+        };
 
         const randomEventCache = {
             common: null,
@@ -1919,12 +2083,19 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function maybeTriggerRandomEvent({ stream = null, locationOverride = null, entryCollector = null } = {}) {
+        async function maybeTriggerRandomEvent({ stream = null, locationOverride = null, entryCollector = null, forceType = null } = {}) {
             const frequencyConfig = config?.random_event_frequency || {};
-            const regionChance = Number(frequencyConfig.regionSpecific);
-            const locationChance = Number(frequencyConfig.locationSpecific);
-            const commonChance = Number(frequencyConfig.common);
-            const rareChance = Number(frequencyConfig.rare);
+
+            const toPercent = (value) => {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || numeric <= 0) {
+                    return 0;
+                }
+                if (numeric <= 1) {
+                    return numeric * 100;
+                }
+                return numeric;
+            };
 
             const resolveLocation = (candidate) => {
                 if (!candidate) {
@@ -1966,71 +2137,138 @@ module.exports = function registerApiRoutes(scope) {
                 resolvedRegion = findRegionByLocationId(currentPlayer.currentLocation) || null;
             }
 
-            if (resolvedLocation && Number.isFinite(locationChance) && locationChance > 0) {
-                const locationEvents = resolvedLocation.randomEvents
-                    .filter(event => typeof event === 'string' && event.trim());
-                if (locationEvents.length && Math.random() < locationChance) {
-                    const index = Math.floor(Math.random() * locationEvents.length);
-                    const locationSeed = locationEvents[index];
-                    if (locationSeed) {
-                        if (typeof resolvedLocation.removeRandomEvent === 'function') {
-                            resolvedLocation.removeRandomEvent(locationSeed);
-                        }
-                        return generateRandomEventNarrative({
-                            eventText: locationSeed,
-                            rarity: 'location',
-                            locationOverride: resolvedLocation,
-                            stream,
-                            entryCollector
-                        });
-                    }
+            const normalizedForceType = typeof forceType === 'string' ? forceType.trim().toLowerCase() : null;
+
+            const locationEvents = resolvedLocation
+                ? resolvedLocation.randomEvents.filter(event => typeof event === 'string' && event.trim())
+                : [];
+            const regionEvents = resolvedRegion
+                ? (resolvedRegion.randomEvents || []).filter(event => typeof event === 'string' && event.trim())
+                : [];
+
+            const runLocationSeed = () => {
+                if (!locationEvents.length) {
+                    return null;
+                }
+                const index = Math.floor(Math.random() * locationEvents.length);
+                const locationSeed = locationEvents[index];
+                if (!locationSeed) {
+                    return null;
+                }
+                if (typeof resolvedLocation?.removeRandomEvent === 'function') {
+                    resolvedLocation.removeRandomEvent(locationSeed);
+                }
+                return generateRandomEventNarrative({
+                    eventText: locationSeed,
+                    rarity: 'location',
+                    locationOverride: resolvedLocation,
+                    stream,
+                    entryCollector
+                });
+            };
+
+            const runRegionSeed = () => {
+                if (!regionEvents.length) {
+                    return null;
+                }
+                const index = Math.floor(Math.random() * regionEvents.length);
+                const regionalSeed = regionEvents[index];
+                if (!regionalSeed) {
+                    return null;
+                }
+                if (typeof resolvedRegion?.removeRandomEvent === 'function') {
+                    resolvedRegion.removeRandomEvent(regionalSeed);
+                }
+                return generateRandomEventNarrative({
+                    eventText: regionalSeed,
+                    rarity: 'regional',
+                    locationOverride: resolvedLocation,
+                    stream,
+                    entryCollector
+                });
+            };
+
+            const runSeedByRarity = (rarity) => {
+                const seedText = pickRandomEventSeed(rarity);
+                if (!seedText) {
+                    console.warn(`Random event triggered, but no ${rarity} entries were available.`);
+                    return null;
+                }
+
+                return generateRandomEventNarrative({
+                    eventText: seedText,
+                    rarity,
+                    locationOverride: resolvedLocation,
+                    stream,
+                    entryCollector
+                });
+            };
+
+            if (normalizedForceType) {
+                switch (normalizedForceType) {
+                    case 'location':
+                        return runLocationSeed();
+                    case 'region':
+                        return runRegionSeed();
+                    case 'common':
+                        return runSeedByRarity('common');
+                    case 'rare':
+                        return runSeedByRarity('rare');
+                    default:
+                        throw new Error(`Unsupported random event type '${normalizedForceType}'.`);
                 }
             }
 
-            if (resolvedRegion && Number.isFinite(regionChance) && regionChance > 0) {
-                const regionEvents = (resolvedRegion.randomEvents || []).filter(event => typeof event === 'string' && event.trim());
-                if (regionEvents.length && Math.random() < regionChance) {
-                    const index = Math.floor(Math.random() * regionEvents.length);
-                    const regionalSeed = regionEvents[index];
-                    if (regionalSeed) {
-                        if (typeof resolvedRegion.removeRandomEvent === 'function') {
-                            resolvedRegion.removeRandomEvent(regionalSeed);
-                        }
-                        return generateRandomEventNarrative({
-                            eventText: regionalSeed,
-                            rarity: 'regional',
-                            locationOverride: resolvedLocation,
-                            stream,
-                            entryCollector
-                        });
-                    }
+            const options = [];
+            const locationChancePercent = toPercent(frequencyConfig.locationSpecific);
+            if (locationChancePercent > 0 && locationEvents.length) {
+                options.push({ type: 'location', chance: locationChancePercent, events: locationEvents });
+            }
+
+            const regionChancePercent = toPercent(frequencyConfig.regionSpecific);
+            if (regionChancePercent > 0 && regionEvents.length) {
+                options.push({ type: 'region', chance: regionChancePercent, events: regionEvents });
+            }
+
+            const rareChancePercent = toPercent(frequencyConfig.rare);
+            if (rareChancePercent > 0) {
+                options.push({ type: 'rare', chance: rareChancePercent });
+            }
+
+            const commonChancePercent = toPercent(frequencyConfig.common);
+            if (commonChancePercent > 0) {
+                options.push({ type: 'common', chance: commonChancePercent });
+            }
+
+            if (!options.length) {
+                return null;
+            }
+
+            const roll = Math.floor(Math.random() * 100) + 1;
+            let cumulative = 0;
+            let selectedOption = null;
+
+            for (const option of options) {
+                cumulative += option.chance;
+                if (roll <= cumulative) {
+                    selectedOption = option;
+                    break;
                 }
             }
 
-            let rarity = null;
-            if (Number.isFinite(commonChance) && commonChance > 0 && Math.random() < commonChance) {
-                rarity = 'common';
-            } else if (Number.isFinite(rareChance) && rareChance > 0 && Math.random() < rareChance) {
-                rarity = 'rare';
-            }
-
-            if (!rarity) {
+            if (!selectedOption) {
                 return null;
             }
 
-            const seedText = pickRandomEventSeed(rarity);
-            if (!seedText) {
-                console.warn(`Random event triggered, but no ${rarity} entries were available.`);
-                return null;
+            if (selectedOption.type === 'location') {
+                return runLocationSeed();
             }
 
-            return generateRandomEventNarrative({
-                eventText: seedText,
-                rarity,
-                locationOverride: resolvedLocation,
-                stream,
-                entryCollector
-            });
+            if (selectedOption.type === 'region') {
+                return runRegionSeed();
+            }
+
+            return runSeedByRarity(selectedOption.type);
         }
 
         function parseAttackCheckResponse(responseText) {
@@ -5542,6 +5780,23 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             try {
+                if (!location && currentPlayer?.currentLocation) {
+                    const resolvedLocationId = currentPlayer.currentLocation;
+                    location = gameLocations.get(resolvedLocationId)
+                        || Location.get(resolvedLocationId)
+                        || null;
+                }
+
+                if (location) {
+                    try {
+                        await ensureRandomEventSeedsForArea(location);
+                    } catch (seedError) {
+                        console.error('Failed to generate random event seeds for the current area.');
+                        console.error(seedError?.stack || seedError);
+                        throw seedError;
+                    }
+                }
+
                 if (!messages) {
                     stream.error({ message: 'Missing messages parameter.' });
                     stream.complete({ aborted: true });

@@ -1,0 +1,295 @@
+{
+  "94": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "95": {
+    "inputs": {
+      "seed": {{ image.seed }},
+      "steps": {{ image.steps }},
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 1,
+      "model": [
+        "141",
+        0
+      ],
+      "positive": [
+        "219",
+        0
+      ],
+      "negative": [
+        "218",
+        0
+      ],
+      "latent_image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "97": {
+    "inputs": {
+      "width": {{ image.width }},
+      "height": {{ image.height }},
+      "length": 1,
+      "batch_size": 1
+    },
+    "class_type": "EmptyHunyuanLatentVideo",
+    "_meta": {
+      "title": "EmptyHunyuanLatentVideo"
+    }
+  },
+  "98": {
+    "inputs": {
+      "samples": [
+        "95",
+        0
+      ],
+      "vae": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "100": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "124": {
+    "inputs": {
+      "unet_name": "qwen-image-Q6_K.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "139": {
+    "inputs": {
+      "seed": {{ image.seed }}
+    },
+    "class_type": "Seed Everywhere",
+    "_meta": {
+      "title": "Seed Everywhere"
+    }
+  },
+  "141": {
+    "inputs": {
+      "lora_name": "qwen/Qwen-Image-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 0.7,
+      "model": [
+        "231",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "151": {
+    "inputs": {
+      "clip_name": "Qwen2.5-VL-7B-Instruct-abliterated.Q6_K.gguf",
+      "type": "qwen_image"
+    },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "218": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "MultiDimensionalPromptTravel",
+    "_meta": {
+      "title": "Multi-Dimensional Prompt Travel"
+    }
+  },
+  "219": {
+    "inputs": {
+      "prompt": [
+        "230",
+        0
+      ],
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "MultiDimensionalPromptTravel",
+    "_meta": {
+      "title": "Multi-Dimensional Prompt Travel"
+    }
+  },
+  "224": {
+    "inputs": {
+      "key1": [
+        "230",
+        0
+      ],
+      "value1": "",
+      "key2": "",
+      "value2": "",
+      "key3": "",
+      "value3": "",
+      "key4": "",
+      "value4": ""
+    },
+    "class_type": "CreateExtraMetaData",
+    "_meta": {
+      "title": "Create Extra MetaData"
+    }
+  },
+  "225": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "subdirectory_name": "",
+      "output_format": "png",
+      "quality": "max",
+      "metadata_scope": "full",
+      "include_batch_num": true,
+      "prefer_nearest": true,
+      "images": [
+        "98",
+        0
+      ],
+      "extra_metadata": [
+        "224",
+        0
+      ]
+    },
+    "class_type": "SaveImageWithMetaData",
+    "_meta": {
+      "title": "Save Image With MetaData"
+    }
+  },
+  "227": {
+    "inputs": {
+      "text": "{{ image.prompt | json }}"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "228": {
+    "inputs": {
+      "string": [
+        "234",
+        0
+      ],
+      "regex_pattern": "—",
+      "replace": "--",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "230": {
+    "inputs": {
+      "source": [
+        "232",
+        0
+      ],
+      "to_replace": "%",
+      "replace_with": " percent"
+    },
+    "class_type": "JWStringReplace",
+    "_meta": {
+      "title": "String Replace"
+    }
+  },
+  "231": {
+    "inputs": {
+      "lora_name": "qwen/digital_painting_background.safetensors",
+      "strength_model": 1,
+      "model": [
+        "235",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "232": {
+    "inputs": {
+      "string": [
+        "228",
+        0
+      ],
+      "regex_pattern": "[^\\x00-\\x7F]+",
+      "replace": " ",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "234": {
+    "inputs": {
+      "text": [
+        "227",
+        0
+      ],
+      "seed": {{ image.seed }}
+    },
+    "class_type": "DPRandomGenerator",
+    "_meta": {
+      "title": "Random Prompts"
+    }
+  },
+  "235": {
+    "inputs": {
+      "lora_name": "qwen/simplicity.safetensors",
+      "strength_model": 1,
+      "model": [
+        "124",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  }
+}

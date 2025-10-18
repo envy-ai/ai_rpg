@@ -1174,7 +1174,7 @@ class AIRPGChat {
         });
     }
 
-    addMessage(sender, content, isError = false, debugInfo = null) {
+    addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'ai-message'}${isError ? ' error' : ''}`;
 
@@ -1184,7 +1184,7 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        const allowMarkdown = sender === 'ai';
+        const allowMarkdown = sender === 'ai' || options.allowMarkdown === true;
         this.setMessageContent(contentDiv, content, { allowMarkdown });
 
         const timestampDiv = document.createElement('div');
@@ -3468,7 +3468,7 @@ class AIRPGChat {
                         return;
                     }
                     const isError = Boolean(reply.ephemeral);
-                    this.addMessage('system', message, isError);
+                    this.addMessage('system', message, isError, null, { allowMarkdown: true });
                 });
             }
 

@@ -94,8 +94,8 @@ imagegen:
 random_event_frequency:
   common: 0.04
   rare: 0.01
-  regionSpecific: 0.05
-  locationSpecific: 0.05
+  regionSpecific: 0.10
+  locationSpecific: 0.10
 # Game Master configuration
 gamemaster:
   # Fallback system prompt

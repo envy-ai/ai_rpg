@@ -18,9 +18,11 @@ Class: {{ characterClass }}
 Race: {{ characterRace }}
 {{ characterDescription | replace('\n', '\n    ') }}
 
-Do not specify an art style. Specify the character's gender (if known), age, clothing, accessories, pose, expression, and any relevant background elements, entirely in prose. Use vivid and specific descriptions to guide the image generation effectively.
+Do not specify an art style. Specify the character's gender (if known), age, clothing, accessories, pose, expression, and any relevant background elements Use vivid and specific descriptions to guide the image generation effectively.
 
 {% if additionalInstructions %}Additional instructions from the user:
 {{ additionalInstructions }}{% endif %}
+
+Describe the character in one paragraph worth of booru tags and one paragraph of prose.
 </generationPrompt>
 </template>

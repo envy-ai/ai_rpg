@@ -5697,8 +5697,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     level: computedLevel
                 });
 
-                console.log(itemData);
-                console.log("Itemdata ^^");
+                //console.log(itemData);
+                //console.log("Itemdata ^^");
 
                 const thing = new Thing({
                     name,
@@ -8869,6 +8869,16 @@ function parseNpcNameRegenResponse(xmlContent) {
                 mapping.set(key, []);
             }
             mapping.get(key).push(entry);
+        }
+
+        // Take the first 4 items off of each name bucket and push them onto the end
+        for (const [key, bucket] of mapping.entries()) {
+            if (!Array.isArray(bucket) || bucket.length <= 4) {
+                continue;
+            }
+            const head = bucket.slice(0, 4);
+            const tail = bucket.slice(4);
+            mapping.set(key, tail.concat(head));
         }
         return mapping;
     } catch (error) {

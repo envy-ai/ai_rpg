@@ -17,11 +17,11 @@ class HelpCommand extends SlashCommandBase {
     const commands = SlashCommandBase.listCommands();
     const lines = commands.map(command => {
       const description = command.description ? ` - ${command.description}` : '';
-      return `/${command.name}${description}\n  Usage: ${command.usage}`;
+      return `* **/${command.name}**${description}  \nUsage: \`\`\`${command.usage}\`\`\``;
     });
 
     const content = lines.length
-      ? `Available slash commands:\n${lines.join('\n')}`
+      ? `**Available slash commands:**\n${lines.join('\n')}`
       : 'No slash commands are currently available.';
 
     return interaction.reply({ content, ephemeral: false });

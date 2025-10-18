@@ -1,0 +1,322 @@
+{
+  "94": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "95": {
+    "inputs": {
+      "seed": {{ image.seed }},
+      "steps": {{ image.steps }},
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "bong_tangent",
+      "denoise": 1,
+      "model": [
+        "141",
+        0
+      ],
+      "positive": [
+        "219",
+        0
+      ],
+      "negative": [
+        "218",
+        0
+      ],
+      "latent_image": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "97": {
+    "inputs": {
+      "width": {{ image.width }},
+      "height": {{ image.height }},
+      "length": 1,
+      "batch_size": 1
+    },
+    "class_type": "EmptyHunyuanLatentVideo",
+    "_meta": {
+      "title": "EmptyHunyuanLatentVideo"
+    }
+  },
+  "98": {
+    "inputs": {
+      "samples": [
+        "95",
+        0
+      ],
+      "vae": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "100": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "124": {
+    "inputs": {
+      "unet_name": "qwen-image-Q6_K.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
+    }
+  },
+  "139": {
+    "inputs": {
+      "seed": {{ image.seed }}
+    },
+    "class_type": "Seed Everywhere",
+    "_meta": {
+      "title": "Seed Everywhere"
+    }
+  },
+  "141": {
+    "inputs": {
+      "lora_name": "qwen/Qwen-Image-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 0.7,
+      "model": [
+        "231",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "151": {
+    "inputs": {
+      "clip_name": "Qwen2.5-VL-7B-Instruct-abliterated.Q6_K.gguf",
+      "type": "qwen_image"
+    },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "218": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "MultiDimensionalPromptTravel",
+    "_meta": {
+      "title": "Multi-Dimensional Prompt Travel"
+    }
+  },
+  "219": {
+    "inputs": {
+      "prompt": [
+        "230",
+        0
+      ],
+      "clip": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "MultiDimensionalPromptTravel",
+    "_meta": {
+      "title": "Multi-Dimensional Prompt Travel"
+    }
+  },
+  "224": {
+    "inputs": {
+      "key1": [
+        "230",
+        0
+      ],
+      "value1": "",
+      "key2": "",
+      "value2": "",
+      "key3": "",
+      "value3": "",
+      "key4": "",
+      "value4": ""
+    },
+    "class_type": "CreateExtraMetaData",
+    "_meta": {
+      "title": "Create Extra MetaData"
+    }
+  },
+  "225": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "subdirectory_name": "",
+      "output_format": "png",
+      "quality": "max",
+      "metadata_scope": "full",
+      "include_batch_num": true,
+      "prefer_nearest": true,
+      "images": [
+        "98",
+        0
+      ],
+      "extra_metadata": [
+        "224",
+        0
+      ]
+    },
+    "class_type": "SaveImageWithMetaData",
+    "_meta": {
+      "title": "Save Image With MetaData"
+    }
+  },
+  "227": {
+    "inputs": {
+      "text": "{{ image.prompt | json }}"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "228": {
+    "inputs": {
+      "string": [
+        "234",
+        0
+      ],
+      "regex_pattern": "—",
+      "replace": "--",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "230": {
+    "inputs": {
+      "source": [
+        "232",
+        0
+      ],
+      "to_replace": "%",
+      "replace_with": " percent"
+    },
+    "class_type": "JWStringReplace",
+    "_meta": {
+      "title": "String Replace"
+    }
+  },
+  "231": {
+    "inputs": {
+      "lora_name": "qwen/digital_painting_background.safetensors",
+      "strength_model": 0.8,
+      "model": [
+        "237",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "232": {
+    "inputs": {
+      "string": [
+        "228",
+        0
+      ],
+      "regex_pattern": "[^\\x00-\\x7F]+",
+      "replace": " ",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "234": {
+    "inputs": {
+      "text": [
+        "227",
+        0
+      ],
+      "seed": {{ image.seed }}
+    },
+    "class_type": "DPRandomGenerator",
+    "_meta": {
+      "title": "Random Prompts"
+    }
+  },
+  "235": {
+    "inputs": {
+      "lora_name": "qwen/cutesexyrobutts2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "124",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "236": {
+    "inputs": {
+      "text": "ecchi isekai harem anime digital painting with dynamic lighting and exaggerated shading, cheerful color palette, colored lights and shadow, thick impressionist brush strokes with hard edges\n\n1girl\nbooru tags: lamia, snake girl, naga, long tail, scales, 1girl, solo, scavenger, post-apocalyptic, ruins, rusted metal, junkyard, scrap, salvaged tech, trinkets, accessories, goggles, tool belt, tube top, torn clothes, revealing clothes, midriff, cleavage, sideboob, bare shoulders, long hair, wavy hair, two-tone hair, gradient hair, brown hair, blonde highlights, amber eyes, slight smile, confident expression, curvy, hourglass figure, outdoors, overgrown, muddy water, wreckage, detailed background, cinematic lighting, dramatic lighting, god rays, dust particles, depth of field, high detail, intricate details.\n\nZora is a curvaceous lamia in her early twenties, her serpentine lower body a mosaic of iridescent, forest-green scales that shimmer with an oil-slick rainbow sheen as she glides through the murky water. Her upper body is toned and alluring, clad in a makeshift, revealing outfit: a tight, frayed grey tube top barely contains her generous bust, exposing her toned shoulders and midriff, while tattered scraps of cloth are wrapped around her arms, offering scant coverage. Her hair is a wild, voluminous cascade of rich chocolate brown, with vibrant honey-blonde highlights streaking through the lengths, creating a natural, sun-kissed gradient. It falls in messy waves around her face and down her back, partially obscuring one of her sharp, intelligent amber eyes. She wears a pair of brass, steampunk-style goggles pushed up on her forehead, a worn leather tool belt slung low on her human hips, and an assortment of scavenged wires, gears, and glowing tubes are clipped and draped across her torso, clinging to her curves. Her expression is a confident, slight smirk, lips parted as if she's just made a witty remark. She is coiled around the rusted, skeletal remains of a half-submerged command vehicle, one hand resting on a pitted metal surface while the other idly holds a glowing energy cell. In the background, the Warwastes stretch out under a hazy sky, a graveyard of twisted metal and overgrown ruins, with god rays piercing through the smog to illuminate her and her find.",
+      "anything": [
+        "234",
+        0
+      ]
+    },
+    "class_type": "easy showAnything",
+    "_meta": {
+      "title": "Show Any"
+    }
+  },
+  "237": {
+    "inputs": {
+      "lora_name": "qwen/simplicity.safetensors",
+      "strength_model": 0.4,
+      "model": [
+        "235",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  }
+}

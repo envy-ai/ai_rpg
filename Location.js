@@ -668,7 +668,8 @@ class Location {
       hasGeneratedStubs: this.#hasGeneratedStubs,
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
       npcIds: [...this.#npcIds],
-      thingIds: [...this.#thingIds]
+      thingIds: [...this.#thingIds],
+      randomEvents: this.randomEvents
     };
   }
 

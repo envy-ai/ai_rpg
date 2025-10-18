@@ -282,8 +282,8 @@ class Region {
     const randomEventsNode = regionElement.getElementsByTagName('randomStoryEvents')?.[0] || null;
     const randomEvents = randomEventsNode
       ? Array.from(randomEventsNode.getElementsByTagName('event'))
-          .map(node => (node.textContent || '').trim())
-          .filter(Boolean)
+        .map(node => (node.textContent || '').trim())
+        .filter(Boolean)
       : [];
 
     return new Region({
@@ -305,6 +305,10 @@ class Region {
 
   get randomEvents() {
     return [...this.#randomEvents];
+  }
+
+  get isStub() {
+    return !Array.isArray(this.#locationIds) || this.#locationIds.length === 0;
   }
 
   set randomEvents(events) {
