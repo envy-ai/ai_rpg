@@ -69,7 +69,7 @@ Plenty of other LLMs will work as well. Some will not. Drop by the <a href='http
    mkdir airpg
    cd airpg
    git clone https://github.com/envy-ai/ai_rpg .
-   git checkout 1.0-alpha6
+   git checkout 1.0-alpha7
    ```
 
 4. Install dependencies:
