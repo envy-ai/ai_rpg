@@ -720,6 +720,8 @@ async function processImageGeneration(job) {
             height: height || config.imagegen.default_settings.image.height || 1024,
             steps: steps || config.imagegen.default_settings.sampling.steps || 20,
             checkpoint: config.imagegen.checkpoint || 'sdxl.safetensors',
+            lora: config.imagegen.lora || null,
+            lora_strength: config.imagegen.lora_strength || 1,
             seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000),
             negativePrompt: effectiveNegativePrompt,
             megapixels: effectiveMegapixels
