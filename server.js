@@ -9800,22 +9800,6 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         return [];
     }
 
-    // Remove any existing location-bound things before adding new ones
-    const existingIds = Array.isArray(location.thingIds)
-        ? location.thingIds
-        : (typeof location.getThingIds === 'function' ? Array.from(location.getThingIds()) : []);
-
-    for (const existingId of existingIds) {
-        if (!existingId) continue;
-        const existingThing = things.get(existingId) || Thing.getById(existingId);
-        if (existingThing && typeof existingThing.delete === 'function') {
-            existingThing.delete();
-        }
-        things.delete(existingId);
-    }
-
-    location.clearThingIds();
-
     const createdThings = [];
     for (const itemData of parsedItems) {
         if (!itemData?.name) {
@@ -11323,20 +11307,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             } catch (abilityError) {
                 console.warn(`Failed to generate abilities for location NPCs (${location.id}):`, abilityError.message);
             }
-        }
-
-        const survivingNpcIds = [];
-        for (const npcId of existingNpcIdsArray) {
-            const npc = players.get(npcId);
-            if (npc?.isRegionImportant) {
-                survivingNpcIds.push(npcId);
-                continue;
-            }
-            players.delete(npcId);
-            Player.unregister(npc);
-        }
-        if (typeof location.setNpcIds === 'function') {
-            location.setNpcIds(survivingNpcIds);
         }
 
         const created = [];
