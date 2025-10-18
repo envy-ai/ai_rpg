@@ -78,6 +78,8 @@ imagegen:
       width: 1024
       height: 1024
       seed: 42
+    sampling:
+      steps: 20
   location_settings:
     image:
       width: 1280
@@ -92,6 +94,8 @@ imagegen:
 random_event_frequency:
   common: 0.04
   rare: 0.01
+  regionSpecific: 0.05
+  locationSpecific: 0.05
 # Game Master configuration
 gamemaster:
   # Fallback system prompt

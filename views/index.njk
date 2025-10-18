@@ -239,7 +239,6 @@
                                                name="level"
                                                value="{{ player.level if player else 1 }}"
                                                min="1"
-                                               max="20"
                                                required>
                                         <span class="help-text">Character level (1-20)</span>
                                     </div>
@@ -741,7 +740,7 @@
                     </div>
                     <div class="npc-edit-field">
                         <label for="npcEditLevel">Level</label>
-                        <input id="npcEditLevel" type="number" min="1" max="20" step="1">
+                        <input id="npcEditLevel" type="number" min="1" step="1">
                     </div>
                     <div class="npc-edit-field">
                         <label for="npcEditHealth">Health</label>
@@ -845,7 +844,7 @@
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditLevel">Level</label>
-                        <input id="thingEditLevel" type="number" min="1" max="20" step="1">
+                        <input id="thingEditLevel" type="number" min="1" step="1">
                     </div>
                     <div class="npc-edit-field">
                         <label for="thingEditImageId">Image ID</label>
@@ -976,7 +975,7 @@
                 </div>
                 <div class="location-edit-field">
                     <label for="regionEditAverageLevel">Average Level</label>
-                    <input type="number" id="regionEditAverageLevel" name="averageLevel" min="1" max="20" step="1" required>
+                    <input type="number" id="regionEditAverageLevel" name="averageLevel" min="1" step="1" required>
                 </div>
                 <footer class="location-edit-footer region-edit-footer">
                     <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>

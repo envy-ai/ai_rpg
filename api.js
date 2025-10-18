@@ -1921,8 +1921,91 @@ module.exports = function registerApiRoutes(scope) {
 
         async function maybeTriggerRandomEvent({ stream = null, locationOverride = null, entryCollector = null } = {}) {
             const frequencyConfig = config?.random_event_frequency || {};
+            const regionChance = Number(frequencyConfig.regionSpecific);
+            const locationChance = Number(frequencyConfig.locationSpecific);
             const commonChance = Number(frequencyConfig.common);
             const rareChance = Number(frequencyConfig.rare);
+
+            const resolveLocation = (candidate) => {
+                if (!candidate) {
+                    return null;
+                }
+                if (typeof Events?.resolveLocationCandidate === 'function') {
+                    const resolved = Events.resolveLocationCandidate(candidate);
+                    if (resolved) {
+                        return resolved;
+                    }
+                }
+                if (typeof candidate === 'string') {
+                    return gameLocations.get(candidate)
+                        || (typeof Location?.get === 'function' ? Location.get(candidate) : null)
+                        || null;
+                }
+                if (typeof candidate === 'object' && candidate.id) {
+                    return typeof candidate.getExit === 'function'
+                        ? candidate
+                        : (gameLocations.get(candidate.id)
+                            || (typeof Location?.get === 'function' ? Location.get(candidate.id) : candidate));
+                }
+                return null;
+            };
+
+            const resolvedLocation = resolveLocation(locationOverride)
+                || resolveLocation(currentPlayer?.currentLocation)
+                || null;
+
+            let resolvedRegion = null;
+            if (resolvedLocation) {
+                resolvedRegion = resolvedLocation.region
+                    || (resolvedLocation.regionId ? Region.get(resolvedLocation.regionId) : null)
+                    || (typeof findRegionByLocationId === 'function'
+                        ? findRegionByLocationId(resolvedLocation.id)
+                        : null);
+            }
+            if (!resolvedRegion && typeof findRegionByLocationId === 'function' && currentPlayer?.currentLocation) {
+                resolvedRegion = findRegionByLocationId(currentPlayer.currentLocation) || null;
+            }
+
+            if (resolvedLocation && Number.isFinite(locationChance) && locationChance > 0) {
+                const locationEvents = resolvedLocation.randomEvents
+                    .filter(event => typeof event === 'string' && event.trim());
+                if (locationEvents.length && Math.random() < locationChance) {
+                    const index = Math.floor(Math.random() * locationEvents.length);
+                    const locationSeed = locationEvents[index];
+                    if (locationSeed) {
+                        if (typeof resolvedLocation.removeRandomEvent === 'function') {
+                            resolvedLocation.removeRandomEvent(locationSeed);
+                        }
+                        return generateRandomEventNarrative({
+                            eventText: locationSeed,
+                            rarity: 'location',
+                            locationOverride: resolvedLocation,
+                            stream,
+                            entryCollector
+                        });
+                    }
+                }
+            }
+
+            if (resolvedRegion && Number.isFinite(regionChance) && regionChance > 0) {
+                const regionEvents = (resolvedRegion.randomEvents || []).filter(event => typeof event === 'string' && event.trim());
+                if (regionEvents.length && Math.random() < regionChance) {
+                    const index = Math.floor(Math.random() * regionEvents.length);
+                    const regionalSeed = regionEvents[index];
+                    if (regionalSeed) {
+                        if (typeof resolvedRegion.removeRandomEvent === 'function') {
+                            resolvedRegion.removeRandomEvent(regionalSeed);
+                        }
+                        return generateRandomEventNarrative({
+                            eventText: regionalSeed,
+                            rarity: 'regional',
+                            locationOverride: resolvedLocation,
+                            stream,
+                            entryCollector
+                        });
+                    }
+                }
+            }
 
             let rarity = null;
             if (Number.isFinite(commonChance) && commonChance > 0 && Math.random() < commonChance) {
@@ -1944,7 +2027,7 @@ module.exports = function registerApiRoutes(scope) {
             return generateRandomEventNarrative({
                 eventText: seedText,
                 rarity,
-                locationOverride,
+                locationOverride: resolvedLocation,
                 stream,
                 entryCollector
             });

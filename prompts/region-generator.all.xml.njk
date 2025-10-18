@@ -110,6 +110,8 @@ Guidelines:
 
 * When proposing region exits, ensure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
 
+* If you generate a location that would hint at a new region, generate a regionExit for that new region. For example, if you create a location called "Ancient Temple Entrance", it would make sense to have a regionExit to a new region called "Ancient Temple Interior". A cave would suggest a cave system region, building would suggest an interior, etc.
+
 * Always avoid contradictions with the setting, and use consistent terminology (e.g., Within, Contains, Adjacent) when describing regional relationships.
 
 * Furniture and workstations are not locations. These should be mentioned in the description, but will be generated as scenery later. For example, a "blacksmith's forge" is not a location, but a "blacksmith's workshop" is.
@@ -162,6 +164,12 @@ If this region is a city, town, village, or other settlement, create at least th
       </regionExits>
     </location>
   </locations>
+  <randomStoryEvents>
+    <!-- Briefly describe 10 random story events that are specifically relevant to this region (but not to specific locations within the region, as they may occur anywhere). Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral.-->
+    <event>[1-2 sentence description of an event]</event>
+    <event>[1-2 sentence description of an event]</event>
+    <!-- ... more events ... -->
+  </randomStoryEvents>
 </region>
 {% endif %}
 

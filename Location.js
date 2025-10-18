@@ -29,6 +29,7 @@ class Location {
   #statusEffects;
   #thingIds;
   #generationHints;
+  #randomEvents;
   #regionId;
   #lastVisitedTime = null; // Decimal hour timestamp of last visit by player
   static #indexById = new Map();
@@ -49,7 +50,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, regionId = null, checkRegionId = true, lastVisitedTime = null } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -97,6 +98,7 @@ class Location {
       : [];
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#generationHints = Location.#normalizeGenerationHints(generationHints);
+    this.#randomEvents = Location.#normalizeRandomEvents(randomEvents);
     this.#lastVisitedTime = Number.isFinite(lastVisitedTime) ? lastVisitedTime : null;
 
     // Index by ID and name if provided
@@ -173,6 +175,15 @@ class Location {
 
     //console.log('Successfully parsed location data:', locationData);
 
+    const randomEventsNode = locationElem.getElementsByTagName('randomStoryEvents')?.[0] || null;
+    const extractedRandomEvents = randomEventsNode
+      ? Array.from(randomEventsNode.getElementsByTagName('event'))
+          .map(node => (node.textContent || '').trim())
+          .filter(Boolean)
+      : [];
+    const randomEvents = Location.#normalizeRandomEvents(extractedRandomEvents);
+    const randomEventsProvided = Boolean(randomEventsNode);
+
     if (existingLocation) {
       if (!locationData.description || typeof locationData.description !== 'string') {
         console.log('Stub expansion missing description in AI response');
@@ -220,7 +231,8 @@ class Location {
           numScenery: locationData.numScenery,
           numNpcs: locationData.numNpcs,
           numHostiles: locationData.numHostiles
-        }
+        },
+        randomEvents: randomEventsProvided ? randomEvents : undefined
       };
 
       if (allowRename && locationData.name) {
@@ -235,6 +247,10 @@ class Location {
         }
         existingLocation.description = promotionData.description;
         existingLocation.baseLevel = promotionData.baseLevel;
+      }
+
+      if (randomEventsProvided) {
+        existingLocation.randomEvents = randomEvents;
       }
 
       return existingLocation;
@@ -277,7 +293,8 @@ class Location {
         numScenery: locationData.numScenery,
         numNpcs: locationData.numNpcs,
         numHostiles: locationData.numHostiles
-      }
+      },
+      randomEvents
     });
   }
 
@@ -462,7 +479,7 @@ class Location {
     this.#hasGeneratedStubs = Boolean(value);
   }
 
-  promoteFromStub({ name, description, baseLevel, imageId, generationHints } = {}) {
+  promoteFromStub({ name, description, baseLevel, imageId, generationHints, randomEvents } = {}) {
     if (!description || typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
@@ -482,6 +499,9 @@ class Location {
     }
     if (generationHints !== undefined) {
       this.generationHints = generationHints;
+    }
+    if (randomEvents !== undefined) {
+      this.randomEvents = randomEvents;
     }
     this.#isStub = false;
     this.#stubMetadata = null;
@@ -608,7 +628,8 @@ class Location {
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
       npcIds: [...this.#npcIds],
       thingIds: [...this.#thingIds],
-      statusEffects: this.getStatusEffects()
+      statusEffects: this.getStatusEffects(),
+      randomEvents: this.randomEvents
     };
   }
 
@@ -649,6 +670,55 @@ class Location {
       npcIds: [...this.#npcIds],
       thingIds: [...this.#thingIds]
     };
+  }
+
+  get randomEvents() {
+    return [...this.#randomEvents];
+  }
+
+  set randomEvents(events) {
+    this.#randomEvents = Location.#normalizeRandomEvents(events);
+    this.#lastUpdated = new Date();
+  }
+
+  addRandomEvent(event) {
+    if (typeof event !== 'string') {
+      return false;
+    }
+    const trimmed = event.trim();
+    if (!trimmed) {
+      return false;
+    }
+    this.#randomEvents.push(trimmed);
+    this.#lastUpdated = new Date();
+    return true;
+  }
+
+  removeRandomEvent(event) {
+    if (!event) {
+      return false;
+    }
+
+    let removed = false;
+    if (typeof event === 'number' && Number.isInteger(event)) {
+      if (event >= 0 && event < this.#randomEvents.length) {
+        this.#randomEvents.splice(event, 1);
+        removed = true;
+      }
+    } else if (typeof event === 'string') {
+      const trimmed = event.trim();
+      const index = this.#randomEvents.findIndex(entry => entry === trimmed);
+      if (index !== -1) {
+        this.#randomEvents.splice(index, 1);
+        removed = true;
+      }
+    }
+
+    if (removed) {
+      this.#lastUpdated = new Date();
+    }
+
+    return removed;
   }
 
   /**
@@ -810,6 +880,16 @@ class Location {
     }
 
     return normalized;
+  }
+
+  static #normalizeRandomEvents(events = []) {
+    if (!Array.isArray(events)) {
+      return [];
+    }
+
+    return events
+      .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(entry => entry.length > 0);
   }
 
   static #normalizeGenerationHints(hints = null) {

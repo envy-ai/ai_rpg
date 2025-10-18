@@ -1,0 +1,14 @@
+<task>
+{% if mode == 'location' %}
+Generate a list of random events for the current location, {{ currentLocation.name }}, taking into account the context above.
+{% else %}
+Generate a list of random events for the current region, {{ currentRegion.name }}, considering all available information.
+{% endif %}
+</task>
+
+Return the events in this format:
+<randomStoryEvents>
+  Briefly describe 5 random story events that are specifically relevant to this {{ mode == 'location' ? 'location' : 'region' }}. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral.
+  <event>[1-2 sentence description of an event]</event>
+  <event>[1-2 sentence description of an event]</event>
+</randomStoryEvents>

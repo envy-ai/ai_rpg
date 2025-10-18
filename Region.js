@@ -24,6 +24,7 @@ class Region {
   #averageLevel;
   #relativeLevel;
   #lastVisitedTime = null;  // Decimal hours since last visit by player.
+  #randomEvents = [];
   static #indexById = new Map();
   static #indexByName = new Map();
 
@@ -33,7 +34,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [] } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -59,6 +60,9 @@ class Region {
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#lastVisitedTime = lastVisitedTime;
+    this.#randomEvents = Array.isArray(randomEvents)
+      ? randomEvents.filter(event => typeof event === 'string' && event.trim()).map(event => event.trim())
+      : [];
     this.#averageLevel = Number.isFinite(averageLevel)
       ? Math.max(1, Math.min(20, Math.round(averageLevel)))
       : null;
@@ -165,7 +169,8 @@ class Region {
       parentRegionId: data.parentRegionId || null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null,
-      lastVisitedTime: data.lastVisitedTime || null
+      lastVisitedTime: data.lastVisitedTime || null,
+      randomEvents: Array.isArray(data.randomEvents) ? data.randomEvents : []
     });
   }
 
@@ -274,11 +279,19 @@ class Region {
       });
     });
 
+    const randomEventsNode = regionElement.getElementsByTagName('randomStoryEvents')?.[0] || null;
+    const randomEvents = randomEventsNode
+      ? Array.from(randomEventsNode.getElementsByTagName('event'))
+          .map(node => (node.textContent || '').trim())
+          .filter(Boolean)
+      : [];
+
     return new Region({
       name: regionName,
       description: regionDescription,
       locations: locationBlueprints,
-      averageLevel: regionLevel
+      averageLevel: regionLevel,
+      randomEvents
     });
   }
 
@@ -288,6 +301,54 @@ class Region {
 
   static get stubRegionCount() {
     return Array.from(Region.#indexById.values()).filter(region => region.isStub).length;
+  }
+
+  get randomEvents() {
+    return [...this.#randomEvents];
+  }
+
+  set randomEvents(events) {
+    this.#randomEvents = Array.isArray(events) ? [...events] : [];
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  addRandomEvent(event) {
+    if (typeof event !== 'string') {
+      return;
+    }
+    const trimmed = event.trim();
+    if (!trimmed) {
+      return;
+    }
+    this.#randomEvents.push(trimmed);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  removeRandomEvent(event) {
+    if (!event) {
+      return false;
+    }
+
+    let removed = false;
+    if (typeof event === 'number' && Number.isInteger(event)) {
+      if (event >= 0 && event < this.#randomEvents.length) {
+        this.#randomEvents.splice(event, 1);
+        removed = true;
+      }
+    } else if (typeof event === 'string') {
+      const trimmed = event.trim();
+      const index = this.#randomEvents.findIndex(entry => entry === trimmed);
+      if (index !== -1) {
+        this.#randomEvents.splice(index, 1);
+        removed = true;
+      }
+    }
+
+    if (removed) {
+      this.#lastUpdated = new Date().toISOString();
+    }
+
+    return removed;
   }
 
   get childRegions() {
@@ -483,7 +544,8 @@ class Region {
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),
-      averageLevel: this.#averageLevel
+      averageLevel: this.#averageLevel,
+      randomEvents: [...this.#randomEvents]
     };
   }
 

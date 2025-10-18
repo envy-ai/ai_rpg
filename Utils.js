@@ -405,7 +405,8 @@ class Utils {
         hasGeneratedStubs: locationData.hasGeneratedStubs ?? false,
         statusEffects: locationData.statusEffects || [],
         npcIds: locationData.npcIds || [],
-        thingIds: locationData.thingIds || []
+        thingIds: locationData.thingIds || [],
+        randomEvents: Array.isArray(locationData.randomEvents) ? locationData.randomEvents : []
       });
 
       if (Object.prototype.hasOwnProperty.call(locationData, 'visited')) {

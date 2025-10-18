@@ -172,8 +172,8 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
     const processedDestinations = new SanitizedStringSet();
 
     for (const entry of entries) {
-        console.log(`Processing exit discovery entry: ${entry.name}`);
-        console.trace();
+        //console.log(`Processing exit discovery entry: ${entry.name}`);
+        //console.trace();
         let exitName = typeof entry?.name === 'string' ? entry.name.trim() : '';
         if (!exitName) {
             continue;
@@ -183,9 +183,9 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
         const originLocationName = originLocation?.name ? originLocation.name.trim() : '';
         const originReference = originNameFromEntry || originLocationName || null;
 
-        console.log(`entry for exit discovery: ${JSON.stringify(entry)}`);
+        //console.log(`entry for exit discovery: ${JSON.stringify(entry)}`);
 
-        console.log(`Checking exit "${exitName}" from origin "${originReference}"`);
+        //console.log(`Checking exit "${exitName}" from origin "${originReference}"`);
         if (entry.name.toLowerCase().trim() === Globals.currentPlayer.getCurrentLocationName().toLowerCase().trim()) {
             try {
                 const regenInput = {
