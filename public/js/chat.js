@@ -3251,7 +3251,7 @@ class AIRPGChat {
         if (this.pendingRequests.size === 0) {
             this.setSendButtonLoading(false);
             this.messageInput?.focus();
-            if (this.pendingMoveOverlay) {
+            if (this.pendingMoveOverlay && !this.locationRefreshPending) {
                 try {
                     window.hideLocationOverlay?.();
                 } catch (_) {
