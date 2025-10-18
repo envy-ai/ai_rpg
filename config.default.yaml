@@ -151,3 +151,4 @@ autosaves_to_retain: 20
 omit_npc_generation: false
 omit_item_generation: false
 deduplicate_item_names: true
+strictXMLParsing: false

@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
 const Region = require('./Region.js');
@@ -129,8 +128,7 @@ class Location {
 
     //console.log('Extracted XML:', strippedXML);
 
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(strippedXML, 'text/xml');
+    const xmlDoc = Utils.parseXmlDocument(strippedXML, 'text/xml');
 
     // Check for parsing errors
     const parserError = xmlDoc.getElementsByTagName('parsererror')[0];

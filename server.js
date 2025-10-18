@@ -7,7 +7,6 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
-const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 
@@ -2898,10 +2897,9 @@ function parseChooseImportantMemoriesResponse(responseText, maxCount) {
         return selections;
     }
 
-    const parser = new DOMParser();
     let doc;
     try {
-        doc = parser.parseFromString(`<root>${responseText}</root>`, 'text/xml');
+        doc = Utils.parseXmlDocument(`<root>${responseText}</root>`, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent || 'choose_important_memories response contained parser errors');
@@ -3113,8 +3111,7 @@ function parsePlausibilityOutcome(xmlSnippet) {
         const match = trimmed.match(/<plausibility[\s\S]*?<\/plausibility>/i);
         const targetXml = match ? match[0] : `<wrapper>${trimmed}</wrapper>`;
 
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(targetXml, 'text/xml');
+        const doc = Utils.parseXmlDocument(targetXml, 'text/xml');
 
         const errorNode = doc.getElementsByTagName('parsererror')[0];
         if (errorNode) {
@@ -4933,8 +4930,7 @@ function parseXMLTemplate(xmlContent) {
             xmlContent = String(xmlContent);
         }
 
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         // Check for parsing errors
         const errorNode = doc.getElementsByTagName('parsererror')[0];
@@ -6931,8 +6927,7 @@ function parseEquipBestAssignments(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const errorNode = doc.getElementsByTagName('parsererror')[0];
         if (errorNode) {
@@ -7236,8 +7231,7 @@ function parseLocationNpcs(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -7374,8 +7368,7 @@ function parseRegionNpcs(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -7531,8 +7524,7 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -7782,8 +7774,7 @@ function parseNpcAbilityAssignments(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -8361,8 +8352,7 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 
 function parseInventoryItems(xmlContent) {
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -8820,8 +8810,7 @@ function parseNpcNameRegenResponse(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -9555,8 +9544,7 @@ function renderLocationThingsPrompt(context = {}) {
 
 function parseLocationThingsXml(xmlContent) {
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -9936,8 +9924,7 @@ function renderSkillsByNamePrompt(context = {}) {
 
 function parseSkillsXml(xmlContent) {
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -10138,8 +10125,7 @@ function parseThingNameRegenResponse(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -10174,8 +10160,7 @@ function parseLocationNameRegenResponse(xmlContent) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlContent, 'text/xml');
+        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent || 'Unknown XML parsing error');
@@ -10568,8 +10553,7 @@ function parseRegionNameRegenResponse(responseText) {
     }
 
     try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(`<root>${responseText}</root>`, 'text/xml');
+        const doc = Utils.parseXmlDocument(`<root>${responseText}</root>`, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent || 'Parser error');
@@ -13488,10 +13472,8 @@ function parseExistingRegionExitResponse(xmlSnippet) {
             .replace(/<\s*br\s*>/gi, '<br/>')
             .replace(/<\s*hr\s*>/gi, '<hr/>');
 
-        const parser = new DOMParser({
-            onError: () => { }
-        });
-        const doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+        const sanitized = sanitize(xmlSnippet.trim());
+        const doc = Utils.parseXmlDocument(sanitized, 'text/xml');
 
         if (!doc || doc.getElementsByTagName('parsererror')?.length) {
             throw new Error('Parser error');
@@ -13611,10 +13593,7 @@ function parseRegionExitsResponse(xmlSnippet) {
 
     let doc;
     try {
-        const parser = new DOMParser({
-            onError: () => { }
-        });
-        doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
     } catch (error) {
         console.warn('Failed to parse region exits XML:', error.message);
         return [];
@@ -13762,10 +13741,7 @@ function parseRegionStubLocations(xmlSnippet) {
 
     let doc;
     try {
-        const parser = new DOMParser({
-            onError: () => { }
-        });
-        doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
+        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
     } catch (error) {
         console.warn('Failed to parse region stub XML:', error.message);
         return [];
@@ -14153,8 +14129,7 @@ function parseRegionEntranceResponse(xmlSnippet) {
     try {
         const match = xmlSnippet.match(/<entrance>[\s\S]*?<\/entrance>/i);
         const entranceXml = match ? match[0] : xmlSnippet;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(entranceXml, 'text/xml');
+        const xmlDoc = Utils.parseXmlDocument(entranceXml, 'text/xml');
 
         const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
         if (parserError) {

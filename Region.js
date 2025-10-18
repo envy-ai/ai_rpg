@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const { DOMParser } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 
 let CachedLocationModule = null;
@@ -182,8 +181,7 @@ class Region {
     const regionMatch = xmlSnippet.match(/<region>[\s\S]*?<\/region>/i);
     const regionXml = regionMatch ? regionMatch[0] : xmlSnippet;
 
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(regionXml, 'text/xml');
+    const xmlDoc = Utils.parseXmlDocument(regionXml, 'text/xml');
 
     const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
     if (parserError) {

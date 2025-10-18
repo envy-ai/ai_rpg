@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const cheerio = require('cheerio');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
+const Globals = require('./Globals.js');
+
+let sharedDomParser = null;
 
 let cachedLocationModule = null;
 let cachedLocationExitModule = null;
@@ -18,6 +22,60 @@ class Utils {
   static innerXML(node) {
     const s = new XMLSerializer();
     return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
+  }
+
+  static #getDomParserInstance() {
+    if (!sharedDomParser) {
+      sharedDomParser = new DOMParser({ onError: () => { } });
+    }
+    return sharedDomParser;
+  }
+
+  static #normalizeXmlWithCheerio(input) {
+    if (input === null || input === undefined) {
+      return '';
+    }
+
+    const source = typeof input === 'string' ? input : String(input);
+    const trimmed = source.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      const $ = cheerio.load(trimmed, {
+        xmlMode: true,
+        decodeEntities: false,
+        recognizeCDATA: true,
+        lowerCaseTags: false,
+        lowerCaseAttributeNames: false
+      });
+      const normalized = $.xml();
+      return typeof normalized === 'string' && normalized.trim() ? normalized : trimmed;
+    } catch (error) {
+      console.warn('Failed to normalize XML via cheerio:', error.message);
+      return trimmed;
+    }
+  }
+
+  static parseXmlDocument(xmlContent, mimeType = 'text/xml') {
+    if (xmlContent === null || xmlContent === undefined) {
+      throw new TypeError('Utils.parseXmlDocument requires a string input.');
+    }
+
+    let normalized = '';
+    if (!Globals.config.strictXMLParsing) {
+      normalized = this.#normalizeXmlWithCheerio(xmlContent);
+    } else {
+      normalized = typeof xmlContent === 'string' ? xmlContent.trim() : String(xmlContent).trim();
+    }
+    const parser = this.#getDomParserInstance();
+
+    try {
+      return parser.parseFromString(normalized, mimeType || 'text/xml');
+    } catch (error) {
+      throw new Error(`Failed to parse XML content: ${error.message}`);
+    }
   }
 
   /* Capitalizes the first letter of each word in a string, except for small words that aren't supposed to be capitalized in titles (like "and", "the", "of", etc.), unless they are the first or last word. */

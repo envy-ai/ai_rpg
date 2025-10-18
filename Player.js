@@ -4148,7 +4148,7 @@ class Player {
     }
 
     finalizeTurn() {
-        console.log(`Finalizing turn for player ${this.#name} (${this.#id})`);
+        //console.log(`Finalizing turn for player ${this.#name} (${this.#id})`);
         // Handle corpse countdown if dead
         if (this.#isDead && this.#corpseCountdown > 0) {
             this.#corpseCountdown -= 1;

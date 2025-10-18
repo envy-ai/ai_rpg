@@ -1,5 +1,4 @@
 const { randomUUID } = require('crypto');
-const { DOMParser } = require('@xmldom/xmldom');
 const fs = require('fs');
 const path = require('path');
 const Player = require('./Player.js');
@@ -203,10 +202,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                const doc = parser.parseFromString(sanitizeForXml(responseText), 'text/xml');
+                const doc = Utils.parseXmlDocument(sanitizeForXml(responseText), 'text/xml');
                 const seedsNode = doc.getElementsByTagName('randomStoryEvents')[0] || null;
                 if (!seedsNode) {
                     return [];
@@ -781,8 +777,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(xmlContent, 'text/xml');
+                const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
                 const parserError = doc.getElementsByTagName('parsererror')[0];
                 if (parserError) {
                     throw new Error(parserError.textContent);
@@ -1831,10 +1826,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let doc;
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+                doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
                 console.warn('Failed to parse random event response XML:', error.message);
                 return null;
@@ -2277,10 +2269,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let doc;
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+                doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
                 console.warn('Failed to parse attack check XML:', error.message);
                 return null;
@@ -3589,10 +3578,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let doc;
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                doc = parser.parseFromString(wrappedResponse, 'text/xml');
+                doc = Utils.parseXmlDocument(wrappedResponse, 'text/xml');
             } catch (_) {
                 console.warn('Failed to parse NPC queue response as XML.');
                 console.error('Error details:', _);
@@ -3796,10 +3782,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let doc;
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+                doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
                 return null;
             }
@@ -3856,10 +3839,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let doc;
             try {
-                const parser = new DOMParser({
-                    onError: () => { }
-                });
-                doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
+                doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
                 return [];
             }
@@ -4449,9 +4429,8 @@ module.exports = function registerApiRoutes(scope) {
                 let memoryText = '';
                 let goalsUpdate = null;
                 try {
-                    const parser = new DOMParser();
                     const sanitized = sanitizeForXml(raw || '');
-                    const doc = parser.parseFromString(sanitized, 'text/xml');
+                    const doc = Utils.parseXmlDocument(sanitized, 'text/xml');
                     const parseError = doc.getElementsByTagName('parsererror')[0];
                     if (!parseError) {
                         const responseNode = doc.getElementsByTagName('response')[0] || doc.documentElement;
@@ -6995,7 +6974,7 @@ module.exports = function registerApiRoutes(scope) {
                     console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
                     const playersById = Globals.playersById;
                     for (const player of playersById.values()) {
-                        console.log(` - Finalizing turn for player ${player.name} (${player.id})`);
+                        //console.log(` - Finalizing turn for player ${player.name} (${player.id})`);
                         player.finalizeTurn();
                     }
 
@@ -12407,12 +12386,8 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('AI response was empty');
             }
 
-            const parser = new DOMParser({
-                onError: () => { }
-            });
-
             const wrapped = sanitizeXmlForDom(trimmed);
-            const doc = parser.parseFromString(wrapped, 'text/xml');
+            const doc = Utils.parseXmlDocument(wrapped, 'text/xml');
             const parserError = doc.getElementsByTagName('parsererror')[0];
             if (parserError) {
                 throw new Error(`AI response XML parsing error: ${parserError.textContent}`);

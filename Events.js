@@ -1,4 +1,3 @@
-const { DOMParser } = require('@xmldom/xmldom');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
@@ -3353,8 +3352,7 @@ class Events {
         }
 
         try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlContent, 'text/xml');
+            const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
             const parserError = doc.getElementsByTagName('parsererror')[0];
             if (parserError) {
@@ -3473,8 +3471,7 @@ class Events {
         }
 
         try {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlContent, 'text/xml');
+            const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
             const parserError = doc.getElementsByTagName('parsererror')[0];
             if (parserError) {
