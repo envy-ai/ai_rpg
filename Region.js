@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { DOMParser } = require('xmldom');
+const { DOMParser } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 
 let CachedLocationModule = null;

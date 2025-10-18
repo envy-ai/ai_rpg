@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { DOMParser, XMLSerializer } = require('xmldom');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
 const Region = require('./Region.js');

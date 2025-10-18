@@ -1,5 +1,5 @@
 const { randomUUID } = require('crypto');
-const { DOMParser } = require('xmldom');
+const { DOMParser } = require('@xmldom/xmldom');
 const fs = require('fs');
 const path = require('path');
 const Player = require('./Player.js');
@@ -204,11 +204,7 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 const doc = parser.parseFromString(sanitizeForXml(responseText), 'text/xml');
                 const seedsNode = doc.getElementsByTagName('randomStoryEvents')[0] || null;
@@ -1836,11 +1832,7 @@ module.exports = function registerApiRoutes(scope) {
             let doc;
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
@@ -2286,11 +2278,7 @@ module.exports = function registerApiRoutes(scope) {
             let doc;
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
@@ -3602,11 +3590,7 @@ module.exports = function registerApiRoutes(scope) {
             let doc;
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 doc = parser.parseFromString(wrappedResponse, 'text/xml');
             } catch (_) {
@@ -3813,11 +3797,7 @@ module.exports = function registerApiRoutes(scope) {
             let doc;
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
@@ -3877,11 +3857,7 @@ module.exports = function registerApiRoutes(scope) {
             let doc;
             try {
                 const parser = new DOMParser({
-                    errorHandler: {
-                        warning: () => { },
-                        error: () => { },
-                        fatalError: () => { }
-                    }
+                    onError: () => { }
                 });
                 doc = parser.parseFromString(sanitizeForXml(trimmed), 'text/xml');
             } catch (_) {
@@ -12432,11 +12408,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const parser = new DOMParser({
-                errorHandler: {
-                    warning: () => { },
-                    error: () => { },
-                    fatalError: () => { }
-                }
+                onError: () => { }
             });
 
             const wrapped = sanitizeXmlForDom(trimmed);

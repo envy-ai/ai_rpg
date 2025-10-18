@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DOMParser, XMLSerializer } = require('xmldom');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 
 let cachedLocationModule = null;
 let cachedLocationExitModule = null;

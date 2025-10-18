@@ -7,7 +7,7 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
-const { DOMParser, XMLSerializer } = require('xmldom');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 
@@ -13489,11 +13489,7 @@ function parseExistingRegionExitResponse(xmlSnippet) {
             .replace(/<\s*hr\s*>/gi, '<hr/>');
 
         const parser = new DOMParser({
-            errorHandler: {
-                warning: () => { },
-                error: () => { },
-                fatalError: () => { }
-            }
+            onError: () => { }
         });
         const doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
 
@@ -13616,11 +13612,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     let doc;
     try {
         const parser = new DOMParser({
-            errorHandler: {
-                warning: () => { },
-                error: () => { },
-                fatalError: () => { }
-            }
+            onError: () => { }
         });
         doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
     } catch (error) {
@@ -13771,11 +13763,7 @@ function parseRegionStubLocations(xmlSnippet) {
     let doc;
     try {
         const parser = new DOMParser({
-            errorHandler: {
-                warning: () => { },
-                error: () => { },
-                fatalError: () => { }
-            }
+            onError: () => { }
         });
         doc = parser.parseFromString(sanitize(xmlSnippet.trim()), 'text/xml');
     } catch (error) {

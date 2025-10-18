@@ -1,4 +1,4 @@
-const { DOMParser } = require('xmldom');
+const { DOMParser } = require('@xmldom/xmldom');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
