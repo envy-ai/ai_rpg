@@ -854,6 +854,10 @@ class AIRPGChat {
         }
     }
 
+    handleChatHistoryUpdated() {
+        this.refreshChatHistory();
+    }
+
     generateRequestId() {
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
             return window.crypto.randomUUID();
@@ -1052,6 +1056,9 @@ class AIRPGChat {
                 break;
             case 'image_job_update':
                 this.handleImageJobUpdate(payload);
+                break;
+            case 'chat_history_updated':
+                this.handleChatHistoryUpdated(payload);
                 break;
             default:
                 console.log('Realtime update:', payload);

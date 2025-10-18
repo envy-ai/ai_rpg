@@ -178,8 +178,8 @@ class Location {
     const randomEventsNode = locationElem.getElementsByTagName('randomStoryEvents')?.[0] || null;
     const extractedRandomEvents = randomEventsNode
       ? Array.from(randomEventsNode.getElementsByTagName('event'))
-          .map(node => (node.textContent || '').trim())
-          .filter(Boolean)
+        .map(node => (node.textContent || '').trim())
+        .filter(Boolean)
       : [];
     const randomEvents = Location.#normalizeRandomEvents(extractedRandomEvents);
     const randomEventsProvided = Boolean(randomEventsNode);
@@ -232,7 +232,9 @@ class Location {
           numNpcs: locationData.numNpcs,
           numHostiles: locationData.numHostiles
         },
-        randomEvents: randomEventsProvided ? randomEvents : undefined
+        randomEvents: randomEventsProvided ? randomEvents : undefined,
+        npcIds: existingLocation.npcIds,
+        thingIds: existingLocation.thingIds
       };
 
       if (allowRename && locationData.name) {
@@ -479,7 +481,7 @@ class Location {
     this.#hasGeneratedStubs = Boolean(value);
   }
 
-  promoteFromStub({ name, description, baseLevel, imageId, generationHints, randomEvents } = {}) {
+  promoteFromStub({ name, description, baseLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
     if (!description || typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
@@ -506,6 +508,8 @@ class Location {
     this.#isStub = false;
     this.#stubMetadata = null;
     this.#hasGeneratedStubs = false;
+    this.setNpcIds(npcIds);
+    this.setThingIds(thingIds);
   }
 
   get generationHints() {

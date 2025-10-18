@@ -9,6 +9,7 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
+const console = require('console');
 
 
 let eventsProcessedThisTurn = false;
@@ -2015,6 +2016,7 @@ module.exports = function registerApiRoutes(scope) {
                     eventChecks = await Events.runEventChecks({ textToCheck: narrativeText, stream });
                 } catch (eventCheckError) {
                     console.warn('Failed to apply random event checks:', eventCheckError.message);
+                    console.debug(eventCheckError);
                 }
 
                 const summary = {

@@ -891,7 +891,7 @@ class Events {
 
             // Check if the NPC already exists and is in this location (see Player.js and Location.js)
             // so we can avoid redundant arrivals
-            const existingNames = Globals.currentPlayer.currentLocationObject.getNPCNames();
+            const existingNames = Globals.location.getNPCNames();
             const uniqueArrivals = arrivals.filter(entry => !existingNames.includes(entry.name));
 
             parsedEntries.npc_arrival_departure.push(...uniqueArrivals);

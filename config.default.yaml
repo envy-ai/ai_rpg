@@ -92,10 +92,10 @@ imagegen:
     location:
     scenery:
 random_event_frequency:
-  common: 0.04
+  common: 0.05
   rare: 0.01
-  regionSpecific: 0.10
-  locationSpecific: 0.10
+  regionSpecific: 0.6
+  locationSpecific: 0.6
 # Game Master configuration
 gamemaster:
   # Fallback system prompt
