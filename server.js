@@ -12008,10 +12008,11 @@ function renderThingImagePrompt(thing) {
 }
 
 // Function to render location generator prompt from template
-function renderLocationGeneratorPrompt(options = {}) {
+async function renderLocationGeneratorPrompt(options = {}) {
     try {
-        const activeSetting = getActiveSettingSnapshot();
         const isStubExpansion = Boolean(options.isStubExpansion);
+        const baseContext = await prepareBasePromptContext();
+        const activeSetting = getActiveSettingSnapshot();
         const settingDescription = describeSettingForPrompt(activeSetting);
         const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
         const overrideSetting = options.setting;
@@ -12053,27 +12054,18 @@ function renderLocationGeneratorPrompt(options = {}) {
             };
         }
 
-        const templateName = isStubExpansion
-            ? 'location-generator.stub.xml.njk'
-            : 'location-generator.full.xml.njk';
-
         let entryProse = '';
-
-        // Set to latest chat prose from last 10 entries of chatHistory    
         if (Array.isArray(chatHistory)) {
-            // Only consider the last 10 entries in chatHistory for stub expansion prose
             const startIdx = Math.max(0, chatHistory.length - 10);
             for (let i = chatHistory.length - 1; i >= startIdx; i--) {
                 const entry = chatHistory[i];
-
                 if (entry && entry.role === 'assistant' && typeof entry.content === 'string' && entry.type === 'player-action' && entry.content.trim()) {
                     entryProse = entry.content.trim();
                     break;
                 }
             }
         } else {
-            console.warn('No chat history available for location stub expansion prompt');
-            console.trace();
+            console.warn('No chat history available for location generation prompt');
         }
 
         const normalizeRegionContext = (region) => {
@@ -12142,57 +12134,61 @@ function renderLocationGeneratorPrompt(options = {}) {
                 .filter(Boolean);
         };
 
-        const currentRegionContext = normalizeRegionContext(options.currentRegion);
+        const currentRegionContext = options.currentRegion ? normalizeRegionContext(options.currentRegion) : null;
         const existingLocationNames = normalizeExistingLocations(options.existingLocations);
 
-        const baseVariables = {
+        const previousLocation = currentPlayer?.previousLocation || null;
+        const previousLocationPayload = previousLocation ? {
+            id: previousLocation.id || null,
+            name: previousLocation.name || (typeof previousLocation.getDetails === 'function' ? (previousLocation.getDetails()?.name || null) : null),
+            region: previousLocation.region ? {
+                id: previousLocation.region.id || null,
+                name: previousLocation.region.name || null
+            } : null
+        } : null;
+
+        const currentPlayerPayload = baseContext.currentPlayer
+            ? { ...baseContext.currentPlayer, previousLocation: previousLocationPayload }
+            : { previousLocation: previousLocationPayload };
+
+        const payload = {
+            ...baseContext,
             setting: settingContext,
-            currentRegion: currentRegionContext,
+            currentPlayer: currentPlayerPayload,
+            currentRegion: currentRegionContext || baseContext.currentRegion,
+            mode: isStubExpansion ? 'stub' : 'full',
             existingLocations: existingLocationNames,
+            promptType: isStubExpansion ? 'location-generator-stub' : 'location-generator-full',
             shortDescription: options.shortDescription || null,
             locationTheme: options.locationTheme || options.theme || null,
-            playerLevel: options.playerLevel || null,
-            locationPurpose: options.locationPurpose || null,
+            playerLevel: options.playerLevel ?? null,
+            locationPurpose: options.locationPurpose ?? null,
             relativeLevel: options.relativeLevel ?? null,
             regionAverageLevel: options.regionAverageLevel ?? null,
-            config: config,
-            entryProse: entryProse,
+            entryProse,
+            originLocationName: isStubExpansion ? (options.originLocationName || null) : null,
+            originDescription: isStubExpansion ? (options.originDescription || null) : null,
+            originDirection: isStubExpansion ? (options.originDirection || null) : null,
+            stubName: isStubExpansion ? (options.stubName || null) : null,
+            stubId: isStubExpansion ? (options.stubId || null) : null,
+            isStubExpansion
         };
 
-        const variables = isStubExpansion
-            ? {
-                ...baseVariables,
-                originLocationName: options.originLocationName || null,
-                originDescription: options.originDescription || null,
-                originDirection: options.originDirection || null,
-                stubName: options.stubName || null,
-                stubId: options.stubId || null,
-            }
-            : baseVariables;
-
-        // Render the template
-        const renderedTemplate = promptEnv.render(templateName, variables);
-
-        // Parse the XML and extract both systemPrompt and generationPrompt
+        const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
         const parsedXML = parseXMLTemplate(renderedTemplate);
-        const systemPrompt = parsedXML.systemPrompt;
-        const generationPrompt = parsedXML.generationPrompt;
 
-        if (!systemPrompt) {
-            throw new Error('No systemPrompt found in location generator template');
+        if (!parsedXML?.systemPrompt || !parsedXML?.generationPrompt) {
+            throw new Error('Location generator template missing systemPrompt or generationPrompt');
         }
 
-        if (!generationPrompt) {
-            throw new Error('No generationPrompt found in location generator template');
-        }
-
-        //console.log('Generated location generator prompt with variables:', variables);
-        return { systemPrompt: systemPrompt.trim(), generationPrompt: generationPrompt.trim() };
-
+        return {
+            systemPrompt: parsedXML.systemPrompt.trim(),
+            generationPrompt: parsedXML.generationPrompt.trim(),
+            maxTokens: parsedXML.maxTokens
+        };
     } catch (error) {
         console.error('Error rendering location generator template:', error);
-        // Fallback to simple prompt
-        return `Generate a new fantasy RPG location. Return an XML snippet in this format: <location><name>Location Name</name><description>Detailed description of the location</description><baseLevel>5</baseLevel></location>`;
+        return null;
     }
 }
 
@@ -13289,7 +13285,12 @@ async function generateLocationFromPrompt(options = {}) {
         };
 
         // Generate the system prompt using the template
-        const { systemPrompt, generationPrompt } = renderLocationGeneratorPrompt(templateOptions);
+        const promptConfig = await renderLocationGeneratorPrompt(templateOptions);
+        if (!promptConfig?.systemPrompt || !promptConfig?.generationPrompt) {
+            throw new Error('Failed to render location generation prompt.');
+        }
+
+        const { systemPrompt, generationPrompt } = promptConfig;
 
         // Prepare the messages for the AI API
         const messages = [
@@ -13316,7 +13317,7 @@ async function generateLocationFromPrompt(options = {}) {
         const requestData = {
             model: model,
             messages: messages,
-            max_tokens: resolveMaxTokens(templateOverrides?.maxTokens, 1000),
+            max_tokens: resolveMaxTokens(promptConfig.maxTokens, 1000),
             temperature: config.ai.temperature || 0.7
         };
 
