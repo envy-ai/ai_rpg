@@ -4482,7 +4482,7 @@ async function expandRegionEntryStub(stubLocation) {
 
             console.log(`🌐 Beginning region stub expansion for ${regionName} (${regionDescription})...`);
 
-            stubPrompt = renderRegionStubPrompt({
+            stubPrompt = await renderRegionStubPrompt({
                 settingDescription,
                 regionNotes: regionDescription,
                 region: {
@@ -12196,82 +12196,184 @@ function renderLocationGeneratorPrompt(options = {}) {
     }
 }
 
-function renderRegionGeneratorPrompt(options = {}) {
-    const templateName = 'region-generator.all.xml.njk';
-    const activeSetting = getActiveSettingSnapshot();
-    const settingDescription = describeSettingForPrompt(activeSetting);
-    const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
-    const overrideSetting = options.setting;
+async function renderRegionGeneratorPrompt(options = {}) {
+    try {
+        const baseContext = await prepareBasePromptContext();
+        const activeSetting = getActiveSettingSnapshot();
+        const settingDescription = describeSettingForPrompt(activeSetting);
+        const defaultSettingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+        const overrideSetting = options.setting;
 
-    const settingKeys = [
-        'name',
-        'description',
-        'theme',
-        'genre',
-        'startingLocationType',
-        'magicLevel',
-        'techLevel',
-        'tone',
-        'difficulty',
-        'currencyName',
-        'currencyNamePlural',
-        'currencyValueNotes',
-        'writingStyleNotes'
-    ];
+        const settingKeys = [
+            'name',
+            'description',
+            'theme',
+            'genre',
+            'startingLocationType',
+            'magicLevel',
+            'techLevel',
+            'tone',
+            'difficulty',
+            'currencyName',
+            'currencyNamePlural',
+            'currencyValueNotes',
+            'writingStyleNotes'
+        ];
 
-    let settingContext = defaultSettingContext;
-    if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
-        settingContext = { ...defaultSettingContext };
-        for (const key of settingKeys) {
-            if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
-                settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
+        let settingContext = defaultSettingContext;
+        if (overrideSetting && typeof overrideSetting === 'object' && !Array.isArray(overrideSetting)) {
+            settingContext = { ...defaultSettingContext };
+            for (const key of settingKeys) {
+                if (Object.prototype.hasOwnProperty.call(overrideSetting, key)) {
+                    settingContext[key] = normalizeSettingValue(overrideSetting[key], settingContext[key]);
+                }
             }
+            if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
+                settingContext.races = normalizeSettingList(overrideSetting.races);
+            }
+            if (!settingContext.description) {
+                settingContext.description = defaultSettingContext.description;
+            }
+        } else if (typeof overrideSetting === 'string') {
+            settingContext = {
+                ...defaultSettingContext,
+                description: overrideSetting
+            };
         }
-        if (Object.prototype.hasOwnProperty.call(overrideSetting, 'races')) {
-            settingContext.races = normalizeSettingList(overrideSetting.races);
-        }
-        if (!settingContext.description) {
-            settingContext.description = defaultSettingContext.description;
-        }
-    } else if (typeof overrideSetting === 'string') {
-        settingContext = {
-            ...defaultSettingContext,
-            description: overrideSetting
+
+        const normalizeRegionContext = (region) => {
+            const fallback = {
+                name: null,
+                description: null,
+                locations: []
+            };
+
+            if (!region || typeof region !== 'object') {
+                return fallback;
+            }
+
+            const nameSource = typeof region.name === 'string' && region.name.trim()
+                ? region.name.trim()
+                : (typeof region.regionName === 'string' && region.regionName.trim() ? region.regionName.trim() : fallback.name);
+            const descriptionSource = typeof region.description === 'string' && region.description.trim()
+                ? region.description.trim()
+                : (typeof region.regionDescription === 'string' && region.regionDescription.trim() ? region.regionDescription.trim() : fallback.description);
+
+            const normalizedLocations = Array.isArray(region.locations)
+                ? region.locations
+                    .map(entry => {
+                        if (!entry) {
+                            return null;
+                        }
+                        if (typeof entry === 'string') {
+                            const name = entry.trim();
+                            return name ? { name } : null;
+                        }
+                        if (typeof entry === 'object' && entry.name) {
+                            const name = String(entry.name).trim();
+                            return name ? { name } : null;
+                        }
+                        return null;
+                    })
+                    .filter(Boolean)
+                : [];
+
+            return {
+                name: nameSource,
+                description: descriptionSource,
+                locations: normalizedLocations,
+                relativeLevel: Number.isFinite(region.relativeLevel) ? region.relativeLevel : null
+            };
         };
+
+        const normalizeExistingLocations = (locations) => {
+            if (!Array.isArray(locations)) {
+                return [];
+            }
+            return locations
+                .map(entry => {
+                    if (!entry) {
+                        return null;
+                    }
+                    if (typeof entry === 'string') {
+                        const trimmed = entry.trim();
+                        return trimmed || null;
+                    }
+                    if (typeof entry === 'object' && entry.name) {
+                        const trimmed = String(entry.name).trim();
+                        return trimmed || null;
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+        };
+
+        const mode = options.mode || 'full';
+        const normalizedCurrentRegion = options.currentRegion ? normalizeRegionContext(options.currentRegion) : null;
+
+        const previousLocation = currentPlayer?.previousLocation || null;
+        const previousLocationPayload = previousLocation ? {
+            id: previousLocation.id || null,
+            name: previousLocation.name || (typeof previousLocation.getDetails === 'function' ? (previousLocation.getDetails()?.name || null) : null),
+            region: previousLocation.region ? {
+                id: previousLocation.region.id || null,
+                name: previousLocation.region.name || null
+            } : null
+        } : null;
+
+        const currentPlayerPayload = baseContext.currentPlayer
+            ? { ...baseContext.currentPlayer, previousLocation: previousLocationPayload }
+            : { previousLocation: previousLocationPayload };
+
+        const minLocations = Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2;
+        const maxLocations = Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10;
+        const minRegionExitsOverride = Number.isInteger(options.minRegionExits) ? options.minRegionExits : null;
+        const minNewRegionExitsOverride = Number.isInteger(options.minNewRegionExits) ? options.minNewRegionExits : null;
+        const minRegionExits = minRegionExitsOverride !== null ? minRegionExitsOverride : 4;
+        const minNewRegionExits = minNewRegionExitsOverride !== null ? minNewRegionExitsOverride : 3;
+
+        const shouldIncludeCurrentRegion = mode === 'stub' || mode === 'exits' || mode === 'locations';
+        const currentRegionForPrompt = shouldIncludeCurrentRegion
+            ? (normalizedCurrentRegion || baseContext.currentRegion || {})
+            : {};
+
+        const existingLocationNames = normalizeExistingLocations(options.existingLocations);
+
+        const payload = {
+            ...baseContext,
+            contextRegion: baseContext.currentRegion,
+            currentRegion: currentRegionForPrompt,
+            setting: settingContext,
+            currentPlayer: currentPlayerPayload,
+            promptType: 'region-generator',
+            mode,
+            regionName: options.regionName || null,
+            regionDescription: options.regionDescription || null,
+            regionNotes: options.regionNotes || null,
+            minLocations,
+            maxLocations,
+            minRegionExits,
+            minNewRegionExits,
+            entryProse: options.entryProse || null,
+            existingLocations: existingLocationNames
+        };
+
+        const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
+        const parsedXML = parseXMLTemplate(renderedTemplate);
+
+        if (!parsedXML?.systemPrompt || !parsedXML?.generationPrompt) {
+            throw new Error('Region generator template missing systemPrompt or generationPrompt');
+        }
+
+        return {
+            systemPrompt: parsedXML.systemPrompt.trim(),
+            generationPrompt: parsedXML.generationPrompt.trim(),
+            maxTokens: parsedXML.maxTokens
+        };
+    } catch (error) {
+        console.error('Error rendering region generator template:', error);
+        return null;
     }
-
-    let minRegionExits = 4;
-    let minNewRegionExits = 3;
-    // Always make sure there are stub regions that can be explored.
-    //if (Region.stubRegionCount <= 2) minRegionExits = 1;
-
-    const variables = {
-        setting: settingContext,
-        regionName: options.regionName || null,
-        regionDescription: options.regionDescription || null,
-        regionNotes: options.regionNotes || null,
-        minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-        maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
-        minRegionExits: minRegionExits,
-        minNewRegionExits: minNewRegionExits,
-        currentPlayer: currentPlayer,
-        mode: 'full',
-        config: config
-    };
-
-    const renderedTemplate = promptEnv.render(templateName, variables);
-    const parsedXML = parseXMLTemplate(renderedTemplate);
-    const systemPrompt = parsedXML.systemPrompt;
-    const generationPrompt = parsedXML.generationPrompt;
-
-    if (!systemPrompt || !generationPrompt) {
-        throw new Error('Region generator template missing systemPrompt or generationPrompt');
-    }
-
-    return {
-        systemPrompt: systemPrompt.trim(),
-        generationPrompt: generationPrompt.trim()
-    };
 }
 
 // Function to generate player portrait image
@@ -13546,36 +13648,24 @@ async function chooseExistingRegionExit({
     }
 }
 
-function renderRegionExitsPrompt({ region, settingDescription }) {
+async function renderRegionExitsPrompt({ region, settingDescription }) {
     try {
-        const templateName = 'region-generator.all.xml.njk';
-
-        let minRegionExits = null;
-        // Always make sure there are stub regions that can be explored.
-        if (Region.stubRegionCount <= 2) minRegionExits = 1;
-
-        const variables = {
-            setting: settingDescription,
-            currentRegion: region,
+        const minRegionExitOverride = Region.stubRegionCount <= 2 ? 1 : null;
+        const promptConfig = await renderRegionGeneratorPrompt({
             mode: 'exits',
-            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
-            minRegionExits: minRegionExits,
-            currentPlayer: currentPlayer,
-            config: config
-        };
+            currentRegion: region,
+            regionName: region?.name || null,
+            regionDescription: region?.description || null,
+            regionNotes: region?.regionNotes || null,
+            setting: settingDescription || null,
+            minRegionExits: minRegionExitOverride
+        });
 
-        const rendered = promptEnv.render(templateName, variables);
-        const parsed = parseXMLTemplate(rendered);
-
-        if (!parsed.systemPrompt || !parsed.generationPrompt) {
-            throw new Error('Region exits template missing prompts');
+        if (!promptConfig) {
+            throw new Error('Region exits prompt renderer returned no data');
         }
 
-        return {
-            systemPrompt: parsed.systemPrompt.trim(),
-            generationPrompt: parsed.generationPrompt.trim()
-        };
+        return promptConfig;
     } catch (error) {
         console.error('Error rendering region exits template:', error);
         return null;
@@ -13687,43 +13777,25 @@ function parseRegionExitsResponse(xmlSnippet) {
     return results;
 }
 
-function renderRegionStubPrompt({ settingDescription, region, previousRegion }) {
+async function renderRegionStubPrompt({ settingDescription, region, previousRegion, regionNotes }) {
     try {
-        const templateName = 'region-generator.all.xml.njk';
-        let minRegionExits = null;
-        // Always make sure there are stub regions that can be explored.
-        if (Region.stubRegionCount <= 2) minRegionExits = 1;
-
-        const variables = {
-            setting: currentSetting,
-            currentRegion: region,
-            regionNotes: region.regionNotes,
-            previousRegion: currentPlayer.previousLocation.region,
-            currentLocation: currentPlayer.location,
-            minLocations: Number.isInteger(config.regions.minLocations) ? config.regions.minLocations : 2,
-            maxLocations: Number.isInteger(config.regions.maxLocations) ? config.regions.maxLocations : 10,
-            minRegionExits: minRegionExits,
+        const minRegionExitOverride = Region.stubRegionCount <= 2 ? 1 : null;
+        const promptConfig = await renderRegionGeneratorPrompt({
             mode: 'stub',
-            currentPlayer: currentPlayer,
-            config: config
-        };
+            currentRegion: region,
+            regionName: region?.name || null,
+            regionDescription: region?.description || null,
+            regionNotes: regionNotes || region?.regionNotes || null,
+            setting: settingDescription || null,
+            minRegionExits: minRegionExitOverride
+        });
 
-
-        //console.trace();
-        //console.log('Rendering region stub prompt with variables:', variables);
-        console.log(`🧩 Rendering region stub prompt for region "${region?.name || region?.id || 'unknown'}"`);
-
-        const renderedTemplate = promptEnv.render(templateName, variables);
-        const parsed = parseXMLTemplate(renderedTemplate);
-
-        if (!parsed.systemPrompt || !parsed.generationPrompt) {
-            throw new Error('Region stub template missing prompts');
+        if (!promptConfig) {
+            throw new Error('Region stub prompt renderer returned no data');
         }
 
-        return {
-            systemPrompt: parsed.systemPrompt.trim(),
-            generationPrompt: parsed.generationPrompt.trim()
-        };
+        console.log(`🧩 Rendering region stub prompt for region "${region?.name || region?.id || 'unknown'}"`);
+        return promptConfig;
     } catch (error) {
         console.error('Error rendering region stub template:', error);
         return null;
@@ -14440,7 +14512,12 @@ async function generateRegionFromPrompt(options = {}) {
 
         const settingDescription = rawOptions.setting || describeSettingForPrompt(getActiveSettingSnapshot());
         const generationOptions = { ...rawOptions, setting: settingDescription };
-        const { systemPrompt, generationPrompt } = renderRegionGeneratorPrompt(generationOptions);
+        const promptConfig = await renderRegionGeneratorPrompt(generationOptions);
+        if (!promptConfig?.systemPrompt || !promptConfig?.generationPrompt) {
+            throw new Error('Failed to render region generation prompt.');
+        }
+
+        const { systemPrompt, generationPrompt } = promptConfig;
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -14461,7 +14538,7 @@ async function generateRegionFromPrompt(options = {}) {
         const requestData = {
             model,
             messages,
-            max_tokens: resolveMaxTokens(6000),
+            max_tokens: resolveMaxTokens(promptConfig.maxTokens, 6000),
             temperature: config.ai.temperature || 0.7
         };
 

@@ -1,6 +1,6 @@
 
 {% set mode = mode or 'full' %}
-{% set isStub = mode == 'stub' or currentRegion %}
+{% set isStub = mode == 'stub' %}
 {% set includeLocations = mode in ['full', 'stub'] %}
 {% set includeConnections = mode != 'locations' %}
 

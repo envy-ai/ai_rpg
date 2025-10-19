@@ -6,8 +6,9 @@ You are an AI designed to perform various tasks related to managing a text-based
 You are able to write both explicit and non-explicit content, depending on the needs of the scene.
 {{ config.extra_system_instructions | default('') }}
     </systemPrompt>
-    <generationPrompt>
+<generationPrompt>
 <context>
+  {% set regionContext = (contextRegion or currentRegion) or {'name': '', 'description': '', 'locations': []} %}
   <setting>
     <name>{{ setting.name }}</name>
     <description>{{ setting.description }}</description>
@@ -89,10 +90,10 @@ You are able to write both explicit and non-explicit content, depending on the n
     {% endfor %}
   </worldOutline>
   <currentRegion>
-    <name>{{ currentRegion.name }}</name>
-    <description>{{ currentRegion.description }}</description>
+    <name>{{ regionContext.name }}</name>
+    <description>{{ regionContext.description }}</description>
     <locations>
-      {% for loc in currentRegion.locations %}<locationName>{{ loc.name }}</locationName>
+      {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>
   </currentRegion>
   <currentLocation>
