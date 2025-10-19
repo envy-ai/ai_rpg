@@ -1,0 +1,46 @@
+{% if originLocationName or originDescription %}
+<originLocation>
+  {% if originLocationName %}<name>{{ originLocationName }}</name>{% endif %}
+  {% if originDescription %}<description>{{ originDescription }}</description>{% endif %}
+</originLocation>
+{% endif %}
+
+{% if stubName or stubId %}
+<stub>
+  {% if stubId %}<id>{{ stubId }}</id>{% endif %}
+  {% if stubName %}<name>{{ stubName }}</name>{% endif %}
+</stub>
+{% endif %}
+
+<task>You are an AI assistant that expands partially discovered locations in a roleplaying game world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
+
+{% if entryProse %}Here is how the location was described upon entry:
+<entryProse>
+{{ entryProse }}
+</entryProse>
+Include notable characters, scenery, and other elements from the entry prose.{% endif %}
+
+GUIDELINES:
+- Reference sensory details and story hooks that bridge to and from the origin location.
+- Mention at least one notable feature that hints at additional unexplored directions.
+- Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.
+- For the number of npcs, items, scenery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. 1 to 3 is usually normal (except for hostiles, which are often 0 in safe territory).
+
+OUTPUT FORMAT:
+Return ONLY the following fields, in this format:
+
+<location>
+  <name>A short name or title for the location</name>
+  <description>1-2 paragraphs of description</description>
+  <relativeLevel>integer from -3 to 3, indicating the difficulty compared to the rest of the region</relativeLevel>
+  <numNpcs>Integer from 0 to 4, indicating how many NPCs typically inhabit this location</numNpcs>
+  <numItems>Integer from 0 to 4, indicating how many items typically can be found in this location</numItems>
+  <numScenery>Integer from 2 to 4, indicating how many notable scenery features typically can be found in this location</numScenery>
+  <numHostiles>Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
+  <randomStoryEvents>
+    Briefly describe 5 random story events that are specifically relevant to this location. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral.
+    <event>[1-2 sentence description of an event]</event>
+    <event>[1-2 sentence description of an event]</event>
+  </randomStoryEvents>
+</location>
+

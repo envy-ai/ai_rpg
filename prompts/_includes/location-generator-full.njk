@@ -1,0 +1,30 @@
+
+
+<task>You are an AI Location Generator for a fantasy RPG world. Your task is to create a complete location with all necessary details that can be used to instantiate a Location object in the game.  Generate a unique, immersive location appropriate to the setting and currentregion.</task>
+
+GUIDELINES:
+- Create vivid, immersive descriptions that engage the senses
+- Base level should reflect actual danger (1=safe village, 10=dangerous dungeon, 20=epic boss lair)
+- Name should be memorable and descriptive, and not a duplicate of any other location in the region
+- Consider environmental storytelling and world-building details
+- Include atmospheric details like lighting, sounds, smells, or magical effects
+{% if config.location.maxNpcs > 1 %}- For the number of npcs, items, scenbery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. Fewer than that is usually normal (except for hostiles, which are often 0 in safe territory).{% endif %}
+
+OUTPUT FORMAT:
+Return ONLY the following fields, in this format:
+
+<location>
+  <name>A short name or title for the location</name>
+  <description>1-2 paragraphs of description</description>
+  <relativeLevel>integer from -{{ config.location.levelVariation }} to {{ config.location.levelVariation }}, indicating the difficulty compared to the rest of the region</relativeLevel>
+  <numNpcs>Integer from 0 to {{ config.location.maxNpcs }}, indicating how many NPCs typically inhabit this location</numNpcs>
+  <numItems>Integer from 0 to {{ config.location.maxItems }}, indicating how many items typically can be found in this location</numItems>
+  <numScenery>Integer from 2 to {{ config.location.maxScenery }}, indicating how many notable scenery features typically can be found in this location</numScenery>
+  <numHostiles>Integer from 0 to {{ config.location.maxHostiles }}, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location</numHostiles>
+  <randomStoryEvents>
+    Briefly describe 5 random story events that are specifically relevant to this location. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral.
+    <event>[1-2 sentence description of an event]</event>
+    <event>[1-2 sentence description of an event]</event>
+  </randomStoryEvents>
+</location>
+
