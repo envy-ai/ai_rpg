@@ -7356,6 +7356,7 @@ function parseLocationNpcs(xmlContent) {
         }
     } catch (error) {
         console.warn('Failed to parse NPC XML:', error.message);
+        console.debug(error);
     }
 
     return result;

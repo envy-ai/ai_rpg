@@ -74,6 +74,7 @@ class Utils {
     try {
       return parser.parseFromString(normalized, mimeType || 'text/xml');
     } catch (error) {
+      console.log('XML Content:', normalized);
       throw new Error(`Failed to parse XML content: ${error.message}`);
     }
   }
