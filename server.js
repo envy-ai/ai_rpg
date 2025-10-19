@@ -12620,7 +12620,10 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         };
 
     } catch (error) {
-        console.error('Error generating image prompt with LLM:', error);
+        const bodyError = error?.response?.data?.error;
+        const message = bodyError?.message || bodyError || error.message || String(error);
+        console.error('Error generating image prompt with LLM:', message);
+        console.error(error)
         // Fallback to the user prompt if LLM fails
         const fallbackPrompt = typeof prompts?.generationPrompt === 'string'
             ? prompts.generationPrompt
