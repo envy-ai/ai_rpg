@@ -2372,7 +2372,12 @@ class Player {
             return this.#experience;
         }
 
-        this.#experience = Math.max(0, this.#experience + Number(amount)) / this.#level;
+        let award = Math.ceil(Number(amount) / this.#level);
+        if (!raw) {
+            award /= this.#level;
+        }
+        this.#experience = Math.max(0, this.#experience + award);
+
         this.#processExperienceOverflow(raw);
         this.#lastUpdated = new Date().toISOString();
 
