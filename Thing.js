@@ -1000,8 +1000,8 @@ class Thing {
       }
     }
 
-    let locationId = owners[0].currentLocation;
-    console.log("Current Location", owners[0].currentLocation);
+    let locationId = owners[0].location.id;
+    console.log("Current Location", owners[0].location);
     if (!locationId) {
       throw new Error(`Player ${owners[0].name} (${owners[0].id}) does not have a valid locationId`);
     }

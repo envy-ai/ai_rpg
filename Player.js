@@ -2372,10 +2372,9 @@ class Player {
             return this.#experience;
         }
 
-        let award = Math.ceil(Number(amount) / this.#level);
-        if (!raw) {
-            award /= this.#level;
-        }
+        let award = Number(amount);
+
+        console.log(`⭐ Awarding ${award.toFixed(2)} experience to player ${this.#name || this.#id || 'unknown'} (raw: ${raw ? 'yes' : 'no'})`);
         this.#experience = Math.max(0, this.#experience + award);
 
         this.#processExperienceOverflow(raw);

@@ -2827,8 +2827,9 @@ class Events {
                     context.experienceAwards = [];
                 }
                 for (const entry of entries) {
-                    player.addExperience(entry.amount * Math.max(Globals.location.baseLevel, 1));
-                    context.experienceAwards.push({ amount: Math.ceil(entry.amount * Math.max(Globals.location.baseLevel, 1) / player.level), reason: entry.reason || 'Accomplishment' });
+                    let award = Math.ceil(entry.amount * Math.max(Globals.location.baseLevel, 1) / player.level);
+                    player.addExperience(award);
+                    context.experienceAwards.push({ amount: award, reason: entry.reason || 'Accomplishment' });
                 }
             },
             move_location: async function (entries = [], context = {}) {
