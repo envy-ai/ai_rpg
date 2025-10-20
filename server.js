@@ -2092,7 +2092,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
             //console.log('Exit info:', directionKey, exitInfo);
 
-            const label = exitInfo.name;
+            const label = exitInfo.relativeName;
             exitSummaries.push({
                 name: label,
                 isVehicle: Boolean(exitInfo.isVehicle),
@@ -4684,38 +4684,52 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
 
     const metadata = stubLocation.stubMetadata || {};
     const originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
-    const originDirection = metadata.originDirection || null;
+    let originDirection = metadata.originDirection || null;
 
     if (originLocation) {
         const originVehicleType = typeof metadata.vehicleType === 'string' ? metadata.vehicleType : null;
         const originIsVehicle = Boolean(metadata.isVehicleExit || originVehicleType);
 
+        let existingOriginExit = null;
         if (originDirection && typeof originLocation.getExit === 'function') {
-            const existingOriginExit = originLocation.getExit(originDirection);
-            if (existingOriginExit) {
-                try {
-                    existingOriginExit.destination = entranceLocation.id;
-                } catch (_) {
-                    existingOriginExit.update({ destination: entranceLocation.id });
+            existingOriginExit = originLocation.getExit(originDirection);
+        }
+
+        if (!existingOriginExit && typeof originLocation.getAvailableDirections === 'function') {
+            for (const direction of originLocation.getAvailableDirections()) {
+                const candidate = originLocation.getExit(direction);
+                if (candidate && candidate.destination === stubLocation.id) {
+                    existingOriginExit = candidate;
+                    originDirection = direction;
+                    metadata.originDirection = originDirection;
+                    break;
                 }
-                try {
-                    existingOriginExit.destinationRegion = region.id;
-                } catch (_) {
-                    existingOriginExit.update({ destinationRegion: region.id });
-                }
-                try {
-                    existingOriginExit.description = originDescription;
-                } catch (_) {
-                    existingOriginExit.update({ description: originDescription });
-                }
-                try {
-                    existingOriginExit.bidirectional = true;
-                } catch (_) {
-                    existingOriginExit.update({ bidirectional: true });
-                }
-                existingOriginExit.isVehicle = originIsVehicle;
-                existingOriginExit.vehicleType = originVehicleType;
             }
+        }
+
+        if (existingOriginExit) {
+            try {
+                existingOriginExit.destination = entranceLocation.id;
+            } catch (_) {
+                existingOriginExit.update({ destination: entranceLocation.id });
+            }
+            try {
+                existingOriginExit.destinationRegion = region.id;
+            } catch (_) {
+                existingOriginExit.update({ destinationRegion: region.id });
+            }
+            try {
+                existingOriginExit.description = originDescription;
+            } catch (_) {
+                existingOriginExit.update({ description: originDescription });
+            }
+            try {
+                existingOriginExit.bidirectional = true;
+            } catch (_) {
+                existingOriginExit.update({ bidirectional: true });
+            }
+            existingOriginExit.isVehicle = originIsVehicle;
+            existingOriginExit.vehicleType = originVehicleType;
         }
 
         ensureExitConnection(originLocation, entranceLocation, {

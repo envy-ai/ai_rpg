@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const Globals = require('./Globals.js');
 
 /**
  * LocationExit class for AI RPG
@@ -348,6 +349,27 @@ class LocationExit {
         ? this.#description.trim()
         : (this.#destination || null);
     }
+  }
+
+  get relativeName() {
+    const name = this.name;
+    if (!name) {
+      return null;
+    }
+
+    const currentLocation = Globals.location;
+    if (!currentLocation) {
+      return name;
+    }
+
+    const currentRegion = currentLocation.region;
+    const destinationRegion = this.region;
+
+    if (destinationRegion && currentRegion && destinationRegion.id !== currentRegion.id) {
+      return `${name} (in ${destinationRegion.name || 'another region'})`;
+    }
+
+    return name;
   }
 
   get bidirectional() {

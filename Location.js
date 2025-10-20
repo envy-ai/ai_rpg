@@ -650,6 +650,7 @@ class Location {
         bidirectional: exit.bidirectional !== false,
         isVehicle: Boolean(exit.isVehicle),
         name: exit.name,
+        relativeName: exit.relativeName,
         vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null,
         exitObject: exit.toJSON()
       };
