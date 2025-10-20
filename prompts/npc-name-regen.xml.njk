@@ -4,7 +4,8 @@
 <generationPrompt>
 <context>
 Here's a list of existing NPCs:
-{% for npc in existingNpcs %}- {{ npc.name }}: {{ npc.shortDescription }} 
+{% for npc in bannedWords %}- {{ word | capitalize }}: deceased 
+{% endfor %}{% for npc in existingNpcs %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 
 </context>
@@ -20,13 +21,9 @@ Here is a list of NPC names that use banned words:
 {% endfor %}
 </npcsToRegenerateName>
 
-Banned words:
-{% for word in bannedWords %}- {{ word }}
-{% endfor %}
+Give each NPC a different name that fits the setting and culture of the location. The name should be unique among all NPCs. Replace their name in the description (and short description, if applicable) as well. Return them in this format:
 
-Give each NPC a different name that fits the setting and culture of the location, and does not use any of the banned words. The name should be unique among all NPCs. Replace their name in the description (and short description, if applicable) as well. Return them in this format:
-
-For each NPC, generate a set of ten new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. Write their original description and short description with the old name replaced by the placeholder '%NAME%'. Return them in this format:
+For each NPC, generate a set of 20 new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. Write their original description and short description with the old name replaced by the placeholder '%NAME%'. Return them in this format:
 
 <npcs>
   <npc>
@@ -37,7 +34,7 @@ For each NPC, generate a set of ten new, different candidate names that fit the 
     <name index='4'>new npc name</name>
     <name index='5'>new npc name</name>
     ...
-    <name index='10'>new npc name</name>
+    <name index='20'>new npc name</name>
     <shortDescription>short description</shortDescription>
     <description>description</description>
   </npc>

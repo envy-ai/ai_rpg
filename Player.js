@@ -2269,7 +2269,7 @@ class Player {
             return 0;
         }
 
-        const { useModified = false, value } = options ?? {};
+        const { useModified = true, value } = options ?? {};
         const normalizedName = attributeName.trim();
         const hasBaseValue = Object.prototype.hasOwnProperty.call(this.#attributes, normalizedName);
         const baseValue = hasBaseValue ? this.#attributes[normalizedName] : undefined;
@@ -2299,7 +2299,7 @@ class Player {
      * Get a formatted object of all attribute modifiers
      */
     getAttributeModifiers(options = {}) {
-        const { useModified = false } = options ?? {};
+        const { useModified = true } = options ?? {};
         const modifiers = {};
         for (const attrName of this.getAttributeNames()) {
             modifiers[attrName] = this.getAttributeModifier(attrName, { useModified });
@@ -2372,7 +2372,7 @@ class Player {
             return this.#experience;
         }
 
-        this.#experience = Math.max(0, this.#experience + Number(amount));
+        this.#experience = Math.max(0, this.#experience + Number(amount)) / this.#level;
         this.#processExperienceOverflow(raw);
         this.#lastUpdated = new Date().toISOString();
 
@@ -3307,8 +3307,8 @@ class Player {
             const baseValue = this.#attributes[attrName];
             const modifiedValue = this.getModifiedAttribute(attrName);
             const resolvedModifiedValue = Number.isFinite(modifiedValue) ? modifiedValue : baseValue;
-            const baseModifier = this.getAttributeModifier(attrName);
-            const modifiedModifier = this.#calculateAttributeModifier(resolvedModifiedValue);
+            const baseModifier = this.getAttributeModifier(attrName, { useModified: false });
+            const modifiedModifier = this.getAttributeModifier(attrName, { useModified: true });
 
             info[attrName] = {
                 ...definition,

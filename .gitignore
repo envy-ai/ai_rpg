@@ -9,3 +9,4 @@ logs_prev/*
 prompt_overrides/*
 autosaves/*
 temp/*
+imagegen/test*
