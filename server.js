@@ -3772,6 +3772,16 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     //console.log(`🧭 ensureExitConnection: ${fromLabel} -> ${toLabel} | requested bidirectional=${Boolean(bidirectional)} isVehicle=${isVehicle === undefined ? 'keep' : Boolean(isVehicle)} vehicleType=${vehicleType === undefined ? 'keep' : (vehicleType || 'null')} destinationRegion=${destinationRegion || 'null'}`);
     //console.trace();
 
+    if (destinationRegion !== undefined && destinationRegion !== null && typeof destinationRegion !== 'string') {
+        throw new Error('[ensureExitConnection] destinationRegion must be a string, null, or undefined.');
+    }
+
+    const normalizedDestinationRegion = destinationRegion !== undefined
+        ? (typeof destinationRegion === 'string'
+            ? (destinationRegion.trim() || null)
+            : null)
+        : undefined;
+
     const { getAvailableDirections, getExit, addExit } = fromLocation || {};
 
     let directionKey = null;
@@ -3814,7 +3824,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         exit = new LocationExit({
             description: exitDescription,
             destination: toLocation.id,
-            destinationRegion: destinationRegion !== undefined ? destinationRegion : null,
+            destinationRegion: normalizedDestinationRegion !== undefined ? normalizedDestinationRegion : null,
             bidirectional: Boolean(bidirectional),
             isVehicle: typeof isVehicle === 'boolean' ? isVehicle : false,
             vehicleType: vehicleType !== undefined ? vehicleType : null
@@ -3837,6 +3847,13 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             exit.destination = toLocation.id;
         } catch (_) {
             exit.update({ destination: toLocation.id });
+        }
+        if (normalizedDestinationRegion !== undefined) {
+            try {
+                exit.destinationRegion = normalizedDestinationRegion;
+            } catch (_) {
+                exit.update({ destinationRegion: normalizedDestinationRegion });
+            }
         }
         try {
             exit.bidirectional = Boolean(bidirectional);

@@ -9462,10 +9462,124 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== PLAYER AND LOCATION QUERY ENDPOINTS ====================
 
+        // Get regions (summary list or current region details)
+        app.get('/api/regions', (req, res) => {
+            try {
+                const scope = typeof req.query?.scope === 'string' ? req.query.scope.trim().toLowerCase() : null;
+                const requestCurrentRegion = scope === 'current';
+
+                if (requestCurrentRegion) {
+                    const currentRegion = Globals.region;
+                    if (!currentRegion) {
+                        return res.status(404).json({
+                            success: false,
+                            error: 'No current region is set.'
+                        });
+                    }
+
+                    const regionId = currentRegion.id;
+                    const canonicalRegion = regionId && regions instanceof Map ? regions.get(regionId) || currentRegion : currentRegion;
+
+                    const payload = {
+                        id: canonicalRegion.id,
+                        name: canonicalRegion.name,
+                        description: canonicalRegion.description,
+                        parentRegionId: canonicalRegion.parentRegionId || null,
+                        averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null
+                    };
+
+                    let parentRegionName = null;
+                    if (payload.parentRegionId && regions instanceof Map && regions.has(payload.parentRegionId)) {
+                        parentRegionName = regions.get(payload.parentRegionId).name || null;
+                    }
+
+                    const parentOptions = buildRegionParentOptions({ excludeId: canonicalRegion.id });
+
+                    return res.json({
+                        success: true,
+                        region: {
+                            ...payload,
+                            parentRegionName
+                        },
+                        parentOptions
+                    });
+                }
+
+                if (!(regions instanceof Map) || regions.size === 0) {
+                    return res.json({
+                        success: true,
+                        regions: []
+                    });
+                }
+
+                const summaries = [];
+                for (const region of regions.values()) {
+                    if (!region || !region.id) {
+                        continue;
+                    }
+
+                    const rawName = typeof region.name === 'string' ? region.name.trim() : '';
+                    summaries.push({
+                        id: region.id,
+                        name: rawName,
+                        parentRegionId: region.parentRegionId || null,
+                        averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
+                    });
+                }
+
+                summaries.sort((a, b) => {
+                    const nameA = (a.name || '').toLowerCase();
+                    const nameB = (b.name || '').toLowerCase();
+                    if (nameA && nameB) {
+                        return nameA.localeCompare(nameB);
+                    }
+                    if (nameA) return -1;
+                    if (nameB) return 1;
+                    return a.id.localeCompare(b.id);
+                });
+
+                res.json({
+                    success: true,
+                    regions: summaries
+                });
+            } catch (error) {
+                console.error('Failed to list regions:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list regions'
+                });
+            }
+        });
+
         // Get all named locations (summary list)
         app.get('/api/locations', (req, res) => {
             try {
                 const scope = typeof req.query?.scope === 'string' ? req.query.scope.trim().toLowerCase() : null;
+                const requestCurrentLocation = scope === 'current';
+
+                if (requestCurrentLocation) {
+                    const currentLocation = Globals.location;
+                    if (!currentLocation) {
+                        return res.status(404).json({
+                            success: false,
+                            error: 'No current location is set.'
+                        });
+                    }
+
+                    const currentLocationData = buildLocationResponse(currentLocation);
+                    if (!currentLocationData) {
+                        return res.status(500).json({
+                            success: false,
+                            error: 'Failed to serialize current location data.'
+                        });
+                    }
+
+                    return res.json({
+                        success: true,
+                        location: currentLocationData
+                    });
+                }
+
                 const includeNamedOnly = !scope || scope === 'named' || scope === 'names';
 
                 if (!(gameLocations instanceof Map) || gameLocations.size === 0) {

@@ -275,28 +275,62 @@ async function applyExitDiscovery(eventsInstance, entries = [], context = {}, {
             continue;
         }
 
-        let destinationRegion = undefined;
-        if (isRegion) {
-            destinationRegion = destination?.stubMetadata?.regionId
+        const destinationRegionRaw = isRegion
+            ? (destination?.stubMetadata?.regionId
                 || destination?.stubMetadata?.targetRegionId
                 || destination?.regionId
-                || null;
-            if (!destinationRegion) {
-                throw new Error(`[${eventLabel}] Destination region metadata missing for exit "${exitName}".`);
-            }
+                || null)
+            : (typeof destination?.regionId === 'string' ? destination.regionId
+                : typeof destination?.stubMetadata?.regionId === 'string' ? destination.stubMetadata.regionId
+                    : typeof destination?.stubMetadata?.targetRegionId === 'string' ? destination.stubMetadata.targetRegionId
+                        : null);
+
+        const destinationRegionId = typeof destinationRegionRaw === 'string'
+            ? destinationRegionRaw.trim() || null
+            : destinationRegionRaw === null ? null : undefined;
+
+        if (isRegion && !destinationRegionId) {
+            throw new Error(`[${eventLabel}] Destination region metadata missing for exit "${exitName}".`);
         }
+
+        const exitDescription = entry?.description || `Path to ${destination.name || exitName}`;
+        const vehicleType = entry?.vehicleType || null;
+        const isVehicleExit = Boolean(vehicleType);
 
         if (!createdRegionStub) {
             try {
                 ensureExitConnection(originLocation, destination, {
-                    description: entry?.description || `Path to ${destination.name || exitName}`,
+                    description: exitDescription,
                     bidirectional: !isRegion,
-                    destinationRegion,
-                    isVehicle: Boolean(entry?.vehicleType),
-                    vehicleType: entry?.vehicleType || null
+                    destinationRegion: destinationRegionId,
+                    isVehicle: isVehicleExit,
+                    vehicleType
                 });
             } catch (error) {
                 throw new Error(`[${eventLabel}] Failed to ensure exit connection to "${destination.name || exitName}": ${error.message}`);
+            }
+        }
+
+        if (!isRegion) {
+            const originRegionRaw = typeof originLocation?.regionId === 'string'
+                ? originLocation.regionId
+                : typeof originLocation?.stubMetadata?.regionId === 'string'
+                    ? originLocation.stubMetadata.regionId
+                    : null;
+            const originRegionId = originRegionRaw && typeof originRegionRaw === 'string'
+                ? originRegionRaw.trim() || null
+                : null;
+
+            try {
+                ensureExitConnection(destination, originLocation, {
+                    description: entry?.reverseDescription || `Path back to ${originLocation.name || originLocation.id || 'origin'}`,
+                    bidirectional: true,
+                    destinationRegion: originRegionId,
+                    isVehicle: isVehicleExit,
+                    vehicleType
+                });
+            } catch (error) {
+                throw new Error(`[${eventLabel}] Failed to ensure reverse exit from "${destination.name || exitName}": ${error.message}`);
             }
         }
 
@@ -2803,7 +2837,7 @@ class Events {
                 for (const name of entries) {
                     const enemy = findActorByName?.(name);
                     const level = Number(enemy?.level) || Number(context.location?.baseLevel) || 1;
-                    const xp = Math.max(25, Math.round(level * 50));
+                    const xp = Math.ceil(Math.max(25, Math.round(level * 50) / player.level));
                     awards.push({ amount: xp, reason: `Defeated ${name}` });
                     player.addExperience(xp);
                     if (name) {

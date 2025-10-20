@@ -9575,6 +9575,7 @@
                 return cached;
             }
 
+            console.log('Attempting to resolve destination name for exit:', exit);
             throw new Error(`Exit ${exit.id || exit.destination || '<unknown>'} is missing a destination name.`);
         }
         const MOVE_PLAUSIBILITY_POLICY = (window.CHECK_MOVE_PLAUSIBILITY || 'never').toLowerCase();

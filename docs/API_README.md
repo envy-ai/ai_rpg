@@ -67,9 +67,10 @@ This reference catalogs every Express route registered in `api.js`. Each entry l
 
 | Method & Path | Request Arguments | Response Format |
 | --- | --- | --- |
+| `GET /api/regions` | Query optional `scope` (`current` to return only the active region). | 200 `{ success: true, regions: Array<{ id, name?, parentRegionId?, averageLevel? }> }` for list requests; 200 `{ success: true, region, parentOptions }` when `scope=current`; 404 when no active region is set; 500 when serialization fails. |
 | `GET /api/regions/:id` | Path `id`. | 200 `{ success: true, region: { id, name, description, parentRegionId, parentRegionName, averageLevel }, parentOptions }`; 400 missing id; 404 unknown region; 500 on error. |
 | `PUT /api/regions/:id` | Path `id`; body `{ name: string, description: string, parentRegionId?: string|null, averageLevel?: number|null }`. | 200 `{ success: true, message, region: { ...updated fields... }, parentOptions }`; 400 validation errors (e.g., cyclic parents, bad values); 404 region/parent missing; 500 on failure. |
-| `GET /api/locations` | Query optional `scope` (`named`/`names` to filter). | 200 `{ success: true, locations: Array<{ id, name?, regionId?, regionName, label }> }`; handles empty map gracefully. |
+| `GET /api/locations` | Query optional `scope` (`named`/`names` to filter, `current` to return only the active location). | 200 `{ success: true, locations: Array<{ id, name?, regionId?, regionName, label }> }` for list requests; 200 `{ success: true, location }` when `scope=current`; 404 when no active location is set; 500 when serialization fails. |
 | `GET /api/locations/:id` | Path `id`. | 200 `{ success: true, location }` with expanded stub data when needed; 404 location missing; 500 when expansion/serialization fails. |
 | `PUT /api/locations/:id` | Path `id`; body must include `description` and `level`, optional `name` (string or null) plus other editable fields mirrored from location schema. | 200 `{ success: true, location, message }`; 400 validation issues; 404 unknown location; 500 on failure. |
 | `GET /api/exits/options` | Query optional `originLocationId`. | 200 `{ success: true, regions: RegionOption[], locations: LocationOption[], originRegionId?, originLocationId? }`; 500 on failure. |
