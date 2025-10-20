@@ -444,14 +444,28 @@
                     <span class="inventory-count" id="npcInventoryCount">0 items</span>
                 </div>
                 <div class="npc-inventory-filters">
-                    <div class="npc-selection-filter">
+                    <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
                         <label class="sr-only" for="npcInventoryFilterInput">Filter items</label>
                         <input type="search" id="npcInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
                     </div>
-                    <label class="modal-checkbox npc-inventory-filter-checkbox" for="npcInventoryEquippedOnly">
-                        <input type="checkbox" id="npcInventoryEquippedOnly">
-                        <span>Equipped only</span>
-                    </label>
+                    <div class="npc-inventory-filter-radios">
+                        <label class="npc-inventory-filter-radio" for="npcInventoryShowAll">
+                            <input type="radio" id="npcInventoryShowAll" name="npcInventoryItemFilter" value="all" checked>
+                            <span>Show all</span>
+                        </label>
+                        <label class="npc-inventory-filter-radio" for="npcInventoryEquippedOnly">
+                            <input type="radio" id="npcInventoryEquippedOnly" name="npcInventoryItemFilter" value="equipped">
+                            <span>Equipped only</span>
+                        </label>
+                        <label class="npc-inventory-filter-radio" for="npcInventoryEquippableOnly">
+                            <input type="radio" id="npcInventoryEquippableOnly" name="npcInventoryItemFilter" value="equippable">
+                            <span>Equippable only</span>
+                        </label>
+                        <label class="npc-inventory-filter-radio" for="npcInventoryNonEquippableOnly">
+                            <input type="radio" id="npcInventoryNonEquippableOnly" name="npcInventoryItemFilter" value="non-equippable">
+                            <span>Non-equippable only</span>
+                        </label>
+                    </div>
                 </div>
                 <div class="npc-inventory-scroll">
                     <div class="inventory-grid" id="npcInventoryGrid"></div>
@@ -4039,7 +4053,10 @@
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
         const npcInventoryGrid = document.getElementById('npcInventoryGrid');
         const npcInventoryFilterInput = document.getElementById('npcInventoryFilterInput');
-        const npcInventoryEquippedOnlyCheckbox = document.getElementById('npcInventoryEquippedOnly');
+        const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
+        const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
+        const npcInventoryEquippableOnlyRadio = document.getElementById('npcInventoryEquippableOnly');
+        const npcInventoryNonEquippableOnlyRadio = document.getElementById('npcInventoryNonEquippableOnly');
         const npcInventoryEmpty = document.getElementById('npcInventoryEmpty');
         const npcInventoryEmptyDefaultText = npcInventoryEmpty ? npcInventoryEmpty.textContent : 'Inventory is empty.';
         const npcInventoryCount = document.getElementById('npcInventoryCount');
@@ -5895,8 +5912,17 @@
             if (npcInventoryFilterInput) {
                 npcInventoryFilterInput.value = '';
             }
-            if (npcInventoryEquippedOnlyCheckbox) {
-                npcInventoryEquippedOnlyCheckbox.checked = false;
+            if (npcInventoryShowAllRadio) {
+                npcInventoryShowAllRadio.checked = true;
+            }
+            if (npcInventoryEquippedOnlyRadio) {
+                npcInventoryEquippedOnlyRadio.checked = false;
+            }
+            if (npcInventoryEquippableOnlyRadio) {
+                npcInventoryEquippableOnlyRadio.checked = false;
+            }
+            if (npcInventoryNonEquippableOnlyRadio) {
+                npcInventoryNonEquippableOnlyRadio.checked = false;
             }
             if (npcInventoryEmpty) {
                 npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
@@ -7780,11 +7806,20 @@
             });
         }
 
-        if (npcInventoryEquippedOnlyCheckbox) {
-            npcInventoryEquippedOnlyCheckbox.addEventListener('change', () => {
-                renderNpcInventory(currentNpcInventory);
+        const filterRadios = [
+            npcInventoryShowAllRadio,
+            npcInventoryEquippedOnlyRadio,
+            npcInventoryEquippableOnlyRadio,
+            npcInventoryNonEquippableOnlyRadio
+        ].filter(Boolean);
+
+        filterRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.checked) {
+                    renderNpcInventory(currentNpcInventory);
+                }
             });
-        }
+        });
 
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
@@ -8378,50 +8413,12 @@
             const filterValueRaw = typeof npcInventoryFilterInput?.value === 'string'
                 ? npcInventoryFilterInput.value.trim().toLowerCase()
                 : '';
-            const equippedOnlyActive = Boolean(npcInventoryEquippedOnlyCheckbox?.checked);
-            const filterActive = Boolean(filterValueRaw) || equippedOnlyActive;
+            const equippedOnlyActive = Boolean(npcInventoryEquippedOnlyRadio?.checked);
+            const equippableOnlyActive = Boolean(npcInventoryEquippableOnlyRadio?.checked);
+            const nonEquippableOnlyActive = Boolean(npcInventoryNonEquippableOnlyRadio?.checked);
 
-            const filteredItems = safeItems.filter(item => {
-                if (equippedOnlyActive && !(item?.isEquipped || item?.equippedSlot)) {
-                    return false;
-                }
-                if (!filterValueRaw) {
-                    return true;
-                }
-                const haystack = [
-                    item?.name,
-                    item?.description,
-                    item?.thingType,
-                    item?.rarity,
-                    item?.slot,
-                    item?.metadata?.slot,
-                    item?.metadata?.properties
-                ];
-                return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filterValueRaw));
-            });
-
-            npcInventoryGrid.innerHTML = '';
-            if (filterActive) {
-                npcInventoryCount.textContent = `${filteredItems.length} of ${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
-            } else {
-                npcInventoryCount.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
-            }
-
-            if (!filteredItems.length) {
-                npcInventoryGrid.style.display = 'none';
-                if (safeItems.length === 0) {
-                    npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
-                } else if (filterActive) {
-                    npcInventoryEmpty.textContent = 'No items match your filters.';
-                } else {
-                    npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
-                }
-                npcInventoryEmpty.style.display = 'block';
-            } else {
-                npcInventoryGrid.style.display = 'flex';
-                npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
-                npcInventoryEmpty.style.display = 'none';
-            }
+            // If both equippable-only and non-equippable-only are checked, treat as no equippable filter (show all)
+            const applyEquippableFilter = !(equippableOnlyActive && nonEquippableOnlyActive);
 
             const normalizeSlotLabel = (value) => {
                 if (value === undefined || value === null) {
@@ -8434,6 +8431,80 @@
                 return text;
             };
 
+            const getItemSlotInfo = (item) => {
+                const slotTypeValueRaw = typeof item?.slot === 'string' && item.slot.trim()
+                    ? item.slot.trim()
+                    : (typeof item?.metadata?.slot === 'string' && item.metadata.slot.trim()
+                        ? item.metadata.slot.trim()
+                        : null);
+                const equippedSlot = normalizeSlotLabel(item?.equippedSlot);
+                const rawSlot = normalizeSlotLabel(slotTypeValueRaw);
+                const slotLabel = equippedSlot || rawSlot || null;
+                const canModifyEquipment = Boolean(slotTypeValueRaw || equippedSlot);
+                return {
+                    slotTypeValueRaw,
+                    equippedSlot,
+                    rawSlot,
+                    slotLabel,
+                    canModifyEquipment
+                };
+            };
+
+            const filteredItems = safeItems.filter(item => {
+                const slotInfo = getItemSlotInfo(item);
+                const isEquipped = Boolean(item?.isEquipped || item?.equippedSlot);
+
+                if (equippedOnlyActive && !isEquipped) {
+                    return false;
+                }
+
+                if (applyEquippableFilter) {
+                    if (equippableOnlyActive && !slotInfo.canModifyEquipment) {
+                        return false;
+                    }
+                    if (nonEquippableOnlyActive && slotInfo.canModifyEquipment) {
+                        return false;
+                    }
+                }
+
+                if (!filterValueRaw) {
+                    return true;
+                }
+
+                const haystack = [
+                    item?.name,
+                    item?.description,
+                    item?.thingType,
+                    item?.rarity,
+                    item?.slot,
+                    item?.metadata?.slot,
+                    item?.metadata?.properties,
+                    slotInfo.canModifyEquipment ? 'equippable' : 'non-equippable'
+                ];
+                return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filterValueRaw));
+            });
+
+            npcInventoryGrid.innerHTML = '';
+            const filtersApplied = Boolean(filterValueRaw)
+                || equippedOnlyActive
+                || (applyEquippableFilter && (equippableOnlyActive || nonEquippableOnlyActive));
+
+            npcInventoryCount.textContent = filtersApplied
+                ? `${filteredItems.length} of ${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`
+                : `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
+
+            if (!filteredItems.length) {
+                npcInventoryGrid.style.display = 'none';
+                npcInventoryEmpty.textContent = safeItems.length === 0
+                    ? npcInventoryEmptyDefaultText
+                    : 'No items match your filters.';
+                npcInventoryEmpty.style.display = 'block';
+            } else {
+                npcInventoryGrid.style.display = 'flex';
+                npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
+                npcInventoryEmpty.style.display = 'none';
+            }
+
             filteredItems.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'location-entity-card inventory-card';
@@ -8442,6 +8513,8 @@
                 if (equipped) {
                     card.classList.add('is-equipped');
                 }
+
+                const slotInfo = getItemSlotInfo(item);
 
                 const icon = document.createElement('div');
                 icon.className = 'inventory-icon';
@@ -8460,15 +8533,11 @@
                 name.textContent = item.name || 'Unknown Item';
                 applyRarityClass(name, item.rarity);
 
-                const equippedSlot = normalizeSlotLabel(item.equippedSlot);
-                const slotTypeValueRaw = typeof item.slot === 'string' && item.slot.trim()
-                    ? item.slot.trim()
-                    : (typeof item.metadata?.slot === 'string' && item.metadata.slot.trim()
-                        ? item.metadata.slot.trim()
-                        : null);
-                const rawSlot = normalizeSlotLabel(slotTypeValueRaw);
-                const slotLabel = equippedSlot || rawSlot || null;
-                const canModifyEquipment = Boolean(slotTypeValueRaw || equippedSlot);
+                const equippedSlot = slotInfo.equippedSlot;
+                const slotTypeValueRaw = slotInfo.slotTypeValueRaw;
+                const rawSlot = slotInfo.rawSlot;
+                const slotLabel = slotInfo.slotLabel;
+                const canModifyEquipment = slotInfo.canModifyEquipment;
 
                 const slotBadge = document.createElement('div');
                 slotBadge.className = 'inventory-slot-tag';
@@ -8979,8 +9048,17 @@
             if (npcInventoryFilterInput) {
                 npcInventoryFilterInput.value = '';
             }
-            if (npcInventoryEquippedOnlyCheckbox) {
-                npcInventoryEquippedOnlyCheckbox.checked = false;
+            if (npcInventoryShowAllRadio) {
+                npcInventoryShowAllRadio.checked = true;
+            }
+            if (npcInventoryEquippedOnlyRadio) {
+                npcInventoryEquippedOnlyRadio.checked = false;
+            }
+            if (npcInventoryEquippableOnlyRadio) {
+                npcInventoryEquippableOnlyRadio.checked = false;
+            }
+            if (npcInventoryNonEquippableOnlyRadio) {
+                npcInventoryNonEquippableOnlyRadio.checked = false;
             }
             renderNpcInventory(items);
 
