@@ -2037,6 +2037,11 @@ class Events {
                     const targetName = entry.newName || entry.to || null;
                     const changeDescription = entry.changeDescription || entry.description || null;
 
+                    const normalizedTargetName = typeof targetName === 'string' ? targetName.trim().toLowerCase() : '';
+                    if (normalizedTargetName === 'consumed' || normalizedTargetName === 'n/a') {
+                        continue;
+                    }
+
                     const lookupCandidates = [originalName, targetName]
                         .filter(candidate => typeof candidate === 'string' && candidate.trim());
 
