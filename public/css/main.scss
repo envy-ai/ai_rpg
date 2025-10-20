@@ -3648,6 +3648,21 @@ body.modal-open {
   width: 100%;
 }
 
+.npc-inventory-filter-top-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.npc-inventory-filter-slot-wrapper {
+  min-width: 200px;
+}
+
+.npc-inventory-filter-slot-wrapper .npc-inventory-slot-filter {
+  width: 100%;
+}
+
 .npc-inventory-filter-radios {
   display: flex;
   flex-wrap: wrap;
@@ -3661,6 +3676,17 @@ body.modal-open {
   gap: 6px;
   margin-right: 2em;
   color: #f8fafc;
+}
+
+@media (max-width: 640px) {
+  .npc-inventory-filter-top-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .npc-inventory-filter-slot-wrapper {
+    width: 100%;
+  }
 }
 
 .npc-inventory-scroll {

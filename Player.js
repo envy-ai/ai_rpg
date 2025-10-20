@@ -2230,6 +2230,13 @@ class Player {
 
 
 
+    dropAllInventoryItems() {
+        const items = this.getInventoryItems();
+        for (const item of items) {
+            item.drop()
+        }
+    }
+
     /**
      * Get list of all attribute names
      */

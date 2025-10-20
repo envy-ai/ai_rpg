@@ -444,9 +444,17 @@
                     <span class="inventory-count" id="npcInventoryCount">0 items</span>
                 </div>
                 <div class="npc-inventory-filters">
-                    <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
-                        <label class="sr-only" for="npcInventoryFilterInput">Filter items</label>
-                        <input type="search" id="npcInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
+                    <div class="npc-inventory-filter-top-row">
+                        <div class="npc-selection-filter npc-inventory-filter-input-wrapper">
+                            <label class="sr-only" for="npcInventoryFilterInput">Filter items</label>
+                            <input type="search" id="npcInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
+                        </div>
+                        <div class="npc-inventory-filter-slot-wrapper">
+                            <label class="sr-only" for="npcInventorySlotFilter">Filter by slot</label>
+                            <select id="npcInventorySlotFilter" class="npc-inventory-slot-filter" aria-label="Filter by slot">
+                                <option value="">All slots</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="npc-inventory-filter-radios">
                         <label class="npc-inventory-filter-radio" for="npcInventoryShowAll">
@@ -4053,6 +4061,7 @@
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
         const npcInventoryGrid = document.getElementById('npcInventoryGrid');
         const npcInventoryFilterInput = document.getElementById('npcInventoryFilterInput');
+        const npcInventorySlotFilter = document.getElementById('npcInventorySlotFilter');
         const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
         const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
         const npcInventoryEquippableOnlyRadio = document.getElementById('npcInventoryEquippableOnly');
@@ -7806,6 +7815,12 @@
             });
         }
 
+        if (npcInventorySlotFilter) {
+            npcInventorySlotFilter.addEventListener('change', () => {
+                renderNpcInventory(currentNpcInventory);
+            });
+        }
+
         const filterRadios = [
             npcInventoryShowAllRadio,
             npcInventoryEquippedOnlyRadio,
@@ -8450,9 +8465,60 @@
                 };
             };
 
+            const slotMap = new Map();
+            if (npcInventorySlotFilter) {
+                safeItems.forEach(item => {
+                    const slotInfo = getItemSlotInfo(item);
+                    const candidates = [
+                        slotInfo.slotLabel,
+                        slotInfo.rawSlot,
+                        slotInfo.equippedSlot,
+                        normalizeSlotLabel(item?.slot),
+                        normalizeSlotLabel(item?.metadata?.slot)
+                    ].filter(Boolean);
+                    for (const candidate of candidates) {
+                        const normalized = candidate.toLowerCase();
+                        if (!slotMap.has(normalized)) {
+                            slotMap.set(normalized, candidate);
+                        }
+                    }
+                });
+
+                const slotEntries = Array.from(slotMap.entries())
+                    .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
+                const signature = JSON.stringify(slotEntries.map(([value]) => value));
+                if (npcInventorySlotFilter.dataset.optionSignature !== signature) {
+                    npcInventorySlotFilter.innerHTML = '';
+                    const allOption = document.createElement('option');
+                    allOption.value = '';
+                    allOption.textContent = 'All slots';
+                    npcInventorySlotFilter.appendChild(allOption);
+                    slotEntries.forEach(([value, label]) => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = label;
+                        npcInventorySlotFilter.appendChild(option);
+                    });
+                    npcInventorySlotFilter.dataset.optionSignature = signature;
+                    if (npcInventorySlotFilter.value && !slotMap.has(npcInventorySlotFilter.value)) {
+                        npcInventorySlotFilter.value = '';
+                    }
+                }
+            }
+
             const filteredItems = safeItems.filter(item => {
                 const slotInfo = getItemSlotInfo(item);
                 const isEquipped = Boolean(item?.isEquipped || item?.equippedSlot);
+
+                if (npcInventorySlotFilter && npcInventorySlotFilter.value) {
+                    const normalizedSlotFilter = npcInventorySlotFilter.value.toLowerCase();
+                    const slotCandidates = [slotInfo.slotLabel, slotInfo.rawSlot, slotInfo.equippedSlot]
+                        .map(value => (typeof value === 'string' ? value.trim().toLowerCase() : null))
+                        .filter(Boolean);
+                    if (!slotCandidates.includes(normalizedSlotFilter)) {
+                        return false;
+                    }
+                }
 
                 if (equippedOnlyActive && !isEquipped) {
                     return false;
@@ -9047,6 +9113,9 @@
             currentNpcInventoryNpcId = npcId;
             if (npcInventoryFilterInput) {
                 npcInventoryFilterInput.value = '';
+            }
+            if (npcInventorySlotFilter) {
+                npcInventorySlotFilter.value = '';
             }
             if (npcInventoryShowAllRadio) {
                 npcInventoryShowAllRadio.checked = true;
