@@ -443,6 +443,16 @@
                     <h3 id="npcInventoryName">Character</h3>
                     <span class="inventory-count" id="npcInventoryCount">0 items</span>
                 </div>
+                <div class="npc-inventory-filters">
+                    <div class="npc-selection-filter">
+                        <label class="sr-only" for="npcInventoryFilterInput">Filter items</label>
+                        <input type="search" id="npcInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items">
+                    </div>
+                    <label class="modal-checkbox npc-inventory-filter-checkbox" for="npcInventoryEquippedOnly">
+                        <input type="checkbox" id="npcInventoryEquippedOnly">
+                        <span>Equipped only</span>
+                    </label>
+                </div>
                 <div class="npc-inventory-scroll">
                     <div class="inventory-grid" id="npcInventoryGrid"></div>
                 </div>
@@ -4028,7 +4038,10 @@
         const npcEditStatus = document.getElementById('npcEditStatus');
         const npcEditSaveBtn = document.getElementById('npcEditSaveBtn');
         const npcInventoryGrid = document.getElementById('npcInventoryGrid');
+        const npcInventoryFilterInput = document.getElementById('npcInventoryFilterInput');
+        const npcInventoryEquippedOnlyCheckbox = document.getElementById('npcInventoryEquippedOnly');
         const npcInventoryEmpty = document.getElementById('npcInventoryEmpty');
+        const npcInventoryEmptyDefaultText = npcInventoryEmpty ? npcInventoryEmpty.textContent : 'Inventory is empty.';
         const npcInventoryCount = document.getElementById('npcInventoryCount');
         const npcInventoryName = document.getElementById('npcInventoryName');
         const npcInventoryCloseBtn = document.getElementById('npcInventoryCloseBtn');
@@ -5879,6 +5892,15 @@
             npcInventoryGrid.innerHTML = '';
             npcInventoryEmpty.style.display = 'block';
             npcInventoryCount.textContent = '0 items';
+            if (npcInventoryFilterInput) {
+                npcInventoryFilterInput.value = '';
+            }
+            if (npcInventoryEquippedOnlyCheckbox) {
+                npcInventoryEquippedOnlyCheckbox.checked = false;
+            }
+            if (npcInventoryEmpty) {
+                npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
+            }
             currentNpcInventory = [];
             currentNpcInventoryNpcId = null;
             try {
@@ -7752,6 +7774,18 @@
             newExitForm.addEventListener('submit', submitNewExit);
         }
 
+        if (npcInventoryFilterInput) {
+            npcInventoryFilterInput.addEventListener('input', () => {
+                renderNpcInventory(currentNpcInventory);
+            });
+        }
+
+        if (npcInventoryEquippedOnlyCheckbox) {
+            npcInventoryEquippedOnlyCheckbox.addEventListener('change', () => {
+                renderNpcInventory(currentNpcInventory);
+            });
+        }
+
         if (npcViewCloseBtn) {
             npcViewCloseBtn.addEventListener('click', () => {
                 closeNpcViewModal();
@@ -8341,10 +8375,53 @@
             }
 
             const safeItems = Array.isArray(items) ? items : [];
+            const filterValueRaw = typeof npcInventoryFilterInput?.value === 'string'
+                ? npcInventoryFilterInput.value.trim().toLowerCase()
+                : '';
+            const equippedOnlyActive = Boolean(npcInventoryEquippedOnlyCheckbox?.checked);
+            const filterActive = Boolean(filterValueRaw) || equippedOnlyActive;
+
+            const filteredItems = safeItems.filter(item => {
+                if (equippedOnlyActive && !(item?.isEquipped || item?.equippedSlot)) {
+                    return false;
+                }
+                if (!filterValueRaw) {
+                    return true;
+                }
+                const haystack = [
+                    item?.name,
+                    item?.description,
+                    item?.thingType,
+                    item?.rarity,
+                    item?.slot,
+                    item?.metadata?.slot,
+                    item?.metadata?.properties
+                ];
+                return haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(filterValueRaw));
+            });
+
             npcInventoryGrid.innerHTML = '';
-            npcInventoryCount.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
-            npcInventoryEmpty.style.display = safeItems.length ? 'none' : 'block';
-            npcInventoryGrid.style.display = safeItems.length ? 'flex' : 'none';
+            if (filterActive) {
+                npcInventoryCount.textContent = `${filteredItems.length} of ${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
+            } else {
+                npcInventoryCount.textContent = `${safeItems.length} ${safeItems.length === 1 ? 'item' : 'items'}`;
+            }
+
+            if (!filteredItems.length) {
+                npcInventoryGrid.style.display = 'none';
+                if (safeItems.length === 0) {
+                    npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
+                } else if (filterActive) {
+                    npcInventoryEmpty.textContent = 'No items match your filters.';
+                } else {
+                    npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
+                }
+                npcInventoryEmpty.style.display = 'block';
+            } else {
+                npcInventoryGrid.style.display = 'flex';
+                npcInventoryEmpty.textContent = npcInventoryEmptyDefaultText;
+                npcInventoryEmpty.style.display = 'none';
+            }
 
             const normalizeSlotLabel = (value) => {
                 if (value === undefined || value === null) {
@@ -8357,7 +8434,7 @@
                 return text;
             };
 
-            safeItems.forEach(item => {
+            filteredItems.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'location-entity-card inventory-card';
 
@@ -8899,6 +8976,12 @@
             const items = Array.isArray(npc.inventory) ? npc.inventory : [];
             currentNpcInventory = items;
             currentNpcInventoryNpcId = npcId;
+            if (npcInventoryFilterInput) {
+                npcInventoryFilterInput.value = '';
+            }
+            if (npcInventoryEquippedOnlyCheckbox) {
+                npcInventoryEquippedOnlyCheckbox.checked = false;
+            }
             renderNpcInventory(items);
 
             if (npcId) {
