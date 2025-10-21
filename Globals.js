@@ -1,10 +1,22 @@
 class Globals {
   static config;
-  static currentPlayer;
+
   static baseDir;
   static gameLoaded = false;
   static _processedMove = false;
   static inCombat = false;
+
+  static get currentPlayer() {
+    const Player = require('./Player.js');
+    return typeof Player.getCurrentPlayer === 'function'
+      ? Player.getCurrentPlayer()
+      : null;
+  }
+
+  static set currentPlayer(player) {
+    console.warn('Globals.currentPlayer should not be set directly. Set Player.currentPlayer instead.');
+    console.trace();
+  }
 
   static set processedMove(value) {
     //console.log(`Globals.processedMove set to ${value}`);
