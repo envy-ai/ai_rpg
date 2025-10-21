@@ -1652,6 +1652,12 @@ class Player {
             if (!Number.isFinite(this.#corpseCountdown) || this.#corpseCountdown <= 0) {
                 this.corpseCountdown = 5; // Set default countdown to 5 turns
             }
+            try {
+                this.dropAllInventoryItems();
+            } catch (error) {
+                console.warn(`Failed to drop inventory for deceased actor ${this.#id || this.#name || '<unknown>'}:`, error?.message || error);
+                console.trace(error);
+            }
         } else {
             this.corpseCountdown = null;
             if (this.#health <= 0 && wasDead) {
@@ -1938,6 +1944,21 @@ class Player {
                 if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
                     member.markPartyMembershipChangedThisTurn();
                 }
+
+                const existingLocation = member.currentLocationObject || null;
+                if (existingLocation) {
+                    if (typeof existingLocation.removeNpcId === 'function') {
+                        existingLocation.removeNpcId(member.id);
+                    } else {
+                        throw new Error(`Unable to unregister '${member.name || member.id}' from location '${existingLocation.name || existingLocation.id}': removeNpcId is not available.`);
+                    }
+
+                    if (typeof member.setLocation === 'function') {
+                        member.setLocation(null);
+                    } else {
+                        throw new Error(`Unable to clear location for '${member.name || member.id}': setLocation is not available.`);
+                    }
+                }
             }
             this.#lastUpdated = new Date().toISOString();
             return true;
@@ -1965,6 +1986,30 @@ class Player {
                 }
                 if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
                     member.markPartyMembershipChangedThisTurn();
+                }
+
+                const playerLocation = this.currentLocationObject || null;
+                if (!playerLocation) {
+                    throw new Error(`Unable to relocate departing party member '${member.name || member.id}': player location is unknown.`);
+                }
+
+                const previousLocation = member.currentLocationObject || null;
+                if (previousLocation && typeof previousLocation.removeNpcId === 'function') {
+                    previousLocation.removeNpcId(member.id);
+                }
+
+                if (typeof member.setLocation === 'function') {
+                    member.setLocation(playerLocation);
+                } else if (typeof member.setLocationByName === 'function') {
+                    member.setLocationByName(playerLocation.name || playerLocation.id);
+                } else {
+                    throw new Error(`Departing party member '${member.name || member.id}' cannot be relocated: no setLocation method available.`);
+                }
+
+                if (typeof playerLocation.addNpcId === 'function') {
+                    playerLocation.addNpcId(member.id);
+                } else {
+                    throw new Error(`Unable to register departing party member '${member.name || member.id}' at the player location: addNpcId is unsupported.`);
                 }
             }
             this.#lastUpdated = new Date().toISOString();
@@ -2233,7 +2278,7 @@ class Player {
     dropAllInventoryItems() {
         const items = this.getInventoryItems();
         for (const item of items) {
-            item.drop()
+            item.drop();
         }
     }
 

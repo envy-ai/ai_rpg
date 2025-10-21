@@ -375,6 +375,13 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const locationId = npc.currentLocation || null;
+            try {
+                npc.dropAllInventoryItems();
+            } catch (error) {
+                console.warn(`Failed to drop inventory while deleting NPC ${npc.name || npcId}:`, error?.message || error);
+                console.trace(error);
+            }
+
             let regionId = null;
 
             if (locationId) {
