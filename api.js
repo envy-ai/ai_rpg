@@ -5444,6 +5444,7 @@ module.exports = function registerApiRoutes(scope) {
                 travelMetadata: rawTravelMetadata
             } = requestBody;
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
+            Globals.currentPlayer = currentPlayer;
             let corpseProcessingRan = false;
             Globals.processedMove = false;
             let currentUserMessage = null;
@@ -5473,16 +5474,15 @@ module.exports = function registerApiRoutes(scope) {
             let travelMetadataNormalizationError = null;
 
             try {
-                const initialPlayerLocationId = currentPlayer?.currentLocation || null;
-                const initialPlayerLocationName = currentPlayer?.getCurrentLocationName() || null;
-
+                const initialPlayerLocationId = Globals.currentPlayer?.currentLocation || null;
+                const initialPlayerLocationName = Globals.currentPlayer?.getCurrentLocationName() || null;
             }
             catch (error) {
                 console.warn('Error during initial player location retrieval:', error.message);
                 console.debug(error);
                 return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
             }
-            Globals.currentPlayer = currentPlayer;
+
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
@@ -6485,7 +6485,8 @@ module.exports = function registerApiRoutes(scope) {
                     model: model,
                     messages: finalMessages,
                     max_tokens: config.ai.maxTokens || 1000,
-                    temperature: config.ai.temperature || 0.7
+                    temperature: config.ai.dialogue_temperature || 0.7,
+                    repetition_penalty: config.ai.dialogue_repetition_penalty || 1.15
                 };
 
                 const response = await axios.post(chatEndpoint, requestData, {
@@ -8089,7 +8090,10 @@ module.exports = function registerApiRoutes(scope) {
                     unspentSkillPoints,
                     currency,
                     experience,
-                    isDead
+                    isDead,
+                    personalityType,
+                    personalityTraits,
+                    personalityNotes
                 } = req.body || {};
 
                 if (typeof name === 'string' && name.trim()) {
@@ -8300,6 +8304,30 @@ module.exports = function registerApiRoutes(scope) {
                         } catch (experienceError) {
                             console.warn(`Failed to set experience for NPC ${npcId}:`, experienceError.message);
                         }
+                    }
+                }
+
+                if (personalityType !== undefined) {
+                    try {
+                        npc.personalityType = typeof personalityType === 'string' ? personalityType : '';
+                    } catch (personalityError) {
+                        console.warn(`Failed to set personality type for NPC ${npcId}:`, personalityError.message);
+                    }
+                }
+
+                if (personalityTraits !== undefined) {
+                    try {
+                        npc.personalityTraits = typeof personalityTraits === 'string' ? personalityTraits : '';
+                    } catch (personalityError) {
+                        console.warn(`Failed to set personality traits for NPC ${npcId}:`, personalityError.message);
+                    }
+                }
+
+                if (personalityNotes !== undefined) {
+                    try {
+                        npc.personalityNotes = typeof personalityNotes === 'string' ? personalityNotes : '';
+                    } catch (personalityError) {
+                        console.warn(`Failed to set personality notes for NPC ${npcId}:`, personalityError.message);
                     }
                 }
 

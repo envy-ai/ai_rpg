@@ -175,6 +175,101 @@ const JOB_STATUS = {
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const entityImageJobs = new Map(); // Track active jobs per entity key
 
+function sanitizePersonalityValue(value) {
+    const collectValues = (input) => {
+        if (input === null || input === undefined) {
+            return [];
+        }
+
+        if (typeof input === 'string') {
+            const trimmed = input.trim();
+            return trimmed ? [trimmed] : [];
+        }
+
+        if (typeof input === 'number' || typeof input === 'boolean') {
+            return [String(input)];
+        }
+
+        if (Array.isArray(input)) {
+            return input.flatMap(collectValues);
+        }
+
+        if (typeof input === 'object') {
+            return Object.values(input).flatMap(collectValues);
+        }
+
+        return [];
+    };
+
+    const parts = collectValues(value);
+    if (!parts.length) {
+        return null;
+    }
+
+    return parts.join(', ');
+}
+
+function collectPersonalityGoals(value) {
+    const goals = [];
+    const visit = (entry) => {
+        if (entry === null || entry === undefined) {
+            return;
+        }
+        if (typeof entry === 'string') {
+            const trimmed = entry.trim();
+            if (trimmed && !goals.includes(trimmed)) {
+                goals.push(trimmed);
+            }
+            return;
+        }
+        if (Array.isArray(entry)) {
+            entry.forEach(visit);
+            return;
+        }
+        if (typeof entry === 'object') {
+            for (const value of Object.values(entry)) {
+                visit(value);
+            }
+        }
+    };
+    visit(value);
+    return goals;
+}
+
+function extractPersonality(primary = null, fallback = null) {
+    const primaryObj = primary && typeof primary === 'object' ? primary : null;
+    const fallbackObj = fallback && typeof fallback === 'object' ? fallback : null;
+    const personalitySource = primaryObj?.personality && typeof primaryObj.personality === 'object'
+        ? primaryObj.personality
+        : null;
+
+    const type = sanitizePersonalityValue(
+        personalitySource?.type
+        ?? primaryObj?.personalityType
+        ?? fallbackObj?.personalityType
+    );
+    const traits = sanitizePersonalityValue(
+        personalitySource?.traits
+        ?? primaryObj?.personalityTraits
+        ?? fallbackObj?.personalityTraits
+    );
+    const notes = sanitizePersonalityValue(
+        personalitySource?.notes
+        ?? primaryObj?.personalityNotes
+        ?? fallbackObj?.personalityNotes
+    );
+
+    const goals = collectPersonalityGoals(
+        personalitySource?.goals
+        ?? primaryObj?.goals
+        ?? primaryObj?.personalityGoals
+        ?? fallbackObj?.personality?.goals
+        ?? fallbackObj?.goals
+    );
+
+    return { type, traits, notes, goals };
+}
+
 axios.interceptors.request.use(request_config => {
     if (!config?.ai?.preventReasoning) {
         return request_config;
@@ -1615,6 +1710,14 @@ function serializeNpcForClient(npc, options = {}) {
         }
     }
 
+    let personality = null;
+    try {
+        const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : null;
+        personality = extractPersonality(npcStatus, npc);
+    } catch (_) {
+        personality = extractPersonality(null, npc);
+    }
+
     let partyMembers = null;
     if (includePartyMembers && typeof npc.getPartyMembers === 'function') {
         try {
@@ -1661,6 +1764,10 @@ function serializeNpcForClient(npc, options = {}) {
         currency,
         experience,
         needBars: typeof npc.getNeedBars === 'function' ? npc.getNeedBars() : [],
+        personality,
+        personalityType: personality?.type ?? null,
+        personalityTraits: personality?.traits ?? null,
+        personalityNotes: personality?.notes ?? null,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer
@@ -2348,101 +2455,6 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
         needBars: currentPlayerNeedBars
     };
-
-    function sanitizePersonalityValue(value) {
-        const collectValues = (input) => {
-            if (input === null || input === undefined) {
-                return [];
-            }
-
-            if (typeof input === 'string') {
-                const trimmed = input.trim();
-                return trimmed ? [trimmed] : [];
-            }
-
-            if (typeof input === 'number' || typeof input === 'boolean') {
-                return [String(input)];
-            }
-
-            if (Array.isArray(input)) {
-                return input.flatMap(collectValues);
-            }
-
-            if (typeof input === 'object') {
-                return Object.values(input).flatMap(collectValues);
-            }
-
-            return [];
-        };
-
-        const parts = collectValues(value);
-        if (!parts.length) {
-            return null;
-        }
-
-        return parts.join(', ');
-    }
-
-    function collectPersonalityGoals(value) {
-        const goals = [];
-        const visit = (entry) => {
-            if (entry === null || entry === undefined) {
-                return;
-            }
-            if (typeof entry === 'string') {
-                const trimmed = entry.trim();
-                if (trimmed && !goals.includes(trimmed)) {
-                    goals.push(trimmed);
-                }
-                return;
-            }
-            if (Array.isArray(entry)) {
-                entry.forEach(visit);
-                return;
-            }
-            if (typeof entry === 'object') {
-                for (const value of Object.values(entry)) {
-                    visit(value);
-                }
-            }
-        };
-        visit(value);
-        return goals;
-    }
-
-    function extractPersonality(primary = null, fallback = null) {
-        const primaryObj = primary && typeof primary === 'object' ? primary : null;
-        const fallbackObj = fallback && typeof fallback === 'object' ? fallback : null;
-        const personalitySource = primaryObj?.personality && typeof primaryObj.personality === 'object'
-            ? primaryObj.personality
-            : null;
-
-        const type = sanitizePersonalityValue(
-            personalitySource?.type
-            ?? primaryObj?.personalityType
-            ?? fallbackObj?.personalityType
-        );
-        const traits = sanitizePersonalityValue(
-            personalitySource?.traits
-            ?? primaryObj?.personalityTraits
-            ?? fallbackObj?.personalityTraits
-        );
-        const notes = sanitizePersonalityValue(
-            personalitySource?.notes
-            ?? primaryObj?.personalityNotes
-            ?? fallbackObj?.personalityNotes
-        );
-
-        const goals = collectPersonalityGoals(
-            personalitySource?.goals
-            ?? primaryObj?.goals
-            ?? primaryObj?.personalityGoals
-            ?? fallbackObj?.personality?.goals
-            ?? fallbackObj?.goals
-        );
-
-        return { type, traits, notes, goals };
-    }
 
     function computeDispositionsTowardsPlayer(actor) {
         if (!actor || !currentPlayer || typeof currentPlayer.id !== 'string' || !currentPlayer.id || !dispositionTypes.length) {

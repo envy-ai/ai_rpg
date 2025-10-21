@@ -5,17 +5,24 @@ class Globals {
   static gameLoaded = false;
   static _processedMove = false;
   static inCombat = false;
+  static #currentPlayerOverride = null;
 
   static get currentPlayer() {
     const Player = require('./Player.js');
+    if (Globals.#currentPlayerOverride) {
+      return Globals.#currentPlayerOverride;
+    }
     return typeof Player.getCurrentPlayer === 'function'
       ? Player.getCurrentPlayer()
       : null;
   }
 
   static set currentPlayer(player) {
-    console.warn('Globals.currentPlayer should not be set directly. Set Player.currentPlayer instead.');
-    console.trace();
+    const Player = require('./Player.js');
+    Globals.#currentPlayerOverride = player || null;
+    if (typeof Player.setCurrentPlayerResolver === 'function') {
+      Player.setCurrentPlayerResolver(() => Globals.#currentPlayerOverride);
+    }
   }
 
   static set processedMove(value) {
@@ -40,39 +47,26 @@ class Globals {
   }
 
   static get location() {
-    if (!Globals.currentPlayer) {
-      console.warn('Globals.location accessed before currentPlayer was set.');
-      console.trace();
-      return null;
-    }
-    return Globals.currentPlayer.location;
+    const player = Globals.currentPlayer;
+    return player?.location || null;
   }
 
   static get region() {
-    if (!Globals.currentPlayer) {
-      console.warn('Globals.region accessed before currentPlayer was set.');
-      console.trace();
-      return null;
-    }
-    return Globals.currentPlayer.location.region;
+    const player = Globals.currentPlayer;
+    return player?.location?.region || null;
   }
 
   static get elapsedTime() {
-    if (!Globals.currentPlayer) {
-      console.warn('Globals.elapsedTime accessed before currentPlayer was set.');
-      console.trace();
-      return 0;
-    }
-    return Globals.currentPlayer.elapsedTime;
+    const player = Globals.currentPlayer;
+    return player?.elapsedTime ?? 0;
   }
 
   static set elapsedTime(value) {
-    if (!Globals.currentPlayer) {
-      console.warn('Globals.elapsedTime set before currentPlayer was set.');
-      console.trace();
+    const player = Globals.currentPlayer;
+    if (!player) {
       return;
     }
-    Globals.currentPlayer.elapsedTime = value;
+    player.elapsedTime = value;
   }
 
   static locationById(id) {

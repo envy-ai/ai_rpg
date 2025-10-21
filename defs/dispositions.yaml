@@ -134,9 +134,9 @@ dispositions:
       0: neutral
       1: mildly respected (+1 to relevant circumstance modifier)
       20: respected (+2 to relevant circumstance modifier)
-      40: admired (+4 to relevant circumstance modifier)
-      80: highly admired (+7 to relevant circumstance modifier)
-      120: revered (+10 to relevant circumstance modifier)
+      40: respected colleague (+4 to relevant circumstance modifier)
+      80: respected ally (+7 to relevant circumstance modifier)
+      120: respected ally (+10 to relevant circumstance modifier)
   comfort_fear:
     description: Represents a character's level of comfort or fear around the player character.
     hostile_value: -20
@@ -165,8 +165,8 @@ dispositions:
       1: mildly comfortable around you (+1 to relevant circumstance modifier)
       20: comfortable around you (+2 to relevant circumstance modifier)
       40: very comfortable around you (+4 to relevant circumstance modifier)
-      80: trust you deeply (+7 to relevant circumstance modifier)
-      120: feel safe with you no matter what (+10 to relevant circumstance modifier)
+      80: very comfortable around you (+7 to relevant circumstance modifier)
+      120: very comfortable around you (+10 to relevant circumstance modifier)
   trust:
     description: Represents a character's level of trust or distrust towards the player character.
     hostile_value: -35
@@ -195,5 +195,5 @@ dispositions:
       1: mildly trusting of you (+1 to relevant circumstance modifier)
       20: somewhat trusting of you (+2 to relevant circumstance modifier)
       40: trust you (+4 to relevant circumstance modifier)
-      80: trust you deeply (+7 to relevant circumstance modifier)
-      120: would trust you with their life (+10 to relevant circumstance modifier)
+      80: trust you as a confidant (+7 to relevant circumstance modifier)
+      120: trust you as a confidant and ally (+10 to relevant circumstance modifier)

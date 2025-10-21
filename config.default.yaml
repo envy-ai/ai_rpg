@@ -26,6 +26,8 @@ ai:
   baseTimeoutSeconds: 120
 
   debug: false
+  dialogue_temperature: 0.85
+  dialogue_repetition_penalty: 1.15
 model_swap_options:
   - "zai-org/GLM-4.5-FP8"
   - "gpt-4o-mini"

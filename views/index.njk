@@ -807,6 +807,24 @@
                 </div>
 
                 <div class="npc-edit-section">
+                    <h3>Personality</h3>
+                    <div class="npc-edit-grid">
+                        <div class="npc-edit-field">
+                            <label for="npcEditPersonalityType">Type</label>
+                            <input id="npcEditPersonalityType" type="text" autocomplete="off">
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditPersonalityTraits">Traits</label>
+                            <textarea id="npcEditPersonalityTraits" rows="2"></textarea>
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditPersonalityNotes">Notes</label>
+                            <textarea id="npcEditPersonalityNotes" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="npc-edit-section">
                     <h3>Attributes</h3>
                     <div id="npcEditAttributes" class="npc-attribute-grid"></div>
                 </div>
@@ -4050,6 +4068,9 @@
         const npcEditCurrencyInput = document.getElementById('npcEditCurrency');
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
+        const npcEditPersonalityTypeInput = document.getElementById('npcEditPersonalityType');
+        const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
+        const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
         const npcEditSkillsContainer = document.getElementById('npcEditSkills');
         const npcEditAbilitiesContainer = document.getElementById('npcEditAbilities');
@@ -5863,6 +5884,22 @@
             }
             if (npcEditDescriptionInput) {
                 npcEditDescriptionInput.value = npc.description || '';
+            }
+            const personalityDetails = npc.personality || {};
+            if (npcEditPersonalityTypeInput) {
+                npcEditPersonalityTypeInput.value = npc.personalityType
+                    ?? personalityDetails.type
+                    ?? '';
+            }
+            if (npcEditPersonalityTraitsInput) {
+                npcEditPersonalityTraitsInput.value = npc.personalityTraits
+                    ?? personalityDetails.traits
+                    ?? '';
+            }
+            if (npcEditPersonalityNotesInput) {
+                npcEditPersonalityNotesInput.value = npc.personalityNotes
+                    ?? personalityDetails.notes
+                    ?? '';
             }
 
             populateNpcAttributes(npc.attributes || {});
@@ -7968,6 +8005,15 @@
                 }
                 if (npcEditClassInput) {
                     payload.class = npcEditClassInput.value ?? '';
+                }
+                if (npcEditPersonalityTypeInput) {
+                    payload.personalityType = npcEditPersonalityTypeInput.value ?? '';
+                }
+                if (npcEditPersonalityTraitsInput) {
+                    payload.personalityTraits = npcEditPersonalityTraitsInput.value ?? '';
+                }
+                if (npcEditPersonalityNotesInput) {
+                    payload.personalityNotes = npcEditPersonalityNotesInput.value ?? '';
                 }
 
                 const parsedLevel = Number.parseInt(npcEditLevelInput?.value ?? '', 10);
