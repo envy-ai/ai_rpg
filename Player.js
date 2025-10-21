@@ -3707,7 +3707,8 @@ class Player {
             }
             snapshot[slotName] = {
                 slotType: slotData.slotType,
-                itemId: slotData.itemId || null
+                itemId: slotData.itemId || null,
+                item: slotData.itemId ? this.#resolveThing(slotData.itemId) : null
             };
         }
         return snapshot;

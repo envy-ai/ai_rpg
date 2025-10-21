@@ -1261,6 +1261,9 @@ class Events {
             }).filter(Boolean),
             item_appear: raw => splitPipeList(raw).map(entry => {
                 const [name] = splitArrowParts(entry, 2);
+                if (!name || Events.alteredItems.has(name)) {
+                    return null;
+                }
                 return name ? name.trim() : null;
             }).filter(Boolean),
             scenery_appear: raw => splitPipeList(raw).map(entry => {

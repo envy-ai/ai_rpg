@@ -5087,12 +5087,89 @@ function renderPlayerPortraitPrompt(player) {
             attributeLines ? `Attributes:\n${attributeLines}` : ''
         ].filter(Boolean).join('\n\n');
 
+        let characterGear = [];
+        if (typeof player.getGear === 'function') {
+            try {
+                const gearSnapshot = player.getGear();
+                if (gearSnapshot && typeof gearSnapshot === 'object') {
+                    for (const entry of Object.values(gearSnapshot)) {
+                        if (!entry || !entry.item) {
+                            continue;
+                        }
+                        const { item, slotType } = entry;
+                        if (!item || typeof item !== 'object') {
+                            continue;
+                        }
+                        const itemName = typeof item.name === 'string' && item.name.trim()
+                            ? item.name.trim()
+                            : `Equipped Item (${slotType || 'unknown slot'})`;
+                        const itemDescription = typeof item.description === 'string' && item.description.trim()
+                            ? item.description.trim()
+                            : 'No description available.';
+                        const slotLabel = typeof item.slot === 'string' && item.slot.trim()
+                            ? item.slot.trim()
+                            : (slotType || 'unknown');
+
+                        characterGear.push({
+                            name: itemName,
+                            description: itemDescription,
+                            slot: slotLabel
+                        });
+                    }
+                }
+            } catch (error) {
+                throw new Error(`Failed to load equipped gear for portrait prompt: ${error?.message || error}`);
+            }
+        }
+
+        const globalsLocation = Globals?.location || null;
+        const playerLocationObject = typeof player.currentLocationObject === 'object' && player.currentLocationObject
+            ? player.currentLocationObject
+            : (player.location || globalsLocation || null);
+
+        const locationPayload = (() => {
+            if (!playerLocationObject && !globalsLocation) {
+                return {
+                    name: 'Unknown Location',
+                    description: 'The character\'s current location is unknown.',
+                    globalsLocation: null
+                };
+            }
+
+            const source = playerLocationObject || globalsLocation;
+            if (!source) {
+                throw new Error('Failed to resolve a location object for the player portrait prompt.');
+            }
+
+            const base = {
+                name: typeof source.name === 'string' && source.name.trim() ? source.name.trim() : (source.id || 'Unknown Location'),
+                description: typeof source.description === 'string' && source.description.trim()
+                    ? source.description.trim()
+                    : 'No location description available.',
+                globalsLocation: null
+            };
+
+            if (globalsLocation) {
+                base.globalsLocation = {
+                    id: globalsLocation.id || null,
+                    name: typeof globalsLocation.name === 'string' && globalsLocation.name.trim() ? globalsLocation.name.trim() : globalsLocation.id || null,
+                    description: typeof globalsLocation.description === 'string' && globalsLocation.description.trim()
+                        ? globalsLocation.description.trim()
+                        : null
+                };
+            }
+
+            return base;
+        })();
+
         const variables = {
             setting: settingDescription,
             characterDescription,
             characterClass: player.class || '',
             characterRace: player.race || '',
-            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.character || ''
+            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.character || '',
+            characterGear,
+            location: locationPayload
         };
 
         const renderedTemplate = promptEnv.render(templateName, variables);

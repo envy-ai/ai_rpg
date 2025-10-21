@@ -8,7 +8,6 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
-const console = require('console');
 
 
 let eventsProcessedThisTurn = false;
@@ -5473,8 +5472,16 @@ module.exports = function registerApiRoutes(scope) {
             let travelMetadata = null;
             let travelMetadataNormalizationError = null;
 
-            const initialPlayerLocationId = currentPlayer?.currentLocation || null;
-            const initialPlayerLocationName = currentPlayer?.getCurrentLocationName() || null;
+            try {
+                const initialPlayerLocationId = currentPlayer?.currentLocation || null;
+                const initialPlayerLocationName = currentPlayer?.getCurrentLocationName() || null;
+
+            }
+            catch (error) {
+                console.warn('Error during initial player location retrieval:', error.message);
+                console.debug(error);
+                return res.status(500).json({ error: 'Failed to retrieve player location. You need to start or load a game first.' });
+            }
             Globals.currentPlayer = currentPlayer;
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;

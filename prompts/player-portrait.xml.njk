@@ -17,6 +17,21 @@ Generate a prompt for a detailed player portrait image based on the following ch
 Class: {{ characterClass }}
 Race: {{ characterRace }}
 {{ characterDescription | replace('\n', '\n    ') }}
+Equipped Gear: 
+<equipment>
+{% for item in characterGear %}
+<item>
+    <name>{{ item.name }}</name>
+    <description>{{ item.description }}</description>
+    <slot>{{ item.slot }}</slot>
+</item>
+{% endfor %}
+</equipment>
+Location:
+<location>
+    <name>{{ location.name }}</name>
+    <description>{{ location.description }}</description>
+</location>
 
 Do not specify an art style. Specify the character's gender (if known), age, clothing, accessories, pose, expression, and any relevant background elements Use vivid and specific descriptions to guide the image generation effectively.
 
