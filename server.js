@@ -4398,10 +4398,18 @@ async function expandRegionEntryStub(stubLocation) {
 
         const settingDescription = metadata.settingDescription || describeSettingForPrompt(getActiveSettingSnapshot());
         const themeHint = metadata.themeHint || null;
-        let regionAverageLevel = Number.isFinite(metadata.regionAverageLevel) ? metadata.regionAverageLevel : null;
+        let regionAverageLevel = null;
 
         let region = regions.get(targetRegionId) || null;
         const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
+        console.log("Pending region info for expansion:", pendingInfo);
+        const pendingRelativeLevel = Number.isFinite(pendingInfo?.relativeLevel)
+            ? pendingInfo.relativeLevel
+            : null;
+        const metadataRelativeLevel = Number.isFinite(metadata.targetRegionRelativeLevel)
+            ? metadata.targetRegionRelativeLevel
+            : (Number.isFinite(metadata.relativeLevel) ? metadata.relativeLevel : null);
+        const combinedRelativeLevel = pendingRelativeLevel !== null ? pendingRelativeLevel : metadataRelativeLevel;
 
         const resolveEntranceLocation = (targetRegion) => {
             if (!targetRegion) {
@@ -4583,9 +4591,22 @@ async function expandRegionEntryStub(stubLocation) {
                 return null;
             }
 
-            regionAverageLevel = regionAverageLevel ?? (Number.isFinite(pendingInfo?.relativeLevel)
-                ? clampLevel((metadata.regionAverageLevel || 1) + pendingInfo.relativeLevel, metadata.regionAverageLevel || 1)
-                : (metadata.regionAverageLevel || 1));
+            if (!Number.isFinite(metadata.regionAverageLevel)) {
+                console.log(`ℹ️ Region stub '${pendingInfo?.name || targetRegionId}' missing regionAverageLevel metadata; defaulting to player level ${currentPlayer?.level || 1}.`);
+            }
+
+            const baseAverageLevel = Number.isFinite(metadata.regionAverageLevel)
+                ? metadata.regionAverageLevel
+                : (currentPlayer?.level || 1);
+
+            if (Number.isFinite(combinedRelativeLevel)) {
+                regionAverageLevel = clampLevel(baseAverageLevel + combinedRelativeLevel, baseAverageLevel);
+                console.log(`📈 Region stub '${pendingInfo?.name || metadata.targetRegionName || targetRegionId}' relative offset ${combinedRelativeLevel} applied: base ${baseAverageLevel} -> ${regionAverageLevel}`);
+            } else {
+                regionAverageLevel = baseAverageLevel;
+                console.log(`📊 Region stub '${pendingInfo?.name || metadata.targetRegionName || targetRegionId}' using base level ${baseAverageLevel} (no relative offset).`);
+                console.trace();
+            }
 
             region = new Region({
                 id: targetRegionId,
@@ -13751,6 +13772,10 @@ async function chooseExistingRegionExit({
     };
 
     try {
+        const requestStart = Date.now();
+        console.log(`🚪 Requesting existing region exit from ${sourceRegion?.name || sourceRegion?.id || 'unknown region'}`
+            + ` via ${sourceLocation?.name || sourceLocation?.id || 'unknown location'} to ${targetRegion?.name || targetRegion?.id || 'target region'}.`);
+
         const response = await axios.post(chatEndpoint, requestData, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -13761,7 +13786,57 @@ async function chooseExistingRegionExit({
         });
 
         const aiResponse = response.data?.choices?.[0]?.message?.content || '';
+        const durationSeconds = (Date.now() - requestStart) / 1000;
+
+        try {
+            const logDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+
+            const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+            const sourceRegionLabel = (sourceRegion?.id || sourceRegion?.name || 'unknown').toString().replace(/[^a-z0-9_-]+/gi, '_');
+            const targetRegionLabel = (targetRegion?.id || targetRegion?.name || 'unknown').toString().replace(/[^a-z0-9_-]+/gi, '_');
+            const logPath = path.join(logDir, `region_existing_exit_${sourceRegionLabel}_${targetRegionLabel}_${timestamp}.log`);
+
+            const logParts = [
+                formatDurationLine(durationSeconds),
+                '=== EXISTING REGION EXIT CONTEXT ===',
+                JSON.stringify({
+                    sourceRegion: {
+                        id: sourceRegion?.id || null,
+                        name: sourceRegion?.name || null
+                    },
+                    sourceLocation: {
+                        id: sourceLocation?.id || null,
+                        name: sourceLocation?.name || null
+                    },
+                    targetRegion: {
+                        id: targetRegion?.id || null,
+                        name: targetRegion?.name || null
+                    }
+                }, null, 2),
+                '\n=== EXISTING REGION EXIT SYSTEM PROMPT ===',
+                prompt.systemPrompt || '(none)',
+                '\n=== EXISTING REGION EXIT PROMPT ===',
+                prompt.generationPrompt || '(none)',
+                '\n=== EXISTING REGION EXIT RESPONSE ===',
+                aiResponse || '(empty)',
+                '\n'
+            ];
+
+            fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
+            console.log(`📝 Existing region exit request logged to ${logPath}`);
+        } catch (logError) {
+            console.warn('Failed to log existing region exit prompt:', logError?.message || logError);
+        }
+
         const parsed = parseExistingRegionExitResponse(aiResponse);
+        if (parsed?.name) {
+            console.log(`🚪 Existing region exit selected: ${parsed.name}`);
+        } else {
+            console.log('🚪 Existing region exit selection returned no result.');
+        }
         return parsed;
     } catch (error) {
         console.warn('Failed to choose existing region exit location:', error.message);
@@ -14181,6 +14256,7 @@ async function generateRegionExitStubs({
             targetRegionDescription: definition.description,
             targetRegionRelationship: definition.relationship,
             targetRegionRelativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
+            relativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
             settingDescription
         };
 
@@ -14297,6 +14373,23 @@ async function connectExistingRegion({
 
     const vehicleLabel = definition.exitVehicle || null;
 
+    const relativeLevelOffset = Number.isFinite(definition.relativeLevel)
+        ? Math.max(-10, Math.min(10, Math.round(definition.relativeLevel)))
+        : null;
+
+    const resolveSourceLevelReference = () => {
+        if (Number.isFinite(sourceLocation?.baseLevel)) {
+            return sourceLocation.baseLevel;
+        }
+        if (Number.isFinite(existingRegion?.averageLevel)) {
+            return existingRegion.averageLevel;
+        }
+        if (Number.isFinite(region?.averageLevel)) {
+            return region.averageLevel;
+        }
+        return currentPlayer?.level || 1;
+    };
+
     ensureExitConnection(sourceLocation, remoteLocation, {
         description: existingRegion.name,
         destinationRegion: existingRegion.id,
@@ -14310,6 +14403,25 @@ async function connectExistingRegion({
         isVehicle: Boolean(vehicleLabel),
         vehicleType: vehicleLabel || null
     });
+
+    if (relativeLevelOffset !== null) {
+        const sourceLevel = resolveSourceLevelReference();
+        const adjustedAverage = clampLevel(sourceLevel + relativeLevelOffset, sourceLevel);
+
+        try {
+            existingRegion.setAverageLevel(adjustedAverage);
+        } catch (error) {
+            console.warn(`Failed to adjust average level for existing region ${existingRegion.name || existingRegion.id}:`, error.message);
+        }
+
+        if (remoteLocation && (remoteLocation.isStub || !Number.isFinite(remoteLocation.baseLevel))) {
+            try {
+                remoteLocation.baseLevel = adjustedAverage;
+            } catch (error) {
+                console.warn(`Failed to adjust base level for location ${remoteLocation.name || remoteLocation.id}:`, error.message);
+            }
+        }
+    }
 
     console.log(`🔗 Linked existing region "${region.name}" ↔ "${existingRegion.name}" via ${sourceLocation.name || sourceLocation.id} and ${remoteLocation.name || remoteLocation.id}.`);
 }

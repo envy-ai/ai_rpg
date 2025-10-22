@@ -10,3 +10,4 @@ prompt_overrides/*
 autosaves/*
 temp/*
 imagegen/test*
+**/*.old

@@ -48,7 +48,7 @@ If this region is a city, town, village, or other settlement, create at least th
   {% if regionName or currentRegion.name %}<!-- strictly retain this exact region name: -->{% endif %}
   <regionName>{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}</regionName>
   <regionDescription><!-- Three sentences that describe this region. --></regionDescription>
-  <relativeLevel>{% if isStub and currentRegion.relativeLevel is defined %}{{ currentRegion.relativeLevel }}{% else %}0{% endif %}</relativeLevel>
+  <relativeLevel>1</relativeLevel>{# Set to 1 to keep the AI from going nuts with high relative levels for locations. This value doesn't affect actual generation. #}
   <locations>
 {% if isStub %}
     <!-- Only list **new** locations to add to the current region -->
