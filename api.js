@@ -5473,9 +5473,11 @@ module.exports = function registerApiRoutes(scope) {
             let travelMetadata = null;
             let travelMetadataNormalizationError = null;
 
+            let initialPlayerLocationId = null;
+            let initialPlayerLocationName = null;
             try {
-                const initialPlayerLocationId = Globals.currentPlayer?.currentLocation || null;
-                const initialPlayerLocationName = Globals.currentPlayer?.getCurrentLocationName() || null;
+                initialPlayerLocationId = Globals.currentPlayer?.currentLocation || null;
+                initialPlayerLocationName = Globals.currentPlayer?.getCurrentLocationName() || null;
             }
             catch (error) {
                 console.warn('Error during initial player location retrieval:', error.message);
