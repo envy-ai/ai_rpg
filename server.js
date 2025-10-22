@@ -1751,6 +1751,7 @@ function serializeNpcForClient(npc, options = {}) {
         isPlayer: !Boolean(npc.isNPC),
         isHostile: Boolean(npc.isHostile),
         isDead: Boolean(npc.isDead),
+        isInPlayerParty: Boolean(npc.isInPlayerParty),
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),

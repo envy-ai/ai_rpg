@@ -6553,6 +6553,147 @@
             }
         }
 
+        async function resolveCurrentPlayerId() {
+            if (window.currentPlayerData && typeof window.currentPlayerData.id === 'string' && window.currentPlayerData.id.trim()) {
+                return window.currentPlayerData.id.trim();
+            }
+            try {
+                const response = await fetch('/api/player', { cache: 'no-store' });
+                const result = await response.json().catch(() => ({}));
+                if (response.ok && result?.success && result.player?.id) {
+                    window.currentPlayerData = result.player;
+                    if (typeof result.player.id === 'string' && result.player.id.trim()) {
+                        return result.player.id.trim();
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to resolve current player ID:', error);
+            }
+            throw new Error('Unable to determine current player ID.');
+        }
+
+        function updateNpcPartyMembershipCache(npcId, inPlayerParty, fallbackNpc = null) {
+            if (!npcId) {
+                return;
+            }
+            const isMember = Boolean(inPlayerParty);
+            if (fallbackNpc && typeof fallbackNpc === 'object') {
+                fallbackNpc.isInPlayerParty = isMember;
+            }
+            if (window.currentNpcData instanceof Map) {
+                const snapshot = window.currentNpcData.get(npcId) || fallbackNpc || { id: npcId };
+                const updated = cloneActorRecord(snapshot) || { ...snapshot };
+                updated.isInPlayerParty = isMember;
+                window.currentNpcData.set(npcId, updated);
+            }
+            if (window.currentPlayerData) {
+                const existingMembers = Array.isArray(window.currentPlayerData.partyMembers)
+                    ? new Set(window.currentPlayerData.partyMembers)
+                    : new Set();
+                if (isMember) {
+                    existingMembers.add(npcId);
+                } else {
+                    existingMembers.delete(npcId);
+                }
+                window.currentPlayerData = {
+                    ...window.currentPlayerData,
+                    partyMembers: Array.from(existingMembers)
+                };
+            }
+        }
+
+        async function recruitNpcToParty(npc, { card = null } = {}) {
+            if (!npc || !npc.id) {
+                throw new Error('Missing character information.');
+            }
+            const ownerId = await resolveCurrentPlayerId();
+            const label = npc.name || 'character';
+            showLocationOverlay(`Recruiting ${label}...`);
+            try {
+                const response = await fetch('/api/player/party', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ownerId, memberId: npc.id })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                updateNpcPartyMembershipCache(npc.id, true, npc);
+
+                try {
+                    if (typeof window.refreshParty === 'function') {
+                        await window.refreshParty();
+                    }
+                } catch (refreshError) {
+                    console.warn('Failed to refresh party after recruiting NPC:', refreshError);
+                }
+
+                try {
+                    if (typeof window.loadCurrentLocation === 'function') {
+                        await window.loadCurrentLocation();
+                    }
+                } catch (locationError) {
+                    console.warn('Failed to refresh location after recruiting NPC:', locationError);
+                }
+
+                if (card && card.parentElement) {
+                    card.remove();
+                }
+
+                return data;
+            } finally {
+                hideLocationOverlay();
+            }
+        }
+
+        async function dismissNpcFromParty(npc, { card = null } = {}) {
+            if (!npc || !npc.id) {
+                throw new Error('Missing character information.');
+            }
+            const ownerId = await resolveCurrentPlayerId();
+            const label = npc.name || 'character';
+            showLocationOverlay(`Dismissing ${label}...`);
+            try {
+                const response = await fetch('/api/player/party', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ownerId, memberId: npc.id })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                updateNpcPartyMembershipCache(npc.id, false, npc);
+
+                try {
+                    if (typeof window.refreshParty === 'function') {
+                        await window.refreshParty();
+                    }
+                } catch (refreshError) {
+                    console.warn('Failed to refresh party after dismissing NPC:', refreshError);
+                }
+
+                try {
+                    if (typeof window.loadCurrentLocation === 'function') {
+                        await window.loadCurrentLocation();
+                    }
+                } catch (locationError) {
+                    console.warn('Failed to refresh location after dismissing NPC:', locationError);
+                }
+
+                if (card && card.parentElement) {
+                    card.remove();
+                }
+
+                return data;
+            } finally {
+                hideLocationOverlay();
+            }
+        }
+
         function setAddNpcStatus(message = '', type = null) {
             if (!addNpcStatus) {
                 return;
@@ -10341,6 +10482,8 @@
                 let teleportButton = null;
                 let memoriesButton = null;
                 let goalsButton = null;
+                let recruitButton = null;
+                let dismissButton = null;
                 let dispositionButton = null;
                 let killButton = null;
                 let deleteButton = null;
@@ -10368,6 +10511,21 @@
                     goalsButton.className = 'npc-card-menu-item';
                     goalsButton.textContent = 'Goals';
                     menu.appendChild(goalsButton);
+
+                    const isInParty = Boolean(npc.isInPlayerParty);
+                    if (isInParty) {
+                        dismissButton = document.createElement('button');
+                        dismissButton.type = 'button';
+                        dismissButton.className = 'npc-card-menu-item';
+                        dismissButton.textContent = 'Dismiss';
+                        menu.appendChild(dismissButton);
+                    } else {
+                        recruitButton = document.createElement('button');
+                        recruitButton.type = 'button';
+                        recruitButton.className = 'npc-card-menu-item';
+                        recruitButton.textContent = 'Force Recruit';
+                        menu.appendChild(recruitButton);
+                    }
 
                     dispositionButton = document.createElement('button');
                     dispositionButton.type = 'button';
@@ -10563,6 +10721,36 @@
                         closeNpcContextMenu();
                         const latestNpc = npcDataCache.get(npc.id) || npc;
                         showNpcGoalsModal(latestNpc);
+                    });
+                }
+
+                if (recruitButton) {
+                    recruitButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                        const latestNpc = npcDataCache?.get(npc.id) || npc;
+                        try {
+                            await recruitNpcToParty(latestNpc, { card });
+                        } catch (error) {
+                            console.warn('Failed to recruit NPC:', error);
+                            alert(`Failed to recruit NPC: ${error?.message || 'Unknown error'}`);
+                        }
+                    });
+                }
+
+                if (dismissButton) {
+                    dismissButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                        const latestNpc = npcDataCache?.get(npc.id) || npc;
+                        try {
+                            await dismissNpcFromParty(latestNpc, { card });
+                        } catch (error) {
+                            console.warn('Failed to dismiss NPC from party:', error);
+                            alert(`Failed to dismiss NPC: ${error?.message || 'Unknown error'}`);
+                        }
                     });
                 }
 
