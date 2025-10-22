@@ -4087,6 +4087,9 @@ module.exports = function registerApiRoutes(scope) {
             const typicalBigStep = Number.isFinite(Number(range.typicalBigStep))
                 ? Number(range.typicalBigStep)
                 : null;
+            const firstImpressionMultiplier = Number.isFinite(Number(definitions?.firstImpressionMultiplier))
+                ? Number(definitions.firstImpressionMultiplier)
+                : null;
 
             const appliedChanges = [];
 
@@ -4099,6 +4102,28 @@ module.exports = function registerApiRoutes(scope) {
                 const npc = findActorByName(npcName);
                 if (!npc || npc === currentPlayer) {
                     continue;
+                }
+
+                let applyFirstImpression = false;
+                if (firstImpressionMultiplier && firstImpressionMultiplier !== 1 && currentPlayer?.id) {
+                    const types = definitions?.types || {};
+                    let hasNonZeroDisposition = false;
+                    for (const def of Object.values(types)) {
+                        if (!def) {
+                            continue;
+                        }
+                        const key = def.key || def.label;
+                        if (!key) {
+                            continue;
+                        }
+                        const existingValue = npc.getDisposition(currentPlayer.id, key);
+                        if (Number(existingValue) !== 0) {
+                            console.log(`[Disposition] ${npc.name} has existing disposition (${existingValue}) for type '${key}'; skipping first impression bonus.`);
+                            hasNonZeroDisposition = true;
+                            break;
+                        }
+                    }
+                    applyFirstImpression = !hasNonZeroDisposition;
                 }
 
                 const dispositionList = Array.isArray(npcEntry.dispositions)
@@ -4158,6 +4183,14 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (delta === 0) {
                         continue;
+                    }
+
+                    if (applyFirstImpression) {
+                        console.log(`[Disposition] Applying first impression multiplier (${firstImpressionMultiplier}) for ${npc.name}.`);
+                        const multiplied = delta * firstImpressionMultiplier;
+                        if (Number.isFinite(multiplied) && multiplied !== 0) {
+                            delta = Math.round(multiplied);
+                        }
                     }
 
                     const currentValue = npc.getDispositionTowardsCurrentPlayer(typeDefinition.key);

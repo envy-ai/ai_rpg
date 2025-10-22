@@ -808,6 +808,9 @@ class Player {
                 typicalStep: Number.isFinite(Number(rangeSource.typical_step)) ? Number(rangeSource.typical_step) : null,
                 typicalBigStep: Number.isFinite(Number(rangeSource.typical_big_step)) ? Number(rangeSource.typical_big_step) : null
             };
+            const firstImpressionMultiplier = Number.isFinite(Number(data.first_impression_multiplier))
+                ? Number(data.first_impression_multiplier)
+                : null;
 
             const dispositionSource = typeof data.dispositions === 'object' && data.dispositions !== null
                 ? data.dispositions
@@ -887,7 +890,8 @@ class Player {
 
             return {
                 range,
-                types
+                types,
+                firstImpressionMultiplier
             };
         } catch (error) {
             console.error('Error loading dispositions definitions:', error.message);

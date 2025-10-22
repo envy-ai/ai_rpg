@@ -3861,13 +3861,6 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
         } catch (_) {
             exit.update({ destination: toLocation.id });
         }
-        if (normalizedDestinationRegion !== undefined) {
-            try {
-                exit.destinationRegion = normalizedDestinationRegion;
-            } catch (_) {
-                exit.update({ destinationRegion: normalizedDestinationRegion });
-            }
-        }
         try {
             exit.bidirectional = Boolean(bidirectional);
         } catch (_) {
@@ -13468,7 +13461,7 @@ async function generateLocationFromPrompt(options = {}) {
         };
 
         console.log('🤖 Requesting location generation from AI...');
-        console.log('📝 System Prompt:', systemPrompt);
+        //console.log('📝 System Prompt:', systemPrompt);
         //console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
 
         const requestStart = Date.now();
