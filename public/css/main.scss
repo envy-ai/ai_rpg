@@ -4321,29 +4321,34 @@ body.modal-open {
   cursor: not-allowed;
 }
 
-.npc-memories-modal .modal__dialog {
+.npc-memories-modal .modal__dialog,
+.npc-goals-modal .modal__dialog {
   max-width: 700px;
 }
 
-.npc-memories-body {
+.npc-memories-body,
+.npc-goals-body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.npc-memories-help {
+.npc-memories-help,
+.npc-goals-help {
   margin: 0;
   font-size: 0.95rem;
   color: #ffffff;
 }
 
-.npc-memories-list {
+.npc-memories-list,
+.npc-goals-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.npc-memory-row {
+.npc-memory-row,
+.npc-goal-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 0.75rem;
@@ -4354,12 +4359,14 @@ body.modal-open {
   padding: 0.5rem 0.75rem;
 }
 
-.npc-memory-row.dragging {
+.npc-memory-row.dragging,
+.npc-goal-row.dragging {
   opacity: 0.6;
   border-style: dashed;
 }
 
-.npc-memory-handle {
+.npc-memory-handle,
+.npc-goal-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4373,12 +4380,14 @@ body.modal-open {
   user-select: none;
 }
 
-.npc-memory-handle:focus {
+.npc-memory-handle:focus,
+.npc-goal-handle:focus {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }
 
-.npc-memory-text {
+.npc-memory-text,
+.npc-goal-text {
   width: 100%;
   min-height: 3.5rem;
   resize: vertical;
@@ -4390,13 +4399,15 @@ body.modal-open {
   color: #0f172a;
 }
 
-.npc-memory-text:focus {
+.npc-memory-text:focus,
+.npc-goal-text:focus {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
   box-shadow: inset 0 1px 4px rgba(15, 23, 42, 0.25);
 }
 
-.npc-memory-delete {
+.npc-memory-delete,
+.npc-goal-delete {
   align-self: center;
   padding: 0.35rem 0.85rem;
   border-radius: 4px;
@@ -4409,12 +4420,15 @@ body.modal-open {
 }
 
 .npc-memory-delete:hover,
-.npc-memory-delete:focus {
+.npc-memory-delete:focus,
+.npc-goal-delete:hover,
+.npc-goal-delete:focus {
   background: #b91c1c;
   border-color: #991b1b;
 }
 
-.npc-memories-add {
+.npc-memories-add,
+.npc-goals-add {
   align-self: center;
   padding: 0.5rem 1rem;
   border-radius: 4px;
@@ -4424,11 +4438,14 @@ body.modal-open {
 }
 
 .npc-memories-add:hover,
-.npc-memories-add:focus {
+.npc-memories-add:focus,
+.npc-goals-add:hover,
+.npc-goals-add:focus {
   background: #1e40af;
 }
 
-.npc-memories-footer {
+.npc-memories-footer,
+.npc-goals-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -4436,53 +4453,66 @@ body.modal-open {
   padding: 0 0.5rem 0.75rem;
 }
 
-.npc-memories-status {
+.npc-memories-status,
+.npc-goals-status {
   min-height: 1.5rem;
   font-size: 0.95rem;
 }
 
-.npc-memories-status.is-error {
+.npc-memories-status.is-error,
+.npc-goals-status.is-error {
   color: #b91c1c;
 }
 
-.npc-memories-status.is-success {
+.npc-memories-status.is-success,
+.npc-goals-status.is-success {
   color: #047857;
 }
 
-.npc-memories-actions {
+.npc-memories-actions,
+.npc-goals-actions {
   display: flex;
   gap: 0.75rem;
 }
 
 .npc-memories-cancel,
-.npc-memories-save {
+.npc-memories-save,
+.npc-goals-cancel,
+.npc-goals-save {
   padding: 0.5rem 1.25rem;
   border-radius: 4px;
   border: none;
   font-weight: 600;
 }
 
-.npc-memories-cancel {
+.npc-memories-cancel,
+.npc-goals-cancel {
   background: rgba(15, 23, 42, 0.08);
   color: #0f172a;
 }
 
 .npc-memories-cancel:hover,
-.npc-memories-cancel:focus {
+.npc-memories-cancel:focus,
+.npc-goals-cancel:hover,
+.npc-goals-cancel:focus {
   background: rgba(15, 23, 42, 0.12);
 }
 
-.npc-memories-save {
+.npc-memories-save,
+.npc-goals-save {
   background: #15803d;
   color: #fff;
 }
 
 .npc-memories-save:hover,
-.npc-memories-save:focus {
+.npc-memories-save:focus,
+.npc-goals-save:hover,
+.npc-goals-save:focus {
   background: #166534;
 }
 
-.npc-memories-save:disabled {
+.npc-memories-save:disabled,
+.npc-goals-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

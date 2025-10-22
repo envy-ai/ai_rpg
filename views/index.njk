@@ -610,6 +610,28 @@
             </footer>
         </div>
     </div>
+    <div id="npcGoalsModal" class="modal npc-goals-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="npcGoalsModalTitle">Edit Goals</h2>
+                <button type="button" class="modal__close" id="npcGoalsCloseBtn" aria-label="Close goals editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body npc-goals-body">
+                <p class="npc-goals-help">Update the character's active goals. Drag the handle to reorder entries.</p>
+                <div id="npcGoalsList" class="npc-goals-list" role="list"></div>
+                <button type="button" class="npc-goals-add" id="npcGoalsAddBtn">Add Goal</button>
+            </div>
+            <footer class="modal__footer npc-goals-footer">
+                <div id="npcGoalsStatus" class="npc-goals-status" role="status" aria-live="polite"></div>
+                <div class="npc-goals-actions">
+                    <button type="button" class="npc-goals-cancel" id="npcGoalsCancelBtn">Cancel</button>
+                    <button type="button" class="npc-goals-save" id="npcGoalsSaveBtn">Save</button>
+                </div>
+            </footer>
+        </div>
+    </div>
     <div id="addNpcModal" class="modal add-npc-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -4007,6 +4029,14 @@
         const npcMemoriesCancelBtn = document.getElementById('npcMemoriesCancelBtn');
         const npcMemoriesSaveBtn = document.getElementById('npcMemoriesSaveBtn');
         const npcMemoriesCloseBtn = document.getElementById('npcMemoriesCloseBtn');
+        const npcGoalsModal = document.getElementById('npcGoalsModal');
+        const npcGoalsModalTitle = document.getElementById('npcGoalsModalTitle');
+        const npcGoalsList = document.getElementById('npcGoalsList');
+        const npcGoalsAddBtn = document.getElementById('npcGoalsAddBtn');
+        const npcGoalsStatus = document.getElementById('npcGoalsStatus');
+        const npcGoalsCancelBtn = document.getElementById('npcGoalsCancelBtn');
+        const npcGoalsSaveBtn = document.getElementById('npcGoalsSaveBtn');
+        const npcGoalsCloseBtn = document.getElementById('npcGoalsCloseBtn');
         const newExitModal = document.getElementById('newExitModal');
         const newExitModalTitle = document.getElementById('newExitModalTitle');
         const newExitForm = document.getElementById('newExitForm');
@@ -4875,6 +4905,10 @@
         let currentNpcMemoriesName = '';
         let npcMemoriesDirty = false;
         let draggedNpcMemoryRow = null;
+        let currentNpcGoalsId = null;
+        let currentNpcGoalsName = '';
+        let npcGoalsDirty = false;
+        let draggedNpcGoalRow = null;
         let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
         let currentThingEditId = null;
@@ -5934,10 +5968,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -5984,10 +6019,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6021,10 +6057,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6059,10 +6096,11 @@
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6092,6 +6130,33 @@
             npcMemoriesDirty = true;
             if (npcMemoriesSaveBtn) {
                 npcMemoriesSaveBtn.disabled = false;
+            }
+        }
+
+        function setNpcGoalsStatus(message = '', type = null) {
+            if (!npcGoalsStatus) {
+                return;
+            }
+            npcGoalsStatus.textContent = message || '';
+            npcGoalsStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                npcGoalsStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                npcGoalsStatus.classList.add('is-success');
+            }
+        }
+
+        function resetNpcGoalsDirty() {
+            npcGoalsDirty = false;
+            if (npcGoalsSaveBtn) {
+                npcGoalsSaveBtn.disabled = true;
+            }
+        }
+
+        function markNpcGoalsDirty() {
+            npcGoalsDirty = true;
+            if (npcGoalsSaveBtn) {
+                npcGoalsSaveBtn.disabled = false;
             }
         }
 
@@ -6157,6 +6222,68 @@
             resetNpcMemoriesDirty();
         }
 
+        function createNpcGoalRow(value = '') {
+            const row = document.createElement('div');
+            row.className = 'npc-goal-row';
+            row.setAttribute('role', 'listitem');
+
+            const handle = document.createElement('button');
+            handle.type = 'button';
+            handle.className = 'npc-goal-handle';
+            handle.setAttribute('aria-label', 'Reorder goal');
+            handle.textContent = '≡';
+            handle.draggable = true;
+
+            const textarea = document.createElement('textarea');
+            textarea.className = 'npc-goal-text';
+            textarea.rows = 2;
+            textarea.value = value || '';
+            textarea.addEventListener('input', () => {
+                markNpcGoalsDirty();
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'npc-goal-delete';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', () => {
+                row.remove();
+                markNpcGoalsDirty();
+                if (npcGoalsList && !npcGoalsList.children.length) {
+                    npcGoalsList.appendChild(createNpcGoalRow(''));
+                }
+            });
+
+            handle.addEventListener('dragstart', (event) => {
+                draggedNpcGoalRow = row;
+                row.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', 'goal');
+            });
+
+            handle.addEventListener('dragend', () => {
+                if (draggedNpcGoalRow === row) {
+                    draggedNpcGoalRow = null;
+                }
+                row.classList.remove('dragging');
+            });
+
+            row.append(handle, textarea, deleteButton);
+            return row;
+        }
+
+        function renderNpcGoals(goals = []) {
+            if (!npcGoalsList) {
+                return;
+            }
+            npcGoalsList.innerHTML = '';
+            const entries = Array.isArray(goals) && goals.length ? goals : [''];
+            entries.forEach(goal => {
+                npcGoalsList.appendChild(createNpcGoalRow(goal));
+            });
+            resetNpcGoalsDirty();
+        }
+
         function collectNpcMemories() {
             if (!npcMemoriesList) {
                 return [];
@@ -6187,10 +6314,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6281,6 +6409,146 @@
                 setNpcMemoriesStatus(error?.message || 'Failed to save memories.', 'error');
                 if (npcMemoriesSaveBtn) {
                     npcMemoriesSaveBtn.disabled = false;
+                }
+            }
+        }
+
+        function collectNpcGoals() {
+            if (!npcGoalsList) {
+                return [];
+            }
+            return Array.from(npcGoalsList.querySelectorAll('.npc-goal-text'))
+                .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
+                .filter(entry => entry.length > 0);
+        }
+
+        function closeNpcGoalsModal() {
+            if (!npcGoalsModal) {
+                return;
+            }
+            npcGoalsModal.setAttribute('aria-hidden', 'true');
+            npcGoalsModal.setAttribute('hidden', '');
+            currentNpcGoalsId = null;
+            currentNpcGoalsName = '';
+            draggedNpcGoalRow = null;
+            if (npcGoalsList) {
+                npcGoalsList.innerHTML = '';
+            }
+            setNpcGoalsStatus('', null);
+            resetNpcGoalsDirty();
+            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
+            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
+            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
+            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
+            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
+            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
+            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
+            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
+            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
+            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
+            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+                npcModalBackdrop.setAttribute('hidden', '');
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        async function showNpcGoalsModal(target) {
+            if (!target || !npcGoalsModal || !npcModalBackdrop) {
+                return;
+            }
+
+            const npcId = typeof target.id === 'string' ? target.id : null;
+            if (!npcId) {
+                console.warn('Unable to open goals editor: NPC id missing');
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            const latestNpc = npcDataCache?.get(npcId) || target;
+            let goals = [];
+            if (Array.isArray(latestNpc?.personality?.goals)) {
+                goals = latestNpc.personality.goals
+                    .map(entry => (typeof entry === 'string' ? entry : ''))
+                    .filter(Boolean);
+            } else if (Array.isArray(latestNpc?.goals)) {
+                goals = latestNpc.goals
+                    .map(entry => (typeof entry === 'string' ? entry : ''))
+                    .filter(Boolean);
+            }
+
+            currentNpcGoalsId = npcId;
+            currentNpcGoalsName = latestNpc?.name || target.name || 'Character';
+            draggedNpcGoalRow = null;
+            setNpcGoalsStatus('', null);
+            renderNpcGoals(goals);
+
+            npcModalBackdrop.removeAttribute('hidden');
+            npcGoalsModal.removeAttribute('hidden');
+            npcGoalsModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            if (npcGoalsModalTitle) {
+                npcGoalsModalTitle.textContent = `${formatPossessiveName(currentNpcGoalsName, 'Character')} Goals`;
+            }
+            scrollModalToTop(npcGoalsModal);
+
+            const firstField = npcGoalsList?.querySelector('.npc-goal-text');
+            if (firstField) {
+                firstField.focus();
+            }
+        }
+
+        async function saveNpcGoals() {
+            if (!currentNpcGoalsId) {
+                return;
+            }
+            const goals = collectNpcGoals();
+
+            try {
+                setNpcGoalsStatus('Saving goals...');
+                if (npcGoalsSaveBtn) {
+                    npcGoalsSaveBtn.disabled = true;
+                }
+
+                const response = await fetch(`/api/npcs/${encodeURIComponent(currentNpcGoalsId)}/goals`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ goals })
+                });
+
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                setNpcGoalsStatus('Goals saved.', 'success');
+                resetNpcGoalsDirty();
+
+                const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                if (npcDataCache) {
+                    const cached = npcDataCache.get(currentNpcGoalsId) || {};
+                    const updatedPersonality = {
+                        ...(cached.personality || {}),
+                        goals: goals.slice(0)
+                    };
+                    npcDataCache.set(currentNpcGoalsId, { ...cached, personality: updatedPersonality, goals: goals.slice(0) });
+                }
+
+                if (typeof window.loadCurrentLocation === 'function') {
+                    await window.loadCurrentLocation();
+                }
+                window.refreshParty?.();
+
+                closeNpcGoalsModal();
+            } catch (error) {
+                console.warn('Failed to save NPC goals:', error);
+                setNpcGoalsStatus(error?.message || 'Failed to save goals.', 'error');
+                if (npcGoalsSaveBtn) {
+                    npcGoalsSaveBtn.disabled = false;
                 }
             }
         }
@@ -6510,10 +6778,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -6620,10 +6889,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -7455,9 +7725,10 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -7479,10 +7750,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -7528,10 +7800,11 @@
             const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
             const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
             const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
+            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
             const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
             const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
             const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && newExitHidden && addNpcHidden && loadGameHidden) {
+            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
                 npcModalBackdrop.setAttribute('hidden', '');
                 document.body.classList.remove('modal-open');
             }
@@ -7788,6 +8061,87 @@
             });
         }
 
+        if (npcGoalsCancelBtn) {
+            npcGoalsCancelBtn.addEventListener('click', () => {
+                closeNpcGoalsModal();
+            });
+        }
+
+        if (npcGoalsCloseBtn) {
+            npcGoalsCloseBtn.addEventListener('click', () => {
+                closeNpcGoalsModal();
+            });
+        }
+
+        if (npcGoalsSaveBtn) {
+            npcGoalsSaveBtn.addEventListener('click', async () => {
+                await saveNpcGoals();
+            });
+        }
+
+        if (npcGoalsAddBtn) {
+            npcGoalsAddBtn.addEventListener('click', () => {
+                if (!npcGoalsList) {
+                    return;
+                }
+                const row = createNpcGoalRow('');
+                npcGoalsList.appendChild(row);
+                const textarea = row.querySelector('.npc-goal-text');
+                if (textarea) {
+                    textarea.focus();
+                }
+                markNpcGoalsDirty();
+            });
+        }
+
+        if (npcGoalsList) {
+            npcGoalsList.addEventListener('dragover', (event) => {
+                if (!draggedNpcGoalRow) {
+                    return;
+                }
+                event.preventDefault();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                const targetRow = event.target.closest('.npc-goal-row');
+                if (!targetRow) {
+                    if (npcGoalsList.lastElementChild !== draggedNpcGoalRow) {
+                        npcGoalsList.appendChild(draggedNpcGoalRow);
+                        markNpcGoalsDirty();
+                    }
+                    return;
+                }
+                if (targetRow === draggedNpcGoalRow) {
+                    return;
+                }
+                const targetRect = targetRow.getBoundingClientRect();
+                const shouldInsertBefore = event.clientY < targetRect.top + targetRect.height / 2;
+                if (shouldInsertBefore) {
+                    npcGoalsList.insertBefore(draggedNpcGoalRow, targetRow);
+                } else {
+                    npcGoalsList.insertBefore(draggedNpcGoalRow, targetRow.nextSibling);
+                }
+                markNpcGoalsDirty();
+            });
+
+            npcGoalsList.addEventListener('drop', (event) => {
+                if (!draggedNpcGoalRow) {
+                    return;
+                }
+                event.preventDefault();
+                draggedNpcGoalRow.classList.remove('dragging');
+                draggedNpcGoalRow = null;
+                markNpcGoalsDirty();
+            });
+
+            npcGoalsList.addEventListener('dragend', () => {
+                if (draggedNpcGoalRow) {
+                    draggedNpcGoalRow.classList.remove('dragging');
+                    draggedNpcGoalRow = null;
+                }
+            });
+        }
+
         if (addNpcButton) {
             addNpcButton.addEventListener('click', () => {
                 openAddNpcModal();
@@ -7924,6 +8278,8 @@
                         closeNpcNeedsModal();
                     } else if (npcMemoriesModal && !npcMemoriesModal.hasAttribute('hidden')) {
                         closeNpcMemoriesModal();
+                    } else if (npcGoalsModal && !npcGoalsModal.hasAttribute('hidden')) {
+                        closeNpcGoalsModal();
                     } else if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
                         closeNpcDispositionModal();
                     } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
@@ -9717,6 +10073,12 @@
                     return;
                 }
 
+                if (npcGoalsModal && !npcGoalsModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closeNpcGoalsModal();
+                    return;
+                }
+
                 if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeNpcDispositionModal();
@@ -9978,6 +10340,7 @@
 
                 let teleportButton = null;
                 let memoriesButton = null;
+                let goalsButton = null;
                 let dispositionButton = null;
                 let killButton = null;
                 let deleteButton = null;
@@ -9999,6 +10362,12 @@
                     memoriesButton.className = 'npc-card-menu-item';
                     memoriesButton.textContent = 'Memories';
                     menu.appendChild(memoriesButton);
+
+                    goalsButton = document.createElement('button');
+                    goalsButton.type = 'button';
+                    goalsButton.className = 'npc-card-menu-item';
+                    goalsButton.textContent = 'Goals';
+                    menu.appendChild(goalsButton);
 
                     dispositionButton = document.createElement('button');
                     dispositionButton.type = 'button';
@@ -10185,6 +10554,15 @@
                         closeNpcContextMenu();
                         const latestNpc = npcDataCache.get(npc.id) || npc;
                         showNpcMemoriesModal(latestNpc);
+                    });
+                }
+
+                if (goalsButton) {
+                    goalsButton.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        const latestNpc = npcDataCache.get(npc.id) || npc;
+                        showNpcGoalsModal(latestNpc);
                     });
                 }
 

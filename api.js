@@ -8680,6 +8680,61 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/npcs/:id/goals', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
+                }
+
+                const npc = players.get(npcId);
+                if (!npc) {
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
+                }
+
+                const submitted = req.body?.goals;
+                if (!Array.isArray(submitted)) {
+                    return res.status(400).json({ success: false, error: 'Goals payload must be an array of strings' });
+                }
+
+                const normalized = [];
+                const seen = new Set();
+                for (const entry of submitted) {
+                    if (typeof entry !== 'string') {
+                        continue;
+                    }
+                    const trimmed = entry.trim();
+                    if (!trimmed || seen.has(trimmed.toLowerCase())) {
+                        continue;
+                    }
+                    seen.add(trimmed.toLowerCase());
+                    normalized.push(trimmed);
+                }
+
+                const existingGoals = Array.isArray(npc.goals) ? npc.goals.slice(0) : [];
+                for (const goal of existingGoals) {
+                    npc.removeGoal(goal);
+                }
+
+                for (const goal of normalized) {
+                    const added = npc.addGoal(goal);
+                    if (!added) {
+                        return res.status(400).json({ success: false, error: `Failed to add goal "${goal}".` });
+                    }
+                }
+
+                const npcProfile = serializeNpcForClient(npc);
+                res.json({
+                    success: true,
+                    npc: npcProfile,
+                    message: `Updated goals for ${npc.name || 'character'}.`
+                });
+            } catch (error) {
+                console.error('Error updating NPC goals:', error);
+                res.status(500).json({ success: false, error: error.message || 'Failed to update goals' });
+            }
+        });
+
         app.put('/api/npcs/:id/dispositions', (req, res) => {
             try {
                 const npcId = req.params.id;
