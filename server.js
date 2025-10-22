@@ -8820,8 +8820,12 @@ function formatDurationLine(durationSeconds) {
 }
 
 function clampLevel(value, fallback = 1) {
-    const base = Number.isFinite(value) ? value : (Number.isFinite(fallback) ? fallback : 1);
-    return Math.max(1, Math.min(20, Math.round(base)));
+    if (!Number.isFinite(value)) {
+        console.warn(`clampLevel: Invalid level value "${value}", using fallback ${fallback}.`);
+        console.trace();
+        return fallback;
+    }
+    return Math.max(1, Math.round(value));
 }
 
 function roundAwayFromZero(value) {

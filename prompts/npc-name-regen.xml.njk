@@ -4,8 +4,8 @@
 <generationPrompt>
 <context>
 Here's a list of existing NPCs:
-{% for word in bannedWords %} {{ word | capitalize }}: deceased 
-{% endfor %}{% for npc in existingNpcs %} {{ npc.name }}: {{ npc.shortDescription }} 
+{#% for word in bannedWords %} {{ word | capitalize }}: deceased 
+{% endfor %#}{% for npc in existingNpcs %} {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 
 </context>

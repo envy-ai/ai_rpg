@@ -3833,7 +3833,7 @@ module.exports = function registerApiRoutes(scope) {
                 .join(' ');
         }
 
-        function parseDispositionCheckResponse(responseText) {
+        function parseDispositionCheckResponse(responseText, { defaultNpcName = null } = {}) {
             if (!responseText || typeof responseText !== 'string') {
                 return [];
             }
@@ -3854,71 +3854,128 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const root = doc.getElementsByTagName('npcDispositions')[0] || doc.documentElement;
-            if (!root) {
-                return [];
-            }
-
-            const npcNodes = Array.from(root.getElementsByTagName('npc'));
             const results = [];
 
-            for (const npcNode of npcNodes) {
-                if (!npcNode) {
-                    continue;
-                }
+            const documentElementName = (doc.documentElement && typeof doc.documentElement.tagName === 'string')
+                ? doc.documentElement.tagName.toLowerCase()
+                : '';
 
-                const nameNode = npcNode.getElementsByTagName('name')[0];
-                const name = nameNode && typeof nameNode.textContent === 'string'
-                    ? nameNode.textContent.trim()
-                    : '';
-                if (!name) {
-                    continue;
-                }
+            const npcRoot = doc.getElementsByTagName('npcDispositions')[0]
+                || (documentElementName === 'npcdispositions' ? doc.documentElement : null);
 
-                const container = npcNode.getElementsByTagName('dispositionsTowardsPlayer')[0] || null;
-                const dispositionNodes = container
-                    ? Array.from(container.getElementsByTagName('disposition'))
-                    : Array.from(npcNode.getElementsByTagName('disposition'));
+            if (npcRoot) {
+                const npcNodes = Array.from(npcRoot.getElementsByTagName('npc'));
 
-                const dispositions = [];
-
-                for (const dispositionNode of dispositionNodes) {
-                    if (!dispositionNode) {
+                for (const npcNode of npcNodes) {
+                    if (!npcNode) {
                         continue;
                     }
 
-                    const getText = (tag) => {
-                        const node = dispositionNode.getElementsByTagName(tag)[0];
-                        if (!node || typeof node.textContent !== 'string') {
-                            return null;
+                    const nameNode = npcNode.getElementsByTagName('name')[0];
+                    const name = nameNode && typeof nameNode.textContent === 'string'
+                        ? nameNode.textContent.trim()
+                        : '';
+                    if (!name) {
+                        continue;
+                    }
+
+                    const container = npcNode.getElementsByTagName('dispositionsTowardsPlayer')[0] || null;
+                    const dispositionNodes = container
+                        ? Array.from(container.getElementsByTagName('disposition'))
+                        : Array.from(npcNode.getElementsByTagName('disposition'));
+
+                    const dispositions = [];
+
+                    for (const dispositionNode of dispositionNodes) {
+                        if (!dispositionNode) {
+                            continue;
                         }
-                        const value = node.textContent.trim();
-                        return value || null;
-                    };
 
-                    const type = getText('type');
-                    const intensityText = getText('intensity');
-                    const reason = getText('reason');
+                        const getText = (tag) => {
+                            const node = dispositionNode.getElementsByTagName(tag)[0];
+                            if (!node || typeof node.textContent !== 'string') {
+                                return null;
+                            }
+                            const value = node.textContent.trim();
+                            return value || null;
+                        };
 
-                    if (!type || !intensityText) {
-                        continue;
+                        const type = getText('type');
+                        const intensityText = getText('intensity');
+                        const reason = getText('reason');
+
+                        if (!type || !intensityText) {
+                            continue;
+                        }
+
+                        const intensityValue = parseInt(intensityText, 10);
+                        if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                            continue;
+                        }
+
+                        dispositions.push({
+                            type,
+                            intensity: intensityValue,
+                            reason: reason || null,
+                            rawIntensity: intensityText
+                        });
                     }
 
-                    const intensityValue = parseInt(intensityText, 10);
-                    if (!Number.isFinite(intensityValue) || intensityValue === 0) {
-                        continue;
+                    if (dispositions.length) {
+                        results.push({ name, dispositions });
                     }
-
-                    dispositions.push({
-                        type,
-                        intensity: intensityValue,
-                        reason: reason || null,
-                        rawIntensity: intensityText
-                    });
                 }
+            }
 
-                if (dispositions.length) {
-                    results.push({ name, dispositions });
+            if (!results.length && defaultNpcName) {
+                const singleNpcContainer = doc.getElementsByTagName('dispositionsChangesTowardsPlayer')[0]
+                    || (documentElementName === 'dispositionschangestowardsplayer' ? doc.documentElement : null);
+
+                if (singleNpcContainer) {
+                    const dispositionNodes = Array.from(singleNpcContainer.getElementsByTagName('dispositionChange'));
+                    const dispositions = [];
+
+                    for (const dispositionNode of dispositionNodes) {
+                        if (!dispositionNode) {
+                            continue;
+                        }
+
+                        const getText = (tag) => {
+                            const node = dispositionNode.getElementsByTagName(tag)[0];
+                            if (!node || typeof node.textContent !== 'string') {
+                                return null;
+                            }
+                            const value = node.textContent.trim();
+                            return value || null;
+                        };
+
+                        const type = getText('type');
+                        const intensityText = getText('intensity');
+                        const reason = getText('reason');
+
+                        if (!type || !intensityText) {
+                            continue;
+                        }
+
+                        const intensityValue = parseInt(intensityText, 10);
+                        if (!Number.isFinite(intensityValue) || intensityValue === 0) {
+                            continue;
+                        }
+
+                        dispositions.push({
+                            type,
+                            intensity: intensityValue,
+                            reason: reason || null,
+                            rawIntensity: intensityText
+                        });
+                    }
+
+                    if (dispositions.length) {
+                        results.push({
+                            name: defaultNpcName,
+                            dispositions
+                        });
+                    }
                 }
             }
 
@@ -4272,14 +4329,14 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runNpcMemoriesPrompt({ npc, historyEntries = [], locationOverride = null, totalPrompts = 1 } = {}) {
             if (!npc || !Array.isArray(historyEntries) || !historyEntries.length) {
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
             const endpoint = config?.ai?.endpoint;
             const apiKey = config?.ai?.apiKey;
             const model = config?.ai?.model;
             if (!endpoint || !apiKey || !model) {
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
             let baseContext;
@@ -4378,7 +4435,7 @@ module.exports = function registerApiRoutes(scope) {
                 .filter(Boolean);
 
             if (!sanitizedHistoryEntries.length) {
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
             const templatePayload = {
@@ -4396,12 +4453,12 @@ module.exports = function registerApiRoutes(scope) {
                     ? nunjucks.lib.prettifyError(error)
                     : error;
                 console.warn('Failed to render npc-memories template:', prettyError);
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
             const chatEndpoint = endpoint.endsWith('/')
@@ -4434,6 +4491,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let memoryText = '';
                 let goalsUpdate = null;
+                let dispositionUpdates = [];
                 try {
                     const sanitized = sanitizeForXml(raw || '');
                     const doc = Utils.parseXmlDocument(sanitized, 'text/xml');
@@ -4447,8 +4505,8 @@ module.exports = function registerApiRoutes(scope) {
                             memoryText = memoryNode.textContent.trim();
                         }
 
-                        const goalsNode = responseNode?.getElementsByTagName('goals')?.[0]
-                            || doc.getElementsByTagName('goals')[0];
+                        const goalsNode = responseNode?.getElementsByTagName('goalChanges')?.[0]
+                            || doc.getElementsByTagName('goalChanges')[0];
                         if (goalsNode) {
                             const extractValues = (tagName) => Array.from(goalsNode.getElementsByTagName(tagName))
                                 .map(node => (node && typeof node.textContent === 'string' ? node.textContent.trim() : ''))
@@ -4466,6 +4524,23 @@ module.exports = function registerApiRoutes(scope) {
                                 };
                             }
                         }
+
+                        const contextName = typeof currentNpcContext?.name === 'string' ? currentNpcContext.name.trim() : '';
+                        const defaultNpcName = contextName || npcName || 'Unknown NPC';
+                        const defaultNpcNameLower = defaultNpcName.toLowerCase();
+                        const parsedDispositions = parseDispositionCheckResponse(raw, { defaultNpcName });
+                        if (Array.isArray(parsedDispositions) && parsedDispositions.length) {
+                            dispositionUpdates = parsedDispositions
+                                .filter(entry => {
+                                    const candidateName = typeof entry?.name === 'string' ? entry.name.trim() : '';
+                                    return candidateName && candidateName.toLowerCase() === defaultNpcNameLower;
+                                })
+                                .map(entry => ({
+                                    name: entry.name,
+                                    dispositions: Array.isArray(entry.dispositions) ? entry.dispositions.slice(0) : []
+                                }))
+                                .filter(entry => entry.dispositions.length);
+                        }
                     }
                 } catch (parseError) {
                     console.warn(`Failed to parse npc-memories response for ${npc.name || 'NPC'}:`, parseError.message);
@@ -4482,11 +4557,12 @@ module.exports = function registerApiRoutes(scope) {
                 return {
                     raw,
                     memory: memoryText ? memoryText : null,
-                    goals: goalsUpdate
+                    goals: goalsUpdate,
+                    dispositions: dispositionUpdates
                 };
             } catch (error) {
                 console.warn(`Failed to run npc-memories prompt for ${npc.name || 'NPC'}:`, error.message);
-                return { raw: '', memory: null, goals: null };
+                return { raw: '', memory: null, goals: null, dispositions: [] };
             }
         }
 
@@ -4635,6 +4711,10 @@ module.exports = function registerApiRoutes(scope) {
                         if (result?.goals) {
                             applyGoalUpdatesToActor(actor, result.goals);
                         }
+
+                        if (Array.isArray(result?.dispositions) && result.dispositions.length) {
+                            applyDispositionChanges(result.dispositions);
+                        }
                     } catch (error) {
                         console.warn(`Error while generating memories for ${actor.name}:`, error.message);
                         console.log(actor);
@@ -4716,6 +4796,10 @@ module.exports = function registerApiRoutes(scope) {
                             if (result?.goals) {
                                 applyGoalUpdatesToActor(member, result.goals);
                             }
+
+                            if (Array.isArray(result?.dispositions) && result.dispositions.length) {
+                                applyDispositionChanges(result.dispositions);
+                            }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${member.name}:`, error.message);
                         } finally {
@@ -4776,6 +4860,10 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (result?.goals) {
                                 applyGoalUpdatesToActor(member, result.goals);
+                            }
+
+                            if (Array.isArray(result?.dispositions) && result.dispositions.length) {
+                                applyDispositionChanges(result.dispositions);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${member.name}:`, error.message);
@@ -4940,6 +5028,10 @@ module.exports = function registerApiRoutes(scope) {
                             if (result?.goals) {
                                 applyGoalUpdatesToActor(member, result.goals);
                             }
+
+                            if (Array.isArray(result?.dispositions) && result.dispositions.length) {
+                                applyDispositionChanges(result.dispositions);
+                            }
                         } catch (error) {
                             console.warn(`Error while generating party memories for ${memberName}:`, error.message);
                         } finally {
@@ -4997,6 +5089,10 @@ module.exports = function registerApiRoutes(scope) {
 
                             if (result?.goals) {
                                 applyGoalUpdatesToActor(member, result.goals);
+                            }
+
+                            if (Array.isArray(result?.dispositions) && result.dispositions.length) {
+                                applyDispositionChanges(result.dispositions);
                             }
                         } catch (error) {
                             console.warn(`Error while generating memories for departed party member ${memberName}:`, error.message);
@@ -6520,11 +6616,7 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    if (config.omit_npc_generation) {
-                        stream.status('player_action:llm_complete', 'Skipping disposition checks (NPC generation disabled).');
-                    } else {
-                        stream.status('player_action:llm_complete', 'Checking for disposition changes.');
-                    }
+                    stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
 
                     // Store AI response in history
                     const aiResponseLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'player action entry');
@@ -6540,19 +6632,6 @@ module.exports = function registerApiRoutes(scope) {
                         await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
                     } catch (summaryError) {
                         console.warn('Failed to summarize player action entry:', summaryError.message);
-                    }
-
-                    let dispositionPromptResult = null;
-                    let dispositionChanges = [];
-                    if (!config.omit_npc_generation) {
-                        try {
-                            dispositionPromptResult = await runDispositionCheckPrompt({ location });
-                            if (Array.isArray(dispositionPromptResult?.structured) && dispositionPromptResult.structured.length) {
-                                dispositionChanges = applyDispositionChanges(dispositionPromptResult.structured);
-                            }
-                        } catch (dispositionError) {
-                            console.warn('Failed to evaluate disposition changes:', dispositionError.message);
-                        }
                     }
 
                     // Include debug information in response for development
@@ -6576,17 +6655,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (debugInfo) {
                         debugInfo.actionResolution = actionResolution;
                         debugInfo.plausibilityStructured = plausibilityInfo?.structured || null;
-                        if (dispositionPromptResult?.raw) {
-                            debugInfo.dispositionPrompt = dispositionPromptResult.raw;
-                        }
-                        if (dispositionChanges.length) {
-                            debugInfo.dispositionChanges = dispositionChanges;
-                        }
                         responseData.debug = debugInfo;
-                    }
-
-                    if (dispositionChanges.length) {
-                        responseData.dispositionChanges = dispositionChanges;
                     }
 
                     if (actionResolution) {
