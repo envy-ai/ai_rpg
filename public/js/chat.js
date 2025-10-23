@@ -3061,6 +3061,30 @@ class AIRPGChat {
         if (!payload) {
             return;
         }
+
+        const stageRaw = typeof payload.stage === 'string' ? payload.stage.trim().toLowerCase() : '';
+        if (stageRaw === 'spinner:start') {
+            const overlayMessage = typeof payload.message === 'string' && payload.message.trim()
+                ? payload.message.trim()
+                : 'Loading...';
+            try {
+                window.showLocationOverlay?.(overlayMessage);
+                this.pendingMoveOverlay = true;
+            } catch (error) {
+                console.debug('Failed to show overlay for spinner:start status:', error);
+            }
+            return;
+        }
+        if (stageRaw === 'spinner:stop') {
+            try {
+                window.hideLocationOverlay?.();
+            } catch (error) {
+                console.debug('Failed to hide overlay for spinner:stop status:', error);
+            }
+            this.pendingMoveOverlay = false;
+            return;
+        }
+
         const requestId = payload.requestId;
         if (!requestId) {
             return;

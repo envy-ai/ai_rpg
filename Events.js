@@ -1632,12 +1632,15 @@ class Events {
                 });
             },
             move_new_location: async function (entries = [], context = {}) {
+                console.log('Processing move_new_location events:', entries);
+                const stream = context?.stream || null;
                 await applyExitDiscovery(this, entries, context, {
                     movePlayer: true,
                     eventLabel: 'move_new_location',
                     moveLabel: 'move_new_location'
                 });
                 if (entries && entries.length > 0) {
+                    console.log('Recording move events in context for move_new_location.');
                     // Initialize moveEvents array if it doesn't exist
                     if (!Array.isArray(context.moveEvents)) {
                         context.moveEvents = [];
@@ -1645,6 +1648,7 @@ class Events {
 
                     // Add event data for each move entry
                     for (const entry of entries) {
+                        console.log('Recording move event for entry:', entry);
                         if (entry && entry.name) {
                             const moveEventData = {
                                 type: 'move_new_location',
@@ -1663,8 +1667,12 @@ class Events {
                                     description: context.location.description
                                 };
                             }
-
+                            console.log('Move event data to record:', moveEventData);
                             context.moveEvents.push(moveEventData);
+                            if (stream && typeof stream.status === 'function') {
+                                stream.status('spinner:start', { message: `Moving to ${entry.name}...` });
+                                console.log(`Spinner start status emitted for moving to ${entry.name}.`);
+                            }
                         }
                     }
                 }
