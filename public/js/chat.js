@@ -1651,6 +1651,7 @@ class AIRPGChat {
             'pick_up_item',
             'transfer_item',
             'consume_item',
+            'move_new_location',
             'move_location',
             'npc_arrival_departure',
             'needbar_change',

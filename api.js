@@ -1163,6 +1163,7 @@ module.exports = function registerApiRoutes(scope) {
             'pick_up_item',
             'transfer_item',
             'consume_item',
+            'move_new_location',
             'move_location',
             'npc_arrival_departure',
             'needbar_change',
@@ -1351,10 +1352,26 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             break;
                         case 'move_location':
-                            entries.forEach(location => {
+                        case 'move_new_location': {
+                            const destinations = (Array.isArray(entries) ? entries : [entries])
+                                .map(entry => {
+                                    if (entry && typeof entry === 'object') {
+                                        if (typeof entry.name === 'string' && entry.name.trim()) {
+                                            return entry.name.trim();
+                                        }
+                                        if (typeof entry.destinationName === 'string' && entry.destinationName.trim()) {
+                                            return entry.destinationName.trim();
+                                        }
+                                    }
+                                    return entry;
+                                })
+                                .filter(value => typeof value === 'string' && value.trim().length);
+                            destinations.forEach(location => {
                                 add('🚶', `Travelled to ${safeSummaryItem(location, 'a new location')}.`);
                             });
+                            shouldRefresh = true;
                             break;
+                        }
                         case 'new_exit_discovered':
                             entries.forEach(description => {
                                 add('🚪', `New exit discovered: ${safeSummaryItem(description, 'a new path')}.`);

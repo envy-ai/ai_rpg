@@ -1085,9 +1085,6 @@ class Events {
                 };
             }).filter(Boolean),
             move_new_location: raw => {
-                if (Globals.processedMove) {
-                    return [];
-                }
                 return splitPipeList(raw).map(entry => {
                     if (typeof entry !== 'string') {
                         return null;
@@ -1640,6 +1637,37 @@ class Events {
                     eventLabel: 'move_new_location',
                     moveLabel: 'move_new_location'
                 });
+                if (entries && entries.length > 0) {
+                    // Initialize moveEvents array if it doesn't exist
+                    if (!Array.isArray(context.moveEvents)) {
+                        context.moveEvents = [];
+                    }
+
+                    // Add event data for each move entry
+                    for (const entry of entries) {
+                        if (entry && entry.name) {
+                            const moveEventData = {
+                                type: 'move_new_location',
+                                destination: entry.name,
+                                description: entry.description || '',
+                                kind: entry.kind || 'location',
+                                vehicleType: entry.vehicleType || null,
+                                timestamp: Date.now()
+                            };
+
+                            // Add the current location info if available
+                            if (context.location) {
+                                moveEventData.newLocation = {
+                                    id: context.location.id,
+                                    name: context.location.name,
+                                    description: context.location.description
+                                };
+                            }
+
+                            context.moveEvents.push(moveEventData);
+                        }
+                    }
+                }
             },
             alter_location: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
