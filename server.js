@@ -2209,11 +2209,14 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
+
     const currentLocationContext = {
         name: locationDetails?.name || location?.name || 'Unknown Location',
         description: locationDetails?.description || location?.description || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails),
-        exits: exitSummaries
+        exits: exitSummaries,
+        items: location.items,
+        scenery: location.scenery
     };
 
     const regionStatus = region && typeof region.toJSON === 'function' ? region.toJSON() : null;
@@ -2599,6 +2602,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 }
             }
         }
+    } else {
+        console.warn('No location available to collect items in scene.');
+        console.trace();
     }
 
     const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];

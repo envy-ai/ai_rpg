@@ -4160,7 +4160,7 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('typicalStep not defined; cannot apply minor disposition change.');
                             continue;
                         }
-                        const scaled = (intensityValue / 2) * typicalStep;
+                        const scaled = intensityValue * typicalStep;
                         const rounded = Math.round(scaled);
                         if (rounded !== 0) {
                             delta = rounded;

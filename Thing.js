@@ -1029,6 +1029,26 @@ class Thing {
     location.addThingId(this.#id);
   }
 
+  static getAllByLocationId(locationId) {
+    const Location = require('./Location.js');
+    const location = Location.get(locationId);
+    if (!location) {
+      console.warn(`Location with ID ${locationId} does not exist`);
+      console.trace();
+      return [];
+    }
+
+    const thingIds = Array.isArray(location.thingIds) ? location.thingIds : (typeof location.thingIds === 'function' ? location.thingIds() : []);
+    const things = [];
+    for (const thingId of thingIds) {
+      const thing = Thing.getById(thingId);
+      if (thing) {
+        things.push(thing);
+      }
+    }
+    return things;
+  }
+
   static putInLocationById(thingId, locationId) {
     const thing = Thing.getById(thingId);
     if (thing) {

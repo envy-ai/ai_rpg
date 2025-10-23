@@ -116,6 +116,147 @@ You are able to write both explicit and non-explicit content, depending on the n
       </exit>
       {% endfor %}
     </exits>
+    <items>
+      {% for item in currentLocation.items %}
+      <item>
+        <name>{{ item.name }}</name>
+        <description>{{ item.description }}</description>
+        <isScenery>{{ item.isScenery | default(false) }}</isScenery>
+        <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <rarity>{{ item.rarity | default('common') }}</rarity>
+        <value>{{ item.value | default(0) }}</value>
+        <statusEffects>
+          {% for effect in item.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+        <weight>{{ item.weight | default(0) }}</weight>
+        <properties>{{ item.properties | default('', true) }}</properties>
+      </item>
+      {% endfor %}
+    </items>
+    <npcs>
+      {% for npc in npcs %}
+      <npc>
+        <id>{{ npc.id | default('unknown', true) }}</id>
+        <name>{{ npc.name }}</name>
+        <description>{{ npc.description }}</description>
+        <class>{{ npc.class | default('Unknown') }}</class>
+        <race>{{ npc.race | default('Unknown') }}</race>
+        <personality>
+          <type>{{ npc.personality.type | default('Unknown', true) }}</type>
+          <traits>{{ npc.personality.traits | default('None', true) }}</traits>
+          <goals>
+              {% for goal in npc.personality.goals %}
+              <goal>{{ goal }}</goal>
+              {% endfor %}
+          </goals>
+          <notes>{{ npc.personality.notes | default('', true) }}</notes>
+        </personality>
+        <health>{{ npc.health | default('unknown') }}</health>
+        <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
+        <dispositionsTowardsPlayer>
+          {% for disposition in npc.dispositionsTowardsPlayer %}
+          <dispositionTowardsPlayer>
+            <type>{{ disposition.type }}</type>
+            <intensity>{{ disposition.intensityName }}</intensity>
+          </dispositionTowardsPlayer>
+          {% endfor %}
+        </dispositionsTowardsPlayer>
+        <importantMemories>
+          {% for entry in npc.selectedImportantMemories %}
+          <memory>{{ entry.memory }}</memory>
+          {% endfor %}
+        </importantMemories>
+        <inventory>
+          {% for item in npc.inventory %}<item>
+            <name>{{ item.name }}</name>
+            <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+          </item>
+        {% endfor %}</inventory>
+        <skills>
+          {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
+        </skills>
+        <abilities>
+          {% for ability in npc.abilities %}
+          <ability>
+            <name>{{ ability.name }}</name>
+            <description>{{ ability.description }}</description>
+            <type>{{ ability.type }}</type>
+            <level>{{ ability.level }}</level>
+          </ability>
+          {% endfor %}
+        </abilities>
+        <statusEffects>
+          {% for effect in npc.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+        <needBars>
+          {% for bar in npc.needBars %}
+          <needBar>
+            <name>{{ bar.name }}</name>
+            <currentThreshold>
+              <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
+              <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
+              <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
+            </currentThreshold>
+          </needBar>
+          {% endfor %}
+        </needBars>
+      </npc>
+      {% endfor %}
+    </npcs>
+    <itemsInScene>
+      {% for item in itemsInScene %}{% if not item.isScenery %}
+      <item>
+        <name>{{ item.name }}</name>
+        <description>{{ item.description }}</description>
+        <isScenery>{{ item.isScenery | default(false) }}</isScenery>
+        <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <rarity>{{ item.rarity | default('common') }}</rarity>
+        <value>{{ item.value | default(0) }}</value>
+        <statusEffects>
+          {% for effect in item.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+        <weight>{{ item.weight | default(0) }}</weight>
+        <properties>{{ item.properties | default('', true) }}</properties>
+      </item>
+      {% endif %}{% endfor %}
+    </itemsInScene>
+    <sceneryList>
+      {% for item in itemsInScene %}{% if item.isScenery %}
+      <sceneryItem>
+        <name>{{ item.name }}</name>
+        <description>{{ item.description }}</description>
+        <isScenery>{{ item.isScenery | default(true) }}</isScenery>
+        <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+        <rarity>{{ item.rarity | default('common') }}</rarity>
+        <value>{{ item.value | default(0) }}</value>
+        <statusEffects>
+          {% for effect in item.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+        <weight>{{ item.weight | default(0) }}</weight>
+        <properties>{{ item.properties | default('', true) }}</properties>
+      </sceneryItem>
+      {% endif %}{% endfor %}
+    </sceneryList>  
   </currentLocation>
   <player>
     <name>{{ currentPlayer.name }}</name>
@@ -179,81 +320,6 @@ You are able to write both explicit and non-explicit content, depending on the n
       {% endfor %}
     </needBars>
   </player>
-  <npcs>
-    {% for npc in npcs %}
-    <npc>
-      <id>{{ npc.id | default('unknown', true) }}</id>
-      <name>{{ npc.name }}</name>
-      <description>{{ npc.description }}</description>
-      <class>{{ npc.class | default('Unknown') }}</class>
-      <race>{{ npc.race | default('Unknown') }}</race>
-      <personality>
-        <type>{{ npc.personality.type | default('Unknown', true) }}</type>
-        <traits>{{ npc.personality.traits | default('None', true) }}</traits>
-        <goals>
-            {% for goal in npc.personality.goals %}
-            <goal>{{ goal }}</goal>
-            {% endfor %}
-        </goals>
-        <notes>{{ npc.personality.notes | default('', true) }}</notes>
-      </personality>
-      <health>{{ npc.health | default('unknown') }}</health>
-      <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
-      <dispositionsTowardsPlayer>
-        {% for disposition in npc.dispositionsTowardsPlayer %}
-        <dispositionTowardsPlayer>
-          <type>{{ disposition.type }}</type>
-          <intensity>{{ disposition.intensityName }}</intensity>
-        </dispositionTowardsPlayer>
-        {% endfor %}
-      </dispositionsTowardsPlayer>
-      <importantMemories>
-        {% for entry in npc.selectedImportantMemories %}
-        <memory>{{ entry.memory }}</memory>
-        {% endfor %}
-      </importantMemories>
-      <inventory>
-        {% for item in npc.inventory %}<item>
-          <name>{{ item.name }}</name>
-          <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
-        </item>
-      {% endfor %}</inventory>
-      <skills>
-        {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
-      </skills>
-      <abilities>
-        {% for ability in npc.abilities %}
-        <ability>
-          <name>{{ ability.name }}</name>
-          <description>{{ ability.description }}</description>
-          <type>{{ ability.type }}</type>
-          <level>{{ ability.level }}</level>
-        </ability>
-        {% endfor %}
-      </abilities>
-      <statusEffects>
-        {% for effect in npc.statusEffects %}
-        <effect>
-          <description>{{ effect.description }}</description>
-          <duration>{{ effect.duration | default('unknown') }}</duration>
-        </effect>
-        {% endfor %}
-      </statusEffects>
-      <needBars>
-        {% for bar in npc.needBars %}
-        <needBar>
-          <name>{{ bar.name }}</name>
-          <currentThreshold>
-            <name>{% if bar.currentThreshold %}{{ bar.currentThreshold.name | default('Neutral') }}{% else %}Neutral{% endif %}</name>
-            <effect>{% if bar.currentThreshold %}{{ bar.currentThreshold.effect | default('No active effect') }}{% else %}No active effect{% endif %}</effect>
-            <value>{% if bar.currentThreshold %}{{ bar.currentThreshold.threshold | default('', true) }}{% else %}{% endif %}</value>
-          </currentThreshold>
-        </needBar>
-        {% endfor %}
-      </needBars>
-    </npc>
-    {% endfor %}
-  </npcs>
   <playerParty>
     {% for member in party %}
     <member>
@@ -328,50 +394,6 @@ You are able to write both explicit and non-explicit content, depending on the n
     </member>
     {% endfor %}
   </playerParty>
-  <itemsInScene>
-    {% for item in itemsInScene %}{% if not item.isScenery %}
-    <item>
-      <name>{{ item.name }}</name>
-      <description>{{ item.description }}</description>
-      <isScenery>{{ item.isScenery | default(false) }}</isScenery>
-      <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
-      <rarity>{{ item.rarity | default('common') }}</rarity>
-      <value>{{ item.value | default(0) }}</value>
-      <statusEffects>
-        {% for effect in item.statusEffects %}
-        <effect>
-          <description>{{ effect.description }}</description>
-          <duration>{{ effect.duration | default('unknown') }}</duration>
-        </effect>
-        {% endfor %}
-      </statusEffects>
-      <weight>{{ item.weight | default(0) }}</weight>
-      <properties>{{ item.properties | default('', true) }}</properties>
-    </item>
-    {% endif %}{% endfor %}
-  </itemsInScene>
-  <sceneryList>
-    {% for item in itemsInScene %}{% if item.isScenery %}
-    <sceneryItem>
-      <name>{{ item.name }}</name>
-      <description>{{ item.description }}</description>
-      <isScenery>{{ item.isScenery | default(true) }}</isScenery>
-      <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
-      <rarity>{{ item.rarity | default('common') }}</rarity>
-      <value>{{ item.value | default(0) }}</value>
-      <statusEffects>
-        {% for effect in item.statusEffects %}
-        <effect>
-          <description>{{ effect.description }}</description>
-          <duration>{{ effect.duration | default('unknown') }}</duration>
-        </effect>
-        {% endfor %}
-      </statusEffects>
-      <weight>{{ item.weight | default(0) }}</weight>
-      <properties>{{ item.properties | default('', true) }}</properties>
-    </sceneryItem>
-    {% endif %}{% endfor %}
-  </sceneryList>  
   <additionalLore>
     {{ additionalLore }}
   </additionalLore>

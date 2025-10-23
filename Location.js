@@ -776,6 +776,29 @@ class Location {
     return [...this.#thingIds];
   }
 
+  get things() {
+    const Thing = require('./Thing.js');
+    const things = [];
+    for (const thingId of this.#thingIds) {
+      const thing = Thing.getById(thingId);
+      if (thing) {
+        things.push(thing);
+      } else {
+        console.warn(`Thing with ID ${thingId} not found in Thing index`);
+      }
+    }
+    return things;
+  }
+
+  // Get things, then filter by type
+  get items() {
+    return this.things.filter(thing => thing.thingType === 'item');
+  }
+
+  get scenery() {
+    return this.things.filter(thing => thing.thingType === 'scenery');
+  }
+
   addNpcId(id) {
     if (!id || typeof id !== 'string') {
       return;
