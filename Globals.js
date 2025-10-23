@@ -6,6 +6,7 @@ class Globals {
   static _processedMove = false;
   static inCombat = false;
   static #currentPlayerOverride = null;
+  static realtimeHub = null;
 
   static get currentPlayer() {
     const Player = require('./Player.js');
@@ -153,6 +154,76 @@ class Globals {
 
     const Player = require('./Player.js');
     return Player.indexByName;
+  }
+
+  static emitToClient(clientId, type, payload = {}, options = {}) {
+    const hub = Globals.realtimeHub;
+    if (!hub || typeof hub.emit !== 'function') {
+      throw new Error('Globals.emitToClient called before realtimeHub was initialized.');
+    }
+
+    const normalizedType = typeof type === 'string' ? type.trim() : '';
+    if (!normalizedType) {
+      throw new Error('Globals.emitToClient requires a non-empty event type.');
+    }
+
+    const hasClientId = clientId !== undefined && clientId !== null;
+    let normalizedClientId = null;
+    if (hasClientId) {
+      if (typeof clientId !== 'string') {
+        throw new TypeError('Globals.emitToClient expects clientId to be a string when provided.');
+      }
+      normalizedClientId = clientId.trim();
+      if (!normalizedClientId) {
+        throw new Error('Globals.emitToClient received an empty clientId string.');
+      }
+    }
+
+    const includeServerTime = options?.includeServerTime !== false;
+    const requestId = typeof options?.requestId === 'string' ? options.requestId.trim() : null;
+
+    let payloadEnvelope;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      payloadEnvelope = { ...payload };
+    } else {
+      payloadEnvelope = { value: payload };
+    }
+
+    if (includeServerTime && !Object.prototype.hasOwnProperty.call(payloadEnvelope, 'serverTime')) {
+      payloadEnvelope.serverTime = new Date().toISOString();
+    }
+
+    if (requestId && !Object.prototype.hasOwnProperty.call(payloadEnvelope, 'requestId')) {
+      payloadEnvelope.requestId = requestId;
+    }
+
+    return Boolean(hub.emit(normalizedClientId, normalizedType, payloadEnvelope));
+  }
+
+  static updateSpinnerText({
+    clientId = null,
+    message = 'Loading...',
+    scope = 'chat',
+    requestId = null,
+    includeServerTime = true
+  } = {}) {
+    const normalizedMessage = typeof message === 'string' && message.trim()
+      ? message.trim()
+      : 'Loading...';
+
+    const payload = {
+      stage: 'spinner:update',
+      message: normalizedMessage,
+      scope
+    };
+
+    if (requestId && typeof requestId === 'string' && requestId.trim()) {
+      payload.requestId = requestId.trim();
+    }
+
+    return Globals.emitToClient(clientId, 'chat_status', payload, {
+      includeServerTime
+    });
   }
 }
 

@@ -141,6 +141,7 @@ const baseTimeoutMilliseconds = resolveBaseTimeoutMilliseconds();
 const app = express();
 const server = http.createServer(app);
 const realtimeHub = new RealtimeHub({ logger: console });
+Globals.realtimeHub = realtimeHub;
 
 // If --port is provided, override config.server.port
 const args = process.argv.slice(2);
@@ -2443,6 +2444,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }))
         : [];
 
+    const abilities = playerStatus.getAbilities() || [];
+
     const currentPlayerContext = {
         name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
         description: playerStatus?.description || currentPlayer?.description || '',
@@ -2453,6 +2456,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         race: playerStatus?.race || currentPlayer?.race || 'Unknown',
         statusEffects: normalizeStatusEffects(currentPlayer || playerStatus),
         inventory: currentPlayerInventory,
+        abilities: abilities,
         skills: currentPlayerSkills,
         gear: gearSnapshot,
         personality: extractPersonality(playerStatus, currentPlayer),
@@ -4100,6 +4104,70 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
             ensureExistingConnection(existingStub, pending.id || null);
             return existingStub;
         }
+    }
+
+    const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+
+    const matchesExistingEntryStub = (location) => {
+        if (!location || typeof location !== 'object') {
+            return false;
+        }
+
+        if (typeof location.isStub === 'boolean' && !location.isStub) {
+            return false;
+        }
+
+        try {
+            if (!location.isStub) {
+                return false;
+            }
+        } catch (_) {
+            return false;
+        }
+
+        const metadata = location.stubMetadata || {};
+        if (metadata.isRegionEntryStub === false) {
+            return false;
+        }
+
+        const candidateNames = [
+            location.name,
+            metadata.targetRegionName,
+            metadata.originalName,
+            metadata.regionName,
+            metadata.shortDescription
+        ].map(normalizeName).filter(Boolean);
+
+        return candidateNames.includes(normalizedTargetName);
+    };
+
+    const findExistingEntryStub = () => {
+        if (typeof Location.findByName === 'function') {
+            try {
+                const exactMatch = Location.findByName(trimmedName);
+                if (matchesExistingEntryStub(exactMatch)) {
+                    return exactMatch;
+                }
+            } catch (_) {
+                // Ignore errors from Location.findByName and continue searching.
+            }
+        }
+
+        for (const candidate of gameLocations.values()) {
+            if (matchesExistingEntryStub(candidate)) {
+                return candidate;
+            }
+        }
+
+        return null;
+    };
+
+    const existingEntryStub = findExistingEntryStub();
+    if (existingEntryStub) {
+        const metadata = existingEntryStub.stubMetadata || {};
+        const destinationRegionId = metadata.targetRegionId || metadata.regionId || null;
+        ensureExistingConnection(existingEntryStub, destinationRegionId);
+        return existingEntryStub;
     }
 
     const exits = typeof originLocation.getAvailableDirections === 'function'
@@ -11383,6 +11451,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 apiKey
             });
 
+            Globals.updateSpinnerText({ message: `Naming NPCs for location ${location.name || location.id}...` });
             npcs = await ensureUniqueNpcNames({
                 npcDataList: npcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
@@ -11403,6 +11472,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let skillConversation = [...baseConversation];
         if (npcs.length) {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC skills for location ${location.name || location.id}...` });
                 const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
                 const skillResult = await requestNpcSkillAssignments({
                     baseMessages: baseConversation,
@@ -11423,6 +11493,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let npcAbilityAssignments = new Map();
         if (npcs.length) {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC abilities for location ${location.name || location.id}...` });
                 const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
                 const abilityResult = await requestNpcAbilityAssignments({
                     baseMessages: skillConversation,
@@ -11521,6 +11592,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         const inventoryTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC inventories for location ${location.name || location.id}...` });
                 await generateInventoryForCharacter({
                     character: npc,
                     characterDescriptor: descriptor,
@@ -11543,6 +11615,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         const equipTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
             try {
+                Globals.updateSpinnerText({ message: `Equipping NPCs for location ${location.name || location.id}...` });
                 await equipBestGearForCharacter({
                     character: npc,
                     characterDescriptor: descriptor,
@@ -11664,6 +11737,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             temperature: config.ai.temperature || 0.7
         };
 
+        Globals.updateSpinnerText({ message: `Generating NPCs for region ${region.name || region.id}...` });
         console.log('🏘️ Requesting important NPC generation for region', region.id);
         const requestStart = Date.now();
         const response = await axios.post(chatEndpoint, requestData, {
@@ -11710,6 +11784,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const originalRegionNpcNames = parsedNpcs.map(npc => npc?.name || null);
         let regionNpcRenameMap = new Map();
         if (parsedNpcs.length) {
+            Globals.updateSpinnerText({ message: `Naming NPCs for region ${region.name || region.id}...` });
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
@@ -11739,6 +11814,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         let regionSkillConversation = [...baseConversation];
         if (parsedNpcs.length) {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC skills for region ${region.name || region.id}...` });
                 const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
                 const skillResult = await requestNpcSkillAssignments({
                     baseMessages: baseConversation,
@@ -11759,6 +11835,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         let regionNpcAbilityAssignments = new Map();
         if (parsedNpcs.length) {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC abilities for region ${region.name || region.id}...` });
                 const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
                 const abilityResult = await requestNpcAbilityAssignments({
                     baseMessages: regionSkillConversation,
@@ -11897,6 +11974,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         const inventoryTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
             try {
+                Globals.updateSpinnerText({ message: `Generating NPC inventories for region ${region.name || region.id}...` });
                 await generateInventoryForCharacter({
                     character: npc,
                     characterDescriptor: descriptor,
@@ -11919,6 +11997,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         const equipTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
             try {
+                Globals.updateSpinnerText({ message: `Equipping NPCs for region ${region.name || region.id}...` });
                 await equipBestGearForCharacter({
                     character: npc,
                     characterDescriptor: descriptor,
@@ -13559,6 +13638,7 @@ async function generateLocationFromPrompt(options = {}) {
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
         try {
+            Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
             await generateLocationThingsForLocation({
                 location,
                 chatEndpoint,
@@ -13616,6 +13696,7 @@ async function generateLocationFromPrompt(options = {}) {
             }
         }
 
+        Globals.updateSpinnerText({ message: `Generating NPCs for location ${location.name || location.id}...` });
         await generateLocationNPCs({
             location,
             systemPrompt,

@@ -3075,6 +3075,18 @@ class AIRPGChat {
             }
             return;
         }
+        if (stageRaw === 'spinner:update') {
+            const overlayMessage = typeof payload.message === 'string' && payload.message.trim()
+                ? payload.message.trim()
+                : 'Loading...';
+            try {
+                window.showLocationOverlay?.(overlayMessage);
+                this.pendingMoveOverlay = true;
+            } catch (error) {
+                console.debug('Failed to update overlay for spinner:update status:', error);
+            }
+            return;
+        }
         if (stageRaw === 'spinner:stop') {
             try {
                 window.hideLocationOverlay?.();

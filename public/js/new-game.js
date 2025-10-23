@@ -127,8 +127,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (realtimeState.activeRequestId && payload.requestId && payload.requestId !== realtimeState.activeRequestId) {
       return;
     }
-    const stage = payload.stage || '';
-    const message = payload.message || stageMessages[stage] || spinnerDefaultText;
+    const stageRaw = typeof payload.stage === 'string' ? payload.stage.trim() : '';
+    const stageNormalized = stageRaw.toLowerCase();
+    if (stageNormalized === 'spinner:update') {
+      const overlayMessage = typeof payload.message === 'string' && payload.message.trim()
+        ? payload.message.trim()
+        : spinnerDefaultText;
+      setOverlayText(overlayMessage);
+      return;
+    }
+    const message = payload.message || stageMessages[stageRaw] || stageMessages[stageNormalized] || spinnerDefaultText;
     setOverlayText(message);
   }
 
