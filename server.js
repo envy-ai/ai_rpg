@@ -2444,7 +2444,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }))
         : [];
 
-    const abilities = playerStatus.getAbilities() || [];
+    const abilities = currentPlayer.getAbilities() || [];
 
     const currentPlayerContext = {
         name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
@@ -2538,6 +2538,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 maxHealth: npcStatus?.maxHealth ?? npc.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(npc || npcStatus),
                 inventory: npcInventory,
+                abilities: npc.getAbilities(),
                 dispositionsTowardsPlayer,
                 skills,
                 personality,
@@ -2581,6 +2582,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 maxHealth: memberStatus?.maxHealth ?? member.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(member || memberStatus),
                 inventory: memberInventory,
+                abilities: member.getAbilities(),
                 personality,
                 skills,
                 dispositionsTowardsPlayer,

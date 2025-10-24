@@ -7,6 +7,7 @@ class Globals {
   static inCombat = false;
   static #currentPlayerOverride = null;
   static realtimeHub = null;
+  static travelHistory = [];
 
   static get currentPlayer() {
     const Player = require('./Player.js');

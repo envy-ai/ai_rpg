@@ -12552,7 +12552,7 @@
                     throw new Error('Player name is missing when preparing travel narration for exit traversal.');
                 }
 
-                const message = `${playerName} moved to ${destinationName}.`;
+                let message = `${playerName} moved to ${destinationName}.`;
 
                 let overlayShown = false;
                 const showMoveOverlay = () => {
@@ -12602,7 +12602,7 @@
                         alert('Failed to queue move command via chat.');
                     }
             return;
-        }
+        } 
 
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
             try {
