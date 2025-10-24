@@ -6,7 +6,7 @@ need_values:
 need_bars:
   food:
     name: Food
-    description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    description: Represents how well-fed the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
     player_only: true
     icon: 🍖
     color: "#FFA500"
@@ -56,7 +56,7 @@ need_bars:
         effect: Good mood, slight bonuses
   rest:
     name: Rest
-    description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes.
+    description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.
     related_attribute: constitution
     player_only: true
     color: "#00BFFF"

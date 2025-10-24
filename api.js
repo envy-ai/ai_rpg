@@ -8,7 +8,8 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
-
+const console = require('console');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -2390,8 +2391,11 @@ module.exports = function registerApiRoutes(scope) {
                         return [];
                     }
 
-                    const modifierNodes = Array.from(node.getElementsByTagName('circumstanceModifier') || []);
+                    const attackModifierNodes = Array.from(node.getElementsByTagName('attackerCircumstanceModifier') || []);
+                    const defenseModifierNodes = Array.from(node.getElementsByTagName('defenderCircumstanceModifier') || []);
                     const modifiers = [];
+
+                    const modifierNodes = attackModifierNodes.concat(defenseModifierNodes);
 
                     for (const modifierNode of modifierNodes) {
                         if (!modifierNode || typeof modifierNode.getElementsByTagName !== 'function') {
@@ -2408,11 +2412,15 @@ module.exports = function registerApiRoutes(scope) {
                             ? reasonNode.textContent.trim()
                             : null;
 
-                        const amount = amountText !== null && amountText !== '' ? Number(amountText) : null;
+                        let amount = amountText !== null && amountText !== '' ? Number(amountText) : null;
                         const hasReason = reasonText && reasonText.toLowerCase() !== 'n/a';
 
                         if (!Number.isFinite(amount) && !hasReason) {
                             continue;
+                        }
+
+                        if (modifierNode.nodeName === 'defenderCircumstanceModifier') {
+                            amount = -amount;
                         }
 
                         modifiers.push({
@@ -2667,6 +2675,7 @@ module.exports = function registerApiRoutes(scope) {
                 };
             } catch (error) {
                 console.warn('Attack check failed:', error.message);
+                console.debug(error);
                 return null;
             }
         }
@@ -6154,8 +6163,10 @@ module.exports = function registerApiRoutes(scope) {
                                 actor: currentPlayer,
                                 location
                             });
+                            //console.log('Attack context for plausibility check:', attackContextForPlausibility);
                         } catch (attackError) {
                             console.warn('Failed to execute attack check:', attackError.message);
+                            console.debug(attackError);
                         }
 
                         try {
@@ -6173,6 +6184,7 @@ module.exports = function registerApiRoutes(scope) {
                             }
                         } catch (plausibilityError) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
+                            console.debug(plausibilityError);
                         }
                     }
                 }

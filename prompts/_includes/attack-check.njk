@@ -43,11 +43,17 @@ or
   </defenderInfo>
   <ability>N/A or name of the ability used</ability>
   <weapon>N/A or name of the weapon used (barehanded if none equipped or specified in the playerAction, or if using an ability)</weapon>
-  <curcumstanceModifiers>
-    <circumstanceModifier>
+  <circumstanceModifiers>
+    <attackerCircumstanceModifier>
+      <!-- These apply bonuses and penalties to the attacker's attack roll -->
       <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
       <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
-    </circumstanceModifier>
+    </attackerCircumstanceModifier>
+    <defenderCircumstanceModifier>
+      <!-- These apply bonuses and penalties to the defender's DC -->
+      <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
+      <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
+    </defenderCircumstanceModifier>
     ... additional circumstanceModifier tags as needed ...
-  </curcumstanceModifiers>
+  </circumstanceModifiers>
 </attack>

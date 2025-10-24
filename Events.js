@@ -1106,8 +1106,8 @@ class Events {
                         return null;
                     }
 
-                    const [name, kind, vehicle, ...descriptionParts] = parts;
-                    const normalizedKind = (kind || '').toLowerCase();
+                    let [name, kind, vehicle, ...descriptionParts] = parts;
+                    let normalizedKind = (kind || '').toLowerCase();
 
                     if (kind === 'sublocation') kind = 'location';
                     if (!name || !descriptionParts.length || (normalizedKind !== 'location' && normalizedKind !== 'region')) {
