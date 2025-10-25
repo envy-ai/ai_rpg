@@ -1,47 +1,50 @@
-Generate exactly one NPC entry for the character named "{{ npc.name }}". Use the XML structure below and keep the <name> element exactly "{{ npc.name }}". The NPC must feel grounded in the location and setting, with clear motivations or hooks for interaction.
+<task>You will be provided with an XML structure representing a an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
 
-If a field is already filled in, keep it as is and just fill in the remaining fields in a way that makes sense.
+Note that an NPC is defined loosely here, and may be a creature, monster, or any other entity that functions as a non-player character in a text-based RPG setting.
 
 {% if oldItem %}Note that this NPC was created from the following item or scenery: "{{ oldItem.name }}", described as "{{ oldItem.description }}". The transformation is described as "{{ oldItem.transformationDescription }}". Use this as inspiration for the NPC's appearance, personality, and role.{% endif %}
+
+{% if additionalInstructions %}Additional instructions from the user:
+{{ additionalInstructions }}{% endif %}
 
 <npcInfo>
 <npcs>
   <npc>
-    <name>{% if npc.name %}{{ npc.name }}{% else %}An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.{% endif %}</name>
-    <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}Three sentences describing appearance, personality, current goals, and how they relate to the location.{% endif %}</description>
-    <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}Ten words or fewer summarizing the NPC.{% endif %}</shortDescription>
-    <role>{% if npc.role %}{{ npc.role  }}{% else %}Clear role, job, or niche within the location.{% endif %}</role>
-    <class>{% if npc.class %}{{ npc.class }}{% else %}RPG class, vocation, or archetype.{% endif %}</class>
-    <race>{% if npc.race %}{{ npc.race }}{% else %}Species or origin.{% endif %}</race>
-    <isHostile>{% if npc.isHostile is defined -%}{% if npc.isHostile in [true, 'true', 'True', 1, '1', 'yes', 'Yes', 'hostile', 'Hostile'] %}true{% else %}false{% endif %}{%- else -%}true or false{%- endif %}</isHostile>
-    <relativeLevel>{% if npc.relativeLevel %}{{ npc.relativeLevel }}{% else %}Integer from -3 to +3{% endif %}</relativeLevel>
-    <currency>{% if npc.currency %}{{ npc.currency }}{% else %}Integer amount of currency the NPC has on hand, based on setting norms.{% endif %}</currency>
+    <name>{% if npc.name %}{{ npc.name }}{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
+    <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing appearance, personality, current goals, and how they relate to the location.--> {% endif %}</description>
+    <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}<!--Ten words or fewer summarizing the NPC.--> {% endif %}</shortDescription>
+    <role>{% if npc.role %}{{ npc.role  }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>
+    <class>{% if npc.class %}{{ npc.class }}{% else %}<!--RPG class, vocation, or archetype.-->{% endif %}</class>
+    <race>{% if npc.race %}{{ npc.race }}{% else %}<!--Species or origin.-->{% endif %}</race>
+    <isHostile>{% if npc.isHostile is defined -%}{% if npc.isHostile in [true, 'true', 'True', 1, '1', 'yes', 'Yes', 'hostile', 'Hostile'] %}true{% else %}false{% endif %}{%- else -%}<!--true or false-->{%- endif %}</isHostile>
+    <relativeLevel>{% if npc.relativeLevel %}{{ npc.relativeLevel }}{% else %}<!--Integer from -3 to +3-->{% endif %}</relativeLevel>
+    <currency>{% if npc.currency %}{{ npc.currency }}{% else %}<!--Integer amount of currency the NPC has on hand, based on setting norms.-->{% endif %}</currency>
     <attributes>
-{% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}">Rating using: poor, below average, average, above average, excellent, or legendary.</attribute>
+{% for attrName, attrDef in attributeDefinitions %}      <attribute name="{{ attrName }}"><!--Rating using: poor, below average, average, above average, excellent, or legendary.--></attribute>
 {% endfor %}
     </attributes>
     <personality>
-        <type>Myers-Briggs type, -dere archetype, Enneagram type, DnD alignment, or "automaton", as appropriate -- whatever works best. Optionally, 2 types separated by commas, so long as they make sense together.</type>
-        <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, mania, any phobias, etc). Comma separated, usually none, no more than 3</traits>
+        <type><!-- Myers-Briggs type, -dere archetype, Enneagram type, DnD alignment, or "automaton", as appropriate - whatever works best. Optionally, 2 types separated by commas, so long as they make sense together. --></type>
+        <traits><!-- optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, mania, any phobias, etc). Comma separated, usually none, no more than 3 --></traits>
         <characterArc>
-            <shortTerm>A brief description of the NPC's short-term active personal growth arc</shortTerm>
-            <longTerm>A brief description of the NPC's long-term personal growth arc or development over the course of the campaign or story</longTerm>
+            <shortTerm><!-- A brief description of the NPC's short-term active personal growth arc --></shortTerm>
+            <longTerm><!-- A brief description of the NPC's long-term personal growth arc or development over the course of the campaign or story --></longTerm>
         </characterArc>
         <goals>
-            <goal>A specific, long-term goal the character is working towards</goal>
-            <goal>Another specific, long-term goal the character is working towards</goal>
-            <goal>A specific, short-term goal the character is actively pursuing</goal>
-            <goal>Another specific, short-term goal the character is actively pursuing</goal>
+            <goal><!-- A specific, long-term goal the character is working towards --></goal>
+            <goal><!-- Another specific, long-term goal the character is working towards --></goal>
+            <goal><!-- A specific, short-term goal the character is actively pursuing --></goal>
+            <goal><!-- Another specific, short-term goal the character is actively pursuing --></goal>
         </goals>
-        <notes>0 to 2 sentences of additional information not covered by the above that's unique to the character</notes>
+        <notes><!-- 0 to 2 sentences of additional information not covered by the above that's unique to the character --></notes>
     </personality>
-    <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
+    <healthAttribute><!-- Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures --></healthAttribute>
   </npc>
 </npcs>
 <memories>
     <npcMemories npc ="Exact name of the NPC">
-        <memory>Short memory of a significant event from the NPC's perspective, in the style of a diary entry or personal note. No more than 2 sentences long. Make up past interactions with other NPCs, places, things, etc.</memory>
-        [... total of 3 memories ...]
+        <memory><!-- Short memory of a significant event from the NPC's perspective, in the style of a diary entry or personal note. No more than 2 sentences long. Make up past interactions with other NPCs, places, things, etc. --></memory>
+        <!--[... total of 3 memories ...]-->
     </npcMemories>
 </memories>
 </npcInfo>

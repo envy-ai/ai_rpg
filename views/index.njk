@@ -670,6 +670,13 @@
                         <label for="addNpcCurrency">Currency</label>
                         <input type="number" id="addNpcCurrency" name="currency" min="0" step="1" autocomplete="off">
                     </div>
+                    <div class="npc-edit-field npc-edit-field--wide">
+                        <label for="addNpcIsHostile">
+                            <input type="checkbox" id="addNpcIsHostile" name="isHostile">
+                            Hostile NPC
+                        </label>
+                        <span class="npc-edit-help-text">Hostile NPCs will treat players as enemies.</span>
+                    </div>
                 </div>
                 <div class="npc-edit-section">
                     <label for="addNpcDescription">Description</label>
@@ -4070,6 +4077,7 @@
         const addNpcRaceInput = document.getElementById('addNpcRace');
         const addNpcLevelInput = document.getElementById('addNpcLevel');
         const addNpcCurrencyInput = document.getElementById('addNpcCurrency');
+        const addNpcIsHostileInput = document.getElementById('addNpcIsHostile');
         const addNpcStatus = document.getElementById('addNpcStatus');
         const addNpcCancelBtn = document.getElementById('addNpcCancelBtn');
         const addNpcSaveBtn = document.getElementById('addNpcSaveBtn');
@@ -6941,6 +6949,9 @@
             if (addNpcLevelInput) {
                 addNpcLevelInput.value = Number.isFinite(baseLevel) ? baseLevel : '';
             }
+            if (addNpcIsHostileInput) {
+                addNpcIsHostileInput.checked = false;
+            }
             setAddNpcStatus('', null);
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -7006,6 +7017,9 @@
 
             if (addNpcForm) {
                 addNpcForm.reset();
+            }
+            if (addNpcIsHostileInput) {
+                addNpcIsHostileInput.checked = false;
             }
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -7088,6 +7102,10 @@
                 if (Number.isFinite(currencyNumber) && currencyNumber >= 0) {
                     payload.currency = Math.round(currencyNumber);
                 }
+            }
+
+            if (addNpcIsHostileInput) {
+                payload.isHostile = Boolean(addNpcIsHostileInput.checked);
             }
 
             setAddNpcStatus('Creating NPC…', null);

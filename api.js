@@ -10897,6 +10897,10 @@ module.exports = function registerApiRoutes(scope) {
                     npcSeed.race = race;
                 }
 
+                if (Object.prototype.hasOwnProperty.call(payload, 'isHostile')) {
+                    npcSeed.isHostile = Boolean(payload.isHostile);
+                }
+
                 if (payload.currency !== undefined && payload.currency !== null && payload.currency !== '') {
                     const currencyValue = Number(payload.currency);
                     if (Number.isFinite(currencyValue) && currencyValue >= 0) {
