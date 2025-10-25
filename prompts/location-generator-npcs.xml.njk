@@ -4,15 +4,17 @@ Here is a list of all character attributes:
 {% endfor %}
 
 Attributes for an NPC should be rated as one of: poor, below average, average, above average, excellent, legendary.
-
+{# 
 These NPCs are deceased:
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
-
-Here's a list of existing NPCs in other regions:
+#}
+Here's a list of existing NPCs:
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
+- Nyx: Self-appointed guardian of the location
 
+{#
 Here's a list of existing NPCs in other locations in this region:
 {% for npc in existingNpcsInOtherLocations %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
@@ -21,8 +23,8 @@ Here's a list of existing NPCs already present in this location:
 {% for npc in existingNpcsInThisLocation %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 </context>
-
-Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
+#}
+Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Do not rehash existing character concepts. Advance the story by creating new character concepts that are distinct from the existing ones. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
 
 <response>
 <npcs>

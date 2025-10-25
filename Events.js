@@ -530,7 +530,7 @@ class Events {
         this.departedCharacters.clear();
         this.defeatedEnemies.clear();
 
-        this.movedLocations.clear();
+        Events.movedLocations.clear();
     }
 
     static _trackItemsFromParsing(parsedEntries = {}) {
@@ -1109,6 +1109,10 @@ class Events {
                     let [name, kind, vehicle, ...descriptionParts] = parts;
                     let normalizedKind = (kind || '').toLowerCase();
 
+                    if (Events.movedLocations.has(name)) {
+                        return null;
+                    }
+
                     if (normalizedKind === 'sublocation') normalizedKind = 'location';
                     if (!name || !descriptionParts.length || (normalizedKind !== 'location' && normalizedKind !== 'region')) {
                         return null;
@@ -1653,6 +1657,7 @@ class Events {
                     for (const entry of entries) {
                         console.log('Recording move event for entry:', entry);
                         if (entry && entry.name) {
+                            Events.movedLocations.add(entry.name);
                             const moveEventData = {
                                 type: 'move_new_location',
                                 destination: entry.name,
@@ -1670,6 +1675,7 @@ class Events {
                                     description: context.location.description
                                 };
                             }
+
                             console.log('Move event data to record:', moveEventData);
                             context.moveEvents.push(moveEventData);
                             if (stream && typeof stream.status === 'function') {
@@ -2928,6 +2934,10 @@ class Events {
                 if (!destinationName) {
                     return;
                 }
+                if (Events.movedLocations.has(destinationName)) {
+                    return;
+                }
+                Events.movedLocations.add(destinationName);
                 try {
                     await movePlayerToDestination(this, destinationName, context, {
                         fallbackName: destinationName,

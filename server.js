@@ -8964,8 +8964,8 @@ function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } =
     return normalizedEntries.map(({ attribute, bonus }) => {
         const scaled = bonus * factor;
         const rounded = roundAwayFromZero(scaled);
-        const clamped = Math.max(-20, Math.min(20, rounded));
-        return { attribute, bonus: clamped };
+        //const clamped = Math.max(-20, Math.min(20, rounded));
+        return { attribute, bonus: rounded };
     });
 }
 
