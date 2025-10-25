@@ -9322,9 +9322,11 @@ function collectNpcSummariesForNameEnforcement({ location = null, region = null,
         }
     };
 
+    /*
     if (location && Array.isArray(location.npcIds)) {
         location.npcIds.forEach(addNpcById);
     }
+    */
 
     if (region && Array.isArray(region.locationIds)) {
         for (const locId of region.locationIds) {
