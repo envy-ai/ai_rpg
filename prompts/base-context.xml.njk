@@ -156,8 +156,8 @@ You are able to write both explicit and non-explicit content, depending on the n
           </goals>
           <notes>{{ npc.personality.notes | default('', true) }}</notes>
         </personality>
-        <health>{{ npc.health | default('unknown') }}</health>
-        <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth>
+{#        <health>{{ npc.health | default('unknown') }}</health>
+        <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth> #}
         <dispositionsTowardsPlayer>
           {% for disposition in npc.dispositionsTowardsPlayer %}
           <dispositionTowardsPlayer>
@@ -260,9 +260,9 @@ You are able to write both explicit and non-explicit content, depending on the n
   </currentLocation>
   <player>
     <name>{{ currentPlayer.name }}</name>
-    <description>{{ currentPlayer.description }}</description>
+    <description>{{ currentPlayer.description }}</description>{#
     <health>{{ currentPlayer.health }}</health>
-    <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>
+    <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>#}
     <class>{{ currentPlayer.class }}</class>
     <race>{{ currentPlayer.race }}</race>
     <currency>{{ currentPlayer.currency | default(0) }}</currency>
@@ -337,8 +337,8 @@ You are able to write both explicit and non-explicit content, depending on the n
         </goals>
         <notes>{{ member.personality.notes | default('', true) }}</notes>
       </personality>
-      <health>{{ member.health | default('unknown') }}</health>
-      <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth>
+{#      <health>{{ member.health | default('unknown') }}</health>
+      <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth> #}
       <dispositionsTowardsPlayer>
         {% for disposition in member.dispositionsTowardsPlayer %}
         <dispositionTowardsPlayer>

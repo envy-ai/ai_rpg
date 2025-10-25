@@ -91,16 +91,16 @@ need_bars:
       1:
         name: Very Tired
         effect: -5% to health and attributes
-      25:
+      15:
         name: Tired
         effect: Reduced focus and minor penalties
-      40:
+      25:
         name: Weary
         effect: No effect
-      60:
+      40:
         name: Rested
         effect: No effect
-      80:
+      70:
         name: Well Rested
         effect: Good mood, slight bonuses
       100:

@@ -8,8 +8,6 @@ const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
-const console = require('console');
-const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -2994,7 +2992,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            const baseDamage = 10 + weaponLevel * rating;
+            const baseDamage = Globals.config.baseWeaponDamage + weaponLevel * rating;
 
             return {
                 thingId: weaponThing?.id || null,
@@ -3124,13 +3122,45 @@ module.exports = function registerApiRoutes(scope) {
             let unmitigatedDamage = 0;
             let mitigatedDamage = 0;
             let toughnessReduction = 0;
-            if (hit && hitDegreeRaw >= 0) {
-                unmitigatedDamage = 1 + Math.round(
-                    weaponData.baseDamage * (0.5 + hitDegreeRaw) + damageAttributeInfo.modifier
-                );
-                toughnessReduction = Number.isFinite(toughnessInfo.modifier) ? toughnessInfo.modifier : 0;
-                mitigatedDamage = unmitigatedDamage - toughnessReduction;
-                attackDamage = mitigatedDamage > 0 ? mitigatedDamage : 0;
+            let damageCalculation = null;
+            if (hit) {
+                const baseWeaponDamage = weaponData.baseDamage;
+                const hitDegreeMultiplier = Math.min(.75 + hitDegreeRaw / 4, 2);
+                const attributeModifier = Number.isFinite(damageAttributeInfo.modifier)
+                    ? damageAttributeInfo.modifier
+                    : 0;
+                const scaledDamage = baseWeaponDamage * hitDegreeMultiplier;
+                const preRoundedDamage = scaledDamage + attributeModifier;
+                const roundedDamageComponent = Math.round(preRoundedDamage);
+                const constantBonus = 1;
+                const canDealDamage = hitDegreeRaw >= 0;
+
+                if (canDealDamage) {
+                    unmitigatedDamage = constantBonus + roundedDamageComponent;
+                    toughnessReduction = Number.isFinite(toughnessInfo.modifier) ? toughnessInfo.modifier : 0;
+                    mitigatedDamage = unmitigatedDamage - toughnessReduction;
+                    attackDamage = mitigatedDamage > 0 ? mitigatedDamage : 0;
+                }
+
+                damageCalculation = {
+                    baseWeaponDamage,
+                    hitDegreeRaw,
+                    hitDegreeRounded: hitDegree,
+                    hitDegreeMultiplier,
+                    attributeModifier,
+                    scaledDamage,
+                    preRoundedDamage,
+                    roundedDamageComponent,
+                    constantBonus,
+                    unmitigatedDamage,
+                    toughnessReduction,
+                    mitigatedDamage,
+                    finalDamage: attackDamage,
+                    canDealDamage,
+                    preventedBy: !canDealDamage
+                        ? 'negative_hit_degree'
+                        : (attackDamage <= 0 && mitigatedDamage <= 0 ? 'toughness' : null)
+                };
             }
 
             const targetHealth = Number.isFinite(defender?.health) ? defender.health : null;
@@ -3183,7 +3213,8 @@ module.exports = function registerApiRoutes(scope) {
                     damageAttribute: {
                         name: damageAttributeInfo.key,
                         modifier: damageAttributeInfo.modifier
-                    }
+                    },
+                    calculation: damageCalculation
                 },
                 target: {
                     name: sanitizeNamedValue(attackEntry.defender) || null,
@@ -3260,7 +3291,8 @@ module.exports = function registerApiRoutes(scope) {
                     weaponRarity: damage.weaponRarity || null,
                     weaponLevel: Number.isFinite(damage.weaponLevel) ? damage.weaponLevel : null,
                     weaponRating: Number.isFinite(damage.weaponRating) ? damage.weaponRating : null,
-                    damageAttribute: damage.damageAttribute || null
+                    damageAttribute: damage.damageAttribute || null,
+                    calculation: damage.calculation || null
                 },
                 target: {
                     startingHealth: Number.isFinite(targetOutcome.startingHealth) ? targetOutcome.startingHealth : (Number.isFinite(target.health) ? target.health : null),

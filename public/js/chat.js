@@ -2469,6 +2469,38 @@ class AIRPGChat {
             return value >= 0 ? `+${value}` : `${value}`;
         };
 
+        const normalizeNumber = (value) => {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                return null;
+            }
+            if (Math.abs(value) < 1e-9) {
+                return 0;
+            }
+            return value;
+        };
+
+        const formatDecimal = (value) => {
+            const normalized = normalizeNumber(value);
+            if (normalized === null) {
+                return null;
+            }
+            const fixed = normalized.toFixed(2);
+            const trimmed = fixed.replace(/\.?0+$/, '');
+            return trimmed.length ? trimmed : '0';
+        };
+
+        const formatSignedDecimal = (value) => {
+            const normalized = normalizeNumber(value);
+            if (normalized === null) {
+                return null;
+            }
+            const magnitude = formatDecimal(Math.abs(normalized));
+            if (magnitude === null) {
+                return null;
+            }
+            return normalized >= 0 ? `+${magnitude}` : `-${magnitude}`;
+        };
+
         const lines = [];
 
         const resultParts = [];
@@ -2703,6 +2735,74 @@ class AIRPGChat {
                 }
                 if (parts.length) {
                     lines.push(`<li><strong>Damage Attribute:</strong> ${parts.join(' ')}</li>`);
+                }
+            }
+
+            if (damage.calculation && typeof damage.calculation === 'object') {
+                const calc = damage.calculation;
+                const segments = [];
+
+                const baseDamageText = formatDecimal(calc.baseWeaponDamage);
+                const hitDegreeRawText = formatDecimal(calc.hitDegreeRaw);
+                const hitDegreeMultiplierText = formatDecimal(calc.hitDegreeMultiplier);
+                const scaledDamageText = formatDecimal(calc.scaledDamage);
+
+                if (baseDamageText && scaledDamageText) {
+                    if (hitDegreeRawText && hitDegreeMultiplierText) {
+                        segments.push(`Base ${baseDamageText} × min(2, 0.75 + ${hitDegreeRawText} / 4) = ${scaledDamageText}`);
+                    } else if (hitDegreeMultiplierText) {
+                        segments.push(`Base ${baseDamageText} × ${hitDegreeMultiplierText} = ${scaledDamageText}`);
+                    } else {
+                        segments.push(`Base ${baseDamageText} scaled = ${scaledDamageText}`);
+                    }
+                }
+
+                const attributeModifierText = formatSignedDecimal(calc.attributeModifier);
+                const preRoundedText = formatDecimal(calc.preRoundedDamage);
+                if (attributeModifierText && preRoundedText) {
+                    segments.push(`Attribute modifier ${attributeModifierText} → ${preRoundedText}`);
+                }
+
+                if (Number.isFinite(calc.roundedDamageComponent)) {
+                    segments.push(`round(...) = ${calc.roundedDamageComponent}`);
+                }
+
+                if (Number.isFinite(calc.constantBonus) && Number.isFinite(calc.unmitigatedDamage)) {
+                    const constantMagnitude = formatDecimal(Math.abs(calc.constantBonus));
+                    const targetValue = formatDecimal(calc.unmitigatedDamage) ?? String(calc.unmitigatedDamage);
+                    if (constantMagnitude && targetValue !== null) {
+                        const prefix = calc.constantBonus >= 0 ? '+' : '-';
+                        segments.push(`${prefix} ${constantMagnitude} base = ${targetValue}`);
+                    }
+                }
+
+                if (calc.canDealDamage && Number.isFinite(calc.toughnessReduction) && calc.toughnessReduction !== 0 && Number.isFinite(calc.mitigatedDamage)) {
+                    const toughnessMagnitude = formatDecimal(Math.abs(calc.toughnessReduction));
+                    const mitigatedText = formatDecimal(calc.mitigatedDamage) ?? String(calc.mitigatedDamage);
+                    if (toughnessMagnitude && mitigatedText !== null) {
+                        const prefix = calc.toughnessReduction >= 0 ? '-' : '+';
+                        segments.push(`${prefix} Toughness ${toughnessMagnitude} = ${mitigatedText}`);
+                    }
+                }
+
+                if (Number.isFinite(calc.finalDamage)) {
+                    const finalText = formatDecimal(calc.finalDamage) ?? String(calc.finalDamage);
+                    segments.push(`Final damage = ${finalText}`);
+                }
+
+                if (typeof calc.preventedBy === 'string') {
+                    if (calc.preventedBy === 'negative_hit_degree') {
+                        segments.push('Damage prevented: hit degree below zero.');
+                    } else if (calc.preventedBy === 'toughness') {
+                        segments.push('Damage prevented: toughness reduced damage to zero.');
+                    }
+                }
+
+                if (segments.length) {
+                    const breakdown = segments
+                        .map(segment => this.escapeHtml(segment))
+                        .join('<br>');
+                    lines.push(`<li><strong>Damage Calculation:</strong><br><small>${breakdown}</small></li>`);
                 }
             }
         }

@@ -5,6 +5,7 @@ const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
+const Globals = require('./Globals.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -1412,7 +1413,7 @@ class Player {
             : (Number.isFinite(this.#attributes[attributeName]) ? this.#attributes[attributeName] : 10);
 
         const level = Number.isFinite(this.#level) ? this.#level : 1;
-        const computed = Math.floor(10 + (baseAttribute / 2) * (level + 1));
+        const computed = Math.floor(Globals.config.baseHealthPerLevel + (baseAttribute / 2) * (level + 1));
         return Math.max(1, computed);
     }
 

@@ -4893,6 +4893,7 @@
 
         let currentNpcEditId = null;
         let currentNpcOriginalHealthAttribute = '';
+        let currentNpcOriginalMaxHealth = null;
         let currentNpcInventory = [];
         let currentNpcInventoryNpcId = null;
         let currentNpcViewId = null;
@@ -5675,22 +5676,10 @@
                 return;
             }
 
-            const attributes = getNpcAttributesFromInputs();
-            const attributeKeys = Object.keys(attributes);
-
-            const selectedAttribute = npcEditHealthAttributeSelect && !npcEditHealthAttributeSelect.disabled
-                ? (npcEditHealthAttributeSelect.value || '').trim()
-                : '';
-
-            const resolvedAttribute = selectedAttribute || resolveDefaultHealthAttributeKey(attributeKeys, currentNpcOriginalHealthAttribute);
-            const attributeValue = Number.isFinite(attributes[resolvedAttribute]) ? attributes[resolvedAttribute] : 10;
-
-            const levelValue = Number.parseInt(npcEditLevelInput?.value ?? '', 10);
-            const level = Number.isFinite(levelValue) && levelValue >= 1 ? levelValue : 1;
-
-            const computed = Math.floor(10 + (attributeValue / 2) * (level + 1));
-            const resolvedValue = Math.max(1, computed);
-            npcEditMaxHealthDisplay.textContent = Number.isFinite(resolvedValue) ? resolvedValue : '—';
+            const resolvedValue = Number.isFinite(currentNpcOriginalMaxHealth)
+                ? Math.round(currentNpcOriginalMaxHealth)
+                : null;
+            npcEditMaxHealthDisplay.textContent = resolvedValue !== null ? resolvedValue : '—';
         }
 
         function populateNpcAttributes(attributes = {}) {
@@ -5900,10 +5889,9 @@
                 const numericHealth = Number.parseInt(npc.health, 10);
                 npcEditHealthInput.value = Number.isFinite(numericHealth) ? numericHealth : '';
             }
-            if (npcEditMaxHealthDisplay) {
-                const numericMax = Number.parseInt(npc.maxHealth, 10);
-                npcEditMaxHealthDisplay.textContent = Number.isFinite(numericMax) ? numericMax : '—';
-            }
+            const numericMax = Number.parseInt(npc.maxHealth, 10);
+            currentNpcOriginalMaxHealth = Number.isFinite(numericMax) ? numericMax : null;
+            updateNpcMaxHealth();
             if (npcEditUnspentInput) {
                 const numericUnspent = Number.parseInt(npc.unspentSkillPoints, 10);
                 npcEditUnspentInput.value = Number.isFinite(numericUnspent) ? numericUnspent : 0;
@@ -5978,6 +5966,7 @@
             }
             currentNpcEditId = null;
             currentNpcOriginalHealthAttribute = '';
+            currentNpcOriginalMaxHealth = null;
             updateNpcEditStatus('');
         }
 
