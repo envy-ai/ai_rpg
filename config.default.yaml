@@ -22,8 +22,11 @@ ai:
 
   # Optional: Additional parameters
   maxTokens: 6000
+  lowTemperature: 0.0
   temperature: 0.7
+  highTemperature: 1.0
   baseTimeoutSeconds: 120
+  retryAttempts: 3
 
   debug: false
   dialogue_temperature: 0.85

@@ -1,6 +1,7 @@
 const http = require('http');
 const express = require('express');
 const axios = require('axios');
+const LLMClient = require('./LLMClient.js');
 const attachAxiosMetricsLogger = require('./utils/axios-metrics.js');
 const bodyParser = require('body-parser');
 const nunjucks = require('nunjucks');
@@ -3051,31 +3052,17 @@ async function populateNpcSelectedMemories(baseContext) {
 
         if (parsedTemplate?.systemPrompt && parsedTemplate?.generationPrompt) {
             try {
-                const endpoint = config.ai.endpoint;
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? `${endpoint}chat/completions`
-                    : `${endpoint}/chat/completions`;
-                const requestData = {
-                    model: config.ai.model,
-                    messages: [
-                        { role: 'system', content: parsedTemplate.systemPrompt },
-                        { role: 'user', content: parsedTemplate.generationPrompt }
-                    ],
-                    max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 200),
-                    temperature: typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.2
-                };
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
 
                 const requestStart = Date.now();
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${config.ai.apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'choose_important_memories' }
+                const responseText = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: 'choose_important_memories'
                 });
 
-                const responseText = response.data?.choices?.[0]?.message?.content || '';
                 selectionsByName = parseChooseImportantMemoriesResponse(responseText, maxMemories);
 
                 const promptForLog = [
@@ -3606,30 +3593,11 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
             { role: 'user', content: parsedTemplate.generationPrompt }
         ];
 
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const chatEndpoint = endpoint.endsWith('/') ?
-            endpoint + 'chat/completions' :
-            endpoint + '/chat/completions';
-
-        const requestData = {
-            model: config.ai.model,
-            messages,
-            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 200),
-            temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
-        };
-
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'plausibility_check' }
+        const plausibilityResponse = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'plausibility_check'
         });
-
-        const plausibilityResponse = response.data?.choices?.[0]?.message?.content || '';
 
         logPlausibilityCheck({
             systemPrompt: parsedTemplate.systemPrompt,
@@ -4459,13 +4427,6 @@ async function expandRegionEntryStub(stubLocation) {
             return null;
         }
 
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-        const chatEndpoint = endpoint.endsWith('/')
-            ? endpoint + 'chat/completions'
-            : endpoint + '/chat/completions';
-
         const settingDescription = metadata.settingDescription || describeSettingForPrompt(getActiveSettingSnapshot());
         const themeHint = metadata.themeHint || null;
         let regionAverageLevel = null;
@@ -4608,26 +4569,14 @@ async function expandRegionEntryStub(stubLocation) {
                 { role: 'user', content: stubPrompt.generationPrompt }
             ];
 
-            const requestData = {
-                model,
-                messages,
-                max_tokens: resolveMaxTokens(stubPrompt?.maxTokens, 4000),
-                temperature: config.ai.temperature || 0.7
-            };
-
             try {
                 console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
                 const requestStart = Date.now();
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'region_stub_locations' }
+                stubResponse = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: 'region_stub_locations'
                 });
 
-                stubResponse = response.data?.choices?.[0]?.message?.content || '';
                 const durationSeconds = (Date.now() - requestStart) / 1000;
 
                 try {
@@ -4703,9 +4652,6 @@ async function expandRegionEntryStub(stubLocation) {
                     themeHint,
                     regionAverageLevel,
                     settingDescription,
-                    chatEndpoint,
-                    model,
-                    apiKey,
                     predefinedExitDefinitions: exitDefinitions
                 });
             } catch (instantiationError) {
@@ -4717,10 +4663,7 @@ async function expandRegionEntryStub(stubLocation) {
                     region,
                     systemPrompt: stubPrompt.systemPrompt,
                     generationPrompt: stubPrompt.generationPrompt,
-                    aiResponse: stubResponse,
-                    chatEndpoint,
-                    model,
-                    apiKey
+                    aiResponse: stubResponse
                 });
             } catch (npcError) {
                 console.warn('Failed to generate important NPCs for region stub:', npcError.message);
@@ -4731,10 +4674,7 @@ async function expandRegionEntryStub(stubLocation) {
                 stubMap,
                 systemPrompt: stubPrompt.systemPrompt,
                 generationPrompt: stubPrompt.generationPrompt,
-                aiResponse: stubResponse,
-                chatEndpoint,
-                model,
-                apiKey
+                aiResponse: stubResponse
             });
 
             const entranceLocation = entranceInfo.location || (entranceInfo.locationId ? gameLocations.get(entranceInfo.locationId) : null);
@@ -5317,7 +5257,7 @@ function findRegionByLocationId(locationId) {
     return null;
 }
 
-async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, chatEndpoint, model, apiKey, timeoutMultiplier = 1, autoEquip = true } = {}) {
+async function generateInventoryForCharacter({ character, characterDescriptor = {}, region = null, location = null, timeoutScale = 1, autoEquip = true } = {}) {
     try {
         if (config.omit_item_generation) {
             return [];
@@ -5363,37 +5303,15 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             { role: 'user', content: generationPrompt }
         ];
 
-        const resolvedModel = model || config.ai.model;
-        const resolvedApiKey = apiKey || config.ai.apiKey;
-        const resolvedEndpoint = chatEndpoint || (config.ai.endpoint.endsWith('/')
-            ? `${config.ai.endpoint}chat/completions`
-            : `${config.ai.endpoint}/chat/completions`);
-
-        if (!resolvedModel || !resolvedApiKey || !resolvedEndpoint) {
-            throw new Error('Missing AI configuration for inventory generation');
-        }
-
-        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
-        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
-
-        const requestData = {
-            model: resolvedModel,
-            messages,
-            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 1200),
-            temperature: config.ai.temperature || 0.7
-        };
+        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const requestStart = Date.now();
-        const response = await axios.post(resolvedEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${resolvedApiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: requestTimeout,
-            metadata: { aiMetricsLabel: 'inventory_generation' }
+        const inventoryContent = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale,
+            metadataLabel: 'inventory_generation'
         });
 
-        const inventoryContent = response.data?.choices?.[0]?.message?.content;
         if (!inventoryContent) {
             throw new Error('Empty inventory response from AI');
         }
@@ -5535,10 +5453,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     region,
                     location,
                     settingDescription,
-                    endpoint: resolvedEndpoint,
-                    model: resolvedModel,
-                    apiKey: resolvedApiKey,
-                    timeoutMultiplier: timeoutScale
+                    timeoutScale: timeoutScale
                 });
             } catch (equipError) {
                 console.warn('Failed to run equip-best flow:', equipError.message);
@@ -5759,13 +5674,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt
         };
 
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const chatEndpoint = endpoint.endsWith('/')
-            ? `${endpoint}chat/completions`
-            : `${endpoint}/chat/completions`;
-        const temperature = config.ai.temperature || 0.7;
-
         const created = [];
 
         for (const name of missing) {
@@ -5802,26 +5710,12 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ];
 
-                const requestData = {
-                    model: config.ai.model,
-                    messages,
-                    max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-                    temperature: typeof parsedTemplate.temperature === 'number'
-                        ? parsedTemplate.temperature
-                        : temperature
-                };
-
                 const requestStart = Date.now();
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'thing_generation' }
+                const inventoryContent = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: 'thing_generation'
                 });
 
-                const inventoryContent = response.data?.choices?.[0]?.message?.content;
                 if (!inventoryContent || !inventoryContent.trim()) {
                     throw new Error('Empty item generation response from AI');
                 }
@@ -6152,15 +6046,10 @@ async function alterThingByPrompt({
         item: itemForPrompt
     };
 
-    const endpoint = config?.ai?.endpoint;
-    const apiKey = config?.ai?.apiKey;
-    const model = config?.ai?.model;
-
-    if (!endpoint || !apiKey || !model) {
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
         throw new Error('AI configuration missing; cannot alter item.');
     }
 
-    const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
     let renderedTemplate;
     try {
         renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
@@ -6194,27 +6083,14 @@ async function alterThingByPrompt({
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    const requestData = {
-        model,
-        messages,
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-        temperature: typeof parsedTemplate.temperature === 'number'
-            ? parsedTemplate.temperature
-            : (config.ai.temperature || 0.7)
-    };
-
     const requestStart = Date.now();
-    const response = await axios.post(chatEndpoint, requestData, {
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        },
-        timeout: baseTimeoutMilliseconds,
-        metadata: { aiMetricsLabel: 'alter_thing' }
+    const aiResponse = await LLMClient.chatCompletion({
+        messages,
+        temperature: parsedTemplate.temperature,
+        metadataLabel: 'alter_thing'
     });
 
     const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-    const aiResponse = response.data?.choices?.[0]?.message?.content;
 
     if (!aiResponse || !aiResponse.trim()) {
         throw new Error('Empty item alteration response from AI.');
@@ -6758,31 +6634,12 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             { role: 'user', content: generationPrompt }
         ];
 
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-        const chatEndpoint = endpoint.endsWith('/') ?
-            `${endpoint}chat/completions` :
-            `${endpoint}/chat/completions`;
-
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 1600),
-            temperature: config.ai.temperature || 0.7
-        };
-
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'npc_generation_single' }
+        const npcResponse = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'npc_generation_single'
         });
 
-        const npcResponse = response.data?.choices?.[0]?.message?.content;
         if (!npcResponse || !npcResponse.trim()) {
             throw new Error('Empty NPC generation response');
         }
@@ -6833,9 +6690,6 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             const skillLogPath = path.join(logsDir, `npc_single_skills_${Date.now()}.log`);
             const skillResult = await requestNpcSkillAssignments({
                 baseMessages: baseConversation,
-                chatEndpoint,
-                model,
-                apiKey,
                 logPath: skillLogPath
             });
             if (skillResult?.assignments instanceof Map) {
@@ -6852,9 +6706,6 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             const abilityLogPath = path.join(logsDir, `npc_single_abilities_${Date.now()}.log`);
             const abilityResult = await requestNpcAbilityAssignments({
                 baseMessages: skillConversation,
-                chatEndpoint,
-                model,
-                apiKey,
                 logPath: abilityLogPath
             });
             if (abilityResult?.assignments instanceof Map) {
@@ -6958,10 +6809,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
                 character: npc,
                 characterDescriptor: inventoryDescriptor,
                 region: resolvedRegion,
-                location: resolvedLocation,
-                chatEndpoint,
-                model,
-                apiKey
+                location: resolvedLocation
             });
         } catch (inventoryError) {
             console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
@@ -7178,10 +7026,7 @@ async function equipBestGearForCharacter({
     region = null,
     location = null,
     settingDescription = '',
-    endpoint,
-    model,
-    apiKey,
-    timeoutMultiplier = 1
+    timeoutScale = 1
 }) {
     if (!character || typeof character.getInventoryItems !== 'function' || typeof character.getGear !== 'function') {
         return;
@@ -7276,44 +7121,21 @@ async function equipBestGearForCharacter({
         return;
     }
 
-    const resolvedModel = model || config.ai.model;
-    const resolvedApiKey = apiKey || config.ai.apiKey;
-    const resolvedEndpoint = endpoint || (config.ai.endpoint.endsWith('/')
-        ? `${config.ai.endpoint}chat/completions`
-        : `${config.ai.endpoint}/chat/completions`);
-
-    if (!resolvedModel || !resolvedApiKey || !resolvedEndpoint) {
-        console.warn('Missing AI configuration for equip-best prompt.');
-        return;
-    }
-
     const messages = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: generationPrompt }
     ];
 
-    const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
-    const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
-
-    const requestData = {
-        model: resolvedModel,
-        messages,
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-        temperature: config.ai.temperature || 0.7
-    };
+    timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
     let equipResponse = '';
     const requestStart = Date.now();
     try {
-        const response = await axios.post(resolvedEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${resolvedApiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: requestTimeout,
-            metadata: { aiMetricsLabel: 'equip_best' }
+        equipResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale,
+            metadataLabel: 'equip_best'
         });
-        equipResponse = response.data?.choices?.[0]?.message?.content || '';
     } catch (error) {
         console.warn('Equip-best API call failed:', error.message || error);
         return;
@@ -7790,7 +7612,7 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 }
 
-async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath, timeoutMultiplier = 1 }) {
+async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutScale = 1 }) {
     try {
         const availableSkillsMap = Player.getAvailableSkills();
         if (!availableSkillsMap || availableSkillsMap.size === 0) {
@@ -7824,35 +7646,28 @@ async function requestNpcSkillAssignments({ baseMessages = [], chatEndpoint, mod
 
         const messages = [...baseMessages, { role: 'user', content: skillsPrompt }];
 
-        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
-        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
-
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(1200),
-            temperature: config.ai.temperature || 0.7
-        };
+        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: requestTimeout,
-            metadata: { aiMetricsLabel: 'npc_skill_assignments' }
+        const skillResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale,
+            metadataLabel: 'npc_skill_assignments'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!skillResponse || !skillResponse.trim()) {
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
             };
         }
 
-        const skillResponse = response.data.choices[0]?.message?.content || '';
         const durationSeconds = (Date.now() - requestStart) / 1000;
+        const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
+        if (!normalizedResponse) {
+            console.log('🚪 Existing region exit selection returned no result.');
+            return null;
+        }
 
         if (logPath) {
             const logDir = path.dirname(logPath);
@@ -8051,7 +7866,7 @@ function parseNpcAbilityAssignments(xmlContent) {
     }
 }
 
-async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, model, apiKey, logPath, timeoutMultiplier = 1 }) {
+async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeoutScale = 1 }) {
     try {
         const abilitiesPrompt = renderNpcAbilitiesPrompt();
         if (!abilitiesPrompt) {
@@ -8063,34 +7878,23 @@ async function requestNpcAbilityAssignments({ baseMessages = [], chatEndpoint, m
 
         const messages = [...baseMessages, { role: 'user', content: abilitiesPrompt }];
 
-        const timeoutScale = Math.max(1, Number(timeoutMultiplier) || 1);
-        const requestTimeout = Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * timeoutScale);
+        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(1600),
-            temperature: config.ai.temperature || 0.7
-        };
 
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: requestTimeout,
-            metadata: { aiMetricsLabel: 'npc_ability_assignments' }
+        const abilityResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale: timeoutScale,
+            metadataLabel: 'npc_ability_assignments'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!abilityResponse || !abilityResponse.trim()) {
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
             };
         }
 
-        const abilityResponse = response.data.choices[0]?.message?.content || '';
         const durationSeconds = (Date.now() - requestStart) / 1000;
 
         if (logPath) {
@@ -8396,48 +8200,23 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             return;
         }
 
-        const endpoint = config?.ai?.endpoint;
-        const apiKey = config?.ai?.apiKey;
-        const model = config?.ai?.model;
-        if (!endpoint || !apiKey || !model) {
-            console.warn('AI configuration missing; skipping level-up ability generation.');
-            return;
-        }
-
-        const chatEndpoint = endpoint.endsWith('/')
-            ? `${endpoint}chat/completions`
-            : `${endpoint}/chat/completions`;
-
         const messages = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: generationPrompt }
         ];
 
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 5000),
-            temperature: typeof parsedTemplate.temperature === 'number'
-                ? parsedTemplate.temperature
-                : (config.ai.temperature || 0.7)
-        };
-
         const requestStart = Date.now();
         let abilityResponse = '';
         try {
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: baseTimeoutMilliseconds,
-                metadata: { aiMetricsLabel: 'levelup_abilities' }
+            abilityResponse = await LLMClient.chatCompletion({
+                messages,
+                temperature: parsedTemplate.temperature,
+                metadataLabel: 'levelup_abilities'
             });
-            if (!response.data?.choices?.length) {
+            if (!abilityResponse || !abilityResponse.trim()) {
                 console.warn(`Level-up ability generation returned no choices for ${trimmedName}.`);
                 return;
             }
-            abilityResponse = response.data.choices[0]?.message?.content || '';
         } catch (error) {
             console.warn(`Level-up ability generation request failed for ${trimmedName}:`, error?.message || error);
             return;
@@ -9099,10 +8878,7 @@ function parseNpcNameRegenResponse(xmlContent) {
 async function enforceBannedNpcNames({
     npcDataList,
     existingNpcSummaries,
-    conversationMessages,
-    chatEndpoint,
-    model,
-    apiKey
+    conversationMessages
 } = {}) {
     if (!Array.isArray(npcDataList) || !npcDataList.length) {
         return npcDataList;
@@ -9193,26 +8969,15 @@ async function enforceBannedNpcNames({
 
         const regenMessages = messages.concat({ role: 'user', content: prompt });
 
-        const requestData = {
-            model,
-            messages: regenMessages,
-            max_tokens: resolveMaxTokens(600),
-            temperature: 0.5
-        };
-
         let regenText = '';
         let apiDurationSeconds = null;
         try {
             const requestStart = Date.now();
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: baseTimeoutMilliseconds,
-                metadata: { aiMetricsLabel: 'npc_name_regen' }
+            regenText = await LLMClient.chatCompletion({
+                messages: regenMessages,
+                temperature: 1,
+                metadataLabel: 'npc_name_regen'
             });
-            regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
         } catch (error) {
             console.warn('NPC name regeneration failed:', error.message);
@@ -9349,10 +9114,7 @@ async function enforceBannedNpcNameForPlayer({
     location = null,
     region = null,
     existingNpcSummaries = null,
-    conversationMessages = [],
-    chatEndpoint = null,
-    model = null,
-    apiKey = null
+    conversationMessages = []
 } = {}) {
     if (!npc || typeof npc !== 'object' || typeof npc.name !== 'string') {
         throw new Error('NPC instance with a valid name is required for banned name enforcement');
@@ -9373,15 +9135,7 @@ async function enforceBannedNpcNameForPlayer({
 
     const resolvedConversation = Array.isArray(conversationMessages) ? conversationMessages : [];
 
-    const aiConfig = config?.ai || {};
-    const resolvedModel = model || aiConfig.model;
-    const resolvedApiKey = apiKey || aiConfig.apiKey;
-    const endpoint = aiConfig.endpoint;
-    const resolvedEndpoint = chatEndpoint || (typeof endpoint === 'string'
-        ? (endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`)
-        : null);
-
-    if (!resolvedEndpoint || !resolvedModel || !resolvedApiKey) {
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
         throw new Error('Missing AI configuration for NPC name enforcement');
     }
 
@@ -9421,10 +9175,7 @@ async function enforceBannedNpcNameForPlayer({
     const [result] = await enforceBannedNpcNames({
         npcDataList,
         existingNpcSummaries: summaries,
-        conversationMessages: resolvedConversation,
-        chatEndpoint: resolvedEndpoint,
-        model: resolvedModel,
-        apiKey: resolvedApiKey
+        conversationMessages: resolvedConversation
     });
 
     if (!result || typeof result.name !== 'string' || !result.name.trim()) {
@@ -9454,20 +9205,13 @@ async function enforceBannedNpcNameForPlayer({
 async function ensureUniqueNpcNames({
     npcDataList,
     existingNpcSummaries,
-    conversationMessages,
-    chatEndpoint,
-    model,
-    apiKey
+    conversationMessages
 } = {}) {
     if (!Array.isArray(npcDataList) || !npcDataList.length) {
         return npcDataList;
     }
 
     if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
-        return npcDataList;
-    }
-
-    if (!chatEndpoint || !model || !apiKey) {
         return npcDataList;
     }
 
@@ -9565,26 +9309,15 @@ async function ensureUniqueNpcNames({
 
         const regenMessages = baseMessages.concat({ role: 'user', content: prompt });
 
-        const requestData = {
-            model,
-            messages: regenMessages,
-            max_tokens: resolveMaxTokens(600),
-            temperature: 0.5
-        };
-
         let regenText = '';
         let apiDurationSeconds = null;
         try {
             const requestStart = Date.now();
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: baseTimeoutMilliseconds,
-                metadata: { aiMetricsLabel: 'npc_name_regen_duplicate' }
+            regenText = await LLMClient.chatCompletion({
+                messages: regenMessages,
+                temperature: 1,
+                metadataLabel: 'npc_name_regen_duplicate'
             });
-            regenText = response.data?.choices?.[0]?.message?.content || '';
             apiDurationSeconds = (Date.now() - requestStart) / 1000;
         } catch (error) {
             console.warn('NPC duplicate name regeneration failed:', error.message);
@@ -9857,7 +9590,7 @@ function parseLocationThingsXml(xmlContent) {
     }
 }
 
-async function generateLocationThingsForLocation({ location, chatEndpoint = null, model = null, apiKey = null } = {}) {
+async function generateLocationThingsForLocation({ location } = {}) {
     if (!location || typeof location.id !== 'string') {
         return [];
     }
@@ -9944,38 +9677,18 @@ async function generateLocationThingsForLocation({ location, chatEndpoint = null
         return [];
     }
 
-    const endpoint = config.ai.endpoint;
-    const resolvedModel = model || config.ai.model;
-    const resolvedApiKey = apiKey || config.ai.apiKey;
-    const resolvedChatEndpoint = chatEndpoint || (endpoint.endsWith('/')
-        ? `${endpoint}chat/completions`
-        : `${endpoint}/chat/completions`);
-
     const messages = [
         { role: 'system', content: parsedTemplate.systemPrompt },
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    const requestData = {
-        model: resolvedModel,
-        messages,
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-        temperature: typeof parsedTemplate.temperature === 'number'
-            ? parsedTemplate.temperature
-            : (config.ai.temperature || 0.6)
-    };
-
     const requestStart = Date.now();
-    const response = await axios.post(resolvedChatEndpoint, requestData, {
-        headers: {
-            'Authorization': `Bearer ${resolvedApiKey}`,
-            'Content-Type': 'application/json'
-        },
-        timeout: baseTimeoutMilliseconds,
-        metadata: { aiMetricsLabel: 'location_things_generation' }
+    const aiResponse = await LLMClient.chatCompletion({
+        messages,
+        temperature: parsedTemplate.temperature,
+        metadataLabel: 'location_things_generation'
     });
 
-    const aiResponse = response.data?.choices?.[0]?.message?.content;
     if (!aiResponse || !aiResponse.trim()) {
         return [];
     }
@@ -10511,33 +10224,20 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         return;
     }
 
-    const endpoint = config.ai.endpoint;
-    const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
-    const requestData = {
-        model: config.ai.model,
-        messages: [
-            { role: 'system', content: parsedTemplate.systemPrompt },
-            { role: 'user', content: parsedTemplate.generationPrompt }
-        ],
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 400),
-        temperature: typeof parsedTemplate.temperature === 'number'
-            ? parsedTemplate.temperature
-            : 0.4
-    };
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
 
     let responseText = '';
     let durationSeconds = null;
     try {
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${config.ai.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'thing_name_regen' }
+        responseText = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'thing_name_regen'
         });
-        responseText = response.data?.choices?.[0]?.message?.content || '';
         durationSeconds = (Date.now() - requestStart) / 1000;
     } catch (error) {
         console.warn('Thing name regeneration request failed:', error.message);
@@ -10652,31 +10352,20 @@ async function regenerateLocationName(location) {
         throw new Error('Location name regeneration template missing prompts.');
     }
 
-    const endpoint = aiConfig.endpoint;
-    const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
-    const requestData = {
-        model: aiConfig.model,
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
-        ],
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, aiConfig?.maxTokens, 400),
-        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
-    };
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
 
     let responseText = '';
     let durationSeconds = null;
     try {
         const requestStarted = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${aiConfig.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'location_name_regen' }
+        responseText = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'location_name_regen'
         });
-        responseText = response.data?.choices?.[0]?.message?.content || '';
         durationSeconds = (Date.now() - requestStarted) / 1000;
     } catch (error) {
         throw new Error(`Location name regeneration request failed: ${error.message}`);
@@ -10968,33 +10657,20 @@ async function regenerateRegionNames(regions) {
         throw new Error('Region name regeneration template missing prompts.');
     }
 
-    const endpoint = aiConfig.endpoint.endsWith('/')
-        ? `${aiConfig.endpoint}chat/completions`
-        : `${aiConfig.endpoint}/chat/completions`;
-
-    const requestData = {
-        model: aiConfig.model,
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
-        ],
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, aiConfig?.maxTokens, 400),
-        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.5
-    };
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
 
     let responseText = '';
     let durationSeconds = null;
     try {
         const requestStarted = Date.now();
-        const response = await axios.post(endpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${aiConfig.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'region_name_regen' }
+        responseText = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'region_name_regen'
         });
-        responseText = response.data?.choices?.[0]?.message?.content || '';
         durationSeconds = (Date.now() - requestStarted) / 1000;
     } catch (error) {
         throw new Error(`Region name regeneration request failed: ${error.message}`);
@@ -11148,38 +10824,18 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
         { role: 'user', content: generationPrompt }
     ];
 
-    const endpoint = config.ai?.endpoint;
-    const apiKey = config.ai?.apiKey;
-    const model = config.ai?.model;
-
-    if (!endpoint || !apiKey || !model) {
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
         console.warn('AI configuration missing for skill generation, using fallback skills.');
         return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
     }
 
-    const chatEndpoint = endpoint.endsWith('/') ?
-        endpoint + 'chat/completions' :
-        endpoint + '/chat/completions';
-
-    const requestData = {
-        model,
-        messages,
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.4
-    };
-
     try {
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'skill_generation' }
+        const skillResponse = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'skill_generation'
         });
-
-        const skillResponse = response.data?.choices?.[0]?.message?.content || '';
 
         logSkillGeneration({
             systemPrompt,
@@ -11252,42 +10908,22 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
         return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
     }
 
-    const endpoint = config.ai?.endpoint;
-    const apiKey = config.ai?.apiKey;
-    const model = config.ai?.model;
-
-    if (!endpoint || !apiKey || !model) {
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
         return normalized.map(name => new Skill({ name, description: '', attribute: '' }));
     }
-
-    const chatEndpoint = endpoint.endsWith('/') ?
-        endpoint + 'chat/completions' :
-        endpoint + '/chat/completions';
 
     const messages = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: generationPrompt }
     ];
 
-    const requestData = {
-        model,
-        messages,
-        max_tokens: resolveMaxTokens(parsedTemplate?.maxTokens, 600),
-        temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
-    };
-
     try {
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'skill_generation_by_name' }
+        const skillResponse = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'skill_generation_by_name'
         });
-
-        const skillResponse = response.data?.choices?.[0]?.message?.content || '';
 
         logSkillGeneration({
             systemPrompt,
@@ -11323,7 +10959,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
 }
 
 // Function to render location NPC prompt from template
-async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, chatEndpoint, model, apiKey, existingLocationsInRegion = [] }) {
+async function generateLocationNPCs({ location, systemPrompt, generationPrompt, aiResponse, regionTheme, existingLocationsInRegion = [] }) {
     if (config.omit_npc_generation) {
         return [];
     }
@@ -11396,13 +11032,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             { role: 'user', content: npcPromptWithContext }
         ];
 
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(2000),
-            temperature: config.ai.temperature || 0.7
-        };
-
         const logDir = path.join(__dirname, 'logs');
         if (!fs.existsSync(logDir)) {
             fs.mkdirSync(logDir, { recursive: true });
@@ -11411,20 +11040,16 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * npcCountHint),
-            metadata: { aiMetricsLabel: 'location_npc_generation' }
+        const npcResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale: npcCountHint,
+            metadataLabel: 'location_npc_generation'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!npcResponse || !npcResponse.trim()) {
             throw new Error('Invalid NPC response from AI API');
         }
 
-        const npcResponse = response.data.choices[0].message.content;
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
@@ -11445,7 +11070,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
-        const npcTimeoutMultiplier = Math.max(1, npcs.length || npcCountHint);
+        const npctimeoutScale = Math.max(1, npcs.length || npcCountHint);
 
         const originalNpcNames = npcs.map(npc => npc?.name || null);
         let npcRenameMap = new Map();
@@ -11453,20 +11078,14 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             npcs = await enforceBannedNpcNames({
                 npcDataList: npcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
-                conversationMessages: baseConversation,
-                chatEndpoint,
-                model,
-                apiKey
+                conversationMessages: baseConversation
             });
 
             Globals.updateSpinnerText({ message: `Naming NPCs for location ${location.name || location.id}...` });
             npcs = await ensureUniqueNpcNames({
                 npcDataList: npcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
-                conversationMessages: baseConversation,
-                chatEndpoint,
-                model,
-                apiKey
+                conversationMessages: baseConversation
             });
 
             npcRenameMap = computeNpcRenameMap(originalNpcNames, npcs);
@@ -11484,11 +11103,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
                 const skillResult = await requestNpcSkillAssignments({
                     baseMessages: baseConversation,
-                    chatEndpoint,
-                    model,
-                    apiKey,
                     logPath: skillsLogPath,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
                 const rawAssignments = skillResult.assignments || new Map();
                 npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
@@ -11505,11 +11121,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
                 const abilityResult = await requestNpcAbilityAssignments({
                     baseMessages: skillConversation,
-                    chatEndpoint,
-                    model,
-                    apiKey,
                     logPath: abilitiesLogPath,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
                 const rawAbilityAssignments = abilityResult.assignments || new Map();
                 npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
@@ -11606,10 +11219,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     characterDescriptor: descriptor,
                     region: resolvedRegion,
                     location,
-                    chatEndpoint,
-                    model,
-                    apiKey,
-                    timeoutMultiplier: npcTimeoutMultiplier,
+                    timeoutScale: npctimeoutScale,
                     autoEquip: false
                 });
             } catch (inventoryError) {
@@ -11630,10 +11240,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                     region: resolvedRegion,
                     location,
                     settingDescription: equipSettingDescription,
-                    endpoint: chatEndpoint,
-                    model,
-                    apiKey,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
             } catch (equipError) {
                 console.warn(`Failed to run equip-best flow for location NPC ${name}:`, equipError.message);
@@ -11657,7 +11264,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 }
 
 
-async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, chatEndpoint, model, apiKey }) {
+async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse }) {
     if (!region) {
         throw new Error('Region is required for generating region NPCs');
     }
@@ -11738,30 +11345,19 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             { role: 'user', content: npcPrompt }
         ];
 
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(2500),
-            temperature: config.ai.temperature || 0.7
-        };
-
         Globals.updateSpinnerText({ message: `Generating NPCs for region ${region.name || region.id}...` });
         console.log('🏘️ Requesting important NPC generation for region', region.id);
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: Math.min(Number.MAX_SAFE_INTEGER, baseTimeoutMilliseconds * Math.max(1, regionLocations.length || 1)),
-            metadata: { aiMetricsLabel: 'region_npc_generation' }
+        const npcResponse = await LLMClient.chatCompletion({
+            messages,
+            timeoutScale: regionLocations.length,
+            metadataLabel: 'region_npc_generation'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!npcResponse || !npcResponse.trim()) {
             throw new Error('Invalid region NPC response from AI API');
         }
 
-        const npcResponse = response.data.choices[0].message.content;
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
@@ -11787,7 +11383,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
         let regionNpcMemories = parsedRegionResult?.memories instanceof Map ? parsedRegionResult.memories : new Map();
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
-        const npcTimeoutMultiplier = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
+        const npctimeoutScale = Math.max(1, parsedNpcs.length || regionLocations.length || 1);
 
         const originalRegionNpcNames = parsedNpcs.map(npc => npc?.name || null);
         let regionNpcRenameMap = new Map();
@@ -11796,19 +11392,13 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
-                conversationMessages: baseConversation,
-                chatEndpoint,
-                model,
-                apiKey
+                conversationMessages: baseConversation
             });
 
             parsedNpcs = await ensureUniqueNpcNames({
                 npcDataList: parsedNpcs,
                 existingNpcSummaries: existingNpcSummariesForRegen,
-                conversationMessages: baseConversation,
-                chatEndpoint,
-                model,
-                apiKey
+                conversationMessages: baseConversation
             });
 
             regionNpcRenameMap = computeNpcRenameMap(originalRegionNpcNames, parsedNpcs);
@@ -11826,11 +11416,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
                 const skillResult = await requestNpcSkillAssignments({
                     baseMessages: baseConversation,
-                    chatEndpoint,
-                    model,
-                    apiKey,
                     logPath: skillsLogPath,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
                 const rawAssignments = skillResult.assignments || new Map();
                 regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
@@ -11847,11 +11434,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
                 const abilityResult = await requestNpcAbilityAssignments({
                     baseMessages: regionSkillConversation,
-                    chatEndpoint,
-                    model,
-                    apiKey,
                     logPath: abilitiesLogPath,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
                 const rawAbilityAssignments = abilityResult.assignments || new Map();
                 regionNpcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, regionNpcRenameMap) || new Map();
@@ -11988,10 +11572,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     characterDescriptor: descriptor,
                     region,
                     location: targetLocation,
-                    chatEndpoint,
-                    model,
-                    apiKey,
-                    timeoutMultiplier: npcTimeoutMultiplier,
+                    timeoutScale: npctimeoutScale,
                     autoEquip: false
                 });
             } catch (inventoryError) {
@@ -12012,10 +11593,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                     region,
                     location: targetLocation,
                     settingDescription: equipSettingDescription,
-                    endpoint: chatEndpoint,
-                    model,
-                    apiKey,
-                    timeoutMultiplier: npcTimeoutMultiplier
+                    timeoutScale: npctimeoutScale
                 });
             } catch (equipError) {
                 console.warn(`Failed to run equip-best flow for region NPC ${name}:`, equipError.message);
@@ -12801,40 +12379,19 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
             }
         ];
 
-        // Use configuration from config.yaml
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-
-        // Prepare the request to the OpenAI-compatible API
-        const chatEndpoint = endpoint.endsWith('/') ?
-            endpoint + 'chat/completions' :
-            endpoint + '/chat/completions';
-
-        const requestData = {
-            model: model,
-            messages: messages,
-            max_tokens: resolveMaxTokens(prompts?.maxTokens, 500),
-            temperature: config.ai.temperature || 0.3  // Lower temperature for more consistent output
-        };
-
         console.log('🤖 Requesting image prompt generation from LLM...');
 
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds, // 60 second timeout
-            metadata: { aiMetricsLabel: 'image_prompt_generation' }
+        const responseText = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'image_prompt_generation'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!responseText || !responseText.trim()) {
             throw new Error('Invalid response from AI API');
         }
 
-        let generatedImagePrompt = response.data.choices[0].message.content;
+        let generatedImagePrompt = responseText;
         //console.log('📥 LLM Generated Image Prompt:', generatedImagePrompt);
 
         // Clean the prompt to remove potential problematic characters
@@ -13539,42 +13096,20 @@ async function generateLocationFromPrompt(options = {}) {
             }
         ];
 
-        // Use configuration from config.yaml
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-
-        // Prepare the request to the OpenAI-compatible API
-        const chatEndpoint = endpoint.endsWith('/') ?
-            endpoint + 'chat/completions' :
-            endpoint + '/chat/completions';
-
-        const requestData = {
-            model: model,
-            messages: messages,
-            max_tokens: resolveMaxTokens(promptConfig.maxTokens, 1000),
-            temperature: config.ai.temperature || 0.7
-        };
-
         console.log('🤖 Requesting location generation from AI...');
         //console.log('📝 System Prompt:', systemPrompt);
-        //console.log('📤 Full Request Data:', JSON.stringify(requestData, null, 2));
+        //console.log('📤 Full Request Payload:', JSON.stringify({ messages }, null, 2));
 
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds, // 60 second timeout
-            metadata: { aiMetricsLabel: 'location_generation' }
+        const aiResponse = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'location_generation'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!aiResponse || !aiResponse.trim()) {
             throw new Error('Invalid response from AI API');
         }
 
-        const aiResponse = response.data.choices[0].message.content;
         //console.log('📥 AI Raw Response:');
         //console.log('='.repeat(50));
         //console.log(aiResponse);
@@ -13651,10 +13186,7 @@ async function generateLocationFromPrompt(options = {}) {
         try {
             Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
             await generateLocationThingsForLocation({
-                location,
-                chatEndpoint,
-                model,
-                apiKey
+                location
             });
         } catch (thingError) {
             console.warn('Failed to generate location things:', thingError.message);
@@ -13713,10 +13245,7 @@ async function generateLocationFromPrompt(options = {}) {
             systemPrompt,
             generationPrompt,
             aiResponse,
-            regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null),
-            chatEndpoint,
-            model,
-            apiKey
+            regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null)
         });
 
         return {
@@ -13844,10 +13373,7 @@ function parseExistingRegionExitResponse(xmlSnippet) {
 async function chooseExistingRegionExit({
     sourceRegion,
     sourceLocation,
-    targetRegion,
-    chatEndpoint,
-    model,
-    apiKey
+    targetRegion
 }) {
     const prompt = renderExistingRegionExitPrompt({ sourceRegion, sourceLocation, targetRegion });
     if (!prompt) {
@@ -13860,28 +13386,16 @@ async function chooseExistingRegionExit({
     }
     messages.push({ role: 'user', content: prompt.generationPrompt });
 
-    const requestData = {
-        model,
-        messages,
-        max_tokens: resolveMaxTokens(300),
-        temperature: config.ai.temperature || 0.4
-    };
-
     try {
         const requestStart = Date.now();
         console.log(`🚪 Requesting existing region exit from ${sourceRegion?.name || sourceRegion?.id || 'unknown region'}`
             + ` via ${sourceLocation?.name || sourceLocation?.id || 'unknown location'} to ${targetRegion?.name || targetRegion?.id || 'target region'}.`);
 
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'existing_region_exit' }
+        const aiResponse = await LLMClient.chatCompletion({
+            messages,
+            metadataLabel: 'existing_region_exit'
         });
 
-        const aiResponse = response.data?.choices?.[0]?.message?.content || '';
         const durationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
@@ -13917,7 +13431,7 @@ async function chooseExistingRegionExit({
                 '\n=== EXISTING REGION EXIT PROMPT ===',
                 prompt.generationPrompt || '(none)',
                 '\n=== EXISTING REGION EXIT RESPONSE ===',
-                aiResponse || '(empty)',
+                normalizedResponse || '(empty)',
                 '\n'
             ];
 
@@ -13927,7 +13441,7 @@ async function chooseExistingRegionExit({
             console.warn('Failed to log existing region exit prompt:', logError?.message || logError);
         }
 
-        const parsed = parseExistingRegionExitResponse(aiResponse);
+        const parsed = parseExistingRegionExitResponse(normalizedResponse);
         if (parsed?.name) {
             console.log(`🚪 Existing region exit selected: ${parsed.name}`);
         } else {
@@ -14187,9 +13701,6 @@ async function generateRegionExitStubs({
     stubMap,
     settingDescription,
     regionAverageLevel,
-    chatEndpoint,
-    model,
-    apiKey,
     predefinedDefinitions = null
 }) {
     if (!region) {
@@ -14262,10 +13773,7 @@ async function generateRegionExitStubs({
                 region,
                 sourceLocation,
                 existingRegion,
-                definition,
-                chatEndpoint,
-                model,
-                apiKey
+                definition
             });
             continue;
         }
@@ -14426,10 +13934,7 @@ async function connectExistingRegion({
     region,
     sourceLocation,
     existingRegion,
-    definition,
-    chatEndpoint,
-    model,
-    apiKey
+    definition
 }) {
     if (!region || !sourceLocation || !existingRegion) {
         return;
@@ -14438,10 +13943,7 @@ async function connectExistingRegion({
     const exitChoice = await chooseExistingRegionExit({
         sourceRegion: region,
         sourceLocation,
-        targetRegion: existingRegion,
-        chatEndpoint,
-        model,
-        apiKey
+        targetRegion: existingRegion
     });
 
     const candidateLocations = Array.isArray(existingRegion.locationIds)
@@ -14552,9 +14054,6 @@ async function instantiateRegionLocations({
     themeHint,
     regionAverageLevel,
     settingDescription,
-    chatEndpoint,
-    model,
-    apiKey,
     predefinedExitDefinitions = null
 }) {
     const stubMap = new Map();
@@ -14736,9 +14235,6 @@ async function instantiateRegionLocations({
         stubMap,
         settingDescription,
         regionAverageLevel,
-        chatEndpoint,
-        model,
-        apiKey,
         predefinedDefinitions: predefinedExitDefinitions
     });
 
@@ -14750,10 +14246,7 @@ async function chooseRegionEntrance({
     stubMap,
     systemPrompt,
     generationPrompt,
-    aiResponse,
-    chatEndpoint,
-    model,
-    apiKey
+    aiResponse
 }) {
     let entranceLocationId = null;
     try {
@@ -14765,24 +14258,17 @@ async function chooseRegionEntrance({
             { role: 'user', content: entrancePrompt }
         ];
 
-        const entranceRequest = {
-            model,
-            messages: entranceMessages,
-            max_tokens: resolveMaxTokens(200),
-            temperature: config.ai.temperature || 0.7
-        };
-
         console.log('🚪 Requesting region entrance selection...');
-        const entranceResponse = await axios.post(chatEndpoint, entranceRequest, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'region_entrance_selection' }
+        const entranceResponse = await LLMClient.chatCompletion({
+            messages: entranceMessages,
+            metadataLabel: 'region_entrance_selection'
         });
 
-        const entranceMessage = entranceResponse.data?.choices?.[0]?.message?.content;
+        const entranceMessage = typeof entranceResponse === 'string' ? entranceResponse.trim() : '';
+        if (!entranceMessage) {
+            console.warn('Entrance selection response was empty.');
+            return;
+        }
         const entranceName = parseRegionEntranceResponse(entranceMessage);
 
         if (entranceName) {
@@ -14855,38 +14341,18 @@ async function generateRegionFromPrompt(options = {}) {
 
         report('region:request', { message: 'Requesting region layout from AI...' });
 
-        const endpoint = config.ai.endpoint;
-        const apiKey = config.ai.apiKey;
-        const model = config.ai.model;
-
-        const chatEndpoint = endpoint.endsWith('/') ?
-            endpoint + 'chat/completions' :
-            endpoint + '/chat/completions';
-
-        // We need lots of tokens for large regions.
-        const requestData = {
-            model,
-            messages,
-            max_tokens: resolveMaxTokens(promptConfig.maxTokens, 6000),
-            temperature: config.ai.temperature || 0.7
-        };
-
         console.log('🗺️ Requesting region generation from AI...');
         const requestStart = Date.now();
-        const response = await axios.post(chatEndpoint, requestData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: baseTimeoutMilliseconds,
-            metadata: { aiMetricsLabel: 'region_generation' }
+        const aiResponse = await LLMClient.chatCompletion({
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'region_generation'
         });
 
-        if (!response.data || !response.data.choices || response.data.choices.length === 0) {
+        if (!aiResponse || !aiResponse.trim()) {
             throw new Error('Invalid response from AI API for region generation');
         }
 
-        const aiResponse = response.data.choices[0].message.content;
         console.log('📥 Region AI Response received.');
         report('region:response', { message: 'Region response received.' });
 
@@ -14937,9 +14403,6 @@ async function generateRegionFromPrompt(options = {}) {
                 themeHint,
                 regionAverageLevel,
                 settingDescription,
-                chatEndpoint,
-                model,
-                apiKey,
                 predefinedExitDefinitions: connectedRegionDefinitions
             });
         } catch (instantiationError) {
@@ -14951,10 +14414,7 @@ async function generateRegionFromPrompt(options = {}) {
             stubMap,
             systemPrompt,
             generationPrompt,
-            aiResponse,
-            chatEndpoint,
-            model,
-            apiKey
+            aiResponse
         });
         report('region:entrance', { message: 'Selecting region entrance...' });
         const entranceLocationId = entranceInfo.locationId || null;
@@ -14967,10 +14427,7 @@ async function generateRegionFromPrompt(options = {}) {
             region,
             systemPrompt,
             generationPrompt,
-            aiResponse,
-            chatEndpoint,
-            model,
-            apiKey
+            aiResponse
         });
 
         report('region:complete', { message: 'Region generation complete.' });
