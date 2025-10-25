@@ -7451,6 +7451,7 @@ function parseLocationNpcs(xmlContent) {
 
         const responseRoot = doc.getElementsByTagName('response')[0] || doc;
         const npcContainer = responseRoot.getElementsByTagName('npcs')[0] || responseRoot;
+        const hostileContainer = responseRoot.getElementsByTagName('hostiles')[0] || responseRoot;
 
         const memoryNodes = Array.from(responseRoot.getElementsByTagName('npcMemories'));
         for (const memoryNode of memoryNodes) {
@@ -7467,7 +7468,10 @@ function parseLocationNpcs(xmlContent) {
             }
         }
 
-        const npcNodes = Array.from(npcContainer.getElementsByTagName('npc'));
+        const npcNodes = [
+            ...npcContainer.getElementsByTagName('npc'),
+            ...hostileContainer.getElementsByTagName('hostile'),
+        ];
 
         for (const node of npcNodes) {
             const nameNode = node.getElementsByTagName('name')[0];
