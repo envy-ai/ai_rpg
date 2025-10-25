@@ -14649,7 +14649,7 @@ async function instantiateRegionLocations({
         const exit = new LocationExit({
             description: `${toStub.name}`,
             destination: toStub.id,
-            bidirectional: false
+            bidirectional: true
         });
         fromStub.addExit(directionKey, exit);
     };
