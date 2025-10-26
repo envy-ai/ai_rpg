@@ -5303,7 +5303,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             { role: 'user', content: generationPrompt }
         ];
 
-        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
+        timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const requestStart = Date.now();
         const inventoryContent = await LLMClient.chatCompletion({
@@ -7552,6 +7552,7 @@ function renderNpcSkillsPrompt(skills = []) {
         return promptEnv.render('npc-generate-skills.xml.njk', { skills: list });
     } catch (error) {
         console.error('Error rendering NPC skills template:', error);
+        console.debug(error);
         return null;
     }
 }
@@ -7613,9 +7614,11 @@ function parseNpcSkillAssignments(xmlContent) {
 }
 
 async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutScale = 1 }) {
+    console.log(`Requesting NPC skill assignments from LLM... (timeoutScale=${timeoutScale})`);
     try {
         const availableSkillsMap = Player.getAvailableSkills();
         if (!availableSkillsMap || availableSkillsMap.size === 0) {
+            console.log('No available skills found for NPC skill assignment.');
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
@@ -7630,6 +7633,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
             }));
 
         if (!skillsForPrompt.length) {
+            console.log('No valid skills found for NPC skill assignment.');
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
@@ -7638,6 +7642,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
 
         const skillsPrompt = renderNpcSkillsPrompt(skillsForPrompt);
         if (!skillsPrompt) {
+            console.log('Failed to render NPC skills prompt.');
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
@@ -7646,7 +7651,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
 
         const messages = [...baseMessages, { role: 'user', content: skillsPrompt }];
 
-        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
+        timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const requestStart = Date.now();
         const skillResponse = await LLMClient.chatCompletion({
@@ -7656,6 +7661,7 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
         });
 
         if (!skillResponse || !skillResponse.trim()) {
+            console.log('NPC skill assignments returned empty response.');
             return {
                 assignments: new Map(),
                 conversation: [...baseMessages]
@@ -7663,9 +7669,9 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
         }
 
         const durationSeconds = (Date.now() - requestStart) / 1000;
-        const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
+        const normalizedResponse = typeof skillResponse === 'string' ? skillResponse.trim() : '';
         if (!normalizedResponse) {
-            console.log('🚪 Existing region exit selection returned no result.');
+            console.log('NPC skill assignments returned no result.');
             return null;
         }
 
@@ -7795,6 +7801,7 @@ function renderNpcAbilitiesPrompt() {
         return promptEnv.render('npc-generate-abilities.xml.njk', {});
     } catch (error) {
         console.error('Error rendering NPC abilities template:', error);
+        console.debug(error);
         return null;
     }
 }
@@ -7878,7 +7885,7 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
 
         const messages = [...baseMessages, { role: 'user', content: abilitiesPrompt }];
 
-        const timeoutScale = Math.max(1, Number(timeoutScale) || 1);
+        timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
 
         const requestStart = Date.now();
@@ -7933,6 +7940,7 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
         };
     } catch (error) {
         console.warn('Failed to request NPC ability assignments:', error.message);
+        console.debug(error);
         return {
             assignments: new Map(),
             conversation: [...baseMessages]
@@ -11111,6 +11119,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 skillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : skillConversation;
             } catch (skillError) {
                 console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
+                console.debug(skillError);
             }
         }
 
@@ -12380,7 +12389,6 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         ];
 
         console.log('🤖 Requesting image prompt generation from LLM...');
-        console.log(messages);
 
         const requestStart = Date.now();
         const responseText = await LLMClient.chatCompletion({
