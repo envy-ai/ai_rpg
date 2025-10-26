@@ -98,8 +98,6 @@ class LLMClient {
 
         if (Array.isArray(messages)) {
             payload.messages = messages;
-
-            messages[1].content += '\n\n/no_think';
         }
 
         if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
@@ -170,7 +168,7 @@ class LLMClient {
                 // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
                 if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
                     const thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
-                    console.warn('❌ Warning: Response content contains <think></think> tags:', thinkTags);
+                    console.warn('⚠️ Response content contains <think></think> tags');
                 }
                 // Check if <think></think> tags are present and remove them and anything inside
                 const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;

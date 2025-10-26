@@ -2678,7 +2678,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         return ` [location: ${locationName}]`;
     };
 
-    const relevantHistory = historyEntries.filter(entry => entry && (entry.content || entry.summary));
+    const relevantHistory = historyEntries.filter(entry => entry && (entry.content) && entry.type !== 'event-summary');
 
     const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
     const limitedHistory = totalHistoryLimit > 0
