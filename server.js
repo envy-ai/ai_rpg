@@ -13463,29 +13463,6 @@ async function chooseExistingRegionExit({
     }
 }
 
-async function renderRegionExitsPrompt({ region, settingDescription }) {
-    try {
-        const minRegionExitOverride = Region.stubRegionCount <= 2 ? 1 : null;
-        const promptConfig = await renderRegionGeneratorPrompt({
-            mode: 'exits',
-            currentRegion: region,
-            regionName: region?.name || null,
-            regionDescription: region?.description || null,
-            regionNotes: region?.regionNotes || null,
-            setting: settingDescription || null,
-            minRegionExits: minRegionExitOverride
-        });
-
-        if (!promptConfig) {
-            throw new Error('Region exits prompt renderer returned no data');
-        }
-
-        return promptConfig;
-    } catch (error) {
-        console.error('Error rendering region exits template:', error);
-        return null;
-    }
-}
 
 function parseRegionExitsResponse(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
@@ -14354,7 +14331,7 @@ async function generateRegionFromPrompt(options = {}) {
         const requestStart = Date.now();
         const aiResponse = await LLMClient.chatCompletion({
             messages,
-            temperature: parsedTemplate.temperature,
+            //temperature: parsedTemplate.temperature,
             metadataLabel: 'region_generation'
         });
 

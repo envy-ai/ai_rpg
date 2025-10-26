@@ -6,6 +6,7 @@ const Skill = require('./Skill.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
+const Quest = require('./Quest.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -68,6 +69,7 @@ class Player {
     #inCombat = false;
     #checkEquipment = false;
     #characterArc = { shortTerm: '', longTerm: '' };
+    #quests = [];
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -1538,6 +1540,27 @@ class Player {
         this.#goals.push(trimmed);
         this.#lastUpdated = new Date().toISOString();
         return true;
+    }
+
+    addQuest(quest) {
+        this.#quests.push(quest);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    getQuestByName(questName) {
+        return this.#quests.find(q => q.name === questName) || null;
+    }
+
+    getQuestById(questId) {
+        return this.#quests.find(q => q.id === questId) || null;
+    }
+
+    getCurrentQuests() {
+        return this.#quests.filter(q => !q.completed);
+    }
+
+    getCompletedQuests() {
+        return this.#quests.filter(q => q.completed);
     }
 
     removeGoal(goal) {
@@ -3478,6 +3501,7 @@ class Player {
             importantMemories: this.importantMemories
         };
 
+        status.quests = this.#quests.map(quest => quest.toJSON());
         status.personality = {
             type: this.#personalityType,
             traits: this.#personalityTraits,
@@ -3550,7 +3574,8 @@ class Player {
             isInPlayerParty: this.#isInPlayerParty,
             partyMembersAddedThisTurn: Array.from(this.#partyMembersAddedThisTurn),
             partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn),
-            elapsedTime: this.#elapsedTime
+            elapsedTime: this.#elapsedTime,
+            quests: this.#quests.map(quest => quest.toJSON())
         };
     }
 
@@ -3659,6 +3684,21 @@ class Player {
             player.#partyMembersRemovedThisTurn = new Set(
                 data.partyMembersRemovedThisTurn.filter(id => typeof id === 'string')
             );
+        }
+
+        if (Array.isArray(data.quests)) {
+            player.#quests = data.quests
+                .map(entry => {
+                    try {
+                        return Quest.fromJSON(entry);
+                    } catch (error) {
+                        console.warn('Failed to deserialize quest:', error?.message || error);
+                        return null;
+                    }
+                })
+                .filter(Boolean);
+        } else {
+            player.#quests = [];
         }
 
         return player;

@@ -2,6 +2,7 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
 const Globals = require('./Globals.js');
+const Quest = require('./Quest.js');
 const LLMClient = require('./LLMClient.js');
 
 const BASE_TIMEOUT_MS = 120000;
@@ -50,7 +51,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
-        { key: 'received_quest', prompt: `Did the player receive a quest or task this turn? Answer Yes or No, with no other information.` },
+        { key: 'received_quest', prompt: `Did the player receive one or more quests or tasks this turn? If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
         { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
@@ -1454,6 +1455,45 @@ class Events {
                     }
                     return entry.trim();
                 }).filter(Boolean);
+            },
+            received_quest: raw => {
+                if (typeof raw !== 'string') {
+                    return [];
+                }
+                const normalized = raw.trim();
+                if (!normalized) {
+                    return [];
+                }
+                if (/^n\/?a$/i.test(normalized) || normalized.toLowerCase() === 'none') {
+                    return [];
+                }
+
+                return splitPipeList(normalized).map(entry => {
+                    if (typeof entry !== 'string') {
+                        return null;
+                    }
+                    const parts = splitArrowParts(entry, 2).map(part => part && part.trim()).filter(Boolean);
+                    if (!parts.length) {
+                        return null;
+                    }
+
+                    let giver = parts[0] || '';
+                    let summary = parts.length > 1 ? parts.slice(1).join(' -> ') : '';
+
+                    if (!summary && giver) {
+                        summary = giver;
+                        giver = '';
+                    }
+
+                    if (!summary) {
+                        return null;
+                    }
+
+                    return {
+                        giver: giver || '',
+                        summary
+                    };
+                }).filter(Boolean);
             }
         };
     }
@@ -1908,6 +1948,202 @@ class Events {
                         context.alteredLocations = [];
                     }
                     context.alteredLocations.push(...alteredSummaries);
+                }
+            },
+            received_quest: async function (entries = [], context = {}, rawValue = null) {
+                const questEntries = Array.isArray(entries)
+                    ? entries.filter(entry => entry && typeof entry.summary === 'string' && entry.summary.trim())
+                    : [];
+
+                if (!questEntries.length) {
+                    return;
+                }
+
+                const {
+                    promptEnv,
+                    parseXMLTemplate,
+                    prepareBasePromptContext,
+                    findActorByName,
+                    Location,
+                    findRegionByLocationId,
+                    fs,
+                    path,
+                    baseDir
+                } = this._deps;
+
+                if (typeof promptEnv?.render !== 'function'
+                    || typeof parseXMLTemplate !== 'function'
+                    || typeof prepareBasePromptContext !== 'function') {
+                    throw new Error('received_quest handler is missing required prompt dependencies.');
+                }
+
+                const player = context.player || this.currentPlayer;
+                if (!player || typeof player.addQuest !== 'function') {
+                    throw new Error('received_quest handler requires a valid player with addQuest.');
+                }
+
+                const baseTimeout = this._baseTimeout || BASE_TIMEOUT_MS;
+
+                let location = context.location || null;
+                if (!location && player.currentLocation && Location && typeof Location.get === 'function') {
+                    try {
+                        location = Location.get(player.currentLocation) || null;
+                    } catch (_) {
+                        location = null;
+                    }
+                }
+                if (!context.location && location) {
+                    context.location = location;
+                }
+
+                if (!context.region && location && typeof findRegionByLocationId === 'function') {
+                    try {
+                        context.region = findRegionByLocationId(location.id) || null;
+                    } catch (_) {
+                        context.region = null;
+                    }
+                }
+
+                let baseContext = {};
+                try {
+                    baseContext = await prepareBasePromptContext({ locationOverride: location });
+                } catch (error) {
+                    console.warn('Failed to prepare base context for quest generation:', error.message);
+                    throw error;
+                }
+
+                if (!Array.isArray(context.questsAwarded)) {
+                    context.questsAwarded = [];
+                }
+
+                let lastQuestCreated = null;
+
+                for (const questEntry of questEntries) {
+                    const questSummaryRaw = questEntry.summary.trim();
+                    const questSummary = questSummaryRaw || 'Provide a concise, engaging summary of the newly assigned quest.';
+                    let questGiverName = questEntry.giver ? questEntry.giver.trim() : '';
+                    if (/^n\/?a$/i.test(questGiverName) || questGiverName.toLowerCase() === 'none') {
+                        questGiverName = '';
+                    }
+
+                    const questSeed = {
+                        name: '',
+                        description: questSummary,
+                        giver: questGiverName
+                    };
+
+                    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                        ...baseContext,
+                        promptType: 'quest-generate',
+                        shortDescription: questSummary,
+                        quest: questSeed
+                    });
+
+                    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                        throw new Error('Quest generation template did not produce prompts.');
+                    }
+
+                    const questMessages = [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ];
+
+                    const questRequestOptions = {
+                        messages: questMessages,
+                        metadataLabel: 'quest_generate',
+                        timeoutMs: baseTimeout
+                    };
+
+                    if (Number.isFinite(parsedTemplate.maxTokens) && parsedTemplate.maxTokens > 0) {
+                        questRequestOptions.maxTokens = parsedTemplate.maxTokens;
+                    }
+                    if (typeof parsedTemplate.temperature === 'number') {
+                        questRequestOptions.temperature = parsedTemplate.temperature;
+                    }
+
+                    const requestStart = Date.now();
+                    const questResponse = await LLMClient.chatCompletion(questRequestOptions);
+                    const durationSeconds = (Date.now() - requestStart) / 1000;
+
+                    Events._logQuestGeneration({
+                        fs,
+                        path,
+                        baseDir,
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        responseText: questResponse,
+                        metadata: { summary: questSummary, giver: questGiverName },
+                        durationSeconds
+                    });
+
+                    const questData = Events._parseQuestXml(questResponse);
+                    if (!questData) {
+                        throw new Error('Quest generation did not return a usable quest.');
+                    }
+
+                    const questName = questData.name || Events._generateQuestName(questSummary);
+                    const questDescription = questData.description || questSummary;
+
+                    const rewardItems = Array.isArray(questData.rewardItems) && questData.rewardItems.length
+                        ? questData.rewardItems
+                        : [];
+
+                    const rewardCurrency = Number.isFinite(questData.rewardCurrency) ? Math.max(0, questData.rewardCurrency) : 0;
+                    const rewardXp = Number.isFinite(questData.rewardXp) ? Math.max(0, questData.rewardXp) : 0;
+
+                    const questOptions = {
+                        name: questName,
+                        description: questDescription,
+                        rewardItems,
+                        rewardCurrency,
+                        rewardXp
+                    };
+
+                    const effectiveGiverName = questData.giver || questGiverName;
+                    if (effectiveGiverName) {
+                        questOptions.giverName = effectiveGiverName;
+                    }
+                    if (effectiveGiverName && typeof findActorByName === 'function') {
+                        try {
+                            const questGiver = findActorByName(effectiveGiverName);
+                            if (questGiver) {
+                                questOptions.giver = questGiver;
+                            }
+                        } catch (error) {
+                            console.warn(`Failed to resolve quest giver "${effectiveGiverName}":`, error.message);
+                        }
+                    }
+
+                    const quest = new Quest(questOptions);
+
+                    const objectiveDescriptions = Array.isArray(questData.objectives) && questData.objectives.length
+                        ? questData.objectives
+                        : (questSummary ? [questSummary] : []);
+
+                    for (const objective of objectiveDescriptions) {
+                        try {
+                            if (objective && typeof objective === 'string') {
+                                quest.addObjective(objective);
+                            }
+                        } catch (error) {
+                            console.warn('Failed to add quest objective:', error.message);
+                        }
+                    }
+
+                    player.addQuest(quest);
+                    context.questsAwarded.push({
+                        id: quest.id,
+                        name: quest.name,
+                        summary: questSummary,
+                        giver: questOptions.giverName || questOptions.giver?.name || ''
+                    });
+
+                    lastQuestCreated = quest;
+                }
+
+                if (lastQuestCreated) {
+                    context.lastQuest = lastQuestCreated;
                 }
             },
             currency: function (delta, context = {}) {
@@ -3525,6 +3761,127 @@ class Events {
         } catch (error) {
             console.warn('Failed to log location alteration prompt:', error.message);
         }
+    }
+
+    static _logQuestGeneration({ fs, path, baseDir, systemPrompt, generationPrompt, responseText, metadata, durationSeconds }) {
+        if (!fs || !path) {
+            return;
+        }
+        try {
+            const logDir = path.join(baseDir || process.cwd(), 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const logPath = path.join(logDir, `quest_generate_${timestamp}.log`);
+            const logLines = [
+                typeof durationSeconds === 'number' ? `=== API CALL DURATION: ${durationSeconds.toFixed(3)}s ===` : null,
+                metadata?.summary ? `Quest Summary: ${metadata.summary}` : null,
+                metadata?.giver ? `Quest Giver: ${metadata.giver}` : null,
+                '=== QUEST SYSTEM PROMPT ===',
+                systemPrompt || '(none)',
+                '',
+                '=== QUEST GENERATION PROMPT ===',
+                generationPrompt || '(none)',
+                '',
+                '=== QUEST RESPONSE ===',
+                responseText || '(no response)',
+                ''
+            ].filter(Boolean);
+            fs.writeFileSync(logPath, logLines.join('\n'), 'utf8');
+        } catch (error) {
+            console.warn('Failed to log quest generation prompt:', error.message);
+        }
+    }
+
+    static _parseQuestXml(xmlContent) {
+        if (typeof xmlContent !== 'string' || !xmlContent.trim()) {
+            return null;
+        }
+
+        try {
+            const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent || 'Unknown XML parsing error');
+            }
+
+            const questNode = doc.getElementsByTagName('quest')[0];
+            if (!questNode) {
+                return null;
+            }
+
+            const getText = tag => questNode.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
+
+            const rewardsNode = questNode.getElementsByTagName('rewards')[0] || null;
+            const rewardItems = rewardsNode
+                ? Array.from(rewardsNode.getElementsByTagName('item'))
+                    .map(node => {
+                        const descriptionNode = node.getElementsByTagName('description')[0];
+                        const value = descriptionNode ? descriptionNode.textContent : node.textContent;
+                        return value ? value.trim() : '';
+                    })
+                    .filter(Boolean)
+                : [];
+
+            let rewardCurrency = 0;
+            if (rewardsNode) {
+                const currencyNode = rewardsNode.getElementsByTagName('currency')[0];
+                if (currencyNode) {
+                    const currencyText = currencyNode.textContent?.trim() || '';
+                    const currencyMatch = currencyText.match(/-?\d+/);
+                    if (currencyMatch) {
+                        rewardCurrency = Number.parseInt(currencyMatch[0], 10);
+                    }
+                }
+            }
+
+            let rewardXp = 0;
+            if (rewardsNode) {
+                const xpNode = rewardsNode.getElementsByTagName('xp')[0] || rewardsNode.getElementsByTagName('experience')[0];
+                if (xpNode) {
+                    const xpText = xpNode.textContent?.trim() || '';
+                    const xpMatch = xpText.match(/-?\d+/);
+                    if (xpMatch) {
+                        rewardXp = Number.parseInt(xpMatch[0], 10);
+                    }
+                }
+            }
+
+            const objectives = Array.from(questNode.getElementsByTagName('objective'))
+                .map(node => {
+                    const descriptionNode = node.getElementsByTagName('description')[0];
+                    const value = descriptionNode ? descriptionNode.textContent : node.textContent;
+                    return value ? value.trim() : '';
+                })
+                .filter(Boolean);
+
+            return {
+                name: getText('name'),
+                description: getText('description'),
+                giver: getText('giver'),
+                objectives,
+                rewardItems: Array.from(new Set(rewardItems)),
+                rewardCurrency,
+                rewardXp
+            };
+        } catch (error) {
+            console.warn('Failed to parse quest XML:', error.message);
+            return null;
+        }
+    }
+
+    static _generateQuestName(seed = '') {
+        if (typeof seed === 'string' && seed.trim()) {
+            const base = seed.split(/[.!?]/)[0].trim();
+            if (base) {
+                const normalized = Utils.capitalizeProperNoun(base).slice(0, 80);
+                if (normalized) {
+                    return normalized;
+                }
+            }
+        }
+        return `Quest ${Date.now().toString(36)}`;
     }
 
     static _parseCharacterAlterXml(xmlContent) {

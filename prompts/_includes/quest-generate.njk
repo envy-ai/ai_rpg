@@ -1,5 +1,8 @@
 <task>You will be provided with an XML structure representing a quest, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent. Return the completed XML structure.</task>
 
+Here is some information about the quest:
+  Short description: {% shortDescription %}
+
 <quest>
   <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest.-->{% endif %}</name>
   <description>{% if quest.description %}{{ quest.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing the quest's objectives, significance, and context within the world.--> {% endif %}</description>
@@ -12,11 +15,11 @@
   </objectives>
   <rewards>
     <item>
-      <description>{% if reward.description %}{{ reward.description }}{% else %}<!--Description of the reward item or benefit.-->{% endif %}</description>
+      <description><!--Description of the reward item or benefit.--></description>
     </item>
     ... more items as needed ...
     <currency>
-      {% if reward.currency is defined %}{{ reward.currency }}{% else %}<!--Integer amount of currency rewarded, based on setting norms.-->{% endif %}
+      <!--Integer amount of currency rewarded, based on setting norms.-->
     </currency>
   </rewards>
 </quest>
