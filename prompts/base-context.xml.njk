@@ -319,6 +319,20 @@ You are able to write both explicit and non-explicit content, depending on the n
       </needBar>
       {% endfor %}
     </needBars>
+    <quests>
+      {% for quest in currentPlayer.currentQuests %}
+      <quest>
+        <name>{{ quest.name }}</name>
+        <description>{{ quest.description }}</description>
+        <objectives>
+          {%- for objective in quest.objectives %}
+          <objective completed="{{ objective.completed }}" optional="{{ objective.optional }}">{{ objective.description }}</objective>
+          {% endfor -%}
+        </objectives>
+        <giver>{{ quest.giver }}</giver>
+      </quest>
+      {% endfor %}
+    </quests>
   </player>
   <playerParty>
     {% for member in party %}

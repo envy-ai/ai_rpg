@@ -9,12 +9,14 @@ class QuestObjective {
   #id = null;
   description = '';
   completed = false;
+  optional = false;
 
-  constructor(description) {
+  constructor(description, optional = false) {
     if (typeof description !== 'string' || !description.trim()) {
       throw new Error('QuestObjective description must be a non-empty string');
     }
     this.description = description;
+    this.optional = Boolean(optional);
     this.#id = QuestObjective.generateId();
   }
 
@@ -26,7 +28,8 @@ class QuestObjective {
     return {
       id: this.#id,
       description: this.description,
-      completed: this.completed
+      completed: this.completed,
+      optional: this.optional
     };
   }
 
@@ -34,6 +37,7 @@ class QuestObjective {
     const obj = new QuestObjective(data.description);
     obj.#id = data.id || QuestObjective.generateId();
     obj.completed = Boolean(data.completed);
+    obj.optional = Boolean(data.optional);
     return obj;
   }
 
@@ -163,11 +167,11 @@ class Quest {
   }
 
   get completed() {
-    return this.objectives.every(obj => obj.completed);
+    return this.objectives.every(obj => obj.completed || obj.optional);
   }
 
-  addObjective(description) {
-    const objective = new QuestObjective(description);
+  addObjective(description, optional = false) {
+    const objective = new QuestObjective(description, optional);
     this.objectives.push(objective);
   }
 

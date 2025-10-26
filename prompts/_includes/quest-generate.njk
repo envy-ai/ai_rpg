@@ -1,7 +1,7 @@
-<task>You will be provided with an XML structure representing a quest, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent. Return the completed XML structure.</task>
+<task>You will be provided with an XML structure representing a quest, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent. Ensure that the quest has at least one no-optional objective. Return the completed XML structure.</task>
 
 Here is some information about the quest:
-  Short description: {% shortDescription %}
+  Short description: {{ shortDescription }}
 
 <quest>
   <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest.-->{% endif %}</name>
@@ -9,6 +9,7 @@ Here is some information about the quest:
   <giver>{% if quest.giver %}{{ quest.giver }}{% else %}<!--Name of the NPC or entity that gives the quest.-->{% endif %}</giver>
   <objectives>
     <objective>
+      <optional><!-- true or false --></optional>
       <description><!--Description of the objective.--></description>
     </objective>
     ... more objectives as needed ...

@@ -1,6 +1,8 @@
 const axios = require('axios');
 const Globals = require('./Globals.js');
 const { response } = require('express');
+const Utils = require('./Utils.js');
+const { dump } = require('js-yaml');
 
 class LLMClient {
     static ensureAiConfig() {
@@ -81,7 +83,11 @@ class LLMClient {
         retryAttempts = null,
         headers = {},
         additionalPayload = {},
-        onResponse = null
+        onResponse = null,
+        validateXML = true,
+        requiredTags = [],
+        waitAfterError = 0,
+        dumpReasoningToConsole = false,
     } = {}) {
         const aiConfig = LLMClient.ensureAiConfig();
 
@@ -161,26 +167,67 @@ class LLMClient {
         while (attempt <= retryAttempts) {
             try {
                 const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+
+                // On any 5xx response, wait waitAfterError seconds and then retry
+                if (response.status >= 500 && response.status < 600) {
+                    console.error(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
+                    if (waitAfterError > 0) {
+                        console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                        await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                    }
+                    throw new Error(`Server error from LLM (status ${response.status}).`);
+                }
+
                 if (typeof onResponse === 'function') {
                     onResponse(response);
                 }
                 responseContent = response.data?.choices?.[0]?.message?.content || '';
                 // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
+                let thinkTags = [];
                 if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
-                    const thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
+                    thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
                     console.warn('⚠️ Response content contains <think></think> tags');
                 }
                 // Check if <think></think> tags are present and remove them and anything inside
                 const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
                 responseContent = responseContent.replace(thinkTagPattern, '').trim();
 
-                if (responseContent) break;
-                console.error(`Empty response content received (attempt ${attempt + 1}).`);
-                if (attempt === retryAttempts) {
-                    console.error('Max retry attempts reached. Failing the chat completion request.');
-                    console.debug(error);
-                    return '';
+                if (responseContent.trim() === '') {
+                    console.error(`Empty response content received (attempt ${attempt + 1}).`);
+                    if (thinkTags.length > 0) {
+                        console.warn('⚠️ Contents of <think></think> tags:', thinkTags);
+                    }
+                    throw new Error('Received empty response content from LLM.');
                 }
+
+                if (dumpReasoningToConsole && thinkTags.length > 0) {
+                    console.log('💡 Dumping reasoning from <think></think> tags to console:');
+                    thinkTags.forEach(tag => console.log(` - ${tag}`));
+                }
+
+                if (validateXML) {
+                    try {
+                        Utils.parseXmlDocument(responseContent);
+
+                    } catch (xmlError) {
+                        console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
+                        throw xmlError;
+                    }
+
+                    // use regex to check for required tags
+                    for (const tag of requiredTags) {
+                        const tagPattern = new RegExp(`<${tag}[\\s\\S]*?>[\\s\\S]*?<\\/${tag}>`, 'i');
+                        if (!tagPattern.test(responseContent)) {
+                            const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
+                            console.error(errorMsg);
+                            throw new Error(errorMsg);
+                        }
+                    }
+                    return responseContent;
+                } else {
+                    return responseContent;
+                }
+
             } catch (error) {
                 console.error(`Error occurred during chat completion (attempt ${attempt + 1}):`, error);
                 if (attempt === retryAttempts) {

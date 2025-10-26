@@ -2462,7 +2462,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         gear: gearSnapshot,
         personality: extractPersonality(playerStatus, currentPlayer),
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
-        needBars: currentPlayerNeedBars
+        needBars: currentPlayerNeedBars,
+        currentQuests: currentPlayer.currentQuests,
     };
 
     function computeDispositionsTowardsPlayer(actor) {
@@ -5059,51 +5060,6 @@ function parseXMLTemplate(xmlContent) {
     } catch (error) {
         console.error('Error parsing XML template:', error);
         throw error;
-    }
-}
-
-// Function to render system prompt from template
-function renderSystemPrompt(settingInfo = null) {
-    try {
-        const templateName = config.gamemaster.promptTemplate;
-        let variables = { ...config.gamemaster.promptVariables } || {};
-
-        // If a SettingInfo object is provided, merge its prompt variables
-        if (settingInfo && typeof settingInfo.getPromptVariables === 'function') {
-            const settingVariables = settingInfo.getPromptVariables();
-            variables = { ...variables, ...settingVariables };
-
-            //console.log('Using SettingInfo variables:', settingVariables);
-        }
-
-        // Add current player information if available
-        if (currentPlayer) {
-            variables.playerName = currentPlayer.name;
-            variables.playerLevel = currentPlayer.level;
-            variables.playerDescription = currentPlayer.description;
-        }
-
-        // Render the template
-        const renderedTemplate = promptEnv.render(templateName, variables);
-
-        // If the template is a .xml.njk file, parse the XML and extract systemPrompt
-        if (templateName.endsWith('.xml.njk')) {
-            const parsedXML = parseXMLTemplate(renderedTemplate);
-            return parsedXML.systemPrompt || renderedTemplate;
-        }
-
-        // If the template is a .yaml.njk file, parse the YAML and extract systemPrompt (backward compatibility)
-        if (templateName.endsWith('.yaml.njk')) {
-            const parsedYaml = yaml.load(renderedTemplate);
-            return parsedYaml.systemPrompt || renderedTemplate;
-        }
-
-        // For regular .njk files, return the rendered content directly
-        return renderedTemplate;
-    } catch (error) {
-        console.error('Error rendering prompt template:', error);
-        // Fallback to default prompt
-        return "You are a creative and engaging AI Game Master for a text-based RPG. Create immersive adventures, memorable characters, and respond to player actions with creativity and detail. Keep responses engaging but concise.";
     }
 }
 
@@ -11661,7 +11617,8 @@ function renderLocationImagePrompt(location) {
         return {
             renderedTemplate: renderedTemplate,
             systemPrompt: systemPrompt.trim(),
-            generationPrompt: generationPrompt.trim()
+            generationPrompt: generationPrompt.trim(),
+            validateXML: false,
         };
 
     } catch (error) {
@@ -12393,7 +12350,9 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         const requestStart = Date.now();
         const responseText = await LLMClient.chatCompletion({
             messages,
-            metadataLabel: 'image_prompt_generation'
+            metadataLabel: 'image_prompt_generation',
+            validateXML: false,
+            waitAfterError: 20,
         });
 
         if (!responseText || !responseText.trim()) {

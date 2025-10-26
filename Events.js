@@ -51,7 +51,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
-        { key: 'received_quest', prompt: `Did the player receive one or more quests or tasks this turn? If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."` },
+        { key: 'received_quest', prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc)? If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
         { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
@@ -731,7 +731,9 @@ class Events {
                 metadataLabel: 'event_checks',
                 metadata: { eventGroup: groupIndex },
                 timeoutMs: this._baseTimeout,
-                temperature: 0
+                temperature: 0,
+                validateXML: false,
+                dumpReasoningToConsole: true,
             };
 
             const responseText = await LLMClient.chatCompletion(requestOptions);
@@ -2039,6 +2041,14 @@ class Events {
                         quest: questSeed
                     });
 
+                    if (typeof renderedTemplate !== 'string' || !renderedTemplate.trim()) {
+                        console.warn('Quest generation template rendered empty output; skipping quest.', {
+                            summary: questSummary,
+                            giver: questGiverName
+                        });
+                        continue;
+                    }
+
                     const parsedTemplate = parseXMLTemplate(renderedTemplate);
                     if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                         throw new Error('Quest generation template did not produce prompts.');
@@ -2076,6 +2086,14 @@ class Events {
                         metadata: { summary: questSummary, giver: questGiverName },
                         durationSeconds
                     });
+
+                    if (typeof questResponse !== 'string' || !questResponse.trim()) {
+                        console.warn('Quest generation returned empty response; skipping quest creation.', {
+                            summary: questSummary,
+                            giver: questGiverName
+                        });
+                        continue;
+                    }
 
                     const questData = Events._parseQuestXml(questResponse);
                     if (!questData) {
@@ -3851,8 +3869,16 @@ class Events {
             const objectives = Array.from(questNode.getElementsByTagName('objective'))
                 .map(node => {
                     const descriptionNode = node.getElementsByTagName('description')[0];
-                    const value = descriptionNode ? descriptionNode.textContent : node.textContent;
-                    return value ? value.trim() : '';
+                    const description = descriptionNode ? descriptionNode.textContent?.trim() : node.textContent?.trim() || '';
+                    const optionalNode = node.getElementsByTagName('optional')[0];
+                    const optionalText = optionalNode ? optionalNode.textContent?.trim().toLowerCase() : '';
+                    const optional = optionalText === 'true' || optionalText === 'yes';
+
+                    if (!description) {
+                        return null;
+                    }
+
+                    return { description, optional };
                 })
                 .filter(Boolean);
 

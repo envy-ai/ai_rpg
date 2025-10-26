@@ -5160,7 +5160,8 @@ module.exports = function registerApiRoutes(scope) {
                 const requestOptions = {
                     messages,
                     metadataLabel: aiMetricsLabel,
-                    timeoutMs: baseTimeoutMilliseconds
+                    timeoutMs: baseTimeoutMilliseconds,
+                    validateXML: false,
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -6538,7 +6539,8 @@ module.exports = function registerApiRoutes(scope) {
                     metadata: { __aiMetricsStart: metricsStart },
                     onResponse: (response) => {
                         capturedResponse = response;
-                    }
+                    },
+                    validateXML: false
                 };
 
                 if (Object.keys(additionalPayload).length) {
@@ -6795,6 +6797,20 @@ module.exports = function registerApiRoutes(scope) {
                             parentId: aiResponseEntry?.id || null,
                             locationId: aiResponseLocationId
                         }, newChatEntries);
+                    }
+
+                    if (Array.isArray(eventResult?.questsAwarded) && eventResult.questsAwarded.length) {
+                        for (const questEntry of eventResult.questsAwarded) {
+                            const summaryLabel = questEntry.summary || questEntry.name || 'New quest received';
+                            const questLogLabel = `🗒️ Quest Received${questEntry.name ? ` – ${questEntry.name}` : ''}`;
+                            recordEventSummaryEntry({
+                                label: questLogLabel,
+                                events: [{ description: summaryLabel }],
+                                timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                parentId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            }, newChatEntries);
+                        }
                     }
 
                     if (responseData.actionResolution) {

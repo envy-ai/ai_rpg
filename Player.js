@@ -1559,6 +1559,14 @@ class Player {
         return this.#quests.filter(q => !q.completed);
     }
 
+    get currentQuests() {
+        return this.getCurrentQuests();
+    }
+
+    get completedQuests() {
+        return this.getCompletedQuests();
+    }
+
     getCompletedQuests() {
         return this.#quests.filter(q => q.completed);
     }
