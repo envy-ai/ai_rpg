@@ -2,6 +2,7 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Utils = require('./Utils.js');
 const Thing = require('./Thing.js');
 const Globals = require('./Globals.js');
+const LLMClient = require('./LLMClient.js');
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -652,7 +653,6 @@ class Events {
 
         const promptEnv = this._deps.promptEnv;
         const parseXMLTemplate = this._deps.parseXMLTemplate;
-        const axios = this._deps.axios;
         const prepareBasePromptContext = this._deps.prepareBasePromptContext;
         const Location = this._deps.Location;
         const findRegionByLocationId = this._deps.findRegionByLocationId;
@@ -665,19 +665,14 @@ class Events {
         if (typeof parseXMLTemplate !== 'function') {
             throw new Error('parseXMLTemplate dependency is not configured.');
         }
-        if (typeof axios?.post !== 'function') {
-            throw new Error('axios dependency is not configured.');
-        }
         if (typeof prepareBasePromptContext !== 'function') {
             throw new Error('prepareBasePromptContext dependency is not configured.');
         }
 
         const config = this.config || {};
-        const endpoint = config?.ai?.endpoint;
-        const apiKey = config?.ai?.apiKey;
-        const model = config?.ai?.model;
+        const aiConfig = config?.ai;
 
-        if (!endpoint || !apiKey || !model) {
+        if (!aiConfig) {
             console.warn('AI configuration missing; skipping event analysis.');
             return null;
         }
@@ -702,8 +697,6 @@ class Events {
         }
 
         const baseContext = await prepareBasePromptContext({ locationOverride: location });
-
-        const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
@@ -732,23 +725,15 @@ class Events {
                 { role: 'user', content: parsedTemplate.generationPrompt }
             ];
 
-            const requestData = {
-                model,
+            const requestOptions = {
                 messages,
-                max_tokens: parsedTemplate.maxTokens || 600,
+                metadataLabel: 'event_checks',
+                metadata: { eventGroup: groupIndex },
+                timeoutMs: this._baseTimeout,
                 temperature: 0
             };
 
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: this._baseTimeout,
-                metadata: { aiMetricsLabel: 'event_checks', eventGroup: groupIndex }
-            });
-
-            const responseText = response.data?.choices?.[0]?.message?.content || '';
+            const responseText = await LLMClient.chatCompletion(requestOptions);
 
             this.logEventCheck({
                 systemPrompt: parsedTemplate.systemPrompt,
@@ -1701,7 +1686,6 @@ class Events {
                     Location,
                     promptEnv,
                     parseXMLTemplate,
-                    axios,
                     prepareBasePromptContext,
                     fs,
                     path,
@@ -1724,18 +1708,13 @@ class Events {
 
                 if (typeof promptEnv?.render !== 'function'
                     || typeof parseXMLTemplate !== 'function'
-                    || typeof axios?.post !== 'function'
                     || typeof prepareBasePromptContext !== 'function') {
                     validEntries.forEach(entry => warnSkippedAlteration(entry, 'Missing required prompt dependencies.'));
                     return;
                 }
 
                 const config = this.config || {};
-                const endpoint = config?.ai?.endpoint;
-                const apiKey = config?.ai?.apiKey;
-                const model = config?.ai?.model;
-
-                if (!endpoint || !apiKey || !model) {
+                if (!config?.ai) {
                     validEntries.forEach(entry => warnSkippedAlteration(entry, 'AI configuration incomplete.'));
                     return;
                 }
@@ -1845,32 +1824,27 @@ class Events {
                             { role: 'user', content: parsedTemplate.generationPrompt }
                         ];
 
-                        const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
-                        const requestData = {
-                            model,
+                        const requestStart = Date.now();
+                        const requestOptions = {
                             messages,
-                            max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 400,
-                            temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : (typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.5)
+                            metadataLabel: 'alter_location',
+                            timeoutMs: this._baseTimeout
                         };
 
-                        const requestStart = Date.now();
-                        let response;
+                        if (typeof parsedTemplate.temperature === 'number') {
+                            requestOptions.temperature = parsedTemplate.temperature;
+                        } else if (Number.isInteger(config.ai.temperature)) {
+                            requestOptions.temperature = config.ai.temperature;
+                        }
+
+                        let aiContent;
                         try {
-                            response = await axios.post(chatEndpoint, requestData, {
-                                headers: {
-                                    'Authorization': `Bearer ${apiKey}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                timeout: this._baseTimeout,
-                                metadata: { aiMetricsLabel: 'alter_location' }
-                            });
+                            aiContent = await LLMClient.chatCompletion(requestOptions);
                         } catch (requestError) {
                             console.warn('Alter location request failed:', requestError.message);
                             warnSkippedAlteration(entry, 'AI request failed.');
                             continue;
                         }
-
-                        const aiContent = response.data?.choices?.[0]?.message?.content || '';
 
                         this._logAlterLocation({
                             fs,
@@ -2955,7 +2929,6 @@ class Events {
             findActorByName,
             promptEnv,
             parseXMLTemplate,
-            axios,
             prepareBasePromptContext,
             Location,
             findRegionByLocationId,
@@ -2975,24 +2948,18 @@ class Events {
         if (typeof parseXMLTemplate !== 'function') {
             throw new Error('alter_npc handler requires parseXMLTemplate dependency.');
         }
-        if (typeof axios?.post !== 'function') {
-            throw new Error('alter_npc handler requires axios.post dependency.');
-        }
         if (typeof prepareBasePromptContext !== 'function') {
             throw new Error('alter_npc handler requires prepareBasePromptContext dependency.');
         }
 
         const config = this.config || {};
-        const endpoint = config?.ai?.endpoint;
-        const apiKey = config?.ai?.apiKey;
-        const model = config?.ai?.model;
+        const aiConfig = config?.ai;
 
-        if (!endpoint || !apiKey || !model) {
+        if (!aiConfig) {
             throw new Error('AI configuration missing; cannot process alter_npc events.');
         }
 
-        const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
-        const defaultTemperature = typeof config.ai.temperature === 'number' ? config.ai.temperature : 0.6;
+        const defaultTemperature = typeof aiConfig.temperature === 'number' ? aiConfig.temperature : 0.6;
 
         const summaries = [];
 
@@ -3132,29 +3099,26 @@ class Events {
                 { role: 'user', content: promptData.generationPrompt }
             ];
 
-            const requestData = {
-                model,
+            const requestOptions = {
                 messages,
-                max_tokens: promptData.maxTokens || config.ai.maxTokens || 700,
-                temperature: typeof promptData.temperature === 'number' ? promptData.temperature : defaultTemperature
+                metadataLabel: 'alter_npc',
+                timeoutMs: this._baseTimeout
             };
 
-            let response;
+            if (typeof promptData.temperature === 'number') {
+                requestOptions.temperature = promptData.temperature;
+            } else if (Number.isInteger(defaultTemperature)) {
+                requestOptions.temperature = defaultTemperature;
+            }
+
             const requestStarted = Date.now();
+            let aiContent;
             try {
-                response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: this._baseTimeout,
-                    metadata: { aiMetricsLabel: 'alter_npc' }
-                });
+                aiContent = await LLMClient.chatCompletion(requestOptions);
             } catch (error) {
                 throw new Error(`Alter NPC request failed for "${npcName}": ${error.message}`);
             }
 
-            const aiContent = response?.data?.choices?.[0]?.message?.content || '';
             if (!aiContent.trim()) {
                 throw new Error(`Alter NPC response for "${npcName}" was empty.`);
             }

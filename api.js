@@ -7,6 +7,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
+const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 
 let eventsProcessedThisTurn = false;
@@ -241,13 +242,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Random event generation template missing prompts for mode '${mode}'.`);
             }
 
-            const aiConfig = config?.ai;
-            if (!aiConfig) {
-                throw new Error('AI configuration missing; cannot generate random event seeds.');
-            }
-
-            const { endpoint, apiKey, model } = aiConfig;
-            if (!endpoint || !apiKey || !model) {
+            if (!config?.ai) {
                 throw new Error('AI configuration missing; cannot generate random event seeds.');
             }
 
@@ -258,29 +253,16 @@ module.exports = function registerApiRoutes(scope) {
                 messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
             }
 
-            const chatEndpoint = endpoint.endsWith('/')
-                ? `${endpoint}chat/completions`
-                : `${endpoint}/chat/completions`;
-
-            const requestData = {
-                model,
+            const requestOptions = {
                 messages,
-                max_tokens: parsedTemplate.maxTokens || aiConfig.maxTokens || 400,
-                temperature: typeof parsedTemplate.temperature === 'number'
-                    ? parsedTemplate.temperature
-                    : (aiConfig.temperature ?? 0.7)
+                metadataLabel: `random_event_seed_${mode}`
             };
 
-            const response = await axios.post(chatEndpoint, requestData, {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: baseTimeoutMilliseconds,
-                metadata: { aiMetricsLabel: `random_event_seed_${mode}` }
-            });
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
 
-            const responseText = response.data?.choices?.[0]?.message?.content || '';
+            const responseText = await LLMClient.chatCompletion(requestOptions);
             const seeds = extractRandomEventSeeds(responseText);
             if (!seeds.length) {
                 throw new Error(`Random event seed generation for ${mode} returned no events.`);
@@ -855,10 +837,7 @@ module.exports = function registerApiRoutes(scope) {
                 return true;
             }
 
-            const endpoint = config?.ai?.endpoint;
-            const apiKey = config?.ai?.apiKey;
-            const model = config?.ai?.model;
-            if (!endpoint || !apiKey || !model) {
+            if (!config?.ai) {
                 return false;
             }
 
@@ -900,32 +879,19 @@ module.exports = function registerApiRoutes(scope) {
                 messages.push({ role: 'user', content: parsedTemplate.generationPrompt });
             }
 
-            const chatEndpoint = endpoint.endsWith('/')
-                ? `${endpoint}chat/completions`
-                : `${endpoint}/chat/completions`;
-
-            const requestData = {
-                model,
-                messages,
-                max_tokens: Globals.config.ai.maxTokens || 4000,
-                temperature: typeof parsedTemplate.temperature === 'number'
-                    ? parsedTemplate.temperature
-                    : 0.2
-            };
-
             const requestStart = Date.now();
             try {
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'summarize_batch' }
-                });
+                const requestOptions = {
+                    messages,
+                    metadataLabel: 'summarize_batch'
+                };
 
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const summaryResponse = await LLMClient.chatCompletion(requestOptions);
                 const durationSeconds = (Date.now() - requestStart) / 1000;
-                const summaryResponse = response.data?.choices?.[0]?.message?.content || '';
                 logSummaryBatchPrompt({
                     systemPrompt: messages[0]?.content || parsedTemplate.systemPrompt || '',
                     generationPrompt: parsedTemplate.generationPrompt || '',
@@ -1950,40 +1916,23 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ];
 
-                const endpoint = config?.ai?.endpoint;
-                const apiKey = config?.ai?.apiKey;
-                const model = config?.ai?.model;
-
-                if (!endpoint || !apiKey || !model) {
+                if (!config?.ai) {
                     console.warn('AI configuration missing; unable to run random event prompt.');
                     return null;
                 }
 
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? `${endpoint}chat/completions`
-                    : `${endpoint}/chat/completions`;
-
-                const requestData = {
-                    model,
+                const start = Date.now();
+                const requestOptions = {
                     messages,
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 400,
-                    temperature: typeof parsedTemplate.temperature === 'number'
-                        ? parsedTemplate.temperature
-                        : (config.ai.temperature || 0.7)
+                    metadataLabel: 'random_event'
                 };
 
-                const start = Date.now();
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: (config.ai.baseTimeoutMilliseconds ? config.ai.baseTimeoutMilliseconds * 1000 : 60000),
-                    metadata: { aiMetricsLabel: 'random_event' }
-                });
-                const durationSeconds = (Date.now() - start) / 1000;
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const rawResponse = response.data?.choices?.[0]?.message?.content || '';
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                const durationSeconds = (Date.now() - start) / 1000;
                 logRandomEventPrompt({
                     rarity,
                     eventText: trimmedEventText,
@@ -2631,29 +2580,16 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ];
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const chatEndpoint = endpoint.endsWith('/') ?
-                    endpoint + 'chat/completions' :
-                    endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: config.ai.model,
+                const requestOptions = {
                     messages,
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
-                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.3
+                    metadataLabel: 'attack_check'
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'attack_check' }
-                });
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const attackResponse = response.data?.choices?.[0]?.message?.content || '';
+                const attackResponse = await LLMClient.chatCompletion(requestOptions);
 
                 logAttackCheck({
                     systemPrompt: parsedTemplate.systemPrompt,
@@ -2683,10 +2619,7 @@ module.exports = function registerApiRoutes(scope) {
                 return true;
             }
 
-            const endpoint = config?.ai?.endpoint;
-            const apiKey = config?.ai?.apiKey;
-            const model = config?.ai?.model;
-            if (!endpoint || !apiKey || !model) {
+            if (!config?.ai) {
                 return true;
             }
 
@@ -2706,27 +2639,18 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ];
 
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? `${endpoint}chat/completions`
-                    : `${endpoint}/chat/completions`;
-
-                const requestData = {
-                    model,
+                const requestOptions = {
                     messages,
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 50,
-                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0
+                    metadataLabel: 'attack_precheck'
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'attack_precheck' }
-                });
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                } else {
+                    requestOptions.temperature = 0;
+                }
 
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const raw = await LLMClient.chatCompletion(requestOptions);
 
                 logAttackPrecheck({
                     systemPrompt: parsedTemplate.systemPrompt,
@@ -3793,32 +3717,19 @@ module.exports = function registerApiRoutes(scope) {
                     return { raw: '', names: [] };
                 }
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? endpoint + 'chat/completions'
-                    : endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: config.ai.model,
+                const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 150,
-                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
+                    metadataLabel: 'next_npc_list'
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'next_npc_list' }
-                });
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const raw = await LLMClient.chatCompletion(requestOptions);
                 const names = parseNpcQueueResponse(raw);
 
                 logNextNpcListPrompt({
@@ -4082,34 +3993,19 @@ module.exports = function registerApiRoutes(scope) {
                     return { raw: '', structured: [] };
                 }
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? endpoint + 'chat/completions'
-                    : endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: config.ai.model,
+                const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 250,
-                    temperature: typeof parsedTemplate.temperature === 'number'
-                        ? parsedTemplate.temperature
-                        : 0.2
+                    metadataLabel: 'disposition_check'
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'disposition_check' }
-                });
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const raw = await LLMClient.chatCompletion(requestOptions);
                 const structured = parseDispositionCheckResponse(raw);
 
                 logDispositionCheck({
@@ -4345,32 +4241,19 @@ module.exports = function registerApiRoutes(scope) {
                     return { raw: '', structured: null };
                 }
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? endpoint + 'chat/completions'
-                    : endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: config.ai.model,
+                const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
-                    temperature: typeof parsedTemplate.temperature === 'number' ? parsedTemplate.temperature : 0.2
+                    metadataLabel: 'npc_plausibility'
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'npc_plausibility' }
-                });
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const raw = await LLMClient.chatCompletion(requestOptions);
                 const actionPlan = parseNpcActionPlan(raw);
                 const structured = actionPlan
                     ? {
@@ -4423,10 +4306,7 @@ module.exports = function registerApiRoutes(scope) {
                 return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
-            const endpoint = config?.ai?.endpoint;
-            const apiKey = config?.ai?.apiKey;
-            const model = config?.ai?.model;
-            if (!endpoint || !apiKey || !model) {
+            if (!config?.ai) {
                 return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
@@ -4552,33 +4432,22 @@ module.exports = function registerApiRoutes(scope) {
                 return { raw: '', memory: null, goals: null, dispositions: [] };
             }
 
-            const chatEndpoint = endpoint.endsWith('/')
-                ? `${endpoint}chat/completions`
-                : `${endpoint}/chat/completions`;
-
-            const requestData = {
-                model,
-                messages: [
-                    { role: 'system', content: parsedTemplate.systemPrompt },
-                    { role: 'user', content: parsedTemplate.generationPrompt }
-                ],
-                max_tokens: parsedTemplate.maxTokens || config.ai.maxTokens || 200,
-                temperature: typeof parsedTemplate.temperature === 'number'
-                    ? parsedTemplate.temperature
-                    : 0.2
-            };
-
             try {
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds * (Number.isFinite(totalPrompts) && totalPrompts > 0 ? totalPrompts : 1),
-                    metadata: { aiMetricsLabel: 'npc_memories' }
-                });
+                const timeoutScale = Number.isFinite(totalPrompts) && totalPrompts > 0 ? totalPrompts : 1;
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'npc_memories',
+                    timeoutMs: baseTimeoutMilliseconds * timeoutScale
+                };
 
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const raw = await LLMClient.chatCompletion(requestOptions);
 
                 let memoryText = '';
                 let goalsUpdate = null;
@@ -5287,31 +5156,18 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const chatEndpoint = endpoint.endsWith('/')
-                    ? endpoint + 'chat/completions'
-                    : endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: config.ai.model,
+                const aiMetricsLabel = actor.isNPC ? 'npc_action' : 'player_action';
+                const requestOptions = {
                     messages,
-                    max_tokens: config.ai.maxTokens || 800,
-                    temperature: config.ai.temperature || 0.7
+                    metadataLabel: aiMetricsLabel,
+                    timeoutMs: baseTimeoutMilliseconds
                 };
 
-                const aiMetricsLabel = actor.isNPC ? 'npc_action' : 'player_action';
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel }
-                });
-
-                const raw = response.data?.choices?.[0]?.message?.content || '';
+                const raw = await LLMClient.chatCompletion(requestOptions);
                 if (!actor.isNPC && playerPromptLog) {
                     logPlayerActionPrompt({
                         ...playerPromptLog,
@@ -6107,6 +5963,7 @@ module.exports = function registerApiRoutes(scope) {
                     stream.status('player_action:creative', 'Processing creative mode action.');
                 }
 
+                let templateTemperature = null;
                 let finalMessages = messages;
                 if (userMessage && sanitizedUserContent !== undefined && sanitizedUserContent !== userMessage.content) {
                     finalMessages = messages.map(msg => {
@@ -6439,6 +6296,10 @@ module.exports = function registerApiRoutes(scope) {
 
                         const promptData = parseXMLTemplate(renderedPrompt);
 
+                        if (typeof promptData.temperature === 'number') {
+                            templateTemperature = promptData.temperature;
+                        }
+
                         if (!promptData.systemPrompt) {
                             throw new Error('Action template missing system prompt.');
                         }
@@ -6663,37 +6524,35 @@ module.exports = function registerApiRoutes(scope) {
                     return respond(responseData);
                 }
 
-                // Use configuration from config.yaml
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const model = config.ai.model;
+                const additionalPayload = {};
+                const repetitionPenalty = Number(config.ai.dialogue_repetition_penalty);
+                if (Number.isFinite(repetitionPenalty) && repetitionPenalty > 0) {
+                    additionalPayload.repetition_penalty = repetitionPenalty;
+                }
 
-                // Prepare the request to the OpenAI-compatible API
-                const chatEndpoint = endpoint.endsWith('/') ?
-                    endpoint + 'chat/completions' :
-                    endpoint + '/chat/completions';
-
-                const requestData = {
-                    model: model,
+                const metricsStart = Date.now();
+                let capturedResponse = null;
+                const requestOptions = {
                     messages: finalMessages,
-                    max_tokens: config.ai.maxTokens || 1000,
-                    temperature: config.ai.dialogue_temperature || 0.7,
-                    repetition_penalty: config.ai.dialogue_repetition_penalty || 1.15
+                    metadataLabel: 'player_action',
+                    metadata: { __aiMetricsStart: metricsStart },
+                    onResponse: (response) => {
+                        capturedResponse = response;
+                    }
                 };
 
-                const response = await axios.post(chatEndpoint, requestData, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds, // 60 second timeout
-                    metadata: { aiMetricsLabel: 'player_action' }
-                });
+                if (Object.keys(additionalPayload).length) {
+                    requestOptions.additionalPayload = additionalPayload;
+                }
 
-                const usageMetrics = emitAiUsageMetrics(response, { label: 'player_action', streamEmitter: stream });
+                if (templateTemperature !== null) {
+                    requestOptions.temperature = templateTemperature;
+                }
 
-                if (response.data && response.data.choices && response.data.choices.length > 0) {
-                    const aiResponse = response.data.choices[0].message.content;
+                const aiResponse = await LLMClient.chatCompletion(requestOptions);
+                const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: 'player_action', streamEmitter: stream });
+
+                if (typeof aiResponse === 'string' && aiResponse.trim()) {
 
                     if (playerActionLogPayload) {
                         logPlayerActionPrompt({
@@ -7195,7 +7054,7 @@ module.exports = function registerApiRoutes(scope) {
                     responseData.messages = newChatEntries;
                     await respond(responseData);
                 } else {
-                    await respond({ error: 'Invalid response from AI API' }, 500);
+                    await respond({ error: 'AI returned an empty response for player action.' }, 500);
                 }
 
             } catch (error) {
@@ -12979,36 +12838,28 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 messages.push({ role: 'user', content: generationPrompt });
 
-                const endpoint = config.ai.endpoint;
-                const apiKey = config.ai.apiKey;
-                const model = config.ai.model;
-
-                if (!endpoint || !apiKey || !model) {
+                if (!config?.ai) {
                     return res.status(500).json({
                         success: false,
                         error: 'AI configuration is incomplete. Please update config.yaml.'
                     });
                 }
 
-                const chatEndpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`;
-
-                const requestPayload = {
-                    model,
+                const requestOptions = {
                     messages,
-                    max_tokens: promptData.maxTokens || config.ai.maxTokens || 800,
-                    temperature: (promptData.temperature ?? config.ai.temperature ?? 0.7)
+                    metadataLabel: 'setting_autofill'
                 };
 
-                const aiResponse = await axios.post(chatEndpoint, requestPayload, {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: baseTimeoutMilliseconds,
-                    metadata: { aiMetricsLabel: 'setting_autofill' }
-                });
+                if (typeof promptData.temperature === 'number') {
+                    requestOptions.temperature = promptData.temperature;
+                } else {
+                    const configTemperature = Number(config.ai.temperature);
+                    if (Number.isInteger(configTemperature)) {
+                        requestOptions.temperature = configTemperature;
+                    }
+                }
 
-                const aiMessage = aiResponse?.data?.choices?.[0]?.message?.content;
+                const aiMessage = await LLMClient.chatCompletion(requestOptions);
                 if (!aiMessage || typeof aiMessage !== 'string') {
                     throw new Error('AI did not return a usable response');
                 }
@@ -13438,12 +13289,6 @@ module.exports = function registerApiRoutes(scope) {
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
                 const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
                 const fallbackSkillCount = Math.max(0, Math.min(100, newGameDefaults.numSkills || 20));
-                const endpoint = config.ai?.endpoint;
-                const apiKey = config.ai?.apiKey;
-                const model = config.ai?.model;
-                const chatEndpoint = endpoint
-                    ? (endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`)
-                    : null;
                 const numSkills = Number.isFinite(parsedSkillCount)
                     ? Math.max(0, Math.min(100, parsedSkillCount))
                     : fallbackSkillCount;
@@ -13682,43 +13527,36 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed to generate inventory for new-game player:', inventoryError);
                 }
 
-                if (chatEndpoint && apiKey && model) {
-                    try {
-                        report('new_game:abilities', 'Discovering unique abilities...');
-                        const playerContext = buildAbilityContextForPlayer(newPlayer, {
-                            settingDescription,
-                            location: entranceLocation,
-                            region
-                        });
+                try {
+                    report('new_game:abilities', 'Discovering unique abilities...');
+                    const playerContext = buildAbilityContextForPlayer(newPlayer, {
+                        settingDescription,
+                        location: entranceLocation,
+                        region
+                    });
 
-                        const abilityBaseMessages = playerContext
-                            ? [{ role: 'assistant', content: playerContext }]
-                            : [];
+                    const abilityBaseMessages = playerContext
+                        ? [{ role: 'assistant', content: playerContext }]
+                        : [];
 
-                        const abilityLogPath = path.join(__dirname, 'logs', `player_${newPlayer.id}_abilities.log`);
-                        const abilityResult = await requestNpcAbilityAssignments({
-                            baseMessages: abilityBaseMessages,
-                            chatEndpoint,
-                            model,
-                            apiKey,
-                            logPath: abilityLogPath
-                        });
+                    const abilityLogPath = path.join(__dirname, 'logs', `player_${newPlayer.id}_abilities.log`);
+                    const abilityResult = await requestNpcAbilityAssignments({
+                        baseMessages: abilityBaseMessages,
+                        logPath: abilityLogPath
+                    });
 
-                        const abilityAssignments = abilityResult.assignments || new Map();
-                        const abilityEntry = abilityAssignments.get((newPlayer.name || '').trim().toLowerCase());
-                        if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
-                            applyNpcAbilities(newPlayer, abilityEntry.abilities);
-                        } else if (typeof newPlayer.setAbilities === 'function') {
-                            newPlayer.setAbilities([]);
-                        }
-                    } catch (abilityError) {
-                        console.warn('Failed to generate abilities for new-game player:', abilityError.message);
-                        if (typeof newPlayer.setAbilities === 'function') {
-                            newPlayer.setAbilities([]);
-                        }
+                    const abilityAssignments = abilityResult.assignments || new Map();
+                    const abilityEntry = abilityAssignments.get((newPlayer.name || '').trim().toLowerCase());
+                    if (abilityEntry && Array.isArray(abilityEntry.abilities) && abilityEntry.abilities.length) {
+                        applyNpcAbilities(newPlayer, abilityEntry.abilities);
+                    } else if (typeof newPlayer.setAbilities === 'function') {
+                        newPlayer.setAbilities([]);
                     }
-                } else if (typeof newPlayer.setAbilities === 'function') {
-                    newPlayer.setAbilities([]);
+                } catch (abilityError) {
+                    console.warn('Failed to generate abilities for new-game player:', abilityError.message);
+                    if (typeof newPlayer.setAbilities === 'function') {
+                        newPlayer.setAbilities([]);
+                    }
                 }
 
                 console.log(`🧙‍♂️ Created new player: ${newPlayer.name} at ${entranceLocation.name}`);

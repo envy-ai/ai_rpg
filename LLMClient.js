@@ -1,5 +1,6 @@
 const axios = require('axios');
 const Globals = require('./Globals.js');
+const { response } = require('express');
 
 class LLMClient {
     static ensureAiConfig() {
@@ -79,7 +80,8 @@ class LLMClient {
         metadata,
         retryAttempts = null,
         headers = {},
-        additionalPayload = {}
+        additionalPayload = {},
+        onResponse = null
     } = {}) {
         const aiConfig = LLMClient.ensureAiConfig();
 
@@ -96,6 +98,8 @@ class LLMClient {
 
         if (Array.isArray(messages)) {
             payload.messages = messages;
+
+            messages[1].content += '\n\n/no_think';
         }
 
         if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
@@ -144,6 +148,8 @@ class LLMClient {
             timeout: resolvedTimeout
         };
 
+        response.reasoning = { "enabled": false };
+
         if (metadataLabel && metadata) {
             axiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
         } else if (metadataLabel) {
@@ -157,7 +163,19 @@ class LLMClient {
         while (attempt <= retryAttempts) {
             try {
                 const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                if (typeof onResponse === 'function') {
+                    onResponse(response);
+                }
                 responseContent = response.data?.choices?.[0]?.message?.content || '';
+                // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
+                if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
+                    const thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
+                    console.warn('❌ Warning: Response content contains <think></think> tags:', thinkTags);
+                }
+                // Check if <think></think> tags are present and remove them and anything inside
+                const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
+                responseContent = responseContent.replace(thinkTagPattern, '').trim();
+
                 if (responseContent) break;
                 console.error(`Empty response content received (attempt ${attempt + 1}).`);
                 if (attempt === retryAttempts) {
