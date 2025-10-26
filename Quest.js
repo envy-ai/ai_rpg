@@ -34,10 +34,9 @@ class QuestObjective {
   }
 
   static fromJSON(data) {
-    const obj = new QuestObjective(data.description);
+    const obj = new QuestObjective(data.description, data.optional);
     obj.#id = data.id || QuestObjective.generateId();
     obj.completed = Boolean(data.completed);
-    obj.optional = Boolean(data.optional);
     return obj;
   }
 
@@ -74,10 +73,10 @@ class Quest {
           return entry;
         }
         if (typeof entry === 'string') {
-          return new QuestObjective(entry);
+          return new QuestObjective(entry, false);
         }
         if (entry && typeof entry.description === 'string') {
-          const objective = new QuestObjective(entry.description);
+          const objective = new QuestObjective(entry.description, Boolean(entry.optional));
           if (typeof entry.completed === 'boolean') {
             objective.completed = entry.completed;
           }

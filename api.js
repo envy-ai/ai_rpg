@@ -9,6 +9,7 @@ const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -1220,6 +1221,21 @@ module.exports = function registerApiRoutes(scope) {
                 bundle.push({ icon: icon || '•', text: normalizedText });
             };
 
+            if (Array.isArray(events)) {
+                events.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    if (typeof entry === 'string') {
+                        add('•', entry);
+                        return;
+                    }
+                    if (typeof entry.description === 'string' && entry.description.trim()) {
+                        add(entry.icon || '•', entry.description);
+                    }
+                });
+            }
+
             const parsed = events && typeof events === 'object'
                 ? (events.parsed && typeof events.parsed === 'object' ? events.parsed : events)
                 : null;
@@ -1380,6 +1396,22 @@ module.exports = function registerApiRoutes(scope) {
                                     add('📣', `${name} ${entry?.action || 'changed party status'}.`);
                                 }
                             });
+                            break;
+                        case 'quest_received':
+                            entries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                if (typeof entry === 'string') {
+                                    add('🗒️', entry);
+                                    return;
+                                }
+                                const summary = entry.summary || entry.description || entry.name || 'New quest received.';
+                                const giver = entry.giver ? safeSummaryName(entry.giver) : null;
+                                const text = giver ? `${summary} (from ${giver})` : summary;
+                                add('🗒️', text);
+                            });
+                            shouldRefresh = true;
                             break;
                         case 'harvest_gather':
                             entries.forEach(entry => {
@@ -6639,6 +6671,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (eventResult) {
+                        console.debug('[QuestDebug] runEventChecks returned quests:', eventResult.questsAwarded);
                         markEventsProcessed();
                         if (eventResult.html) {
                             responseData.eventChecks = eventResult.html;
@@ -6673,6 +6706,62 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (eventResult.locationRefreshRequested) {
                             responseData.locationRefreshRequested = true;
+                        }
+                        if (Array.isArray(eventResult.questsAwarded) && eventResult.questsAwarded.length) {
+                            console.debug('[QuestDebug] questsAwarded before processing:', eventResult.questsAwarded);
+                            responseData.questsAwarded = eventResult.questsAwarded.slice(0);
+
+                            const ensureParsedContainer = (container) => {
+                                if (!container || typeof container !== 'object') {
+                                    return null;
+                                }
+                                if (!container.parsed || typeof container.parsed !== 'object') {
+                                    container.parsed = {};
+                                }
+                                return container.parsed;
+                            };
+
+                            const targetContainers = [];
+                            if (eventResult.structured && typeof eventResult.structured === 'object') {
+                                targetContainers.push(eventResult.structured);
+                            }
+                            if (responseData.events && responseData.events !== eventResult.structured) {
+                                targetContainers.push(responseData.events);
+                            }
+                            if (targetContainers.length === 0) {
+                                const fallback = { parsed: {}, rawEntries: {} };
+                                responseData.events = fallback;
+                                if (!eventResult.structured) {
+                                    eventResult.structured = fallback;
+                                }
+                                targetContainers.push(fallback);
+                            }
+
+                            eventResult.questsAwarded.forEach(questEntry => {
+                                const summaryLabel = questEntry.summary || questEntry.name || 'New quest received.';
+                                targetContainers.forEach(container => {
+                                    const parsedContainer = ensureParsedContainer(container);
+                                    if (!parsedContainer) {
+                                        return;
+                                    }
+                                    const list = Array.isArray(parsedContainer.quest_received)
+                                        ? parsedContainer.quest_received
+                                        : (parsedContainer.quest_received = []);
+                                    list.push({
+                                        summary: summaryLabel,
+                                        name: questEntry.name || null,
+                                        giver: questEntry.giver || null
+                                    });
+
+                                    if (container.rawEntries && typeof container.rawEntries === 'object') {
+                                        const rawList = Array.isArray(container.rawEntries.quest_received)
+                                            ? container.rawEntries.quest_received
+                                            : (container.rawEntries.quest_received = []);
+                                        rawList.push(summaryLabel);
+                                    }
+                                });
+                            });
+                            console.debug('[QuestDebug] responseData.events after quest injection:', responseData.events);
                         }
                     }
 
@@ -6799,13 +6888,15 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    if (Array.isArray(eventResult?.questsAwarded) && eventResult.questsAwarded.length) {
-                        for (const questEntry of eventResult.questsAwarded) {
-                            const summaryLabel = questEntry.summary || questEntry.name || 'New quest received';
+                    console.debug('[QuestDebug] processing questsAwarded:', responseData.questsAwarded);
+                    if (Array.isArray(responseData.questsAwarded) && responseData.questsAwarded.length) {
+                        console.debug('[QuestDebug] emitting quest summary entries:', responseData.questsAwarded);
+                        for (const questEntry of responseData.questsAwarded) {
+                            const summaryLabel = questEntry.summary || questEntry.name || 'New quest received.';
                             const questLogLabel = `🗒️ Quest Received${questEntry.name ? ` – ${questEntry.name}` : ''}`;
                             recordEventSummaryEntry({
                                 label: questLogLabel,
-                                events: [{ description: summaryLabel }],
+                                events: [{ description: summaryLabel, icon: '🗒️' }],
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
                                 locationId: aiResponseLocationId
