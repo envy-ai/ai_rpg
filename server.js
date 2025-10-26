@@ -12380,6 +12380,7 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         ];
 
         console.log('🤖 Requesting image prompt generation from LLM...');
+        console.log(messages);
 
         const requestStart = Date.now();
         const responseText = await LLMClient.chatCompletion({
