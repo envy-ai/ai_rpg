@@ -7,6 +7,7 @@ Here is some information about the quest:
   <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest.-->{% endif %}</name>
   <description>{% if quest.description %}{{ quest.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing the quest's objectives, significance, and context within the world.--> {% endif %}</description>
   <giver>{% if quest.giver %}{{ quest.giver }}{% else %}<!--Name of the NPC or entity that gives the quest.-->{% endif %}</giver>
+  <secretNotes><!-- Internal notes about the quest that are not revealed to the player. If this is a simple quest, it's okay to leave these blank. --></secretNotes>
   <objectives>
     <objective>
       <optional><!-- true or false --></optional>

@@ -637,6 +637,29 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
+        const parseQuestRewardMessage = (text) => {
+            if (typeof text !== 'string') {
+                return null;
+            }
+            const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+            if (!lines.length) {
+                return null;
+            }
+            const header = lines.shift();
+            if (!/^i receive the following quest rewards:/i.test(header)) {
+                return null;
+            }
+            const rewards = lines
+                .filter(line => line.startsWith('*'))
+                .map(line => line.replace(/^\*\s*/, '').trim())
+                .filter(Boolean);
+
+            if (!rewards.length) {
+                return { header, rewards: [] };
+            }
+            return { header, rewards };
+        };
+
         const normalizeTravelMetadata = (input) => {
             if (input === null || input === undefined) {
                 return null;
@@ -6983,6 +7006,86 @@ module.exports = function registerApiRoutes(scope) {
                                 console.warn('Failed to notify client about quest acceptance:', error.message);
                             }
                         }
+                    }
+
+                    if (Array.isArray(eventResult.questRewards) && eventResult.questRewards.length) {
+                        responseData.questRewards = eventResult.questRewards;
+                        for (const rewardEntry of eventResult.questRewards) {
+                            if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                continue;
+                            }
+
+                            const parsedReward = parseQuestRewardMessage(rewardEntry.message);
+                            if (parsedReward?.rewards?.length) {
+                                const summaryLabel = rewardEntry.questName
+                                    ? `🏆 Quest Completed – ${rewardEntry.questName}`
+                                    : '🏆 Quest Completed';
+                                const summaryItems = parsedReward.rewards.map(line => ({
+                                    description: line,
+                                    icon: '🎁'
+                                }));
+                                recordEventSummaryEntry({
+                                    label: summaryLabel,
+                                    events: summaryItems,
+                                    timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                    parentId: aiResponseEntry?.id || null,
+                                    locationId: aiResponseLocationId
+                                }, newChatEntries);
+                            }
+
+                            pushChatEntry({
+                                role: 'assistant',
+                                content: rewardEntry.message,
+                                type: 'quest-reward',
+                                locationId: aiResponseLocationId,
+                                metadata: {
+                                    questId: rewardEntry.questId || null,
+                                    questName: rewardEntry.questName || null
+                                }
+                            }, newChatEntries, aiResponseLocationId);
+                        }
+                    }
+
+                    if (Array.isArray(eventResult.questObjectivesCompleted) && eventResult.questObjectivesCompleted.length) {
+                        responseData.questObjectivesCompleted = eventResult.questObjectivesCompleted;
+
+                        const groupedObjectives = new Map();
+                        for (const objective of eventResult.questObjectivesCompleted) {
+                            if (!objective) {
+                                continue;
+                            }
+                            const questLabel = objective.questName || objective.questId || 'Quest';
+                            if (!groupedObjectives.has(questLabel)) {
+                                groupedObjectives.set(questLabel, []);
+                            }
+                            groupedObjectives.get(questLabel).push(objective);
+                        }
+
+                        for (const [questLabel, objectives] of groupedObjectives.entries()) {
+                            const summaryItems = objectives.map(item => {
+                                const objectiveNumber = Number.isFinite(item.objectiveNumber)
+                                    ? item.objectiveNumber
+                                    : (Number.isFinite(item.objectiveIndex) ? item.objectiveIndex + 1 : null);
+                                const description = item.objectiveDescription || (objectiveNumber ? `Objective ${objectiveNumber}` : 'Objective completed');
+                                const label = objectiveNumber ? `Objective ${objectiveNumber}: ${description}` : description;
+                                return {
+                                    description: label,
+                                    icon: '✅'
+                                };
+                            });
+
+                            recordEventSummaryEntry({
+                                label: `✅ Quest Update – ${questLabel}`,
+                                events: summaryItems,
+                                timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                parentId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            }, newChatEntries);
+                        }
+                    }
+
+                    if (Array.isArray(eventResult.followupResults) && eventResult.followupResults.length) {
+                        responseData.followupEventChecks = eventResult.followupResults;
                     }
 
                     if (responseData.actionResolution) {

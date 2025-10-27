@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
+const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -4795,11 +4796,6 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
                 existingOriginExit.update({ destination: entranceLocation.id });
             }
             try {
-                existingOriginExit.destinationRegion = region.id;
-            } catch (_) {
-                existingOriginExit.update({ destinationRegion: region.id });
-            }
-            try {
                 existingOriginExit.description = originDescription;
             } catch (_) {
                 existingOriginExit.update({ description: originDescription });
@@ -7270,7 +7266,8 @@ function parseLocationNpcs(xmlContent) {
 
         const memoryNodes = Array.from(responseRoot.getElementsByTagName('npcMemories'));
         for (const memoryNode of memoryNodes) {
-            const rawName = memoryNode.getAttribute('npc') || memoryNode.getAttribute('name') || '';
+            const nameNode = memoryNode.getElementsByTagName('npcName')[0] || null;
+            const rawName = nameNode ? nameNode.textContent : '';
             const normalizedName = rawName ? rawName.trim().toLowerCase() : '';
             if (!normalizedName) {
                 continue;
@@ -7411,7 +7408,8 @@ function parseRegionNpcs(xmlContent) {
 
         const memoryNodes = Array.from(responseRoot.getElementsByTagName('npcMemories'));
         for (const memoryNode of memoryNodes) {
-            const rawName = memoryNode.getAttribute('npc') || memoryNode.getAttribute('name') || '';
+            const nameNode = memoryNode.getElementsByTagName('npcName')[0] || null;
+            const rawName = nameNode ? nameNode.textContent : '';
             const normalizedName = rawName ? rawName.trim().toLowerCase() : '';
             if (!normalizedName) {
                 continue;
@@ -14620,6 +14618,7 @@ Events.initialize({
     generateThingImage,
     shouldGenerateThingImage,
     createRegionStubFromEvent,
+    getCurrencyLabel,
     generatedImages,
     pendingRegionStubs,
     alterThingByPrompt,

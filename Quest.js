@@ -53,8 +53,12 @@ class Quest {
   rewardItems = [];
   rewardCurrency = 0;
   rewardXp = 0;
+  rewardClaimed = false;
+  secretNotes = '';
   giverId = null;
   giverName = '';
+  secretNotes = '';
+
   static #indexByName = new SanitizedStringMap();
   static #indexById = new Map();
 
@@ -91,6 +95,7 @@ class Quest {
       throw new Error('Quest name must be a non-empty string');
     }
     this.description = typeof options.description === 'string' ? options.description : '';
+    this.secretNotes = typeof options.secretNotes === 'string' ? options.secretNotes : '';
 
     if (Array.isArray(options.rewardItems)) {
       this.rewardItems = options.rewardItems
@@ -107,6 +112,8 @@ class Quest {
 
     const xpValue = Number(options.rewardXp);
     this.rewardXp = Number.isFinite(xpValue) ? Math.max(0, Math.floor(xpValue)) : 0;
+
+    this.rewardClaimed = Boolean(options.rewardClaimed);
 
     this.giverName = typeof options.giverName === 'string' ? options.giverName.trim() : '';
 
@@ -191,10 +198,13 @@ class Quest {
       rewardItems: Array.isArray(this.rewardItems) ? this.rewardItems.slice() : [],
       rewardCurrency: this.rewardCurrency,
       rewardXp: this.rewardXp,
+      secretNotes: this.secretNotes || null,
+      rewardClaimed: Boolean(this.rewardClaimed),
       giverId: this.giverId || null,
       giverName: this.giverName || null,
       giver: this.giverName || null,
-      completed: this.completed
+      completed: this.completed,
+      secretNotes: this.secretNotes || null
     };
   }
 
@@ -227,9 +237,12 @@ class Quest {
       rewardItems,
       rewardCurrency: data.rewardCurrency,
       rewardXp: data.rewardXp,
+      secretNotes: typeof data.secretNotes === 'string' ? data.secretNotes : '',
       giverId,
       giverName,
-      objectives: []
+      rewardClaimed: Boolean(data.rewardClaimed),
+      objectives: [],
+      secretNotes: data.secretNotes || null
     });
 
     quest.objectives = [];
