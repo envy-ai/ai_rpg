@@ -601,6 +601,42 @@ module.exports = function registerApiRoutes(scope) {
             return normalized;
         };
 
+        const findMostRecentHistoryEntryWithRequestId = (collector = null, requestId = null) => {
+            const targetId = typeof requestId === 'string' ? requestId.trim() : '';
+            if (!targetId) {
+                return null;
+            }
+
+            const sources = [];
+            if (Array.isArray(collector)) {
+                sources.push(collector);
+            }
+            sources.push(chatHistory);
+
+            for (const source of sources) {
+                if (!Array.isArray(source)) {
+                    continue;
+                }
+                for (let index = source.length - 1; index >= 0; index -= 1) {
+                    const entry = source[index];
+                    if (!entry || entry.role !== 'user') {
+                        continue;
+                    }
+                    const metaId = typeof entry?.metadata?.requestId === 'string'
+                        ? entry.metadata.requestId.trim()
+                        : '';
+                    const directId = typeof entry?.requestId === 'string'
+                        ? entry.requestId.trim()
+                        : '';
+                    if ((metaId && metaId === targetId) || (directId && directId === targetId)) {
+                        return entry;
+                    }
+                }
+            }
+
+            return null;
+        };
+
         const normalizeTravelMetadata = (input) => {
             if (input === null || input === undefined) {
                 return null;
@@ -5899,12 +5935,16 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
-                    pushChatEntry({
+                    const entryPayload = {
                         role: 'user',
                         content: userMessage.content,
                         travel: isTravelMessage,
                         locationId: playerChatLocationId
-                    }, newChatEntries, playerChatLocationId);
+                    };
+                    if (stream.requestId) {
+                        entryPayload.metadata = { requestId: stream.requestId };
+                    }
+                    pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
                 } else {
                     currentActionIsTravel = false;
                     previousActionWasTravel = false;
@@ -6658,12 +6698,25 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     let eventResult = null;
+                    let userInput = null;
                     if (isForcedEventAction) {
                         eventResult = forcedEventResult;
                     } else {
                         try {
                             stream.status('player_action:event_checks', 'Evaluating resulting events.');
-                            eventResult = await Events.runEventChecks({ textToCheck: aiResponse, stream });
+                            if (currentPlayer && 'lastOutcomeSucceeded' in currentPlayer) {
+                                const wasSuccessful = Boolean(currentPlayer.lastOutcomeSucceeded);
+                                const isTrivial = plausibilityType === 'trivial';
+                                if (wasSuccessful || isTrivial) {
+                                    const historyEntry = findMostRecentHistoryEntryWithRequestId(newChatEntries, stream.requestId);
+                                    if (historyEntry && typeof historyEntry.content === 'string' && historyEntry.content.trim()) {
+                                        userInput = historyEntry.content.trim();
+                                    }
+                                }
+                            }
+
+                            const textToCheck = userInput ? `${userInput}\n\n${aiResponse}` : aiResponse;
+                            eventResult = await Events.runEventChecks({ textToCheck, stream });
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);

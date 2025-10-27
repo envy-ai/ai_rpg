@@ -70,6 +70,7 @@ class Player {
     #checkEquipment = false;
     #characterArc = { shortTerm: '', longTerm: '' };
     #quests = [];
+    #lastOutcomeSucceeded = null;
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -1592,6 +1593,15 @@ class Player {
 
     get lastActionWasTravel() {
         return Boolean(this.#lastActionWasTravel);
+    }
+
+    set lastOutcomeSucceeded(value) {
+        console.log(`✅ Player ${this.#name || this.#id || 'unknown'} lastOutcomeSucceeded set to ${value}`);
+        this.#lastOutcomeSucceeded = Boolean(value);
+    }
+
+    get lastOutcomeSucceeded() {
+        return Boolean(this.#lastOutcomeSucceeded);
     }
 
     set lastActionWasTravel(value) {

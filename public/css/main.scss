@@ -246,6 +246,8 @@ p:not(:last-child) {
   border-radius: 20px;
   box-shadow: 0 28px 60px rgba(6, 9, 20, 0.45);
   backdrop-filter: blur(8px);
+  max-height: 100%;
+  overflow-y: auto;
 
   &-header {
     display: flex;

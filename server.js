@@ -3064,6 +3064,9 @@ async function populateNpcSelectedMemories(baseContext) {
     let selectionsByName = new Map();
 
     if (canCallAi) {
+        let textToCheck = baseContext.gameHistory || '';
+
+        baseContext.gameHistory = textToCheck;
         const templatePayload = {
             npcs: pendingActors.map(({ actor, important }) => ({
                 name: actor.name || actor.id || 'Unknown NPC',
@@ -3301,27 +3304,27 @@ function difficultyToDC(label) {
 
 function classifyOutcomeMargin(margin) {
     if (margin >= 10) {
-        return { label: 'critical success', degree: 'critical_success' };
+        return { label: 'critical success', degree: 'critical_success', success: true };
     }
     if (margin >= 6) {
-        return { label: 'major success', degree: 'major_success' };
+        return { label: 'major success', degree: 'major_success', success: true };
     }
     if (margin >= 3) {
-        return { label: 'success', degree: 'success' };
+        return { label: 'success', degree: 'success', success: true };
     }
     if (margin >= 0) {
-        return { label: 'barely succeeded', degree: 'barely_succeeded' };
+        return { label: 'barely succeeded', degree: 'barely_succeeded', success: true };
     }
     if (margin <= -10) {
-        return { label: 'critical failure', degree: 'critical_failure' };
+        return { label: 'critical failure', degree: 'critical_failure', success: false };
     }
     if (margin <= -6) {
-        return { label: 'major failure', degree: 'major_failure' };
+        return { label: 'major failure', degree: 'major_failure', success: false };
     }
     if (margin <= -3) {
-        return { label: 'minor failure', degree: 'minor_failure' };
+        return { label: 'minor failure', degree: 'minor_failure', success: false };
     }
-    return { label: 'barely failed', degree: 'barely_failed' };
+    return { label: 'barely failed', degree: 'barely_failed', success: false };
 }
 
 function findAttributeKey(player, attributeName) {
@@ -3415,6 +3418,7 @@ function resolveActionOutcome({ plausibility, player }) {
         return {
             label: 'automatic success',
             degree: 'automatic_success',
+            success: true,
             type: type,
             reason: plausibility.reason || null,
             roll: null,
@@ -3429,6 +3433,7 @@ function resolveActionOutcome({ plausibility, player }) {
         return {
             label: 'failure - implausible',
             degree: 'implausible_failure',
+            success: false,
             type: type,
             reason: plausibility.reason || null,
             roll: null,
@@ -3482,6 +3487,7 @@ function resolveActionOutcome({ plausibility, player }) {
         return {
             label: 'success',
             degree: 'success',
+            success: true,
             type: type,
             reason: plausibility.reason || skillCheck.reason || null,
             roll: null,
@@ -3513,6 +3519,7 @@ function resolveActionOutcome({ plausibility, player }) {
     return {
         label: outcome.label,
         degree: outcome.degree,
+        success: outcome.success,
         type: type,
         reason: plausibility.reason || skillCheck.reason || null,
         roll: {
