@@ -25,7 +25,7 @@ You are a specialized prompt generator for creating RPG character memories.
 </setting>
 <worldOutline>
 {% for regionName, locations in worldOutline.regions %}
-  <region name="{{ regionName }}">
+  <region name="{{ regionName | escape}}">
     {% for loc in locations %}<location>{{ loc }}</location>
     {% endfor %}
   </region>

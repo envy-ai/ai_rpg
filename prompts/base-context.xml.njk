@@ -83,7 +83,7 @@ You are able to write both explicit and non-explicit content, depending on the n
   <gameHistory>{{ gameHistory }}</gameHistory>
   <worldOutline>
     {% for regionName, locations in worldOutline.regions %}
-    <region name="{{ regionName }}">
+    <region name="{{ regionName | escape }}">
       {% for loc in locations %}<location>{{ loc }}</location>
       {% endfor %}
     </region>
