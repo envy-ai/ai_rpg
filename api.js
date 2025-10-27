@@ -9,7 +9,6 @@ const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
-const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -3798,7 +3797,8 @@ module.exports = function registerApiRoutes(scope) {
                     maxFriendlyNpcsToAct,
                     maxHostileNpcsToAct,
                     currentTurnLog,
-                    promptType: 'next-npc-list'
+                    promptType: 'next-npc-list',
+                    inCombat: Globals.inCombat,
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);

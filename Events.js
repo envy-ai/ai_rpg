@@ -4350,10 +4350,13 @@ class Events {
                 .map(node => {
                     const descriptionNode = node.getElementsByTagName('description')[0];
                     const description = descriptionNode ? descriptionNode.textContent?.trim() : node.textContent?.trim() || '';
+
+                    /*
                     const optionalNode = node.getElementsByTagName('optional')[0];
                     const optionalText = optionalNode ? optionalNode.textContent?.trim().toLowerCase() : '';
                     const optional = optionalText === 'true' || optionalText === 'yes';
-
+                    */
+                    const optional = false;
                     if (!description) {
                         return null;
                     }

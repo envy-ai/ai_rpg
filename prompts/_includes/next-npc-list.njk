@@ -18,4 +18,9 @@ First, make a list of NPCs who have already acted during currentTurn. Then, from
     <npc disposition='[friendly or hostile]'>Exact name of the second npc. Omit if no one needs to act.</npc>
     ... up to the number of npcs specified above ...
   </npcs>
-</npcActionInfo>
+</npcActionInfo>{% if inCombat %}
+
+This is a combat situation. Here are some additional guidelines:
+ - Only things that would count as an attack action or full round action in D&amp;D count as having acted. Talking, dodging, blocking, being hit, etc, do not count.
+ 
+ {% endif %}
