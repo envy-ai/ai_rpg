@@ -9,26 +9,22 @@ banned_npc_names:
   - Lyra
   - Orion
   - Nyx
-  - Kael
-  - Kaelen
   - Seraphina
   - Sophia
   - Patel
   - Liam
   - Chen
-  - Jaxon
-  - Jax
-  - Jaxx
   - Reed
   - Zephyr
-  - Rostova
   - Kade
-  - Rostov
   - Voss
   - Marcus
   - Zara
   - Zorvath
-  - Finn
-  - Finnian
   - Silas
   - Vance
+banned_npc_name_regexes:
+  - "/Kael/"
+  - "/Fin/"
+  - "/Rostov/"
+  - "/Jax/"

@@ -51,6 +51,7 @@ attachAxiosMetricsLogger(axios);
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 let cachedBannedNpcWords = null;
+let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 
@@ -8449,6 +8450,36 @@ function getBannedNpcWords() {
     return cachedBannedNpcWords;
 }
 
+function getBannedNpcRegexes() {
+    if (Array.isArray(cachedBannedNpcRegexes)) {
+        return cachedBannedNpcRegexes;
+    }
+
+    try {
+        const raw = fs.readFileSync(BANNED_NPC_NAMES_PATH, 'utf8');
+        const parsed = yaml.load(raw) || {};
+        const regexes = Array.isArray(parsed.banned_npc_name_regexes) ? parsed.banned_npc_name_regexes : [];
+        for (const regexStr of regexes) {
+            // Remove leading and trailing slashes if present
+            const trimmed = regexStr.replace(/^\/|\/$/g, '').trim();
+            if (typeof trimmed !== 'string' || !trimmed) {
+                continue;
+            }
+            try {
+                const regex = new RegExp(trimmed);
+                cachedBannedNpcRegexes.push(regex);
+            } catch (regexError) {
+                console.warn('Invalid banned NPC name regex:', regexStr, regexError.message);
+            }
+        }
+
+    } catch (error) {
+        console.warn('Failed to load banned NPC name regexes:', error.message);
+    }
+
+    return cachedBannedNpcRegexes;
+}
+
 function getBannedLocationNameSet() {
     if (cachedBannedLocationNames instanceof Set) {
         return cachedBannedLocationNames;
@@ -8594,7 +8625,7 @@ function normalizeNameForComparison(name) {
     return normalized ? normalized.toLowerCase() : '';
 }
 
-function isNpcNameAllowed(name, { bannedWords = getBannedNpcWords(), forbiddenNames = null } = {}) {
+function isNpcNameAllowed(name, { bannedWords = getBannedNpcWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
     const normalized = normalizeNpcName(name);
     if (!normalized) {
         return false;
@@ -8602,6 +8633,14 @@ function isNpcNameAllowed(name, { bannedWords = getBannedNpcWords(), forbiddenNa
 
     if (npcNameContainsBannedWord(normalized, bannedWords)) {
         return false;
+    }
+
+    // It's case sensitive, so we don't normalize it.
+    for (const regex of bannedRegexes) {
+        if (regex.test(name)) {
+            console.log(`NPC name "${name}" rejected by banned regex: ${regex.toString()}`);
+            return false;
+        }
     }
 
     if (forbiddenNames instanceof Set) {
@@ -8649,7 +8688,7 @@ function pullRegeneratedNpcEntry(mapping, name) {
     return entry;
 }
 
-function selectFirstAllowedNpcName(candidates, { bannedWords = getBannedNpcWords(), forbiddenNames = null } = {}) {
+function selectFirstAllowedNpcName(candidates, { bannedWords = getBannedNpcWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
     if (!Array.isArray(candidates) || !candidates.length) {
         return null;
     }
@@ -8657,7 +8696,7 @@ function selectFirstAllowedNpcName(candidates, { bannedWords = getBannedNpcWords
         if (!candidate) {
             continue;
         }
-        if (isNpcNameAllowed(candidate, { bannedWords, forbiddenNames })) {
+        if (isNpcNameAllowed(candidate, { bannedWords, bannedRegexes, forbiddenNames })) {
             return normalizeNpcName(candidate);
         }
     }
