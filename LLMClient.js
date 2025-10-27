@@ -88,8 +88,39 @@ class LLMClient {
         requiredTags = [],
         waitAfterError = 0,
         dumpReasoningToConsole = false,
+        debug = false,
     } = {}) {
+        if (debug) {
+            console.log('LLMClient.chatCompletion called with parameters:');
+            console.log({
+                messages,
+                maxTokens,
+                temperature,
+                model,
+                apiKey: apiKey ? '***REDACTED***' : null,
+                endpoint,
+                timeoutMs,
+                timeoutScale,
+                metadataLabel,
+                metadata,
+                retryAttempts,
+                headers,
+                additionalPayload,
+                validateXML,
+                requiredTags,
+                waitAfterError,
+                dumpReasoningToConsole,
+            });
+        }
         const aiConfig = LLMClient.ensureAiConfig();
+
+        //check if Globals.config.ai.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
+        if (metadataLabel && aiConfig.prompt_ai_overrides && aiConfig.prompt_ai_overrides[metadataLabel]) {
+            const overrides = aiConfig.prompt_ai_overrides[metadataLabel];
+            for (const [key, value] of Object.entries(overrides)) {
+                aiConfig[key] = value;
+            }
+        }
 
         if (metadataLabel) {
             console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
@@ -182,6 +213,9 @@ class LLMClient {
                     onResponse(response);
                 }
                 responseContent = response.data?.choices?.[0]?.message?.content || '';
+                if (debug) {
+                    console.log('Raw LLM response content:', responseContent);
+                }
                 // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
                 let thinkTags = [];
                 if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
@@ -191,6 +225,7 @@ class LLMClient {
                 // Check if <think></think> tags are present and remove them and anything inside
                 const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
                 responseContent = responseContent.replace(thinkTagPattern, '').trim();
+
 
                 if (responseContent.trim() === '') {
                     console.error(`Empty response content received (attempt ${attempt + 1}).`);
@@ -205,18 +240,78 @@ class LLMClient {
                     thinkTags.forEach(tag => console.log(` - ${tag}`));
                 }
 
+                if (debug) {
+                    try {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const baseDir = Globals?.baseDir || process.cwd();
+                        const logDir = path.join(baseDir, 'logs');
+                        if (!fs.existsSync(logDir)) {
+                            fs.mkdirSync(logDir, { recursive: true });
+                        }
+                        const safeLabel = metadataLabel
+                            ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                            : 'unknown';
+                        const timestamp = Date.now();
+                        const filePath = path.join(logDir, `debug_${safeLabel}_${timestamp}.log`);
+
+                        const logPayload = {
+                            timestamp,
+                            metadataLabel,
+                            parameters: {
+                                maxTokens,
+                                temperature: resolvedTemperature,
+                                model: payload.model,
+                                endpoint: resolvedEndpoint,
+                                timeoutMs: resolvedTimeout,
+                                timeoutScale,
+                                retryAttempts,
+                                waitAfterError,
+                                validateXML,
+                                requiredTags,
+                                dumpReasoningToConsole
+                            },
+                            aiConfigOverride: aiConfig,
+                            requestPayload: payload,
+                            rawResponse: response.data,
+                            messages
+                        };
+
+                        fs.writeFileSync(filePath, JSON.stringify(logPayload, null, 2), 'utf8');
+                        console.log(`Debug log written to ${filePath}`);
+                    } catch (debugError) {
+                        console.warn('Failed to write debug log file:', debugError.message);
+                    }
+                }
+
                 if (validateXML) {
                     try {
                         Utils.parseXmlDocument(responseContent);
-
                     } catch (xmlError) {
                         console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
+                        try {
+                            const fs = require('fs');
+                            const path = require('path');
+                            const baseDir = Globals?.baseDir || process.cwd();
+                            const logDir = path.join(baseDir, 'logs');
+                            if (!fs.existsSync(logDir)) {
+                                fs.mkdirSync(logDir, { recursive: true });
+                            }
+                            const safeLabel = metadataLabel
+                                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                                : 'unknown';
+                            const filePath = path.join(logDir, `invalidXML_${safeLabel}_${Date.now()}.log`);
+                            fs.writeFileSync(filePath, responseContent || '', 'utf8');
+                            console.warn(`Invalid XML response logged to ${filePath}`);
+                        } catch (logError) {
+                            console.warn('Failed to write invalid XML log file:', logError.message);
+                        }
                         throw xmlError;
                     }
 
                     // use regex to check for required tags
                     for (const tag of requiredTags) {
-                        const tagPattern = new RegExp(`<${tag}[\\s\\S]*?>[\\s\\S]*?<\\/${tag}>`, 'i');
+                        const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
                         if (!tagPattern.test(responseContent)) {
                             const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
                             console.error(errorMsg);

@@ -3653,22 +3653,20 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const wrappedResponse = `<response>${trimmed}</response>`;
-
             let doc;
             try {
-                doc = Utils.parseXmlDocument(wrappedResponse, 'text/xml');
+                doc = Utils.parseXmlDocument(trimmed, 'text/xml');
             } catch (_) {
                 console.warn('Failed to parse NPC queue response as XML.');
                 console.error('Error details:', _);
-                console.error('Response text:', wrappedResponse);
+                console.error('Response text:', trimmed);
                 console.debug(_);
                 return [];
             }
 
             if (!doc || doc.getElementsByTagName('parsererror')?.length) {
                 console.log('NPC queue response XML contained parser errors.');
-                console.debug('Response text:', wrappedResponse);
+                console.debug('Response text:', trimmed);
                 return [];
             }
 
@@ -3813,7 +3811,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'next_npc_list'
+                    metadataLabel: 'next_npc_list',
+                    debug: true,
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
