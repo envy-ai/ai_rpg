@@ -55,6 +55,7 @@ class AIRPGChat {
         this.locationRefreshTimers = [];
         this.locationRefreshPending = false;
         this.activeEventBundle = null;
+        this.activeStatusBundle = null;
 
         this.setupEditModal();
         this.setupQuestConfirmationModal();
@@ -657,6 +658,10 @@ class AIRPGChat {
             return this.createEventSummaryElement(entry);
         }
 
+        if (entry.type === 'status-summary') {
+            return this.createStatusSummaryElement(entry);
+        }
+
         if (entry.type === 'plausibility') {
             return this.createPlausibilityEntryElement(entry);
         }
@@ -1008,6 +1013,52 @@ class AIRPGChat {
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
         senderDiv.textContent = entry.summaryTitle || '📋 Events';
+
+        const listWrapper = document.createElement('div');
+        const list = document.createElement('ul');
+        list.className = 'event-summary-list';
+
+        if (Array.isArray(entry.summaryItems) && entry.summaryItems.length) {
+            entry.summaryItems.forEach(item => {
+                if (!item || !item.text) {
+                    return;
+                }
+                const listItem = document.createElement('li');
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'event-summary-icon';
+                iconSpan.textContent = item.icon || '•';
+                listItem.appendChild(iconSpan);
+                listItem.appendChild(document.createTextNode(` ${item.text}`));
+                list.appendChild(listItem);
+            });
+        }
+
+        listWrapper.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+
+        container.appendChild(senderDiv);
+        container.appendChild(listWrapper);
+        container.appendChild(timestampDiv);
+
+        const actions = this.createMessageActions(entry);
+        if (actions) {
+            container.appendChild(actions);
+        }
+
+        return container;
+    }
+
+    createStatusSummaryElement(entry) {
+        const container = document.createElement('div');
+        container.className = 'message status-summary-batch';
+        container.dataset.timestamp = entry.timestamp || '';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = entry.summaryTitle || '🌀 Status Changes';
 
         const listWrapper = document.createElement('div');
         const list = document.createElement('ul');
@@ -1690,6 +1741,18 @@ class AIRPGChat {
         this.renderStandaloneEventSummary(icon, summaryText);
     }
 
+    addStatusSummary(icon, summaryText) {
+        if (!summaryText) {
+            return;
+        }
+
+        if (this.pushStatusBundleItem(icon || '🌀', summaryText)) {
+            return;
+        }
+
+        this.renderStandaloneStatusSummary(icon, summaryText);
+    }
+
     addExperienceAward(amount, reason = '') {
         const numeric = Number(amount);
         if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -2267,11 +2330,13 @@ class AIRPGChat {
                     const description = entry?.description ? String(entry.description).trim() : 'a status effect';
                     const action = (entry?.action || '').trim().toLowerCase();
                     if (action === 'gained') {
-                        this.addEventSummary('🌀', `${entity} gained ${description}.`);
+                        this.addStatusSummary('🌀', `${entity} gained status: "${description}".`);
                     } else if (action === 'lost') {
-                        this.addEventSummary('🌀', `${entity} lost ${description}.`);
+                        this.addStatusSummary('🌀', `${entity} lost status: "${description}".`);
+                    } else if (action) {
+                        this.addStatusSummary('🌀', `${entity} ${action} status: "${description}".`);
                     } else {
-                        this.addEventSummary('🌀', `${entity} changed status: ${description}.`);
+                        this.addStatusSummary('🌀', `${entity} changed status: "${description}".`);
                     }
                 });
             },
@@ -2401,6 +2466,30 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    renderStandaloneStatusSummary(icon, summaryText) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message status-summary';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = `${icon || '🌀'} Status Change`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.textContent = summaryText;
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+        timestampDiv.textContent = timestamp;
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     pushEventBundleItem(icon, text) {
         if (!this.activeEventBundle) {
             return false;
@@ -2411,6 +2500,20 @@ class AIRPGChat {
         this.activeEventBundle.items.push({
             icon: icon || '•',
             text: text
+        });
+        return true;
+    }
+
+    pushStatusBundleItem(icon, text) {
+        if (!this.activeStatusBundle) {
+            return false;
+        }
+        if (!text) {
+            return true;
+        }
+        this.activeStatusBundle.items.push({
+            icon: icon || '•',
+            text
         });
         return true;
     }
@@ -2433,6 +2536,17 @@ class AIRPGChat {
             timestamp: new Date().toISOString()
         };
         return this.activeEventBundle;
+    }
+
+    startStatusBundle() {
+        if (this.activeStatusBundle) {
+            return this.activeStatusBundle;
+        }
+        this.activeStatusBundle = {
+            items: [],
+            timestamp: new Date().toISOString()
+        };
+        return this.activeStatusBundle;
     }
 
     flushEventBundle() {
@@ -2489,6 +2603,53 @@ class AIRPGChat {
         }
 
         return { shouldRefresh: bundle.refresh };
+    }
+
+    flushStatusBundle() {
+        const bundle = this.activeStatusBundle;
+        this.activeStatusBundle = null;
+        if (!bundle) {
+            return;
+        }
+
+        if (!bundle.items.length) {
+            return;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message status-summary-batch';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🌀 Status Changes';
+
+        const contentDiv = document.createElement('div');
+        const list = document.createElement('ul');
+        list.className = 'event-summary-list';
+
+        bundle.items.forEach(item => {
+            const li = document.createElement('li');
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'event-summary-icon';
+            iconSpan.textContent = item.icon || '•';
+            li.appendChild(iconSpan);
+            li.appendChild(document.createTextNode(' ' + item.text));
+            list.appendChild(li);
+        });
+
+        contentDiv.appendChild(list);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        const timestamp = bundle.timestamp || new Date().toISOString();
+        timestampDiv.textContent = timestamp.replace('T', ' ').replace('Z', '');
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
     }
 
     buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing }) {
@@ -3422,7 +3583,9 @@ class AIRPGChat {
         }
 
         this.flushEventBundle();
+        this.flushStatusBundle();
         this.startEventBundle();
+        this.startStatusBundle();
 
         if (payload.streamMeta && context) {
             context.streamMeta = payload.streamMeta;
@@ -3491,6 +3654,7 @@ class AIRPGChat {
         if (bundleResult.shouldRefresh) {
             shouldRefreshLocation = true;
         }
+        this.flushStatusBundle();
 
         if (payload.plausibility) {
             this.addPlausibilityMessage(payload.plausibility);
@@ -3507,6 +3671,7 @@ class AIRPGChat {
         if (finalBundleResult.shouldRefresh) {
             shouldRefreshLocation = true;
         }
+        this.flushStatusBundle();
 
         return { shouldRefreshLocation };
     }
@@ -3517,7 +3682,9 @@ class AIRPGChat {
         }
 
         this.flushEventBundle();
+        this.flushStatusBundle();
         this.startEventBundle();
+        this.startStatusBundle();
 
         const context = this.getRequestContext(requestId);
         const keyBase = turn.npcId || turn.name || `npc-${index}`;
@@ -3566,6 +3733,7 @@ class AIRPGChat {
         }
 
         this.flushEventBundle();
+        this.flushStatusBundle();
     }
 
     handleChatStatus(payload) {

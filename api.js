@@ -1284,6 +1284,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (!entry) {
                         return;
                     }
+                    if (entry && typeof entry === 'object' && entry.type === 'status_effect_change') {
+                        return;
+                    }
                     if (typeof entry === 'string') {
                         add('•', entry);
                         return;
@@ -1544,20 +1547,6 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             shouldRefresh = true;
                             break;
-                        case 'status_effect_change':
-                            entries.forEach(entry => {
-                                const entity = safeSummaryName(entry?.entity);
-                                const description = entry?.description ? String(entry.description).trim() : 'a status effect';
-                                const action = (entry?.action || '').trim().toLowerCase();
-                                if (action === 'gained' || action === 'added' || action === 'applied') {
-                                    add('🌀', `${entity} gained status: "${description}".`);
-                                } else if (action === 'lost' || action === 'removed') {
-                                    add('🌀', `${entity} lost status: "${description}".`);
-                                } else {
-                                    add('🌀', `${entity} changed status: "${description}".`);
-                                }
-                            });
-                            break;
                         case 'transfer_item':
                             entries.forEach(entry => {
                                 const giver = safeSummaryName(entry?.giver);
@@ -1675,6 +1664,69 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function buildStatusSummaryBundle({ events = null } = {}) {
+            const bundle = [];
+            const seenSummaries = new Set();
+
+            const add = (icon, text) => {
+                const normalizedText = text && String(text).trim();
+                if (!normalizedText) {
+                    return;
+                }
+                const key = `${icon || '🌀'}::${normalizedText}`;
+                if (seenSummaries.has(key)) {
+                    return;
+                }
+                seenSummaries.add(key);
+                bundle.push({ icon: icon || '🌀', text: normalizedText });
+            };
+
+            const appendStatusEntry = (entry) => {
+                if (!entry) {
+                    return;
+                }
+
+                const entity = safeSummaryName(entry.entity || entry.name || entry.actor || entry.target || 'Someone');
+                const description = entry.description
+                    ? String(entry.description).trim()
+                    : String(entry.detail || entry.effect || entry.status || '').trim() || 'a status effect';
+                const actionSource = [entry.action, entry.change, entry.direction]
+                    .find(value => typeof value === 'string' && value.trim());
+                const action = actionSource ? actionSource.trim().toLowerCase() : '';
+
+                if (action === 'gained' || action === 'added' || action === 'applied') {
+                    add('🌀', `${entity} gained status: "${description}".`);
+                } else if (action === 'lost' || action === 'removed') {
+                    add('🌀', `${entity} lost status: "${description}".`);
+                } else if (action) {
+                    add('🌀', `${entity} ${action} status: "${description}".`);
+                } else {
+                    add('🌀', `${entity} changed status: "${description}".`);
+                }
+            };
+
+            const parsed = events && typeof events === 'object'
+                ? (events.parsed && typeof events.parsed === 'object' ? events.parsed : events)
+                : null;
+
+            if (parsed && parsed.status_effect_change) {
+                const statusEntries = Array.isArray(parsed.status_effect_change)
+                    ? parsed.status_effect_change
+                    : [parsed.status_effect_change];
+                statusEntries.forEach(appendStatusEntry);
+            }
+
+            if (Array.isArray(events)) {
+                events.forEach(entry => {
+                    if (entry && (entry.type === 'status_effect_change' || entry.eventType === 'status_effect_change')) {
+                        appendStatusEntry(entry);
+                    }
+                });
+            }
+
+            return { items: bundle };
+        }
+
         function formatEventSummaryText(bundle, title = '📋 Events') {
             if (!Array.isArray(bundle) || !bundle.length) {
                 return '';
@@ -1743,6 +1795,49 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 summaryText,
                 shouldRefresh: bundle.shouldRefresh,
+                entry: storedEntry
+            };
+        }
+
+        function recordStatusSummaryEntry({
+            label = '🌀 Status Changes',
+            events = null,
+            timestamp = null,
+            parentId = null,
+            locationId = null
+        } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+
+            const bundle = buildStatusSummaryBundle({ events });
+            if (!bundle.items.length) {
+                return null;
+            }
+
+            const resolvedLocationId = requireLocationId(locationId, 'recordStatusSummaryEntry');
+            const summaryText = formatEventSummaryText(bundle.items, label);
+            if (!summaryText) {
+                return null;
+            }
+
+            const entry = {
+                role: 'assistant',
+                content: summaryText,
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                type: 'status-summary',
+                summaryTitle: label,
+                summaryItems: bundle.items.map(item => ({
+                    icon: item?.icon || '•',
+                    text: item?.text || ''
+                })),
+                locationId: resolvedLocationId
+            };
+
+            const storedEntry = pushChatEntry(entry, collector, resolvedLocationId);
+            return {
+                summaryText,
                 entry: storedEntry
             };
         }
@@ -2114,6 +2209,14 @@ module.exports = function registerApiRoutes(scope) {
                     currencyChanges: summary.currencyChanges,
                     environmentalDamageEvents: summary.environmentalDamageEvents,
                     needBarChanges: summary.needBarChanges,
+                    timestamp: summary.timestamp,
+                    parentId: randomEventEntry?.id || null,
+                    locationId: randomEventLocationId
+                }, entryCollector);
+
+                recordStatusSummaryEntry({
+                    label: '🌀 Status Changes – Random Event',
+                    events: summary.events,
                     timestamp: summary.timestamp,
                     parentId: randomEventEntry?.id || null,
                     locationId: randomEventLocationId
@@ -3812,7 +3915,6 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: 'next_npc_list',
-                    debug: true,
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -5485,6 +5587,14 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: npcTurnLocationId
                     }, entryCollector);
 
+                    recordStatusSummaryEntry({
+                        label: `🌀 Status Changes – NPC Turn (${npcNameLabel})`,
+                        events: npcTurnResult.events,
+                        timestamp: npcTurnTimestamp,
+                        parentId: npcTurnEntry?.id || null,
+                        locationId: npcTurnLocationId
+                    }, entryCollector);
+
                     if (!isAttack && actionResolution) {
                         npcTurnResult.actionResolution = actionResolution;
                     }
@@ -6558,6 +6668,14 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: forcedEventLocationId
                     }, newChatEntries);
 
+                    recordStatusSummaryEntry({
+                        label: '🌀 Status Changes – Forced Action',
+                        events: responseData.events,
+                        timestamp: forcedEventEntry?.timestamp || new Date().toISOString(),
+                        parentId: forcedEventEntry?.id || null,
+                        locationId: forcedEventLocationId
+                    }, newChatEntries);
+
                     if (debugInfo) {
                         responseData.debug = {
                             ...debugInfo,
@@ -6952,6 +7070,14 @@ module.exports = function registerApiRoutes(scope) {
                         currencyChanges: responseData.currencyChanges,
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
+                        timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                        parentId: aiResponseEntry?.id || null,
+                        locationId: aiResponseLocationId
+                    }, newChatEntries);
+
+                    recordStatusSummaryEntry({
+                        label: '🌀 Status Changes – Player Turn',
+                        events: responseData.events,
                         timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                         parentId: aiResponseEntry?.id || null,
                         locationId: aiResponseLocationId
