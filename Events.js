@@ -795,8 +795,6 @@ class Events {
         let environmentalDamageEvents = [];
         let needBarChanges = [];
 
-        let questsAwarded = [];
-
         try {
             const outcomeContext = await this.applyEventOutcomes(structured, {
                 player: currentPlayer,
@@ -823,9 +821,6 @@ class Events {
             if (Array.isArray(outcomeContext?.needBarChanges) && outcomeContext.needBarChanges.length) {
                 needBarChanges = outcomeContext.needBarChanges;
             }
-            if (Array.isArray(outcomeContext?.questsAwarded) && outcomeContext.questsAwarded.length) {
-                questsAwarded = outcomeContext.questsAwarded;
-            }
         } catch (error) {
             console.warn('Failed to apply event outcomes:', error.message);
         }
@@ -846,6 +841,8 @@ class Events {
             || (movedLocationNames && movedLocationNames.length)
         );
 
+        console.debug('[QuestDebug] runEventChecks returning quests:', questsAwarded);
+
         return {
             raw: cleaned,
             html,
@@ -854,10 +851,8 @@ class Events {
             currencyChanges,
             environmentalDamageEvents,
             needBarChanges,
-            questsAwarded,
             npcUpdates,
-            locationRefreshRequested,
-            questsAwarded
+            locationRefreshRequested
         };
     }
 
@@ -2183,8 +2178,7 @@ class Events {
                         summary: questSummary,
                         giver: questOptions.giverName || questOptions.giver?.name || ''
                     });
-
-                    console.log(`Context:`, context);
+                    console.debug('[QuestDebug] context after push:', context.questsAwarded);
 
                     lastQuestCreated = quest;
                 }
