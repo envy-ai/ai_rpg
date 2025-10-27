@@ -19,6 +19,7 @@
                 <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
+                <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
             </div>
 
@@ -406,6 +407,28 @@
                         </div>
 
                         <div id="status-message" class="status-message" style="display: none;"></div>
+                    </div>
+                </section>
+                <section class="tab-panel" id="tab-quests" role="tabpanel" aria-labelledby="tab-quests-tab" hidden>
+                    <div class="quest-panel">
+                        <div class="quest-panel-header">
+                            <div>
+                                <h2>Active Quests</h2>
+                                <p class="quest-panel-subtitle">Track your current objectives and rewards at a glance.</p>
+                            </div>
+                            <span class="quest-count-badge" id="questActiveCount">0</span>
+                        </div>
+                        <div class="quest-accordion" id="questAccordion" role="list"></div>
+                        <div class="quest-empty" id="questEmpty">No active quests yet. Venture forth to discover new adventures!</div>
+                        <div class="quest-divider" aria-hidden="true"></div>
+                        <div class="quest-completed">
+                            <div class="quest-completed-header">
+                                <h3>Completed Quests</h3>
+                                <span class="quest-count-compact" id="questCompletedCount">0</span>
+                            </div>
+                            <div class="quest-accordion quest-accordion--compact" id="questCompletedAccordion" role="list"></div>
+                            <div class="quest-empty quest-empty--secondary" id="questCompletedEmpty">You have not completed any quests yet.</div>
+                        </div>
                     </div>
                 </section>
                 <section class="tab-panel" id="tab-party" role="tabpanel" aria-labelledby="tab-party-tab" hidden>
@@ -1192,6 +1215,7 @@
             initFloatingTooltipController();
             // Initialize location display
             initLocationDisplay();
+            initQuestPanel();
             initPlayerOverviewSync();
             initPartyDisplay();
         });
@@ -12754,6 +12778,214 @@
             }
         }
 
+        function initQuestPanel() {
+            const activeContainer = document.getElementById('questAccordion');
+            const completedContainer = document.getElementById('questCompletedAccordion');
+            const emptyActive = document.getElementById('questEmpty');
+            const emptyCompleted = document.getElementById('questCompletedEmpty');
+            const activeCountBadge = document.getElementById('questActiveCount');
+            const completedCountBadge = document.getElementById('questCompletedCount');
+
+            const toElement = node => (node instanceof HTMLElement ? node : null);
+            const activeRoot = toElement(activeContainer);
+            const completedRoot = toElement(completedContainer);
+
+            const createQuestCard = (quest, { defaultOpen = false, compact = false } = {}) => {
+                const details = document.createElement('details');
+                details.className = 'quest-card';
+                if (defaultOpen) {
+                    details.open = true;
+                }
+
+                const summary = document.createElement('summary');
+
+                const titleGroup = document.createElement('div');
+                titleGroup.className = 'quest-title-group';
+
+                const title = document.createElement('h3');
+                title.className = 'quest-title';
+                title.textContent = quest.name || 'Unnamed Quest';
+                titleGroup.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'quest-meta';
+
+                const objectives = Array.isArray(quest.objectives) ? quest.objectives.filter(Boolean) : [];
+                const objectiveCount = objectives.length;
+                const completedObjectives = objectives.filter(obj => obj.completed === true).length;
+                if (objectiveCount > 0) {
+                    const objectiveChip = document.createElement('span');
+                    objectiveChip.className = 'quest-objective-chip';
+                    const label = completedObjectives === objectiveCount
+                        ? 'All objectives complete'
+                        : `${completedObjectives}/${objectiveCount} complete`;
+                    objectiveChip.textContent = label;
+                    meta.appendChild(objectiveChip);
+                }
+
+                const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? Math.max(0, quest.rewardCurrency) : 0;
+                const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
+                const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
+                const rewardParts = [];
+                if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} gold`);
+                if (rewardXp > 0) rewardParts.push(`${rewardXp} XP`);
+                if (rewardItems.length) rewardParts.push(`${rewardItems.length} item${rewardItems.length === 1 ? '' : 's'}`);
+
+                if (rewardParts.length) {
+                    const rewardChip = document.createElement('span');
+                    rewardChip.className = 'quest-reward-chip';
+                    rewardChip.textContent = rewardParts.join(' • ');
+                    meta.appendChild(rewardChip);
+                }
+
+                if (meta.childElementCount) {
+                    titleGroup.appendChild(meta);
+                }
+
+                summary.appendChild(titleGroup);
+
+                const toggleIcon = document.createElement('span');
+                toggleIcon.className = 'quest-toggle-icon';
+                toggleIcon.innerHTML = '&rsaquo;';
+                summary.appendChild(toggleIcon);
+
+                const content = document.createElement('div');
+                content.className = 'quest-content';
+
+                if (quest.giver) {
+                    const giver = document.createElement('div');
+                    giver.className = 'quest-giver';
+                    giver.textContent = `Quest giver: ${quest.giver}`;
+                    content.appendChild(giver);
+                }
+
+                const summaryCopy = quest.summary || '';
+                const descriptionCopy = quest.description && quest.description !== summaryCopy ? quest.description : summaryCopy;
+                if (descriptionCopy) {
+                    const description = document.createElement('p');
+                    description.className = 'quest-description';
+                    description.textContent = descriptionCopy;
+                    content.appendChild(description);
+                }
+
+                if (objectives.length) {
+                    const objectiveSection = document.createElement('div');
+                    objectiveSection.className = 'quest-objectives';
+                    const heading = document.createElement('h4');
+                    heading.textContent = 'Objectives';
+                    objectiveSection.appendChild(heading);
+
+                    const list = document.createElement('ul');
+                    list.className = 'quest-objective-list';
+                    objectives.forEach(obj => {
+                        const item = document.createElement('li');
+                        const marker = document.createElement('span');
+                        marker.className = obj.completed
+                            ? 'quest-objective-marker quest-objective-marker--complete'
+                            : 'quest-objective-marker quest-objective-marker--pending';
+                        marker.textContent = obj.completed ? '✔' : '○';
+                        item.appendChild(marker);
+
+                        const text = document.createElement('span');
+                        const label = obj.description || 'Objective';
+                        text.textContent = obj.optional ? `${label} (optional)` : label;
+                        item.appendChild(text);
+                        list.appendChild(item);
+                    });
+                    objectiveSection.appendChild(list);
+                    content.appendChild(objectiveSection);
+                }
+
+                if (rewardParts.length || rewardItems.length) {
+                    const rewardSection = document.createElement('div');
+                    rewardSection.className = 'quest-rewards';
+                    const heading = document.createElement('h4');
+                    heading.textContent = 'Rewards';
+                    rewardSection.appendChild(heading);
+
+                    const list = document.createElement('ul');
+                    list.className = 'quest-reward-list';
+                    if (rewardCurrency > 0) {
+                        const currencyItem = document.createElement('li');
+                        currencyItem.textContent = `${rewardCurrency} gold`;
+                        list.appendChild(currencyItem);
+                    }
+                    if (rewardXp > 0) {
+                        const xpItem = document.createElement('li');
+                        xpItem.textContent = `${rewardXp} experience`;
+                        list.appendChild(xpItem);
+                    }
+                    rewardItems.forEach(label => {
+                        const item = document.createElement('li');
+                        item.textContent = label;
+                        list.appendChild(item);
+                    });
+
+                    rewardSection.appendChild(list);
+                    content.appendChild(rewardSection);
+                }
+
+                details.appendChild(summary);
+                details.appendChild(content);
+
+                if (compact) {
+                    details.removeAttribute('open');
+                }
+
+                return details;
+            };
+
+            const renderQuestPanel = (activeQuests = [], completedQuests = []) => {
+                if (activeRoot) {
+                    activeRoot.innerHTML = '';
+                    const activeCount = Array.isArray(activeQuests) ? activeQuests.length : 0;
+                    if (activeCountBadge) {
+                        activeCountBadge.textContent = String(activeCount);
+                    }
+                    if (emptyActive) {
+                        emptyActive.toggleAttribute('hidden', activeCount > 0);
+                    }
+                    activeRoot.toggleAttribute('hidden', activeCount === 0);
+                    activeQuests.forEach((quest, index) => {
+                        const card = createQuestCard(quest || {}, { defaultOpen: index === 0 });
+                        activeRoot.appendChild(card);
+                    });
+                }
+
+                if (completedRoot) {
+                    completedRoot.innerHTML = '';
+                    const completedCount = Array.isArray(completedQuests) ? completedQuests.length : 0;
+                    if (completedCountBadge) {
+                        completedCountBadge.textContent = String(completedCount);
+                    }
+                    if (emptyCompleted) {
+                        emptyCompleted.toggleAttribute('hidden', completedCount > 0);
+                    }
+                    completedRoot.toggleAttribute('hidden', completedCount === 0);
+                    completedQuests.slice(0, 5).forEach(quest => {
+                        const card = createQuestCard(quest || {}, { compact: true });
+                        completedRoot.appendChild(card);
+                    });
+                }
+            };
+
+            const refreshQuestPanel = async () => {
+                try {
+                    const response = await fetch('/api/player', { cache: 'no-store' });
+                    const data = await response.json();
+                    if (data.success && data.player) {
+                        renderQuestPanel(data.player.quests || [], data.player.completedQuests || []);
+                    }
+                } catch (error) {
+                    console.warn('Failed to refresh quest log:', error);
+                }
+            };
+
+            window.renderQuestPanel = renderQuestPanel;
+            window.refreshQuestPanel = refreshQuestPanel;
+            refreshQuestPanel();
+        }
+
         function initPlayerOverviewSync() {
             async function refreshPlayerOverview() {
                 try {
@@ -12763,6 +12995,9 @@
                         updateChatPlayerPanel(data.player);
                         if (Array.isArray(data.player.partyMembers)) {
                             renderChatPartyPanel(data.player.partyMembers);
+                        }
+                        if (typeof window.renderQuestPanel === 'function') {
+                            window.renderQuestPanel(data.player.quests || [], data.player.completedQuests || []);
                         }
                     }
                 } catch (error) {
@@ -13009,6 +13244,9 @@
                     updateChatPlayerPanel(result.player);
                     if (Array.isArray(result.player.partyMembers)) {
                         renderChatPartyPanel(result.player.partyMembers);
+                    }
+                    if (typeof window.renderQuestPanel === 'function') {
+                        window.renderQuestPanel(result.player.quests || [], result.player.completedQuests || []);
                     }
                 }
 

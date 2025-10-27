@@ -6738,6 +6738,9 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             eventResult.questsAwarded.forEach(questEntry => {
+                                if (!questEntry || questEntry.accepted === false) {
+                                    return;
+                                }
                                 const summaryLabel = questEntry.summary || questEntry.name || 'New quest received.';
                                 targetContainers.forEach(container => {
                                     const parsedContainer = ensureParsedContainer(container);
@@ -6891,16 +6894,41 @@ module.exports = function registerApiRoutes(scope) {
                     console.debug('[QuestDebug] processing questsAwarded:', responseData.questsAwarded);
                     if (Array.isArray(responseData.questsAwarded) && responseData.questsAwarded.length) {
                         console.debug('[QuestDebug] emitting quest summary entries:', responseData.questsAwarded);
+                        let acceptedQuestLogged = false;
                         for (const questEntry of responseData.questsAwarded) {
-                            const summaryLabel = questEntry.summary || questEntry.name || 'New quest received.';
-                            const questLogLabel = `🗒️ Quest Received${questEntry.name ? ` – ${questEntry.name}` : ''}`;
+                            if (!questEntry || questEntry.accepted === false) {
+                                continue;
+                            }
+                            const questName = questEntry.name || null;
+                            const summaryLabel = questEntry.summary || questName || 'Quest accepted.';
+                            const questLogLabel = `🗒️ Quest Accepted${questName ? ` – ${questName}` : ''}`;
+                            const descriptionParts = [];
+                            if (questName) {
+                                descriptionParts.push(`Accepted quest: ${questName}`);
+                            }
+                            if (questEntry.summary && questEntry.summary !== questName) {
+                                descriptionParts.push(questEntry.summary);
+                            }
+                            if (!descriptionParts.length) {
+                                descriptionParts.push(summaryLabel);
+                            }
                             recordEventSummaryEntry({
                                 label: questLogLabel,
-                                events: [{ description: summaryLabel, icon: '🗒️' }],
+                                events: [{ description: descriptionParts.join(' – '), icon: '🗒️' }],
                                 timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                                 parentId: aiResponseEntry?.id || null,
                                 locationId: aiResponseLocationId
                             }, newChatEntries);
+                            acceptedQuestLogged = true;
+                        }
+                        if (acceptedQuestLogged && stream?.clientId) {
+                            try {
+                                Globals.emitToClient(stream.clientId, 'chat_history_updated', {
+                                    reason: 'quest_accepted'
+                                });
+                            } catch (error) {
+                                console.warn('Failed to notify client about quest acceptance:', error.message);
+                            }
                         }
                     }
 
@@ -7197,6 +7225,76 @@ module.exports = function registerApiRoutes(scope) {
                     // Other errors
                     await respond(withMeta({ error: `Request failed: ${error.message}` }), 500);
                 }
+            }
+        });
+
+        app.post('/api/quests/confirm', (req, res) => {
+            if (!questConfirmationManager || typeof questConfirmationManager.resolveConfirmation !== 'function') {
+                return res.status(503).json({
+                    success: false,
+                    error: 'Quest confirmation service is unavailable.'
+                });
+            }
+
+            const body = req.body || {};
+            const confirmationId = typeof body.confirmationId === 'string' ? body.confirmationId.trim() : '';
+            const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : '';
+
+            let decisionValue = null;
+            if (typeof body.accepted === 'boolean') {
+                decisionValue = body.accepted;
+            } else if (typeof body.decision === 'string') {
+                const normalized = body.decision.trim().toLowerCase();
+                if (['accept', 'accepted', 'yes', 'y', 'true'].includes(normalized)) {
+                    decisionValue = true;
+                } else if (['decline', 'declined', 'reject', 'rejected', 'no', 'n', 'false'].includes(normalized)) {
+                    decisionValue = false;
+                }
+            } else if (typeof body.accept === 'string') {
+                const normalized = body.accept.trim().toLowerCase();
+                if (['true', '1', 'yes', 'accept'].includes(normalized)) {
+                    decisionValue = true;
+                } else if (['false', '0', 'no', 'decline'].includes(normalized)) {
+                    decisionValue = false;
+                }
+            }
+
+            if (!confirmationId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'confirmationId is required.'
+                });
+            }
+
+            if (!clientId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'clientId is required.'
+                });
+            }
+
+            if (decisionValue === null) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'decision is required and must indicate acceptance or rejection.'
+                });
+            }
+
+            try {
+                const result = questConfirmationManager.resolveConfirmation({
+                    confirmationId,
+                    clientId,
+                    accepted: decisionValue
+                });
+                res.json({
+                    success: true,
+                    accepted: Boolean(result?.accepted)
+                });
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error?.message || 'Failed to resolve quest confirmation.'
+                });
             }
         });
 

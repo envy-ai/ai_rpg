@@ -41,6 +41,7 @@ const NanoGPTImageClient = require('./NanoGPTImageClient.js');
 const OpenAIImageClient = require('./OpenAIImageClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
+const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 
 Globals.baseDir = __dirname;
 
@@ -142,6 +143,13 @@ const baseTimeoutMilliseconds = resolveBaseTimeoutMilliseconds();
 const app = express();
 const server = http.createServer(app);
 const realtimeHub = new RealtimeHub({ logger: console });
+const questConfirmationTimeoutRaw = Number(config?.quests?.confirmationTimeoutMs);
+const questConfirmationTimeout = Number.isFinite(questConfirmationTimeoutRaw) && questConfirmationTimeoutRaw > 0
+    ? questConfirmationTimeoutRaw
+    : null;
+const questConfirmationManager = new QuestConfirmationManager({
+    timeoutMs: questConfirmationTimeout
+});
 Globals.realtimeHub = realtimeHub;
 
 // If --port is provided, override config.server.port
@@ -1775,6 +1783,28 @@ function serializeNpcForClient(npc, options = {}) {
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer
     };
+
+    if (typeof npc.getCurrentQuests === 'function') {
+        try {
+            const activeQuests = npc.getCurrentQuests();
+            serialized.quests = Array.isArray(activeQuests)
+                ? activeQuests.map(quest => (typeof quest?.toJSON === 'function' ? quest.toJSON() : { ...quest }))
+                : [];
+        } catch (_) {
+            serialized.quests = [];
+        }
+    }
+
+    if (typeof npc.getCompletedQuests === 'function') {
+        try {
+            const pastQuests = npc.getCompletedQuests();
+            serialized.completedQuests = Array.isArray(pastQuests)
+                ? pastQuests.map(quest => (typeof quest?.toJSON === 'function' ? quest.toJSON() : { ...quest }))
+                : [];
+        } catch (_) {
+            serialized.completedQuests = [];
+        }
+    }
 
     if (includePartyMembers) {
         serialized.partyMembers = Array.isArray(partyMembers) ? partyMembers : [];
@@ -14587,6 +14617,7 @@ Events.initialize({
     pendingRegionStubs,
     alterThingByPrompt,
     regenerateLocationName,
+    confirmQuestWithPlayer: ({ clientId, quest, requestId }) => questConfirmationManager.requestConfirmation({ clientId, quest, requestId }),
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseTimeoutMilliseconds,
@@ -14645,6 +14676,7 @@ const apiScope = {
     ensureExitConnection,
     shouldGenerateNpcImage,
     shouldGenerateThingImage,
+    questConfirmationManager,
     getJobSnapshot,
     tickStatusEffectsForAction,
     buildLocationShortDescription,

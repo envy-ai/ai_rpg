@@ -31,6 +31,21 @@ class AIRPGChat {
         window.AIRPG_CLIENT_ID = this.clientId;
 
         this.pendingMoveOverlay = false;
+        this.questConfirmationQueue = [];
+        this.activeQuestConfirmation = null;
+        this.questConfirmationModal = null;
+        this.questConfirmationDialog = null;
+        this.questConfirmationTitle = null;
+        this.questConfirmationBackdrop = null;
+        this.questConfirmationSummary = null;
+        this.questConfirmationDescription = null;
+        this.questConfirmationObjectives = null;
+        this.questConfirmationRewards = null;
+        this.questConfirmationGiver = null;
+        this.questConfirmationStatus = null;
+        this.questConfirmationAcceptButton = null;
+        this.questConfirmationDeclineButton = null;
+        this.questConfirmationSubmitting = false;
 
         this.ensureTemplateEnvironment();
         this.init();
@@ -42,9 +57,397 @@ class AIRPGChat {
         this.activeEventBundle = null;
 
         this.setupEditModal();
+        this.setupQuestConfirmationModal();
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
+    }
+
+    setupQuestConfirmationModal() {
+        if (this.questConfirmationModal) {
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'quest-confirmation';
+        container.setAttribute('hidden', '');
+        container.innerHTML = `
+            <div class="quest-confirmation__backdrop" role="presentation"></div>
+            <div class="quest-confirmation__dialog" role="dialog" aria-modal="true" aria-labelledby="questConfirmationTitle">
+                <header class="quest-confirmation__header">
+                    <h2 id="questConfirmationTitle" class="quest-confirmation__title">Quest Available</h2>
+                </header>
+                <div class="quest-confirmation__body">
+                    <p class="quest-confirmation__giver"></p>
+                    <p class="quest-confirmation__summary"></p>
+                    <p class="quest-confirmation__description"></p>
+                    <div class="quest-confirmation__section quest-confirmation__section--objectives">
+                        <h3>Objectives</h3>
+                        <ul class="quest-confirmation__objectives"></ul>
+                    </div>
+                    <div class="quest-confirmation__section quest-confirmation__section--rewards">
+                        <h3>Rewards</h3>
+                        <ul class="quest-confirmation__rewards"></ul>
+                    </div>
+                    <p class="quest-confirmation__status" role="status" aria-live="polite"></p>
+                </div>
+                <footer class="quest-confirmation__footer">
+                    <button type="button" class="quest-confirmation__decline">Decline</button>
+                    <button type="button" class="quest-confirmation__accept">Accept Quest</button>
+                </footer>
+            </div>
+        `;
+
+        document.body.appendChild(container);
+
+        this.questConfirmationModal = container;
+        this.questConfirmationDialog = container.querySelector('.quest-confirmation__dialog');
+        this.questConfirmationBackdrop = container.querySelector('.quest-confirmation__backdrop');
+        this.questConfirmationTitle = container.querySelector('.quest-confirmation__title');
+        this.questConfirmationSummary = container.querySelector('.quest-confirmation__summary');
+        this.questConfirmationDescription = container.querySelector('.quest-confirmation__description');
+        this.questConfirmationObjectives = container.querySelector('.quest-confirmation__objectives');
+        this.questConfirmationRewards = container.querySelector('.quest-confirmation__rewards');
+        this.questConfirmationGiver = container.querySelector('.quest-confirmation__giver');
+        this.questConfirmationStatus = container.querySelector('.quest-confirmation__status');
+        this.questConfirmationAcceptButton = container.querySelector('.quest-confirmation__accept');
+        this.questConfirmationDeclineButton = container.querySelector('.quest-confirmation__decline');
+
+        if (this.questConfirmationAcceptButton) {
+            this.questConfirmationAcceptButton.addEventListener('click', () => this.submitQuestConfirmation(true));
+        }
+        if (this.questConfirmationDeclineButton) {
+            this.questConfirmationDeclineButton.addEventListener('click', () => this.submitQuestConfirmation(false));
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isQuestConfirmationVisible() && !this.questConfirmationSubmitting) {
+                this.submitQuestConfirmation(false);
+            }
+        });
+    }
+
+    isQuestConfirmationVisible() {
+        return Boolean(this.questConfirmationModal && !this.questConfirmationModal.hasAttribute('hidden'));
+    }
+
+    normalizeQuestConfirmationRequest(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return null;
+        }
+
+        const confirmationId = typeof payload.confirmationId === 'string'
+            ? payload.confirmationId.trim()
+            : '';
+        if (!confirmationId) {
+            return null;
+        }
+
+        const questSource = payload.quest && typeof payload.quest === 'object' ? payload.quest : null;
+        if (!questSource) {
+            return null;
+        }
+
+        const safeText = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            return trimmed.length ? trimmed : '';
+        };
+
+        const objectives = Array.isArray(questSource.objectives)
+            ? questSource.objectives
+                .map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        return null;
+                    }
+                    const description = safeText(entry.description);
+                    if (!description) {
+                        return null;
+                    }
+                    return {
+                        description,
+                        optional: Boolean(entry.optional)
+                    };
+                })
+                .filter(Boolean)
+            : [];
+
+        const rewardItems = Array.isArray(questSource.rewardItems)
+            ? questSource.rewardItems
+                .map(entry => {
+                    if (!entry) {
+                        return null;
+                    }
+                    if (typeof entry === 'string') {
+                        const name = safeText(entry);
+                        return name ? { name } : null;
+                    }
+                    if (typeof entry === 'object') {
+                        const name = safeText(entry.name || entry.label);
+                        if (!name) {
+                            return null;
+                        }
+                        const quantity = Number.isFinite(entry.quantity)
+                            ? Math.max(1, Math.round(entry.quantity))
+                            : null;
+                        return quantity && quantity !== 1
+                            ? { name, quantity }
+                            : { name };
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+            : [];
+
+        const rewardCurrency = Number.isFinite(questSource.rewardCurrency)
+            ? Math.max(0, Math.round(questSource.rewardCurrency))
+            : 0;
+        const rewardXp = Number.isFinite(questSource.rewardXp)
+            ? Math.max(0, Math.round(questSource.rewardXp))
+            : 0;
+
+        return {
+            confirmationId,
+            quest: {
+                id: safeText(questSource.id),
+                name: safeText(questSource.name),
+                summary: safeText(questSource.summary),
+                description: safeText(questSource.description),
+                giver: safeText(questSource.giver),
+                objectives,
+                rewardItems,
+                rewardCurrency,
+                rewardXp
+            }
+        };
+    }
+
+    enqueueQuestConfirmation(request) {
+        const normalized = this.normalizeQuestConfirmationRequest(request);
+        if (!normalized) {
+            console.warn('Received invalid quest confirmation payload:', request);
+            return;
+        }
+
+        this.questConfirmationQueue.push(normalized);
+        if (!this.activeQuestConfirmation) {
+            this.presentNextQuestConfirmation();
+        }
+    }
+
+    presentNextQuestConfirmation() {
+        if (this.activeQuestConfirmation || !this.questConfirmationQueue.length) {
+            return;
+        }
+        const next = this.questConfirmationQueue.shift();
+        this.activeQuestConfirmation = next;
+        this.renderQuestConfirmation(next);
+        this.openQuestConfirmationModal();
+    }
+
+    openQuestConfirmationModal() {
+        if (!this.questConfirmationModal) {
+            return;
+        }
+        this.questConfirmationModal.removeAttribute('hidden');
+        this.questConfirmationModal.classList.add('is-open');
+        this.questConfirmationSubmitting = false;
+        this.setQuestConfirmationStatus('');
+        if (this.questConfirmationAcceptButton) {
+            setTimeout(() => {
+                this.questConfirmationAcceptButton?.focus();
+            }, 50);
+        }
+    }
+
+    closeQuestConfirmationModal() {
+        if (!this.questConfirmationModal) {
+            return;
+        }
+        this.questConfirmationModal.setAttribute('hidden', '');
+        this.questConfirmationModal.classList.remove('is-open');
+        this.questConfirmationSubmitting = false;
+        this.activeQuestConfirmation = null;
+        this.setQuestConfirmationStatus('');
+    }
+
+    setQuestConfirmationStatus(message, tone = null) {
+        if (!this.questConfirmationStatus) {
+            return;
+        }
+        const text = typeof message === 'string' ? message.trim() : '';
+        this.questConfirmationStatus.textContent = text;
+        this.questConfirmationStatus.classList.remove('is-error', 'is-success');
+        if (!text) {
+            return;
+        }
+        if (tone === 'error') {
+            this.questConfirmationStatus.classList.add('is-error');
+        } else if (tone === 'success') {
+            this.questConfirmationStatus.classList.add('is-success');
+        }
+    }
+
+    setQuestConfirmationBusy(isBusy, message = null) {
+        this.questConfirmationSubmitting = Boolean(isBusy);
+        if (this.questConfirmationAcceptButton) {
+            this.questConfirmationAcceptButton.disabled = this.questConfirmationSubmitting;
+        }
+        if (this.questConfirmationDeclineButton) {
+            this.questConfirmationDeclineButton.disabled = this.questConfirmationSubmitting;
+        }
+        if (typeof message === 'string') {
+            this.setQuestConfirmationStatus(message, isBusy ? null : undefined);
+        }
+    }
+
+    renderQuestConfirmation(request) {
+        if (!request || !request.quest) {
+            return;
+        }
+        const quest = request.quest;
+        const toggleHidden = (element, shouldHide) => {
+            if (!element) {
+                return;
+            }
+            if (shouldHide) {
+                element.setAttribute('hidden', '');
+            } else {
+                element.removeAttribute('hidden');
+            }
+        };
+
+        const titleSegments = [];
+        if (quest.name) {
+            titleSegments.push(`Accept "${quest.name}"?`);
+        } else {
+            titleSegments.push('Accept this quest?');
+        }
+        if (this.questConfirmationTitle) {
+            this.questConfirmationTitle.textContent = titleSegments.join(' ');
+        }
+
+        if (this.questConfirmationGiver) {
+            this.questConfirmationGiver.textContent = quest.giver
+                ? `Quest giver: ${quest.giver}`
+                : '';
+            toggleHidden(this.questConfirmationGiver, !quest.giver);
+        }
+
+        if (this.questConfirmationSummary) {
+            this.questConfirmationSummary.textContent = quest.summary
+                ? quest.summary
+                : '';
+            toggleHidden(this.questConfirmationSummary, !quest.summary);
+        }
+
+        if (this.questConfirmationDescription) {
+            const description = quest.description && quest.description !== quest.summary
+                ? quest.description
+                : '';
+            this.questConfirmationDescription.textContent = description;
+            toggleHidden(this.questConfirmationDescription, !description);
+        }
+
+        if (this.questConfirmationObjectives) {
+            this.questConfirmationObjectives.innerHTML = '';
+            if (Array.isArray(quest.objectives) && quest.objectives.length) {
+                quest.objectives.forEach(entry => {
+                    const item = document.createElement('li');
+                    item.textContent = entry.optional
+                        ? `${entry.description} (optional)`
+                        : entry.description;
+                    this.questConfirmationObjectives.appendChild(item);
+                });
+            } else {
+                const item = document.createElement('li');
+                item.textContent = 'No explicit objectives were provided.';
+                this.questConfirmationObjectives.appendChild(item);
+            }
+        }
+
+        if (this.questConfirmationRewards) {
+            this.questConfirmationRewards.innerHTML = '';
+            const rewardLines = [];
+            const formatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+            if (quest.rewardCurrency > 0) {
+                rewardLines.push(`Currency: ${formatter.format(quest.rewardCurrency)}`);
+            }
+            if (quest.rewardXp > 0) {
+                rewardLines.push(`Experience: ${formatter.format(quest.rewardXp)} XP`);
+            }
+            if (Array.isArray(quest.rewardItems) && quest.rewardItems.length) {
+                quest.rewardItems.forEach(entry => {
+                    const line = entry.quantity && entry.quantity !== 1
+                        ? `${entry.quantity} × ${entry.name}`
+                        : entry.name;
+                    rewardLines.push(line);
+                });
+            }
+            if (!rewardLines.length) {
+                rewardLines.push('No guaranteed rewards listed.');
+            }
+
+            rewardLines.forEach(line => {
+                const item = document.createElement('li');
+                item.textContent = line;
+                this.questConfirmationRewards.appendChild(item);
+            });
+        }
+
+        this.setQuestConfirmationStatus('');
+    }
+
+    async submitQuestConfirmation(accepted) {
+        if (!this.activeQuestConfirmation || this.questConfirmationSubmitting) {
+            return;
+        }
+        if (typeof accepted !== 'boolean') {
+            return;
+        }
+
+        if (!this.clientId) {
+            this.setQuestConfirmationStatus('Client ID missing; cannot respond to quest.', 'error');
+            return;
+        }
+
+        this.setQuestConfirmationBusy(true, accepted ? 'Accepting quest…' : 'Declining quest…');
+
+        try {
+            const response = await fetch('/api/quests/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    confirmationId: this.activeQuestConfirmation.confirmationId,
+                    clientId: this.clientId,
+                    decision: accepted ? 'accept' : 'decline'
+                })
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                const errorMessage = data?.error || `HTTP ${response.status}`;
+                throw new Error(errorMessage);
+            }
+            this.setQuestConfirmationStatus(accepted ? 'Quest accepted.' : 'Quest declined.', 'success');
+            this.closeQuestConfirmationModal();
+            this.presentNextQuestConfirmation();
+            try {
+                window.refreshQuestPanel?.();
+            } catch (panelError) {
+                console.debug('Quest panel refresh failed:', panelError);
+            }
+        } catch (error) {
+            console.warn('Failed to submit quest confirmation:', error);
+            this.setQuestConfirmationStatus(error?.message || 'Failed to submit quest confirmation.', 'error');
+            this.setQuestConfirmationBusy(false);
+            return;
+        }
+    }
+
+    handleQuestConfirmationRequest(payload) {
+        this.enqueueQuestConfirmation(payload);
     }
 
     async loadExistingHistory() {
@@ -856,6 +1259,11 @@ class AIRPGChat {
 
     handleChatHistoryUpdated() {
         this.refreshChatHistory();
+        try {
+            window.refreshQuestPanel?.();
+        } catch (error) {
+            console.debug('Quest panel refresh skipped:', error);
+        }
     }
 
     generateRequestId() {
@@ -1059,6 +1467,9 @@ class AIRPGChat {
                 break;
             case 'chat_history_updated':
                 this.handleChatHistoryUpdated(payload);
+                break;
+            case 'quest_confirmation_request':
+                this.handleQuestConfirmationRequest(payload);
                 break;
             default:
                 console.log('Realtime update:', payload);
