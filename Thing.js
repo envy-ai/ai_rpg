@@ -700,7 +700,7 @@ class Thing {
         const bonusRaw = 'bonus' in entry ? entry.bonus : entry.value;
         const parsedBonus = Number(bonusRaw);
         if (Number.isFinite(parsedBonus)) {
-          bonusValue = Math.max(-20, Math.min(20, parsedBonus));
+          bonusValue = parsedBonus;
         }
       }
 
@@ -711,7 +711,7 @@ class Thing {
       if (!Number.isFinite(bonusValue)) {
         const parsed = Number(entry?.bonus ?? entry?.value);
         if (Number.isFinite(parsed)) {
-          bonusValue = Math.max(-20, Math.min(20, parsed));
+          bonusValue = parsed;
         }
       }
 

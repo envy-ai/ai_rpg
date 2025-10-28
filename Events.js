@@ -29,7 +29,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
         { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration.` },
         { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.` },
-        { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[giver] -> [item] -> [receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
+        { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[exact name of the giver] -> [item] -> [exact name of the receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
         { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
         { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
         { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
@@ -1901,7 +1901,7 @@ class Events {
 
                     // Add event data for each move entry
                     for (const entry of entries) {
-                        console.log('Recording move event for entry:', entry);
+                        //console.log('Recording move event for entry:', entry);
                         if (entry && entry.name) {
                             Events.movedLocations.add(entry.name);
                             const moveEventData = {
@@ -1922,7 +1922,7 @@ class Events {
                                 };
                             }
 
-                            console.log('Move event data to record:', moveEventData);
+                            //console.log('Move event data to record:', moveEventData);
                             context.moveEvents.push(moveEventData);
                             if (stream && typeof stream.status === 'function') {
                                 stream.status('spinner:start', { message: `Moving to ${entry.name}...` });
@@ -2888,7 +2888,8 @@ class Events {
                         receiver.addInventoryItem(thing);
                         thing.metadata = { ...(thing.metadata || {}), ownerId: receiver.id };
                     } else {
-                        this._detachThingFromWorld(thing);
+                        console.warn('transfer_item: No valid receiver found.', entry);
+                        //this._detachThingFromWorld(thing);
                     }
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);

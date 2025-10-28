@@ -51,7 +51,7 @@ attachAxiosMetricsLogger(axios);
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 let cachedBannedNpcWords = null;
-let cachedBannedNpcRegexes = [];
+let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 
@@ -8455,24 +8455,37 @@ function getBannedNpcRegexes() {
         return cachedBannedNpcRegexes;
     }
 
+    cachedBannedNpcRegexes = [];
+
     try {
         const raw = fs.readFileSync(BANNED_NPC_NAMES_PATH, 'utf8');
         const parsed = yaml.load(raw) || {};
         const regexes = Array.isArray(parsed.banned_npc_name_regexes) ? parsed.banned_npc_name_regexes : [];
         for (const regexStr of regexes) {
-            // Remove leading and trailing slashes if present
-            const trimmed = regexStr.replace(/^\/|\/$/g, '').trim();
-            if (typeof trimmed !== 'string' || !trimmed) {
+            if (typeof regexStr !== 'string') {
+                continue;
+            }
+            const sanitized = regexStr.trim();
+            if (!sanitized) {
+                continue;
+            }
+            let pattern = sanitized;
+            let flags = '';
+            const match = sanitized.match(/^\/(.*)\/([a-z]*)$/i);
+            if (match) {
+                pattern = match[1];
+                flags = match[2] || '';
+            }
+            if (!pattern) {
                 continue;
             }
             try {
-                const regex = new RegExp(trimmed);
+                const regex = new RegExp(pattern, flags);
                 cachedBannedNpcRegexes.push(regex);
             } catch (regexError) {
                 console.warn('Invalid banned NPC name regex:', regexStr, regexError.message);
             }
         }
-
     } catch (error) {
         console.warn('Failed to load banned NPC name regexes:', error.message);
     }

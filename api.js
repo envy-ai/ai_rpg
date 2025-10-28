@@ -2109,7 +2109,8 @@ module.exports = function registerApiRoutes(scope) {
                 const start = Date.now();
                 const requestOptions = {
                     messages,
-                    metadataLabel: 'random_event'
+                    metadataLabel: 'random_event',
+                    validateXML: false,
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {

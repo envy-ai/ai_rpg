@@ -152,7 +152,7 @@ summaries:
   # For 32k context, set unsummarized to 20 and summarized to 200
   #max_unsummarized_log_entries: 20
   #max_summarized_log_entries: 200
-party_generate_memory_interval: 25
+party_generate_memory_interval: 12
 
 # Set to 0 to disable autosaves (not recommended). Default is 20 if omitted.
 autosaves_to_retain: 20

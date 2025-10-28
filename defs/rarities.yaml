@@ -43,7 +43,7 @@ rarities:
     label: "Legendary"
     damage_multiplier: 3
     value_multiplier: 3
-    attribute_multiplier: 3
+    attribute_multiplier: 2.5
     prevalence: 2
     color: "#FF3000"
     description: "Mythical items of immense power and rarity. These items are often the stuff of legends, imbued with magical properties or crafted by master artisans. They are coveted by heroes and villains alike. Typically 4-6 attribute modifiers, mostly positive. Any negative modifiers should be -2 at most."
@@ -51,7 +51,7 @@ rarities:
     label: "Artifact"
     damage_multiplier: 4
     value_multiplier: 4
-    attribute_multiplier: 4
+    attribute_multiplier: 3
     prevalence: 1
     color: "#FFD700"
     description: "Unique and unparalleled items that transcend ordinary classifications. Artifacts are often one-of-a-kind, possessing immense historical significance or supernatural abilities. They are the pinnacle of item rarity and power. Typically 5-6 attribute modifiers, mostly positive. Any negative modifiers should be -1 at most."
