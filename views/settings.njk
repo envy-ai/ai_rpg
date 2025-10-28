@@ -299,8 +299,8 @@
                 console.warn('Auto-load saved settings failed:', e.message);
             }
 
-            await refreshSettingsList();
             await loadCurrentSetting();
+            await refreshSettingsList();
             setupEventListeners();
         });
 
@@ -330,12 +330,18 @@
                 const response = await fetch('/api/settings/current');
                 const data = await response.json();
                 
-                if (data.success && data.setting) {
-                    appliedSetting = data.setting;
-                    updateCurrentSettingDisplay();
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to load current setting');
+                }
+
+                appliedSetting = data.setting || null;
+                updateCurrentSettingDisplay();
+                if (appliedSetting) {
+                    applySettingToForm(appliedSetting, { markAsSelected: Boolean(appliedSetting.id) });
                 }
             } catch (error) {
-                console.warn('Could not load current setting:', error.message);
+                console.error('Could not load current setting:', error);
+                showMessage('Could not load current setting: ' + (error?.message || error), 'error');
             }
         }
 
@@ -382,6 +388,98 @@
             `).join('');
         }
 
+        function applySettingToForm(setting, { markAsSelected = false } = {}) {
+            if (!setting || typeof setting !== 'object') {
+                throw new Error('applySettingToForm requires a setting object');
+            }
+
+            const getField = (id) => {
+                const field = document.getElementById(id);
+                if (!field) {
+                    throw new Error(`Form field "${id}" is missing`);
+                }
+                return field;
+            };
+
+            const assignValue = (id, value = '') => {
+                const field = getField(id);
+                field.value = value ?? '';
+            };
+
+            assignValue('settingId', setting.id || '');
+            assignValue('name', setting.name || '');
+            assignValue('description', setting.description || '');
+            assignValue('theme', setting.theme || '');
+            assignValue('genre', setting.genre || '');
+            assignValue('startingLocationType', setting.startingLocationType || '');
+            assignValue('magicLevel', setting.magicLevel || '');
+            assignValue('techLevel', setting.techLevel || '');
+            assignValue('tone', setting.tone || '');
+            assignValue('difficulty', setting.difficulty || '');
+            assignValue('currencyName', setting.currencyName || '');
+            assignValue('currencyNamePlural', setting.currencyNamePlural || '');
+
+            const startingLevelParsed = Number.parseInt(setting.playerStartingLevel, 10);
+            assignValue(
+                'playerStartingLevel',
+                Number.isFinite(startingLevelParsed) ? String(startingLevelParsed) : '1'
+            );
+
+            const defaultCurrencyParsed = Number.parseInt(setting.defaultStartingCurrency, 10);
+            assignValue(
+                'defaultStartingCurrency',
+                Number.isFinite(defaultCurrencyParsed) ? String(defaultCurrencyParsed) : '0'
+            );
+
+            assignValue('defaultPlayerName', setting.defaultPlayerName || '');
+            assignValue('defaultPlayerDescription', setting.defaultPlayerDescription || '');
+            assignValue('defaultStartingLocation', setting.defaultStartingLocation || '');
+
+            const defaultNumSkillsParsed = Number.parseInt(setting.defaultNumSkills, 10);
+            assignValue(
+                'defaultNumSkills',
+                Number.isFinite(defaultNumSkillsParsed) ? String(defaultNumSkillsParsed) : '20'
+            );
+
+            const joinLines = (value) => {
+                if (Array.isArray(value)) {
+                    return value.join('\n');
+                }
+                if (typeof value === 'string') {
+                    return value;
+                }
+                return '';
+            };
+
+            assignValue('defaultExistingSkills', joinLines(setting.defaultExistingSkills));
+            assignValue('availableClasses', joinLines(setting.availableClasses));
+            assignValue('availableRaces', joinLines(setting.availableRaces));
+            assignValue('currencyValueNotes', setting.currencyValueNotes || '');
+            assignValue('writingStyleNotes', setting.writingStyleNotes || '');
+            assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
+            assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
+            assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
+            assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
+
+            if (markAsSelected && setting.id) {
+                selectedSettingId = setting.id;
+            }
+
+            isEditMode = Boolean(setting.id);
+            const titleEl = document.getElementById('formTitle');
+            if (titleEl) {
+                const safeName = typeof setting.name === 'string' ? setting.name.trim() : '';
+                titleEl.textContent = safeName ? `✏️ Edit Setting: ${safeName}` : '✏️ Edit Setting';
+            }
+            const submitBtn = document.getElementById('submitBtn');
+            if (submitBtn) {
+                submitBtn.textContent = 'Update Setting';
+            }
+
+            renderSettingsList();
+            updatePreview();
+        }
+
         function selectSetting(settingId) {
             selectedSettingId = settingId;
             renderSettingsList();
@@ -389,55 +487,15 @@
         }
 
         function editSetting(settingId) {
+            if (!settingId) {
+                throw new Error('editSetting requires a settingId');
+            }
             const setting = currentSettings.find(s => s.id === settingId);
-            if (!setting) return;
-
-            isEditMode = true;
-            selectedSettingId = settingId;
-            
-            // Populate form with setting data
-            document.getElementById('settingId').value = setting.id;
-            document.getElementById('name').value = setting.name;
-            document.getElementById('description').value = setting.description || '';
-            document.getElementById('theme').value = setting.theme || '';
-            document.getElementById('genre').value = setting.genre || '';
-            document.getElementById('startingLocationType').value = setting.startingLocationType || '';
-            document.getElementById('magicLevel').value = setting.magicLevel || '';
-            document.getElementById('techLevel').value = setting.techLevel || '';
-            document.getElementById('tone').value = setting.tone || '';
-            document.getElementById('difficulty').value = setting.difficulty || '';
-            document.getElementById('currencyName').value = setting.currencyName || '';
-            document.getElementById('currencyNamePlural').value = setting.currencyNamePlural || '';
-            document.getElementById('playerStartingLevel').value = setting.playerStartingLevel;
-            const defaultStartingCurrencyField = document.getElementById('defaultStartingCurrency');
-            if (defaultStartingCurrencyField) {
-                const parsedCurrency = parseInt(setting.defaultStartingCurrency, 10);
-                defaultStartingCurrencyField.value = Number.isFinite(parsedCurrency) ? parsedCurrency : 0;
+            if (!setting) {
+                throw new Error(`Setting with id "${settingId}" not found`);
             }
-            document.getElementById('defaultPlayerName').value = setting.defaultPlayerName || '';
-            document.getElementById('defaultPlayerDescription').value = setting.defaultPlayerDescription || '';
-            document.getElementById('defaultStartingLocation').value = setting.defaultStartingLocation || '';
-            const defaultNumSkillsField = document.getElementById('defaultNumSkills');
-            if (defaultNumSkillsField) {
-                const parsedNumSkills = Number.parseInt(setting.defaultNumSkills, 10);
-                defaultNumSkillsField.value = Number.isFinite(parsedNumSkills) ? parsedNumSkills : 20;
-            }
-            document.getElementById('defaultExistingSkills').value = Array.isArray(setting.defaultExistingSkills) ? setting.defaultExistingSkills.join('\n') : '';
-            document.getElementById('availableClasses').value = Array.isArray(setting.availableClasses) ? setting.availableClasses.join('\n') : '';
-            document.getElementById('availableRaces').value = Array.isArray(setting.availableRaces) ? setting.availableRaces.join('\n') : '';
-            document.getElementById('currencyValueNotes').value = setting.currencyValueNotes || '';
-            document.getElementById('writingStyleNotes').value = setting.writingStyleNotes || '';
-            document.getElementById('imagePromptPrefixCharacter').value = setting.imagePromptPrefixCharacter || '';
-            document.getElementById('imagePromptPrefixLocation').value = setting.imagePromptPrefixLocation || '';
-            document.getElementById('imagePromptPrefixItem').value = setting.imagePromptPrefixItem || '';
-            document.getElementById('imagePromptPrefixScenery').value = setting.imagePromptPrefixScenery || '';
 
-            // Update form title and button
-            document.getElementById('formTitle').textContent = `✏️ Edit Setting: ${setting.name}`;
-            document.getElementById('submitBtn').textContent = 'Update Setting';
-            
-            renderSettingsList();
-            updatePreview();
+            applySettingToForm(setting, { markAsSelected: true });
         }
 
         async function cloneSetting(settingId) {
@@ -517,6 +575,9 @@
                     appliedSetting = data.setting;
                     console.log('Applied Setting:', appliedSetting);
                     updateCurrentSettingDisplay();
+                    if (appliedSetting) {
+                        applySettingToForm(appliedSetting, { markAsSelected: Boolean(appliedSetting.id) });
+                    }
                     renderSettingsList();
                 } else {
                     showMessage('Error applying setting: ' + data.error, 'error');
@@ -528,6 +589,10 @@
 
                 // Log current setting to console
                 console.log('Current Setting after apply:', data2);
+                if (!data2.success) {
+                    console.error('Failed to confirm current setting:', data2.error);
+                    showMessage('Failed to confirm current setting: ' + (data2.error || 'unknown error'), 'error');
+                }
             } catch (error) {
                 showMessage('Error applying setting: ' + error.message, 'error');
             }

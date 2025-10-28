@@ -51,7 +51,7 @@ attachAxiosMetricsLogger(axios);
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 let cachedBannedNpcWords = null;
-let cachedBannedNpcRegexes = null;
+let cachedBannedNpcRegexes = [];
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 

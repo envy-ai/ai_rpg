@@ -7192,7 +7192,10 @@ module.exports = function registerApiRoutes(scope) {
                                     ? item.objectiveNumber
                                     : (Number.isFinite(item.objectiveIndex) ? item.objectiveIndex + 1 : null);
                                 const description = item.objectiveDescription || (objectiveNumber ? `Objective ${objectiveNumber}` : 'Objective completed');
-                                const label = objectiveNumber ? `Objective ${objectiveNumber}: ${description}` : description;
+                                let label = objectiveNumber ? `Objective ${objectiveNumber}: ${description}` : description;
+                                if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
+                                    label = `${label} (Quest complete!)`;
+                                }
                                 return {
                                     description: label,
                                     icon: '✅'
@@ -13374,6 +13377,34 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Get current applied setting
+        app.get('/api/settings/current', (req, res) => {
+            try {
+                if (!currentSetting) {
+                    console.log('Current setting requested: none');
+                    return res.json({
+                        success: true,
+                        setting: null,
+                        message: 'No setting currently applied'
+                    });
+                }
+
+                console.log('Current setting details:', currentSetting.toJSON());
+                res.json({
+                    success: true,
+                    setting: currentSetting.toJSON(),
+                    promptVariables: currentSetting.getPromptVariables()
+                });
+            } catch (error) {
+                console.log('Failed to get current setting:', error);
+                console.debug(error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // Get a specific setting by ID
         app.get('/api/settings/:id', (req, res) => {
             try {
@@ -13647,30 +13678,6 @@ module.exports = function registerApiRoutes(scope) {
                     setting: setting.toJSON(),
                     message: `Applied setting: ${setting.name}`,
                     promptVariables: setting.getPromptVariables()
-                });
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
-            }
-        });
-
-        // Get current applied setting
-        app.get('/api/settings/current', (req, res) => {
-            try {
-                if (!currentSetting) {
-                    return res.json({
-                        success: true,
-                        setting: null,
-                        message: 'No setting currently applied'
-                    });
-                }
-
-                res.json({
-                    success: true,
-                    setting: currentSetting.toJSON(),
-                    promptVariables: currentSetting.getPromptVariables()
                 });
             } catch (error) {
                 res.status(500).json({
