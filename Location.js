@@ -325,6 +325,16 @@ class Location {
     return Location.#indexById.get(locationId) || null;
   }
 
+  // Alias for consistency
+  static getById(id) {
+    return Location.get(id);
+  }
+
+  // Alias for consistency
+  static getByName(name) {
+    return Location.findByName(name);
+  }
+
   static get indexById() {
     return new Map(Location.#indexById);
   }

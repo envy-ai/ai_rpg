@@ -3011,7 +3011,7 @@
                 }
             }
 
-            if (npc?.isNPC && card && card.parentElement && !['location', 'npc-equipment', 'npc-inventory'].includes(activeContext)) {
+            if (card && card.parentElement && !['location', 'npc-equipment', 'npc-inventory'].includes(activeContext)) {
                 card.remove();
             }
 
@@ -3033,10 +3033,10 @@
 
             const currentLocationId = window.lastRenderedLocation?.id || null;
             const destinationId = result.destination?.id || null;
-            const shouldReload = (!applied && (
+            const shouldReload = (
                 (originLocationId && originLocationId === currentLocationId)
                 || (destinationId && destinationId === currentLocationId)
-            ));
+            );
 
             if (shouldReload) {
                 try {
@@ -3380,7 +3380,7 @@
                 menu.appendChild(dropButton);
             }
 
-            const canPickup = options.context === 'location';
+            const canPickup = true;
             let pickupButton = null;
             if (canPickup) {
                 pickupButton = document.createElement('button');
@@ -3592,7 +3592,7 @@
                             const options = [];
                             const seenIds = new Set();
 
-                            const pushEntry = (entry) => {
+                            const pushEntry = (entry, { priority = 2 } = {}) => {
                                 if (!entry || !entry.id || !entry.name) {
                                     return;
                                 }
@@ -3603,17 +3603,20 @@
                                 }
 
                                 seenIds.add(entry.id);
-                                options.push({ id: entry.id, name: trimmedName });
+                                options.push({ id: entry.id, name: trimmedName, priority });
                             };
 
-                            // Always include the current player
-                            if (window.currentPlayerData && window.currentPlayerData.id && window.currentPlayerData.name) {
-                                pushEntry(window.currentPlayerData);
+                            const currentPlayer = window.currentPlayerData && window.currentPlayerData.id && window.currentPlayerData.name
+                                ? { id: window.currentPlayerData.id, name: window.currentPlayerData.name }
+                                : null;
+
+                            if (currentPlayer) {
+                                pushEntry(currentPlayer, { priority: 0 });
                             }
 
-                            // Include cached NPCs
+                            // Include cached NPCs (player party, etc.)
                             if (window.currentNpcData instanceof Map) {
-                                window.currentNpcData.forEach(pushEntry);
+                                window.currentNpcData.forEach(entry => pushEntry(entry, { priority: 1 }));
                             }
 
                             try {
@@ -3622,7 +3625,10 @@
                                 if (response.ok && data?.success && Array.isArray(data.players)) {
                                     data.players
                                         .filter(entry => entry && entry.id && entry.name && entry.isNPC)
-                                        .forEach(pushEntry);
+                                        .forEach(entry => {
+                                            const priority = 2;
+                                            pushEntry(entry, { priority });
+                                        });
                                 }
                             } catch (fetchError) {
                                 console.warn('Failed to fetch NPC list:', fetchError);
@@ -3638,7 +3644,12 @@
                             return;
                         }
 
-                        const sortedNpcList = npcOptions.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+                        const sortedNpcList = npcOptions.sort((a, b) => {
+                            if (a.priority !== b.priority) {
+                                return a.priority - b.priority;
+                            }
+                            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                        });
 
                         const modal = document.createElement('div');
                         modal.className = 'npc-selection-modal';
@@ -3752,16 +3763,34 @@
                                 cleanup();
                             }
 
-                            if (moveResult?.success && options.context === 'location' && card && card.parentElement) {
-                                const container = card.parentElement;
-                                card.remove();
+                            if (moveResult?.success) {
+                                if (options.context === 'location' && card && card.parentElement) {
+                                    const container = card.parentElement;
+                                    card.remove();
 
-                                const hasRemainingCards = container.querySelector('.location-entity-card');
-                                if (!hasRemainingCards) {
-                                    const emptyMessage = container.id === 'locationScenery'
-                                        ? 'No notable scenery present.'
-                                        : 'No notable items present.';
-                                    container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
+                                    const hasRemainingCards = container.querySelector('.location-entity-card');
+                                    if (!hasRemainingCards) {
+                                        const emptyMessage = container.id === 'locationScenery'
+                                            ? 'No notable scenery present.'
+                                            : 'No notable items present.';
+                                        container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
+                                    }
+                                } else if (options.context === 'npc-inventory') {
+                                    const targetOwnerId = moveResult?.owner?.id || null;
+                                    if (targetOwnerId === currentNpcInventoryNpcId) {
+                                        const updatedInventory = Array.isArray(moveResult.owner?.inventory) ? moveResult.owner.inventory : [];
+                                        currentNpcInventory = updatedInventory;
+                                        renderNpcInventory(updatedInventory);
+                                    } else if (Array.isArray(currentNpcInventory)) {
+                                        currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
+                                        renderNpcInventory(currentNpcInventory);
+                                    }
+                                } else if (options.context === 'player-inventory') {
+                                    try {
+                                        await window.refreshInventory?.();
+                                    } catch (inventoryError) {
+                                        console.warn('Failed to refresh player inventory after moving item:', inventoryError);
+                                    }
                                 }
                             }
                         };
@@ -11595,6 +11624,7 @@
                 closeSummonThingModal();
             } catch (error) {
                 console.warn('Failed to summon item:', error);
+                console.debug(error);
                 setSummonThingStatus(`Failed to summon item: ${error?.message || error}`, 'error');
             } finally {
                 if (overlayVisible) {

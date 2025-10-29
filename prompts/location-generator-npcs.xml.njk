@@ -24,7 +24,7 @@ Here's a list of existing NPCs already present in this location:
 {% endfor %}
 </context>
 #}
-Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Any NPCs listed above have already been generated and don't need to be generated again. Do not rehash existing character concepts. Advance the story by creating new character concepts that are distinct from the existing ones. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
+Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above. Don't copy any NPCs already listed in the region's xml. Pick some character concepts from the location's characterConcepts section, and, if applicable, pick some hostiles from the location's enemyConcepts section. Be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
 
 <response>
 <npcs>

@@ -7189,11 +7189,10 @@ module.exports = function registerApiRoutes(scope) {
 
                         for (const [questLabel, objectives] of groupedObjectives.entries()) {
                             const summaryItems = objectives.map(item => {
-                                const objectiveNumber = Number.isFinite(item.objectiveNumber)
-                                    ? item.objectiveNumber
-                                    : (Number.isFinite(item.objectiveIndex) ? item.objectiveIndex + 1 : null);
-                                const description = item.objectiveDescription || (objectiveNumber ? `Objective ${objectiveNumber}` : 'Objective completed');
-                                let label = objectiveNumber ? `Objective ${objectiveNumber}: ${description}` : description;
+                                const hasIndex = Number.isFinite(item.objectiveIndex);
+                                const displayNumber = hasIndex ? item.objectiveIndex + 1 : null;
+                                const description = item.objectiveDescription || (displayNumber !== null ? `Objective ${displayNumber}` : 'Objective completed');
+                                let label = displayNumber !== null ? `Objective ${displayNumber}: ${description}` : description;
                                 if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
                                     label = `${label} (Quest complete!)`;
                                 }

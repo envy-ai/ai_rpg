@@ -17,6 +17,15 @@ class LLMClient {
         return aiConfig;
     }
 
+    static #cloneAiConfig() {
+        const source = LLMClient.ensureAiConfig();
+        try {
+            return JSON.parse(JSON.stringify(source));
+        } catch (error) {
+            throw new Error(`Failed to clone AI configuration: ${error.message}`);
+        }
+    }
+
     static baseTimeoutMilliseconds() {
         const globalConfig = Globals?.config;
         const seconds = Number(globalConfig?.ai?.baseTimeoutSeconds);
@@ -89,6 +98,8 @@ class LLMClient {
         waitAfterError = 0,
         dumpReasoningToConsole = false,
         debug = false,
+        frequencyPenalty = null,
+        presencePenalty = null,
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -112,15 +123,20 @@ class LLMClient {
                 dumpReasoningToConsole,
             });
         }
-        const aiConfig = LLMClient.ensureAiConfig();
+        const aiConfig = LLMClient.#cloneAiConfig();
 
-        //check if Globals.config.ai.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
-        if (metadataLabel && aiConfig.prompt_ai_overrides && aiConfig.prompt_ai_overrides[metadataLabel]) {
-            const overrides = aiConfig.prompt_ai_overrides[metadataLabel];
+        //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
+        console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
+        if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
+            const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
+            console.log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
             for (const [key, value] of Object.entries(overrides)) {
+                console.log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
                 aiConfig[key] = value;
             }
         }
+
+
 
         if (metadataLabel) {
             console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
@@ -132,6 +148,14 @@ class LLMClient {
         const payload = additionalPayload && typeof additionalPayload === 'object'
             ? { ...additionalPayload }
             : {};
+
+        if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
+            payload.frequency_penalty = frequencyPenalty !== null ? frequencyPenalty : aiConfig.frequency_penalty;
+        }
+
+        if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
+            payload.presence_penalty = presencePenalty !== null ? presencePenalty : aiConfig.presence_penalty;
+        }
 
         if (Array.isArray(messages)) {
             payload.messages = messages;
@@ -264,6 +288,8 @@ class LLMClient {
                                 model: payload.model,
                                 endpoint: resolvedEndpoint,
                                 timeoutMs: resolvedTimeout,
+                                frequencyPenalty,
+                                presencePenalty,
                                 timeoutScale,
                                 retryAttempts,
                                 waitAfterError,

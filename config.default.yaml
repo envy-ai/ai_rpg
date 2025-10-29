@@ -18,7 +18,7 @@ ai:
 
   # Your API key (keep this secure!)
   apiKey: "your-api-key-here"
-  model: z-ai/glm-4.6:reasoning-exclude
+  model: z-ai/glm-4.6
 
   # Optional: Additional parameters
   maxTokens: 6000
@@ -29,11 +29,24 @@ ai:
   retryAttempts: 3
 
   debug: false
-  dialogue_temperature: 0.85
-  dialogue_repetition_penalty: 1.15
+
+# overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
+prompt_ai_overrides:
+  player_action:
+    frequency_penalty: 0.3
+    presence_penalty: 0.3
+    temperature: 0.85
+  npc_action:
+    frequency_penalty: 0.3
+    presence_penalty: 0.3
+    temperature: 0.85
+  random_event:
+    frequency_penalty: 0.3
+    presence_penalty: 0.3
+    temperature: 0.85
 model_swap_options:
+  - "z-ai/glm-4.6"
   - "zai-org/GLM-4.5-FP8"
-  - "z-ai/glm-4.6:reasoning-exclude"
   - "GLM-4.5-Air-Steam-v1"
   - "GLM-4.5-Air-Iceblink"
   - "deepseek-ai/DeepSeek-V3.1-Terminus"

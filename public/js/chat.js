@@ -256,6 +256,7 @@ class AIRPGChat {
         this.questConfirmationModal.classList.add('is-open');
         this.questConfirmationSubmitting = false;
         this.setQuestConfirmationStatus('');
+        this.setQuestConfirmationBusy(false);
         if (this.questConfirmationAcceptButton) {
             setTimeout(() => {
                 this.questConfirmationAcceptButton?.focus();

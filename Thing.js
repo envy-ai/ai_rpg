@@ -4,6 +4,8 @@ const path = require('path');
 const yaml = require('js-yaml');
 const Utils = require('./Utils.js');
 const { count } = require('console');
+const SanitizedStringMap = require('./SanitizedStringMap.js');
+const Globals = require('./Globals.js');
 
 /**
  * Thing class for AI RPG
@@ -31,7 +33,7 @@ class Thing {
 
   // Static indexing maps
   static #indexByID = new Map();
-  static #indexByName = new Map();
+  static #indexByName = new SanitizedStringMap();
 
   // Rarity definitions loaded from defs/rarities.yaml
   static #rarityDefinitions = new Map();
@@ -39,6 +41,145 @@ class Thing {
 
   // Valid thing types
   static #validTypes = ['scenery', 'item'];
+
+  static #getLocationIdForThing(thing) {
+    if (!thing) {
+      return null;
+    }
+    const meta = thing.#metadata && typeof thing.#metadata === 'object' ? thing.#metadata : {};
+    const candidates = [
+      meta.locationId,
+      meta.locationID,
+      meta.location?.id,
+      meta.location?.locationId,
+      meta.location?.locationID
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  static #normalizeNameIndexEntry(entry, name, index) {
+    if (!entry) {
+      throw new Error(`Invalid entry in Thing name index for "${name}" at position ${index}: entry is falsy`);
+    }
+
+    if (Array.isArray(entry)) {
+      throw new Error(`Legacy entry detected in Thing name index for "${name}" at position ${index}`);
+    }
+
+    if (typeof entry !== 'object') {
+      throw new Error(`Invalid entry in Thing name index for "${name}" at position ${index}: expected object`);
+    }
+
+    const { item } = entry;
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Invalid Thing reference in name index for "${name}" at position ${index}`);
+    }
+
+    const normalizeId = (value, field) => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      if (typeof value !== 'string') {
+        throw new Error(`Invalid ${field} in Thing name index for "${name}" at position ${index}: expected string`);
+      }
+      const trimmed = value.trim();
+      return trimmed ? trimmed : null;
+    };
+
+    const normalizedLocationId = normalizeId(entry.locationId, 'locationId');
+    const normalizedPlayerId = normalizeId(entry.playerId, 'playerId');
+
+    if (normalizedLocationId === entry.locationId && normalizedPlayerId === entry.playerId) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      locationId: normalizedLocationId,
+      playerId: normalizedPlayerId
+    };
+  }
+
+  static #getNameBucket(name) {
+    if (!name || typeof name !== 'string') {
+      return null;
+    }
+    let bucket;
+    try {
+      bucket = Thing.#indexByName.get(name);
+    } catch (_) {
+      return null;
+    }
+    if (bucket === undefined) {
+      return null;
+    }
+    if (!Array.isArray(bucket)) {
+      throw new Error(`Thing name index for "${name}" is corrupted: expected array bucket`);
+    }
+
+    for (let index = bucket.length - 1; index >= 0; index -= 1) {
+      const normalized = Thing.#normalizeNameIndexEntry(bucket[index], name, index);
+      bucket[index] = normalized;
+    }
+
+    return bucket;
+  }
+
+  static #removeThingFromNameIndex(thing, nameOverride = null) {
+    if (!thing) {
+      return;
+    }
+    const key = typeof nameOverride === 'string' && nameOverride ? nameOverride : thing.#name;
+    if (!key) {
+      return;
+    }
+    const bucket = Thing.#getNameBucket(key);
+    if (!bucket || !bucket.length) {
+      return;
+    }
+    let removed = false;
+    for (let index = bucket.length - 1; index >= 0; index -= 1) {
+      const entry = bucket[index];
+      if (entry && typeof entry === 'object' && entry.item === thing) {
+        bucket.splice(index, 1);
+        removed = true;
+      }
+    }
+    if (removed && bucket.length === 0) {
+      Thing.#indexByName.delete(key);
+    }
+  }
+
+  static #addThingToNameIndex(thing) {
+    if (!thing || !thing.#name) {
+      return;
+    }
+    const key = thing.#name;
+    const entry = {
+      locationId: Thing.#getLocationIdForThing(thing),
+      playerId: null,
+      item: thing
+    };
+    const bucket = Thing.#getNameBucket(key);
+    if (bucket) {
+      // Avoid duplicate references to the same thing
+      if (!bucket.some(existing => existing && typeof existing === 'object' && existing.item === thing)) {
+        bucket.push(entry);
+      }
+    } else {
+      Thing.#indexByName.set(key, [entry]);
+    }
+  }
 
   static #normalizeRarityKey(value) {
     if (value === null || value === undefined) {
@@ -269,7 +410,8 @@ class Thing {
       return false;
     }
 
-    return Thing.#indexByName.has(name.toLowerCase());
+    const bucket = Thing.#getNameBucket(name);
+    return Array.isArray(bucket) && bucket.length > 0;
   }
 
   // Static private method for generating unique IDs
@@ -360,7 +502,7 @@ class Thing {
 
     // Add to static indexes
     Thing.#indexByID.set(this.#id, this);
-    Thing.#indexByName.set(this.#name.toLowerCase(), this);
+    Thing.#addThingToNameIndex(this);
   }
 
   // Getter methods
@@ -430,9 +572,11 @@ class Thing {
   }
 
   set metadata(newMetadata) {
+    Thing.#removeThingFromNameIndex(this, this.#name);
     this.#metadata = newMetadata && typeof newMetadata === 'object' ? { ...newMetadata } : {};
     this.#applyMetadataFieldsFromMetadata();
     this.#lastUpdated = new Date().toISOString();
+    Thing.#addThingToNameIndex(this);
   }
 
   get slot() {
@@ -542,13 +686,13 @@ class Thing {
     }
 
     // Remove from name index with old name
-    Thing.#indexByName.delete(this.#name.toLowerCase());
+    Thing.#removeThingFromNameIndex(this, this.#name);
 
     this.#name = Utils.capitalizeProperNoun(newName.trim());
     this.#lastUpdated = new Date().toISOString();
 
     // Add to name index with new name
-    Thing.#indexByName.set(this.#name.toLowerCase(), this);
+    Thing.#addThingToNameIndex(this);
   }
 
   set description(newDescription) {
@@ -588,7 +732,128 @@ class Thing {
   }
 
   static getByName(name) {
-    return Thing.#indexByName.get(name.toLowerCase()) || null;
+    const bucket = Thing.#getNameBucket(name);
+    if (!bucket || bucket.length === 0) {
+      return null;
+    }
+
+    if (bucket.length === 1) {
+      return bucket[0]?.item || null;
+    }
+
+    const currentLocation = Globals?.location || null;
+    const currentLocationId = currentLocation && typeof currentLocation.id === 'string'
+      ? currentLocation.id
+      : null;
+
+    if (currentLocationId) {
+      const inCurrentLocation = bucket.find(entry => entry.locationId === currentLocationId);
+      if (inCurrentLocation?.item) {
+        return inCurrentLocation.item;
+      }
+    }
+
+    const currentRegion = Globals?.region || null;
+    const currentRegionId = currentRegion && typeof currentRegion.id === 'string'
+      ? currentRegion.id
+      : null;
+
+    if (currentRegionId) {
+      let LocationModule = null;
+      try {
+        LocationModule = require('./Location.js');
+      } catch (_) {
+        LocationModule = null;
+      }
+
+      if (LocationModule && typeof LocationModule.get === 'function') {
+        for (const entry of bucket) {
+          const { locationId, item } = entry || {};
+          if (!locationId || !item) {
+            continue;
+          }
+          let location = null;
+          try {
+            location = LocationModule.get(locationId);
+          } catch (_) {
+            location = null;
+          }
+          if (!location) {
+            continue;
+          }
+          const locationRegionId = location.regionId
+            || (location.stubMetadata && location.stubMetadata.regionId)
+            || null;
+          if (locationRegionId === currentRegionId) {
+            return item;
+          }
+        }
+      }
+    }
+
+    return bucket[0]?.item || null;
+  }
+
+  static getAllByName(name) {
+    const bucket = Thing.#getNameBucket(name);
+    if (!bucket || !bucket.length) {
+      return [];
+    }
+    return bucket
+      .map(entry => (entry && typeof entry === 'object' ? entry.item : null))
+      .filter(Boolean);
+  }
+
+  static getByNameAndLocation(name, location) {
+    if (!name || typeof name !== 'string' || !location) {
+      return null;
+    }
+    const bucket = Thing.#getNameBucket(name);
+    if (!bucket || !bucket.length) {
+      return null;
+    }
+
+    const findInBucket = (candidateId) => {
+      if (!candidateId || typeof candidateId !== 'string') {
+        return null;
+      }
+      const normalized = candidateId.trim();
+      if (!normalized) {
+        return null;
+      }
+      const target = bucket.find(entry => entry && entry.locationId === normalized);
+      return target?.item || null;
+    };
+
+    if (typeof location === 'object' && location !== null) {
+      const candidateId = typeof location.id === 'string' ? location.id.trim() : null;
+      return findInBucket(candidateId);
+    }
+
+    if (typeof location === 'string') {
+      const trimmed = location.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      const direct = findInBucket(trimmed);
+      if (direct) {
+        return direct;
+      }
+
+      try {
+        const Location = require('./Location.js');
+        const locationObj = typeof Location.getByName === 'function'
+          ? Location.getByName(trimmed)
+          : null;
+        if (locationObj && typeof locationObj.id === 'string') {
+          return findInBucket(locationObj.id);
+        }
+      } catch (_) {
+        // Ignore lookup failures
+      }
+    }
+    return null;
   }
 
   static getByType(thingType) {
@@ -615,7 +880,7 @@ class Thing {
   // Instance methods
   delete() {
     Thing.#indexByID.delete(this.#id);
-    Thing.#indexByName.delete(this.#name.toLowerCase());
+    Thing.#removeThingFromNameIndex(this, this.#name);
   }
 
   // Serialization methods
