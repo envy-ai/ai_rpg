@@ -5494,10 +5494,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
         return [];
     }
 
-    const missing = normalized.filter(name => !findThingByName(name));
-    if (!missing.length) {
-        return [];
-    }
+    const missing = normalized;
 
     const normalizeThingSeed = (seed = {}) => {
         if (!seed || typeof seed !== 'object') {
@@ -5593,7 +5590,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
 
     const createFallbackThing = (name) => {
-        if (!name || findThingByName(name)) {
+        if (!name) {
             return null;
         }
         try {

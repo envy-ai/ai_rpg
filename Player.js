@@ -1344,6 +1344,45 @@ class Player {
 
         const added = this.#inventory.size !== previousSize;
 
+        if (added) {
+            const metadata = resolved.metadata || {};
+            let metadataChanged = false;
+            const ownerId = typeof this.#id === 'string' ? this.#id.trim() : null;
+            if (ownerId && metadata.ownerId !== ownerId) {
+                metadata.ownerId = ownerId;
+                metadataChanged = true;
+            }
+            const cleanupKeys = ['ownerID', 'owner_id', 'inventoryOwnerId'];
+            for (const key of cleanupKeys) {
+                if (metadata[key] !== undefined) {
+                    delete metadata[key];
+                    metadataChanged = true;
+                }
+            }
+            if (metadata.owner && typeof metadata.owner === 'object') {
+                const ownerObj = metadata.owner;
+                const ownerObjId = typeof ownerObj.id === 'string' ? ownerObj.id.trim() : null;
+                if (ownerObjId !== ownerId || Object.keys(ownerObj).length !== 1) {
+                    delete metadata.owner;
+                    metadataChanged = true;
+                }
+            }
+            if (ownerId && metadata.playerId !== ownerId) {
+                metadata.playerId = ownerId;
+                metadataChanged = true;
+            }
+            const locationKeys = ['locationId', 'locationID', 'location_id'];
+            for (const key of locationKeys) {
+                if (metadata[key] !== undefined) {
+                    delete metadata[key];
+                    metadataChanged = true;
+                }
+            }
+            if (metadataChanged) {
+                resolved.metadata = metadata;
+            }
+        }
+
         if (updateTimestamp && added) {
             this.#lastUpdated = new Date().toISOString();
         }
@@ -1364,6 +1403,40 @@ class Player {
         const removed = this.#inventory.delete(resolved);
         if (removed) {
             this.unequipItemId(resolved.id, { suppressTimestamp: true });
+
+            const metadata = resolved.metadata || {};
+            let metadataChanged = false;
+            const ownerId = typeof this.#id === 'string' ? this.#id.trim() : null;
+            if (ownerId && metadata.ownerId === ownerId) {
+                delete metadata.ownerId;
+                metadataChanged = true;
+            }
+            if (ownerId && metadata.playerId === ownerId) {
+                delete metadata.playerId;
+                metadataChanged = true;
+            }
+            const cleanupKeys = ['ownerID', 'owner_id', 'inventoryOwnerId'];
+            for (const key of cleanupKeys) {
+                if (metadata[key] === undefined) {
+                    continue;
+                }
+                const value = typeof metadata[key] === 'string' ? metadata[key].trim() : null;
+                if (!ownerId || value === ownerId) {
+                    delete metadata[key];
+                    metadataChanged = true;
+                }
+            }
+            if (metadata.owner && typeof metadata.owner === 'object') {
+                const ownerObjId = typeof metadata.owner.id === 'string' ? metadata.owner.id.trim() : null;
+                if (!ownerId || ownerObjId === ownerId) {
+                    delete metadata.owner;
+                    metadataChanged = true;
+                }
+            }
+            if (metadataChanged) {
+                resolved.metadata = metadata;
+            }
+
             if (updateTimestamp) {
                 this.#lastUpdated = new Date().toISOString();
             }

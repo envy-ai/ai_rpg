@@ -11331,13 +11331,6 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (findThingByName(rawName)) {
-                    return res.status(409).json({
-                        success: false,
-                        error: `An item named "${rawName}" already exists.`
-                    });
-                }
-
                 const region = findRegionByLocationId(location.id) || null;
 
                 const normalizeSeedString = (value) => {

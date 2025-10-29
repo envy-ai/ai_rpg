@@ -855,6 +855,39 @@ class Location {
     Thing.removeFromWorldById(id);
     this.#thingIds.push(id);
     this.#lastUpdated = new Date();
+
+    const thing = Thing.getById(id);
+    if (thing) {
+      const metadata = thing.metadata || {};
+      let metadataChanged = false;
+      const locationId = this.#id;
+      const existingLocationId = typeof metadata.locationId === 'string' ? metadata.locationId.trim() : null;
+      if (locationId && existingLocationId !== locationId) {
+        metadata.locationId = locationId;
+        metadataChanged = true;
+      }
+      const cleanupKeys = ['locationID', 'location_id'];
+      for (const key of cleanupKeys) {
+        if (metadata[key] !== undefined) {
+          delete metadata[key];
+          metadataChanged = true;
+        }
+      }
+      const ownerKeys = ['ownerId', 'ownerID', 'owner_id', 'playerId', 'inventoryOwnerId'];
+      for (const key of ownerKeys) {
+        if (metadata[key] !== undefined) {
+          delete metadata[key];
+          metadataChanged = true;
+        }
+      }
+      if (metadata.owner !== undefined) {
+        delete metadata.owner;
+        metadataChanged = true;
+      }
+      if (metadataChanged) {
+        thing.metadata = metadata;
+      }
+    }
   }
 
   removeThingId(id) {
@@ -865,6 +898,29 @@ class Location {
     this.#thingIds = this.#thingIds.filter(existing => existing !== id);
     if (this.#thingIds.length !== before) {
       this.#lastUpdated = new Date();
+      const Thing = require('./Thing.js');
+      const thing = Thing.getById(id);
+      if (thing) {
+        const metadata = thing.metadata || {};
+        let metadataChanged = false;
+        const locationId = this.#id;
+        const currentLocationId = typeof metadata.locationId === 'string' ? metadata.locationId.trim() : null;
+        if (currentLocationId && currentLocationId === locationId) {
+          delete metadata.locationId;
+          metadataChanged = true;
+        }
+        const cleanupKeys = ['locationID', 'location_id'];
+        for (const key of cleanupKeys) {
+          const value = typeof metadata[key] === 'string' ? metadata[key].trim() : null;
+          if (value && value === locationId) {
+            delete metadata[key];
+            metadataChanged = true;
+          }
+        }
+        if (metadataChanged) {
+          thing.metadata = metadata;
+        }
+      }
       return true;
     }
     return false;

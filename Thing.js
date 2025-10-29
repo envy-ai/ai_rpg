@@ -67,6 +67,33 @@ class Thing {
     return null;
   }
 
+  static #getPlayerIdForThing(thing) {
+    if (!thing) {
+      return null;
+    }
+    const meta = thing.#metadata && typeof thing.#metadata === 'object' ? thing.#metadata : {};
+    const candidates = [
+      meta.ownerId,
+      meta.ownerID,
+      meta.owner_id,
+      meta.owner?.id,
+      meta.owner?.ownerId,
+      meta.playerId,
+      meta.inventoryOwnerId
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+    }
+
+    return null;
+  }
+
   static #normalizeNameIndexEntry(entry, name, index) {
     if (!entry) {
       throw new Error(`Invalid entry in Thing name index for "${name}" at position ${index}: entry is falsy`);
@@ -99,14 +126,11 @@ class Thing {
     const normalizedLocationId = normalizeId(entry.locationId, 'locationId');
     const normalizedPlayerId = normalizeId(entry.playerId, 'playerId');
 
-    if (normalizedLocationId === entry.locationId && normalizedPlayerId === entry.playerId) {
-      return entry;
-    }
-
     return {
       ...entry,
       locationId: normalizedLocationId,
-      playerId: normalizedPlayerId
+      playerId: normalizedPlayerId,
+      item
     };
   }
 
@@ -167,7 +191,7 @@ class Thing {
     const key = thing.#name;
     const entry = {
       locationId: Thing.#getLocationIdForThing(thing),
-      playerId: null,
+      playerId: Thing.#getPlayerIdForThing(thing),
       item: thing
     };
     const bucket = Thing.#getNameBucket(key);
@@ -753,6 +777,38 @@ class Thing {
       }
     }
 
+    if (currentLocationId) {
+      let PlayerModule = null;
+      try {
+        PlayerModule = require('./Player.js');
+      } catch (_) {
+        PlayerModule = null;
+      }
+
+      if (PlayerModule && typeof PlayerModule.getById === 'function') {
+        for (const entry of bucket) {
+          if (!entry?.playerId || !entry.item) {
+            continue;
+          }
+          let owner = null;
+          try {
+            owner = PlayerModule.getById(entry.playerId);
+          } catch (_) {
+            owner = null;
+          }
+          if (!owner) {
+            continue;
+          }
+          const ownerLocationId = typeof owner.currentLocation === 'string'
+            ? owner.currentLocation.trim()
+            : null;
+          if (ownerLocationId && ownerLocationId === currentLocationId) {
+            return entry.item;
+          }
+        }
+      }
+    }
+
     const currentRegion = Globals?.region || null;
     const currentRegionId = currentRegion && typeof currentRegion.id === 'string'
       ? currentRegion.id
@@ -789,6 +845,11 @@ class Thing {
           }
         }
       }
+    }
+
+    const nullLocationEntry = bucket.find(entry => entry && entry.locationId === null && entry.item);
+    if (nullLocationEntry?.item) {
+      return nullLocationEntry.item;
     }
 
     return bucket[0]?.item || null;

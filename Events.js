@@ -40,7 +40,7 @@ const EVENT_PROMPT_ORDER = [
         // NPC stuff
         //[
         { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
-        { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, healed, modified, or altered, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
+        { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed modified, or otherwise physically altered, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
         { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML.` },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
@@ -521,18 +521,18 @@ class Events {
     static _followupEventTexts = [];
 
     static _resetTrackingSets() {
-        this.animatedItems.clear();
-        this.alteredItems.clear();
-        this.newItems.clear();
-        this.obtainedItems.clear();
-        this.destroyedItems.clear();
-        this.droppedItems.clear();
+        Events.animatedItems.clear();
+        Events.alteredItems.clear();
+        Events.newItems.clear();
+        Events.obtainedItems.clear();
+        Events.destroyedItems.clear();
+        Events.droppedItems.clear();
 
-        this.alteredCharacters.clear();
-        this.newCharacters.clear();
-        this.arrivedCharacters.clear();
-        this.departedCharacters.clear();
-        this.defeatedEnemies.clear();
+        Events.alteredCharacters.clear();
+        Events.newCharacters.clear();
+        Events.arrivedCharacters.clear();
+        Events.departedCharacters.clear();
+        Events.defeatedEnemies.clear();
 
         Events.movedLocations.clear();
     }
@@ -1463,6 +1463,11 @@ class Events {
             }).filter(Boolean),
             scenery_appear: raw => splitPipeList(raw).map(entry => {
                 const [name] = splitArrowParts(entry, 2);
+
+                // Remove any items that are in newItems
+                if (!name || Events.newItems.has(name) || Events.alteredItems.has(name)) {
+                    return null;
+                }
                 return name ? name.trim() : null;
             }).filter(Boolean),
             harvestable_resource_appear: raw => splitPipeList(raw).map(entry => {
@@ -3089,6 +3094,12 @@ class Events {
                 }
 
                 await this._ensureItemsExist(items, context.location);
+
+                for (const item of items) {
+                    if (typeof item === 'string' && item.trim()) {
+                        this.newItems.add(item);
+                    }
+                }
             },
             scenery_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -4122,6 +4133,7 @@ class Events {
                 }
             }
 
+            /*
             const shouldDrop = desiredInventory.length === 0 || desiredById.size > 0;
             if (shouldDrop) {
                 for (const [id, thing] of beforeById) {
@@ -4141,6 +4153,7 @@ class Events {
                     }
                 }
             }
+            */
         }
 
         if (Number.isFinite(parsedCharacter.relativeLevel)) {
@@ -4623,14 +4636,14 @@ class Events {
     }
 
     static _resolveNpcBaseLevelReference({ npc, location = null, region = null }) {
+        if (Number.isFinite(npc?.level)) {
+            return npc.level;
+        }
         if (location && Number.isFinite(location.baseLevel)) {
             return location.baseLevel;
         }
         if (region && Number.isFinite(region.averageLevel)) {
             return region.averageLevel;
-        }
-        if (Number.isFinite(npc.level)) {
-            return npc.level;
         }
         if (Number.isFinite(this.currentPlayer?.level)) {
             return this.currentPlayer.level;
