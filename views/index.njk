@@ -12820,7 +12820,47 @@
             const activeRoot = toElement(activeContainer);
             const completedRoot = toElement(completedContainer);
 
-            const createQuestCard = (quest, { defaultOpen = false, compact = false } = {}) => {
+            async function handleAbandonQuest(quest, trigger) {
+                if (!quest || !quest.id) {
+                    return;
+                }
+
+                const questName = quest.name || 'this quest';
+                const confirmed = window.confirm(`Are you sure you want to abandon "${questName}"? This cannot be undone.`);
+                if (!confirmed) {
+                    return;
+                }
+
+                const button = trigger instanceof HTMLButtonElement ? trigger : null;
+                const originalLabel = button ? button.textContent : null;
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Abandoning...';
+                }
+
+                try {
+                    const response = await fetch(`/api/player/quests/${encodeURIComponent(quest.id)}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result?.success) {
+                        throw new Error(result?.error || 'Failed to abandon quest.');
+                    }
+                    await refreshQuestPanel();
+                } catch (error) {
+                    console.error('Failed to abandon quest:', error);
+                    window.alert(`Failed to abandon quest: ${error.message || error}`);
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = originalLabel || 'Abandon Quest';
+                    }
+                }
+            }
+
+            const createQuestCard = (quest, { defaultOpen = false, compact = false, allowAbandon = false } = {}) => {
                 const details = document.createElement('details');
                 details.className = 'quest-card';
                 if (defaultOpen) {
@@ -12955,6 +12995,24 @@
                     content.appendChild(rewardSection);
                 }
 
+                if (allowAbandon && quest?.id) {
+                    const actions = document.createElement('div');
+                    actions.className = 'quest-actions';
+
+                    const abandonButton = document.createElement('button');
+                    abandonButton.type = 'button';
+                    abandonButton.className = 'quest-abandon-button';
+                    abandonButton.textContent = 'Abandon Quest';
+                    abandonButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleAbandonQuest(quest, event.currentTarget);
+                    });
+
+                    actions.appendChild(abandonButton);
+                    content.appendChild(actions);
+                }
+
                 details.appendChild(summary);
                 details.appendChild(content);
 
@@ -12966,9 +13024,44 @@
             };
 
             const renderQuestPanel = (activeQuests = [], completedQuests = []) => {
+                const sortByRecency = (quests) => {
+                    if (!Array.isArray(quests)) {
+                        return [];
+                    }
+
+                    const toTime = (value) => {
+                        if (!value) {
+                            return 0;
+                        }
+                        const parsed = Date.parse(value);
+                        return Number.isFinite(parsed) ? parsed : 0;
+                    };
+
+                    return quests
+                        .map((quest, idx) => ({
+                            quest,
+                            idx,
+                            updated: toTime(quest?.lastUpdated),
+                            created: toTime(quest?.createdAt)
+                        }))
+                        .sort((a, b) => {
+                            if (b.updated !== a.updated) {
+                                return b.updated - a.updated;
+                            }
+                            if (b.created !== a.created) {
+                                return b.created - a.created;
+                            }
+                            return b.idx - a.idx;
+                        })
+                        .map(entry => entry.quest);
+                };
+
+                const sortedActive = sortByRecency(activeQuests);
+                const sortedCompleted = sortByRecency(completedQuests);
+
                 if (activeRoot) {
                     activeRoot.innerHTML = '';
-                    const activeCount = Array.isArray(activeQuests) ? activeQuests.length : 0;
+                    const activeCount = Array.isArray(sortedActive) ? sortedActive.length : 0;
                     if (activeCountBadge) {
                         activeCountBadge.textContent = String(activeCount);
                     }
@@ -12976,15 +13069,15 @@
                         emptyActive.toggleAttribute('hidden', activeCount > 0);
                     }
                     activeRoot.toggleAttribute('hidden', activeCount === 0);
-                    activeQuests.forEach((quest, index) => {
-                        const card = createQuestCard(quest || {}, { defaultOpen: index === 0 });
+                    sortedActive.forEach((quest, index) => {
+                        const card = createQuestCard(quest || {}, { defaultOpen: index === 0, allowAbandon: true });
                         activeRoot.appendChild(card);
                     });
                 }
 
                 if (completedRoot) {
                     completedRoot.innerHTML = '';
-                    const completedCount = Array.isArray(completedQuests) ? completedQuests.length : 0;
+                    const completedCount = Array.isArray(sortedCompleted) ? sortedCompleted.length : 0;
                     if (completedCountBadge) {
                         completedCountBadge.textContent = String(completedCount);
                     }
@@ -12992,14 +13085,14 @@
                         emptyCompleted.toggleAttribute('hidden', completedCount > 0);
                     }
                     completedRoot.toggleAttribute('hidden', completedCount === 0);
-                    completedQuests.slice(0, 5).forEach(quest => {
+                    sortedCompleted.forEach(quest => {
                         const card = createQuestCard(quest || {}, { compact: true });
                         completedRoot.appendChild(card);
                     });
                 }
             };
 
-            const refreshQuestPanel = async () => {
+            async function refreshQuestPanel() {
                 try {
                     const response = await fetch('/api/player', { cache: 'no-store' });
                     const data = await response.json();
@@ -13009,7 +13102,7 @@
                 } catch (error) {
                     console.warn('Failed to refresh quest log:', error);
                 }
-            };
+            }
 
             window.renderQuestPanel = renderQuestPanel;
             window.refreshQuestPanel = refreshQuestPanel;

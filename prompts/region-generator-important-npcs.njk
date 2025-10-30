@@ -13,7 +13,10 @@ These NPCs are deceased:
 Here's a list of existing NPCs in other regions:
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
-- Nyx: Self-appointed guardian of the region
+
+Here is a list of banned NPC concepts
+- Self-appointed guardian
+- Person who gives cryptic advice
 
 Here is the region for which you are generating NPCs:
 <region>
@@ -81,4 +84,15 @@ Generate 0 or more (up to 6) important or prominent NPCs appropriate for the reg
     </npcMemories>
     [... an npcMemories record for each generated NPC ...]
 </memories>
+
+<bannedNpcs>
+<!-- For each NPC you created above, check if it matches one of the banned concepts. If it does, generate a new NPC to replace it here. -->
+<npc>
+<oldNpcName><!-- Exact name of the NPC being replaced --></oldNpcName>
+<whichBannedConcept><!-- Which banned concept this NPC matched --></whichBannedConcept>
+<!-- The other fields are the same as in the main npc block above -->
+<!-- ... -->
+</npc>
+<!-- more npcs as needed -->
+</bannedNpcs>
 </response>

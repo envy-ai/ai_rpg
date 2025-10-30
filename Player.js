@@ -1621,6 +1621,16 @@ class Player {
         this.#lastUpdated = new Date().toISOString();
     }
 
+    removeQuest(questId) {
+        const index = this.#quests.findIndex(q => q.id === questId);
+        if (index === -1) {
+            return false;
+        }
+        this.#quests.splice(index, 1);
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
     getQuestByName(questName) {
         return this.#quests.find(q => q.name === questName) || null;
     }

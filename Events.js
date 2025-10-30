@@ -3106,13 +3106,16 @@ class Events {
                     return;
                 }
 
+                // Filter out all items that are in newItems
+                const filteredItems = items.filter(item => !this.newItems.has(item) && !this.alteredItems.has(item));
+
                 try {
-                    await this._generateItemsIntoWorld(items, context.location, { treatAsScenery: true });
+                    await this._generateItemsIntoWorld(filteredItems, context.location, { treatAsScenery: true });
                 } catch (error) {
                     console.warn('Failed to generate scenery items:', error.message);
                 }
 
-                for (const item of items) {
+                for (const item of filteredItems) {
                     if (typeof item === 'string' && item.trim()) {
                         this.newItems.add(item);
                     }

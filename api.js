@@ -336,7 +336,7 @@ module.exports = function registerApiRoutes(scope) {
             rare: null
         };
 
-        function deleteNpcById(npcId, { skipNotFound = false, reason = null } = {}) {
+        function deleteNpcById(npcId, { skipNotFound = false, reason = null, deleteInventory = false } = {}) {
             if (!npcId || typeof npcId !== 'string') {
                 return { success: false, error: 'NPC ID is required', status: 400 };
             }
@@ -354,13 +354,57 @@ module.exports = function registerApiRoutes(scope) {
                 return result;
             }
 
-            const locationId = npc.currentLocation || null;
-            try {
-                npc.dropAllInventoryItems();
-            } catch (error) {
-                console.warn(`Failed to drop inventory while deleting NPC ${npc.name || npcId}:`, error?.message || error);
-                console.trace(error);
+            if (deleteInventory) {
+                try {
+                    if (typeof npc.clearInventory === 'function') {
+                        const inventoryItems = typeof npc.getInventoryItems === 'function'
+                            ? npc.getInventoryItems()
+                            : [];
+                        for (const item of inventoryItems) {
+                            if (!item || !item.id) {
+                                continue;
+                            }
+                            try {
+                                Thing.removeFromWorldById(item.id);
+                            } catch (error) {
+                                console.warn(`Failed to remove item ${item.name || item.id} from world while deleting NPC ${npc.name || npcId}:`, error?.message || error);
+                            }
+                            try {
+                                if (typeof item.delete === 'function') {
+                                    item.delete();
+                                }
+                            } catch (error) {
+                                console.warn(`Failed to delete item ${item.name || item.id} while deleting NPC ${npc.name || npcId}:`, error?.message || error);
+                            }
+                            if (things instanceof Map) {
+                                things.delete(item.id);
+                            } else if (things && typeof things === 'object' && item.id) {
+                                delete things[item.id];
+                            }
+                        }
+                        npc.clearInventory();
+                    }
+                } catch (error) {
+                    console.warn(`Failed to clear inventory for NPC ${npc.name || npcId}:`, error?.message || error);
+                }
+            } else {
+                try {
+                    const inventoryItems = typeof npc.getInventoryItems === 'function'
+                        ? npc.getInventoryItems()
+                        : [];
+                    for (const item of inventoryItems) {
+                        try {
+                            item?.drop?.();
+                        } catch (error) {
+                            console.warn(`Failed to drop item ${item?.name || item?.id} while deleting NPC ${npc.name || npcId}:`, error?.message || error);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Failed to drop inventory while deleting NPC ${npc.name || npcId}:`, error?.message || error);
+                }
             }
+
+            const locationId = npc.currentLocation || null;
 
             let regionId = null;
 
@@ -7791,6 +7835,38 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        app.delete('/api/player/quests/:questId', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            const questIdRaw = req.params.questId;
+            const questId = typeof questIdRaw === 'string' ? questIdRaw.trim() : '';
+            if (!questId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Quest ID is required'
+                });
+            }
+
+            const removed = currentPlayer.removeQuest(questId);
+            if (!removed) {
+                return res.status(404).json({
+                    success: false,
+                    error: `Quest '${questId}' not found on player`
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Quest abandoned successfully',
+                player: serializeNpcForClient(currentPlayer)
+            });
+        });
+
         app.get('/api/player/party', (req, res) => {
             try {
                 if (!currentPlayer) {
@@ -9515,7 +9591,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const result = deleteNpcById(npcId, { reason: 'api-request' });
+                const result = deleteNpcById(npcId, { reason: 'api-request', deleteInventory: true });
                 if (!result.success) {
                     const statusCode = result.status || (result.error === 'NPC ID is required' ? 400 : 404);
                     return res.status(statusCode).json({

@@ -9448,6 +9448,7 @@ async function ensureUniqueNpcNames({
             attempts += 1;
             continue;
         }
+        break;
     }
 
     return workingList;
@@ -11049,6 +11050,10 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         );
         const npcCountHint = Math.max(1, hintedNumNpcs || 1);
 
+        if (hintedNumNpcs + hintedNumHostiles === 0) {
+            return [];
+        }
+
         const npcPrompt = renderLocationNpcPrompt(location, {
             regionTheme,
             attributeDefinitions: attributeDefinitionsForPrompt,
@@ -11104,7 +11109,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             const parts = [
                 formatDurationLine(apiDurationSeconds),
                 '=== NPC PROMPT ===',
-                npcPromptWithContext,
+                [systemPrompt, generationPrompt, aiResponse, npcPromptWithContext].join('\n\n'),
                 '\n=== NPC RESPONSE ===',
                 npcResponse,
                 '\n'

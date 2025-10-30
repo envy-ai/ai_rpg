@@ -452,6 +452,48 @@ p:not(:last-child) {
   gap: 8px;
 }
 
+.quest-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.quest-abandon-button {
+  appearance: none;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 9px 18px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(135deg, rgba(255, 122, 122, 0.24), rgba(255, 107, 150, 0.24));
+  box-shadow: 0 10px 24px rgba(255, 107, 150, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.quest-abandon-button:hover,
+.quest-abandon-button:focus {
+  outline: none;
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(255, 122, 122, 0.42), rgba(255, 107, 150, 0.42));
+  border-color: rgba(255, 136, 164, 0.65);
+  box-shadow: 0 14px 32px rgba(255, 120, 150, 0.3);
+}
+
+.quest-abandon-button:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 18px rgba(255, 120, 150, 0.24);
+}
+
+.quest-abandon-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+  transform: none;
+  box-shadow: none;
+}
+
 .quest-empty {
   text-align: center;
   padding: 28px;
