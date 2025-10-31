@@ -4,13 +4,11 @@ Here is a list of all character attributes:
 
 Attributes for an NPC should be rated as one of: poor, below average, average, above average, excellent, legendary.
 
-{# 
-These NPCs are deceased:
+These NPC names are banned (names should not contain any of these):
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
-#}
 
-Here's a list of existing NPCs in other regions:
+Here's a list of existing NPCs in other regions (to avoid generating duplicates):
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 
@@ -23,6 +21,12 @@ Here is the region for which you are generating NPCs:
 <name>{{ region.name }}</name>
 <description>{{ region.description }}</description>
 </region>
+
+Here are the character concepts for the region:
+<characterConcepts>
+{% for concept in characterConcepts %}- {{ concept }}
+{% endfor %}
+</characterConcepts>
 
 Here are all the locations in the region:
 <allLocationsInRegion>
@@ -86,10 +90,10 @@ Generate 0 or more (up to 6) important or prominent NPCs appropriate for the reg
 </memories>
 
 <bannedNpcs>
-<!-- For each NPC you created above, check if it matches one of the banned concepts. If it does, generate a new NPC to replace it here. -->
+<!-- For each NPC you created above, check if it matches one of the banned names, banned concepts or existing NPCs. If it does, generate a new NPC to replace it here. -->
 <npc>
 <oldNpcName><!-- Exact name of the NPC being replaced --></oldNpcName>
-<whichBannedConcept><!-- Which banned concept this NPC matched --></whichBannedConcept>
+<whichBannedThing><!-- Which banned name or concept this NPC matched; omit if existing NPC --></whichBannedThing>
 <!-- The other fields are the same as in the main npc block above -->
 <!-- ... -->
 </npc>

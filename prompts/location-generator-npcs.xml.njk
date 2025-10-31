@@ -4,12 +4,12 @@ Here is a list of all character attributes:
 {% endfor %}
 
 Attributes for an NPC should be rated as one of: poor, below average, average, above average, excellent, legendary.
-{# 
-These NPCs are deceased:
+
+These NPC names are banned (names should not contain any of these):
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
-#}
-Here's a list of existing NPCs:
+
+Here's a list of existing NPCs (don't generate these again):
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
 
@@ -76,10 +76,10 @@ Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} 
 </memories>
 
 <bannedNpcs>
-<!-- For each NPC you created above, check if it matches one of the banned concepts. If it does, generate a new NPC to replace it here. -->
+<!-- For each NPC you created above, check if it matches one of the banned names, banned concepts or existing NPCs. If it does, generate a new NPC to replace it here. -->
 <npc>
 <oldNpcName><!-- Exact name of the NPC being replaced --></oldNpcName>
-<whichBannedConcept><!-- Which banned concept this NPC matched --></whichBannedConcept>
+<whichBannedThing><!-- Which banned name or concept this NPC matched; omit if existing NPC --></whichBannedThing>
 <!-- The other fields are the same as in the main npc block above -->
 <!-- ... -->
 </npc>

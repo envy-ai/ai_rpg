@@ -24,6 +24,8 @@ class Region {
   #relativeLevel;
   #lastVisitedTime = null;  // Decimal hours since last visit by player.
   #randomEvents = [];
+  #characterConcepts = [];
+  #enemyConcepts = [];
   static #indexById = new Map();
   static #indexByName = new Map();
 
@@ -33,7 +35,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [] } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [] } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -66,6 +68,9 @@ class Region {
       ? Math.max(1, Math.min(20, Math.round(averageLevel)))
       : null;
     this.#relativeLevel = null; // to be set externally if needed
+    this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
+    this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
+
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
   }
@@ -169,7 +174,9 @@ class Region {
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null,
       lastVisitedTime: data.lastVisitedTime || null,
-      randomEvents: Array.isArray(data.randomEvents) ? data.randomEvents : []
+      randomEvents: Array.isArray(data.randomEvents) ? data.randomEvents : [],
+      characterConcepts: Array.isArray(data.characterConcepts) ? data.characterConcepts : [],
+      enemyConcepts: Array.isArray(data.enemyConcepts) ? data.enemyConcepts : [],
     });
   }
 
@@ -196,6 +203,8 @@ class Region {
     let regionName = null;
     let regionDescription = null;
     let regionLevel = null;
+    const characterConcepts = [];
+    const enemyConcepts = [];
 
     const childElements = Array.from(regionElement.childNodes).filter(node => node.nodeType === 1);
     for (const child of childElements) {
@@ -210,6 +219,50 @@ class Region {
         const parsedLevel = Number(child.textContent.trim());
         if (Number.isFinite(parsedLevel)) {
           regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
+        }
+      } else if (tag === 'characterconcept' || tag === 'characterconcepts') {
+        if (tag === 'characterconcepts') {
+          const conceptNodes = Array.from(child.getElementsByTagName('concept'));
+          if (conceptNodes.length) {
+            conceptNodes.forEach(node => {
+              const value = node.textContent?.trim();
+              if (value) {
+                characterConcepts.push(value);
+              }
+            });
+          } else {
+            const value = child.textContent?.trim();
+            if (value) {
+              characterConcepts.push(value);
+            }
+          }
+        } else {
+          const value = child.textContent?.trim();
+          if (value) {
+            characterConcepts.push(value);
+          }
+        }
+      } else if (tag === 'enemyconcept' || tag === 'enemyconcepts') {
+        if (tag === 'enemyconcepts') {
+          const conceptNodes = Array.from(child.getElementsByTagName('concept'));
+          if (conceptNodes.length) {
+            conceptNodes.forEach(node => {
+              const value = node.textContent?.trim();
+              if (value) {
+                enemyConcepts.push(value);
+              }
+            });
+          } else {
+            const value = child.textContent?.trim();
+            if (value) {
+              enemyConcepts.push(value);
+            }
+          }
+        } else {
+          const value = child.textContent?.trim();
+          if (value) {
+            enemyConcepts.push(value);
+          }
         }
       }
     }
@@ -289,7 +342,9 @@ class Region {
       description: regionDescription,
       locations: locationBlueprints,
       averageLevel: regionLevel,
-      randomEvents
+      randomEvents,
+      characterConcepts,
+      enemyConcepts
     });
   }
 
@@ -455,6 +510,24 @@ class Region {
     return this.#relativeLevel;
   }
 
+  get characterConcepts() {
+    return [...this.#characterConcepts];
+  }
+
+  set characterConcepts(concepts) {
+    this.#characterConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get enemyConcepts() {
+    return [...this.#enemyConcepts];
+  }
+
+  set enemyConcepts(concepts) {
+    this.#enemyConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   set lastVisitedTime(value) {
     if (value === null || value === undefined) {
       this.#lastVisitedTime = null;
@@ -547,7 +620,9 @@ class Region {
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),
       averageLevel: this.#averageLevel,
-      randomEvents: [...this.#randomEvents]
+      randomEvents: [...this.#randomEvents],
+      characterConcepts: [...this.#characterConcepts],
+      enemyConcepts: [...this.#enemyConcepts],
     };
   }
 

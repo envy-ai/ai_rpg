@@ -17,6 +17,47 @@ class LLMClient {
         return aiConfig;
     }
 
+    static writeLogFile({
+        prefix = 'log',
+        metadataLabel = '',
+        payload = '',
+        serializeJson = false,
+        onFailureMessage = 'Failed to write log file',
+        error = '',
+    } = {}) {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const baseDir = Globals?.baseDir || process.cwd();
+            const logDir = path.join(baseDir, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const safeLabel = metadataLabel
+                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                : 'unknown';
+            const filePath = path.join(logDir, `ERROR_${prefix}_${safeLabel}_${Date.now()}.log`);
+
+            let dataToWrite = payload;
+            if (serializeJson) {
+                dataToWrite = JSON.stringify(payload, null, 2);
+            } else if (typeof payload !== 'string') {
+                dataToWrite = JSON.stringify(payload ?? '', null, 2);
+            }
+
+            error = JSON.stringify(error);
+            if (error) {
+                dataToWrite = `Error Details:\n${error}\n\nPayload:\n${dataToWrite}`;
+            }
+
+            fs.writeFileSync(filePath, dataToWrite || '', 'utf8');
+            return filePath;
+        } catch (error) {
+            console.warn(`${onFailureMessage}: ${error.message}`);
+            return null;
+        }
+    }
+
     static #cloneAiConfig() {
         const source = LLMClient.ensureAiConfig();
         try {
@@ -315,22 +356,15 @@ class LLMClient {
                         Utils.parseXmlDocument(responseContent);
                     } catch (xmlError) {
                         console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
-                        try {
-                            const fs = require('fs');
-                            const path = require('path');
-                            const baseDir = Globals?.baseDir || process.cwd();
-                            const logDir = path.join(baseDir, 'logs');
-                            if (!fs.existsSync(logDir)) {
-                                fs.mkdirSync(logDir, { recursive: true });
-                            }
-                            const safeLabel = metadataLabel
-                                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
-                                : 'unknown';
-                            const filePath = path.join(logDir, `invalidXML_${safeLabel}_${Date.now()}.log`);
-                            fs.writeFileSync(filePath, responseContent || '', 'utf8');
+                        const filePath = LLMClient.writeLogFile({
+                            prefix: 'invalidXML',
+                            metadataLabel,
+                            error: xmlError,
+                            payload: responseContent || '',
+                            onFailureMessage: 'Failed to write invalid XML log file'
+                        });
+                        if (filePath) {
                             console.warn(`Invalid XML response logged to ${filePath}`);
-                        } catch (logError) {
-                            console.warn('Failed to write invalid XML log file:', logError.message);
                         }
                         throw xmlError;
                     }
@@ -340,6 +374,16 @@ class LLMClient {
                         const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
                         if (!tagPattern.test(responseContent)) {
                             const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
+                            const filePath = LLMClient.writeLogFile({
+                                prefix: 'missingTag',
+                                metadataLabel,
+                                error: errorMsg,
+                                payload: responseContent || '',
+                                onFailureMessage: 'Failed to write missing tag log file'
+                            });
+                            if (filePath) {
+                                console.warn(`Invalid XML response logged to ${filePath}`);
+                            }
                             console.error(errorMsg);
                             throw new Error(errorMsg);
                         }
@@ -350,7 +394,19 @@ class LLMClient {
                 }
 
             } catch (error) {
-                console.error(`Error occurred during chat completion (attempt ${attempt + 1}):`, error);
+                console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
+
+                const filePath = LLMClient.writeLogFile({
+                    prefix: 'chatCompletionError',
+                    metadataLabel,
+                    error: error,
+                    payload: responseContent || '',
+                    onFailureMessage: 'Failed to write chat completion error log file'
+                });
+                if (filePath) {
+                    console.warn(`Chat completion error response logged to ${filePath}`);
+                }
+
                 if (attempt === retryAttempts) {
                     console.error('Max retry attempts reached. Failing the chat completion request.');
                     console.debug(error);

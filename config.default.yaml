@@ -31,19 +31,19 @@ ai:
   debug: false
 
 # overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
-prompt_ai_overrides:
-  player_action:
-    frequency_penalty: 0.3
-    presence_penalty: 0.3
-    temperature: 0.85
-  npc_action:
-    frequency_penalty: 0.3
-    presence_penalty: 0.3
-    temperature: 0.85
-  random_event:
-    frequency_penalty: 0.3
-    presence_penalty: 0.3
-    temperature: 0.85
+# prompt_ai_overrides:
+#   player_action:
+#     frequency_penalty: 0.0
+#     presence_penalty: 0.1
+#     temperature: 0.85
+#   npc_action:
+#     frequency_penalty: 0.0
+#     presence_penalty: 0.1
+#     temperature: 0.85
+#   random_event:
+#     frequency_penalty: 0.0
+#     presence_penalty: 0.1
+#     temperature: 0.85
 model_swap_options:
   - "z-ai/glm-4.6"
   - "zai-org/GLM-4.5-FP8"

@@ -4451,6 +4451,26 @@ function scheduleStubExpansion(location) {
     return expansionPromise;
 }
 
+function extractRegionCharacterConcepts(stubResponse) {
+    // Find the strings inside <concept> tags inside <characterConcepts>. 
+
+    const concepts = [];
+    if (!stubResponse || typeof stubResponse !== 'string') {
+        return concepts;
+    }
+
+    const xmlDoc = Utils.parseXmlDocument(stubResponse, 'text/xml');
+    const characterConcepts = xmlDoc.getElementsByTagName("characterConcepts");
+    if (characterConcepts.length > 0) {
+        const conceptElements = characterConcepts[0].getElementsByTagName("concept");
+        for (let i = 0; i < conceptElements.length; i++) {
+            concepts.push(conceptElements[i].textContent.trim());
+        }
+    }
+
+    return concepts;
+}
+
 async function expandRegionEntryStub(stubLocation) {
     if (!stubLocation || !stubLocation.isStub) {
         return null;
@@ -4473,7 +4493,7 @@ async function expandRegionEntryStub(stubLocation) {
 
         let region = regions.get(targetRegionId) || null;
         const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
-        console.log("Pending region info for expansion:", pendingInfo);
+        //console.log("Pending region info for expansion:", pendingInfo);
         const pendingRelativeLevel = Number.isFinite(pendingInfo?.relativeLevel)
             ? pendingInfo.relativeLevel
             : null;
@@ -4645,6 +4665,10 @@ async function expandRegionEntryStub(stubLocation) {
 
             const locationDefinitions = parseRegionStubLocations(stubResponse);
             const exitDefinitions = parseRegionExitsResponse(stubResponse);
+            const characterConcepts = extractRegionCharacterConcepts(stubResponse);
+
+            console.log("Character concepts extracted for region NPC generation:", characterConcepts);
+
             if (!locationDefinitions.length) {
                 console.warn('Region stub generation returned no locations.');
                 return null;
@@ -4696,6 +4720,7 @@ async function expandRegionEntryStub(stubLocation) {
                 });
             } catch (instantiationError) {
                 console.warn('Failed to instantiate region from stub:', instantiationError.message);
+                console.debug(instantiationError);
             }
 
             try {
@@ -4703,10 +4728,12 @@ async function expandRegionEntryStub(stubLocation) {
                     region,
                     systemPrompt: stubPrompt.systemPrompt,
                     generationPrompt: stubPrompt.generationPrompt,
-                    aiResponse: stubResponse
+                    aiResponse: stubResponse,
+                    characterConcepts,
                 });
             } catch (npcError) {
                 console.warn('Failed to generate important NPCs for region stub:', npcError.message);
+                console.debug(npcError);
             }
 
             const entranceInfo = await chooseRegionEntrance({
@@ -6364,7 +6391,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             allLocationsInRegion: options.allLocationsInRegion || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
-            bannedWords: options.bannedWords || getBannedNpcWords()
+            bannedWords: options.bannedWords || getBannedNpcWords(),
+            characterConcepts: options.characterConcepts || []
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -11318,7 +11346,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 }
 
 
-async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse }) {
+async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, characterConcepts = [] }) {
     if (!region) {
         throw new Error('Region is required for generating region NPCs');
     }
@@ -11382,10 +11410,13 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             ...existingNpcObjectsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
         ];
 
+        console.log(`Character concepts for region ${region.id}:`, Array.isArray(region.characterConcepts) ? region.characterConcepts : []);
+
         const npcPrompt = renderRegionNpcPrompt(region, {
             allLocationsInRegion: allLocationsForPrompt,
             existingNpcsInOtherRegions,
-            attributeDefinitions: attributeDefinitionsForPrompt
+            attributeDefinitions: attributeDefinitionsForPrompt,
+            characterConcepts
         });
 
         if (!npcPrompt) {
@@ -14455,6 +14486,8 @@ async function generateRegionFromPrompt(options = {}) {
         if (!region.entranceLocationId && entranceLocationId) {
             region.entranceLocationId = entranceLocationId;
         }
+
+        console.log(`* Region character concepts:`, region.characterConcepts);
 
         report('region:npcs', { message: 'Populating region with NPCs...' });
         await generateRegionNPCs({

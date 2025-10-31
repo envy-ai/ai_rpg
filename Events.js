@@ -800,7 +800,7 @@ class Events {
         const cleaned = this.cleanEventResponseText(combinedResponseText);
         const html = this.escapeHtml(cleaned).replace(/\n/g, '<br>');
 
-        const structured = this._parseEventPromptResponse(combinedResponseText);
+        const structured = this._parseEventPromptResponse(cleaned);
         if (!allowEnvironmentalEffects) {
             if (Array.isArray(structured.parsed.environmental_status_damage)) {
                 structured.parsed.environmental_status_damage = [];
@@ -1104,23 +1104,25 @@ class Events {
             parsedEntries.move_location = filterOutItems(parsedEntries.move_location, entry => entry);
         }
 
-        const firstAppearance = parsedEntries.npc_first_appearance || [];
-        if (firstAppearance.length) {
-            const arrivals = firstAppearance
-                .map(name => normalizeString(name))
-                .filter(name => name.length > 0)
-                .map(name => ({ name, action: 'arrived', destination: null, firstAppearance: true }));
+        if (parsedEntries.new_exit_discovered.length === 0 && parsedEntries.move_location.length === 0) {
+            const firstAppearance = parsedEntries.npc_first_appearance || [];
+            if (firstAppearance.length) {
+                const arrivals = firstAppearance
+                    .map(name => normalizeString(name))
+                    .filter(name => name.length > 0)
+                    .map(name => ({ name, action: 'arrived', destination: null, firstAppearance: true }));
 
-            if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
-                parsedEntries.npc_arrival_departure = [];
+                if (!Array.isArray(parsedEntries.npc_arrival_departure)) {
+                    parsedEntries.npc_arrival_departure = [];
+                }
+
+                // Check if the NPC already exists and is in this location (see Player.js and Location.js)
+                // so we can avoid redundant arrivals
+                const existingNames = Globals.location.getNPCNames();
+                const uniqueArrivals = arrivals.filter(entry => !existingNames.includes(entry.name));
+
+                parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
             }
-
-            // Check if the NPC already exists and is in this location (see Player.js and Location.js)
-            // so we can avoid redundant arrivals
-            const existingNames = Globals.location.getNPCNames();
-            const uniqueArrivals = arrivals.filter(entry => !existingNames.includes(entry.name));
-
-            parsedEntries.npc_arrival_departure.push(...uniqueArrivals);
         }
 
         this._trackItemsFromParsing(parsedEntries);
@@ -1890,7 +1892,7 @@ class Events {
                 });
             },
             move_new_location: async function (entries = [], context = {}) {
-                console.log('Processing move_new_location events:', entries);
+                //console.log('Processing move_new_location events:', entries);
                 const stream = context?.stream || null;
                 await applyExitDiscovery(this, entries, context, {
                     movePlayer: true,
@@ -1898,7 +1900,7 @@ class Events {
                     moveLabel: 'move_new_location'
                 });
                 if (entries && entries.length > 0) {
-                    console.log('Recording move events in context for move_new_location.');
+                    //console.log('Recording move events in context for move_new_location.');
                     // Initialize moveEvents array if it doesn't exist
                     if (!Array.isArray(context.moveEvents)) {
                         context.moveEvents = [];
@@ -2792,7 +2794,7 @@ class Events {
                     return;
                 }
 
-                const { findThingByName, alterThingByPrompt, findActorById } = this._deps;
+                const { findThingByName, alterThingByPrompt, findActorById, Location } = this._deps;
                 if (typeof findThingByName !== 'function') {
                     throw new Error('alter_item handler requires findThingByName dependency.');
                 }
@@ -2837,12 +2839,56 @@ class Events {
                     }
 
                     tasks.push((async () => {
+                        let ownerCandidate = null;
+
+                        const metadataOwnerId = thing.metadata?.ownerId;
+                        if (metadataOwnerId && typeof findActorById === 'function') {
+                            try {
+                                const found = findActorById(metadataOwnerId);
+                                if (found) {
+                                    ownerCandidate = found;
+                                }
+                            } catch (_) {
+                                ownerCandidate = null;
+                            }
+                        }
+
+                        if (!ownerCandidate && typeof thing.whoseInventory === 'function') {
+                            try {
+                                const owners = thing.whoseInventory() || [];
+                                if (Array.isArray(owners) && owners.length > 0) {
+                                    ownerCandidate = owners[0] || null;
+                                }
+                            } catch (_) {
+                                ownerCandidate = null;
+                            }
+                        }
+
+                        let locationCandidate = context.location || null;
+                        if (!locationCandidate) {
+                            const metadataLocationId = thing.metadata?.locationId;
+                            if (metadataLocationId && Location && typeof Location.get === 'function') {
+                                try {
+                                    locationCandidate = Location.get(metadataLocationId) || null;
+                                } catch (_) {
+                                    locationCandidate = null;
+                                }
+                            }
+                        }
+                        if (!locationCandidate && ownerCandidate?.currentLocation && Location && typeof Location.get === 'function') {
+                            try {
+                                locationCandidate = Location.get(ownerCandidate.currentLocation) || null;
+                            } catch (_) {
+                                locationCandidate = null;
+                            }
+                        }
+
                         const outcome = await alterThingByPrompt({
                             thing,
                             changeDescription,
                             newName: targetName,
-                            location: context.location || null,
-                            owner: context.player || this.currentPlayer || null
+                            location: locationCandidate,
+                            owner: ownerCandidate || context.player || this.currentPlayer || null
                         });
 
                         if (outcome?.originalName) {
@@ -4829,7 +4875,7 @@ class Events {
         if (typeof text !== 'string') {
             return '';
         }
-        return text.replace(/\*/g, '').trim();
+        return text.replace(/[\*\[\]]/g, '').trim();
     }
 
     static escapeHtml(text) {

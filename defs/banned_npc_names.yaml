@@ -25,8 +25,16 @@ banned_npc_names:
   - Vance
   - Faelan
   - Pip
+  - Kael
+  - Fin
+  - Rostov
+  - Jax
+  - Lira
+  - Kaelen
+  - Valerius
 banned_npc_name_regexes:
   - "/Kael/"
+  - "/Fael/"
   - "/Fin/"
   - "/Rostov/"
   - "/Jax/"

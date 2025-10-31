@@ -31,6 +31,9 @@ class Location {
   #randomEvents;
   #regionId;
   #lastVisitedTime = null; // Decimal hour timestamp of last visit by player
+  #characterConcepts = [];
+  #enemyConcepts = [];
+
   static #indexById = new Map();
   static #indexByName = new Map();
 
@@ -49,7 +52,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null } = {}) {
+  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -99,6 +102,8 @@ class Location {
     this.#generationHints = Location.#normalizeGenerationHints(generationHints);
     this.#randomEvents = Location.#normalizeRandomEvents(randomEvents);
     this.#lastVisitedTime = Number.isFinite(lastVisitedTime) ? lastVisitedTime : null;
+    this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
+    this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
 
     // Index by ID and name if provided
     Location.#indexById.set(this.#id, this);
@@ -641,7 +646,9 @@ class Location {
       npcIds: [...this.#npcIds],
       thingIds: [...this.#thingIds],
       statusEffects: this.getStatusEffects(),
-      randomEvents: this.randomEvents
+      randomEvents: this.randomEvents,
+      characterConcepts: this.characterConcepts,
+      enemyConcepts: this.enemyConcepts
     };
   }
 
@@ -682,7 +689,10 @@ class Location {
       stubMetadata: this.#stubMetadata ? { ...this.#stubMetadata } : null,
       npcIds: [...this.#npcIds],
       thingIds: [...this.#thingIds],
-      randomEvents: this.randomEvents
+      randomEvents: this.randomEvents,
+      statusEffects: this.getStatusEffects(),
+      characterConcepts: this.characterConcepts,
+      enemyConcepts: this.enemyConcepts
     };
   }
 
@@ -807,6 +817,24 @@ class Location {
 
   get scenery() {
     return this.things.filter(thing => thing.thingType === 'scenery');
+  }
+
+  get characterConcepts() {
+    return [...this.#characterConcepts];
+  }
+
+  set characterConcepts(concepts) {
+    this.#characterConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get enemyConcepts() {
+    return [...this.#enemyConcepts];
+  }
+
+  set enemyConcepts(concepts) {
+    this.#enemyConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#lastUpdated = new Date().toISOString();
   }
 
   addNpcId(id) {

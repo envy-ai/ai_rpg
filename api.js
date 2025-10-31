@@ -1244,7 +1244,6 @@ module.exports = function registerApiRoutes(scope) {
                 return fallback;
             }
 
-            console.log("Normalize summary text value:", value);
             if (typeof value === 'object') {
                 const candidateKeys = ['text', 'name', 'title', 'label', 'description', 'raw'];
                 for (const key of candidateKeys) {
@@ -7330,8 +7329,8 @@ module.exports = function registerApiRoutes(scope) {
 
                         console.log(`NPC turns config: takeNpcTurns=${takeNpcTurns}, maxNpcsToAct=${maxNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}, npcTurnFrequency=${npcTurnFrequency}`);
 
-                        console.log(Boolean(Globals.processedMove));
-                        console.log(Globals.processedMove);
+                        //console.log(Boolean(Globals.processedMove));
+                        //console.log(Globals.processedMove);
                         const playerMovedThisTurn = Boolean(Globals.processedMove);
                         if (playerMovedThisTurn) {
                             console.log('Skipping NPC turns because the player moved this turn.');
@@ -13458,7 +13457,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                console.log('Current setting details:', currentSetting.toJSON());
+                //console.log('Current setting details:', currentSetting.toJSON());
                 res.json({
                     success: true,
                     setting: currentSetting.toJSON(),
@@ -14022,7 +14021,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 };
 
-                console.log('🏗️  Starting region generation with regionOptions:', regionOptions);
+                //console.log('🏗️  Starting region generation with regionOptions:', regionOptions);
 
                 const regionResult = await generateRegionFromPrompt(regionOptions);
                 const region = regionResult.region;
