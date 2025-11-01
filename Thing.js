@@ -242,10 +242,23 @@ class Thing {
       damageMultiplier: definition.damageMultiplier,
       valueMultiplier: definition.valueMultiplier,
       attributeMultiplier: definition.attributeMultiplier,
+      attributeBonus: definition.attributeBonus,
       prevalence: definition.prevalence,
       description: definition.description,
       order: definition.order
     };
+  }
+
+  static getMaxAttributeBonus(rarity, level) {
+    const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
+    const rarityMultiplier = Thing.getRarityAttributeMultiplier(rarity);
+    const rarityBonus = Thing.getRarityAttributeBonus(rarity);
+    const effectiveMultiplier = Number.isFinite(rarityMultiplier) && rarityMultiplier > 0 ? rarityMultiplier : 1;
+    const factor = 0.5 * effectiveLevel * effectiveMultiplier;
+    const scaled = (4 + effectiveLevel) * factor + rarityBonus;
+    const rounded = Utils.roundAwayFromZero(scaled);
+
+    return rounded;
   }
 
   static loadRarityDefinitions({ forceReload = false } = {}) {
@@ -288,6 +301,7 @@ class Thing {
             damageMultiplier: safeNumber(rawDefinition.damage_multiplier, 1),
             valueMultiplier: safeNumber(rawDefinition.value_multiplier, 1),
             attributeMultiplier: safeNumber(rawDefinition.attribute_multiplier, 1),
+            attributeBonus: safeNumber(rawDefinition.attribute_bonus, 0),
             prevalence: safeNumber(rawDefinition.prevalence, 0),
             description: typeof rawDefinition.description === 'string' ? rawDefinition.description.trim() : '',
             order: order++
@@ -309,6 +323,7 @@ class Thing {
         damageMultiplier: 1,
         valueMultiplier: 1,
         attributeMultiplier: 1,
+        attributeBonus: 0,
         prevalence: 0,
         description: '',
         order: 0
@@ -414,6 +429,11 @@ class Thing {
   static getRarityAttributeMultiplier(rarity) {
     const definition = this.getRarityDefinition(rarity, { fallbackToDefault: true });
     return Number.isFinite(definition?.attributeMultiplier) ? definition.attributeMultiplier : 1;
+  }
+
+  static getRarityAttributeBonus(rarity) {
+    const definition = this.getRarityDefinition(rarity, { fallbackToDefault: true });
+    return Number.isFinite(definition?.attributeBonus) ? definition.attributeBonus : 0;
   }
 
   static getRarityColor(rarity) {

@@ -2147,9 +2147,14 @@ class AIRPGChat {
                     }
                 }
             }
+            let travelledTo = new Set();
             entries.forEach((location) => {
                 const destination = safeItem(location, 'a new location');
-                this.addEventSummary('🚶', `Travelled to ${destination}.`);
+
+                if (!travelledTo.has(destination)) {
+                    this.addEventSummary('🚶', `Travelled to ${destination}.`);
+                }
+                travelledTo.add(destination);
             });
         };
 

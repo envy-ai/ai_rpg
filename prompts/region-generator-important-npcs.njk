@@ -28,6 +28,12 @@ Here are the character concepts for the region:
 {% endfor %}
 </characterConcepts>
 
+Here are some secrets about the region:
+<secrets>
+{% for secret in secrets %}- {{ secret }}
+{% endfor %}
+</secrets>
+
 Here are all the locations in the region:
 <allLocationsInRegion>
 {% for loc in allLocationsInRegion %}

@@ -2304,7 +2304,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         name: regionStatus?.name || location?.stubMetadata?.regionName || 'Unknown Region',
         description: regionStatus?.description || location?.stubMetadata?.regionDescription || 'No region description available.',
         statusEffects: normalizeStatusEffects(region || regionStatus),
-        locations: regionLocations
+        locations: regionLocations,
+        secrets: regionStatus?.secrets || []
     };
 
     const mapItemContext = (item, equippedSlot = null) => {
@@ -4471,6 +4472,25 @@ function extractRegionCharacterConcepts(stubResponse) {
     return concepts;
 }
 
+function extractRegionSecrets(stubResponse) {
+    // Find the strings inside <secret> tags inside <regionSecrets>.
+    const secrets = [];
+    if (!stubResponse || typeof stubResponse !== 'string') {
+        return secrets;
+    }
+
+    const xmlDoc = Utils.parseXmlDocument(stubResponse, 'text/xml');
+    const regionSecrets = xmlDoc.getElementsByTagName("secrets");
+    if (regionSecrets.length > 0) {
+        const secretElements = regionSecrets[0].getElementsByTagName("secret");
+        for (let i = 0; i < secretElements.length; i++) {
+            secrets.push(secretElements[i].textContent.trim());
+        }
+    }
+
+    return secrets;
+}
+
 async function expandRegionEntryStub(stubLocation) {
     if (!stubLocation || !stubLocation.isStub) {
         return null;
@@ -4666,6 +4686,7 @@ async function expandRegionEntryStub(stubLocation) {
             const locationDefinitions = parseRegionStubLocations(stubResponse);
             const exitDefinitions = parseRegionExitsResponse(stubResponse);
             const characterConcepts = extractRegionCharacterConcepts(stubResponse);
+            const secrets = extractRegionSecrets(stubResponse);
 
             console.log("Character concepts extracted for region NPC generation:", characterConcepts);
 
@@ -4730,6 +4751,7 @@ async function expandRegionEntryStub(stubLocation) {
                     generationPrompt: stubPrompt.generationPrompt,
                     aiResponse: stubResponse,
                     characterConcepts,
+                    secrets
                 });
             } catch (npcError) {
                 console.warn('Failed to generate important NPCs for region stub:', npcError.message);
@@ -5364,19 +5386,23 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 { level: computedLevel, rarity: item.rarity }
             );
 
-            if (scaledAttributeBonuses.length) {
-                const bonusSummary = scaledAttributeBonuses
+            const bonusSummary = scaledAttributeBonuses.length
+                ? scaledAttributeBonuses
                     .map(bonus => {
                         const attr = bonus.attribute || 'Attribute';
                         const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
                         const sign = value >= 0 ? `+${value}` : `${value}`;
                         return `${attr} ${sign}`;
                     })
-                    .join(', ');
-                if (bonusSummary) {
-                    detailParts.push(`Bonuses: ${bonusSummary}`);
-                }
+                    .join(', ')
+                : '';
+            if (bonusSummary) {
+                detailParts.push(`Bonuses: ${bonusSummary}`);
             }
+
+            console.log(
+                `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
+            );
 
             const extendedDescription = [item.description, detailParts.join(' | ')].filter(Boolean).join(' ');
 
@@ -5780,18 +5806,18 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     )
                     : [];
 
-                if (scaledAttributeBonuses.length) {
-                    const bonusSummary = scaledAttributeBonuses
+                const bonusSummary = scaledAttributeBonuses.length
+                    ? scaledAttributeBonuses
                         .map(bonus => {
                             const attr = bonus.attribute || 'Attribute';
                             const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
                             const sign = value >= 0 ? `+${value}` : `${value}`;
                             return `${attr} ${sign}`;
                         })
-                        .join(', ');
-                    if (bonusSummary) {
-                        detailParts.push(`Bonuses: ${bonusSummary}`);
-                    }
+                        .join(', ')
+                    : '';
+                if (bonusSummary) {
+                    detailParts.push(`Bonuses: ${bonusSummary}`);
                 }
 
                 if (detailParts.length) {
@@ -5828,6 +5854,14 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     relativeLevel,
                     metadata
                 });
+
+                const ownerLevelForLog = owner && Number.isFinite(owner?.level)
+                    ? owner.level
+                    : (resolvedLocation?.baseLevel ?? resolvedRegion?.averageLevel ?? 'n/a');
+
+                console.log(
+                    `[ItemGeneration] Calculated stats for "${name}": ownerLevel=${ownerLevelForLog}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${itemData?.rarity || 'unknown'}, slot=${itemData?.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
+                );
                 things.set(thing.id, thing);
 
                 if (owner && typeof owner.addInventoryItem === 'function') {
@@ -5965,6 +5999,16 @@ function buildThingPromptItem(thing) {
     const itemOrScenery = thing.thingType === 'scenery' ? 'scenery' : 'item';
     const rarity = thing.rarity || metadata.rarity || getDefaultRarityLabel();
 
+    // iterate through attributeBonuses (array of {attribute, bonus}) and set them all to 4 * bonus + Thing.getMaxAttributeBonus(rarity, thing.level)
+    const attributeBonuses = normalizeBonuses(
+        Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
+            ? thing.attributeBonuses
+            : metadata.attributeBonuses
+    ).map(({ attribute, bonus }) => {
+        const finalBonus = bonus / roundAwayFromZero(Thing.getMaxAttributeBonus(rarity, thing.level)) * 4;
+        return { attribute, bonus: finalBonus };
+    });
+
     return {
         name: thing.name,
         description: thing.description || '',
@@ -5979,11 +6023,7 @@ function buildThingPromptItem(thing) {
         weight: metadata.weight ?? '',
         relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
         isVehicle: Boolean(metadata.isVehicle),
-        attributeBonuses: normalizeBonuses(
-            Array.isArray(thing.attributeBonuses) && thing.attributeBonuses.length
-                ? thing.attributeBonuses
-                : metadata.attributeBonuses
-        ),
+        attributeBonuses: attributeBonuses,
         causeStatusEffect: thing.causeStatusEffect || metadata.causeStatusEffect || null,
         properties: metadata.properties || ''
     };
@@ -6040,7 +6080,7 @@ async function alterThingByPrompt({
         rarity: itemForPrompt.rarity,
         value: itemForPrompt.value,
         weight: itemForPrompt.weight,
-        relativeLevel: itemForPrompt.relativeLevel ?? 0,
+        relativeLevel: 0,
         isVehicle: itemForPrompt.isVehicle ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
@@ -8811,15 +8851,18 @@ function scaleAttributeBonusesForItem(rawBonuses, { level = 1, rarity = null } =
         return [];
     }
 
+    /*
     const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
     const rarityMultiplier = Thing.getRarityAttributeMultiplier(rarity);
+    const rarityBonus = Thing.getRarityAttributeBonus(rarity);
     const effectiveMultiplier = Number.isFinite(rarityMultiplier) && rarityMultiplier > 0 ? rarityMultiplier : 1;
     const factor = 0.5 * effectiveLevel * effectiveMultiplier;
+    */
 
     return normalizedEntries.map(({ attribute, bonus }) => {
-        const scaled = bonus * factor;
-        const rounded = roundAwayFromZero(scaled);
-        //const clamped = Math.max(-20, Math.min(20, rounded));
+        const finalBonus = Thing.getMaxAttributeBonus(rarity, level) * bonus / 4;
+        const rounded = roundAwayFromZero(finalBonus);
+
         return { attribute, bonus: rounded };
     });
 }
@@ -10541,7 +10584,7 @@ function parseRegionNameRegenResponse(responseText) {
     }
 
     try {
-        const doc = Utils.parseXmlDocument(`<root>${responseText}</root>`, 'text/xml');
+        const doc = Utils.parseXmlDocument(responseText, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent || 'Parser error');
@@ -11346,7 +11389,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 }
 
 
-async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, characterConcepts = [] }) {
+async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiResponse, characterConcepts = [], secrets = [] }) {
     if (!region) {
         throw new Error('Region is required for generating region NPCs');
     }
@@ -11416,7 +11459,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             allLocationsInRegion: allLocationsForPrompt,
             existingNpcsInOtherRegions,
             attributeDefinitions: attributeDefinitionsForPrompt,
-            characterConcepts
+            characterConcepts,
+            secrets
         });
 
         if (!npcPrompt) {

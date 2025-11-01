@@ -24,6 +24,13 @@ class Utils {
     return Array.from(node.childNodes).map(n => s.serializeToString(n)).join('');
   }
 
+  static roundAwayFromZero(value) {
+    if (!Number.isFinite(value) || value === 0) {
+      return 0;
+    }
+    return value > 0 ? Math.ceil(value) : Math.floor(value);
+  }
+
   static #getDomParserInstance() {
     if (!sharedDomParser) {
       sharedDomParser = new DOMParser({ onError: () => { } });

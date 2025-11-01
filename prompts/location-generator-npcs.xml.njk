@@ -27,7 +27,7 @@ Here's a list of existing NPCs already present in this location:
 {% endfor %}
 </context>
 #}
-Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. Additionally, be sure to generate any NPCs mentioned in the description of the location. Output the NPCs in this format:
+Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. Additionally, be sure to generate any NPCs mentioned in the description of the location, but not in the location's npcs xml block, as those have already been generated. Output the NPCs in this format:
 
 <response>
 <npcs>

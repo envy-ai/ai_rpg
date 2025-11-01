@@ -26,6 +26,7 @@ class Region {
   #randomEvents = [];
   #characterConcepts = [];
   #enemyConcepts = [];
+  #secrets = [];
   static #indexById = new Map();
   static #indexByName = new Map();
 
@@ -35,7 +36,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [] } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -70,6 +71,7 @@ class Region {
     this.#relativeLevel = null; // to be set externally if needed
     this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
     this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
+    this.#secrets = Array.isArray(secrets) ? [...secrets] : [];
 
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
@@ -177,6 +179,7 @@ class Region {
       randomEvents: Array.isArray(data.randomEvents) ? data.randomEvents : [],
       characterConcepts: Array.isArray(data.characterConcepts) ? data.characterConcepts : [],
       enemyConcepts: Array.isArray(data.enemyConcepts) ? data.enemyConcepts : [],
+      secrets: Array.isArray(data.secrets) ? data.secrets : [],
     });
   }
 
@@ -205,6 +208,7 @@ class Region {
     let regionLevel = null;
     const characterConcepts = [];
     const enemyConcepts = [];
+    const secrets = [];
 
     const childElements = Array.from(regionElement.childNodes).filter(node => node.nodeType === 1);
     for (const child of childElements) {
@@ -263,6 +267,16 @@ class Region {
           if (value) {
             enemyConcepts.push(value);
           }
+        }
+      } else if (tag === 'secrets') {
+        const secretNodes = Array.from(child.getElementsByTagName('secret'));
+        if (secretNodes.length) {
+          secretNodes.forEach(node => {
+            const value = node.textContent?.trim();
+            if (value) {
+              secrets.push(value);
+            }
+          });
         }
       }
     }
@@ -344,7 +358,8 @@ class Region {
       averageLevel: regionLevel,
       randomEvents,
       characterConcepts,
-      enemyConcepts
+      enemyConcepts,
+      secrets
     });
   }
 
@@ -514,6 +529,15 @@ class Region {
     return [...this.#characterConcepts];
   }
 
+  get secrets() {
+    return [...this.#secrets];
+  }
+
+  set secrets(secrets) {
+    this.#secrets = Array.isArray(secrets) ? [...secrets] : [];
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   set characterConcepts(concepts) {
     this.#characterConcepts = Array.isArray(concepts) ? [...concepts] : [];
     this.#lastUpdated = new Date().toISOString();
@@ -623,6 +647,7 @@ class Region {
       randomEvents: [...this.#randomEvents],
       characterConcepts: [...this.#characterConcepts],
       enemyConcepts: [...this.#enemyConcepts],
+      secrets: [...this.#secrets],
     };
   }
 

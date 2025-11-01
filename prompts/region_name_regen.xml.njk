@@ -34,25 +34,28 @@ You are a specialized prompt generator for creating immersive RPG region names t
 </regions>
 </context>
 
-For each region listed above, generate exactly 10 replacement names that fit the setting, respect the provided descriptions, and strictly avoid terms that could appear on a banned list.
+For each region listed above, generate exactly 10 replacement names that fit the setting, respect the provided descriptions, and strictly avoid terms that could appear on a banned list. Vary the length and feel of the names for each region to provide diverse options.
 
-Respond with one regionNames block per region, keeping the blocks in the same order they were provided. Each block must follow this structure:
+Respond with one regionNames block per region, keeping the blocks in the same order they were provided, following this format:
 
-<regionNames>
-  <regionIndex>0</regionIndex>
-  <regionId>...</regionId> <!-- repeat the incoming regionId if provided; otherwise omit the tag -->
-  <originalName>...</originalName>
-  <name index="1">...</name>
-  <name index="2">...</name>
-  <name index="3">...</name>
-  <name index="4">...</name>
-  <name index="5">...</name>
-  <name index="6">...</name>
-  <name index="7">...</name>
-  <name index="8">...</name>
-  <name index="9">...</name>
-  <name index="10">...</name>
-</regionNames>
+<response>
+  <regionNames>
+    <regionIndex>0</regionIndex>
+    <regionId>...</regionId> <!-- repeat the incoming regionId if provided; otherwise omit the tag -->
+    <originalName>...</originalName>
+    <name index="1">...</name>
+    <name index="2">...</name>
+    <name index="3">...</name>
+    <name index="4">...</name>
+    <name index="5">...</name>
+    <name index="6">...</name>
+    <name index="7">...</name>
+    <name index="8">...</name>
+    <name index="9">...</name>
+    <name index="10">...</name>
+  </regionNames>
+  ... repeat for each region ...
+</response>
 
 Only include XML described above—no commentary, bullet lists, or additional text.
 

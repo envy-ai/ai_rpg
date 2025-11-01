@@ -1663,6 +1663,9 @@ class Events {
                 }).filter(Boolean);
             },
             received_quest: raw => {
+                if (!Globals.config.quests.enabled) {
+                    return [];
+                }
                 if (typeof raw !== 'string') {
                     return [];
                 }
@@ -2887,7 +2890,7 @@ class Events {
                             thing,
                             changeDescription,
                             newName: targetName,
-                            location: locationCandidate,
+                            location: Globals.location,
                             owner: ownerCandidate || context.player || this.currentPlayer || null
                         });
 
@@ -3998,7 +4001,7 @@ class Events {
         }
     }
 
-    static _applyCharacterAlteration({
+    static async _applyCharacterAlteration({
         npc,
         entry,
         parsedCharacter,
@@ -4164,21 +4167,28 @@ class Events {
             const beforeById = new Map(beforeItems.map(item => [item.id, item]));
             const desiredById = new Map();
 
+            await this._ensureItemsExist(desiredInventory);
+
             for (const itemName of desiredInventory) {
-                const thing = findThingByName(itemName);
-                if (!thing) {
-                    throw new Error(`Unable to locate item "${itemName}" while updating inventory for "${npc.name}".`);
-                }
-                desiredById.set(thing.id, thing);
-                if (!beforeById.has(thing.id)) {
-                    npc.addInventoryItem(thing);
-                    const metadata = { ...(thing.metadata || {}) };
-                    if (metadata.locationId) {
-                        this.removeThingFromLocation(thing, metadata.locationId);
+                const thing = Thing.getByName(itemName);
+                try {
+                    if (!thing) {
+                        throw new Error(`Unable to locate item "${itemName}" while updating inventory for "${npc.name}".`);
                     }
-                    metadata.ownerId = npc.id;
-                    delete metadata.locationId;
-                    thing.metadata = metadata;
+                    desiredById.set(thing.id, thing);
+                    if (!beforeById.has(thing.id)) {
+                        npc.addInventoryItem(thing);
+                        const metadata = { ...(thing.metadata || {}) };
+                        if (metadata.locationId) {
+                            this.removeThingFromLocation(thing, metadata.locationId);
+                        }
+                        metadata.ownerId = npc.id;
+                        delete metadata.locationId;
+                        thing.metadata = metadata;
+                    }
+                } catch (error) {
+                    console.warn(`Failed to add item "${itemName}" to inventory of "${npc.name}":`, error.message);
+                    console.debug(error);
                 }
             }
 

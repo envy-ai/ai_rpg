@@ -4,6 +4,7 @@ rarities:
     damage_multiplier: 0.75
     value_multiplier: 0.75
     attribute_multiplier: 0.75
+    attribute_bonus: -1
     prevalence: 50
     color: "#808080"
     description: "Items of very low quality, often broken or barely functional. These items are usually inexpensive and not very reliable. Typically 0-2 attribute modifiers, mostly negative."
@@ -12,6 +13,7 @@ rarities:
     damage_multiplier: 1
     value_multiplier: 1
     attribute_multiplier: 1
+    attribute_bonus: 0
     prevalence: 100
     color: "#CCFFFF"
     description: "Standard items that are widely available and functional. These items are reliable and serve their purpose well, making them a staple for most adventurers. Typically 0-2 attribute modifiers, mostly neutral or slightly positive."
@@ -19,7 +21,8 @@ rarities:
     label: "Uncommon"
     damage_multiplier: 1.25
     value_multiplier: 1.25
-    attribute_multiplier: 1.25
+    attribute_multiplier: 1.1
+    attribute_bonus: 1
     prevalence: 75
     color: "#00FF00"
     description: "Items that are of better quality than common ones, often featuring improved materials or craftsmanship. These items are less frequently found and are valued for their enhanced performance. Typically 1-3 attribute modifiers, mostly positive."
@@ -27,7 +30,8 @@ rarities:
     label: "Rare"
     damage_multiplier: 1.5
     value_multiplier: 1.5
-    attribute_multiplier: 1.5
+    attribute_multiplier: 1.2
+    attribute_bonus: 2
     prevalence: 25
     color: "#2000FF"
     description: "High-quality items that are not commonly found. These items often have unique features or superior craftsmanship, making them highly sought after by adventurers and collectors alike. Typically 2-4 attribute modifiers, mostly positive."
@@ -35,7 +39,8 @@ rarities:
     label: "Epic"
     damage_multiplier: 2
     value_multiplier: 2
-    attribute_multiplier: 2
+    attribute_multiplier: 1.3
+    attribute_bonus: 3
     prevalence: 5
     color: "#C000C0"
     description: "Exceptional items that are rare and often possess extraordinary qualities. These items are typically associated with legendary tales and are prized possessions for those fortunate enough to acquire them. Typically 3-5 attribute modifiers, mostly positive. Any negative modifiers should be -2 at most."
@@ -43,7 +48,8 @@ rarities:
     label: "Legendary"
     damage_multiplier: 3
     value_multiplier: 3
-    attribute_multiplier: 2.5
+    attribute_multiplier: 1.4
+    attribute_bonus: 4
     prevalence: 2
     color: "#FF3000"
     description: "Mythical items of immense power and rarity. These items are often the stuff of legends, imbued with magical properties or crafted by master artisans. They are coveted by heroes and villains alike. Typically 4-6 attribute modifiers, mostly positive. Any negative modifiers should be -2 at most."
@@ -51,7 +57,8 @@ rarities:
     label: "Artifact"
     damage_multiplier: 4
     value_multiplier: 4
-    attribute_multiplier: 3
+    attribute_multiplier: 1.5
+    attribute_bonus: 5
     prevalence: 1
     color: "#FFD700"
     description: "Unique and unparalleled items that transcend ordinary classifications. Artifacts are often one-of-a-kind, possessing immense historical significance or supernatural abilities. They are the pinnacle of item rarity and power. Typically 5-6 attribute modifiers, mostly positive. Any negative modifiers should be -1 at most."

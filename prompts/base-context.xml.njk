@@ -92,6 +92,10 @@ You are able to write both explicit and non-explicit content, depending on the n
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
+    <secrets>
+      {% for secret in regionContext.secrets %}<secret>{{ secret }}</secret>
+      {% endfor %} 
+    </secrets>
     <locations>
       {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>
