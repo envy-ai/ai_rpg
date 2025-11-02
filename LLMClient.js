@@ -58,6 +58,73 @@ class LLMClient {
         }
     }
 
+    static logPrompt({
+        prefix = 'prompt',
+        metadataLabel = '',
+        systemPrompt = '',
+        generationPrompt = '',
+        response = '',
+        sections = []
+    } = {}) {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const baseDir = Globals?.baseDir || process.cwd();
+            const logDir = path.join(baseDir, 'logs');
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+
+            const safeLabel = metadataLabel
+                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                : 'unknown';
+            const filePath = path.join(logDir, `${prefix}_${safeLabel}_${Date.now()}.log`);
+
+            const lines = [];
+
+            if (systemPrompt) {
+                lines.push('=== SYSTEM PROMPT ===', systemPrompt, '');
+            }
+
+            if (generationPrompt) {
+                lines.push('=== GENERATION PROMPT ===', generationPrompt, '');
+            }
+
+            if (Array.isArray(sections)) {
+                for (const entry of sections) {
+                    if (!entry) {
+                        continue;
+                    }
+                    const title = typeof entry.title === 'string' && entry.title.trim()
+                        ? entry.title.trim()
+                        : null;
+                    const content = entry.content !== undefined && entry.content !== null
+                        ? String(entry.content)
+                        : '';
+                    if (!title || !content) {
+                        continue;
+                    }
+                    lines.push(`=== ${title.toUpperCase()} ===`, content, '');
+                }
+            }
+
+            if (response) {
+                lines.push('=== RESPONSE ===', response, '');
+            }
+
+            if (!lines.length) {
+                return null;
+            }
+
+            fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
+            console.log(`Prompt log written to ${filePath}`);
+            return filePath;
+        } catch (error) {
+            console.warn(`Failed to write prompt log file: ${error.message}`);
+            return null;
+        }
+    }
+
     static #cloneAiConfig() {
         const source = LLMClient.ensureAiConfig();
         try {

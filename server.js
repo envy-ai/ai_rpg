@@ -8922,78 +8922,6 @@ function renderNpcNameRegenPrompt({ existingNpcSummaries = [], regenerationCandi
     }
 }
 
-function parseNpcNameRegenResponse(xmlContent) {
-    if (!xmlContent || typeof xmlContent !== 'string') {
-        return new Map();
-    }
-
-    try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
-        const parserError = doc.getElementsByTagName('parsererror')[0];
-        if (parserError) {
-            throw new Error(parserError.textContent);
-        }
-
-        const mapping = new Map();
-        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
-        for (const node of npcNodes) {
-            const oldNameRaw = node.getElementsByTagName('oldName')[0]?.textContent;
-            const oldName = normalizeNpcName(oldNameRaw);
-            if (!oldName) {
-                continue;
-            }
-
-            const candidateNodes = Array.from(node.getElementsByTagName('name')).filter(nameNode => {
-                if (!nameNode || !nameNode.parentNode) {
-                    return false;
-                }
-                if (nameNode.parentNode !== node) {
-                    return false;
-                }
-                return true;
-            });
-
-            const candidates = candidateNodes
-                .map(candidateNode => normalizeNpcName(candidateNode?.textContent))
-                .filter(Boolean);
-
-            if (!candidates.length) {
-                continue;
-            }
-
-            const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
-            const description = node.getElementsByTagName('description')[0]?.textContent?.trim() || '';
-
-            const entry = {
-                oldName,
-                candidates,
-                shortTemplate: shortDescription,
-                descriptionTemplate: description
-            };
-
-            const key = normalizeNameForComparison(oldName);
-            if (!mapping.has(key)) {
-                mapping.set(key, []);
-            }
-            mapping.get(key).push(entry);
-        }
-
-        // Take the first 4 items off of each name bucket and push them onto the end
-        for (const [key, bucket] of mapping.entries()) {
-            if (!Array.isArray(bucket) || bucket.length <= 4) {
-                continue;
-            }
-            const head = bucket.slice(0, 4);
-            const tail = bucket.slice(4);
-            mapping.set(key, tail.concat(head));
-        }
-        return mapping;
-    } catch (error) {
-        console.warn('Failed to parse NPC name regeneration response:', error.message);
-        return new Map();
-    }
-}
-
 async function enforceBannedNpcNames({
     npcDataList,
     existingNpcSummaries,
@@ -9003,177 +8931,262 @@ async function enforceBannedNpcNames({
         return npcDataList;
     }
 
-    const bannedWords = getBannedNpcWords();
-    if (!bannedWords.length) {
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+        console.warn('AI configuration missing for NPC name enforcement');
         return npcDataList;
     }
 
-    const workingList = npcDataList.map(npc => ({ ...npc }));
-    const messages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
+    const bannedWords = getBannedNpcWords();
+    const bannedRegexes = getBannedNpcRegexes();
 
-    const globalForbiddenNames = new Set();
-    const addForbiddenName = (value) => {
-        const normalized = normalizeNameForComparison(value);
-        if (normalized) {
-            globalForbiddenNames.add(normalized);
-        }
-    };
-
-    if (Array.isArray(existingNpcSummaries)) {
-        for (const summary of existingNpcSummaries) {
-            addForbiddenName(summary?.name);
-        }
+    if (!bannedWords.length && !bannedRegexes.length) {
+        return npcDataList;
     }
 
-    Player.getAll().forEach(npc => {
-        if (!npc || !npc.isNPC) {
-            return;
+    // Store original names before any processing
+    const originalNames = new Map();
+    npcDataList.forEach((npc, index) => {
+        if (npc?.name) {
+            originalNames.set(index, npc.name.trim());
         }
-        addForbiddenName(npc.name);
     });
 
-    for (const npc of workingList) {
-        if (isNpcNameAllowed(npc?.name, { bannedWords })) {
-            addForbiddenName(npc.name);
+    // Get existing names (excluding current NPCs being processed)
+    const existingNames = new Set();
+    const existingSummaries = Array.isArray(existingNpcSummaries) ? existingNpcSummaries : [];
+
+    // Add names from existing summaries
+    existingSummaries.forEach(summary => {
+        if (summary?.name) {
+            existingNames.add(summary.name.toLowerCase());
         }
+    });
+
+    // Add names from all players except those being processed
+    const npcIdsBeingProcessed = new Set(
+        npcDataList.map(npc => npc?.tempId || npc?.name).filter(Boolean)
+    );
+
+    Player.getAll().forEach(npc => {
+        if (npc?.isNPC && npc?.name && !npcIdsBeingProcessed.has(npc.id)) {
+            existingNames.add(npc.name.toLowerCase());
+        }
+    });
+
+    // Helper to check if a name passes all validation rules
+    const isNameValid = (name) => {
+        if (!name || typeof name !== 'string') return false;
+
+        const trimmedName = name.trim();
+        if (!trimmedName) return false;
+
+        const lowerName = trimmedName.toLowerCase();
+
+        // Check banned words
+        if (bannedWords.length && npcNameContainsBannedWord(trimmedName, bannedWords)) {
+            return false;
+        }
+
+        // Check banned regexes
+        for (const regex of bannedRegexes) {
+            if (regex.test(trimmedName)) {
+                return false;
+            }
+        }
+
+        // Check duplicates (excluding self)
+        if (existingNames.has(lowerName)) {
+            return false;
+        }
+
+        return true;
+    };
+
+    // Create a copy to work with, preserving original names
+    const workingNpcs = npcDataList.map((npc, index) => ({
+        ...npc,
+        originalName: originalNames.get(index) || npc.name
+    }));
+
+    // Filter out NPCs that need regeneration
+    const npcsNeedingRegen = workingNpcs.filter(npc => !isNameValid(npc.name));
+
+    if (!npcsNeedingRegen.length) {
+        return workingNpcs;
     }
 
     let attempts = 0;
-    while (attempts < 2) {
-        attempts += 1;
-        console.log(`🔄 NPC Name Regeneration Attempt ${attempts}`);
-        const offenders = workingList.filter(npc => !isNpcNameAllowed(npc?.name, { bannedWords }));
-        if (!offenders.length) {
-            break;
-        }
+    const maxAttempts = 3;
 
-        const offenderSummaries = offenders.map(npc => ({
-            name: npc.name,
+    while (attempts < maxAttempts && npcsNeedingRegen.some(npc => !isNameValid(npc.name))) {
+        attempts++;
+        console.log(`NPC name regeneration attempt ${attempts}/${maxAttempts}`);
+
+        // Prepare context for regeneration
+        const npcContexts = npcsNeedingRegen.map(npc => ({
+            originalName: npc.originalName,
             shortDescription: npc.shortDescription || '',
-            detailedDescription: npc.description || ''
+            description: npc.description || ''
         }));
 
-        const contextMap = new Map();
-        const addToContext = summary => {
-            if (!summary || !summary.name) {
-                return;
-            }
-            const key = normalizeNameForComparison(summary.name);
-            if (!key) {
-                return;
-            }
-            if (!contextMap.has(key)) {
-                contextMap.set(key, summary);
-            }
-        };
+        // Collect all existing NPCs for context (excluding those being regenerated)
+        const allExistingNpcs = Player.getAll()
+            .filter(p => p.isNPC && !npcIdsBeingProcessed.has(p.id))
+            .map(p => ({
+                name: p.name,
+                shortDescription: p.shortDescription || '',
+                description: p.description || ''
+            }));
 
-        if (Array.isArray(existingNpcSummaries)) {
-            existingNpcSummaries.forEach(addToContext);
-        }
+        // Add already-valid NPCs from current batch to context
+        workingNpcs.forEach(npc => {
+            if (isNameValid(npc.name)) {
+                allExistingNpcs.push({
+                    name: npc.name,
+                    shortDescription: npc.shortDescription || '',
+                    description: npc.description || ''
+                });
+            }
+        });
 
-        workingList.forEach(npc => addToContext({
-            name: npc?.name,
-            shortDescription: npc?.shortDescription || '',
-            detailedDescription: npc?.description || ''
-        }));
-
+        // Render regeneration prompt
         const prompt = renderNpcNameRegenPrompt({
-            existingNpcSummaries: Array.from(contextMap.values()),
-            regenerationCandidates: offenderSummaries
+            existingNpcs: allExistingNpcs,
+            regenerationCandidates: npcContexts
         });
 
         if (!prompt) {
+            console.warn('Failed to render NPC name regeneration prompt');
             break;
         }
 
-        const regenMessages = messages.concat({ role: 'user', content: prompt });
+        const messages = Array.isArray(conversationMessages)
+            ? [...conversationMessages, { role: 'user', content: prompt }]
+            : [{ role: 'user', content: prompt }];
 
-        let regenText = '';
-        let apiDurationSeconds = null;
         try {
             const requestStart = Date.now();
-            regenText = await LLMClient.chatCompletion({
-                messages: regenMessages,
+            const regenResponse = await LLMClient.chatCompletion({
+                messages,
                 temperature: 1,
                 metadataLabel: 'npc_name_regen'
             });
-            apiDurationSeconds = (Date.now() - requestStart) / 1000;
+
+            const durationSeconds = (Date.now() - requestStart) / 1000;
+
+            // Log the interaction
+            try {
+                logNpcNameRegeneration({
+                    prompt,
+                    responseText: regenResponse,
+                    durationSeconds
+                });
+            } catch (logError) {
+                console.warn('Failed to log NPC name regeneration:', logError.message);
+            }
+
+            // Parse and apply new names
+            const mapping = parseNpcNameRegenResponse(regenResponse);
+
+            if (mapping.size > 0) {
+                npcsNeedingRegen.forEach(npc => {
+                    // Use original name as lookup key
+                    const key = npc.originalName;
+                    const newNameInfo = mapping.get(key);
+
+                    if (newNameInfo?.candidates?.length > 0) {
+                        // Find first valid candidate
+                        for (const candidate of newNameInfo.candidates) {
+                            if (isNameValid(candidate)) {
+                                npc.name = candidate;
+
+                                // Update descriptions based on templates if provided
+                                if (newNameInfo.shortTemplate) {
+                                    npc.shortDescription = applyNpcNameTemplate(
+                                        newNameInfo.shortTemplate,
+                                        candidate
+                                    );
+                                }
+                                if (newNameInfo.descriptionTemplate) {
+                                    npc.description = applyNpcNameTemplate(
+                                        newNameInfo.descriptionTemplate,
+                                        candidate
+                                    );
+                                }
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+
         } catch (error) {
-            console.warn('NPC name regeneration failed:', error.message);
+            console.warn('NPC name regeneration request failed:', error.message);
             break;
-        }
-
-        if (!regenText.trim()) {
-            break;
-        }
-
-        try {
-            logNpcNameRegeneration({ prompt, responseText: regenText, durationSeconds: apiDurationSeconds });
-        } catch (logError) {
-            console.warn('Failed to log NPC name regeneration interaction:', logError.message);
-        }
-
-        messages.push({ role: 'user', content: prompt });
-        messages.push({ role: 'assistant', content: regenText });
-
-        const mapping = parseNpcNameRegenResponse(regenText);
-        if (!mapping.size) {
-            continue;
-        }
-
-        const offenderSet = new Set(offenders);
-        const iterationForbidden = new Set(globalForbiddenNames);
-        for (const npc of workingList) {
-            if (!npc || offenderSet.has(npc)) {
-                continue;
-            }
-            const normalized = normalizeNameForComparison(npc.name);
-            if (normalized) {
-                iterationForbidden.add(normalized);
-            }
-        }
-
-        let retryRequired = false;
-
-        for (const offender of offenders) {
-            const entry = pullRegeneratedNpcEntry(mapping, offender.name);
-            if (!entry) {
-                retryRequired = true;
-                continue;
-            }
-
-            const candidate = selectFirstAllowedNpcName(entry.candidates, {
-                bannedWords,
-                forbiddenNames: iterationForbidden
-            });
-
-            if (!candidate) {
-                retryRequired = true;
-                continue;
-            }
-
-            const shortDescription = applyNpcNameTemplate(entry.shortTemplate, candidate);
-            const description = applyNpcNameTemplate(entry.descriptionTemplate, candidate);
-
-            offender.name = candidate;
-            if (shortDescription) {
-                offender.shortDescription = shortDescription;
-            }
-            if (description) {
-                offender.description = description;
-            }
-
-            // Do not mark regenerated names as globally forbidden; this keeps future
-            // regeneration passes from exhausting the name space unnecessarily.
-        }
-
-        if (retryRequired) {
-            attempts += 1;
-            continue;
         }
     }
 
-    return workingList;
+    // Final validation - fall back to original names for any invalid ones
+    workingNpcs.forEach(npc => {
+        if (!isNameValid(npc.name)) {
+            console.log(`Falling back to original name for NPC: "${npc.originalName}"`);
+            npc.name = npc.originalName;
+        }
+    });
+
+    return workingNpcs;
+}
+
+// Helper function to parse regeneration response
+function parseNpcNameRegenResponse(xmlContent) {
+    const mapping = new Map();
+
+    if (!xmlContent || typeof xmlContent !== 'string') {
+        return mapping;
+    }
+
+    try {
+        const doc = Utils.parseXmlDocument(`<root>${xmlContent}</root>`, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+
+        if (parserError) {
+            throw new Error(parserError.textContent);
+        }
+
+        const npcNodes = Array.from(doc.getElementsByTagName('npc'));
+
+        for (const node of npcNodes) {
+            const oldNameNode = node.getElementsByTagName('oldName')[0];
+            const oldName = oldNameNode ? oldNameNode.textContent.trim() : null;
+
+            if (!oldName) continue;
+
+            const candidates = [];
+            const nameNodes = Array.from(node.getElementsByTagName('name'));
+
+            for (const nameNode of nameNodes) {
+                const name = nameNode.textContent?.trim();
+                if (name) {
+                    candidates.push(name);
+                }
+            }
+
+            if (candidates.length > 0) {
+                const shortTemplate = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+                const descriptionTemplate = node.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+
+                mapping.set(oldName, {
+                    candidates,
+                    shortTemplate,
+                    descriptionTemplate
+                });
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to parse NPC name regeneration response:', error.message);
+    }
+
+    return mapping;
 }
 
 function collectNpcSummariesForNameEnforcement({ location = null, region = null, excludeNpcIds = [] } = {}) {

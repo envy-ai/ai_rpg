@@ -2608,7 +2608,7 @@ class Events {
 
                     if (rewardLines.length) {
                         let rewardProse = '';
-                        const fallbackList = ['I receive the following quest rewards:', ...rewardLines.map(line => `* ${line}`)].join('\n');
+                        const fallbackList = ['Received item summary (shorten these item names to a reasonable size):', ...rewardLines.map(line => `* ${line}`)].join('\n');
                         try {
                             if (!rewardPromptContext) {
                                 const rewardLocation = context.location || null;
@@ -2631,24 +2631,31 @@ class Events {
                             const rewardResponse = await LLMClient.chatCompletion({
                                 messages: rewardMessages,
                                 metadataLabel: 'quest_reward_prose',
-                                timeoutMs: this._baseTimeout,
                                 validateXML: false,
+                            });
+                            LLMClient.logPrompt({
+                                prefix: 'quest_reward_prose',
+                                metadataLabel: 'quest_reward_prose',
+                                systemPrompt: parsedRewardTemplate.systemPrompt,
+                                generationPrompt: parsedRewardTemplate.generationPrompt,
+                                response: rewardResponse
                             });
                             if (typeof rewardResponse === 'string' && rewardResponse.trim()) {
                                 rewardProse = rewardResponse.trim();
                             }
                         } catch (error) {
                             console.warn('Failed to generate quest reward prose:', error.message);
+                            console.debug(error);
                         }
 
                         if (!rewardProse) {
                             rewardProse = fallbackList;
                         }
 
-                        const followupPayload = rewardProse.includes('I receive the following quest rewards:')
-                            ? rewardProse
-                            : `${rewardProse}\n\n${fallbackList}`;
-                        Events._enqueueFollowupEventCheck(followupPayload);
+                        // const followupPayload = rewardProse.includes('I receive the following quest rewards:')
+                        //     ? rewardProse
+                        //     : `${rewardProse}\n\n${fallbackList}`;
+                        Events._enqueueFollowupEventCheck(`${rewardProse}\n\n${fallbackList}`);
 
                         context.questCompletionRewards.push({
                             questId: quest.id,
@@ -2659,6 +2666,8 @@ class Events {
                             message: rewardProse,
                             rewards: rewardLines.slice()
                         });
+
+                        // Add the rewardProse to the chat log.
                     }
                 }
             },
