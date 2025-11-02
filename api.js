@@ -1,4 +1,3 @@
-const { randomUUID } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Player = require('./Player.js');
@@ -90,6 +89,14 @@ function maybeInstallAiDebugInterceptor(axiosInstance) {
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
         throw new Error('registerApiRoutes requires a scope object containing an Express app');
+    }
+
+    const { pushChatEntry, normalizeChatEntry } = scope;
+    if (typeof pushChatEntry !== 'function') {
+        throw new Error('registerApiRoutes requires pushChatEntry helper.');
+    }
+    if (typeof normalizeChatEntry !== 'function') {
+        throw new Error('registerApiRoutes requires normalizeChatEntry helper.');
     }
 
     if (!scope[Symbol.unscopables]) {
@@ -503,88 +510,6 @@ module.exports = function registerApiRoutes(scope) {
             return { removed, countdownUpdates };
         }
 
-        const generateMessageId = () => {
-            if (typeof randomUUID === 'function') {
-                try {
-                    return randomUUID();
-                } catch (_) {
-                    // fall through to fallback
-                }
-            }
-            return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-        };
-
-        const normalizeChatEntry = (entry) => {
-            if (!entry || typeof entry !== 'object') {
-                return null;
-            }
-            if (!entry.id) {
-                entry.id = generateMessageId();
-            }
-            if (!entry.timestamp) {
-                entry.timestamp = new Date().toISOString();
-            }
-            if (!Object.prototype.hasOwnProperty.call(entry, 'parentId')) {
-                entry.parentId = null;
-            }
-            return entry;
-        };
-
-        const collectNpcNamesForContext = (entry = null) => {
-            const names = new Set();
-
-            const addNpcId = (npcId) => {
-                if (!npcId || typeof npcId !== 'string') {
-                    return;
-                }
-                const npc = players.get(npcId);
-                if (npc && npc.isNPC) {
-                    const label = typeof npc.name === 'string' && npc.name.trim()
-                        ? npc.name.trim()
-                        : npcId;
-                    names.add(label);
-                }
-            };
-
-            let locationId = null;
-            if (entry && entry.locationId) {
-                locationId = entry.locationId;
-            } else if (entry && entry.metadata && entry.metadata.locationId) {
-                locationId = entry.metadata.locationId;
-            } else if (currentPlayer?.currentLocation) {
-                locationId = currentPlayer.currentLocation;
-            }
-
-            if (locationId) {
-                let locationRecord = gameLocations.get(locationId) || null;
-                if (!locationRecord && typeof Location?.get === 'function') {
-                    try {
-                        locationRecord = Location.get(locationId) || null;
-                    } catch (_) {
-                        locationRecord = null;
-                    }
-                }
-
-                if (locationRecord && Array.isArray(locationRecord.npcIds)) {
-                    locationRecord.npcIds.forEach(addNpcId);
-                }
-            }
-
-            if (currentPlayer) {
-                const partyMembers = typeof currentPlayer.getPartyMembers === 'function'
-                    ? currentPlayer.getPartyMembers()
-                    : (Array.isArray(currentPlayer.party) ? currentPlayer.party : []);
-
-                if (Array.isArray(partyMembers)) {
-                    partyMembers.forEach(addNpcId);
-                } else if (partyMembers && typeof partyMembers.forEach === 'function') {
-                    partyMembers.forEach(addNpcId);
-                }
-            }
-
-            return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-        };
-
         const requireLocationId = (value, contextLabel = 'chat entry') => {
             if (typeof value === 'string') {
                 const trimmed = value.trim();
@@ -594,54 +519,6 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             throw new Error(`${contextLabel} is missing a valid locationId`);
-        };
-
-        const pushChatEntry = (entry, collector = null, locationId = null) => {
-            const normalized = normalizeChatEntry(entry);
-            if (!normalized) {
-                return null;
-            }
-
-            const resolvedLocationId = (() => {
-                if (locationId && typeof locationId === 'string' && locationId.trim()) {
-                    return locationId.trim();
-                }
-                if (typeof normalized.locationId === 'string' && normalized.locationId.trim()) {
-                    return normalized.locationId.trim();
-                }
-                const metadataLocation = normalized.metadata && typeof normalized.metadata === 'object'
-                    ? normalized.metadata.locationId
-                    : null;
-                if (typeof metadataLocation === 'string' && metadataLocation.trim()) {
-                    return metadataLocation.trim();
-                }
-                throw new Error('pushChatEntry is missing a valid locationId');
-            })();
-
-            normalized.locationId = resolvedLocationId;
-            const existingMetadata = normalized.metadata && typeof normalized.metadata === 'object'
-                ? normalized.metadata
-                : {};
-            normalized.metadata = {
-                ...existingMetadata,
-                locationId: resolvedLocationId
-            };
-
-            if (!normalized.travel) {
-                const npcNames = collectNpcNamesForContext(normalized);
-                if (npcNames.length) {
-                    normalized.metadata = {
-                        ...normalized.metadata,
-                        npcNames
-                    };
-                }
-            }
-
-            chatHistory.push(normalized);
-            if (Array.isArray(collector)) {
-                collector.push(normalized);
-            }
-            return normalized;
         };
 
         const findMostRecentHistoryEntryWithRequestId = (collector = null, requestId = null) => {

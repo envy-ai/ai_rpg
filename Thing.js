@@ -254,7 +254,7 @@ class Thing {
     const rarityMultiplier = Thing.getRarityAttributeMultiplier(rarity);
     const rarityBonus = Thing.getRarityAttributeBonus(rarity);
     const effectiveMultiplier = Number.isFinite(rarityMultiplier) && rarityMultiplier > 0 ? rarityMultiplier : 1;
-    const factor = 0.5 * effectiveLevel * effectiveMultiplier;
+    const factor = 0.5 * effectiveMultiplier;
     const scaled = (4 + effectiveLevel) * factor + rarityBonus;
     const rounded = Utils.roundAwayFromZero(scaled);
 

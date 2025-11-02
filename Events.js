@@ -2550,6 +2550,8 @@ class Events {
                     const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
 
                     const grantedItems = [];
+                    grantedItems.push(...rewardItems);
+                    /*
                     if (rewardItems.length && typeof generateItemsByNames === 'function') {
                         try {
                             const createdItems = await generateItemsByNames({ itemNames: rewardItems, owner: player });
@@ -2568,7 +2570,6 @@ class Events {
                     if (!grantedItems.length) {
                         grantedItems.push(...rewardItems);
                     }
-
                     if (rewardCurrency > 0 && typeof player.adjustCurrency === 'function') {
                         const before = typeof player.getCurrency === 'function'
                             ? player.getCurrency()
@@ -2583,7 +2584,7 @@ class Events {
                             after
                         });
                     }
-
+                    */
                     if (rewardXp > 0 && typeof player.addExperience === 'function') {
                         player.addExperience(rewardXp);
                         if (!Array.isArray(context.experienceAwards)) {
@@ -2655,12 +2656,12 @@ class Events {
                         // const followupPayload = rewardProse.includes('I receive the following quest rewards:')
                         //     ? rewardProse
                         //     : `${rewardProse}\n\n${fallbackList}`;
-                        Events._enqueueFollowupEventCheck(`${rewardProse}\n\n${fallbackList}`);
+                        Events._enqueueFollowupEventCheck(rewardProse);
 
                         context.questCompletionRewards.push({
                             questId: quest.id,
                             questName: quest.name,
-                            items: grantedItems,
+                            items: [], //grantedItems,
                             xp: rewardXp,
                             currency: rewardCurrency,
                             message: rewardProse,

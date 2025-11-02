@@ -8,6 +8,7 @@ const nunjucks = require('nunjucks');
 const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
@@ -1427,6 +1428,136 @@ const pendingRegionStubs = new Map(); // Store region definitions awaiting full 
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
+
+function generateChatMessageId() {
+    if (typeof randomUUID === 'function') {
+        try {
+            return randomUUID();
+        } catch (_) {
+            // fall through to fallback ID generation below
+        }
+    }
+    return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeChatEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+        return null;
+    }
+    if (!entry.id) {
+        entry.id = generateChatMessageId();
+    }
+    if (!entry.timestamp) {
+        entry.timestamp = new Date().toISOString();
+    }
+    if (!Object.prototype.hasOwnProperty.call(entry, 'parentId')) {
+        entry.parentId = null;
+    }
+    return entry;
+}
+
+function collectNpcNamesForContext(entry = null) {
+    const names = new Set();
+
+    const addNpcId = (npcId) => {
+        if (!npcId || typeof npcId !== 'string') {
+            return;
+        }
+        const npc = players.get(npcId);
+        if (npc && npc.isNPC) {
+            const label = typeof npc.name === 'string' && npc.name.trim()
+                ? npc.name.trim()
+                : npcId;
+            names.add(label);
+        }
+    };
+
+    let locationId = null;
+    if (entry && entry.locationId) {
+        locationId = entry.locationId;
+    } else if (entry?.metadata?.locationId) {
+        locationId = entry.metadata.locationId;
+    } else if (currentPlayer?.currentLocation) {
+        locationId = currentPlayer.currentLocation;
+    }
+
+    if (locationId) {
+        let locationRecord = gameLocations.get(locationId) || null;
+        if (!locationRecord && typeof Location?.get === 'function') {
+            try {
+                locationRecord = Location.get(locationId) || null;
+            } catch (_) {
+                locationRecord = null;
+            }
+        }
+
+        if (locationRecord && Array.isArray(locationRecord.npcIds)) {
+            locationRecord.npcIds.forEach(addNpcId);
+        }
+    }
+
+    if (currentPlayer) {
+        const partyMembers = typeof currentPlayer.getPartyMembers === 'function'
+            ? currentPlayer.getPartyMembers()
+            : (Array.isArray(currentPlayer.party) ? currentPlayer.party : []);
+
+        if (Array.isArray(partyMembers)) {
+            partyMembers.forEach(addNpcId);
+        } else if (partyMembers && typeof partyMembers.forEach === 'function') {
+            partyMembers.forEach(addNpcId);
+        }
+    }
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function pushChatEntry(entry, collector = null, locationId = null) {
+    const normalized = normalizeChatEntry(entry);
+    if (!normalized) {
+        return null;
+    }
+
+    const resolvedLocationId = (() => {
+        if (locationId && typeof locationId === 'string' && locationId.trim()) {
+            return locationId.trim();
+        }
+        if (typeof normalized.locationId === 'string' && normalized.locationId.trim()) {
+            return normalized.locationId.trim();
+        }
+        const metadataLocation = normalized.metadata && typeof normalized.metadata === 'object'
+            ? normalized.metadata.locationId
+            : null;
+        if (typeof metadataLocation === 'string' && metadataLocation.trim()) {
+            return metadataLocation.trim();
+        }
+        throw new Error('pushChatEntry is missing a valid locationId');
+    })();
+
+    normalized.locationId = resolvedLocationId;
+    const existingMetadata = normalized.metadata && typeof normalized.metadata === 'object'
+        ? normalized.metadata
+        : {};
+    normalized.metadata = {
+        ...existingMetadata,
+        locationId: resolvedLocationId
+    };
+
+    if (!normalized.travel) {
+        const npcNames = collectNpcNamesForContext(normalized);
+        if (npcNames.length) {
+            normalized.metadata = {
+                ...normalized.metadata,
+                npcNames
+            };
+        }
+    }
+
+    chatHistory.push(normalized);
+    if (Array.isArray(collector)) {
+        collector.push(normalized);
+    }
+    return normalized;
+}
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -14763,6 +14894,7 @@ Events.initialize({
     shouldGenerateThingImage,
     createRegionStubFromEvent,
     getCurrencyLabel,
+    pushChatEntry,
     generatedImages,
     pendingRegionStubs,
     alterThingByPrompt,
@@ -14843,6 +14975,8 @@ const apiScope = {
     processJobQueue,
     runPlausibilityCheck,
     prepareBasePromptContext,
+    normalizeChatEntry,
+    pushChatEntry,
     players,
     skills,
     things,
