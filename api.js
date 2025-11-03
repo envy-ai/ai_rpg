@@ -8,6 +8,7 @@ const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
+const SanitizedStringSet = require('./SanitizedStringSet.js');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -1221,6 +1222,8 @@ module.exports = function registerApiRoutes(scope) {
                 ? (events.parsed && typeof events.parsed === 'object' ? events.parsed : events)
                 : null;
 
+            let movedTo = new SanitizedStringSet();
+
             if (parsed) {
                 Object.entries(parsed).forEach(([eventType, payload]) => {
                     if (!payload || (Array.isArray(payload) && payload.length === 0)) {
@@ -1328,8 +1331,14 @@ module.exports = function registerApiRoutes(scope) {
                                     return entry;
                                 })
                                 .filter(value => typeof value === 'string' && value.trim().length);
+                            console.log("Travel event destinations:", destinations);
+
                             destinations.forEach(location => {
-                                add('🚶', `Travelled to ${safeSummaryItem(location, 'a new location')}.`);
+                                if (!movedTo.has(location)) {
+                                    add('🚶', `Travelled to ${safeSummaryItem(location, 'a new location')}.`);
+                                    console.log(`🚶 Travelled to ${safeSummaryItem(location, 'a new location')}.`)
+                                }
+                                movedTo.add(location);
                             });
                             shouldRefresh = true;
                             break;

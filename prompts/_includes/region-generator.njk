@@ -29,7 +29,9 @@ Guidelines:
 
 * When proposing region exits, ensure the exit location you choose for each region makes sense given the current region's locations. For instance, if the current region is a starbase, any region that's not part of the starbase should have an exit location that is an airlock or docking bay.
 
-* If you generate a location that would hint at a new region, generate a regionExit for that new region. For example, if you create a location called "Ancient Temple Entrance", it would make sense to have a regionExit to a new region called "Ancient Temple Interior". A cave would suggest a cave system region, building would suggest an interior, etc.
+* If you generate a location that would hint at a new region, generate a regionExit for that new region. For example, if you create a location called "Ancient Temple Exterior", it would make sense to have a regionExit to a new region called "Ancient Temple Interior". A cave would suggest a cave system region, building would suggest an interior, etc. If a location is a building/cave/dungeon/etc exterior, always include a regionExit for the building interior and make sure to include the word "Exterior" in the location name.
+
+* When creating locations, make sure that the location makes sense inside the region. For instance, a "blacksmith's workshop" would not make sense as a location inside a forest region, but it would make sense inside a village region. It's good to generate locations mentioned in dialogue and quests, but only if they make sense for the region.
 
 * Always avoid contradictions with the setting, and use consistent terminology (e.g., Within, Contains, Adjacent) when describing regional relationships.
 

@@ -64,6 +64,7 @@ class LLMClient {
         systemPrompt = '',
         generationPrompt = '',
         response = '',
+        reasoning = '',
         sections = []
     } = {}) {
         try {
@@ -88,6 +89,10 @@ class LLMClient {
 
             if (generationPrompt) {
                 lines.push('=== GENERATION PROMPT ===', generationPrompt, '');
+            }
+
+            if (reasoning) {
+                lines.push('=== REASONING ===', reasoning, '');
             }
 
             if (Array.isArray(sections)) {
@@ -278,6 +283,11 @@ class LLMClient {
             throw new Error('AI model is not configured.');
         }
         payload.model = resolvedModel;
+
+        if (payload.model !== aiConfig.model) {
+            console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
+            console.trace();
+        }
 
         if (maxTokens !== undefined) {
             if (!Number.isFinite(maxTokens) || maxTokens <= 0) {

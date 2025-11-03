@@ -33,13 +33,14 @@ Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} 
 <npcs>
 <npc>
 <name>Full name of the NPC</name>
-<description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors</description>
-<shortDescription>10 words or less description of the NPC</shortDescription>
+<description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors. Replace their name with %NAME%.</description>
+<shortDescription>10 words or less description of the NPC. Replace their name with %NAME%.</shortDescription>
 <isHostile>true or false</isHostile>
 <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
 
 <race>their race (human, elf, android, etc)</race>
 
+<gender>male, female, none, or other</gender>
 <relativeLevel>Integer from -3 to +3</relativeLevel>
 <currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
 <attributes>

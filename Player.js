@@ -28,6 +28,7 @@ class Player {
     #shortDescription;
     #class;
     #race;
+    #gender;
     #id;
     #currentLocation;
     #imageId;
@@ -658,6 +659,25 @@ class Player {
         return null;
     }
 
+    static getByNames(names) {
+        // If names is a set, convert to array
+        if (names instanceof Set) {
+            names = Array.from(names);
+        }
+
+        if (!Array.isArray(names) || names.length === 0) {
+            return [];
+        }
+        const results = [];
+        for (const name of names) {
+            const player = this.getByName(name);
+            if (player) {
+                results.push(player);
+            }
+        }
+        return results;
+    }
+
     static getById(id) {
         if (!id) {
             return null;
@@ -941,6 +961,7 @@ class Player {
         this.#id = options.id ?? Player.#generateUniqueId();
         this.#class = options.class ?? "person";
         this.#race = options.race ?? "human";
+        this.#gender = options.gender ?? "unspecified";
         this.#isDead = options.isDead ?? false;
         this.#inCombat = options.inCombat ?? false;
         this.#characterArc = Player.#normalizeCharacterArc(options.characterArc);
@@ -1672,6 +1693,18 @@ class Player {
     updatePreviousLocation() {
         this.#previousLocationId = this.#currentLocation;
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    get gender() {
+        return this.#gender;
+    }
+
+    set gender(value) {
+        // Make sure it's a string
+        if (typeof value !== 'string') {
+            throw new Error('Gender must be a string');
+        }
+        this.#gender = value.toLowerCase().trim();
     }
 
     get lastActionWasTravel() {
@@ -3627,6 +3660,7 @@ class Player {
             shortDescription: this.#shortDescription,
             class: this.#class,
             race: this.#race,
+            gender: this.#gender,
             level: this.#level,
             health: this.#health,
             maxHealth: this.maxHealth,
@@ -3698,6 +3732,7 @@ class Player {
             shortDescription: data.shortDescription,
             class: data.class,
             race: data.race,
+            gender: data.gender,
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,

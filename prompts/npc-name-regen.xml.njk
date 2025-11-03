@@ -12,34 +12,55 @@ Here's a list of existing NPCs:
 
 Here is a list of NPC names that use banned words:
 <npcsToRegenerateName>
-{% for npc in npcToRegenerateName %}- {{ npc.name }}
+{% for npc in npcsToRegenerateName %}- {{ npc.name }}
 <npc>
-  <name>{{ npc.name }}</name>
+  <name>{{ npc.originalName }}</name>
+  <race>{{ npc.race }}</race>
+  <gender>{{ npc.gender }}</gender>
   <shortDescription>{{ npc.shortDescription }}</shortDescription>
-  <description>{{ npc.detailedDescription }}</description>
+  <description>{{ npc.description }}</description>
 </npc>
 {% endfor %}
 </npcsToRegenerateName>
 
-
-For each NPC, generate a set of 20 new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. Write their original description and short description with the old name replaced by the placeholder '%NAME%'. Vary the length and feel of the names for each NPC to provide diverse options.Return them in this format:
+For each NPC, generate a set of 20 new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. Write their original description and short description with the old name replaced by the placeholder '%NAME%'. Return them in this format, being sure to quote the index attribute values carefully:
 
 <npcs>
   <npc>
     <oldName>original npc name</oldName>
-    <name index='1'>new npc name</name>
-    <name index='2'>new npc name</name>
-    <name index='3'>new npc name</name>
-    <name index='4'>new npc name</name>
-    <name index='5'>new npc name</name>
-    ...
-    <name index='20'>new npc name</name>
+    <shortNames>
+      <name>short npc name</name>
+      ... 4 more short names ...
+    </shortNames>
+    <mediumNames>
+      <name>2-word name</name>
+      ... 4 more medium names ...
+    </mediumNames>
+    <longNames>
+      <name>3-word name or name with 4+ syllables</name>
+      ... 4 more long names ...
+    </longNames>
+    <namesWithTitles>
+      <name>name with title or honorific</name>
+      ... 4 more names with titles ...
+    </namesWithTitles>
+    <differentCultureNames>
+      <name>culturally distinct name</name>
+      ... 4 more different culture names ...
+    </differentCultureNames>
+    <weirdNames>
+      <name>unusual or strange name</name>
+      ... 4 more weird names ...
+    </weirdNames>
+
     <shortDescription>short description</shortDescription>
     <description>description</description>
   </npc>
   <npc>
-    ... the rest of the npcs ...
+    ... the rest of the npcs listed in namesToRegenerate ...
   </npc>
 </npcs>
+
+
 </generationPrompt>
 </template>

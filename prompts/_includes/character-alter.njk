@@ -87,6 +87,7 @@ Guidelines:
 - Refresh personality details to match the new mindset or outlook while preserving continuity with prior lore when appropriate.
 - Rename the character only when the alteration necessitates it; otherwise keep the existing name.
 - Ensure the revised character still fits the location, setting, and campaign tone, and keep banned names in mind.
+- Item names should be no more than 5 words long. 
 
 Return the character in the following format:
 <npc>
@@ -138,7 +139,7 @@ Return the character in the following format:
     </ability>
     ... more lost abilities as needed ...
   </lostAbilities>
-  <inventory>
+  {#<inventory>
     <item>
       <name>The exact name of an item the character has permanently gained due to the alteration</name>
       <description>Brief description of the item's appearance, properties, and any relevant lore</description>
@@ -152,5 +153,5 @@ Return the character in the following format:
       <reason>Brief explanation of why the item was lost or dropped</reason>
     </item>
     ... more dropped items as needed ...
-  </droppedItems>
+  </droppedItems>#}
 </npc>
