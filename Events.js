@@ -1922,7 +1922,7 @@ class Events {
                     for (const entry of entries) {
                         //console.log('Recording move event for entry:', entry);
                         if (entry && entry.name) {
-                            //Events.movedLocations.add(entry.name);
+                            Events.movedLocations.add(entry.name);
                             const moveEventData = {
                                 type: 'move_new_location',
                                 destination: entry.name,
