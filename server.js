@@ -8329,12 +8329,11 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             ? previousLevel
             : (Number.isFinite(currentLevel) ? currentLevel - 1 : null);
 
-        const historyEntries = chatHistory.slice(-10);
-        const historyText = historyEntries.length
-            ? historyEntries.map(entry => `[${entry.role}] ${entry.content}`).join('\n')
-            : '';
+        const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
+
         const levelUpLine = `[system] ${trimmedName} advanced ${Number.isFinite(priorLevel) ? `from level ${priorLevel} ` : ''}to level ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}.`;
-        const gameHistory = historyText ? `${historyText}\n${levelUpLine}` : levelUpLine;
+        const baseHistoryText = typeof baseContext?.gameHistory === 'string' ? baseContext.gameHistory.trim() : '';
+        const gameHistory = baseHistoryText ? `${baseHistoryText}\n${levelUpLine}` : levelUpLine;
 
         const existingNpcSummaries = collectNpcSummariesForLevelUp({
             character,
@@ -8357,8 +8356,6 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             class: '',
             race: ''
         };
-
-        const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
 
         const promptTemplateBase = {
             ...baseContext,
@@ -8547,6 +8544,8 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 
     return abilityPromise;
 }
+
+Globals.generateLevelUpAbilitiesForCharacter = generateLevelUpAbilitiesForCharacter;
 
 function parseInventoryItems(xmlContent) {
     try {
@@ -11891,7 +11890,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         for (const npcData of parsedNpcs) {
             if (npcData && typeof npcData === 'object') {
-                npcData.description = applyNpcNameTemplates(npcData.description, npcData.name);
+                npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
                 npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
             }
         }

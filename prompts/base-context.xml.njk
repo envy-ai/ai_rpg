@@ -326,7 +326,7 @@ You are able to write both explicit and non-explicit content, depending on the n
         {% if quest.secretNotes %}<secretNotes>{{ quest.secretNotes }}</secretNotes>{% endif -%}
         <objectives>
           {%- for objective in quest.objectives %}
-          <objective completed="{{ objective.completed }}" optional="{{ objective.optional }}" index="{{ loop.index0 }}">{{ objective.description }}</objective>
+          <objective completed="{{ objective.completed }}" optional="{{ objective.optional }}" index="{{ loop.index }}">{{ objective.description }}</objective>
           {% endfor -%}
         </objectives>
         <giver>{{ quest.giver }}</giver>

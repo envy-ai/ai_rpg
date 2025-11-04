@@ -10216,9 +10216,18 @@
                 latestNpc.abilities.forEach(ability => {
                     if (!ability) return;
                     const label = ability.name || 'Ability';
-                    const typeSuffix = ability.type ? ` (${ability.type})` : '';
+                    const typeLabel = ability.type ? String(ability.type) : '';
+                    const numericLevel = Number.isFinite(Number(ability.level)) ? Number(ability.level) : null;
+                    const metaParts = [];
+                    if (typeLabel) {
+                        metaParts.push(typeLabel);
+                    }
+                    if (numericLevel !== null) {
+                        metaParts.push(`Level ${numericLevel}`);
+                    }
+                    const metaSuffix = metaParts.length ? ` (${metaParts.join(' • ')})` : '';
                     const descriptionText = ability.description || ability.text || '';
-                    const entry = `<strong>${escapeHtml(label)}${escapeHtml(typeSuffix)}</strong>${descriptionText ? `<span class="npc-view-list-description">${escapeHtml(descriptionText)}</span>` : ''}`;
+                    const entry = `<strong>${escapeHtml(label)}${escapeHtml(metaSuffix)}</strong>${descriptionText ? `<span class="npc-view-list-description">${escapeHtml(descriptionText)}</span>` : ''}`;
                     abilityEntries.push(entry);
                 });
             }
