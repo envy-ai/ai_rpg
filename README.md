@@ -69,7 +69,7 @@ Plenty of other LLMs will work as well. Some will not. Drop by the <a href='http
    mkdir airpg
    cd airpg
    git clone https://github.com/envy-ai/ai_rpg .
-   git checkout 1.0-alpha8
+   git checkout 1.0-beta1
    ```
 
 4. Install dependencies:
@@ -121,19 +121,16 @@ The front end talks to the JSON API defined in `server.js`. Key routes cover cha
 ## Technical Features
 
 - **AI-first orchestration** – Uses configurable Nunjucks prompt templates to describe players, regions, locations, and encounters before calling any OpenAI-compatible chat completion API.
-- **Rich world state** – Manages players, NPCs, items, exits, and regions entirely in memory with helpers in `Player`, `Region`, `Location`, `Thing`, and related classes.
+- **Rich world state** – Manages players, NPCs, exits, locations, regions, and quests entirely in memory with helpers in `Player`, `Region`, `Location`, `Thing`, `Quest`, and related classes.
 - **Browser control panel** – Ships Nunjucks views and vanilla JS for chat, new-game onboarding, settings, configuration editing, and debug dashboards (with Cytoscape-powered maps).
-- **Optional art generation** – Integrates with ComfyUI to queue portraits, locations, exits, and item renders using customizable workflow JSON templates.
+- **Optional art generation** – Integrates with ComfyUI or external API providers to queue portraits, locations, exits, and item renders using customizable workflow JSON templates.
 - **Persistent saves and logs** – Stores save-game snapshots, prompt transcripts, and generated images on disk so you can resume or debug any adventure.
 
 ## Future plans
 
 Near future:
 
-- Quests
-- Character goals
 - Elapsed in-game time, day/night cycle, seasons, etc
-- Configure multiple AIs for different types of prompts so you can throw character prose at the big ones and have the little ones handle housekeeping for speed.
 
 ## Development Tips
 
