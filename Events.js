@@ -55,7 +55,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'completed_quest_objective', prompt: `Did the player complete one or more quest objectives this turn? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
-        { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See that sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
+        { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See the sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
         { key: 'disposition_check', prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.` },
         { key: 'time_passed', prompt: `In decimal hours, how much time has passed since the last turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.` },
         { key: 'triggered_abilities', prompt: `Were any character's triggered abilities triggered this turn? If so, list them in the format "[exact character name] -> [exact ability name]", separated by '|' if multiple. If none, answer N/A.` },
@@ -1303,9 +1303,9 @@ class Events {
                         return null;
                     }
 
-                    if (normalizedKind === 'location') {
-                        Events.movedLocations.add(name);
-                    }
+                    // if (normalizedKind === 'location') {
+                    //     Events.movedLocations.add(name);
+                    // }
 
                     const vehicleType = normalizeString(vehicle);
                     return {
@@ -1922,7 +1922,7 @@ class Events {
                     for (const entry of entries) {
                         //console.log('Recording move event for entry:', entry);
                         if (entry && entry.name) {
-                            Events.movedLocations.add(entry.name);
+                            //Events.movedLocations.add(entry.name);
                             const moveEventData = {
                                 type: 'move_new_location',
                                 destination: entry.name,

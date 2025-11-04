@@ -57,6 +57,20 @@ class Utils {
         lowerCaseTags: false,
         lowerCaseAttributeNames: false
       });
+
+      // Remove punctuation from all attribute names
+      $('*').each((_, elem) => {
+        const attribs = elem.attribs || {};
+        for (const attrName of Object.keys(attribs)) {
+          const normalizedAttrName = attrName.replace(/[^\w-]/g, '');
+          if (normalizedAttrName !== attrName) {
+            const value = attribs[attrName];
+            delete attribs[attrName];
+            attribs[normalizedAttrName] = value;
+          }
+        }
+      });
+
       const normalized = $.xml();
       return typeof normalized === 'string' && normalized.trim() ? normalized : trimmed;
     } catch (error) {

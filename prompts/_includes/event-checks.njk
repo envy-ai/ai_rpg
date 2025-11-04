@@ -1,3 +1,8 @@
+<sampleExperiencePointValues>
+  {% for exp in experiencePointValues %}
+  {{ exp.action }}: {{ exp.value }}{% endfor %}
+</sampleExperiencePointValues>
+
 <task>You are an AI designed to analyze a text-based RPG scene and determine if specific events have occurred. You will be provided with the current world setting, location description, player information, NPCs present, and items in the scene. Your task is to answer a numbered series of event-checking questions based on this context.</task>
 
 Text to check for events:
