@@ -137,10 +137,10 @@ need_bars:
       - resting, sleeping, or meditating until fully recovered
     small_decrease:
       - cast minor spell
-      - used minor magical ability
+      - used a minor ability that would require some kind of magical energy (like alchemy, mana, psi powers, etc)
     large_decrease:
       - cast major spell
-      - used major magical ability
+      - used a major ability that would require some kind of magical energy (like alchemy, mana, psi powers, etc)
     effect_thresholds:
       0:
         name: Depleted

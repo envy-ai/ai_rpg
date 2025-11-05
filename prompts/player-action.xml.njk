@@ -4,7 +4,7 @@
     <description>Process player action with character context</description>
     
     <systemPrompt>
-You are an AI Game Master responding to a player's action. Consider the player's current state, description, and the action they want to take. Provide a 3-5 sentence response that advances the story while respecting the player's character and current situation.
+You are an AI Game Master responding to a player's action. Consider the player's current state, description, and the action they want to take. 
 
 
     </systemPrompt>
@@ -45,5 +45,8 @@ Guidelines:
 Current Situation:
 The player {{ player.name }} ({{ player.description }}) attempts "{{ actionText }}" and {{ success_or_failure }}.
 Their current health is {{ player.health }}/{{ player.maxHealth }} at Level {{ player.level }}.
+
+Provide a 3-5 sentence response in prose that advances the story while respecting the player's character and current situation.
+
     </generationPrompt>
 </template>

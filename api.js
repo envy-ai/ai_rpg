@@ -9,6 +9,7 @@ const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -5290,13 +5291,22 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
 
-                const raw = await LLMClient.chatCompletion(requestOptions);
+                let raw = await LLMClient.chatCompletion(requestOptions);
                 if (!actor.isNPC && playerPromptLog) {
                     logPlayerActionPrompt({
                         ...playerPromptLog,
                         responseText: raw
                     });
                 }
+
+                if (Globals.config.repetition_buster) {
+                    // extract final prose from numbered list
+                    const finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                    if (finalProseMatch && finalProseMatch[1]) {
+                        raw = finalProseMatch[1].trim();
+                    }
+                }
+
                 const debug = {
                     actorId: actor.id || null,
                     actorName: actor.name || null,
@@ -6341,6 +6351,8 @@ module.exports = function registerApiRoutes(scope) {
                     };
                 }
 
+                let promptType = null;
+
                 if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                     try {
                         stream.status('player_action:prompt', 'Building prompt for AI response.');
@@ -6397,7 +6409,7 @@ module.exports = function registerApiRoutes(scope) {
                             characterName: 'The player',
                             additionalLore: additionalLore.trim(),
                         };
-
+                        promptType = promptVariables.promptType;
                         if (attackContextForPlausibility) {
                             const isAttack = Boolean(attackContextForPlausibility.isAttack);
                             const attackerDetails = attackContextForPlausibility.attacker || null;
@@ -6693,7 +6705,17 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.temperature = templateTemperature;
                 }
 
-                const aiResponse = await LLMClient.chatCompletion(requestOptions);
+                let aiResponse = await LLMClient.chatCompletion(requestOptions);
+                //console.log("Player Prose Request Options:", requestOptions);
+
+                if (promptType === 'player-action' && Globals.config.repetition_buster) {
+                    // extract final prose from numbered list
+                    const finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                    if (finalProseMatch && finalProseMatch[1]) {
+                        aiResponse = finalProseMatch[1].trim();
+                    }
+                }
+
                 const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: 'player_action', streamEmitter: stream });
 
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {

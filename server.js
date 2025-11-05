@@ -6916,6 +6916,9 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             };
         }
 
+        npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
+        npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
+
         const attributes = {};
         const attrSource = npcData?.attributes || {};
         for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {

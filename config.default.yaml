@@ -144,6 +144,7 @@ combat_npc_turns:
   npcTurnFrequency: 1
 baseWeaponDamage: 5
 baseHealthPerLevel: 15
+repetition_buster: false
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.
 # You can omit this for sophisticated models that can handle more complex prompts.
