@@ -10,6 +10,15 @@ class SanitizedStringSet extends Set {
       .trim()
       .toLowerCase();
   }
+
+  static fromArray(arr) {
+    const set = new SanitizedStringSet();
+    for (const item of arr) {
+      set.add(item);
+    }
+    return set;
+  }
+
   add(value) {
     if (typeof value === 'string') {
       const sanitized = SanitizedStringSet.#sanitizeValue(value);

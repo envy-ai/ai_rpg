@@ -32,11 +32,11 @@ Here's a list of existing NPCs already present in this location:
 <task>
 First, make a list of names of existing NPCs from the gameState tag.
 
-Then, generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. To form a cohesive setting, you may connect newly generated NPCs with one another or with the existing NPCs listed in the gameState tag.
+Then, generate {{ numNpcs }} additional NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. **IMPORTANT: The generated NPC must be entirely new and not match any existing NPC from the gameState, not just those in the current location. Check thoroughly against the entire list of existing NPCs.**
 
 Then, generate 3 short memories for each newly generated NPC, from their perspective, about recent significant events they have experienced. These should be no more than 2 sentences long each, and should include interactions with other NPCs, places, things, etc.
 
-Finally, check each newly generated NPC against the banned names, banned concepts, and existing NPCs listed in the gameState tag. If any newly generated NPC matches one of these, generate a new NPC to replace it.
+Finally, check each newly generated NPC against the banned names, banned concepts, and ALL existing NPCs in the gameState. If any newly generated NPC matches one of these, generate a new NPC to replace it.
 </task>
 
 Format your response as follows:

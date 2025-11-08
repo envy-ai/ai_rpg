@@ -11536,10 +11536,28 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         const parsedResult = parseLocationNpcs(npcResponse);
+        let npcsAtLocation = SanitizedStringSet.fromArray(location.getNpcNames());
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
+
+        // Remove NPCs from npcs and mpcMemoryMap that have a name property that's contained in npcsAtLocation
+        npcs = npcs.filter(npcData => {
+            const npcName = npcData && typeof npcData.name === 'string' ? npcData.name : '';
+            if (npcName && npcsAtLocation.has(npcName)) {
+                console.log(`🧑‍🤝‍🧑 Skipping NPC generation for duplicate name "${npcName}" at location ${location.id}`);
+                // Remove from npcMemoryMap as well
+                if (npcMemoryMap instanceof Map && npcMemoryMap.has(npcName)) {
+                    npcMemoryMap.delete(npcName);
+                }
+                return false; // Exclude this NPC from the list
+            }
+            return true; // Keep this NPC
+        });
+
         const baseConversation = [...messages, { role: 'assistant', content: npcResponse }];
         const npctimeoutScale = Math.max(1, npcs.length || npcCountHint);
+
+
 
         const originalNpcNames = npcs.map(npc => npc?.name || null);
         let npcRenameMap = new Map();
