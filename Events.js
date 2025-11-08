@@ -3161,7 +3161,13 @@ class Events {
                     return;
                 }
 
+                if (Globals.processedMove()) {
+                    // If we just processed a move, skip generating new items, as the location generator handles this
+                    return;
+                }
                 await this._ensureItemsExist(items, context.location);
+
+
 
                 for (const item of items) {
                     if (typeof item === 'string' && item.trim()) {
@@ -3171,6 +3177,11 @@ class Events {
             },
             scenery_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
+                    return;
+                }
+
+                if (Globals.processedMove()) {
+                    // If we just processed a move, skip generating new scenery, as the location generator handles this
                     return;
                 }
 
@@ -3252,6 +3263,44 @@ class Events {
                     }
                     return null;
                 };
+
+                if (Globals.processedMove()) {
+                    const indexesToRemove = [];
+                    for (let index = 0; index < entries.length; index += 1) {
+                        const entry = entries[index];
+                        const normalizedName = normalizeString(entry?.name);
+                        const candidateIds = [
+                            typeof entry?.id === 'string' ? entry.id.trim() : null,
+                            typeof entry?.npcId === 'string' ? entry.npcId.trim() : null,
+                            typeof entry?.npcID === 'string' ? entry.npcID.trim() : null,
+                            typeof entry?.actorId === 'string' ? entry.actorId.trim() : null
+                        ].filter(Boolean);
+
+                        let existingNpc = null;
+                        for (const candidateId of candidateIds) {
+                            existingNpc = resolveActorById(candidateId);
+                            if (existingNpc) {
+                                break;
+                            }
+                        }
+                        if (!existingNpc && normalizedName && typeof findActorByName === 'function') {
+                            existingNpc = findActorByName(normalizedName) || null;
+                        }
+                        if (!existingNpc) {
+                            indexesToRemove.push(index);
+                        }
+                    }
+
+                    if (indexesToRemove.length) {
+                        for (let i = indexesToRemove.length - 1; i >= 0; i -= 1) {
+                            entries.splice(indexesToRemove[i], 1);
+                        }
+                    }
+
+                    if (!entries.length) {
+                        return;
+                    }
+                }
 
                 const collectPartyNames = (actor) => {
                     if (!actor) {
