@@ -24,7 +24,10 @@ GUIDELINES:
 - Reference sensory details and story hooks that bridge to and from the origin location.
 - Mention at least one notable feature that hints at additional unexplored directions.
 - Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.
-- For the number of npcs, items, scenery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. 1 to 3 is usually normal (except for hostiles, which are often 0 in safe territory).
+- For the number of npcs, items, scenery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. 0 to 3 is usually normal (except for hostiles, which are often 0 in safe territory).
+- For certain locations (rooms in safe but abandoned or vacant structures), it may make sense for them to be empty of NPCs. Just set numNpcs to 0 in that case.
+- In more dangerous or hostile locations, it may make sense to have more hostiles. Adjust numHostiles accordingly. This is particularly true for places that are traditionally unsafe in RPGs (dungeons, monster lairs, bandit hideouts, ruins, and so on). These types of locations will often have 2 or more hostiles. 
+- Wild areas will often have a sparse mix of hostiles and friendly NPCs, so consider balancing numNpcs and numHostiles appropriately.
 
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
