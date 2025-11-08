@@ -342,6 +342,61 @@ function renderMap(region) {
       loadRegionMap(targetRegionId);
     }
   });
+
+  cy.on('tap', 'node', event => {
+    const node = event.target;
+    if (!node || node.hasClass('region-exit')) {
+      return;
+    }
+    const locationId = node.id();
+    if (!locationId) {
+      return;
+    }
+    if (!node.data('visited')) {
+      return;
+    }
+    if (node.hasClass('current')) {
+      return;
+    }
+    if (typeof window.travelToAdjacentLocationFromMap === 'function') {
+      window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: true });
+    }
+  });
+
+  cy.on('cxttap', 'node', event => {
+    const node = event.target;
+    if (!node || node.hasClass('region-exit')) {
+      return;
+    }
+    const locationId = node.id();
+    if (!locationId) {
+      return;
+    }
+    if (event.originalEvent) {
+      event.originalEvent.preventDefault?.();
+      event.originalEvent.stopPropagation?.();
+    }
+    if (typeof window.openLocationContextMenuForLocationId === 'function') {
+      let anchorPoint = null;
+      if (event.originalEvent && Number.isFinite(event.originalEvent.clientX) && Number.isFinite(event.originalEvent.clientY)) {
+        anchorPoint = {
+          x: event.originalEvent.clientX,
+          y: event.originalEvent.clientY
+        };
+      } else if (event.renderedPosition && container) {
+        const rect = container.getBoundingClientRect();
+        anchorPoint = {
+          x: rect.left + event.renderedPosition.x,
+          y: rect.top + event.renderedPosition.y
+        };
+      }
+      window.openLocationContextMenuForLocationId(locationId, {
+        useFloatingMenu: true,
+        focusAdventureTab: false,
+        anchorPoint
+      });
+    }
+  });
 }
 
 function showMapError(message) {

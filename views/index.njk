@@ -214,6 +214,13 @@
                             <h2 id="mapTitle" class="map-title">Region Map</h2>
                         </div>
                         <div id="mapContainer" class="map-placeholder" aria-live="polite"></div>
+                        <div class="map-location-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
+                            <button type="button" class="location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
+                            <button type="button" class="location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
+                            <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
+                            <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
+                            <button type="button" class="location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                        </div>
                     </div>
                 </section>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
@@ -4194,6 +4201,12 @@
         const locationSummonNpcButton = document.getElementById('locationSummonNpcButton');
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
+        const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
+        const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
+        const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
+        const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
+        const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
+        const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const locationEditModal = document.getElementById('locationEditModal');
         const locationEditForm = document.getElementById('locationEditForm');
         const locationEditNameInput = document.getElementById('locationEditName');
@@ -4274,10 +4287,50 @@
         const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
         const thingEditStatus = document.getElementById('thingEditStatus');
 
+        let locationMenuContextOverride = null;
+
+        function clearLocationMenuContext() {
+            locationMenuContextOverride = null;
+        }
+
+        function setLocationMenuContext(locationRecord) {
+            if (locationRecord && lastRenderedLocation?.id && locationRecord.id === lastRenderedLocation.id) {
+                locationMenuContextOverride = null;
+                return;
+            }
+            if (locationRecord && typeof locationRecord === 'object') {
+                try {
+                    locationMenuContextOverride = JSON.parse(JSON.stringify(locationRecord));
+                } catch (_) {
+                    locationMenuContextOverride = { ...locationRecord };
+                }
+            } else {
+                locationMenuContextOverride = null;
+            }
+        }
+
+        function getLocationMenuContext() {
+            return locationMenuContextOverride || lastRenderedLocation || null;
+        }
+
+        function isCurrentLocationContext(target) {
+            if (!target || !target.id || !lastRenderedLocation?.id) {
+                return false;
+            }
+            return target.id === lastRenderedLocation.id;
+        }
+
         let locationImageMenuOpen = false;
+        let mapLocationMenuOpen = false;
 
         function openLocationImageMenu() {
             if (!locationImageMenu || !locationImageMenuButton) {
+                return;
+            }
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently available for these actions.');
+                clearLocationMenuContext();
                 return;
             }
             locationImageMenu.hidden = false;
@@ -4298,11 +4351,18 @@
             }
         }
 
-        function closeLocationImageMenu() {
+        function closeLocationImageMenu(options = {}) {
+            const preserveContext = Boolean(options?.preserveContext);
             if (!locationImageMenu || !locationImageMenuButton) {
+                if (!preserveContext) {
+                    clearLocationMenuContext();
+                }
                 return;
             }
             if (!locationImageMenuOpen) {
+                if (!preserveContext) {
+                    clearLocationMenuContext();
+                }
                 return;
             }
 
@@ -4312,6 +4372,9 @@
             locationImageMenuOpen = false;
             if (locationImageWrapper) {
                 locationImageWrapper.classList.remove('context-menu-open');
+            }
+            if (!preserveContext) {
+                clearLocationMenuContext();
             }
 
             requestAnimationFrame(() => {
@@ -4328,6 +4391,130 @@
                 openLocationImageMenu();
             }
         }
+
+        function openMapLocationContextMenu(anchorPoint = null) {
+            if (!mapLocationContextMenu) {
+                alert('Location context menu is unavailable.');
+                return;
+            }
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently available for these actions.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const point = anchorPoint || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+            mapLocationContextMenu.style.left = '0px';
+            mapLocationContextMenu.style.top = '0px';
+            mapLocationContextMenu.hidden = false;
+            mapLocationContextMenu.classList.add('is-open');
+            mapLocationMenuOpen = true;
+
+            requestAnimationFrame(() => {
+                const rect = mapLocationContextMenu.getBoundingClientRect();
+                const padding = 12;
+                let left = typeof point.x === 'number' ? point.x : window.innerWidth / 2;
+                let top = typeof point.y === 'number' ? point.y : window.innerHeight / 2;
+
+                if (left + rect.width + padding > window.innerWidth) {
+                    left = window.innerWidth - rect.width - padding;
+                }
+                if (top + rect.height + padding > window.innerHeight) {
+                    top = window.innerHeight - rect.height - padding;
+                }
+                left = Math.max(padding, left);
+                top = Math.max(padding, top);
+
+                mapLocationContextMenu.style.left = `${Math.round(left)}px`;
+                mapLocationContextMenu.style.top = `${Math.round(top)}px`;
+            });
+        }
+
+        function closeMapLocationContextMenu(options = {}) {
+            const preserveContext = Boolean(options?.preserveContext);
+            if (!mapLocationContextMenu) {
+                if (!preserveContext) {
+                    clearLocationMenuContext();
+                }
+                return;
+            }
+            if (!mapLocationMenuOpen) {
+                if (!preserveContext) {
+                    clearLocationMenuContext();
+                }
+                return;
+            }
+            mapLocationContextMenu.classList.remove('is-open');
+            mapLocationContextMenu.hidden = true;
+            mapLocationContextMenu.style.left = '-9999px';
+            mapLocationContextMenu.style.top = '-9999px';
+            mapLocationMenuOpen = false;
+            if (!preserveContext) {
+                clearLocationMenuContext();
+            }
+        }
+
+        async function openLocationContextMenuForLocationId(locationId, options = {}) {
+            if (!locationId) {
+                return;
+            }
+
+            const useFloatingMenu = Boolean(options?.useFloatingMenu && mapLocationContextMenu);
+            const anchorPoint = options?.anchorPoint || null;
+            const shouldFocusAdventureTab = options?.focusAdventureTab ?? !useFloatingMenu;
+
+            if (locationImageMenuOpen) {
+                closeLocationImageMenu({ preserveContext: true });
+            }
+            if (mapLocationMenuOpen) {
+                closeMapLocationContextMenu({ preserveContext: true });
+            }
+
+            let targetLocation = null;
+            if (lastRenderedLocation?.id === locationId) {
+                targetLocation = lastRenderedLocation;
+                clearLocationMenuContext();
+            } else if (locationMenuContextOverride?.id === locationId) {
+                targetLocation = locationMenuContextOverride;
+            }
+
+            if (!targetLocation) {
+                try {
+                    const response = await fetch(`/api/locations/${encodeURIComponent(locationId)}?expandStubs=false&_=${Date.now()}`, { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.location) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+                    setLocationMenuContext(data.location);
+                    targetLocation = getLocationMenuContext();
+                } catch (error) {
+                    console.warn('Failed to load location for context menu:', error);
+                    alert(`Failed to load location: ${error?.message || 'Unknown error'}`);
+                    return;
+                }
+            } else if (!isCurrentLocationContext(targetLocation)) {
+                setLocationMenuContext(targetLocation);
+                targetLocation = getLocationMenuContext();
+            }
+
+            if (useFloatingMenu) {
+                openMapLocationContextMenu(anchorPoint);
+                return;
+            }
+
+            if (shouldFocusAdventureTab) {
+                if (typeof window.activateTab === 'function') {
+                    window.activateTab('adventure');
+                } else {
+                    document.querySelector('[data-tab="adventure"]')?.click();
+                }
+            }
+
+            openLocationImageMenu();
+        }
+
+        window.openLocationContextMenuForLocationId = openLocationContextMenuForLocationId;
 
         function safeJsonStringify(value, fallback = '') {
             try {
@@ -10356,6 +10543,10 @@
                     panel.classList.toggle('active', isActive);
                 });
 
+                if (tabName !== 'map' && mapLocationMenuOpen) {
+                    closeMapLocationContextMenu();
+                }
+
                 if (tabName === 'map') {
                     window.loadRegionMap?.();
                 }
@@ -10363,6 +10554,7 @@
                     window.refreshParty?.();
                 }
             };
+            window.activateTab = activateTab;
 
             tabButtons.forEach(button => {
                 button.addEventListener('click', () => {
@@ -11017,13 +11209,16 @@
         }
 
         function openLocationEditModal() {
-            if (!locationEditModal || !lastRenderedLocation) {
+            const targetLocation = getLocationMenuContext();
+            if (!locationEditModal || !targetLocation) {
+                alert('No location is currently available to edit.');
+                clearLocationMenuContext();
                 return;
             }
-            const name = lastRenderedLocation.name || '';
-            const description = lastRenderedLocation.description || '';
-            const numericLevel = Number.isFinite(lastRenderedLocation.baseLevel)
-                ? lastRenderedLocation.baseLevel
+            const name = targetLocation.name || '';
+            const description = targetLocation.description || '';
+            const numericLevel = Number.isFinite(targetLocation.baseLevel)
+                ? targetLocation.baseLevel
                 : null;
 
             if (locationEditNameInput) {
@@ -11055,13 +11250,18 @@
             locationEditModal.classList.remove('is-open');
             setLocationEditStatus('', null);
             updateLocationAbsoluteLevelDisplay(null);
+            clearLocationMenuContext();
         }
 
         async function submitLocationEditForm(event) {
             if (event) {
                 event.preventDefault();
             }
-            if (!locationEditForm || !lastRenderedLocation || !lastRenderedLocation.id) {
+            if (!locationEditForm) {
+                return;
+            }
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 setLocationEditStatus('No active location to edit.', 'error');
                 return;
             }
@@ -11093,7 +11293,7 @@
             showLocationOverlay('Updating location...');
 
             try {
-                const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}`, {
+                const response = await fetch(`/api/locations/${encodeURIComponent(targetLocation.id)}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -11106,11 +11306,28 @@
                 setLocationEditStatus('Location updated.', 'success');
                 closeLocationEditModal();
 
-                if (data.location) {
-                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
-                    await window.updateLocationDisplay(data.location);
-                } else {
-                    await window.loadCurrentLocation?.();
+                const updatedLocation = data.location;
+                if (updatedLocation) {
+                    if (isCurrentLocationContext(targetLocation)) {
+                        lastRenderedLocation = JSON.parse(JSON.stringify(updatedLocation));
+                        await window.updateLocationDisplay(updatedLocation);
+                    } else {
+                        setLocationMenuContext(updatedLocation);
+                    }
+                    const mapTab = document.querySelector('[data-tab="map"]');
+                    if (mapTab?.classList.contains('active')) {
+                        const mapContainer = document.getElementById('mapContainer');
+                        const activeRegionId = mapContainer?.dataset?.regionId || null;
+                        if (!activeRegionId || (updatedLocation.regionId && updatedLocation.regionId === activeRegionId)) {
+                            try {
+                                await window.loadRegionMap?.(activeRegionId || updatedLocation.regionId || null);
+                            } catch (mapError) {
+                                console.warn('Failed to refresh map after location edit:', mapError);
+                            }
+                        }
+                    }
+                } else if (typeof window.loadCurrentLocation === 'function') {
+                    await window.loadCurrentLocation();
                 }
             } catch (error) {
                 console.warn('Failed to update location:', error);
@@ -11209,7 +11426,7 @@
         }
 
         async function gatherSummonNpcOptions() {
-            const currentLocationId = lastRenderedLocation?.id || null;
+            const currentLocationId = getLocationMenuContext()?.id || null;
             if (!currentLocationId) {
                 throw new Error('No active location loaded.');
             }
@@ -11249,7 +11466,7 @@
         }
 
         async function gatherSummonThingOptions() {
-            const currentLocationId = lastRenderedLocation?.id || null;
+            const currentLocationId = getLocationMenuContext()?.id || null;
             if (!currentLocationId) {
                 throw new Error('No active location loaded.');
             }
@@ -11341,7 +11558,8 @@
                 alert('Summon NPC dialog is unavailable.');
                 return;
             }
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently loaded.');
                 return;
             }
@@ -11411,6 +11629,7 @@
             if (summonNpcConfirmBtn) {
                 summonNpcConfirmBtn.disabled = true;
             }
+            clearLocationMenuContext();
         }
 
         async function openSummonThingModal() {
@@ -11418,7 +11637,8 @@
                 alert('Summon item dialog is unavailable.');
                 return;
             }
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently loaded.');
                 return;
             }
@@ -11487,6 +11707,7 @@
             if (summonThingConfirmBtn) {
                 summonThingConfirmBtn.disabled = true;
             }
+            clearLocationMenuContext();
         }
 
         function handleSummonNpcSelectionChange() {
@@ -11535,7 +11756,8 @@
                 setSummonNpcStatus('Select an NPC to summon.', 'error');
                 return;
             }
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 setSummonNpcStatus('No location is currently loaded.', 'error');
                 return;
             }
@@ -11559,7 +11781,7 @@
                     ? (cloneActorRecord(optionEntry.raw) || { ...optionEntry.raw })
                     : { id: npcId };
 
-                await teleportNpcToLocation(npcRecord, lastRenderedLocation.id, {
+                await teleportNpcToLocation(npcRecord, targetLocation.id, {
                     originLocationId: optionEntry?.locationId || null
                 });
 
@@ -11590,7 +11812,8 @@
                 setSummonThingStatus('Select an item or scenery to summon.', 'error');
                 return;
             }
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 setSummonThingStatus('No location is currently loaded.', 'error');
                 return;
             }
@@ -11609,7 +11832,7 @@
             }
 
             try {
-                const teleportResult = await teleportThingToLocation(entry.raw, lastRenderedLocation.id, {
+                const teleportResult = await teleportThingToLocation(entry.raw, targetLocation.id, {
                     context: 'general',
                     originLocationId: entry.locationId || null
                 });
@@ -11683,11 +11906,14 @@
         }
 
         async function openRegionEditModal() {
-            if (!regionEditModal || !lastRenderedLocation) {
+            const targetLocation = getLocationMenuContext();
+            if (!regionEditModal || !targetLocation) {
+                alert('No location is currently available for region editing.');
+                clearLocationMenuContext();
                 return;
             }
-            const regionId = lastRenderedLocation.regionId
-                || lastRenderedLocation.stubMetadata?.regionId
+            const regionId = targetLocation.regionId
+                || targetLocation.stubMetadata?.regionId
                 || null;
 
             if (!regionId) {
@@ -11769,6 +11995,7 @@
             if (regionEditAverageLevelInput) {
                 regionEditAverageLevelInput.value = '';
             }
+            clearLocationMenuContext();
         }
 
         async function submitRegionEditForm(event) {
@@ -11870,21 +12097,27 @@
         }
 
         async function regenerateLocationImage() {
-            if (!lastRenderedLocation || !lastRenderedLocation.id) {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently loaded.');
+                clearLocationMenuContext();
                 return;
             }
-            if (locationImageRegenerateButton && locationImageRegenerateButton.disabled) {
+            if (locationImageRegenerateButton && locationImageRegenerateButton.disabled && isCurrentLocationContext(targetLocation)) {
                 alert('Image generation is disabled.');
+                clearLocationMenuContext();
                 return;
             }
 
-            const locationId = String(lastRenderedLocation.id);
-            const placeholderAlt = lastRenderedLocation.name || 'Location image';
+            const locationId = String(targetLocation.id);
+            const placeholderAlt = targetLocation.name || 'Location image';
+            const affectsCurrentLocation = isCurrentLocationContext(targetLocation);
 
-            applyEntityImagePlaceholder('location', locationId);
-            lastRenderedLocation.imageId = null;
-            lastRenderedLocation.pendingImageJobId = null;
+            if (affectsCurrentLocation) {
+                applyEntityImagePlaceholder('location', locationId);
+                lastRenderedLocation.imageId = null;
+                lastRenderedLocation.pendingImageJobId = null;
+            }
 
             const payload = {
                 entityType: 'location',
@@ -11909,41 +12142,58 @@
                 }
 
                 if (data?.skipped) {
-                    renderEntityImages('location', locationId, {
-                        imageId: lastRenderedLocation.imageId || null,
-                        force: false,
-                        altText: placeholderAlt
-                    });
+                    if (affectsCurrentLocation) {
+                        renderEntityImages('location', locationId, {
+                            imageId: lastRenderedLocation.imageId || null,
+                            force: false,
+                            altText: placeholderAlt
+                        });
+                    }
                     alert('Image regeneration was skipped.');
                     return;
                 }
 
                 if (data?.imageId) {
-                    lastRenderedLocation.imageId = data.imageId;
+                    if (affectsCurrentLocation) {
+                        lastRenderedLocation.imageId = data.imageId;
+                    } else if (locationMenuContextOverride?.id === targetLocation.id) {
+                        locationMenuContextOverride.imageId = data.imageId;
+                    }
                 }
                 if (data?.jobId) {
-                    lastRenderedLocation.pendingImageJobId = data.jobId;
+                    if (affectsCurrentLocation) {
+                        lastRenderedLocation.pendingImageJobId = data.jobId;
+                    } else if (locationMenuContextOverride?.id === targetLocation.id) {
+                        locationMenuContextOverride.pendingImageJobId = data.jobId;
+                    }
                 }
 
-                renderEntityImages('location', locationId, {
-                    imageId: null,
-                    force: true,
-                    altText: placeholderAlt
-                });
+                if (affectsCurrentLocation) {
+                    renderEntityImages('location', locationId, {
+                        imageId: null,
+                        force: true,
+                        altText: placeholderAlt
+                    });
+                }
             } catch (error) {
                 console.warn('Failed to regenerate location image:', error);
                 alert(`Failed to regenerate image: ${error?.message || 'Unknown error'}`);
-                renderEntityImages('location', locationId, {
-                    imageId: lastRenderedLocation.imageId || null,
-                    force: false,
-                    altText: placeholderAlt
-                });
+                if (affectsCurrentLocation) {
+                    renderEntityImages('location', locationId, {
+                        imageId: lastRenderedLocation.imageId || null,
+                        force: false,
+                        altText: placeholderAlt
+                    });
+                }
+            } finally {
+                clearLocationMenuContext();
             }
         }
 
         if (locationImageMenuButton) {
             locationImageMenuButton.addEventListener('click', (event) => {
                 event.stopPropagation();
+                clearLocationMenuContext();
                 toggleLocationImageMenu();
             });
         }
@@ -11951,7 +12201,7 @@
         if (locationImageEditButton) {
             locationImageEditButton.addEventListener('click', (event) => {
                 event.stopPropagation();
-                closeLocationImageMenu();
+                closeLocationImageMenu({ preserveContext: true });
                 openLocationEditModal();
             });
         }
@@ -11959,7 +12209,7 @@
         if (locationRegionEditButton) {
             locationRegionEditButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
-                closeLocationImageMenu();
+                closeLocationImageMenu({ preserveContext: true });
                 await openRegionEditModal();
             });
         }
@@ -11967,7 +12217,7 @@
         if (locationSummonNpcButton) {
             locationSummonNpcButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
-                closeLocationImageMenu();
+                closeLocationImageMenu({ preserveContext: true });
                 await openSummonNpcModal();
             });
         }
@@ -11975,7 +12225,7 @@
         if (locationSummonThingButton) {
             locationSummonThingButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
-                closeLocationImageMenu();
+                closeLocationImageMenu({ preserveContext: true });
                 await openSummonThingModal();
             });
         }
@@ -11983,24 +12233,78 @@
         if (locationImageRegenerateButton) {
             locationImageRegenerateButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
-                closeLocationImageMenu();
+                closeLocationImageMenu({ preserveContext: true });
+                await regenerateLocationImage();
+            });
+        }
+
+        if (mapLocationMenuEditButton) {
+            mapLocationMenuEditButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                openLocationEditModal();
+            });
+        }
+
+        if (mapLocationMenuRegionButton) {
+            mapLocationMenuRegionButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openRegionEditModal();
+            });
+        }
+
+        if (mapLocationMenuSummonNpcButton) {
+            mapLocationMenuSummonNpcButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openSummonNpcModal();
+            });
+        }
+
+        if (mapLocationMenuSummonThingButton) {
+            mapLocationMenuSummonThingButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openSummonThingModal();
+            });
+        }
+
+        if (mapLocationMenuRegenerateImageButton) {
+            mapLocationMenuRegenerateImageButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
                 await regenerateLocationImage();
             });
         }
 
         document.addEventListener('click', (event) => {
-            if (!locationImageMenuOpen) {
-                return;
+            if (locationImageMenuOpen) {
+                if (!locationImageWrapper || !locationImageWrapper.contains(event.target)) {
+                    closeLocationImageMenu();
+                }
             }
-            if (locationImageWrapper && locationImageWrapper.contains(event.target)) {
-                return;
+            if (mapLocationMenuOpen) {
+                if (!mapLocationContextMenu || !mapLocationContextMenu.contains(event.target)) {
+                    closeMapLocationContextMenu();
+                }
             }
-            closeLocationImageMenu();
         });
 
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && locationImageMenuOpen) {
-                closeLocationImageMenu();
+            if (event.key === 'Escape') {
+                if (locationImageMenuOpen) {
+                    closeLocationImageMenu();
+                }
+                if (mapLocationMenuOpen) {
+                    closeMapLocationContextMenu();
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            if (mapLocationMenuOpen) {
+                closeMapLocationContextMenu();
             }
         });
 
@@ -12739,6 +13043,77 @@
                     alert(`Move failed: ${error.message}`);
                 }
             }
+
+            function collectExitEntries(location) {
+                if (!location || !location.exits) {
+                    return [];
+                }
+                const exits = location.exits;
+                if (Array.isArray(exits)) {
+                    return exits
+                        .map((exit, index) => [String(index), exit])
+                        .filter(([, exit]) => Boolean(exit));
+                }
+                if (exits instanceof Map) {
+                    return Array.from(exits.entries()).filter(([, exit]) => Boolean(exit));
+                }
+                if (typeof exits === 'object') {
+                    return Object.entries(exits).filter(([, exit]) => Boolean(exit));
+                }
+                return [];
+            }
+
+            function findExitForDestination(location, destinationId) {
+                if (!location || !destinationId) {
+                    return null;
+                }
+                const entries = collectExitEntries(location);
+                for (const [direction, exit] of entries) {
+                    if (exit?.destination === destinationId) {
+                        return { direction, exit };
+                    }
+                }
+                return null;
+            }
+
+            async function travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab = true } = {}) {
+                if (!destinationId) {
+                    return false;
+                }
+                if (!lastRenderedLocation || !lastRenderedLocation.id) {
+                    console.warn('Map travel unavailable: no active location loaded.');
+                    return false;
+                }
+                if (lastRenderedLocation.id === destinationId) {
+                    if (focusAdventureTab && typeof window.activateTab === 'function') {
+                        window.activateTab('adventure');
+                    }
+                    return false;
+                }
+
+                const match = findExitForDestination(lastRenderedLocation, destinationId);
+                if (!match) {
+                    console.warn(`No known exit from ${lastRenderedLocation.name || lastRenderedLocation.id} to location ${destinationId}.`);
+                    return false;
+                }
+
+                try {
+                    await moveToLocation({
+                        exit: match.exit,
+                        direction: match.direction,
+                        originLocationId: lastRenderedLocation.id
+                    });
+                    if (focusAdventureTab && typeof window.activateTab === 'function') {
+                        window.activateTab('adventure');
+                    }
+                    return true;
+                } catch (error) {
+                    console.warn('Failed to travel via map:', error);
+                    return false;
+                }
+            }
+
+            window.travelToAdjacentLocationFromMap = travelToAdjacentLocationFromMap;
 
             // Load current player location on page load
             showLocationOverlay('Loading current location...');

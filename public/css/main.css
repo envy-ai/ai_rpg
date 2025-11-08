@@ -3533,6 +3533,19 @@ p:not(:last-child) {
   transform: translateY(0);
 }
 
+.map-location-context-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  transform: translateY(0);
+  z-index: 200;
+}
+
+.map-location-context-menu.is-open {
+  transform: translateY(0);
+}
+
 .npc-card-menu-item,
 .thing-card-menu-item,
 .location-image-menu-item {

@@ -10258,31 +10258,49 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (location.isStub && location.stubMetadata?.isRegionEntryStub) {
-                    try {
-                        const expanded = await expandRegionEntryStub(location);
-                        if (expanded) {
-                            location = expanded;
-                        }
-                    } catch (expansionError) {
-                        console.error('Failed to expand region entry stub:', expansionError);
-                        return res.status(500).json({
-                            success: false,
-                            error: `Failed to expand region: ${expansionError.message}`,
-                            trace: expansionError.stack || String(expansionError)
-                        });
+                const expandParam = req.query.expandStubs ?? req.query.expandStub;
+                const shouldExpandStubs = (() => {
+                    if (expandParam === undefined) {
+                        return true;
                     }
-                }
+                    const raw = Array.isArray(expandParam) ? expandParam[0] : expandParam;
+                    if (raw === undefined || raw === null) {
+                        return true;
+                    }
+                    const normalized = String(raw).trim().toLowerCase();
+                    if (!normalized) {
+                        return true;
+                    }
+                    return !['0', 'false', 'no', 'off'].includes(normalized);
+                })();
 
-                if (location.isStub && !location.stubMetadata?.isRegionEntryStub) {
-                    try {
-                        await scheduleStubExpansion(location);
-                        location = gameLocations.get(location.id) || location;
-                    } catch (expansionError) {
-                        return res.status(500).json({
-                            success: false,
-                            error: `Failed to expand location: ${expansionError.message}`
-                        });
+                if (shouldExpandStubs) {
+                    if (location.isStub && location.stubMetadata?.isRegionEntryStub) {
+                        try {
+                            const expanded = await expandRegionEntryStub(location);
+                            if (expanded) {
+                                location = expanded;
+                            }
+                        } catch (expansionError) {
+                            console.error('Failed to expand region entry stub:', expansionError);
+                            return res.status(500).json({
+                                success: false,
+                                error: `Failed to expand region: ${expansionError.message}`,
+                                trace: expansionError.stack || String(expansionError)
+                            });
+                        }
+                    }
+
+                    if (location.isStub && !location.stubMetadata?.isRegionEntryStub) {
+                        try {
+                            await scheduleStubExpansion(location);
+                            location = gameLocations.get(location.id) || location;
+                        } catch (expansionError) {
+                            return res.status(500).json({
+                                success: false,
+                                error: `Failed to expand location: ${expansionError.message}`
+                            });
+                        }
                     }
                 }
 
