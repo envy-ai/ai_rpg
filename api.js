@@ -6791,6 +6791,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     let eventResult = null;
+                    let questResult = null;
                     let userInput = null;
                     if (isForcedEventAction) {
                         eventResult = forcedEventResult;
@@ -6809,7 +6810,10 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             const textToCheck = userInput ? `${userInput}\n\n${aiResponse}` : aiResponse;
-                            eventResult = await Events.runEventChecks({ textToCheck, stream });
+                            [eventResult, questResult] = await Promise.all([
+                                Events.runEventChecks({ textToCheck, stream }),
+                                Events.runQuestChecks()
+                            ]);
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
@@ -8287,6 +8291,65 @@ module.exports = function registerApiRoutes(scope) {
 
             const locationData = location.toJSON();
             locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
+
+            const resolvedRegionId = location.regionId
+                || location.stubMetadata?.regionId
+                || location.stubMetadata?.targetRegionId
+                || null;
+            let resolvedRegionName = null;
+            let regionPayload = null;
+            let regionPath = [];
+
+            if (resolvedRegionId && regions.has(resolvedRegionId)) {
+                const regionRecord = regions.get(resolvedRegionId);
+                if (regionRecord) {
+                    resolvedRegionName = typeof regionRecord.name === 'string' ? regionRecord.name : null;
+                    regionPayload = {
+                        id: regionRecord.id,
+                        name: regionRecord.name || null,
+                        description: regionRecord.description || null,
+                        parentRegionId: regionRecord.parentRegionId || null,
+                        averageLevel: Number.isFinite(regionRecord.averageLevel)
+                            ? Number(regionRecord.averageLevel)
+                            : null
+                    };
+                    const hierarchy = Array.isArray(regionRecord.parentHierarchy)
+                        ? regionRecord.parentHierarchy
+                        : [];
+                    for (const ancestor of hierarchy) {
+                        regionPath.push({
+                            id: ancestor.id || null,
+                            name: ancestor.name || null
+                        });
+                    }
+                    regionPath.push({
+                        id: regionRecord.id,
+                        name: regionRecord.name || null
+                    });
+                }
+            }
+
+            if (!resolvedRegionName) {
+                resolvedRegionName = location.stubMetadata?.regionName
+                    || location.stubMetadata?.targetRegionName
+                    || null;
+            }
+
+            if (resolvedRegionName) {
+                locationData.regionName = resolvedRegionName;
+            }
+
+            if (!regionPath.length && resolvedRegionName) {
+                regionPath.push({
+                    id: resolvedRegionId || null,
+                    name: resolvedRegionName
+                });
+            }
+
+            if (regionPayload) {
+                locationData.region = regionPayload;
+            }
+            locationData.regionPath = regionPath;
 
             if (locationData.exits) {
                 for (const exit of Object.values(locationData.exits)) {

@@ -332,7 +332,8 @@
                                 <span class="status-value" id="unspentSkillPointsDisplay">{{ player.unspentSkillPoints if player else 0 }}</span>
                             </div>
                             <div class="skills-grid readonly">
-                                {% for skill in availableSkills %}
+                                {% set sortedSkills = availableSkills | sort(false, false, 'name') %}
+                                {% for skill in sortedSkills %}
                                 {% set skillValue = player.skills[skill.name] if player and player.skills and skill.name in player.skills else 1 %}
                                 <div class="skill-card readonly">
                                     <div class="skill-header">
@@ -10627,7 +10628,7 @@
                 ? locationCache[destinationId].trim()
                 : '';
             if (cached) {
-                return cached;
+                return { name: cached, regionName: null };
             }
             try {
                 const response = await fetch(`/api/locations/${encodeURIComponent(destinationId)}?expandStubs=false`, { cache: 'no-store' });
@@ -10638,9 +10639,31 @@
                         : (typeof data.location.shortDescription === 'string' && data.location.shortDescription.trim()
                             ? data.location.shortDescription.trim()
                             : '');
+
+                    const resolvedRegionName = (() => {
+                        if (typeof data.location.regionName === 'string' && data.location.regionName.trim()) {
+                            return data.location.regionName.trim();
+                        }
+                        if (data.location.region && typeof data.location.region.name === 'string' && data.location.region.name.trim()) {
+                            return data.location.region.name.trim();
+                        }
+                        if (data.location.stubMetadata && typeof data.location.stubMetadata.regionName === 'string' && data.location.stubMetadata.regionName.trim()) {
+                            return data.location.stubMetadata.regionName.trim();
+                        }
+                        if (Array.isArray(data.location.regionPath) && data.location.regionPath.length) {
+                            const lastRegion = data.location.regionPath[data.location.regionPath.length - 1];
+                            if (lastRegion && typeof lastRegion.name === 'string' && lastRegion.name.trim()) {
+                                return lastRegion.name.trim();
+                            }
+                        }
+                        return null;
+                    })();
+
                     if (resolvedName) {
                         locationCache[destinationId] = resolvedName;
-                        return resolvedName;
+                    }
+                    if (resolvedName || resolvedRegionName) {
+                        return { name: resolvedName || null, regionName: resolvedRegionName || null };
                     }
                 }
             } catch (error) {
@@ -13118,6 +13141,8 @@
                 }
 
                 let destinationName = null;
+                let destinationRegionName = null;
+
                 if (lastRenderedLocation && lastRenderedLocation.id) {
                     const match = findExitForDestination(lastRenderedLocation, destinationId);
                     if (match) {
@@ -13126,10 +13151,18 @@
                         } catch (_) {
                             destinationName = null;
                         }
+                        if (match.exit?.destinationRegionName) {
+                            destinationRegionName = match.exit.destinationRegionName.trim() || null;
+                        }
                     }
                 }
                 if (!destinationName) {
-                    destinationName = await ensureLocationNameCached(destinationId) || `Location ${destinationId}`;
+                    const details = await ensureLocationNameCached(destinationId);
+                    destinationName = details?.name || `Location ${destinationId}`;
+                    destinationRegionName = destinationRegionName || details?.regionName || null;
+                }
+                if (!destinationRegionName) {
+                    destinationRegionName = 'Unknown Region';
                 }
 
                 const playerRecord = (window.currentPlayerData && window.currentPlayerData.id)
@@ -13146,7 +13179,7 @@
                     return false;
                 }
 
-                const message = `${playerName} moved to ${destinationName}.`;
+                const message = `${playerName} traveled to ${destinationName} in ${destinationRegionName}.`;
                 let overlayVisible = false;
                 const showMoveOverlay = () => {
                     if (!overlayVisible) {

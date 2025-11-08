@@ -2275,7 +2275,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     let location = locationOverride;
     if (!location && currentPlayer && currentPlayer.currentLocation) {
         try {
-            location = Location.get(currentPlayer.currentLocation);
+            location = Globals.location;
         } catch (error) {
             console.warn('Failed to resolve current player location for prompt context:', error.message);
         }

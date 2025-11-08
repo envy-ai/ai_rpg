@@ -661,6 +661,51 @@ class Events {
         this._handlers = this._buildHandlers();
     }
 
+    static async runQuestChecks() {
+        const promptEnv = this._deps.promptEnv;
+        const parseXMLTemplate = this._deps.parseXMLTemplate;
+        const prepareBasePromptContext = this._deps.prepareBasePromptContext;
+        const findRegionByLocationId = this._deps.findRegionByLocationId;
+
+        const baseContext = await prepareBasePromptContext();
+
+        const renderedQuestCheck = promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'quest-check',
+        });
+
+        const parsedQuestTemplate = parseXMLTemplate(renderedQuestCheck);
+
+        if (!parsedQuestTemplate?.systemPrompt || !parsedQuestTemplate?.generationPrompt) {
+            throw new Error(`Quest check template did not produce prompts.`);
+        }
+
+        const questMessages = [
+            { role: 'system', content: parsedQuestTemplate.systemPrompt },
+            { role: 'user', content: parsedQuestTemplate.generationPrompt }
+        ];
+
+        const questRequestOptions = {
+            messages: questMessages,
+            metadataLabel: 'quest_check',
+            timeoutMs: this._baseTimeout,
+            temperature: 0,
+            validateXML: true,
+            dumpReasoningToConsole: true,
+        };
+
+        const questResponseText = await LLMClient.chatCompletion(questRequestOptions);
+
+        LLMClient.logPrompt({
+            systemPrompt: parsedQuestTemplate.systemPrompt,
+            generationPrompt: parsedQuestTemplate.generationPrompt,
+            response: questResponseText,
+            metadataLabel: 'quest_check'
+        });
+
+        return questResponseText;
+    }
+
     static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true, isNpcTurn = false, _depth = 0 } = {}) {
         if (isBlank(textToCheck)) {
             return null;
@@ -737,6 +782,7 @@ class Events {
             });
 
             const parsedTemplate = parseXMLTemplate(rendered);
+
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                 throw new Error(`Event check template did not produce prompts for group ${groupIndex + 1}.`);
             }
@@ -756,7 +802,9 @@ class Events {
                 dumpReasoningToConsole: true,
             };
 
-            const responseText = await LLMClient.chatCompletion(requestOptions);
+            const [responseText, questResponseText] = await Promise.all([
+                LLMClient.chatCompletion(requestOptions)
+            ]);
 
             this.logEventCheck({
                 systemPrompt: parsedTemplate.systemPrompt,
@@ -3041,8 +3089,7 @@ class Events {
                         }
                     }
 
-                    console.warn('pick_up_item event could not resolve available item:', itemName);
-                    console.trace();
+                    console.log('pick_up_item event could not resolve available item:', itemName);
 
                     return null;
                 };

@@ -1,0 +1,33 @@
+<task>Carefully check the gameHistory and determine whether each objective in each of the following quests is complete.</task>
+
+<quests>
+  {% for quest in currentPlayer.currentQuests %}
+  <quest>
+    <name>{{ quest.name }}</name>
+    <description>{{ quest.description }}</description>
+    {% if quest.secretNotes %}<secretNotes>{{ quest.secretNotes }}</secretNotes>{% endif -%}
+    <objectives>
+      {%- for objective in quest.objectives %}
+      <objective index="{{ loop.index }}">{{ objective.description }}</objective>
+      {% endfor -%}
+    </objectives>
+    <giver>{{ quest.giver }}</giver>
+  </quest>
+  {% endfor %}
+</quests>
+
+Respond in the following format:
+
+<quests>
+  <quest>
+    <name><!-- Exact name of the quest --></name>
+    <objectives>
+      <objective>
+        <index><!-- Index of the objective --></index>
+        <completed><!-- True or false --></completed>
+      </objective>
+      <!-- Repeat for each objective in the quest -->
+    </objectives>
+  </quest>
+  <!-- Repeat for each quest -->
+</quests>
