@@ -11482,13 +11482,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (!matchedExit) {
-                    return res.status(404).json({
-                        success: false,
-                        error: 'Exit not found from current location'
-                    });
-                }
-
                 let destinationLocation = gameLocations.get(matchedExit.destination);
                 if (!destinationLocation) {
                     return res.status(404).json({
