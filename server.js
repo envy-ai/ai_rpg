@@ -11536,7 +11536,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         const parsedResult = parseLocationNpcs(npcResponse);
-        let npcsAtLocation = SanitizedStringSet.fromArray(location.getNpcNames());
+        let npcsAtLocation = SanitizedStringSet.fromArray(location.getNPCNames());
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
 
