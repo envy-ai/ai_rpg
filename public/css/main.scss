@@ -1159,7 +1159,8 @@ p:not(:last-child) {
   font-size: 1.1rem;
 }
 
-#tab-map {
+#tab-map,
+#tab-world-map {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -1184,23 +1185,52 @@ p:not(:last-child) {
     color: rgba(224, 242, 254, 0.92);
     letter-spacing: 0.03em;
   }
+}
 
-  #mapContainer {
-    flex: 1 1 auto;
-    width: 100%;
-    height: 100%;
-    min-height: 320px;
-    background: rgba(15, 23, 42, 0.85);
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    overflow: hidden;
-    position: relative;
+#tab-map #mapContainer,
+#tab-world-map #worldMapContainer {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  position: relative;
+}
+
+.map-panel #mapContainer,
+.map-panel #worldMapContainer {
+  @media (min-width: 769px) {
+    min-height: 0;
   }
 }
 
-.map-panel #mapContainer {
-  @media (min-width: 769px) {
-    min-height: 0;
+.map-action-button {
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(94, 234, 212, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+  color: #5eead4;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+
+  &:hover,
+  &:focus-visible {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: rgba(56, 189, 248, 0.65);
+    color: #e0f2fe;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    border-color: rgba(148, 163, 184, 0.4);
   }
 }
 

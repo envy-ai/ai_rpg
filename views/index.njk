@@ -18,6 +18,7 @@
             <div class="tab-bar" role="tablist">
                 <button class="tab-button active" id="tab-adventure-tab" data-tab="adventure" role="tab" aria-selected="true" aria-controls="tab-adventure">Adventure</button>
                 <button class="tab-button" id="tab-map-tab" data-tab="map" role="tab" aria-selected="false" aria-controls="tab-map">Map</button>
+                <button class="tab-button" id="tab-world-map-tab" data-tab="world-map" role="tab" aria-selected="false" aria-controls="tab-world-map">World Map</button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
@@ -214,15 +215,29 @@
                             <h2 id="mapTitle" class="map-title">Region Map</h2>
                         </div>
                         <div id="mapContainer" class="map-placeholder" aria-live="polite"></div>
-                        <div class="map-location-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
-                            <button type="button" class="location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
-                            <button type="button" class="location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
-                            <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
-                            <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
-                            <button type="button" class="location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
-                        </div>
                     </div>
                 </section>
+                <section class="tab-panel" id="tab-world-map" role="tabpanel" aria-labelledby="tab-world-map-tab" hidden>
+                    <div class="map-panel world-map-panel">
+                        <div class="map-header">
+                            <h2 id="worldMapTitle" class="map-title">World Map</h2>
+                            <button type="button"
+                                    class="map-action-button"
+                                    id="worldMapReloadButton"
+                                    aria-label="Reload world map">
+                                Reload
+                            </button>
+                        </div>
+                        <div id="worldMapContainer" class="map-placeholder" aria-live="polite"></div>
+                    </div>
+                </section>
+                <div class="map-location-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
+                    <button type="button" class="location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
+                    <button type="button" class="location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
+                    <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
+                    <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
+                    <button type="button" class="location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                </div>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
                     <div class="config-content character-panel">
                         <div class="config-section">
@@ -1163,6 +1178,8 @@
     <script src="/vendor/layout-base.js"></script>
     <script src="/vendor/cose-base.js"></script>
     <script src="/vendor/cytoscape-fcose.js"></script>
+    <script src="/vendor/cytoscape-euler.js"></script>
+    <script src="/js/cytoscape-convex-hull.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
     <script src="/js/currency-utils.js"></script>
@@ -1170,6 +1187,7 @@
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
+    <script defer src="/js/world-map.js"></script>
     <script defer src="/js/player-stats.js"></script>
     <script>
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
@@ -4203,6 +4221,7 @@
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
+        const worldMapReloadButton = document.getElementById('worldMapReloadButton');
         const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
         const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
@@ -10544,14 +10563,21 @@
                     panel.classList.toggle('active', isActive);
                 });
 
-                if (tabName !== 'map' && mapLocationMenuOpen) {
+                if (mapLocationMenuOpen) {
                     closeMapLocationContextMenu();
                 }
 
                 if (tabName === 'map') {
-                    window.loadRegionMap?.();
-                }
-                if (tabName === 'party') {
+                    const pendingRegionId = window.__AIRPG_NEXT_REGION_MAP_ID || null;
+                    if (pendingRegionId) {
+                        window.__AIRPG_NEXT_REGION_MAP_ID = null;
+                        window.loadRegionMap?.(pendingRegionId);
+                    } else {
+                        window.loadRegionMap?.();
+                    }
+                } else if (tabName === 'world-map') {
+                    window.loadWorldMap?.();
+                } else if (tabName === 'party') {
                     window.refreshParty?.();
                 }
             };
@@ -10559,11 +10585,18 @@
 
             tabButtons.forEach(button => {
                 button.addEventListener('click', () => {
-                    if (button.classList.contains('active')) {
+                    const tabName = button.dataset.tab;
+                    if (!tabName) {
                         return;
                     }
-                    activateTab(button.dataset.tab);
-                    const newHash = `#${hashPrefix}${button.dataset.tab}`;
+                    if (button.classList.contains('active')) {
+                        if (tabName === 'world-map') {
+                            window.loadWorldMap?.();
+                        }
+                        return;
+                    }
+                    activateTab(tabName);
+                    const newHash = `#${hashPrefix}${tabName}`;
                     if (window.location.hash !== newHash) {
                         window.location.hash = newHash;
                     }
@@ -12328,6 +12361,23 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await regenerateLocationImage();
+            });
+        }
+
+        if (worldMapReloadButton) {
+            const defaultLabel = (worldMapReloadButton.textContent || 'Reload').trim() || 'Reload';
+            worldMapReloadButton.addEventListener('click', async () => {
+                if (worldMapReloadButton.disabled) {
+                    return;
+                }
+                worldMapReloadButton.disabled = true;
+                worldMapReloadButton.textContent = 'Loading...';
+                try {
+                    await window.loadWorldMap?.();
+                } finally {
+                    worldMapReloadButton.disabled = false;
+                    worldMapReloadButton.textContent = defaultLabel;
+                }
             });
         }
 

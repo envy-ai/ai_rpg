@@ -1,6 +1,18 @@
 function registerLayouts() {
-  if (typeof window.cytoscape !== 'undefined' && typeof window.cytoscapeFcose === 'function') {
-    window.cytoscapeFcose(window.cytoscape);
+  if (typeof window.cytoscape === 'undefined') {
+    return;
+  }
+
+  const cytoscape = window.cytoscape;
+
+  if (!cytoscape.__fcoseRegistered && typeof window.cytoscapeFcose === 'function') {
+    window.cytoscapeFcose(cytoscape);
+    cytoscape.__fcoseRegistered = true;
+  }
+
+  if (!cytoscape.__eulerRegistered && typeof window.cytoscapeEuler === 'function') {
+    window.cytoscapeEuler(cytoscape);
+    cytoscape.__eulerRegistered = true;
   }
 }
 

@@ -11709,6 +11709,93 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function buildMapLocationSummary(location) {
+            if (!location) {
+                return null;
+            }
+
+            const availableDirections = typeof location.getAvailableDirections === 'function'
+                ? Array.from(location.getAvailableDirections())
+                : [];
+
+            const stubMetadata = location.stubMetadata || {};
+            const resolvedName = typeof location.name === 'string' && location.name.trim()
+                ? location.name.trim()
+                : (
+                    typeof stubMetadata.shortDescription === 'string' && stubMetadata.shortDescription.trim()
+                        ? stubMetadata.shortDescription.trim()
+                        : (
+                            typeof stubMetadata.targetRegionName === 'string' && stubMetadata.targetRegionName.trim()
+                                ? stubMetadata.targetRegionName.trim()
+                                : (typeof location.description === 'string' && location.description.trim()
+                                    ? location.description.trim()
+                                    : location.id)
+                        )
+                );
+
+            const exits = availableDirections.map(direction => {
+                const exit = typeof location.getExit === 'function' ? location.getExit(direction) : null;
+                const destinationRegionId = exit?.destinationRegion || null;
+                const destinationLocation = exit?.destination && gameLocations instanceof Map
+                    ? gameLocations.get(exit.destination)
+                    : null;
+                const destinationName = destinationLocation?.name
+                    || destinationLocation?.stubMetadata?.blueprintDescription
+                    || null;
+                const destinationIsStub = Boolean(destinationLocation?.isStub);
+                const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
+
+                let destinationRegionName = null;
+                let destinationRegionExpanded = false;
+
+                if (destinationRegionId) {
+                    if (regions instanceof Map && regions.has(destinationRegionId)) {
+                        const targetRegion = regions.get(destinationRegionId);
+                        destinationRegionName = targetRegion?.name || null;
+                        destinationRegionExpanded = true;
+                    } else if (typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
+                        const pending = pendingRegionStubs.get(destinationRegionId);
+                        if (pending) {
+                            destinationRegionName = pending.name || null;
+                        }
+                    }
+                }
+
+                return {
+                    id: exit?.id || `${location.id}_${direction}`,
+                    destination: exit?.destination || null,
+                    destinationRegion: destinationRegionId,
+                    destinationRegionName,
+                    destinationRegionExpanded,
+                    destinationName,
+                    bidirectional: exit?.bidirectional !== false,
+                    isVehicle: Boolean(exit?.isVehicle),
+                    vehicleType: exit?.vehicleType || null,
+                    destinationIsStub,
+                    destinationIsRegionEntryStub
+                };
+            });
+
+            const payload = {
+                id: location.id,
+                name: resolvedName,
+                isStub: Boolean(location.isStub),
+                visited: Boolean(location.visited),
+                regionId: location.regionId || stubMetadata.regionId || null,
+                exits
+            };
+
+            if (location.imageId) {
+                const metadata = generatedImages?.get ? generatedImages.get(location.imageId) : null;
+                const firstImage = metadata?.images?.[0];
+                payload.image = firstImage
+                    ? { id: location.imageId, url: firstImage.url }
+                    : { id: location.imageId, url: null };
+            }
+
+            return payload;
+        }
+
         app.get('/api/map/region', (req, res) => {
             try {
                 let requestedRegionId = null;
@@ -11768,69 +11855,97 @@ module.exports = function registerApiRoutes(scope) {
                     regionId: region.id,
                     regionName: region.name,
                     currentLocationId,
-                    locations: locations.map(loc => {
-                        const locationPayload = {
-                            id: loc.id,
-                            name: loc.name || loc.id,
-                            isStub: Boolean(loc.isStub),
-                            visited: Boolean(loc.visited),
-                            exits: Array.from(loc.getAvailableDirections()).map(direction => {
-                                const exit = loc.getExit(direction);
-                                const destinationRegionId = exit?.destinationRegion || null;
-                                const destinationLocation = exit?.destination ? gameLocations.get(exit.destination) : null;
-                                const destinationName = destinationLocation?.name
-                                    || destinationLocation?.stubMetadata?.blueprintDescription
-                                    || null;
-                                const destinationIsStub = Boolean(destinationLocation?.isStub);
-                                const destinationIsRegionEntryStub = Boolean(destinationLocation?.stubMetadata?.isRegionEntryStub);
-
-                                let destinationRegionName = null;
-                                let destinationRegionExpanded = false;
-
-                                if (destinationRegionId) {
-                                    if (regions.has(destinationRegionId)) {
-                                        const targetRegion = regions.get(destinationRegionId);
-                                        destinationRegionName = targetRegion?.name || null;
-                                        destinationRegionExpanded = true;
-                                    } else if (typeof pendingRegionStubs !== 'undefined' && pendingRegionStubs?.get) {
-                                        const pending = pendingRegionStubs.get(destinationRegionId);
-                                        if (pending) {
-                                            destinationRegionName = pending.name || null;
-                                        }
-                                    }
-                                }
-
-                                return {
-                                    id: exit?.id || `${loc.id}_${direction}`,
-                                    destination: exit?.destination || null,
-                                    destinationRegion: destinationRegionId,
-                                    destinationRegionName,
-                                    destinationRegionExpanded,
-                                    destinationName,
-                                    bidirectional: exit?.bidirectional !== false,
-                                    isVehicle: Boolean(exit?.isVehicle),
-                                    vehicleType: exit?.vehicleType || null,
-                                    destinationIsStub,
-                                    destinationIsRegionEntryStub
-                                };
-                            })
-                        };
-
-                        if (loc.imageId) {
-                            const metadata = generatedImages.get(loc.imageId);
-                            const firstImage = metadata?.images?.[0];
-                            locationPayload.image = firstImage
-                                ? { id: loc.imageId, url: firstImage.url }
-                                : { id: loc.imageId, url: null };
-                        }
-
-                        return locationPayload;
-                    })
+                    locations: locations
+                        .map(loc => buildMapLocationSummary(loc))
+                        .filter(Boolean)
                 };
 
                 res.json({ success: true, region: payload });
             } catch (error) {
                 console.error('Error building map data:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.get('/api/map/world', (req, res) => {
+            try {
+                if (!(regions instanceof Map) || regions.size === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'World map unavailable: no regions registered'
+                    });
+                }
+
+                const allLocations = gameLocations instanceof Map
+                    ? Array.from(gameLocations.values())
+                    : [];
+
+                if (allLocations.length === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'World map unavailable: no locations registered'
+                    });
+                }
+
+                const regionList = Array.from(regions.values());
+                const currentLocationId = currentPlayer ? currentPlayer.currentLocation || null : null;
+
+                const regionSummaries = regionList.map(region => {
+                    const locationIds = Array.isArray(region.locationIds)
+                        ? [...region.locationIds]
+                        : [];
+                    const parentRegionId = typeof region.parentRegionId === 'string' && region.parentRegionId.trim()
+                        ? region.parentRegionId.trim()
+                        : null;
+
+                    return {
+                        id: region.id,
+                        name: region.name,
+                        parentRegionId,
+                        isStub: Boolean(region.isStub),
+                        locationIds,
+                        locationCount: locationIds.length,
+                        averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
+                    };
+                });
+
+                const regionIdSet = new Set(regionSummaries.map(region => region.id));
+                const childLookup = new Map();
+                for (const summary of regionSummaries) {
+                    if (summary.parentRegionId && regionIdSet.has(summary.parentRegionId)) {
+                        const children = childLookup.get(summary.parentRegionId) || [];
+                        children.push(summary.id);
+                        childLookup.set(summary.parentRegionId, children);
+                    }
+                }
+                for (const summary of regionSummaries) {
+                    summary.childRegionIds = childLookup.get(summary.id) || [];
+                }
+
+                const locationSummaries = allLocations
+                    .map(loc => buildMapLocationSummary(loc))
+                    .filter(summary => summary && summary.regionId);
+
+                if (!locationSummaries.length) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'World map unavailable: no mapped locations found'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    world: {
+                        currentLocationId,
+                        regions: regionSummaries,
+                        locations: locationSummaries
+                    }
+                });
+            } catch (error) {
+                console.error('Error building world map data:', error);
                 res.status(500).json({
                     success: false,
                     error: error.message
