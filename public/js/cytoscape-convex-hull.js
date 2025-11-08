@@ -36,80 +36,124 @@
     return lower.concat(upper);
   }
 
-  function inflateHull(points, padding) {
-    if (!padding || padding <= 0 || !points.length) {
-      return points.slice();
+  function polygonOrientation(points) {
+    if (!Array.isArray(points) || points.length < 3) {
+      return 0;
     }
-
-    const centroid = points.reduce((acc, point) => {
-      acc.x += point.x;
-      acc.y += point.y;
-      return acc;
-    }, { x: 0, y: 0 });
-    centroid.x /= points.length;
-    centroid.y /= points.length;
-
-    return points.map(point => {
-      const dx = point.x - centroid.x;
-      const dy = point.y - centroid.y;
-      const len = Math.hypot(dx, dy) || 1;
-      return {
-        x: point.x + ((dx / len) * padding),
-        y: point.y + ((dy / len) * padding)
-      };
-    });
+    let sum = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const current = points[i];
+      const next = points[(i + 1) % points.length];
+      sum += (current.x * next.y) - (next.x * current.y);
+    }
+    return sum / 2;
   }
 
-  function drawRoundedPolygon(ctx, points, radius) {
-    if (!Array.isArray(points) || points.length === 0) {
-      return;
-    }
-    if (!radius || radius <= 0 || points.length < 3) {
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i += 1) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.closePath();
-      return;
+  function buildHullSegments(points, radius) {
+    if (!Array.isArray(points) || points.length < 3 || !radius || radius <= 0) {
+      return null;
     }
 
+    const orientation = polygonOrientation(points);
+    const clockwise = orientation < 0;
+    const segments = [];
     const count = points.length;
-    ctx.beginPath();
+
     for (let i = 0; i < count; i += 1) {
       const prev = points[(i - 1 + count) % count];
       const current = points[i];
       const next = points[(i + 1) % count];
 
-      const prevVector = { x: current.x - prev.x, y: current.y - prev.y };
-      const nextVector = { x: next.x - current.x, y: next.y - current.y };
+      const prevVec = {
+        x: current.x - prev.x,
+        y: current.y - prev.y
+      };
+      const nextVec = {
+        x: next.x - current.x,
+        y: next.y - current.y
+      };
 
-      const prevLength = Math.hypot(prevVector.x, prevVector.y) || 1;
-      const nextLength = Math.hypot(nextVector.x, nextVector.y) || 1;
+      const prevLen = Math.hypot(prevVec.x, prevVec.y) || 1;
+      const nextLen = Math.hypot(nextVec.x, nextVec.y) || 1;
 
-      const prevUnit = { x: prevVector.x / prevLength, y: prevVector.y / prevLength };
-      const nextUnit = { x: nextVector.x / nextLength, y: nextVector.y / nextLength };
+      const prevUnit = { x: prevVec.x / prevLen, y: prevVec.y / prevLen };
+      const nextUnit = { x: nextVec.x / nextLen, y: nextVec.y / nextLen };
 
-      const cornerRadius = Math.min(radius, prevLength / 2, nextLength / 2);
+      const normalFor = ({ x, y }) => (clockwise ? { x: -y, y: x } : { x: y, y: -x });
+
+      const prevNormal = normalFor(prevUnit);
+      const nextNormal = normalFor(nextUnit);
+
+      const prevNormalLen = Math.hypot(prevNormal.x, prevNormal.y) || 1;
+      const nextNormalLen = Math.hypot(nextNormal.x, nextNormal.y) || 1;
+
+      const normalizedPrevNormal = {
+        x: prevNormal.x / prevNormalLen,
+        y: prevNormal.y / prevNormalLen
+      };
+      const normalizedNextNormal = {
+        x: nextNormal.x / nextNormalLen,
+        y: nextNormal.y / nextNormalLen
+      };
 
       const startPoint = {
-        x: current.x - prevUnit.x * cornerRadius,
-        y: current.y - prevUnit.y * cornerRadius
+        x: current.x + normalizedPrevNormal.x * radius,
+        y: current.y + normalizedPrevNormal.y * radius
       };
 
       const endPoint = {
-        x: current.x + nextUnit.x * cornerRadius,
-        y: current.y + nextUnit.y * cornerRadius
+        x: current.x + normalizedNextNormal.x * radius,
+        y: current.y + normalizedNextNormal.y * radius
       };
 
-      if (i === 0) {
-        ctx.moveTo(startPoint.x, startPoint.y);
-      } else {
-        ctx.lineTo(startPoint.x, startPoint.y);
+      segments.push({
+        anchor: current.anchor ? { ...current.anchor } : { x: current.x, y: current.y },
+        startPoint,
+        endPoint
+      });
+    }
+
+    return {
+      radius,
+      clockwise,
+      segments
+    };
+  }
+
+  function drawHullPath(ctx, hullData) {
+    if (!hullData || !hullData.segments?.length || !hullData.radius) {
+      return;
+    }
+
+    const { segments, radius, clockwise } = hullData;
+    ctx.beginPath();
+
+    const first = segments[0];
+    ctx.moveTo(first.startPoint.x, first.startPoint.y);
+
+    for (let i = 0; i < segments.length; i += 1) {
+      const segment = segments[i];
+      if (i > 0) {
+        ctx.lineTo(segment.startPoint.x, segment.startPoint.y);
       }
 
-      ctx.quadraticCurveTo(current.x, current.y, endPoint.x, endPoint.y);
+      const anchor = segment.anchor;
+      let startAngle = Math.atan2(segment.startPoint.y - anchor.y, segment.startPoint.x - anchor.x);
+      let endAngle = Math.atan2(segment.endPoint.y - anchor.y, segment.endPoint.x - anchor.x);
+
+      if (clockwise) {
+        while (endAngle >= startAngle) {
+          endAngle -= Math.PI * 2;
+        }
+        ctx.arc(anchor.x, anchor.y, radius, startAngle, endAngle, true);
+      } else {
+        while (endAngle <= startAngle) {
+          endAngle += Math.PI * 2;
+        }
+        ctx.arc(anchor.x, anchor.y, radius, startAngle, endAngle, false);
+      }
     }
+
     ctx.closePath();
   }
 
@@ -136,7 +180,7 @@
         if (!node || typeof node.position !== 'function') return;
         const pos = node.position(); // Use model coordinates
         if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-          rawPoints.push({ x: pos.x, y: pos.y });
+          rawPoints.push({ x: pos.x, y: pos.y, anchor: { x: pos.x, y: pos.y } });
         }
       });
 
@@ -145,7 +189,8 @@
       }
 
       const hull = monotoneChain(rawPoints);
-      return inflateHull(hull, this.options.padding);
+      const effectiveRadius = Math.max(this.options.cornerRadius || 0, this.options.padding || 0);
+      return buildHullSegments(hull, effectiveRadius);
     }
 
     destroy() {
@@ -260,10 +305,10 @@
       ctx.lineCap = 'round';
 
       for (const path of this.paths) {
-        const hullPoints = path.getHullPoints();
-        if (!hullPoints || hullPoints.length < 3) continue;
+        const hullData = path.getHullPoints();
+        if (!hullData?.segments || hullData.segments.length < 3) continue;
 
-        drawRoundedPolygon(ctx, hullPoints, path.options.cornerRadius);
+        drawHullPath(ctx, hullData);
 
         ctx.fillStyle = path.options.fill;
         ctx.strokeStyle = path.options.stroke;
