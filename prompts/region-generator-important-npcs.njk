@@ -7,11 +7,11 @@ Attributes for an NPC should be rated as one of: poor, below average, average, a
 These NPC names are banned (names should not contain any of these):
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
-
+{#
 Here's a list of existing NPCs in other regions (to avoid generating duplicates):
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
-
+#}
 Here is a list of banned NPC concepts
 - Self-appointed guardian
 - Person who gives cryptic advice
@@ -46,9 +46,24 @@ Here are all the locations in the region:
 
 </context>
 
-Generate 0 or more (up to 6) important or prominent NPCs appropriate for the region above. What is considered important depends on the region. If the region is someone's house, then the people who live in the house are important. Other important people might be leaders of the region (mayor, etc); important merchants like a blacksmith, car salesman, arms dealer, etc; any other prominent individuals (famous people, wizards, healers, well known mercenaries); or just interesting people who aren't background characters.  Do not reuse NPC names. Do not rehash existing character concepts. Advance the story by creating new character concepts that are distinct from the existing ones. Output the NPCs in this format:
+<task>
+First, make a list of names of existing NPCs from the gameState tag.
+
+Next, generate 0 or more (up to 6) important or prominent NPCs appropriate for the region above. What is considered important depends on the region. If the region is someone's house, then the people who live in the house are important. Other important people might be leaders of the region (mayor, etc); important merchants like a blacksmith, car salesman, arms dealer, etc; any other prominent individuals (famous people, wizards, healers, well known mercenaries); or just interesting people who aren't background characters. To form a cohesive setting, you may connect newly generated NPCs with one another or with the existing NPCs listed in the gameState tag.
+
+Then, generate 3 short memories for each newly generated NPC, from their perspective, about recent significant events they have experienced. These should be no more than 2 sentences long each, and should include interactions with other NPCs, places, things, etc.
+
+Finally, check each newly generated NPC against the banned names, banned concepts, and existing NPCs listed in the gameState tag. If any newly generated NPC matches one of these, generate a new NPC to replace it.
+</task>
+
+Format your response as follows:
 
 <response>
+<existingNpcs>
+<npcName>Exact name of an existing NPC</npcName>
+<npcName>Exact name of an existing NPC</npcName>
+<!-- ...and so on. Every existing NPC in the gameState should be listed here. -->
+</existingNpcs>
 <npcs>
 <npc>
 <name>Full name of the NPC</name>

@@ -30,6 +30,9 @@ class SanitizedStringSet extends Set {
     }
     return false;
   }
+  keys() {
+    return Array.from(this);
+  }
 }
 
 module.exports = SanitizedStringSet;

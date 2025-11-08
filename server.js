@@ -2063,10 +2063,7 @@ async function ensureNpcByName(name, context = {}) {
     }
 
     const resolvedRegion = context.region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
-    const existingNpcSummaries = collectNpcSummariesForNameEnforcement({
-        location: resolvedLocation,
-        region: resolvedRegion
-    });
+    const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name));
 
     const generated = await generateNpcFromEvent({
         name,
@@ -2083,7 +2080,7 @@ async function ensureNpcByName(name, context = {}) {
         npc: generated,
         location: resolvedLocation,
         region: resolvedRegion,
-        existingNpcSummaries
+        existingNames
     });
 
     return generated;
@@ -9066,7 +9063,7 @@ function renderNpcNameRegenPrompt({ existingNpcSummaries = [], regenerationCandi
 
 async function enforceBannedNpcNames({
     npcDataList,
-    existingNpcSummaries,
+    existingNames,
     conversationMessages
 } = {}) {
     if (!Array.isArray(npcDataList) || !npcDataList.length) {
@@ -9095,16 +9092,7 @@ async function enforceBannedNpcNames({
     });
 
     console.log("enforceBannedNpcNames: Checking NPC names:", Array.from(namesBeingChecked));
-
-    // Get a list of all current NPC names
-    const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name));
-
     console.log("enforceBannedNpcNames: Existing NPC names:", existingNames);
-
-    // Remove the names of NPCs being processed from the current names
-    namesBeingChecked.forEach(name => {
-        existingNames.delete(name);
-    });
 
     const isNameValid = (name) => {
         if (!name || typeof name !== 'string') return false;
@@ -9175,8 +9163,8 @@ async function enforceBannedNpcNames({
 
         const existingNpcs = Player.getByNames(existingNames);
 
-        console.log("Existing names after filtering:", existingNames);
-        console.log("Existing NPCs for context:", existingNpcs);
+        console.log("Existing names after filtering:", existingNames.keys().join(', '));
+        console.log("Existing NPCs for context:", existingNpcs.join(', '));
 
         // Render regeneration prompt
         const prompt = renderNpcNameRegenPrompt({
@@ -9590,7 +9578,7 @@ async function enforceBannedNpcNameForPlayer({
     npc,
     location = null,
     region = null,
-    existingNpcSummaries = null,
+    existingNames,
     conversationMessages = []
 } = {}) {
     if (!npc || typeof npc !== 'object' || typeof npc.name !== 'string') {
@@ -9651,7 +9639,7 @@ async function enforceBannedNpcNameForPlayer({
 
     const [result] = await enforceBannedNpcNames({
         npcDataList,
-        existingNpcSummaries: summaries,
+        existingNames,
         conversationMessages: resolvedConversation
     });
 
@@ -11457,11 +11445,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const existingNpcsInOtherLocations = getAllPlayers(Array.from(otherLocationNpcIds)).filter(npc => npc && npc.isNPC);
         const existingNpcsInOtherRegions = getAllPlayers(Array.from(otherRegionNpcIds)).filter(npc => npc && npc.isNPC);
 
-        const existingNpcSummariesForRegen = [
-            ...existingNpcsInThisLocation.map(summarizeNpcForNameRegen).filter(Boolean),
-            ...existingNpcsInOtherLocations.map(summarizeNpcForNameRegen).filter(Boolean),
-            ...existingNpcsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
-        ];
+        const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name))
 
         const generationHints = location?.generationHints || {};
         const resolveCount = (value, fallback) => {
@@ -11563,7 +11547,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             Globals.updateSpinnerText({ message: `Naming NPCs for location ${location.name || location.id}...` });
             npcs = await enforceBannedNpcNames({
                 npcDataList: npcs,
-                existingNpcSummaries: existingNpcSummariesForRegen,
+                existingNames,
                 conversationMessages: baseConversation
             });
 
@@ -11812,10 +11796,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
         }
 
-        const existingNpcSummariesForRegen = [
-            ...regionNpcSummaries,
-            ...existingNpcObjectsInOtherRegions.map(summarizeNpcForNameRegen).filter(Boolean)
-        ];
+        const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name))
 
         console.log(`Character concepts for region ${region.id}:`, Array.isArray(region.characterConcepts) ? region.characterConcepts : []);
 
@@ -11884,7 +11865,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             Globals.updateSpinnerText({ message: `Naming NPCs for region ${region.name || region.id}...` });
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
-                existingNpcSummaries: existingNpcSummariesForRegen,
+                existingNames,
                 conversationMessages: baseConversation
             });
 

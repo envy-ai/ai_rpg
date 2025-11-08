@@ -3625,7 +3625,7 @@ class Events {
                     if (!actor || typeof actor.applyNeedBarChange !== 'function') {
                         continue;
                     }
-                    if (magnitude.toLowerCase() === 'none') {
+                    if (entry.magnitude.toLowerCase() === 'none') {
                         continue;
                     }
                     const change = actor.applyNeedBarChange(entry.bar, {

@@ -6705,16 +6705,9 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.temperature = templateTemperature;
                 }
 
+                stream.status('player_action:prompt', 'Awaiting response from AI...');
                 let aiResponse = await LLMClient.chatCompletion(requestOptions);
                 //console.log("Player Prose Request Options:", requestOptions);
-
-                if (promptType === 'player-action' && Globals.config.repetition_buster) {
-                    // extract final prose from numbered list
-                    const finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
-                    if (finalProseMatch && finalProseMatch[1]) {
-                        aiResponse = finalProseMatch[1].trim();
-                    }
-                }
 
                 const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: 'player_action', streamEmitter: stream });
 
@@ -6733,6 +6726,14 @@ module.exports = function registerApiRoutes(scope) {
                             generationPrompt: debugInfo.generationPrompt || null,
                             responseText: aiResponse
                         });
+                    }
+
+                    if (promptType === 'player-action' && Globals.config.repetition_buster) {
+                        // extract final prose from numbered list
+                        const finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                        if (finalProseMatch && finalProseMatch[1]) {
+                            aiResponse = finalProseMatch[1].trim();
+                        }
                     }
 
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');

@@ -9,10 +9,11 @@ These NPC names are banned (names should not contain any of these):
 {% for word in bannedWords %}- {{ word }}
 {% endfor %}
 
+{#
 Here's a list of existing NPCs (don't generate these again):
 {% for npc in existingNpcsInOtherRegions %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
-
+#}
 Here is a list of banned NPC concepts
 - Self-appointed guardian
 - Person who gives cryptic advice
@@ -27,9 +28,25 @@ Here's a list of existing NPCs already present in this location:
 {% endfor %}
 </context>
 #}
-Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. Additionally, be sure to generate any NPCs mentioned in the description of the location, but not in the location's npcs xml block, as those have already been generated. Output the NPCs in this format:
+
+<task>
+First, make a list of names of existing NPCs from the gameState tag.
+
+Then, generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. To form a cohesive setting, you may connect newly generated NPCs with one another or with the existing NPCs listed in the gameState tag.
+
+Then, generate 3 short memories for each newly generated NPC, from their perspective, about recent significant events they have experienced. These should be no more than 2 sentences long each, and should include interactions with other NPCs, places, things, etc.
+
+Finally, check each newly generated NPC against the banned names, banned concepts, and existing NPCs listed in the gameState tag. If any newly generated NPC matches one of these, generate a new NPC to replace it.
+</task>
+
+Format your response as follows:
 
 <response>
+<existingNpcs>
+<npcName>Exact name of an existing NPC</npcName>
+<npcName>Exact name of an existing NPC</npcName>
+<!-- ...and so on. Every existing NPC in the gameState should be listed here. -->
+</existingNpcs>
 <npcs>
 <npc>
 <name>Full name of the NPC</name>
@@ -87,3 +104,4 @@ Generate {{ numNpcs }} new NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} 
 <!-- more npcs as needed -->
 </bannedNpcs>
 </response>
+

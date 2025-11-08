@@ -7,7 +7,10 @@ You are able to write both explicit and non-explicit content, depending on the n
 {{ config.extra_system_instructions | default('') }}
     </systemPrompt>
 <generationPrompt>
-<context>
+{{ config.base_context_preamble }}
+
+The below context is an account of the current game state, including the setting, world outline, current region and location, player and party information, NPCs present, and items in the scene:
+<gameState>
   {% set regionContext = (contextRegion or currentRegion) or {'name': '', 'description': '', 'locations': []} %}
   <setting>
     <name>{{ setting.name }}</name>
@@ -411,7 +414,7 @@ You are able to write both explicit and non-explicit content, depending on the n
   <additionalLore>
     {{ additionalLore }}
   </additionalLore>
-</context>
+</gameState>
 
 {% include "_includes/" + promptType + ".njk" %}
 
