@@ -3161,7 +3161,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove()) {
+                if (Globals.processedMove) {
                     // If we just processed a move, skip generating new items, as the location generator handles this
                     return;
                 }
@@ -3180,7 +3180,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove()) {
+                if (Globals.processedMove) {
                     // If we just processed a move, skip generating new scenery, as the location generator handles this
                     return;
                 }
@@ -3264,7 +3264,7 @@ class Events {
                     return null;
                 };
 
-                if (Globals.processedMove()) {
+                if (Globals.processedMove) {
                     const indexesToRemove = [];
                     for (let index = 0; index < entries.length; index += 1) {
                         const entry = entries[index];
