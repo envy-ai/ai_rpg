@@ -11,3 +11,4 @@ autosaves/*
 temp/*
 imagegen/test*
 **/*.old
+config.yaml.polaris

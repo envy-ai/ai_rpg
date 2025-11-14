@@ -23,7 +23,7 @@ Provide a response in prose, strictly adhering to the outcome of the attack. Use
 {% else %}
 
 {# Credit to this post for the following prompt: https://old.reddit.com/r/NovelAi/comments/1oqa17z/glm46_creative_writing_system_v161_eliminating_ai/ #}
-
+{#
 ## Core Rule
 
 What characters DO > what they SAY > what narrator TELLS
@@ -293,7 +293,7 @@ Understood. I will write following these standards across all POVs (first/second
 - Ground with sensory detail in opening
 - Build context through action, not explanation
 
-==User==
+==User== #}
 
 <actionStatus>
 {{ success_or_failure }}
@@ -306,9 +306,16 @@ Guidelines:
 - NPCs should treat and perceive the player as they would any other NPC. On its own, being the player character should not confer any special treatment or deference from NPCs.
 - Words like "profoundly" and "unadulterated" and any other extreme hyperbole are overused and repetative.
 - Even if the text in the playerAction is exactly the same as something previously said, respond in a new way and continue advancing the story.
+- If multiple characters act or speak, split them into separate paragraphs for clarity.  
+Bad: 
+  Bob picked up the sword and swung at the goblin. Alice chanted a healing spell.
+Good: 
+  Bob picked up the sword and swung at the goblin. 
+  
+  Alice chanted a healing spell.
 
 {{ config.prose_instructions }}
-{% if config.repetition_buster %}
+{% if config.repetition_buster %}{#
 Respond in a numbered list of four steps:
 
 1. Provide a 3-5 sentence response in prose that advances the story while respecting the player's character and current situation. Split those 3-5 sentences into multiple short paragraphs if it makes sense to do so, particularly if different characters are speaking or acting.
@@ -320,8 +327,25 @@ Use this format:
 1. ...
 2. ...
 3. ...
-4. <finalProse>...</finalProse>
+4. <finalProse>...</finalProse>#}
+First, you will perform a self-correction and brainstorming process
+
+Second, you will write the final, polished story continuation
+
+1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt.
+
+2. Repetition Analysis: Identify specific words, phrases, or story beats from your **Draft Response** that are repetitive when compared to the recent story. Also, note any other repetitive patterns in the preceding text that should be avoided.
+
+3. Brainstorm New Directions: Propose 2-3 new actions, sensory details, or dialogue hooks that could be introduced right now to move the story forward in a fresh, logical way, while still adhering to the characters' personalities and this level of success/failure: "{{ success_or_failure }}".
+
+The final response must eliminate the weaknesses identified in your "Repetition Analysis" and incorporate at least one of the ideas from your "Brainstorm New Directions", enclosed in finalProse tags. Use multiple short paragraphs of 1-2 sentences if different characters are speaking or acting.
+
+Use this format: 
+1. ...
+2. ...
+3. ...
+<finalProse>...</finalProse>
 {% else %}
-Provide a 3-5 sentence response in prose that advances the story while respecting the player's character and current situation.
+Provide a {{ config.prose_length }} response in prose that advances the story while respecting the player's character and current situation.
 {% endif %}
 {% endif %}

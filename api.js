@@ -5301,10 +5301,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (Globals.config.repetition_buster) {
                     // extract final prose from numbered list
-                    const finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                    const finalProseMatch = raw.match(/<finalPro.e>([\s\S]*?)/i);
                     if (finalProseMatch && finalProseMatch[1]) {
-                        raw = finalProseMatch[1].trim();
+                        //Strip closing tag and anything after
+                        raw = finalProseMatch[1].replace(/<\/finalPro.e>.*/i, '').trim();
                     }
+
                 }
 
                 const debug = {
@@ -5615,6 +5617,19 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('processRandomEvents requires an entryCollector array.');
             }
             return maybeTriggerRandomEvent({ stream, locationOverride, entryCollector, forceType });
+        }
+
+        async function withProcessedMoveSuspended(callback) {
+            if (typeof callback !== 'function') {
+                throw new Error('withProcessedMoveSuspended requires a callback function.');
+            }
+            const previousProcessedMove = Globals.processedMove;
+            Globals.processedMove = false;
+            try {
+                return await callback();
+            } finally {
+                Globals.processedMove = previousProcessedMove;
+            }
         }
 
         // Chat API endpoint
@@ -7299,11 +7314,11 @@ module.exports = function registerApiRoutes(scope) {
 
 
                             try {
-                                const randomEventResult = await processRandomEvents({
+                                const randomEventResult = await withProcessedMoveSuspended(() => processRandomEvents({
                                     stream,
                                     locationOverride: location,
                                     entryCollector: newChatEntries
-                                });
+                                }));
                                 if (randomEventResult) {
                                     if (!Array.isArray(npcTurns)) {
                                         npcTurns = [];
@@ -10435,9 +10450,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (typeof body.description !== 'string' || !body.description.trim()) {
-                    return res.status(400).json({ success: false, error: 'Description must be a non-empty string' });
-                }
                 const resolvedDescription = body.description.trim();
 
                 const numericLevel = Number(body.level);

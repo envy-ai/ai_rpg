@@ -11357,11 +11357,6 @@
             payload.name = nameValue.trim() || null;
 
             const descriptionValue = locationEditDescriptionInput?.value ?? '';
-            if (!descriptionValue.trim()) {
-                setLocationEditStatus('Description cannot be empty.', 'error');
-                locationEditDescriptionInput?.focus();
-                return;
-            }
             payload.description = descriptionValue.trim();
 
             const levelValue = Number(locationEditLevelInput?.value ?? NaN);
@@ -12104,11 +12099,6 @@
             }
 
             const descriptionValue = regionEditDescriptionInput?.value ?? '';
-            if (!descriptionValue.trim()) {
-                setRegionEditStatus('Region description cannot be empty.', 'error');
-                regionEditDescriptionInput?.focus();
-                return;
-            }
 
             const averageLevelRaw = regionEditAverageLevelInput?.value ?? '';
             if (!averageLevelRaw.toString().trim()) {

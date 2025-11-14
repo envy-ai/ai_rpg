@@ -169,6 +169,47 @@
         }
       },
       {
+        selector: 'node.region-exit-node',
+        style: {
+          'shape': 'roundrectangle',
+          'width': 34,
+          'height': 34,
+          'background-color': '#10b981',
+          'border-color': '#064e3b',
+          'border-width': 1.5,
+          'label': 'data(label)',
+          'font-size': '6px',
+          'font-weight': 600,
+          'text-wrap': 'wrap',
+          'text-max-width': '70px',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#ecfccb',
+          'text-outline-width': 2,
+          'text-outline-color': 'rgba(6, 78, 59, 0.8)',
+          'background-image': 'data(symbolImage)',
+          'background-fit': 'cover',
+          'background-clip': 'node',
+          'background-opacity': 0.35,
+          'padding': '4px',
+          'shadow-blur': 4,
+          'shadow-color': 'rgba(16, 185, 129, 0.4)',
+          'events': 'no'
+        }
+      },
+      {
+        selector: 'edge.region-exit-edge',
+        style: {
+          'width': 1.5,
+          'curve-style': 'straight',
+          'line-color': '#34d399',
+          'target-arrow-color': '#34d399',
+          'target-arrow-shape': 'triangle',
+          'target-distance-from-node': 6,
+          'line-style': 'dashed'
+        }
+      },
+      {
         selector: 'edge.bidirectional',
         style: {
           'source-arrow-shape': 'triangle',
@@ -256,8 +297,7 @@
         },
         classes: 'region-label',
         grabbable: false,
-        selectable: false,
-        locked: true
+        selectable: false
       };
     });
   }
@@ -268,6 +308,7 @@
       data: {
         id: `${REGION_NODE_PREFIX}${region.id}:group`,
         regionId: region.id,
+        parent: `${REGION_NODE_PREFIX}${region.id}`,
         groupFill: (colorLookup.get(region.id) || {}).bubbleFill || 'rgba(56, 189, 248, 0.12)',
         groupBorder: (colorLookup.get(region.id) || {}).border || 'rgba(56, 189, 248, 0.65)'
       },
@@ -277,32 +318,170 @@
     }));
   }
 
-  function buildLocationNodes(locations, regionGroupLookup) {
-    if (!Array.isArray(locations)) return [];
-    return locations.map(location => {
+  function buildRegionMembershipLookup(regions = []) {
+    const membershipLookup = new Map();
+    if (!Array.isArray(regions) || !regions.length) {
+      return membershipLookup;
+    }
+
+    const index = new Map();
+    for (const region of regions) {
+      if (region && region.id) {
+        index.set(region.id, region);
+      }
+    }
+
+    const resolveMembership = (regionId, stack = new Set()) => {
+      if (!regionId || !index.has(regionId)) {
+        return [];
+      }
+      if (membershipLookup.has(regionId)) {
+        return membershipLookup.get(regionId);
+      }
+      if (stack.has(regionId)) {
+        return [regionId];
+      }
+
+      stack.add(regionId);
+      const region = index.get(regionId);
+      const memberships = [region.id];
+      const parentId = typeof region.parentRegionId === 'string' && region.parentRegionId.trim()
+        ? region.parentRegionId.trim()
+        : null;
+      if (parentId && index.has(parentId)) {
+        memberships.push(...resolveMembership(parentId, stack));
+      }
+      stack.delete(regionId);
+
+      const uniqueMemberships = Array.from(new Set(memberships));
+      membershipLookup.set(regionId, uniqueMemberships);
+      return uniqueMemberships;
+    };
+
+    for (const region of regions) {
+      if (region && region.id) {
+        resolveMembership(region.id);
+      }
+    }
+    return membershipLookup;
+  }
+
+  function buildExitSymbolImage(symbol = '?') {
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">',
+      '<rect width="120" height="120" fill="white" fill-opacity="0"/>',
+      `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="\'Segoe UI\', sans-serif" font-size="80">${symbol}</text>`,
+      '</svg>'
+    ].join('');
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  function buildLocationNodes(locations, regionGroupLookup, regionMembershipLookup = new Map()) {
+    if (!Array.isArray(locations)) {
+      return { nodes: [], orphanLocations: new Map() };
+    }
+    const nodes = [];
+    const orphanLocations = new Map();
+    for (const location of locations) {
+      const parentId = regionGroupLookup.get(location.regionId);
+      if (!parentId) {
+        orphanLocations.set(location.id, location);
+        continue;
+      }
+
       const classes = ['location-node'];
       if (location.visited) classes.push('visited');
       if (location.isStub) classes.push('stub');
-      return {
+      const membership = regionMembershipLookup.get(location.regionId) || (
+        location.regionId ? [location.regionId] : []
+      );
+
+      nodes.push({
         data: {
           id: location.id,
           label: location.name || location.id,
           regionId: location.regionId,
-          parent: regionGroupLookup.get(location.regionId) || undefined,
+          parent: parentId,
           visited: Boolean(location.visited),
           isStub: Boolean(location.isStub),
-          imageUrl: location.image?.url || null
+          imageUrl: location.image?.url || null,
+          regionMembership: membership
         },
         classes: classes.join(' ')
-      };
-    });
+      });
+    }
+
+    return {
+      nodes,
+      orphanLocations
+    };
   }
 
-  function buildLocationEdges(locations) {
-    const locationIds = new Set(locations.map(loc => loc.id));
+  function buildOrphanExitNodes(orphanLocations, locations = [], regionGroupLookup) {
+    if (!orphanLocations || orphanLocations.size === 0) {
+      return { exitNodes: [], exitEdges: [] };
+    }
+
+    const exitNodes = [];
+    const exitEdges = [];
+    const createdExitNodes = new Map();
+
+    for (const source of locations) {
+      const sourceParent = regionGroupLookup.get(source.regionId);
+      if (!sourceParent || !Array.isArray(source.exits)) {
+        continue;
+      }
+      for (const exit of source.exits) {
+        const destinationId = exit?.destination;
+        if (!destinationId || !orphanLocations.has(destinationId)) {
+          continue;
+        }
+        const orphan = orphanLocations.get(destinationId);
+        const cacheKey = `${source.id}::${destinationId}`;
+        let exitNodeId = createdExitNodes.get(cacheKey);
+        if (!exitNodeId) {
+          exitNodeId = `region-exit-${source.id}-${destinationId}`;
+          createdExitNodes.set(cacheKey, exitNodeId);
+          exitNodes.push({
+            data: {
+              id: exitNodeId,
+              label: orphan.name || orphan.id,
+              sourceLocationId: source.id,
+              targetLocationId: orphan.id,
+              parent: sourceParent,
+              symbolImage: buildExitSymbolImage('?')
+            },
+            classes: 'region-exit-node',
+            grabbable: false,
+            selectable: false
+          });
+        }
+
+        exitEdges.push({
+          data: {
+            id: `${source.id}_${exitNodeId}`,
+            source: source.id,
+            target: exitNodeId,
+            regionExit: true
+          },
+          classes: 'region-exit-edge'
+        });
+      }
+    }
+
+    return { exitNodes, exitEdges };
+  }
+
+  function buildLocationEdges(locations, validLocationIds) {
+    const locationIds = validLocationIds instanceof Set
+      ? validLocationIds
+      : new Set(locations.map(loc => loc.id));
     const edgeMap = new Map();
 
     for (const location of locations) {
+      if (!locationIds.has(location.id)) {
+        continue;
+      }
       for (const exit of location.exits || []) {
         const destinationId = exit.destination;
         if (!destinationId || !locationIds.has(destinationId)) continue;
@@ -372,7 +551,13 @@
 
     const locationNodes = cy.nodes('.location-node');
     for (const region of regions) {
-      const members = locationNodes.filter(node => node.data('regionId') === region.id);
+      const members = locationNodes.filter(node => {
+        const membership = node.data('regionMembership');
+        if (Array.isArray(membership)) {
+          return membership.includes(region.id);
+        }
+        return node.data('regionId') === region.id;
+      });
       if (members.length < 3) {
         continue;
       }
@@ -389,6 +574,32 @@
     return plugin;
   }
 
+  function ensureAdventureTabFocus() {
+    if (typeof window.activateTab !== 'function') {
+      return;
+    }
+    window.activateTab('adventure');
+  }
+
+  function handleWorldMapTravelResult(result) {
+    if (!result) {
+      return;
+    }
+    if (typeof result.then === 'function') {
+      result.then(success => {
+        if (success) {
+          ensureAdventureTabFocus();
+        }
+      }).catch(error => {
+        console.warn('World map travel failed:', error);
+      });
+      return;
+    }
+    if (result === true) {
+      ensureAdventureTabFocus();
+    }
+  }
+
   function attachWorldMapEvents(cy, container) {
     if (!cy || !container) return;
 
@@ -401,8 +612,14 @@
       const locationId = node.id();
       if (!locationId || !node.data('visited') || node.hasClass('current')) return;
 
-      if (typeof window.travelToAdjacentLocationFromMap === 'function') {
-        window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: true });
+      if (typeof window.travelToAdjacentLocationFromMap !== 'function') {
+        return;
+      }
+      try {
+        const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: true });
+        handleWorldMapTravelResult(travelResult);
+      } catch (error) {
+        console.warn('Failed to initiate travel from world map:', error);
       }
     });
 
@@ -474,15 +691,24 @@
     const regionColorLookup = new Map(regions.map(region => [region.id, getRegionColors(region.id)]));
     const regionGroupNodes = buildRegionGroupNodes(regions, regionColorLookup);
     const regionGroupLookup = new Map(regionGroupNodes.map(node => [node.data.regionId, node.data.id]));
-    const locationNodes = buildLocationNodes(world.locations || [], regionGroupLookup);
+    const regionMembershipLookup = buildRegionMembershipLookup(regions);
+    const { nodes: locationNodes, orphanLocations } = buildLocationNodes(
+      world.locations || [],
+      regionGroupLookup,
+      regionMembershipLookup
+    );
+    const { exitNodes, exitEdges } = buildOrphanExitNodes(orphanLocations, world.locations || [], regionGroupLookup);
     const regionLabelNodes = buildRegionLabelNodes(regions, regionColorLookup);
-    const edges = buildLocationEdges(world.locations || []);
+    const locationIdSet = new Set(locationNodes.map(node => node.data.id));
+    const edges = buildLocationEdges(world.locations || [], locationIdSet);
 
     cy.add([
+      ...regionLabelNodes,
       ...regionGroupNodes,
       ...locationNodes,
-      ...regionLabelNodes,
-      ...edges
+      ...exitNodes,
+      ...edges,
+      ...exitEdges
     ]);
 
     attachWorldMapEvents(cy, container);

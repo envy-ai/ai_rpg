@@ -445,9 +445,6 @@ class Location {
   }
 
   set description(newDescription) {
-    if (!newDescription || typeof newDescription !== 'string') {
-      throw new Error('Description must be a non-empty string');
-    }
     this.#description = newDescription.trim();
     this.#lastUpdated = new Date();
   }

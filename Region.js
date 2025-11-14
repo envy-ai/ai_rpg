@@ -506,9 +506,6 @@ class Region {
       throw new Error('Region description must be a string');
     }
     const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error('Region description cannot be empty');
-    }
     this.#description = trimmed;
     this.#lastUpdated = new Date().toISOString();
   }

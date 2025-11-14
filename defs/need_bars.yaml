@@ -54,6 +54,50 @@ need_bars:
       100:
         name: Stuffed
         effect: Good mood, slight bonuses
+  stamina:
+    name: Stamina
+    description: Represents the character's minute-to-minute energy levels. If this reaches 0, it will be difficult for them to swing weapons or do other strenuous acts. Regenerates very quickly.
+    related_attribute: strength
+    player_only: false
+    color: "#33CC66"
+    icon: ⚡
+    min: 0
+    max: 100
+    initial: 100
+    change_per_turn: 5
+    relative_to_level: false
+    large_increase:
+      - non-strenuous activity (such as walking)
+      - light exercise
+      - being outside of battle
+    fill_completely:
+      - sitting down for a moment
+      - standing still for a moment
+    small_decrease:
+      - moderately strenuous activity
+      - swinging a weapon
+    large_decrease:
+      - strenuous activity
+      - swinging a heavy weapon
+    effect_thresholds:
+      0:
+        name: Breathless
+        effect: Slow, -4 circumstance penalty to physical actions
+      1:
+        name: Winded
+        effect: -2 circumstance penalty to physical actions
+      15:
+        name: Slightly winded
+        effect: No effect
+      25:
+        name: Fine
+        effect: No effect
+      70:
+        name: Energized
+        effect: Good mood, slight bonuses
+      100:
+        name: Fully Energized
+        effect: Good mood, slight bonuses
   rest:
     name: Rest
     description: Represents how well-rested the character is. If this reaches 0, the character may suffer penalties to health and attributes. Normal travel does not reduce this need.

@@ -116,8 +116,38 @@
     return {
       radius,
       clockwise,
-      segments
+      orientation,
+      segments,
+      polygon: points.map(point => ({ x: point.x, y: point.y })),
+      hitPadding: radius
     };
+  }
+
+  function pointInInflatedPolygon(point, polygon, padding = 0, orientationValue = null) {
+    if (!polygon || polygon.length < 3) {
+      return false;
+    }
+    const orientation = Number.isFinite(orientationValue) ? orientationValue : polygonOrientation(polygon);
+    if (!orientation) {
+      return false;
+    }
+    const clockwise = orientation < 0;
+    for (let i = 0; i < polygon.length; i += 1) {
+      const a = polygon[i];
+      const b = polygon[(i + 1) % polygon.length];
+      const edge = { x: b.x - a.x, y: b.y - a.y };
+      const edgeLength = Math.hypot(edge.x, edge.y) || 1;
+      const cross = (edge.x * (point.y - a.y)) - (edge.y * (point.x - a.x));
+      const signedDistance = cross / edgeLength;
+      if (clockwise) {
+        if (signedDistance > padding) {
+          return false;
+        }
+      } else if (signedDistance < -padding) {
+        return false;
+      }
+    }
+    return true;
   }
 
   function drawHullPath(ctx, hullData) {
@@ -174,7 +204,7 @@
       nodes.on('add remove', this.boundUpdate);
     }
 
-    getHullPoints() {
+    getHullData() {
       const rawPoints = [];
       this.nodes.forEach(node => {
         if (!node || typeof node.position !== 'function') return;
@@ -190,7 +220,9 @@
 
       const hull = monotoneChain(rawPoints);
       const effectiveRadius = Math.max(this.options.cornerRadius || 0, this.options.padding || 0);
-      return buildHullSegments(hull, effectiveRadius);
+      const hullData = buildHullSegments(hull, effectiveRadius);
+      this.lastHullData = hullData;
+      return hullData;
     }
 
     destroy() {
@@ -209,6 +241,7 @@
         padding: 32,
         minPoints: 3,
         cornerRadius: 20,
+        draggable: false,
         ...options
       };
       this.paths = new Set();
@@ -224,17 +257,32 @@
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        zIndex: 2
+        zIndex: 0
       });
-      this.container.appendChild(this.canvas);
+      if (this.container.firstChild) {
+        this.container.insertBefore(this.canvas, this.container.firstChild);
+      } else {
+        this.container.appendChild(this.canvas);
+      }
 
       this.ctx = this.canvas.getContext('2d');
       this.resizeHandler = () => this.resize();
       this.viewportHandler = () => this.render();
+      this.pointerDownHandler = event => this.handlePointerDown(event);
+      this.pointerMoveHandler = event => this.handlePointerMove(event);
+      this.pointerUpHandler = event => this.handlePointerUp(event);
       cy.on('pan zoom', this.viewportHandler);
       cy.on('resize', this.resizeHandler);
       cy.one('destroy', () => this.destroy());
 
+      this.pointerDownOptions = { passive: false, capture: true };
+      this.pointerMoveOptions = { passive: false };
+      this.dragListenersAttached = false;
+      this.dragEnabled = Boolean(this.options.draggable);
+      if (this.dragEnabled) {
+        this.attachDragListeners();
+      }
+      this.dragState = null;
       this.resize();
     }
 
@@ -305,8 +353,10 @@
       ctx.lineCap = 'round';
 
       for (const path of this.paths) {
-        const hullData = path.getHullPoints();
+        const hullData = path.getHullData();
         if (!hullData?.segments || hullData.segments.length < 3) continue;
+
+        path.lastHullData = hullData;
 
         drawHullPath(ctx, hullData);
 
@@ -320,14 +370,188 @@
       ctx.restore();
     }
 
+    attachDragListeners() {
+      if (this.dragListenersAttached || !this.container) {
+        return;
+      }
+      this.container.addEventListener('pointerdown', this.pointerDownHandler, this.pointerDownOptions);
+      window.addEventListener('pointermove', this.pointerMoveHandler, this.pointerMoveOptions);
+      window.addEventListener('pointerup', this.pointerUpHandler, this.pointerMoveOptions);
+      window.addEventListener('pointercancel', this.pointerUpHandler, this.pointerMoveOptions);
+      this.dragListenersAttached = true;
+    }
+
+    detachDragListeners() {
+      if (!this.dragListenersAttached) {
+        return;
+      }
+      this.container.removeEventListener('pointerdown', this.pointerDownHandler, this.pointerDownOptions);
+      window.removeEventListener('pointermove', this.pointerMoveHandler, this.pointerMoveOptions);
+      window.removeEventListener('pointerup', this.pointerUpHandler, this.pointerMoveOptions);
+      window.removeEventListener('pointercancel', this.pointerUpHandler, this.pointerMoveOptions);
+      this.dragListenersAttached = false;
+    }
+
     destroy() {
       this.cy.off('pan zoom', this.viewportHandler);
       this.cy.off('resize', this.resizeHandler);
+      if (this.dragState?.pointerId && this.container.releasePointerCapture) {
+        try {
+          this.container.releasePointerCapture(this.dragState.pointerId);
+        } catch (error) {
+          console.warn('Failed to release pointer capture during destroy:', error);
+        }
+      }
+      this.dragState = null;
+      this.detachDragListeners();
       this.clear();
       if (this.canvas?.parentNode) {
         this.canvas.parentNode.removeChild(this.canvas);
       }
       this.ctx = null;
+    }
+
+    setDraggable(enabled) {
+      const next = Boolean(enabled);
+      if (next === this.dragEnabled) {
+        return;
+      }
+      this.dragEnabled = next;
+      if (this.dragEnabled) {
+        this.attachDragListeners();
+      } else {
+        if (this.dragState?.pointerId && this.container?.releasePointerCapture) {
+          try {
+            this.container.releasePointerCapture(this.dragState.pointerId);
+          } catch (error) {
+            console.warn('Failed to release pointer capture when disabling hull drag:', error);
+          }
+        }
+        this.dragState = null;
+        this.detachDragListeners();
+      }
+    }
+
+    handlePointerDown(event) {
+      if (!this.dragEnabled) {
+        return;
+      }
+      if (event.button !== 0 || this.dragState) {
+        return;
+      }
+      const modelPoint = this.eventToModelPoint(event);
+      if (!modelPoint) return;
+      const targetPath = this.findDraggablePath(modelPoint);
+      if (!targetPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      this.dragState = {
+        path: targetPath,
+        pointerId: event.pointerId,
+        lastModelPoint: modelPoint
+      };
+
+      if (this.container.setPointerCapture) {
+        try {
+          this.container.setPointerCapture(event.pointerId);
+        } catch (error) {
+          console.warn('Failed to set pointer capture for hull drag:', error);
+        }
+      }
+    }
+
+    handlePointerMove(event) {
+      if (!this.dragEnabled) {
+        return;
+      }
+      if (!this.dragState || event.pointerId !== this.dragState.pointerId) {
+        return;
+      }
+      if (!this.paths.has(this.dragState.path)) {
+        this.dragState = null;
+        return;
+      }
+      const modelPoint = this.eventToModelPoint(event);
+      if (!modelPoint) return;
+
+      const dx = modelPoint.x - this.dragState.lastModelPoint.x;
+      const dy = modelPoint.y - this.dragState.lastModelPoint.y;
+      if (!dx && !dy) {
+        return;
+      }
+
+      this.dragState.lastModelPoint = modelPoint;
+      this.dragState.path.nodes.forEach(node => {
+        if (!node || typeof node.position !== 'function') return;
+        const current = node.position();
+        if (!current) return;
+        node.position({
+          x: current.x + dx,
+          y: current.y + dy
+        });
+      });
+
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    handlePointerUp(event) {
+      if (!this.dragEnabled) {
+        return;
+      }
+      if (!this.dragState || event.pointerId !== this.dragState.pointerId) {
+        return;
+      }
+      if (this.container.releasePointerCapture) {
+        try {
+          this.container.releasePointerCapture(event.pointerId);
+        } catch (error) {
+          console.warn('Failed to release pointer capture after hull drag:', error);
+        }
+      }
+      this.dragState = null;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    eventToModelPoint(event) {
+      if (!event || !this.container) return null;
+      const rect = this.container.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const pan = this.cy.pan();
+      const zoom = this.cy.zoom() || 1;
+      return {
+        x: (x - pan.x) / zoom,
+        y: (y - pan.y) / zoom
+      };
+    }
+
+    findDraggablePath(modelPoint) {
+      if (!this.dragEnabled) {
+        return null;
+      }
+      if (!modelPoint || !this.paths.size) {
+        return null;
+      }
+      const orderedPaths = Array.from(this.paths);
+      for (let i = orderedPaths.length - 1; i >= 0; i -= 1) {
+        const path = orderedPaths[i];
+        const hullData = path.lastHullData || path.getHullData();
+        if (!hullData?.polygon || hullData.polygon.length < 3) {
+          continue;
+        }
+        const padding = hullData.hitPadding ?? Math.max(
+          path.options.padding || 0,
+          path.options.cornerRadius || 0
+        );
+        if (pointInInflatedPolygon(modelPoint, hullData.polygon, padding, hullData.orientation)) {
+          return path;
+        }
+      }
+      return null;
     }
   }
 

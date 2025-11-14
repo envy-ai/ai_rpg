@@ -208,7 +208,7 @@ class LLMClient {
         onResponse = null,
         validateXML = true,
         requiredTags = [],
-        waitAfterError = 0,
+        waitAfterError = 10,
         dumpReasoningToConsole = false,
         debug = false,
         frequencyPenalty = null,
@@ -249,7 +249,7 @@ class LLMClient {
             }
         }
 
-
+        dumpReasoningToConsole = true;
 
         if (metadataLabel) {
             console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
@@ -261,6 +261,8 @@ class LLMClient {
         const payload = additionalPayload && typeof additionalPayload === 'object'
             ? { ...additionalPayload }
             : {};
+
+        payload.reasoning = true;
 
         if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
             payload.frequency_penalty = frequencyPenalty !== null ? frequencyPenalty : aiConfig.frequency_penalty;
@@ -325,8 +327,6 @@ class LLMClient {
             timeout: resolvedTimeout
         };
 
-        response.reasoning = { "enabled": false };
-
         if (metadataLabel && metadata) {
             axiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
         } else if (metadataLabel) {
@@ -342,7 +342,7 @@ class LLMClient {
                 const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
 
                 // On any 5xx response, wait waitAfterError seconds and then retry
-                if (response.status >= 500 && response.status < 600) {
+                if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
                     console.error(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
                     if (waitAfterError > 0) {
                         console.log(`Waiting ${waitAfterError} seconds before retrying...`);
@@ -472,6 +472,15 @@ class LLMClient {
 
             } catch (error) {
                 console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
+                //console.debug(error);
+
+                if (error.status == 429) {
+                    console.log('Rate limit exceeded. Waiting before retrying...');
+                    if (waitAfterError > 0) {
+                        console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                        await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                    }
+                }
 
                 const filePath = LLMClient.writeLogFile({
                     prefix: 'chatCompletionError',
@@ -490,6 +499,7 @@ class LLMClient {
                     return '';
                 }
             }
+
             console.error(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
             attempt++;
         }
