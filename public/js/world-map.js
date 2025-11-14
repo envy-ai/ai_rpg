@@ -523,18 +523,18 @@
         if (sourceGroup && targetGroup && sourceGroup !== targetGroup) {
           return 28;
         }
-        return 48;
+        return 28;
       },
       edgeElasticity: edge => {
         const sourceGroup = getNodeGroupId(edge.source());
         const targetGroup = getNodeGroupId(edge.target());
         if (sourceGroup && targetGroup && sourceGroup !== targetGroup) {
-          return 0.95;
+          return 0.45;
         }
         return 0.45;
       },
       padding: 32,
-      nestingFactor: 0.9,
+      nestingFactor: 1.5,
       nodeDimensionsIncludeLabels: true
     };
 
