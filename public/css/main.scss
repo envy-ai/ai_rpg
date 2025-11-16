@@ -2129,10 +2129,33 @@ p:not(:last-child) {
   box-shadow: 0 6px 12px rgba(15, 23, 42, 0.35);
 }
 
+.entity-image-badges--interactive {
+  pointer-events: auto;
+}
+
 .entity-image-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.entity-image-badge--action {
+  background: rgba(37, 99, 235, 0.2);
+  border-radius: 999px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+
+  &:hover,
+  &:focus {
+    background: rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.8);
+  }
 }
 
 .location-entity-image {
@@ -4038,6 +4061,197 @@ body.modal-open {
   display: flex;
   gap: 12px;
   margin-left: auto;
+}
+
+.crafting-modal__dialog {
+  width: min(1100px, 96vw);
+}
+
+.crafting-modal__body {
+  flex-direction: column;
+  gap: 20px;
+}
+
+.crafting-modal__content {
+  display: flex;
+  flex-direction: row;
+  gap: 28px;
+
+  @media (max-width: 900px) {
+    flex-direction: column;
+  }
+}
+
+.crafting-modal__inventory,
+.crafting-modal__workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #f8fafc;
+}
+
+.crafting-modal__section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crafting-modal__hint {
+  font-size: 0.9rem;
+  color: #cbd5f5;
+  margin: 0;
+}
+
+.crafting-modal__inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 6px;
+
+  .inventory-card {
+    cursor: grab;
+
+    &.is-dragging {
+      opacity: 0.7;
+    }
+  }
+}
+
+.crafting-modal__empty {
+  padding: 18px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 0.95rem;
+  color: #cbd5f5;
+}
+
+.crafting-modal__slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 18px;
+}
+
+.crafting-modal__notes {
+  width: 100%;
+}
+
+.crafting-modal__notes-input {
+  width: 100%;
+  min-height: 64px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.6);
+  color: #f8fafc;
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  resize: vertical;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+  &:focus {
+    border-color: rgba(129, 140, 248, 0.9);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+    outline: none;
+  }
+}
+
+.crafting-slot {
+  border: 2px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 18px;
+  min-height: 150px;
+  aspect-ratio: 1/1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  text-align: center;
+  color: #cbd5f5;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+
+  &--hover {
+    border-color: rgba(129, 140, 248, 0.9);
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  &--filled {
+    border-style: solid;
+    border-color: rgba(129, 140, 248, 0.9);
+    background: rgba(37, 99, 235, 0.08);
+  }
+
+  &__placeholder {
+    font-size: 0.9rem;
+    opacity: 0.75;
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+
+    &-image {
+      width: 72px;
+      height: 72px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin-bottom: 4px;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+
+    &-icon {
+      font-size: 2rem;
+    }
+
+    &-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+  }
+
+  &__remove {
+    border: none;
+    background: rgba(15, 23, 42, 0.4);
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+
+    &:hover,
+    &:focus {
+      background: rgba(59, 130, 246, 0.5);
+      color: #fff;
+      outline: none;
+    }
+  }
+}
+
+.crafting-modal__footer {
+  justify-content: space-between;
+}
+
+.crafting-inventory-card.is-used {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
 }
 
 .npc-edit-grid {

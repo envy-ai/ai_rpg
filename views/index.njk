@@ -644,20 +644,26 @@
                 </button>
             </header>
             <div class="modal__body crafting-modal__body">
-                <section class="crafting-modal__inventory">
-                    <div class="crafting-modal__section-header">
-                        <h3>Player Inventory</h3>
-                        <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
-                    </div>
-                    <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
-                    <div id="craftingInventoryEmpty" class="crafting-modal__empty">Player inventory is not available.</div>
-                </section>
-                <section class="crafting-modal__workspace">
-                    <div class="crafting-modal__section-header">
-                        <h3 id="craftingWorkspaceTitle">Crafting Slots</h3>
-                    </div>
-                    <div id="craftingSlots" class="crafting-modal__slots"></div>
-                </section>
+                <div class="crafting-modal__content">
+                    <section class="crafting-modal__inventory">
+                        <div class="crafting-modal__section-header">
+                            <h3>Player Inventory</h3>
+                            <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
+                        </div>
+                        <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
+                        <div id="craftingInventoryEmpty" class="crafting-modal__empty">Player inventory is not available.</div>
+                    </section>
+                    <section class="crafting-modal__workspace">
+                        <div class="crafting-modal__section-header">
+                            <h3 id="craftingWorkspaceTitle">Crafting Slots</h3>
+                        </div>
+                        <div id="craftingSlots" class="crafting-modal__slots"></div>
+                    </section>
+                </div>
+                <div class="crafting-modal__notes">
+                    <label for="craftingNotesInput" class="sr-only">Crafting notes</label>
+                    <textarea id="craftingNotesInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally, describe what you are trying to craft."></textarea>
+                </div>
             </div>
             <footer class="modal__footer crafting-modal__footer">
                 <button type="button" class="button button-secondary" id="craftingCancelButton">Cancel</button>
@@ -4555,11 +4561,14 @@
         const craftingSlotsContainer = document.getElementById('craftingSlots');
         const craftingActionButton = document.getElementById('craftingActionButton');
         const craftingCancelButton = document.getElementById('craftingCancelButton');
+        const craftingNotesInput = document.getElementById('craftingNotesInput');
 
         let currentCraftingMode = 'craft';
         let currentCraftingSlotCount = 4;
         let craftingSlotAssignments = new Map();
         let craftingInventoryLookup = new Map();
+        let craftingInventoryCardRefs = new Map();
+        let craftingIsSubmitting = false;
         let craftingSourceThing = null;
         let craftingIsOpen = false;
 
@@ -8684,8 +8693,11 @@
         }
 
         if (craftingActionButton) {
-            craftingActionButton.addEventListener('click', () => {
-                closeCraftingModal();
+            craftingActionButton.addEventListener('click', async () => {
+                if (craftingIsSubmitting) {
+                    return;
+                }
+                await submitCraftingRequest();
             });
         }
 
@@ -10410,6 +10422,12 @@
                     ? 'Process Item'
                     : 'Craft Items';
             }
+            if (craftingNotesInput) {
+                craftingNotesInput.value = '';
+                craftingNotesInput.placeholder = currentCraftingMode === 'process'
+                    ? 'Optionally, describe what you are trying to create via processing.'
+                    : 'Optionally, describe what you are trying to craft.';
+            }
 
             craftingModal.removeAttribute('hidden');
             craftingModal.setAttribute('aria-hidden', 'false');
@@ -10428,9 +10446,20 @@
             craftingModalBackdrop.setAttribute('hidden', '');
             craftingSlotAssignments = new Map();
             craftingInventoryLookup = new Map();
+            craftingInventoryCardRefs.forEach(card => {
+                card.classList.remove('is-used');
+                card.removeAttribute('aria-disabled');
+                card.draggable = true;
+            });
+            craftingInventoryCardRefs = new Map();
             craftingSourceThing = null;
+            if (craftingNotesInput) {
+                craftingNotesInput.value = '';
+            }
+            craftingIsSubmitting = false;
             craftingIsOpen = false;
             document.body.classList.remove('modal-open');
+            updateCraftingActionState();
         }
 
         function renderCraftingInventory(items = []) {
@@ -10440,6 +10469,7 @@
 
             craftingInventoryGrid.innerHTML = '';
             craftingInventoryLookup = new Map();
+            craftingInventoryCardRefs = new Map();
             const safeItems = Array.isArray(items) ? items : [];
 
             if (!safeItems.length) {
@@ -10462,6 +10492,7 @@
                 if (clone.id) {
                     card.dataset.thingId = clone.id;
                     card.draggable = true;
+                    craftingInventoryCardRefs.set(clone.id, card);
                 }
 
                 const icon = document.createElement('div');
@@ -10497,6 +10528,14 @@
                 }
 
                 if (clone.id) {
+                    const isAlreadyAssigned = isItemIdAssignedToAnySlot(clone.id);
+                    if (isAlreadyAssigned) {
+                        markCraftingInventoryItemUsed(clone.id, true);
+                        card.draggable = false;
+                    } else {
+                        markCraftingInventoryItemUsed(clone.id, false);
+                        card.draggable = true;
+                    }
                     card.addEventListener('dragstart', handleCraftingInventoryDragStart);
                     card.addEventListener('dragend', handleCraftingInventoryDragEnd);
                     card.addEventListener('dblclick', () => {
@@ -10559,13 +10598,25 @@
             slotElement.classList.add('crafting-slot--filled');
             const preview = document.createElement('div');
             preview.className = 'crafting-slot__item';
-            const icon = document.createElement('span');
-            icon.className = 'crafting-slot__item-icon';
-            icon.textContent = assignedItem.thingType === 'scenery' ? '🏞️' : '🎁';
+
+            const imageWrapper = document.createElement('div');
+            imageWrapper.className = 'crafting-slot__item-image';
+            renderEntityImage({
+                element: imageWrapper,
+                entityType: 'thing',
+                entityId: assignedItem.id || '',
+                imageId: assignedItem.imageId || null,
+                altText: assignedItem.name || 'Item',
+                placeholderIcon: assignedItem.thingType === 'scenery' ? '🏞️' : '🎁',
+                placeholderClass: 'crafting-slot__item-image-placeholder',
+                enableLightbox: false,
+                badges: getThingPropertyBadges(assignedItem)
+            });
+
             const label = document.createElement('span');
             label.className = 'crafting-slot__item-name';
             label.textContent = assignedItem.name || 'Item';
-            preview.appendChild(icon);
+            preview.appendChild(imageWrapper);
             preview.appendChild(label);
             slotElement.appendChild(preview);
             bindThingTooltip(preview, assignedItem);
@@ -10586,9 +10637,13 @@
             if (!craftingInventoryLookup.has(thingId)) {
                 return;
             }
+            if (isItemIdAssignedToAnySlot(thingId)) {
+                return;
+            }
             const sourceThing = craftingInventoryLookup.get(thingId);
             const clone = cloneThingRecord(sourceThing) || { ...sourceThing };
             craftingSlotAssignments.set(slotIndex, clone);
+            markCraftingInventoryItemUsed(thingId, true);
             const slotElement = craftingSlotsContainer?.querySelector(`[data-slot-index="${slotIndex}"]`);
             if (slotElement) {
                 updateCraftingSlotElement(slotElement);
@@ -10600,7 +10655,11 @@
             if (!craftingSlotAssignments.has(slotIndex)) {
                 return;
             }
+            const removed = craftingSlotAssignments.get(slotIndex);
             craftingSlotAssignments.delete(slotIndex);
+            if (removed?.id) {
+                markCraftingInventoryItemUsed(removed.id, false);
+            }
             const slotElement = craftingSlotsContainer?.querySelector(`[data-slot-index="${slotIndex}"]`);
             if (slotElement) {
                 updateCraftingSlotElement(slotElement);
@@ -10618,12 +10677,40 @@
             return false;
         }
 
+        function isItemIdAssignedToAnySlot(thingId) {
+            if (!thingId) {
+                return false;
+            }
+            for (const entry of craftingSlotAssignments.values()) {
+                if (entry?.id === thingId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function markCraftingInventoryItemUsed(thingId, isUsed) {
+            const card = craftingInventoryCardRefs.get(thingId);
+            if (!card) {
+                return;
+            }
+            if (isUsed) {
+                card.classList.add('is-used');
+                card.setAttribute('aria-disabled', 'true');
+                card.draggable = false;
+            } else {
+                card.classList.remove('is-used');
+                card.removeAttribute('aria-disabled');
+                card.draggable = true;
+            }
+        }
+
         function updateCraftingActionState() {
             if (!craftingActionButton) {
                 return;
             }
             const filledSlots = Array.from(craftingSlotAssignments.values()).filter(Boolean).length;
-            craftingActionButton.disabled = filledSlots === 0;
+            craftingActionButton.disabled = filledSlots === 0 || craftingIsSubmitting;
         }
 
         function handleCraftingInventoryDragStart(event) {
@@ -10673,6 +10760,66 @@
                 return;
             }
             assignItemToCraftingSlot(slotIndex, thingId);
+        }
+
+        function buildCraftingPayload() {
+            const slots = Array.from(craftingSlotAssignments.entries())
+                .sort((a, b) => a[0] - b[0])
+                .map(([slotIndex, item]) => ({
+                    slotIndex,
+                    thingId: item?.id || null,
+                    name: item?.name || null
+                }))
+                .filter(entry => entry.thingId);
+
+            return {
+                mode: currentCraftingMode,
+                notes: craftingNotesInput?.value?.trim() || '',
+                stationThingId: craftingSourceThing?.id || null,
+                slotCount: currentCraftingSlotCount,
+                itemIds: slots.map(entry => entry.thingId),
+                slots
+            };
+        }
+
+        async function submitCraftingRequest() {
+            const payload = buildCraftingPayload();
+            if (!payload.itemIds.length) {
+                return;
+            }
+
+            craftingIsSubmitting = true;
+            updateCraftingActionState();
+            const originalText = craftingActionButton?.textContent;
+            if (craftingActionButton) {
+                craftingActionButton.textContent = 'Processing...';
+            }
+
+            try {
+                const response = await fetch('/api/craft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    const errorMessage = result?.error || `Crafting failed (HTTP ${response.status})`;
+                    alert(errorMessage);
+                    return;
+                }
+                const successMessage = result?.message || 'Crafting request submitted.';
+                alert(successMessage);
+                closeCraftingModal();
+            } catch (error) {
+                console.warn('Crafting request failed:', error);
+                alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
+            } finally {
+                craftingIsSubmitting = false;
+                if (craftingActionButton) {
+                    craftingActionButton.textContent = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
+                }
+                updateCraftingActionState();
+            }
         }
 
         function formatTagValue(label, value) {
