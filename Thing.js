@@ -532,10 +532,10 @@ class Thing {
     this.#causeStatusEffect = null;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
-    this.#isVehicle = isVehicle;
-    this.#isCraftingStation = isCraftingStation;
-    this.#isProcessingStation = isProcessingStation;
-    this.#isHarvestable = isHarvestable;
+    this.isVehicle = isVehicle;
+    this.isCraftingStation = isCraftingStation;
+    this.isProcessingStation = isProcessingStation;
+    this.isHarvestable = isHarvestable;
 
     this.#applyMetadataFieldsFromMetadata();
 

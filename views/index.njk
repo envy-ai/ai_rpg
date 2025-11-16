@@ -982,6 +982,40 @@
                     <textarea id="thingEditDescription" rows="4"></textarea>
                 </div>
 
+                <div class="npc-edit-section thing-edit-flags">
+                    <h3>Item Properties</h3>
+                    <div class="thing-toggle-grid">
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsVehicle">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Vehicle</span>
+                                <span class="thing-toggle-hint">Usable for travel or transport (e.g., mounts, vehicles, teleport devices).</span>
+                            </div>
+                        </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsCraftingStation">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Crafting Station</span>
+                                <span class="thing-toggle-hint">Provides crafting interactions such as forges, workbenches, or labs.</span>
+                            </div>
+                        </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsProcessingStation">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Processing Station</span>
+                                <span class="thing-toggle-hint">Used to refine or process materials without crafting recipes.</span>
+                            </div>
+                        </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsHarvestable">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Harvestable Resource</span>
+                                <span class="thing-toggle-hint">Can be harvested repeatedly for materials or reagents.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="npc-edit-section">
                     <div class="npc-edit-section-header">
                         <h3>Metadata</h3>
@@ -1298,6 +1332,79 @@
             return {};
         })();
 
+        function renderImageBadgesOverlay(element, badges = null) {
+            if (!element) {
+                return;
+            }
+            const existing = element.querySelector('.entity-image-badges');
+            if (existing) {
+                existing.remove();
+            }
+
+            let normalized = [];
+            if (Array.isArray(badges) && badges.length) {
+                normalized = badges
+                    .map(badge => {
+                        if (typeof badge === 'string') {
+                            const icon = badge.trim();
+                            return icon ? { icon, label: '' } : null;
+                        }
+                        if (badge && typeof badge === 'object' && typeof badge.icon === 'string') {
+                            const icon = badge.icon.trim();
+                            if (!icon) {
+                                return null;
+                            }
+                            return {
+                                icon,
+                                label: typeof badge.label === 'string' ? badge.label : ''
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+            } else if (element?.dataset?.imageBadges) {
+                try {
+                    const stored = JSON.parse(element.dataset.imageBadges);
+                    if (Array.isArray(stored)) {
+                        normalized = stored
+                            .map(entry => {
+                                if (entry && typeof entry.icon === 'string') {
+                                    const icon = entry.icon.trim();
+                                    if (!icon) {
+                                        return null;
+                                    }
+                                    return {
+                                        icon,
+                                        label: typeof entry.label === 'string' ? entry.label : ''
+                                    };
+                                }
+                                return null;
+                            })
+                            .filter(Boolean);
+                    }
+                } catch (_) {
+                    normalized = [];
+                }
+            }
+
+            if (!normalized.length) {
+                return;
+            }
+
+            const overlay = document.createElement('div');
+            overlay.className = 'entity-image-badges';
+            normalized.forEach(badge => {
+                const span = document.createElement('span');
+                span.className = 'entity-image-badge';
+                span.textContent = badge.icon;
+                if (badge.label) {
+                    span.title = badge.label;
+                }
+                overlay.appendChild(span);
+            });
+            element.appendChild(overlay);
+        }
+
         function renderEntityImage({
             element,
             entityType,
@@ -1308,7 +1415,8 @@
             placeholderClass = 'image-placeholder',
             placeholderMarkup = null,
             enableLightbox = true,
-            force = false
+            force = false,
+            badges = null
         }) {
             if (!element) {
                 return Promise.resolve(null);
@@ -1319,9 +1427,46 @@
                 ? placeholderMarkup
                 : `<div class="${placeholderClass}">${placeholderIcon}</div>`;
 
+            const normalizedBadges = Array.isArray(badges)
+                ? badges
+                    .map(badge => {
+                        if (typeof badge === 'string') {
+                            const icon = badge.trim();
+                            return icon ? { icon, label: '' } : null;
+                        }
+                        if (badge && typeof badge === 'object' && typeof badge.icon === 'string') {
+                            const icon = badge.icon.trim();
+                            if (!icon) {
+                                return null;
+                            }
+                            return {
+                                icon,
+                                label: typeof badge.label === 'string' ? badge.label : ''
+                            };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean)
+                : [];
+
+            if (normalizedBadges.length) {
+                try {
+                    element.dataset.imageBadges = JSON.stringify(normalizedBadges);
+                } catch (_) {
+                    element.dataset.imageBadges = JSON.stringify(normalizedBadges.map(entry => ({ icon: entry.icon })));
+                }
+            } else {
+                delete element.dataset.imageBadges;
+            }
+
+            const applyBadgesOverlay = () => {
+                renderImageBadgesOverlay(element, normalizedBadges.length ? normalizedBadges : null);
+            };
+
             const applyImageMarkup = (url) => {
                 if (!url) {
                     element.innerHTML = computedPlaceholderMarkup;
+                    applyBadgesOverlay();
                     return;
                 }
 
@@ -1333,10 +1478,12 @@
                     img.dataset.lightboxCaption = altText || '';
                     bindLightboxElement(img);
                 }
+                applyBadgesOverlay();
             };
 
             const setPlaceholder = () => {
                 element.innerHTML = computedPlaceholderMarkup;
+                applyBadgesOverlay();
             };
 
             element.dataset.imageEntityType = entityType || '';
@@ -1433,6 +1580,7 @@
             }
             element.dataset.imageId = '';
             element.dataset.imageProcessing = 'true';
+            renderImageBadgesOverlay(element);
         }
 
         function applyEntityImagePlaceholder(entityType, entityId) {
@@ -4293,6 +4441,10 @@
         const thingEditLevelInput = document.getElementById('thingEditLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingEditIsVehicleInput = document.getElementById('thingEditIsVehicle');
+        const thingEditIsCraftingStationInput = document.getElementById('thingEditIsCraftingStation');
+        const thingEditIsProcessingStationInput = document.getElementById('thingEditIsProcessingStation');
+        const thingEditIsHarvestableInput = document.getElementById('thingEditIsHarvestable');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
         const thingMetadataAddBtn = document.getElementById('thingMetadataAddBtn');
         const thingAttributeBonusesList = document.getElementById('thingEditAttributeBonusesList');
@@ -4544,6 +4696,14 @@
             }
         }
 
+        const THING_BADGE_DEFINITIONS = [
+            { key: 'isVehicle', icon: '🚗', label: 'Vehicle' },
+            { key: 'isHarvestable', icon: '🌾', label: 'Harvestable Resource' },
+            { key: 'isCraftingStation', icon: '⚒️', label: 'Crafting Station' },
+            { key: 'isProcessingStation', icon: '⚙️', label: 'Processing Station' }
+        ];
+        const THING_BOOLEAN_METADATA_KEYS = THING_BADGE_DEFINITIONS.map(def => def.key);
+
         function formatThingMetadataValue(value) {
             if (value === undefined || value === null) {
                 return '';
@@ -4568,6 +4728,9 @@
             delete metadata.relativeLevel;
             delete metadata.location;
             delete metadata.locationId;
+            THING_BOOLEAN_METADATA_KEYS.forEach(key => {
+                delete metadata[key];
+            });
             return metadata;
         }
 
@@ -4649,6 +4812,43 @@
                 metadata[key] = parsed;
             });
             return metadata;
+        }
+
+        function coerceBooleanFlag(value) {
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                if (!normalized) {
+                    return false;
+                }
+                return normalized === 'true' || normalized === '1' || normalized === 'yes';
+            }
+            return Boolean(value);
+        }
+
+        function resolveThingBooleanFlag(thing, key) {
+            if (!thing || typeof thing !== 'object') {
+                return false;
+            }
+            if (thing[key] !== undefined && thing[key] !== null) {
+                return coerceBooleanFlag(thing[key]);
+            }
+            const metadataValue = thing.metadata?.[key];
+            if (metadataValue !== undefined && metadataValue !== null) {
+                return coerceBooleanFlag(metadataValue);
+            }
+            return false;
+        }
+
+        function getThingPropertyBadges(thing) {
+            if (!thing) {
+                return [];
+            }
+            return THING_BADGE_DEFINITIONS
+                .filter(definition => resolveThingBooleanFlag(thing, definition.key))
+                .map(definition => ({
+                    icon: definition.icon,
+                    label: definition.label
+                }));
         }
 
         function populateAttributeSelect(selectElement, selectedAttribute = '') {
@@ -5015,6 +5215,19 @@
 
             if (thingEditDescriptionInput) {
                 thingEditDescriptionInput.value = thing?.description || '';
+            }
+
+            if (thingEditIsVehicleInput) {
+                thingEditIsVehicleInput.checked = resolveThingBooleanFlag(thing, 'isVehicle');
+            }
+            if (thingEditIsCraftingStationInput) {
+                thingEditIsCraftingStationInput.checked = resolveThingBooleanFlag(thing, 'isCraftingStation');
+            }
+            if (thingEditIsProcessingStationInput) {
+                thingEditIsProcessingStationInput.checked = resolveThingBooleanFlag(thing, 'isProcessingStation');
+            }
+            if (thingEditIsHarvestableInput) {
+                thingEditIsHarvestableInput.checked = resolveThingBooleanFlag(thing, 'isHarvestable');
             }
 
             currentThingLockedMetadata = {};
@@ -9089,6 +9302,26 @@
                         }
                     });
                 }
+                if (thingEditIsVehicleInput) {
+                    const flag = Boolean(thingEditIsVehicleInput.checked);
+                    finalMetadata.isVehicle = flag;
+                    payload.isVehicle = flag;
+                }
+                if (thingEditIsCraftingStationInput) {
+                    const flag = Boolean(thingEditIsCraftingStationInput.checked);
+                    finalMetadata.isCraftingStation = flag;
+                    payload.isCraftingStation = flag;
+                }
+                if (thingEditIsProcessingStationInput) {
+                    const flag = Boolean(thingEditIsProcessingStationInput.checked);
+                    finalMetadata.isProcessingStation = flag;
+                    payload.isProcessingStation = flag;
+                }
+                if (thingEditIsHarvestableInput) {
+                    const flag = Boolean(thingEditIsHarvestableInput.checked);
+                    finalMetadata.isHarvestable = flag;
+                    payload.isHarvestable = flag;
+                }
                 payload.metadata = finalMetadata;
 
                 const attributeBonusesValue = collectThingAttributeBonuses();
@@ -9401,7 +9634,8 @@
                     imageId: item.imageId || null,
                     altText: item.name || 'Inventory item',
                     placeholderIcon: item.thingType === 'scenery' ? '🏞️' : '🎁',
-                    placeholderClass: 'location-entity-placeholder'
+                    placeholderClass: 'location-entity-placeholder',
+                    badges: getThingPropertyBadges(item)
                 });
 
                 const name = document.createElement('div');
@@ -10060,7 +10294,8 @@
                         imageId: entry.item.imageId || null,
                         altText: entry.item.name || 'Equipped item',
                         placeholderIcon,
-                        placeholderClass: 'npc-view-equipment-icon-placeholder'
+                        placeholderClass: 'npc-view-equipment-icon-placeholder',
+                        badges: getThingPropertyBadges(entry.item)
                     });
 
                     const textWrapper = document.createElement('div');
@@ -12884,7 +13119,8 @@
                                     imageId: thing.imageId || null,
                                     altText: thing.name || 'Location item',
                                     placeholderIcon,
-                                    placeholderClass: 'location-entity-placeholder'
+                                    placeholderClass: 'location-entity-placeholder',
+                                    badges: getThingPropertyBadges(thing)
                                 });
 
                                 const nameEl = document.createElement('div');

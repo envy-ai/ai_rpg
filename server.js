@@ -5486,7 +5486,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
-        const items = parseInventoryItems(inventoryContent);
+        const items = parseThingsXml(inventoryContent, { isInventory: true });
 
         const createdThings = [];
         for (const item of items) {
@@ -5841,7 +5841,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 }
 
                 const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-                const parsedItems = parseInventoryItems(inventoryContent) || [];
+                const parsedItems = parseThingsXml(inventoryContent, { isInventory: true }) || [];
                 const itemData = parsedItems.find(it => it?.name) || null;
                 if (!itemData) {
                     throw new Error('No item data returned by AI');
@@ -6213,7 +6213,7 @@ async function alterThingByPrompt({
         throw new Error('Empty item alteration response from AI.');
     }
 
-    const parsedItems = parseInventoryItems(aiResponse);
+    const parsedItems = parseThingsXml(aiResponse, { isInventory: true });
     if (!Array.isArray(parsedItems) || !parsedItems.length) {
         throw new Error('Thing alteration response did not include an item definition.');
     }
@@ -8481,95 +8481,6 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
 
 Globals.generateLevelUpAbilitiesForCharacter = generateLevelUpAbilitiesForCharacter;
 
-function parseInventoryItems(xmlContent) {
-    try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
-
-        const parserError = doc.getElementsByTagName('parsererror')[0];
-        if (parserError) {
-            throw new Error(parserError.textContent);
-        }
-
-        const collectTags = ['item', 'scenery', 'thing'];
-        const itemNodes = collectTags.flatMap(tag => Array.from(doc.getElementsByTagName(tag)));
-        const items = [];
-
-        for (const node of itemNodes) {
-            const nameNode = node.getElementsByTagName('name')[0];
-            if (!nameNode) {
-                continue;
-            }
-            const attributeBonusesNode = node.getElementsByTagName('attributeBonuses')[0];
-            const attributeBonuses = attributeBonusesNode
-                ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
-                    .map(bonusNode => {
-                        const attr = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
-                        const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
-                        if (!attr) {
-                            return null;
-                        }
-                        const bonus = Number(bonusRaw);
-                        return {
-                            attribute: attr,
-                            bonus: Number.isFinite(bonus) ? bonus : 0
-                        };
-                    })
-                    .filter(Boolean)
-                : [];
-
-            const statusEffectNode = node.getElementsByTagName('statusEffect')[0];
-            let causeStatusEffect = null;
-            if (statusEffectNode) {
-                const effectName = statusEffectNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                const effectDescription = statusEffectNode.getElementsByTagName('description')[0]?.textContent?.trim();
-                const effectDuration = statusEffectNode.getElementsByTagName('duration')[0]?.textContent?.trim();
-                const effectPayload = {};
-                if (effectName) effectPayload.name = effectName;
-                if (effectDescription) effectPayload.description = effectDescription;
-                if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
-                    effectPayload.duration = effectDuration;
-                }
-                if (Object.keys(effectPayload).length) {
-                    causeStatusEffect = effectPayload;
-                }
-            }
-
-            const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
-            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
-
-            const itemOrSceneryNode = node.getElementsByTagName('itemOrScenery')[0];
-            const itemOrScenery = itemOrSceneryNode ? itemOrSceneryNode.textContent.trim().toLowerCase() : '';
-
-            const item = {
-                name: nameNode.textContent.trim(),
-                description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
-                type: node.getElementsByTagName('type')[0]?.textContent?.trim() || 'item',
-                slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
-                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || getDefaultRarityLabel(),
-                value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
-                weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
-                properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
-                isVehicle: node.getElementsByTagName('isVehicle')[0]?.textContent?.trim().toLowerCase() === 'true',
-                isCraftingStation: node.getElementsByTagName('isCraftingStation')[0]?.textContent?.trim().toLowerCase() === 'true',
-                isProcessingStation: node.getElementsByTagName('isProcessingStation')[0]?.textContent?.trim().toLowerCase() === 'true',
-                isHarvestable: node.getElementsByTagName('isHarvestable')[0]?.textContent?.trim().toLowerCase() === 'true',
-                relativeLevel,
-                thingType: itemOrScenery,
-                itemOrScenery,
-                attributeBonuses,
-                attributeBonuses,
-                causeStatusEffect
-            };
-            items.push(item);
-        }
-
-        return items;
-    } catch (error) {
-        console.warn('Failed to parse inventory XML:', error.message);
-        return [];
-    }
-}
-
 function getBannedNpcWords() {
     if (Array.isArray(cachedBannedNpcWords)) {
         return cachedBannedNpcWords;
@@ -9904,7 +9815,7 @@ function renderLocationThingsPrompt(context = {}) {
     }
 }
 
-function parseLocationThingsXml(xmlContent) {
+function parseThingsXml(xmlContent, { isInventory = false } = {}) {
     try {
         const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
@@ -9913,10 +9824,8 @@ function parseLocationThingsXml(xmlContent) {
             throw new Error(parserError.textContent);
         }
 
-        const itemNodes = Array.from(doc.getElementsByTagName('item'));
-        // Also accept 'thing' and 'scenery' as top-level tags
-        itemNodes.push(...Array.from(doc.getElementsByTagName('thing')));
-        itemNodes.push(...Array.from(doc.getElementsByTagName('scenery')));
+        const collectTags = ['item', 'thing', 'scenery'];
+        const itemNodes = collectTags.flatMap(tag => Array.from(doc.getElementsByTagName(tag)));
 
         const items = [];
 
@@ -9972,19 +9881,35 @@ function parseLocationThingsXml(xmlContent) {
                 return '';
             })();
 
+            const resolvedKind = isInventory
+                ? 'item'
+                : (rawItemOrScenery || fallbackKind || 'item');
+
+            const parseBooleanTag = tag => {
+                const text = node.getElementsByTagName(tag)[0]?.textContent?.trim().toLowerCase();
+                return text === 'true';
+            };
+
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
-                itemOrScenery: rawItemOrScenery || fallbackKind,
-                type: node.getElementsByTagName('type')[0]?.textContent?.trim() || '',
+                itemOrScenery: resolvedKind,
+                thingType: resolvedKind,
+                type: node.getElementsByTagName('type')[0]?.textContent?.trim()
+                    || (resolvedKind === 'scenery' ? 'scenery' : 'item'),
                 slot: node.getElementsByTagName('slot')[0]?.textContent?.trim() || '',
-                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim() || '',
+                rarity: node.getElementsByTagName('rarity')[0]?.textContent?.trim()
+                    || (isInventory ? getDefaultRarityLabel() : ''),
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
                 relativeLevel,
                 attributeBonuses,
-                causeStatusEffect
+                causeStatusEffect,
+                isVehicle: parseBooleanTag('isVehicle'),
+                isCraftingStation: parseBooleanTag('isCraftingStation'),
+                isProcessingStation: parseBooleanTag('isProcessingStation'),
+                isHarvestable: parseBooleanTag('isHarvestable')
             };
 
             items.push(entry);
@@ -9992,7 +9917,7 @@ function parseLocationThingsXml(xmlContent) {
 
         return items;
     } catch (error) {
-        console.warn('Failed to parse location things XML:', error.message);
+        console.warn('Failed to parse things XML:', error.message);
         return [];
     }
 }
@@ -10125,7 +10050,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         console.warn('Failed to log location things generation:', logError.message);
     }
 
-    const parsedItems = parseLocationThingsXml(aiResponse);
+    const parsedItems = parseThingsXml(aiResponse);
     if (!parsedItems.length) {
         return [];
     }
