@@ -634,6 +634,37 @@
             </form>
         </div>
     </div>
+    <div id="craftingModalBackdrop" class="modal-backdrop" hidden></div>
+    <div id="craftingModal" class="modal crafting-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog crafting-modal__dialog">
+            <header class="modal__header">
+                <h2 id="craftingModalTitle">Crafting Station</h2>
+                <button type="button" class="modal__close" id="craftingModalCloseBtn" aria-label="Close crafting interface">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body crafting-modal__body">
+                <section class="crafting-modal__inventory">
+                    <div class="crafting-modal__section-header">
+                        <h3>Player Inventory</h3>
+                        <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
+                    </div>
+                    <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
+                    <div id="craftingInventoryEmpty" class="crafting-modal__empty">Player inventory is not available.</div>
+                </section>
+                <section class="crafting-modal__workspace">
+                    <div class="crafting-modal__section-header">
+                        <h3 id="craftingWorkspaceTitle">Crafting Slots</h3>
+                    </div>
+                    <div id="craftingSlots" class="crafting-modal__slots"></div>
+                </section>
+            </div>
+            <footer class="modal__footer crafting-modal__footer">
+                <button type="button" class="button button-secondary" id="craftingCancelButton">Cancel</button>
+                <button type="button" class="button button-primary" id="craftingActionButton" disabled>Craft Items</button>
+            </footer>
+        </div>
+    </div>
     <div id="npcMemoriesModal" class="modal npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1363,7 +1394,8 @@
                             }
                             return {
                                 icon,
-                                label: typeof badge.label === 'string' ? badge.label : ''
+                                label: typeof badge.label === 'string' ? badge.label : '',
+                                key: typeof badge.key === 'string' ? badge.key : null
                             };
                         }
                         return null;
@@ -1375,19 +1407,20 @@
                     if (Array.isArray(stored)) {
                         normalized = stored
                             .map(entry => {
-                                if (entry && typeof entry.icon === 'string') {
-                                    const icon = entry.icon.trim();
-                                    if (!icon) {
-                                        return null;
-                                    }
-                                    return {
-                                        icon,
-                                        label: typeof entry.label === 'string' ? entry.label : ''
-                                    };
+                            if (entry && typeof entry.icon === 'string') {
+                                const icon = entry.icon.trim();
+                                if (!icon) {
+                                    return null;
                                 }
-                                return null;
-                            })
-                            .filter(Boolean);
+                                return {
+                                    icon,
+                                    label: typeof entry.label === 'string' ? entry.label : '',
+                                    key: typeof entry.key === 'string' ? entry.key : null
+                                };
+                            }
+                            return null;
+                        })
+                        .filter(Boolean);
                     }
                 } catch (_) {
                     normalized = [];
@@ -1400,12 +1433,37 @@
 
             const overlay = document.createElement('div');
             overlay.className = 'entity-image-badges';
+            const hasInteractiveBadges = normalized.some(entry => entry.key === 'isCraftingStation' || entry.key === 'isProcessingStation');
+            if (hasInteractiveBadges) {
+                overlay.classList.add('entity-image-badges--interactive');
+            }
             normalized.forEach(badge => {
                 const span = document.createElement('span');
                 span.className = 'entity-image-badge';
                 span.textContent = badge.icon;
                 if (badge.label) {
                     span.title = badge.label;
+                }
+                if (badge.key) {
+                    span.dataset.badgeKey = badge.key;
+                }
+                const isCraftingAction = badge.key === 'isCraftingStation';
+                const isProcessingAction = badge.key === 'isProcessingStation';
+                if (isCraftingAction || isProcessingAction) {
+                    span.classList.add('entity-image-badge--action');
+                    span.setAttribute('role', 'button');
+                    span.setAttribute('tabindex', '0');
+                    const activateBadge = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openCraftingModalFromBadge(isProcessingAction ? 'isProcessingStation' : 'isCraftingStation', element);
+                    };
+                    span.addEventListener('click', activateBadge);
+                    span.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            activateBadge(event);
+                        }
+                    });
                 }
                 overlay.appendChild(span);
             });
@@ -1448,7 +1506,8 @@
                             }
                             return {
                                 icon,
-                                label: typeof badge.label === 'string' ? badge.label : ''
+                                label: typeof badge.label === 'string' ? badge.label : '',
+                                key: typeof badge.key === 'string' ? badge.key : null
                             };
                         }
                         return null;
@@ -1886,6 +1945,24 @@
                 clone.importantMemories = actor.importantMemories.slice(0);
             }
             return clone;
+        }
+
+        function cloneThingRecord(thing) {
+            if (!thing || typeof thing !== 'object') {
+                return null;
+            }
+            try {
+                if (typeof structuredClone === 'function') {
+                    return structuredClone(thing);
+                }
+            } catch (_) {
+                // ignore structuredClone errors and fall back to JSON cloning
+            }
+            try {
+                return JSON.parse(JSON.stringify(thing));
+            } catch (_) {
+                return { ...thing };
+            }
         }
 
         function computeHealthDelta(previousActor, currentActor) {
@@ -4467,6 +4544,25 @@
         const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
         const thingEditStatus = document.getElementById('thingEditStatus');
 
+        const craftingModalBackdrop = document.getElementById('craftingModalBackdrop');
+        const craftingModal = document.getElementById('craftingModal');
+        const craftingModalTitle = document.getElementById('craftingModalTitle');
+        const craftingWorkspaceTitle = document.getElementById('craftingWorkspaceTitle');
+        const craftingModalHint = document.getElementById('craftingModalHint');
+        const craftingModalCloseBtn = document.getElementById('craftingModalCloseBtn');
+        const craftingInventoryGrid = document.getElementById('craftingInventoryGrid');
+        const craftingInventoryEmpty = document.getElementById('craftingInventoryEmpty');
+        const craftingSlotsContainer = document.getElementById('craftingSlots');
+        const craftingActionButton = document.getElementById('craftingActionButton');
+        const craftingCancelButton = document.getElementById('craftingCancelButton');
+
+        let currentCraftingMode = 'craft';
+        let currentCraftingSlotCount = 4;
+        let craftingSlotAssignments = new Map();
+        let craftingInventoryLookup = new Map();
+        let craftingSourceThing = null;
+        let craftingIsOpen = false;
+
         let locationMenuContextOverride = null;
 
         function clearLocationMenuContext() {
@@ -4855,6 +4951,7 @@
             return THING_BADGE_DEFINITIONS
                 .filter(definition => resolveThingBooleanFlag(thing, definition.key))
                 .map(definition => ({
+                    key: definition.key,
                     icon: definition.icon,
                     label: definition.label
                 }));
@@ -8580,6 +8677,37 @@
             });
         }
 
+        if (craftingCancelButton) {
+            craftingCancelButton.addEventListener('click', () => {
+                closeCraftingModal();
+            });
+        }
+
+        if (craftingActionButton) {
+            craftingActionButton.addEventListener('click', () => {
+                closeCraftingModal();
+            });
+        }
+
+        if (craftingModalCloseBtn) {
+            craftingModalCloseBtn.addEventListener('click', () => {
+                closeCraftingModal();
+            });
+        }
+
+        if (craftingModalBackdrop) {
+            craftingModalBackdrop.addEventListener('click', () => {
+                closeCraftingModal();
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && craftingIsOpen) {
+                event.preventDefault();
+                closeCraftingModal();
+            }
+        });
+
         if (npcDispositionCancelBtn) {
             npcDispositionCancelBtn.addEventListener('click', () => {
                 closeNpcDispositionModal();
@@ -10220,6 +10348,331 @@
                     }
                 })();
             }
+        }
+
+        function openCraftingModalFromBadge(badgeKey, hostElement) {
+            const mode = badgeKey === 'isProcessingStation' ? 'process' : 'craft';
+            const thingId = hostElement?.dataset?.imageEntityId || null;
+            let sourceThing = null;
+            if (thingId && thingDataCache instanceof Map && thingDataCache.has(thingId)) {
+                sourceThing = thingDataCache.get(thingId);
+            }
+            openCraftingModal({ mode, sourceThing });
+        }
+
+        function openCraftingModal({ mode = 'craft', sourceThing = null } = {}) {
+            if (!craftingModal || !craftingModalBackdrop) {
+                return;
+            }
+
+            try {
+                window.floatingTooltipController?.hide?.();
+            } catch (_) {}
+
+            if (npcInventoryModal && npcInventoryModal.getAttribute('aria-hidden') === 'false') {
+                try {
+                    closeNpcInventoryModal();
+                } catch (_) {}
+            }
+
+            currentCraftingMode = mode === 'process' ? 'process' : 'craft';
+            currentCraftingSlotCount = currentCraftingMode === 'process' ? 1 : 4;
+            craftingSlotAssignments = new Map();
+            craftingInventoryLookup = new Map();
+            craftingSourceThing = sourceThing || null;
+
+            const playerData = typeof getLatestPlayerData === 'function'
+                ? getLatestPlayerData()
+                : (window.currentPlayerData || null);
+            const inventoryItems = Array.isArray(playerData?.inventory) ? playerData.inventory : [];
+
+            renderCraftingInventory(inventoryItems);
+            renderCraftingSlots(currentCraftingSlotCount);
+            updateCraftingActionState();
+
+            const stationName = craftingSourceThing?.name
+                || (currentCraftingMode === 'process' ? 'Processing Station' : 'Crafting Station');
+            if (craftingModalTitle) {
+                craftingModalTitle.textContent = stationName;
+            }
+            if (craftingWorkspaceTitle) {
+                craftingWorkspaceTitle.textContent = currentCraftingMode === 'process'
+                    ? 'Processing Slot'
+                    : 'Crafting Slots';
+            }
+            if (craftingModalHint) {
+                craftingModalHint.textContent = currentCraftingMode === 'process'
+                    ? 'Drag a single item into the slot to process it. Items remain in your inventory until you confirm.'
+                    : 'Drag up to four items into the slots to craft. Items remain in your inventory until you confirm.';
+            }
+            if (craftingActionButton) {
+                craftingActionButton.textContent = currentCraftingMode === 'process'
+                    ? 'Process Item'
+                    : 'Craft Items';
+            }
+
+            craftingModal.removeAttribute('hidden');
+            craftingModal.setAttribute('aria-hidden', 'false');
+            craftingModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            craftingIsOpen = true;
+            scrollModalToTop(craftingModal);
+        }
+
+        function closeCraftingModal() {
+            if (!craftingModal || !craftingModalBackdrop) {
+                return;
+            }
+            craftingModal.setAttribute('hidden', '');
+            craftingModal.setAttribute('aria-hidden', 'true');
+            craftingModalBackdrop.setAttribute('hidden', '');
+            craftingSlotAssignments = new Map();
+            craftingInventoryLookup = new Map();
+            craftingSourceThing = null;
+            craftingIsOpen = false;
+            document.body.classList.remove('modal-open');
+        }
+
+        function renderCraftingInventory(items = []) {
+            if (!craftingInventoryGrid || !craftingInventoryEmpty) {
+                return;
+            }
+
+            craftingInventoryGrid.innerHTML = '';
+            craftingInventoryLookup = new Map();
+            const safeItems = Array.isArray(items) ? items : [];
+
+            if (!safeItems.length) {
+                craftingInventoryEmpty.removeAttribute('hidden');
+                craftingInventoryGrid.setAttribute('hidden', '');
+                return;
+            }
+
+            craftingInventoryEmpty.setAttribute('hidden', '');
+            craftingInventoryGrid.removeAttribute('hidden');
+
+            safeItems.forEach(item => {
+                const clone = cloneThingRecord(item) || { ...item };
+                if (clone.id) {
+                    craftingInventoryLookup.set(clone.id, clone);
+                }
+                const card = document.createElement('div');
+                card.className = 'location-entity-card inventory-card crafting-inventory-card';
+                card.tabIndex = 0;
+                if (clone.id) {
+                    card.dataset.thingId = clone.id;
+                    card.draggable = true;
+                }
+
+                const icon = document.createElement('div');
+                icon.className = 'inventory-icon';
+                renderEntityImage({
+                    element: icon,
+                    entityType: 'thing',
+                    entityId: clone.id || '',
+                    imageId: clone.imageId || null,
+                    altText: clone.name || 'Inventory item',
+                    placeholderIcon: clone.thingType === 'scenery' ? '🏞️' : '🎁',
+                    placeholderClass: 'location-entity-placeholder',
+                    badges: getThingPropertyBadges(clone)
+                });
+
+                const name = document.createElement('div');
+                name.className = 'inventory-name';
+                name.textContent = clone.name || 'Unknown Item';
+                applyRarityClass(name, clone.rarity);
+
+                const rawSlot = typeof clone.slot === 'string' ? clone.slot.trim() : '';
+                const metadataSlot = typeof clone.metadata?.slot === 'string' ? clone.metadata.slot.trim() : '';
+                const slotLabelRaw = rawSlot && rawSlot.toLowerCase() !== 'n/a'
+                    ? rawSlot
+                    : (metadataSlot && metadataSlot.toLowerCase() !== 'n/a' ? metadataSlot : '');
+                card.appendChild(icon);
+                card.appendChild(name);
+                if (slotLabelRaw) {
+                    const slotBadge = document.createElement('div');
+                    slotBadge.className = 'inventory-slot-tag';
+                    slotBadge.textContent = slotLabelRaw;
+                    card.appendChild(slotBadge);
+                }
+
+                if (clone.id) {
+                    card.addEventListener('dragstart', handleCraftingInventoryDragStart);
+                    card.addEventListener('dragend', handleCraftingInventoryDragEnd);
+                    card.addEventListener('dblclick', () => {
+                        if (!assignItemToFirstAvailableSlot(clone.id)) {
+                            assignItemToCraftingSlot(0, clone.id);
+                        }
+                    });
+                    card.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            if (!assignItemToFirstAvailableSlot(clone.id)) {
+                                assignItemToCraftingSlot(0, clone.id);
+                            }
+                        }
+                    });
+                }
+
+                bindThingTooltip(card, clone);
+                craftingInventoryGrid.appendChild(card);
+            });
+        }
+
+        function renderCraftingSlots(slotCount) {
+            if (!craftingSlotsContainer) {
+                return;
+            }
+            craftingSlotsContainer.innerHTML = '';
+            for (let index = 0; index < slotCount; index += 1) {
+                const slot = document.createElement('div');
+                slot.className = 'crafting-slot';
+                slot.dataset.slotIndex = String(index);
+                slot.addEventListener('dragover', handleCraftingSlotDragOver);
+                slot.addEventListener('dragenter', handleCraftingSlotDragEnter);
+                slot.addEventListener('dragleave', handleCraftingSlotDragLeave);
+                slot.addEventListener('drop', handleCraftingSlotDrop);
+                slot.addEventListener('dblclick', () => clearCraftingSlot(index));
+                updateCraftingSlotElement(slot);
+                craftingSlotsContainer.appendChild(slot);
+            }
+        }
+
+        function updateCraftingSlotElement(slotElement) {
+            if (!slotElement) {
+                return;
+            }
+            const slotIndex = Number(slotElement.dataset.slotIndex);
+            const assignedItem = craftingSlotAssignments.get(slotIndex) || null;
+            slotElement.innerHTML = '';
+            slotElement.classList.remove('crafting-slot--filled');
+            slotElement.classList.remove('crafting-slot--hover');
+
+            if (!assignedItem) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'crafting-slot__placeholder';
+                placeholder.textContent = 'Empty Slot';
+                slotElement.appendChild(placeholder);
+                return;
+            }
+
+            slotElement.classList.add('crafting-slot--filled');
+            const preview = document.createElement('div');
+            preview.className = 'crafting-slot__item';
+            const icon = document.createElement('span');
+            icon.className = 'crafting-slot__item-icon';
+            icon.textContent = assignedItem.thingType === 'scenery' ? '🏞️' : '🎁';
+            const label = document.createElement('span');
+            label.className = 'crafting-slot__item-name';
+            label.textContent = assignedItem.name || 'Item';
+            preview.appendChild(icon);
+            preview.appendChild(label);
+            slotElement.appendChild(preview);
+            bindThingTooltip(preview, assignedItem);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'crafting-slot__remove';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                clearCraftingSlot(slotIndex);
+            });
+            slotElement.appendChild(removeBtn);
+        }
+
+        function assignItemToCraftingSlot(slotIndex, thingId) {
+            if (!craftingInventoryLookup.has(thingId)) {
+                return;
+            }
+            const sourceThing = craftingInventoryLookup.get(thingId);
+            const clone = cloneThingRecord(sourceThing) || { ...sourceThing };
+            craftingSlotAssignments.set(slotIndex, clone);
+            const slotElement = craftingSlotsContainer?.querySelector(`[data-slot-index="${slotIndex}"]`);
+            if (slotElement) {
+                updateCraftingSlotElement(slotElement);
+            }
+            updateCraftingActionState();
+        }
+
+        function clearCraftingSlot(slotIndex) {
+            if (!craftingSlotAssignments.has(slotIndex)) {
+                return;
+            }
+            craftingSlotAssignments.delete(slotIndex);
+            const slotElement = craftingSlotsContainer?.querySelector(`[data-slot-index="${slotIndex}"]`);
+            if (slotElement) {
+                updateCraftingSlotElement(slotElement);
+            }
+            updateCraftingActionState();
+        }
+
+        function assignItemToFirstAvailableSlot(thingId) {
+            for (let index = 0; index < currentCraftingSlotCount; index += 1) {
+                if (!craftingSlotAssignments.has(index)) {
+                    assignItemToCraftingSlot(index, thingId);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updateCraftingActionState() {
+            if (!craftingActionButton) {
+                return;
+            }
+            const filledSlots = Array.from(craftingSlotAssignments.values()).filter(Boolean).length;
+            craftingActionButton.disabled = filledSlots === 0;
+        }
+
+        function handleCraftingInventoryDragStart(event) {
+            const target = event.currentTarget;
+            const thingId = target?.dataset?.thingId;
+            if (!thingId) {
+                event.preventDefault();
+                return;
+            }
+            target.classList.add('is-dragging');
+            event.dataTransfer.setData('text/x-thing-id', thingId);
+            event.dataTransfer.effectAllowed = 'copy';
+        }
+
+        function handleCraftingInventoryDragEnd(event) {
+            event.currentTarget?.classList.remove('is-dragging');
+        }
+
+        function handleCraftingSlotDragOver(event) {
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
+            }
+        }
+
+        function handleCraftingSlotDragEnter(event) {
+            event.preventDefault();
+            event.currentTarget?.classList.add('crafting-slot--hover');
+        }
+
+        function handleCraftingSlotDragLeave(event) {
+            event.currentTarget?.classList.remove('crafting-slot--hover');
+        }
+
+        function handleCraftingSlotDrop(event) {
+            event.preventDefault();
+            const slotElement = event.currentTarget;
+            slotElement?.classList.remove('crafting-slot--hover');
+            const slotIndex = Number(slotElement?.dataset?.slotIndex);
+            if (!Number.isFinite(slotIndex)) {
+                return;
+            }
+            const thingId = event.dataTransfer?.getData('text/x-thing-id')
+                || event.dataTransfer?.getData('text/plain')
+                || '';
+            if (!thingId) {
+                return;
+            }
+            assignItemToCraftingSlot(slotIndex, thingId);
         }
 
         function formatTagValue(label, value) {
