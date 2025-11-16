@@ -34,6 +34,7 @@ class Thing {
   isCraftingStation = null;
   isProcessingStation = null;
   isHarvestable = null;
+  isSalvageable = null;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -96,6 +97,36 @@ class Thing {
     }
 
     return null;
+  }
+
+  static #normalizeBooleanFlag(value) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      if (value === 1) {
+        return true;
+      }
+      if (value === 0) {
+        return false;
+      }
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) {
+        return null;
+      }
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+        return true;
+      }
+      if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+        return false;
+      }
+    }
+    return Boolean(value);
   }
 
   static #normalizeNameIndexEntry(entry, name, index) {
@@ -496,7 +527,8 @@ class Thing {
     isVehicle = null,
     isCraftingStation = null,
     isProcessingStation = null,
-    isHarvestable = null
+    isHarvestable = null,
+    isSalvageable = null
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -532,10 +564,11 @@ class Thing {
     this.#causeStatusEffect = null;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
-    this.isVehicle = isVehicle;
-    this.isCraftingStation = isCraftingStation;
-    this.isProcessingStation = isProcessingStation;
-    this.isHarvestable = isHarvestable;
+    this.isVehicle = Thing.#normalizeBooleanFlag(isVehicle);
+    this.isCraftingStation = Thing.#normalizeBooleanFlag(isCraftingStation);
+    this.isProcessingStation = Thing.#normalizeBooleanFlag(isProcessingStation);
+    this.isHarvestable = Thing.#normalizeBooleanFlag(isHarvestable);
+    this.isSalvageable = Thing.#normalizeBooleanFlag(isSalvageable);
 
     this.#applyMetadataFieldsFromMetadata();
 
@@ -978,6 +1011,7 @@ class Thing {
 
   // Serialization methods
   toJSON() {
+    const normalizeBoolean = value => (value === null || value === undefined ? undefined : Boolean(value));
     return {
       id: this.#id,
       name: this.#name,
@@ -993,6 +1027,11 @@ class Thing {
       causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
+      isVehicle: normalizeBoolean(this.isVehicle),
+      isCraftingStation: normalizeBoolean(this.isCraftingStation),
+      isProcessingStation: normalizeBoolean(this.isProcessingStation),
+      isHarvestable: normalizeBoolean(this.isHarvestable),
+      isSalvageable: normalizeBoolean(this.isSalvageable),
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
     };
@@ -1001,6 +1040,16 @@ class Thing {
   static fromJSON(data) {
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid data provided to Thing.fromJSON');
+    }
+
+    const booleanFlagKeys = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+    const booleanFlagOptions = {};
+    for (const key of booleanFlagKeys) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        booleanFlagOptions[key] = data[key];
+      } else if (data.metadata && Object.prototype.hasOwnProperty.call(data.metadata, key)) {
+        booleanFlagOptions[key] = data.metadata[key];
+      }
     }
 
     const thing = new Thing({
@@ -1017,7 +1066,8 @@ class Thing {
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
       causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null,
       level: data.level ?? data.metadata?.level ?? null,
-      relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null
+      relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
+      ...booleanFlagOptions
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {
@@ -1129,6 +1179,22 @@ class Thing {
       this.#relativeLevel = null;
     }
 
+    if (meta.isVehicle !== undefined) {
+      this.isVehicle = Thing.#normalizeBooleanFlag(meta.isVehicle);
+    }
+    if (meta.isCraftingStation !== undefined) {
+      this.isCraftingStation = Thing.#normalizeBooleanFlag(meta.isCraftingStation);
+    }
+    if (meta.isProcessingStation !== undefined) {
+      this.isProcessingStation = Thing.#normalizeBooleanFlag(meta.isProcessingStation);
+    }
+    if (meta.isHarvestable !== undefined) {
+      this.isHarvestable = Thing.#normalizeBooleanFlag(meta.isHarvestable);
+    }
+    if (meta.isSalvageable !== undefined) {
+      this.isSalvageable = Thing.#normalizeBooleanFlag(meta.isSalvageable);
+    }
+
     this.#syncFieldsToMetadata();
   }
 
@@ -1161,6 +1227,51 @@ class Thing {
       this.#metadata.relativeLevel = this.#relativeLevel;
     } else {
       delete this.#metadata.relativeLevel;
+    }
+
+    const normalizedVehicle = Thing.#normalizeBooleanFlag(this.isVehicle);
+    if (normalizedVehicle === null) {
+      delete this.#metadata.isVehicle;
+      this.isVehicle = null;
+    } else {
+      this.#metadata.isVehicle = normalizedVehicle;
+      this.isVehicle = normalizedVehicle;
+    }
+
+    const normalizedCrafting = Thing.#normalizeBooleanFlag(this.isCraftingStation);
+    if (normalizedCrafting === null) {
+      delete this.#metadata.isCraftingStation;
+      this.isCraftingStation = null;
+    } else {
+      this.#metadata.isCraftingStation = normalizedCrafting;
+      this.isCraftingStation = normalizedCrafting;
+    }
+
+    const normalizedProcessing = Thing.#normalizeBooleanFlag(this.isProcessingStation);
+    if (normalizedProcessing === null) {
+      delete this.#metadata.isProcessingStation;
+      this.isProcessingStation = null;
+    } else {
+      this.#metadata.isProcessingStation = normalizedProcessing;
+      this.isProcessingStation = normalizedProcessing;
+    }
+
+    const normalizedHarvestable = Thing.#normalizeBooleanFlag(this.isHarvestable);
+    if (normalizedHarvestable === null) {
+      delete this.#metadata.isHarvestable;
+      this.isHarvestable = null;
+    } else {
+      this.#metadata.isHarvestable = normalizedHarvestable;
+      this.isHarvestable = normalizedHarvestable;
+    }
+
+    const normalizedSalvageable = Thing.#normalizeBooleanFlag(this.isSalvageable);
+    if (normalizedSalvageable === null) {
+      delete this.#metadata.isSalvageable;
+      this.isSalvageable = null;
+    } else {
+      this.#metadata.isSalvageable = normalizedSalvageable;
+      this.isSalvageable = normalizedSalvageable;
     }
   }
 

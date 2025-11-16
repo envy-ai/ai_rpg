@@ -1013,6 +1013,13 @@
                                 <span class="thing-toggle-hint">Can be harvested repeatedly for materials or reagents.</span>
                             </div>
                         </label>
+                        <label class="thing-toggle">
+                            <input type="checkbox" id="thingEditIsSalvageable">
+                            <div class="thing-toggle-details">
+                                <span class="thing-toggle-label">Salvageable</span>
+                                <span class="thing-toggle-hint">Can be broken down for parts or resources (consumed when salvaged).</span>
+                            </div>
+                        </label>
                     </div>
                 </div>
 
@@ -4445,6 +4452,7 @@
         const thingEditIsCraftingStationInput = document.getElementById('thingEditIsCraftingStation');
         const thingEditIsProcessingStationInput = document.getElementById('thingEditIsProcessingStation');
         const thingEditIsHarvestableInput = document.getElementById('thingEditIsHarvestable');
+        const thingEditIsSalvageableInput = document.getElementById('thingEditIsSalvageable');
         const thingMetadataList = document.getElementById('thingEditMetadataList');
         const thingMetadataAddBtn = document.getElementById('thingMetadataAddBtn');
         const thingAttributeBonusesList = document.getElementById('thingEditAttributeBonusesList');
@@ -4700,7 +4708,8 @@
             { key: 'isVehicle', icon: '🚗', label: 'Vehicle' },
             { key: 'isHarvestable', icon: '🌾', label: 'Harvestable Resource' },
             { key: 'isCraftingStation', icon: '⚒️', label: 'Crafting Station' },
-            { key: 'isProcessingStation', icon: '⚙️', label: 'Processing Station' }
+            { key: 'isProcessingStation', icon: '⚙️', label: 'Processing Station' },
+            { key: 'isSalvageable', icon: '♻️', label: 'Salvageable' }
         ];
         const THING_BOOLEAN_METADATA_KEYS = THING_BADGE_DEFINITIONS.map(def => def.key);
 
@@ -5228,6 +5237,9 @@
             }
             if (thingEditIsHarvestableInput) {
                 thingEditIsHarvestableInput.checked = resolveThingBooleanFlag(thing, 'isHarvestable');
+            }
+            if (thingEditIsSalvageableInput) {
+                thingEditIsSalvageableInput.checked = resolveThingBooleanFlag(thing, 'isSalvageable');
             }
 
             currentThingLockedMetadata = {};
@@ -9321,6 +9333,11 @@
                     const flag = Boolean(thingEditIsHarvestableInput.checked);
                     finalMetadata.isHarvestable = flag;
                     payload.isHarvestable = flag;
+                }
+                if (thingEditIsSalvageableInput) {
+                    const flag = Boolean(thingEditIsSalvageableInput.checked);
+                    finalMetadata.isSalvageable = flag;
+                    payload.isSalvageable = flag;
                 }
                 payload.metadata = finalMetadata;
 

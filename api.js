@@ -11533,7 +11533,8 @@ module.exports = function registerApiRoutes(scope) {
                     isVehicle: Boolean(rawSeed.isVehicle),
                     isHarvestable: Boolean(rawSeed.isHarvestable),
                     isCraftingStation: Boolean(rawSeed.isCraftingStation),
-                    isProcessingStation: Boolean(rawSeed.isProcessingStation)
+                    isProcessingStation: Boolean(rawSeed.isProcessingStation),
+                    isSalvageable: Boolean(rawSeed.isSalvageable)
                 };
 
                 const rawItemOrScenery = normalizeSeedString(rawSeed.itemOrScenery);
@@ -12277,6 +12278,89 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== THING MANAGEMENT API ENDPOINTS ====================
 
+        const THING_BOOLEAN_FLAG_KEYS = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+
+        function parseThingBooleanFlagValue(value, key) {
+            if (value === undefined) {
+                return undefined;
+            }
+            if (value === null) {
+                return null;
+            }
+            if (typeof value === 'boolean') {
+                return value;
+            }
+            if (typeof value === 'number') {
+                if (value === 1) {
+                    return true;
+                }
+                if (value === 0) {
+                    return false;
+                }
+                throw new Error(`Invalid numeric value for ${key}. Use 1 or 0.`);
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                if (!normalized || normalized === 'null') {
+                    return null;
+                }
+                if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+                    return true;
+                }
+                if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+                    return false;
+                }
+                throw new Error(`Invalid boolean string value "${value}" for ${key}.`);
+            }
+            throw new Error(`Unsupported value type for ${key}: ${typeof value}`);
+        }
+
+        function extractThingBooleanFlagsFromPayload(payload = {}) {
+            const flags = {};
+            for (const key of THING_BOOLEAN_FLAG_KEYS) {
+                if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                    flags[key] = parseThingBooleanFlagValue(payload[key], key);
+                }
+            }
+            return flags;
+        }
+
+        function applyThingBooleanFlagsToInstance(thing, flags = {}) {
+            if (!thing || typeof thing !== 'object') {
+                return;
+            }
+            const entries = Object.entries(flags).filter(([, value]) => value !== undefined);
+            if (!entries.length) {
+                return;
+            }
+            const metadata = thing.metadata || {};
+            let mutated = false;
+            for (const [key, value] of entries) {
+                if (value === null) {
+                    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
+                        delete metadata[key];
+                        mutated = true;
+                    }
+                    if (thing[key] !== null) {
+                        thing[key] = null;
+                        mutated = true;
+                    }
+                    continue;
+                }
+                if (thing[key] !== value) {
+                    thing[key] = value;
+                    mutated = true;
+                }
+                if (metadata[key] !== value) {
+                    metadata[key] = value;
+                    mutated = true;
+                }
+            }
+            if (mutated) {
+                thing.metadata = metadata;
+            }
+        }
+
         // Create a new thing
         app.post('/api/things', async (req, res) => {
             try {
@@ -12295,6 +12379,7 @@ module.exports = function registerApiRoutes(scope) {
                     relativeLevel,
                     statusEffects
                 } = req.body || {};
+                const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
 
                 const thing = new Thing({
                     name,
@@ -12309,7 +12394,8 @@ module.exports = function registerApiRoutes(scope) {
                     causeStatusEffect,
                     level,
                     relativeLevel,
-                    statusEffects
+                    statusEffects,
+                    ...booleanFlags
                 });
 
                 things.set(thing.id, thing);
@@ -12466,6 +12552,7 @@ module.exports = function registerApiRoutes(scope) {
                     relativeLevel,
                     statusEffects
                 } = req.body || {};
+                const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
                 const thing = things.get(id);
 
                 if (!thing) {
@@ -12554,6 +12641,8 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                 }
+
+                applyThingBooleanFlagsToInstance(thing, booleanFlags);
 
                 // Trigger image regeneration if visual properties changed (only when relevant)
                 let imageNeedsUpdate = false;

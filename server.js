@@ -1976,6 +1976,7 @@ function buildThingProfiles(location) {
 
         const metadata = thing.metadata || {};
         const statusEffects = typeof thing.getStatusEffects === 'function' ? thing.getStatusEffects() : [];
+        const booleanFlags = resolveThingBooleanFlagsFromInstance(thing);
 
         profiles.push({
             id: thing.id,
@@ -1989,7 +1990,8 @@ function buildThingProfiles(location) {
             attributeBonuses: thing.attributeBonuses || [],
             causeStatusEffect: thing.causeStatusEffect || null,
             metadata: metadata || {},
-            statusEffects
+            statusEffects,
+            ...booleanFlags
         });
     }
 
@@ -5548,6 +5550,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     relativeLevel,
                     level: computedLevel
                 });
+                const booleanFlags = extractThingBooleanFlags(item);
+                Object.assign(metadata, booleanFlags);
 
                 const thing = new Thing({
                     name: item.name,
@@ -5560,7 +5564,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     causeStatusEffect: item.causeStatusEffect,
                     level: computedLevel,
                     relativeLevel,
-                    metadata
+                    metadata,
+                    ...booleanFlags
                 });
                 things.set(thing.id, thing);
                 character.addInventoryItem(thing, { suppressNpcEquip: true });
@@ -5743,6 +5748,11 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             normalizedSeed.itemOrScenery = normalizedType === 'scenery' ? 'scenery' : 'item';
         }
 
+        const seedBooleanFlags = extractThingBooleanFlags(seed);
+        if (Object.keys(seedBooleanFlags).length) {
+            Object.assign(normalizedSeed, seedBooleanFlags);
+        }
+
         return normalizedSeed;
     };
 
@@ -5917,6 +5927,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     relativeLevel,
                     level: computedLevel
                 });
+                const booleanFlags = extractThingBooleanFlags(itemData);
+                Object.assign(metadata, booleanFlags);
 
                 //console.log(itemData);
                 //console.log("Itemdata ^^");
@@ -5932,7 +5944,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     causeStatusEffect: itemData?.causeStatusEffect,
                     level: computedLevel,
                     relativeLevel,
-                    metadata
+                    metadata,
+                    ...booleanFlags
                 });
 
                 const ownerLevelForLog = owner && Number.isFinite(owner?.level)
@@ -6019,6 +6032,14 @@ function buildThingPromptItem(thing) {
     }
 
     const metadata = thing.metadata || {};
+    const resolveBooleanFlag = (primaryValue, fallbackValue) => {
+        const primaryResolved = normalizeThingBooleanFlagValue(primaryValue);
+        if (primaryResolved !== null) {
+            return primaryResolved;
+        }
+        const fallbackResolved = normalizeThingBooleanFlagValue(fallbackValue);
+        return fallbackResolved !== null ? fallbackResolved : false;
+    };
     const rawSlot = typeof thing.slot === 'string'
         ? thing.slot
         : (typeof metadata.slot === 'string' ? metadata.slot : null);
@@ -6085,7 +6106,11 @@ function buildThingPromptItem(thing) {
         value: metadata.value ?? '',
         weight: metadata.weight ?? '',
         relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
-        isVehicle: Boolean(metadata.isVehicle),
+        isVehicle: resolveBooleanFlag(thing.isVehicle, metadata.isVehicle),
+        isCraftingStation: resolveBooleanFlag(thing.isCraftingStation, metadata.isCraftingStation),
+        isProcessingStation: resolveBooleanFlag(thing.isProcessingStation, metadata.isProcessingStation),
+        isHarvestable: resolveBooleanFlag(thing.isHarvestable, metadata.isHarvestable),
+        isSalvageable: resolveBooleanFlag(thing.isSalvageable, metadata.isSalvageable),
         attributeBonuses: attributeBonuses,
         causeStatusEffect: thing.causeStatusEffect || metadata.causeStatusEffect || null,
         properties: metadata.properties || ''
@@ -6145,6 +6170,10 @@ async function alterThingByPrompt({
         weight: itemForPrompt.weight,
         relativeLevel: 0,
         isVehicle: itemForPrompt.isVehicle ? 'true' : 'false',
+        isCraftingStation: itemForPrompt.isCraftingStation ? 'true' : 'false',
+        isProcessingStation: itemForPrompt.isProcessingStation ? 'true' : 'false',
+        isHarvestable: itemForPrompt.isHarvestable ? 'true' : 'false',
+        isSalvageable: itemForPrompt.isSalvageable ? 'true' : 'false',
         properties: itemForPrompt.properties,
         attributeBonuses: itemForPrompt.attributeBonuses,
         causeStatusEffect: itemForPrompt.causeStatusEffect
@@ -6219,6 +6248,7 @@ async function alterThingByPrompt({
     }
 
     const updatedItem = parsedItems[0];
+    const updatedBooleanFlags = extractThingBooleanFlags(updatedItem);
     const originalName = thing.name;
     const updatedName = typeof updatedItem.name === 'string' && updatedItem.name.trim()
         ? updatedItem.name.trim()
@@ -6292,6 +6322,9 @@ async function alterThingByPrompt({
         relativeLevel,
         level: computedLevel
     };
+    if (Object.keys(updatedBooleanFlags).length) {
+        Object.assign(updatedMetadata, updatedBooleanFlags);
+    }
 
     if (normalizedType === 'scenery') {
         delete updatedMetadata.ownerId;
@@ -8867,6 +8900,69 @@ function sanitizeMetadataObject(meta) {
     return cleaned;
 }
 
+const THING_BOOLEAN_FLAG_KEYS = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+
+function normalizeThingBooleanFlagValue(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        if (value === 1) {
+            return true;
+        }
+        if (value === 0) {
+            return false;
+        }
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) {
+            return null;
+        }
+        if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+            return true;
+        }
+        if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+            return false;
+        }
+    }
+    return Boolean(value);
+}
+
+function extractThingBooleanFlags(source = {}) {
+    const flags = {};
+    for (const key of THING_BOOLEAN_FLAG_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) {
+            const normalizedValue = normalizeThingBooleanFlagValue(source[key]);
+            if (normalizedValue !== null) {
+                flags[key] = normalizedValue;
+            }
+        }
+    }
+    return flags;
+}
+
+function resolveThingBooleanFlagsFromInstance(thing) {
+    const flags = {};
+    for (const key of THING_BOOLEAN_FLAG_KEYS) {
+        const primaryValue = thing ? normalizeThingBooleanFlagValue(thing[key]) : null;
+        if (primaryValue !== null) {
+            flags[key] = primaryValue;
+            continue;
+        }
+        if (thing?.metadata && Object.prototype.hasOwnProperty.call(thing.metadata, key)) {
+            const metadataValue = normalizeThingBooleanFlagValue(thing.metadata[key]);
+            if (metadataValue !== null) {
+                flags[key] = metadataValue;
+            }
+        }
+    }
+    return flags;
+}
+
 function summarizeNpcForNameRegen(npc) {
     if (!npc) {
         return null;
@@ -9909,7 +10005,8 @@ function parseThingsXml(xmlContent, { isInventory = false } = {}) {
                 isVehicle: parseBooleanTag('isVehicle'),
                 isCraftingStation: parseBooleanTag('isCraftingStation'),
                 isProcessingStation: parseBooleanTag('isProcessingStation'),
-                isHarvestable: parseBooleanTag('isHarvestable')
+                isHarvestable: parseBooleanTag('isHarvestable'),
+                isSalvageable: parseBooleanTag('isSalvageable')
             };
 
             items.push(entry);
@@ -10087,6 +10184,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
         if (Number.isFinite(itemData.relativeLevel)) {
             metadata.relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
         }
+        const booleanFlags = extractThingBooleanFlags(itemData);
+        Object.assign(metadata, booleanFlags);
 
         const baseReference = Number.isFinite(location.baseLevel)
             ? location.baseLevel
@@ -10121,7 +10220,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
             causeStatusEffect: itemData.causeStatusEffect,
             level: computedLevel,
             relativeLevel,
-            metadata: cleanedMetadata
+            metadata: cleanedMetadata,
+            ...booleanFlags
         });
 
         things.set(thing.id, thing);
