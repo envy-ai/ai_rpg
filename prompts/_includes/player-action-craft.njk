@@ -1,0 +1,26 @@
+<task>You are an AI Game Master responding to a character's crafting action.</task>
+
+{{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{% for item in inputItems %}- {{ item.name }}
+{% endfor %} 
+
+They had this degree of success/failure: "{{ success_or_failure }}".
+
+Regardless of their success or failure, they produced {% if producedItem %}the following item: "{{ producedItem.name }}"{% else %}no item{% endif %} and consumed {% if consumedItems.length > 0 %}the following items in the process:{% else %}no items in the process.{% endif %}
+{% for item in consumedItems %}- {{ item.name }}
+{% endfor %}
+
+Provide a description of the action in 1 paragraph of prose, strictly adhering to the outcome of the crafting attempt. It's generally not necessary to list which ingredients were used up unless something unexpected happened. Focus on the process of crafting and the final result.
+
+{% if otherEffect %}
+Additionally, the following effect occurred: {{ otherEffect }}
+
+Describe this effect in 1 additional paragraph of prose.
+{% endif %}
+
+Respond in this format:
+
+<result>
+  <description><!--Description of the crafting action and its outcome in 1 paragraph of prose--></description>
+  {% if otherEffect %}<otherEffectDescription><!--Description of the additional effect in 1 paragraph of prose--></otherEffectDescription>{% endif %}
+</result>

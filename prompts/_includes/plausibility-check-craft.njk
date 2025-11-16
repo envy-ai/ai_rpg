@@ -1,0 +1,172 @@
+<task>You are an AI Game Master whose job it is to determine the possible results of a player crafting or processing an item at varying levels of success.</task>
+
+
+{#
+Guidelines:
+- Consider the player's current state. The player's attributes are not listed here, because you are not making the skill check yourself, just determining if one is needed and what skills or attributes would be relevant.
+- If interacting with an object or NPC in the scene, consider their description and status
+- If attempting to interact with an object or NPC not specifically listed in the scene, consider whether the action is plausible given the context and setting.  For instance, if a player is in a hospital room and they say "I pick up the scalpel on the tray", this is plausible, even if a scalpel isn't listed among the items in the scene.  If they say "I pick up the MRI machine" or "I pick up the tuba", this is implausible (the MRI machine because it's too big to pick up, the tuba because it doesn't belong in a hospital room).
+{% if not isAttack %}- If the player is attempting an action that requires a skill check, determine the appropriate skill.
+{% endif %}- Do not consider the player's level or experience, only their current health, physical state, and status effects.
+- If the player is in the act of spending more currency than their current total ({{ currentPlayer.currency | default(0) }} {{ setting.currencyNamePlural }}), the action is automatically implausible. (This is separate from haggling down to a price that the player can afford, which is plausible.)
+- Do not consider whether an action is a good idea or bad idea, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
+- Do not consider whether the player has explicit consent to perform an action, only whether it is trivial, plausible, or implausible. For instance, if the player is trying to steal something, this is plausible if they are in a position to do so, even if they don't have consent. Likewise if they are attempting to attack someone, pick them up and move them, etc; this is plausible if they are in a position to do so, even if they don't have consent. Consequences for violating someone's consent or boundaries are handled in game.
+- If doing something requires an item or tool, then the player must have that item or tool (or something equivalent) in their inventory or on their person for the action to be plausible. For instance, "I pick the lock on the door" may still be plausible if the player has a hairpin, even if they don't have a lockpick. Item quality and appropriateness should be considered for circumstance modifiers. A high quality hairpin might have both a positive modifier for being sturdy and a negative modifier for not being designed for lockpicking.
+- Extremely difficult doesn't mean implausible. For instance, "I throw a dart into the eye of the thug at the far side of the tavern" is plausible, but would require a very hard or legendary skill/attribute check. {% if not isAttack %}The skill used is determined elsewhere.{% endif %}
+- For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors.
+- If the player is moving somewhere, consider whether they are able to move (e.g., not paralyzed or restrained), whether the destination is reachable from their location, whether the exit is locked or guarded, whether there are environmental hazards preventing them from moving (vacuum, fire, etc), or someone may prevent them from leaving or fleeing. Fleeing from combat is a skill check, and obstacles may be skill checks or make the move implausible depending on the situation. When taking the listed vehicle for an exit, don't consider the remote location when determining plausibility; just accept that the vehicle goes there. If the player is trying to move to a location that isn't listed as an exit, consider whether it is plausible given the context and setting. For instance, if the player is in a tavern and they say "I go to the kitchen", this is plausible, even if the kitchen isn't listed among the exits.  If they say "I go to the moon", this is implausible.  In general, travel to a listed location is trivial unless there's a specific reason for it not to be.
+- The player may only act on behalf of themselves, not other characters or NPCs, unless explicitly able to control them due to an item, ability, etc. If they attempt to do so without such an ability, reject the action (this is different from being implausible in that we don't process the attempt). However, if they ask an NPC to do something, this is plausible, and may require a skill check depending on the NPC's disposition and relationship with the player.
+#}
+
+Guidelines:
+- Do not consider whether an action is a good idea or bad idea, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
+- Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
+- It's generally okay to assume that the tools necessary for using a crafting or processing station are present at the station, unless indicated otherwise. A carpentry workbench would have woodworking tools, a cooking station would have cooking utensils, etc.
+
+Current Situation:
+{% if intendedItemName %}
+The player is attempting to craft an item called "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{%- for item in craftingItems %}
+    - {{ item.name }}
+{% endfor %}
+{% else %}
+The player is attempting to craft an item using the crafting/processing station "{{ stationName }}" out of the following items:
+{%- for item in craftingItems %}
+    - {{ item.name }}
+{% endfor %}
+{% endif %}
+
+
+Step 1: Determine whether the crafting/processing action is trivial, plausible, or implausible, in this format.
+
+<plausibility>
+  <reason>Brief explanation of why the crafting is trivial (e.g., "Microwaving popcorn is trivial.")</reason>
+  <type>Trivial</type>
+</plausibility>
+
+or
+
+<plausibility>
+  <type>Plausible</type>
+  <skillCheck>
+    <reason>Brief explanation of why this skill/attribute and difficulty level are appropriate for the crafting attempt</reason>
+    <skill>Exact name of the most relevant skill the player has (If none are relevant, make up a new one. If the action doesn't require any particular skill, respond with N/A)</skill>
+    <attribute>Relevant attribute</attribute>
+    <difficulty>Difficulty level (Easy, Medium, Hard, Very Hard, Legendary). Do not account for the player's current state, because that's accounted for in the circumstance modifiers. What you should account for is the appropriateness and quality of the ingredients. If the character is attempting to craft a woodsman's axe out of a rusty shovel head, an old stick, and a piece of twine, it should be a higher difficulty level and the possible outcomes should reflect the ingredients. Note that ingredient quality should *not* be reflected in circumstance modifiers, as it's already being accounted for here.</difficulty>
+    <curcumstanceModifiers>
+      <circumstanceModifier>
+        <amount>integer from -10 (worst possible circumstances) to 10 (extremely ideal circumstances)</amount>
+        <reason>Brief explanation of the circumstance modifier, N/A if 0</reason>
+      </circumstanceModifier>
+      ... additional circumstanceModifier tags as needed ...
+    </curcumstanceModifiers>
+  </skillCheck>
+</plausibility>
+
+or
+
+<plausibility>
+  <reason>Brief explanation of why the character is completely prevented from crafting the item. Generally this might be because the player is restrained or otherwise unable to interact with the work area, or because the ingredients are completely inappropriate (such as trying to craft a woodsman's axe with a cucumber and a cotton ball).</reason>
+  <type>Implausible</type>
+</plausibility>
+
+Step 2: If the action is plausible, determine the outputted item for each level of success (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, and critical_failure). Use the following XML structure for each item, filling in all fields appropriately:
+
+<craftingResults>
+  <result>
+    <level>critical_success</level>
+    <itemsConsumed>
+      <!-- In this section, list all of the items consumed in the crafting attempt. Crafting may consume some, all, or none of the input items depending on the recipe and the level of success. -->
+      <itemName><!-- exact name of consumed item --></itemName>
+      ... more itemName tags as needed ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item. A typical critical_success would produce an item of higher rarity, better stats, and/or additional special properties compared to a normal success, and may not consume all of the input items. There may also be additional positive effects if it makes sense (additional crafted items, improvements to the work area, discoveries, or anything else that makes sense in the context of the scene) -->
+    {% include "item-output.njk" %}
+    <other><!-- 1-2 sentences describing additional positive effects. --></other>
+  </result>
+  <result>
+    <level>major_success</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item. A typical major_success would produce an item of higher rarity, better stats, and/or additional special properties compared to a normal success, and may not consume all of the input items. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>success</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item. A success would produce an item roughly the same quality/rarity as the ingredients and be just fine for its intended use. Occasionally, some consumable ingredients may be partially consumed or left over. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>barely_succeeded</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>  
+    <!-- XML describing the crafted item. A "barely_succeeded" result would produce an item of lower quality/rarity than its ingredients, still functional for its intended use but not as good as the expected result. Barely succeeding using epic ingredients will still produce a functional item of at least uncommon or rare quality, while barely succeeding using junk items will produce a barely functional junk item. It should be possible to improve the item to a better quality. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>barely_failed</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item, if any. A "barely_failed" does not produce an item that works for its intended use, however, it should be relatively easy to recover from this level of failure. An example may be an incompletely assembled item and not all of the crafting components being consumed, or an item that can be made functional with a bit of additional work. You may also choose to omit the <item> tag altogether and not consume the components. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>failure</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item, if any. A "failure" does not produce an item that works for its intended use, and typically one or more component is wasted in the crafting process. You may also choose to omit the <item> tag altogether and consume some of the components, or create a non-functional item of significantly lower quality than the ingredients. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>major_failure</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item, if any. A "major_failure" produces either no item or non-functional junk, and consumes all consumable ingredients, along with possibly some non-consumable ingredients that are broken in the process. Any item produced will be of junk quality. -->
+    <item>
+    [... item XML ...]
+    </item>
+  </result>
+  <result>
+    <level>critical_failure</level>
+    <itemsConsumed>
+      ...
+    </itemsConsumed>
+    <!-- XML describing the crafted item, if any. This is the same as a major_failure, except that there may be other negative effects in addition to wasting the crafting components, such as injury, damage to the work area, bad status effects, etc. The degree of these effects should be appropriate to the item being crafted. For instance, critically failing at crafting explosives might result in an explosion, while critically failing at cooking would probably result in a first degree burn or a cut finger. Don't be overly harsh with critical failures unless the character is doing something dangerous. -->
+    <item>
+    [... item XML ...]
+    </item>
+    <other><!-- 1-2 sentences describing other negative effects --></other>
+  </result>
+</craftingResults>
+
+Enclose both steps in a single XML response, like this:
+
+<response>
+  <plausibility>
+    ...
+  </plausibility>
+  <craftingResults>
+    ...
+  </craftingResults>
+</response>
