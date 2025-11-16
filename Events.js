@@ -53,7 +53,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.` },
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
         { key: 'received_quest', prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc). If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."` },
-        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
+        //        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
         { key: 'death_incapacitation', prompt: `Did any entity die or become incapacitated? If so, reply in this format: "[exact name of character/entity] -> ["dead" or "incapacitated"]. If multiple, separate with vertical bars. Otherwise answer N/A.` },
         { key: 'defeated_enemy', prompt: `Did the player defeat an enemy this turn? If so, respond with the exact name of the enemy. If there are multiple enemies, separate multiple names with vertical bars. Otherwise, respond N/A.` },
         { key: 'experience_check', prompt: `Did the player do something (other than defeating an enemy) that would cause them to gain experience points? If so, respond with "[integer from 1-100] -> [reason in one sentence]" (note that experience cannot be gained just because something happened to the player; the player must have taken a specific action that contributes to their growth or development). Otherwise, respond N/A. See the sampleExperiencePointValues section for examples of actions that might grant experience points and how much.` },
@@ -906,72 +906,10 @@ class Events {
             console.warn('Failed to apply event outcomes:', error.message);
         }
 
-        if (questRewards.length) {
-            if (structured && typeof structured === 'object') {
-                if (!structured.parsed || typeof structured.parsed !== 'object') {
-                    structured.parsed = {};
-                }
-                const normalizedRewards = questRewards.map(reward => ({
-                    questId: reward.questId || null,
-                    questName: reward.questName || null,
-                    items: Array.isArray(reward.items) ? reward.items.slice() : [],
-                    xp: Number.isFinite(reward.xp) ? reward.xp : 0,
-                    currency: Number.isFinite(reward.currency) ? reward.currency : 0
-                }));
-                if (Array.isArray(structured.parsed.quest_rewards)) {
-                    structured.parsed.quest_rewards.push(...normalizedRewards);
-                } else {
-                    structured.parsed.quest_rewards = normalizedRewards;
-                }
-
-                if (structured.rawEntries && typeof structured.rawEntries === 'object') {
-                    const rewardMessages = questRewards
-                        .map(entry => (typeof entry.message === 'string' ? entry.message.trim() : ''))
-                        .filter(Boolean);
-                    if (rewardMessages.length) {
-                        structured.rawEntries.quest_rewards = rewardMessages.join(' | ');
-                    }
-                }
-            }
-        }
-
-        if (questObjectivesCompleted.length) {
-            if (structured && typeof structured === 'object') {
-                if (!structured.parsed || typeof structured.parsed !== 'object') {
-                    structured.parsed = {};
-                }
-                const normalizedObjectives = questObjectivesCompleted.map(entry => ({
-                    questId: entry.questId || null,
-                    questName: entry.questName || null,
-                    objectiveIndex: Number.isFinite(entry.objectiveIndex) ? entry.objectiveIndex : null,
-                    objectiveNumber: Number.isFinite(entry.objectiveNumber) ? entry.objectiveNumber : null,
-                    objectiveDescription: entry.objectiveDescription || null,
-                    questCompleted: Boolean(entry.questCompleted),
-                    questJustCompleted: Boolean(entry.questJustCompleted)
-                }));
-                if (Array.isArray(structured.parsed.completed_quest_objective)) {
-                    structured.parsed.completed_quest_objective.push(...normalizedObjectives);
-                } else {
-                    structured.parsed.completed_quest_objective = normalizedObjectives;
-                }
-
-                if (!structured.rawEntries || typeof structured.rawEntries !== 'object') {
-                    structured.rawEntries = {};
-                }
-                const rawSegments = normalizedObjectives
-                    .map(entry => {
-                        const questLabel = entry.questName || entry.questId || 'Quest';
-                        const description = entry.objectiveDescription
-                            || (entry.objectiveNumber ? `Objective ${entry.objectiveNumber}` : null)
-                            || (entry.objectiveIndex !== null ? `Objective ${entry.objectiveIndex + 1}` : null);
-                        return `${questLabel} -> ${description || 'Objective completed'}`;
-                    })
-                    .filter(Boolean);
-                if (rawSegments.length) {
-                    structured.rawEntries.completed_quest_objective = rawSegments.join(' | ');
-                }
-            }
-        }
+        this.mergeQuestOutcomesIntoStructured(structured, {
+            questRewards,
+            questObjectivesCompleted
+        });
 
         const addedCharacters = Array.from(this.newCharacters);
         const departedCharacters = Array.from(this.departedCharacters);
@@ -1098,6 +1036,307 @@ class Events {
             questsAwarded,
             followupResults
         };
+    }
+
+    static mergeQuestOutcomesIntoStructured(structured, {
+        questRewards = [],
+        questObjectivesCompleted = []
+    } = {}) {
+        if (!structured || typeof structured !== 'object') {
+            return;
+        }
+
+        const ensureParsed = () => {
+            if (!structured.parsed || typeof structured.parsed !== 'object') {
+                structured.parsed = {};
+            }
+            return structured.parsed;
+        };
+
+        const ensureRawEntries = () => {
+            if (!structured.rawEntries || typeof structured.rawEntries !== 'object') {
+                structured.rawEntries = {};
+            }
+            return structured.rawEntries;
+        };
+
+        if (Array.isArray(questRewards) && questRewards.length) {
+            const parsedContainer = ensureParsed();
+            const normalizedRewards = questRewards.map(reward => ({
+                questId: reward.questId || null,
+                questName: reward.questName || null,
+                items: Array.isArray(reward.items) ? reward.items.slice() : [],
+                xp: Number.isFinite(reward.xp) ? reward.xp : 0,
+                currency: Number.isFinite(reward.currency) ? reward.currency : 0,
+                message: reward.message || null
+            }));
+            if (Array.isArray(parsedContainer.quest_rewards)) {
+                parsedContainer.quest_rewards.push(...normalizedRewards);
+            } else {
+                parsedContainer.quest_rewards = normalizedRewards;
+            }
+
+            if (structured.rawEntries && typeof structured.rawEntries === 'object') {
+                const rewardMessages = questRewards
+                    .map(entry => (typeof entry.message === 'string' ? entry.message.trim() : ''))
+                    .filter(Boolean);
+                if (rewardMessages.length) {
+                    structured.rawEntries.quest_rewards = rewardMessages.join(' | ');
+                }
+            }
+        }
+
+        if (Array.isArray(questObjectivesCompleted) && questObjectivesCompleted.length) {
+            const parsedContainer = ensureParsed();
+            const normalizedObjectives = questObjectivesCompleted.map(entry => ({
+                questId: entry.questId || null,
+                questName: entry.questName || null,
+                objectiveIndex: Number.isFinite(entry.objectiveIndex) ? entry.objectiveIndex : null,
+                objectiveNumber: Number.isFinite(entry.objectiveNumber) ? entry.objectiveNumber : null,
+                objectiveDescription: entry.objectiveDescription || null,
+                questCompleted: Boolean(entry.questCompleted),
+                questJustCompleted: Boolean(entry.questJustCompleted)
+            }));
+            if (Array.isArray(parsedContainer.completed_quest_objective)) {
+                parsedContainer.completed_quest_objective.push(...normalizedObjectives);
+            } else {
+                parsedContainer.completed_quest_objective = normalizedObjectives;
+            }
+
+            const rawEntries = ensureRawEntries();
+            const rawSegments = normalizedObjectives
+                .map(entry => {
+                    const questLabel = entry.questName || entry.questId || 'Quest';
+                    const description = entry.objectiveDescription
+                        || (entry.objectiveNumber ? `Objective ${entry.objectiveNumber}` : null)
+                        || (entry.objectiveIndex !== null ? `Objective ${entry.objectiveIndex + 1}` : null);
+                    return `${questLabel} -> ${description || 'Objective completed'}`;
+                })
+                .filter(Boolean);
+            if (rawSegments.length) {
+                rawEntries.completed_quest_objective = rawSegments.join(' | ');
+            }
+        }
+    }
+
+    static async processQuestObjectiveCompletionEntries(entries = [], context = {}) {
+        if (!Array.isArray(entries) || !entries.length) {
+            console.warn('completed_quest_objective handler called with no entries.');
+            return;
+        }
+
+        const player = context.player || this.currentPlayer;
+        if (!player || typeof player.getQuestByName !== 'function') {
+            throw new Error('completed_quest_objective handler requires a valid player with quests.');
+        }
+
+        if (!Array.isArray(context.completedQuestObjectives)) {
+            context.completedQuestObjectives = [];
+        }
+        if (!Array.isArray(context.questCompletionRewards)) {
+            context.questCompletionRewards = [];
+        }
+        if (!Array.isArray(context.experienceAwards)) {
+            context.experienceAwards = [];
+        }
+        if (!Array.isArray(context.currencyChanges)) {
+            context.currencyChanges = [];
+        }
+
+        const {
+            generateItemsByNames,
+            getCurrencyLabel,
+            promptEnv,
+            parseXMLTemplate,
+            prepareBasePromptContext
+        } = this._deps;
+        if (typeof promptEnv?.render !== 'function'
+            || typeof parseXMLTemplate !== 'function'
+            || typeof prepareBasePromptContext !== 'function') {
+            throw new Error('completed_quest_objective handler is missing prompt dependencies.');
+        }
+        const currencyContext = this.config?.setting || Globals.config || {};
+        const rewardLabel = (amount) => {
+            if (typeof getCurrencyLabel === 'function') {
+                try {
+                    return getCurrencyLabel(amount, currencyContext);
+                } catch (_) {
+                    // ignore
+                }
+            }
+            return Math.abs(Number(amount)) === 1 ? 'coin' : 'coins';
+        };
+
+        const rewardedQuestIds = new Set();
+        let rewardPromptContext = context._questRewardPromptContext || null;
+
+        for (const entry of entries) {
+            const questName = typeof entry?.quest === 'string' ? entry.quest.trim() : '';
+            const objectiveIndexValue = Number(entry?.objectiveIndex) - 1;
+            if (!questName || !Number.isFinite(objectiveIndexValue)) {
+                console.warn('completed_quest_objective handler called with invalid entry:', entry);
+                continue;
+            }
+
+            const quest = player.getQuestByName(questName);
+            if (!quest) {
+                console.warn(`completed_quest_objective: Quest "${questName}" not found on player.`);
+                continue;
+            }
+
+            const zeroBasedIndex = Math.max(0, Math.round(objectiveIndexValue));
+            if (!Array.isArray(quest.objectives) || !quest.objectives[zeroBasedIndex]) {
+                console.warn(`completed_quest_objective: Quest "${questName}" objective index ${objectiveIndexValue} is invalid.`);
+                continue;
+            }
+
+            const objective = quest.objectives[zeroBasedIndex];
+            if (objective.completed) {
+                continue;
+            }
+
+            const questWasComplete = quest.completed;
+            objective.completed = true;
+            const questIsComplete = quest.completed;
+            const questJustCompleted = !questWasComplete && questIsComplete;
+
+            context.completedQuestObjectives.push({
+                questId: quest.id,
+                questName: quest.name,
+                objectiveIndex: zeroBasedIndex,
+                objectiveNumber: zeroBasedIndex + 1,
+                objectiveDescription: objective.description || null,
+                questCompleted: questIsComplete,
+                questJustCompleted
+            });
+
+            if (!quest.completed || quest.rewardClaimed || rewardedQuestIds.has(quest.id)) {
+                continue;
+            }
+
+            rewardedQuestIds.add(quest.id);
+            quest.rewardClaimed = true;
+
+            const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
+            const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? Math.max(0, quest.rewardCurrency) : 0;
+            const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
+
+            const grantedItems = [];
+            grantedItems.push(...rewardItems);
+            /*
+            if (rewardItems.length && typeof generateItemsByNames === 'function') {
+                try {
+                    const createdItems = await generateItemsByNames({ itemNames: rewardItems, owner: player });
+                    if (Array.isArray(createdItems) && createdItems.length) {
+                        createdItems.forEach(item => {
+                            if (item && typeof item.name === 'string' && item.name.trim()) {
+                                grantedItems.push(item.name.trim());
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Failed to generate quest reward items:', error.message);
+                }
+            }
+
+            if (!grantedItems.length) {
+                grantedItems.push(...rewardItems);
+            }
+            if (rewardCurrency > 0 && typeof player.adjustCurrency === 'function') {
+                const before = typeof player.getCurrency === 'function'
+                    ? player.getCurrency()
+                    : Number(player.currency) || 0;
+                const after = player.adjustCurrency(rewardCurrency);
+                if (!Array.isArray(context.currencyChanges)) {
+                    context.currencyChanges = [];
+                }
+                context.currencyChanges.push({
+                    amount: rewardCurrency,
+                    before,
+                    after
+                });
+            }
+            */
+            if (rewardXp > 0 && typeof player.addExperience === 'function') {
+                player.addExperience(rewardXp);
+                context.experienceAwards.push({
+                    amount: rewardXp,
+                    reason: `Completed quest: ${quest.name}`
+                });
+            }
+
+            const rewardLines = [];
+            grantedItems.filter(Boolean).forEach(itemName => {
+                rewardLines.push(itemName);
+            });
+            if (rewardXp > 0) {
+                rewardLines.push(`${rewardXp} XP`);
+            }
+            if (rewardCurrency > 0) {
+                rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
+            }
+
+            if (!rewardLines.length) {
+                continue;
+            }
+
+            let rewardProse = '';
+            const fallbackList = ['Received item summary (shorten these item names to a reasonable size):', ...rewardLines.map(line => `* ${line}`)].join('\n');
+            try {
+                if (!rewardPromptContext) {
+                    const rewardLocation = context.location || null;
+                    rewardPromptContext = await prepareBasePromptContext({ locationOverride: rewardLocation });
+                    context._questRewardPromptContext = rewardPromptContext;
+                }
+                const renderedRewardPrompt = promptEnv.render('base-context.xml.njk', {
+                    ...rewardPromptContext,
+                    promptType: 'quest-reward-prose',
+                    questRewards: rewardLines
+                });
+                const parsedRewardTemplate = parseXMLTemplate(renderedRewardPrompt);
+                if (!parsedRewardTemplate?.systemPrompt || !parsedRewardTemplate?.generationPrompt) {
+                    throw new Error('Quest reward prose template did not produce prompts.');
+                }
+                const rewardMessages = [
+                    { role: 'system', content: parsedRewardTemplate.systemPrompt },
+                    { role: 'user', content: parsedRewardTemplate.generationPrompt }
+                ];
+                const rewardResponse = await LLMClient.chatCompletion({
+                    messages: rewardMessages,
+                    metadataLabel: 'quest_reward_prose',
+                    validateXML: false,
+                });
+                LLMClient.logPrompt({
+                    prefix: 'quest_reward_prose',
+                    metadataLabel: 'quest_reward_prose',
+                    systemPrompt: parsedRewardTemplate.systemPrompt,
+                    generationPrompt: parsedRewardTemplate.generationPrompt,
+                    response: rewardResponse
+                });
+                if (typeof rewardResponse === 'string' && rewardResponse.trim()) {
+                    rewardProse = rewardResponse.trim();
+                }
+            } catch (error) {
+                console.warn('Failed to generate quest reward prose:', error.message);
+                console.debug(error);
+            }
+
+            if (!rewardProse) {
+                rewardProse = fallbackList;
+            }
+
+            this._enqueueFollowupEventCheck(rewardProse);
+
+            context.questCompletionRewards.push({
+                questId: quest.id,
+                questName: quest.name,
+                items: [],
+                xp: rewardXp,
+                currency: rewardCurrency,
+                message: rewardProse,
+                rewards: rewardLines.slice()
+            });
+        }
     }
 
     static _parseEventPromptResponse(responseText) {
@@ -2427,16 +2666,115 @@ class Events {
                         }
                     }
 
-                    const quest = new Quest(questOptions);
-
                     const objectiveDescriptions = Array.isArray(questData.objectives) && questData.objectives.length
                         ? questData.objectives
                         : (questSummary ? [questSummary] : []);
 
-                    for (const objective of objectiveDescriptions) {
-                        try {
-                            if (!objective) {
+                const normalizeObjectiveKey = description => (
+                    typeof description === 'string' && description.trim()
+                        ? description.trim().toLowerCase()
+                        : ''
+                );
+
+                const existingQuest = typeof player.getQuestByName === 'function'
+                    ? player.getQuestByName(questName)
+                    : null;
+
+                if (existingQuest) {
+                    existingQuest.description = questDescription;
+                    if (typeof questData.secretNotes === 'string') {
+                        existingQuest.secretNotes = questData.secretNotes;
+                    }
+                    existingQuest.rewardItems = rewardItems.slice();
+                    existingQuest.rewardCurrency = rewardCurrency;
+                    existingQuest.rewardXp = rewardXp;
+                    if (questOptions.giver) {
+                        existingQuest.giver = questOptions.giver;
+                    } else if (questOptions.giverName) {
+                        existingQuest.giverName = questOptions.giverName;
+                    }
+
+                    const existingObjectiveStates = new Map();
+                    if (Array.isArray(existingQuest.objectives)) {
+                        for (const objective of existingQuest.objectives) {
+                            const key = normalizeObjectiveKey(objective?.description);
+                            if (!key) {
                                 continue;
+                            }
+                            const current = existingObjectiveStates.get(key);
+                            if (!current || (objective.completed && !current.completed)) {
+                                existingObjectiveStates.set(key, {
+                                    description: objective.description,
+                                    optional: Boolean(objective.optional),
+                                    completed: Boolean(objective.completed)
+                                });
+                            }
+                        }
+                    }
+
+                    existingQuest.objectives = [];
+                    const seenKeys = new Set();
+
+                    const addObjective = (description, optional = false, completed = false) => {
+                        existingQuest.addObjective(description, optional);
+                        if (completed) {
+                            const lastObjective = existingQuest.objectives[existingQuest.objectives.length - 1];
+                            if (lastObjective) {
+                                lastObjective.completed = true;
+                            }
+                        }
+                    };
+
+                    for (const objective of objectiveDescriptions) {
+                        let description = '';
+                        let optional = false;
+                        let completed = false;
+                        if (typeof objective === 'string') {
+                            description = objective.trim();
+                        } else if (objective && typeof objective === 'object') {
+                            description = typeof objective.description === 'string'
+                                ? objective.description.trim()
+                                : '';
+                            optional = Boolean(objective.optional);
+                            completed = Boolean(objective.completed);
+                        }
+                        if (!description) {
+                            continue;
+                        }
+                        const key = normalizeObjectiveKey(description);
+                        const preserved = existingObjectiveStates.get(key);
+                        const shouldComplete = (preserved && preserved.completed) || completed;
+                        addObjective(description, optional, shouldComplete);
+                        if (key) {
+                            seenKeys.add(key);
+                        }
+                    }
+
+                    for (const [key, state] of existingObjectiveStates.entries()) {
+                        if (!state.completed || seenKeys.has(key)) {
+                            continue;
+                        }
+                        addObjective(state.description, state.optional, true);
+                        seenKeys.add(key);
+                    }
+
+                    if (!Array.isArray(context.updatedQuests)) {
+                        context.updatedQuests = [];
+                    }
+                    context.updatedQuests.push({
+                        id: existingQuest.id,
+                        name: existingQuest.name,
+                        summary: questSummary || existingQuest.description || existingQuest.name
+                    });
+                    continue;
+                }
+
+                const quest = new Quest(questOptions);
+
+                for (const objective of objectiveDescriptions) {
+                    try {
+                        if (!objective) {
+                            continue;
                             }
                             if (typeof objective === 'string') {
                                 if (objective.trim()) {
@@ -2516,219 +2854,7 @@ class Events {
                 }
             },
             completed_quest_objective: async function (entries = [], context = {}) {
-                if (!Array.isArray(entries) || !entries.length) {
-                    return;
-                }
-
-                const player = context.player || this.currentPlayer;
-                if (!player || typeof player.getQuestByName !== 'function') {
-                    throw new Error('completed_quest_objective handler requires a valid player with quests.');
-                }
-
-                if (!Array.isArray(context.completedQuestObjectives)) {
-                    context.completedQuestObjectives = [];
-                }
-                if (!Array.isArray(context.questCompletionRewards)) {
-                    context.questCompletionRewards = [];
-                }
-
-                const {
-                    generateItemsByNames,
-                    getCurrencyLabel,
-                    promptEnv,
-                    parseXMLTemplate,
-                    prepareBasePromptContext
-                } = this._deps;
-                if (typeof promptEnv?.render !== 'function'
-                    || typeof parseXMLTemplate !== 'function'
-                    || typeof prepareBasePromptContext !== 'function') {
-                    throw new Error('completed_quest_objective handler is missing prompt dependencies.');
-                }
-                const currencyContext = this.config?.setting || Globals.config || {};
-                const rewardLabel = (amount) => {
-                    if (typeof getCurrencyLabel === 'function') {
-                        try {
-                            return getCurrencyLabel(amount, currencyContext);
-                        } catch (_) {
-                            // fall through
-                        }
-                    }
-                    return Math.abs(Number(amount)) === 1 ? 'coin' : 'coins';
-                };
-
-                const rewardedQuestIds = new Set();
-                let rewardPromptContext = context._questRewardPromptContext || null;
-
-                for (const entry of entries) {
-                    const questName = typeof entry?.quest === 'string' ? entry.quest.trim() : '';
-                    const objectiveIndexValue = Number(entry?.objectiveIndex) - 1;
-                    if (!questName || !Number.isFinite(objectiveIndexValue)) {
-                        continue;
-                    }
-
-                    const quest = player.getQuestByName(questName);
-                    if (!quest) {
-                        console.warn(`completed_quest_objective: Quest "${questName}" not found on player.`);
-                        continue;
-                    }
-
-                    const zeroBasedIndex = Math.max(0, Math.round(objectiveIndexValue));
-                    if (!Array.isArray(quest.objectives) || !quest.objectives[zeroBasedIndex]) {
-                        console.warn(`completed_quest_objective: Quest "${questName}" objective index ${objectiveIndexValue} is invalid.`);
-                        continue;
-                    }
-
-                    const objective = quest.objectives[zeroBasedIndex];
-                    const questWasComplete = quest.completed;
-                    if (!objective.completed) {
-                        objective.completed = true;
-                    }
-                    const questIsComplete = quest.completed;
-                    const questJustCompleted = !questWasComplete && questIsComplete;
-
-                    context.completedQuestObjectives.push({
-                        questId: quest.id,
-                        questName: quest.name,
-                        objectiveIndex: zeroBasedIndex,
-                        objectiveNumber: zeroBasedIndex + 1,
-                        objectiveDescription: objective.description || null,
-                        questCompleted: questIsComplete,
-                        questJustCompleted
-                    });
-
-                    if (!quest.completed || quest.rewardClaimed || rewardedQuestIds.has(quest.id)) {
-                        continue;
-                    }
-
-                    rewardedQuestIds.add(quest.id);
-                    quest.rewardClaimed = true;
-
-                    const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
-                    const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? Math.max(0, quest.rewardCurrency) : 0;
-                    const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
-
-                    const grantedItems = [];
-                    grantedItems.push(...rewardItems);
-                    /*
-                    if (rewardItems.length && typeof generateItemsByNames === 'function') {
-                        try {
-                            const createdItems = await generateItemsByNames({ itemNames: rewardItems, owner: player });
-                            if (Array.isArray(createdItems) && createdItems.length) {
-                                createdItems.forEach(item => {
-                                    if (item && typeof item.name === 'string' && item.name.trim()) {
-                                        grantedItems.push(item.name.trim());
-                                    }
-                                });
-                            }
-                        } catch (error) {
-                            console.warn('Failed to generate quest reward items:', error.message);
-                        }
-                    }
-
-                    if (!grantedItems.length) {
-                        grantedItems.push(...rewardItems);
-                    }
-                    if (rewardCurrency > 0 && typeof player.adjustCurrency === 'function') {
-                        const before = typeof player.getCurrency === 'function'
-                            ? player.getCurrency()
-                            : Number(player.currency) || 0;
-                        const after = player.adjustCurrency(rewardCurrency);
-                        if (!Array.isArray(context.currencyChanges)) {
-                            context.currencyChanges = [];
-                        }
-                        context.currencyChanges.push({
-                            amount: rewardCurrency,
-                            before,
-                            after
-                        });
-                    }
-                    */
-                    if (rewardXp > 0 && typeof player.addExperience === 'function') {
-                        player.addExperience(rewardXp);
-                        if (!Array.isArray(context.experienceAwards)) {
-                            context.experienceAwards = [];
-                        }
-                        context.experienceAwards.push({
-                            amount: rewardXp,
-                            reason: `Completed quest: ${quest.name}`
-                        });
-                    }
-
-                    const rewardLines = [];
-                    grantedItems.filter(Boolean).forEach(itemName => {
-                        rewardLines.push(itemName);
-                    });
-                    if (rewardXp > 0) {
-                        rewardLines.push(`${rewardXp} XP`);
-                    }
-                    if (rewardCurrency > 0) {
-                        rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
-                    }
-
-                    if (rewardLines.length) {
-                        let rewardProse = '';
-                        const fallbackList = ['Received item summary (shorten these item names to a reasonable size):', ...rewardLines.map(line => `* ${line}`)].join('\n');
-                        try {
-                            if (!rewardPromptContext) {
-                                const rewardLocation = context.location || null;
-                                rewardPromptContext = await prepareBasePromptContext({ locationOverride: rewardLocation });
-                                context._questRewardPromptContext = rewardPromptContext;
-                            }
-                            const renderedRewardPrompt = promptEnv.render('base-context.xml.njk', {
-                                ...rewardPromptContext,
-                                promptType: 'quest-reward-prose',
-                                questRewards: rewardLines
-                            });
-                            const parsedRewardTemplate = parseXMLTemplate(renderedRewardPrompt);
-                            if (!parsedRewardTemplate?.systemPrompt || !parsedRewardTemplate?.generationPrompt) {
-                                throw new Error('Quest reward prose template did not produce prompts.');
-                            }
-                            const rewardMessages = [
-                                { role: 'system', content: parsedRewardTemplate.systemPrompt },
-                                { role: 'user', content: parsedRewardTemplate.generationPrompt }
-                            ];
-                            const rewardResponse = await LLMClient.chatCompletion({
-                                messages: rewardMessages,
-                                metadataLabel: 'quest_reward_prose',
-                                validateXML: false,
-                            });
-                            LLMClient.logPrompt({
-                                prefix: 'quest_reward_prose',
-                                metadataLabel: 'quest_reward_prose',
-                                systemPrompt: parsedRewardTemplate.systemPrompt,
-                                generationPrompt: parsedRewardTemplate.generationPrompt,
-                                response: rewardResponse
-                            });
-                            if (typeof rewardResponse === 'string' && rewardResponse.trim()) {
-                                rewardProse = rewardResponse.trim();
-                            }
-                        } catch (error) {
-                            console.warn('Failed to generate quest reward prose:', error.message);
-                            console.debug(error);
-                        }
-
-                        if (!rewardProse) {
-                            rewardProse = fallbackList;
-                        }
-
-                        // const followupPayload = rewardProse.includes('I receive the following quest rewards:')
-                        //     ? rewardProse
-                        //     : `${rewardProse}\n\n${fallbackList}`;
-                        Events._enqueueFollowupEventCheck(rewardProse);
-
-                        context.questCompletionRewards.push({
-                            questId: quest.id,
-                            questName: quest.name,
-                            items: [], //grantedItems,
-                            xp: rewardXp,
-                            currency: rewardCurrency,
-                            message: rewardProse,
-                            rewards: rewardLines.slice()
-                        });
-
-                        // Add the rewardProse to the chat log.
-                    }
-                }
+                return Events.processQuestObjectiveCompletionEntries(entries, context);
             },
             currency: function (delta, context = {}) {
                 if (!delta) {
@@ -4594,6 +4720,60 @@ class Events {
         } catch (error) {
             console.warn('Failed to parse quest XML:', error.message);
             return null;
+        }
+    }
+
+    static parseQuestObjectiveStatusXml(xmlContent) {
+        if (typeof xmlContent !== 'string' || !xmlContent.trim()) {
+            return [];
+        }
+
+        try {
+            const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+            if (!doc) {
+                return [];
+            }
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(parserError.textContent || 'Quest objective XML contained parser errors.');
+            }
+
+            const questNodes = Array.from(doc.getElementsByTagName('quest'));
+            const entries = [];
+
+            for (const questNode of questNodes) {
+                const questName = questNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                if (!questName) {
+                    continue;
+                }
+
+                const objectiveNodes = Array.from(questNode.getElementsByTagName('objective'));
+                for (const objectiveNode of objectiveNodes) {
+                    const indexText = objectiveNode.getElementsByTagName('index')[0]?.textContent?.trim()
+                        || objectiveNode.getAttribute?.('index')
+                        || '';
+                    const completedText = objectiveNode.getElementsByTagName('completed')[0]?.textContent?.trim().toLowerCase()
+                        || objectiveNode.getAttribute?.('completed')?.trim().toLowerCase()
+                        || '';
+                    const isCompleted = ['true', 'yes', 'y', '1', 'completed'].includes(completedText);
+                    if (!isCompleted) {
+                        continue;
+                    }
+                    const indexValue = Number.parseInt(indexText, 10);
+                    if (!Number.isFinite(indexValue)) {
+                        continue;
+                    }
+                    entries.push({
+                        quest: questName,
+                        objectiveIndex: indexValue
+                    });
+                }
+            }
+
+            return entries;
+        } catch (error) {
+            console.warn('Failed to parse quest objective status XML:', error.message);
+            return [];
         }
     }
 

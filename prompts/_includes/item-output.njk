@@ -8,7 +8,10 @@
   <value>{{ item.value }}</value>
   <weight>{{ item.weight }}</weight>
   <relativeLevel>{{ item.relativeLevel }}</relativeLevel>
-  <isVehicle>{% if item.isVehicle is defined %}{{ item.isVehicle }}{% else %}[true or false]{% endif %}</isVehicle>
+  <isVehicle>{{ item.isVehicle }}</isVehicle>
+  <isCraftingStation>{{ item.isCraftingStation }}</isCraftingStation>
+  <isProcessingStation>{{ item.isProcessingStation }}</isProcessingStation>
+  <isHarvestable>{{ item.isHarvestable }}</isHarvestable>
   <attributeBonuses>
     {% if item.attributeBonuses %}{% for bonus in item.attributeBonuses %}<attributeBonus>
       <attribute>{{ bonus.attribute }}</attribute>

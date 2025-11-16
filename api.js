@@ -1404,6 +1404,26 @@ module.exports = function registerApiRoutes(scope) {
                             });
                             shouldRefresh = true;
                             break;
+                        case 'completed_quest_objective': {
+                            const normalizedEntries = Array.isArray(entries) ? entries : [entries];
+                            normalizedEntries.forEach(entry => {
+                                if (!entry) {
+                                    return;
+                                }
+                                const questLabel = safeSummaryItem(entry.questName || entry.questId || 'Quest');
+                                const description = safeSummaryItem(
+                                    entry.objectiveDescription
+                                    || (Number.isFinite(entry.objectiveNumber) ? `Objective ${entry.objectiveNumber}` : null)
+                                    || (Number.isFinite(entry.objectiveIndex) ? `Objective ${entry.objectiveIndex + 1}` : 'Objective')
+                                );
+                                add('✅', `Quest objective complete: **${questLabel}** - *${description}*`);
+                                if (entry.questJustCompleted) {
+                                    add('🏆', `Finished quest ${questLabel}!`);
+                                }
+                            });
+                            shouldRefresh = true;
+                            break;
+                        }
                         case 'harvest_gather':
                             entries.forEach(entry => {
                                 const actor = safeSummaryName(entry?.harvester);
@@ -6933,6 +6953,92 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    if (questResult) {
+                        //console.log("[QuestDebug] questResult from runQuestChecks:", questResult);
+                        try {
+                            const questCompletionEntries = Events.parseQuestObjectiveStatusXml(questResult);
+                            console.debug('[QuestDebug] questCompletionEntries parsed:', questCompletionEntries);
+                            if (Array.isArray(questCompletionEntries) && questCompletionEntries.length) {
+                                const questRegion = location?.region
+                                    || (location?.regionId ? Region.get(location.regionId) : null);
+
+                                const questProcessingContext = {
+                                    player: currentPlayer,
+                                    location,
+                                    region: questRegion,
+                                    stream,
+                                    experienceAwards: [],
+                                    currencyChanges: [],
+                                    questCompletionRewards: [],
+                                    completedQuestObjectives: []
+                                };
+
+
+                                await Events.processQuestObjectiveCompletionEntries(
+                                    questCompletionEntries,
+                                    questProcessingContext
+                                );
+
+                                const appendArray = (key, values) => {
+                                    if (!Array.isArray(values) || !values.length) {
+                                        return;
+                                    }
+                                    if (!Array.isArray(responseData[key])) {
+                                        responseData[key] = [];
+                                    }
+                                    responseData[key].push(...values);
+                                    if (eventResult) {
+                                        if (!Array.isArray(eventResult[key])) {
+                                            eventResult[key] = [];
+                                        }
+                                        eventResult[key].push(...values);
+                                    }
+                                };
+
+                                appendArray('experienceAwards', questProcessingContext.experienceAwards);
+                                appendArray('currencyChanges', questProcessingContext.currencyChanges);
+
+                                const questEventsContainer = (() => {
+                                    if (responseData.events && typeof responseData.events === 'object') {
+                                        return responseData.events;
+                                    }
+                                    if (eventResult?.structured && typeof eventResult.structured === 'object') {
+                                        responseData.events = eventResult.structured;
+                                        return responseData.events;
+                                    }
+                                    const fresh = { parsed: {}, rawEntries: {} };
+                                    responseData.events = fresh;
+                                    if (eventResult) {
+                                        eventResult.structured = fresh;
+                                    }
+                                    return fresh;
+                                })();
+
+                                Events.mergeQuestOutcomesIntoStructured(questEventsContainer, {
+                                    questRewards: questProcessingContext.questCompletionRewards,
+                                    questObjectivesCompleted: questProcessingContext.completedQuestObjectives
+                                });
+
+                                if (questProcessingContext.questCompletionRewards.length) {
+                                    if (!eventResult) {
+                                        eventResult = { structured: questEventsContainer };
+                                    }
+                                    if (!Array.isArray(eventResult.questRewards)) {
+                                        eventResult.questRewards = [];
+                                    }
+                                    eventResult.questRewards.push(...questProcessingContext.questCompletionRewards);
+                                }
+
+                                if (questProcessingContext.questCompletionRewards.length
+                                    || questProcessingContext.completedQuestObjectives.length) {
+                                    markEventsProcessed();
+                                }
+                            }
+                        } catch (questProcessingError) {
+                            console.warn('Failed to process quest objective completions:', questProcessingError.message);
+                        }
+                    }
+
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
                         let travelAttemptSucceeded = false;
                         if (plausibilityType === 'trivial') {
@@ -11423,7 +11529,11 @@ module.exports = function registerApiRoutes(scope) {
                     description: normalizeSeedString(rawSeed.description),
                     type: normalizeSeedString(rawSeed.type),
                     slot: normalizeSeedString(rawSeed.slot),
-                    rarity: normalizeSeedString(rawSeed.rarity)
+                    rarity: normalizeSeedString(rawSeed.rarity),
+                    isVehicle: Boolean(rawSeed.isVehicle),
+                    isHarvestable: Boolean(rawSeed.isHarvestable),
+                    isCraftingStation: Boolean(rawSeed.isCraftingStation),
+                    isProcessingStation: Boolean(rawSeed.isProcessingStation)
                 };
 
                 const rawItemOrScenery = normalizeSeedString(rawSeed.itemOrScenery);
@@ -11963,6 +12073,13 @@ module.exports = function registerApiRoutes(scope) {
                     error: error.message
                 });
             }
+        });
+
+        app.post('/api/craft', (req, res) => {
+            res.json({
+                success: true,
+                message: 'Crafting endpoint not yet implemented.'
+            });
         });
 
         // ==================== LOCATION GENERATION FUNCTIONALITY ====================

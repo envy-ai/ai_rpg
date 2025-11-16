@@ -4,23 +4,23 @@ Here is some information about the quest:
   Short description: {{ shortDescription }}
 
 <quest>
-  <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest.-->{% endif %}</name>
+  <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest. Use the same name as an existing one if modifying it.-->{% endif %}</name>
   <description>{% if quest.description %}{{ quest.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing the quest's objectives, significance, and context within the world.--> {% endif %}</description>
   <giver>{% if quest.giver %}{{ quest.giver }}{% else %}<!--Name of the NPC or entity that gives the quest.-->{% endif %}</giver>
   <secretNotes><!-- Internal notes about the quest that are not revealed to the player. If this is a simple quest, it's okay to leave these blank. --></secretNotes>
   <objectives>
     <objective>
-      <description><!--Description of the objective.--></description>
+      <description><!--Description of the objective. If modifying a quest, skip any objectives that are already completed. Keep or add objectives as needed.--></description>
     </objective>
     ... more objectives as needed ...
   </objectives>
   <rewards>
     <item>
-      <description><!--Description of the reward item or benefit.--></description>
+      <description><!--Description of the reward item or benefit. If modifying an existing request, list all existing rewards unless there's a very good reason to remove one or more of them. It is okay to add additional rewards.--></description>
     </item>
     ... more items as needed ...
     <currency>
-      <!--Integer amount of currency rewarded, based on setting norms.-->
+      <!--Integer amount of currency rewarded, based on setting norms. If modifying an existing quest, do not decrease this from the original value, but increasing it is okay.-->
     </currency>
   </rewards>
 </quest>

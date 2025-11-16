@@ -30,6 +30,10 @@ class Thing {
   #causeStatusEffect;
   #level;
   #relativeLevel;
+  isVehicle = null;
+  isCraftingStation = null;
+  isProcessingStation = null;
+  isHarvestable = null;
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -488,7 +492,11 @@ class Thing {
     attributeBonuses = null,
     causeStatusEffect = null,
     level = null,
-    relativeLevel = null
+    relativeLevel = null,
+    isVehicle = null,
+    isCraftingStation = null,
+    isProcessingStation = null,
+    isHarvestable = null
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -524,6 +532,10 @@ class Thing {
     this.#causeStatusEffect = null;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
+    this.#isVehicle = isVehicle;
+    this.#isCraftingStation = isCraftingStation;
+    this.#isProcessingStation = isProcessingStation;
+    this.#isHarvestable = isHarvestable;
 
     this.#applyMetadataFieldsFromMetadata();
 

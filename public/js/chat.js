@@ -694,8 +694,7 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        const allowMarkdown = entry.role === 'assistant';
-        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown });
+        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1029,7 +1028,11 @@ class AIRPGChat {
                 iconSpan.className = 'event-summary-icon';
                 iconSpan.textContent = item.icon || '•';
                 listItem.appendChild(iconSpan);
-                listItem.appendChild(document.createTextNode(` ${item.text}`));
+                listItem.appendChild(document.createTextNode(' '));
+                const textSpan = document.createElement('span');
+                textSpan.className = 'event-summary-text';
+                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+                listItem.appendChild(textSpan);
                 list.appendChild(listItem);
             });
         }
@@ -1075,7 +1078,11 @@ class AIRPGChat {
                 iconSpan.className = 'event-summary-icon';
                 iconSpan.textContent = item.icon || '•';
                 listItem.appendChild(iconSpan);
-                listItem.appendChild(document.createTextNode(` ${item.text}`));
+                listItem.appendChild(document.createTextNode(' '));
+                const textSpan = document.createElement('span');
+                textSpan.className = 'event-summary-text';
+                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+                listItem.appendChild(textSpan);
                 list.appendChild(listItem);
             });
         }
@@ -1570,7 +1577,7 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        contentDiv.textContent = 'Processing...';
+        this.setMessageContent(contentDiv, 'Processing...', { allowMarkdown: true });
 
         element.appendChild(senderDiv);
         element.appendChild(contentDiv);
@@ -1600,7 +1607,7 @@ class AIRPGChat {
             element.dataset.scope = scope;
             const contentDiv = element.querySelector('.message-content');
             if (contentDiv) {
-                contentDiv.textContent = message;
+                this.setMessageContent(contentDiv, message, { allowMarkdown: true });
             }
             this.chatLog.appendChild(element);
             this.scrollToBottom();
@@ -1682,7 +1689,7 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        const allowMarkdown = sender === 'ai' || options.allowMarkdown === true;
+        const allowMarkdown = options.allowMarkdown !== false;
         this.setMessageContent(contentDiv, content, { allowMarkdown });
 
         const timestampDiv = document.createElement('div');
@@ -1775,7 +1782,7 @@ class AIRPGChat {
         senderDiv.textContent = '✨ Experience Gained';
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryText;
+        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1842,7 +1849,7 @@ class AIRPGChat {
         senderDiv.textContent = '💰 Currency Update';
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryText;
+        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -2054,7 +2061,7 @@ class AIRPGChat {
         senderDiv.textContent = isHealing ? '🌿 Environmental Healing' : '☠️ Environmental Damage';
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryMessage;
+        this.setMessageContent(contentDiv, summaryMessage, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -2457,7 +2464,7 @@ class AIRPGChat {
         senderDiv.textContent = `${icon || '📣'} Event`;
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryText;
+        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -2481,7 +2488,7 @@ class AIRPGChat {
         senderDiv.textContent = `${icon || '🌀'} Status Change`;
 
         const contentDiv = document.createElement('div');
-        contentDiv.textContent = summaryText;
+        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -2586,7 +2593,11 @@ class AIRPGChat {
             iconSpan.className = 'event-summary-icon';
             iconSpan.textContent = item.icon || '•';
             li.appendChild(iconSpan);
-            li.appendChild(document.createTextNode(' ' + item.text));
+            li.appendChild(document.createTextNode(' '));
+            const textSpan = document.createElement('span');
+            textSpan.className = 'event-summary-text';
+            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+            li.appendChild(textSpan);
             list.appendChild(li);
         });
 
@@ -2639,7 +2650,11 @@ class AIRPGChat {
             iconSpan.className = 'event-summary-icon';
             iconSpan.textContent = item.icon || '•';
             li.appendChild(iconSpan);
-            li.appendChild(document.createTextNode(' ' + item.text));
+            li.appendChild(document.createTextNode(' '));
+            const textSpan = document.createElement('span');
+            textSpan.className = 'event-summary-text';
+            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+            li.appendChild(textSpan);
             list.appendChild(li);
         });
 

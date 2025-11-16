@@ -5771,55 +5771,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 
     const resolvedRegion = region || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null);
 
-    const createFallbackThing = (name) => {
-        if (!name) {
-            return null;
-        }
-        try {
-            const seed = seedLookup.get(name.toLowerCase()) || {};
-            const fallbackType = typeof seed.itemOrScenery === 'string' && seed.itemOrScenery.toLowerCase() === 'scenery'
-                ? 'scenery'
-                : 'item';
-            const thing = new Thing({
-                name,
-                description: seed.description || `An item called ${name}.`,
-                thingType: fallbackType,
-                metadata: {}
-            });
-            things.set(thing.id, thing);
-            const fallbackMetadata = thing.metadata || {};
-            if (Number.isFinite(seed.relativeLevel)) {
-                fallbackMetadata.relativeLevel = seed.relativeLevel;
-            }
-            if (seed.slot) {
-                fallbackMetadata.slot = seed.slot;
-                thing.slot = seed.slot;
-            }
-            if (seed.rarity) {
-                thing.rarity = seed.rarity;
-            }
-            if (seed.type) {
-                thing.itemTypeDetail = seed.type;
-            }
-            if (owner && typeof owner.addInventoryItem === 'function') {
-                owner.addInventoryItem(thing);
-                fallbackMetadata.ownerId = owner.id;
-                delete fallbackMetadata.locationId;
-            } else if (resolvedLocation) {
-                fallbackMetadata.locationId = resolvedLocation.id;
-                delete fallbackMetadata.ownerId;
-                if (typeof resolvedLocation.addThingId === 'function') {
-                    resolvedLocation.addThingId(thing.id);
-                }
-            }
-            thing.metadata = fallbackMetadata;
-            return thing;
-        } catch (creationError) {
-            console.warn(`Failed to create fallback item for "${name}":`, creationError.message);
-            return null;
-        }
-    };
-
     try {
         const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
         const attributeList = (baseContext.attributes && baseContext.attributes.length)
@@ -6043,10 +5994,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 }
             } catch (itemError) {
                 console.warn(`Failed to generate detailed items from event for "${name}":`, itemError.message);
-                const fallbackThing = createFallbackThing(name);
-                if (fallbackThing) {
-                    created.push(fallbackThing);
-                }
             }
         }
 
@@ -6062,19 +6009,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
     } catch (error) {
         console.warn('Failed to prepare item generation context:', error.message);
         const fallbacks = [];
-        for (const name of missing) {
-            const fallbackThing = createFallbackThing(name);
-            if (fallbackThing) {
-                fallbacks.push(fallbackThing);
-            }
-        }
-        if (fallbacks.length) {
-            try {
-                await ensureUniqueThingNames({ things: fallbacks, location: resolvedLocation, owner, region: resolvedRegion });
-            } catch (error) {
-                console.warn('Failed to enforce unique thing names for fallback items:', error.message);
-            }
-        }
         return fallbacks;
     }
 }
@@ -8615,6 +8549,10 @@ function parseInventoryItems(xmlContent) {
                 value: node.getElementsByTagName('value')[0]?.textContent?.trim() || '0',
                 weight: node.getElementsByTagName('weight')[0]?.textContent?.trim() || '0',
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
+                isVehicle: node.getElementsByTagName('isVehicle')[0]?.textContent?.trim().toLowerCase() === 'true',
+                isCraftingStation: node.getElementsByTagName('isCraftingStation')[0]?.textContent?.trim().toLowerCase() === 'true',
+                isProcessingStation: node.getElementsByTagName('isProcessingStation')[0]?.textContent?.trim().toLowerCase() === 'true',
+                isHarvestable: node.getElementsByTagName('isHarvestable')[0]?.textContent?.trim().toLowerCase() === 'true',
                 relativeLevel,
                 thingType: itemOrScenery,
                 itemOrScenery,
