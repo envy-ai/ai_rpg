@@ -6147,6 +6147,8 @@ async function alterThingByPrompt({
         throw new Error('alterThingByPrompt requires a valid Thing instance.');
     }
 
+    console.log(`🛠️ Altering item "${thing.name}" (${thing.id}) via AI prompt...`);
+
     const metadata = thing.metadata || {};
 
     let resolvedOwner = owner || null;
@@ -6261,7 +6263,7 @@ async function alterThingByPrompt({
         throw new Error('Empty item alteration response from AI.');
     }
 
-    const parsedItems = parseThingsXml(aiResponse, { isInventory: true });
+    const parsedItems = parseThingsXml(aiResponse);
     if (!Array.isArray(parsedItems) || !parsedItems.length) {
         throw new Error('Thing alteration response did not include an item definition.');
     }
@@ -6276,9 +6278,27 @@ async function alterThingByPrompt({
         ? 'scenery'
         : 'item';
 
+    console.log("Updated Item:", updatedItem);
+    console.log("Item type:", normalizedType);
+
     const previousMetadata = { ...metadata };
     const previousOwnerId = previousMetadata.ownerId || null;
     const previousLocationId = previousMetadata.locationId || null;
+
+    const getLocationById = (locId) => {
+        if (!locId) {
+            return null;
+        }
+        try {
+            return Location.get(locId);
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const previousOwner = previousOwnerId ? players.get(previousOwnerId) || null : null;
+    const previousLocation = getLocationById(previousLocationId);
+    const playerCurrentLocation = currentPlayer?.currentLocation ? getLocationById(currentPlayer.currentLocation) : null;
 
     const ownerCandidate = resolvedOwner || (previousOwnerId ? players.get(previousOwnerId) || null : null);
 
@@ -6345,33 +6365,42 @@ async function alterThingByPrompt({
         Object.assign(updatedMetadata, updatedBooleanFlags);
     }
 
-    if (normalizedType === 'scenery') {
-        delete updatedMetadata.ownerId;
-        if (resolvedLocation) {
-            updatedMetadata.locationId = resolvedLocation.id;
-            updatedMetadata.locationName = resolvedLocation.name || resolvedLocation.id;
+    const finalOwner = normalizedType === 'item'
+        ? (previousOwner || resolvedOwner || null)
+        : null;
+
+    const finalLocation = (() => {
+        if (normalizedType === 'item') {
+            if (finalOwner) {
+                return null;
+            }
+            return previousLocation || resolvedLocation || playerCurrentLocation || null;
         }
-    } else if (resolvedOwner && typeof resolvedOwner.id === 'string') {
-        updatedMetadata.ownerId = resolvedOwner.id;
+        return resolvedLocation || playerCurrentLocation || previousLocation || null;
+    })();
+
+    if (finalOwner) {
+        updatedMetadata.ownerId = finalOwner.id;
         delete updatedMetadata.locationId;
         delete updatedMetadata.locationName;
-    } else if (resolvedLocation) {
-        updatedMetadata.locationId = resolvedLocation.id;
-        updatedMetadata.locationName = resolvedLocation.name || resolvedLocation.id;
+    } else if (finalLocation) {
+        updatedMetadata.locationId = finalLocation.id;
+        updatedMetadata.locationName = finalLocation.name || finalLocation.id;
+        delete updatedMetadata.ownerId;
+    } else {
+        delete updatedMetadata.ownerId;
+        delete updatedMetadata.locationId;
+        delete updatedMetadata.locationName;
     }
 
     const sanitizedMetadata = sanitizeMetadataObject(updatedMetadata);
 
-    const previousOwner = previousOwnerId ? players.get(previousOwnerId) || null : null;
-    const previousLocation = previousLocationId ? (() => {
-        try {
-            return Location.get(previousLocationId);
-        } catch (_) {
-            return null;
-        }
-    })() : null;
+    resolvedOwner = finalOwner || null;
+    if (finalLocation) {
+        resolvedLocation = finalLocation;
+    }
 
-    if (previousOwner && previousOwner !== resolvedOwner && typeof previousOwner.removeInventoryItem === 'function') {
+    if (previousOwner && previousOwner !== finalOwner && typeof previousOwner.removeInventoryItem === 'function') {
         try {
             previousOwner.removeInventoryItem(thing);
         } catch (error) {
@@ -6388,11 +6417,11 @@ async function alterThingByPrompt({
         }
     }
 
-    if (resolvedOwner && typeof resolvedOwner.addInventoryItem === 'function' && sanitizedMetadata.ownerId === resolvedOwner.id) {
+    if (finalOwner && typeof finalOwner.addInventoryItem === 'function' && sanitizedMetadata.ownerId === finalOwner.id) {
         try {
-            resolvedOwner.addInventoryItem(thing);
+            finalOwner.addInventoryItem(thing);
         } catch (error) {
-            console.warn(`Failed to add ${thing.name} to ${resolvedOwner.name || resolvedOwner.id}:`, error.message);
+            console.warn(`Failed to add ${thing.name} to ${finalOwner.name || finalOwner.id}:`, error.message);
         }
     }
 
