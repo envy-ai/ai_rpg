@@ -1439,7 +1439,12 @@
 
             const overlay = document.createElement('div');
             overlay.className = 'entity-image-badges';
-            const hasInteractiveBadges = normalized.some(entry => entry.key === 'isCraftingStation' || entry.key === 'isProcessingStation');
+            const hasInteractiveBadges = normalized.some(entry =>
+                entry.key === 'isCraftingStation'
+                || entry.key === 'isProcessingStation'
+                || entry.key === 'isSalvageable'
+                || entry.key === 'isHarvestable'
+            );
             if (hasInteractiveBadges) {
                 overlay.classList.add('entity-image-badges--interactive');
             }
@@ -1455,21 +1460,41 @@
                 }
                 const isCraftingAction = badge.key === 'isCraftingStation';
                 const isProcessingAction = badge.key === 'isProcessingStation';
-                if (isCraftingAction || isProcessingAction) {
+                const isSalvageAction = badge.key === 'isSalvageable';
+                const isHarvestAction = badge.key === 'isHarvestable';
+                if (isCraftingAction || isProcessingAction || isSalvageAction || isHarvestAction) {
                     span.classList.add('entity-image-badge--action');
                     span.setAttribute('role', 'button');
                     span.setAttribute('tabindex', '0');
-                    const activateBadge = (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        openCraftingModalFromBadge(isProcessingAction ? 'isProcessingStation' : 'isCraftingStation', element);
-                    };
-                    span.addEventListener('click', activateBadge);
-                    span.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            activateBadge(event);
-                        }
-                    });
+                    if (isSalvageAction || isHarvestAction) {
+                        const activateBadge = (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (isHarvestAction) {
+                                attemptHarvestFromBadge(element);
+                            } else {
+                                attemptSalvageFromBadge(element);
+                            }
+                        };
+                        span.addEventListener('click', activateBadge);
+                        span.addEventListener('keydown', (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                activateBadge(event);
+                            }
+                        });
+                    } else {
+                        const activateBadge = (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openCraftingModalFromBadge(isProcessingAction ? 'isProcessingStation' : 'isCraftingStation', element);
+                        };
+                        span.addEventListener('click', activateBadge);
+                        span.addEventListener('keydown', (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                activateBadge(event);
+                            }
+                        });
+                    }
                 }
                 overlay.appendChild(span);
             });
@@ -4569,6 +4594,7 @@
         let craftingInventoryLookup = new Map();
         let craftingInventoryCardRefs = new Map();
         let craftingIsSubmitting = false;
+        let salvageIsSubmitting = false;
         let craftingSourceThing = null;
         let craftingIsOpen = false;
 
@@ -10372,6 +10398,48 @@
             openCraftingModal({ mode, sourceThing });
         }
 
+        function attemptSalvageFromBadge(hostElement) {
+            if (!hostElement) {
+                return;
+            }
+            const thingId = hostElement?.dataset?.imageEntityId || null;
+            if (!thingId) {
+                alert('Unable to salvage: missing item reference.');
+                return;
+            }
+            let targetThing = null;
+            if (thingDataCache instanceof Map && thingDataCache.has(thingId)) {
+                targetThing = thingDataCache.get(thingId);
+            }
+            const thingName = targetThing?.name?.trim() || 'this item';
+            const confirmation = window.confirm(`Salvage "${thingName}"? This destroys the item but may yield useful components.`);
+            if (!confirmation) {
+                return;
+            }
+            submitSalvageRequest({ thingId, thing: targetThing, mode: 'salvage' });
+        }
+
+        function attemptHarvestFromBadge(hostElement) {
+            if (!hostElement) {
+                return;
+            }
+            const thingId = hostElement?.dataset?.imageEntityId || null;
+            if (!thingId) {
+                alert('Unable to harvest: missing item reference.');
+                return;
+            }
+            let targetThing = null;
+            if (thingDataCache instanceof Map && thingDataCache.has(thingId)) {
+                targetThing = thingDataCache.get(thingId);
+            }
+            const thingName = targetThing?.name?.trim() || 'this resource';
+            const confirmation = window.confirm(`Harvest from "${thingName}"? This collects materials without destroying the source.`);
+            if (!confirmation) {
+                return;
+            }
+            submitSalvageRequest({ thingId, thing: targetThing, mode: 'harvest' });
+        }
+
         function openCraftingModal({ mode = 'craft', sourceThing = null } = {}) {
             if (!craftingModal || !craftingModalBackdrop) {
                 return;
@@ -10782,6 +10850,68 @@
             };
         }
 
+        function removeThingElementsFromUi(thingId) {
+            if (!thingId) {
+                return;
+            }
+            if (thingDataCache instanceof Map) {
+                thingDataCache.delete(thingId);
+            }
+            const selector = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+                ? `[data-thing-id="${CSS.escape(thingId)}"]`
+                : '[data-thing-id]';
+            const nodes = Array.from(document.querySelectorAll(selector))
+                .filter(node => node?.dataset?.thingId === thingId);
+            nodes.forEach(node => {
+                if (!node) {
+                    return;
+                }
+                const removable = node.closest('.thing-card')
+                    || node.closest('.inventory-card')
+                    || node.closest('.npc-view-equipment-item-card')
+                    || node.closest('.crafting-slot__item')
+                    || node;
+                try {
+                    removable.remove();
+                } catch (_) {}
+            });
+        }
+
+        function toggleChatSendSpinner(isLoading) {
+            try {
+                window.AIRPG_CHAT?.setSendButtonLoading?.(Boolean(isLoading));
+            } catch (error) {
+                console.debug('Unable to toggle chat spinner:', error);
+            }
+        }
+
+        async function refreshCraftingRelatedViews() {
+            const refreshTasks = [];
+            const enqueueRefresh = (operation, label) => {
+                if (typeof operation !== 'function') {
+                    return;
+                }
+                try {
+                    const value = operation();
+                    if (value && typeof value.then === 'function') {
+                        refreshTasks.push(value.catch(error => {
+                            console.warn(`Crafting refresh (${label}) failed:`, error);
+                        }));
+                    }
+                } catch (error) {
+                    console.warn(`Crafting refresh (${label}) failed:`, error);
+                }
+            };
+
+            enqueueRefresh(() => window.AIRPG_CHAT?.refreshChatHistory?.(), 'chat');
+            enqueueRefresh(() => window.refreshInventory?.(), 'inventory');
+            enqueueRefresh(() => window.refreshParty?.(), 'party');
+
+            if (refreshTasks.length) {
+                await Promise.allSettled(refreshTasks);
+            }
+        }
+
         async function submitCraftingRequest() {
             const payload = buildCraftingPayload();
             if (!payload.itemIds.length) {
@@ -10807,8 +10937,7 @@
                     alert(errorMessage);
                     return;
                 }
-                const successMessage = result?.message || 'Crafting request submitted.';
-                alert(successMessage);
+                await refreshCraftingRelatedViews();
                 closeCraftingModal();
             } catch (error) {
                 console.warn('Crafting request failed:', error);
@@ -10819,6 +10948,71 @@
                     craftingActionButton.textContent = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
                 }
                 updateCraftingActionState();
+            }
+        }
+
+        async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage' } = {}) {
+            const normalizedMode = mode === 'harvest' ? 'harvest' : 'salvage';
+            const isHarvestMode = normalizedMode === 'harvest';
+            if (!thingId) {
+                alert(`Unable to ${isHarvestMode ? 'harvest' : 'salvage'} without a valid item.`);
+                return;
+            }
+            if (salvageIsSubmitting) {
+                return;
+            }
+            salvageIsSubmitting = true;
+            toggleChatSendSpinner(true);
+            try {
+                const actionLabel = isHarvestMode ? 'Harvest' : 'Salvage';
+                const payloadMode = normalizedMode;
+                const payload = {
+                    mode: payloadMode,
+                    actionType: payloadMode,
+                    slotCount: 1,
+                    notes: '',
+                    itemIds: [thingId],
+                    slots: [{
+                        slotIndex: 0,
+                        thingId,
+                        name: thing?.name || null
+                    }],
+                    stationThingId: null,
+                    stationName: isHarvestMode ? 'Harvest Interface' : 'Salvage Interface'
+                };
+                if (isHarvestMode) {
+                    payload.harvestItemId = thingId;
+                    payload.harvestItemName = thing?.name || null;
+                    payload.harvestItemDescription = thing?.description || null;
+                    payload.harvestNotes = '';
+                } else {
+                    payload.salvageItemId = thingId;
+                    payload.salvageItemName = thing?.name || null;
+                    payload.salvageItemDescription = thing?.description || null;
+                    payload.salvageNotes = '';
+                }
+
+                const response = await fetch('/api/craft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    const errorMessage = result?.error || `${actionLabel} failed (HTTP ${response.status})`;
+                    alert(errorMessage);
+                    return;
+                }
+                if (!isHarvestMode) {
+                    removeThingElementsFromUi(thingId);
+                }
+                await refreshCraftingRelatedViews();
+            } catch (error) {
+                console.warn('Salvage request failed:', error);
+                alert(`${mode === 'harvest' ? 'Harvest' : 'Salvage'} failed: ${error?.message || 'Unknown error'}`);
+            } finally {
+                salvageIsSubmitting = false;
+                toggleChatSendSpinner(false);
             }
         }
 

@@ -4,6 +4,7 @@ const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
+const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
@@ -197,6 +198,70 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        async function runAutosaveIfEnabled() {
+            const config = Globals?.config || {};
+            let retention = config?.autosaves_to_retain;
+            if (retention === null || retention === undefined) {
+                retention = 20;
+            }
+
+            const numericRetention = Number(retention);
+            if (!Number.isFinite(numericRetention)) {
+                retention = 20;
+            } else {
+                retention = Math.floor(numericRetention);
+            }
+
+            if (retention <= 0) {
+                return;
+            }
+
+            try {
+                const autosaveResult = performGameSave({ saveRoot: 'autosaves' });
+                const autosaveRoot = path.dirname(autosaveResult.saveDir);
+
+                if (!fs.existsSync(autosaveRoot)) {
+                    return;
+                }
+
+                const dirEntries = fs.readdirSync(autosaveRoot, { withFileTypes: true });
+                const autosaveDirs = dirEntries
+                    .filter(entry => entry.isDirectory())
+                    .map(entry => {
+                        const fullPath = path.join(autosaveRoot, entry.name);
+                        let stats;
+                        try {
+                            stats = fs.statSync(fullPath);
+                        } catch (error) {
+                            console.warn('Failed to stat autosave directory:', fullPath, error?.message || error);
+                            return null;
+                        }
+                        return {
+                            name: entry.name,
+                            path: fullPath,
+                            mtime: stats?.mtimeMs ?? stats?.mtime?.getTime?.() ?? 0
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.mtime - b.mtime);
+
+                while (autosaveDirs.length > retention) {
+                    const oldest = autosaveDirs.shift();
+                    try {
+                        fs.rmSync(oldest.path, { recursive: true, force: true });
+                    } catch (error) {
+                        console.warn('Failed to remove old autosave:', oldest.path, error?.message || error);
+                    }
+                }
+            } catch (error) {
+                if (error?.code === 'NO_PLAYER') {
+                    console.warn('Autosave skipped: no current player to save.');
+                    return;
+                }
+                console.warn('Autosave failed:', error?.message || error);
+            }
+        }
+
         function sanitizeForXml(input) {
             return `<root>${input}</root>`
                 .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
@@ -222,6 +287,183 @@ module.exports = function registerApiRoutes(scope) {
                 console.warn('Failed to parse random event seed response:', error?.message || error);
                 return [];
             }
+        }
+
+        const sharedXmlSerializer = new XMLSerializer();
+
+        function serializeXmlNode(node) {
+            if (!node) {
+                return '';
+            }
+            try {
+                return sharedXmlSerializer.serializeToString(node);
+            } catch (error) {
+                try {
+                    return `<${node.nodeName}>${Utils.innerXML(node)}</${node.nodeName}>`;
+                } catch (_) {
+                    return '';
+                }
+            }
+        }
+
+        function parseCraftingResultsResponse(xmlContent) {
+            const results = new Map();
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                return results;
+            }
+            try {
+                const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
+                const parent = doc.getElementsByTagName('craftingResults')[0]
+                    || doc.getElementsByTagName('salvageResults')[0]
+                    || doc.getElementsByTagName('harvestResults')[0]
+                    || null;
+                if (!parent) {
+                    return results;
+                }
+                const parentTagName = String(parent.nodeName || '').toLowerCase();
+                const resultNodes = Array.from(parent.getElementsByTagName('result'));
+                resultNodes.forEach(resultNode => {
+                    if (!resultNode) {
+                        return;
+                    }
+                    const levelNode = resultNode.getElementsByTagName('level')[0] || null;
+                    const level = levelNode && typeof levelNode.textContent === 'string'
+                        ? levelNode.textContent.trim().toLowerCase()
+                        : '';
+                    if (!level) {
+                        return;
+                    }
+
+                    const itemsConsumedNode = resultNode.getElementsByTagName('itemsConsumed')[0] || null;
+                    const consumedNames = itemsConsumedNode
+                        ? Array.from(itemsConsumedNode.getElementsByTagName('itemName'))
+                            .map(node => (node.textContent || '').trim())
+                            .filter(name => !!name && name !== '...')
+                        : [];
+
+                    const recoveredItems = [];
+                    const pushParsedItemNode = (itemNode) => {
+                        if (!itemNode) {
+                            return;
+                        }
+                        const serializedItem = serializeXmlNode(itemNode);
+                        if (!serializedItem) {
+                            return;
+                        }
+                        const wrapped = `<items>${serializedItem}</items>`;
+                        const parsedItems = parseThingsXml(wrapped, { isInventory: true }) || [];
+                        parsedItems.forEach(entry => {
+                            if (entry) {
+                                recoveredItems.push(entry);
+                            }
+                        });
+                    };
+
+                    const recoveredParent = resultNode.getElementsByTagName('itemsRecovered')[0] || null;
+                    if (recoveredParent) {
+                        const innerItems = Array.from(recoveredParent.getElementsByTagName('item'));
+                        if (innerItems.length) {
+                            innerItems.forEach(pushParsedItemNode);
+                        }
+                    }
+
+                    if (!recoveredItems.length) {
+                        const itemNode = resultNode.getElementsByTagName('item')[0] || null;
+                        if (itemNode) {
+                            pushParsedItemNode(itemNode);
+                        }
+                    }
+
+                    const parsedItem = recoveredItems[0] || null;
+
+                    const otherNode = resultNode.getElementsByTagName('other')[0] || null;
+                    const other = otherNode && typeof otherNode.textContent === 'string'
+                        ? otherNode.textContent.trim()
+                        : null;
+
+                    results.set(level, {
+                        itemsConsumed: consumedNames,
+                        item: parsedItem,
+                        itemsRecovered: recoveredItems,
+                        other: other && other.toLowerCase() !== 'n/a' ? other : null
+                    });
+                });
+            } catch (error) {
+                console.warn('Failed to parse crafting results response:', error?.message || error);
+            }
+            return results;
+        }
+
+        function parseCraftingNarrativeResponse(xmlContent) {
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                return null;
+            }
+            try {
+                const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
+                const root = doc.getElementsByTagName('result')[0] || doc.documentElement;
+                if (!root) {
+                    return null;
+                }
+                const getText = (tagName) => {
+                    const node = root.getElementsByTagName(tagName)[0] || null;
+                    return node && typeof node.textContent === 'string' ? node.textContent.trim() : '';
+                };
+                return {
+                    description: getText('description'),
+                    otherEffectDescription: getText('otherEffectDescription')
+                };
+            } catch (error) {
+                console.warn('Failed to parse crafting narrative response:', error?.message || error);
+                return null;
+            }
+        }
+
+        function mapOutcomeDegreeToCraftLevel(degree, d20Roll = null, difficulty = null) {
+            if (!degree || typeof degree !== 'string') {
+                return null;
+            }
+            const normalized = degree.trim().toLowerCase();
+            let resolved;
+            switch (normalized) {
+                case 'automatic_success':
+                case 'trivial_success':
+                    resolved = 'success';
+                    break;
+                case 'minor_failure':
+                    resolved = 'failure';
+                    break;
+                case 'implausible_failure':
+                    resolved = 'implausible';
+                    break;
+                case 'critical_success':
+                    if (Number.isFinite(d20Roll) && d20Roll < 16) {
+                        resolved = 'major_success';
+                        break;
+                    }
+                    resolved = 'critical_success';
+                    break;
+                case 'critical_failure':
+                    if (Number.isFinite(d20Roll) && d20Roll > 4) {
+                        resolved = 'major_failure';
+                        break;
+                    }
+                    resolved = 'critical_failure';
+                    break;
+                default:
+                    resolved = normalized;
+            }
+
+            const normalizedDifficulty = typeof difficulty === 'string'
+                ? difficulty.trim().toLowerCase()
+                : null;
+            if (normalizedDifficulty === 'trivial') {
+                const successTiers = new Set(['success', 'major_success', 'critical_success']);
+                if (!successTiers.has(resolved)) {
+                    resolved = 'success';
+                }
+            }
+
+            return resolved;
         }
 
         async function generateRandomEventSeeds({ mode, locationOverride = null, baseContext = null } = {}) {
@@ -5708,70 +5950,6 @@ module.exports = function registerApiRoutes(scope) {
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
             eventsProcessedThisTurn = false;
-
-            const runAutosaveIfEnabled = async () => {
-                const config = Globals?.config || {};
-                let retention = config?.autosaves_to_retain;
-                if (retention === null || retention === undefined) {
-                    retention = 20;
-                }
-
-                const numericRetention = Number(retention);
-                if (!Number.isFinite(numericRetention)) {
-                    retention = 20;
-                } else {
-                    retention = Math.floor(numericRetention);
-                }
-
-                if (retention <= 0) {
-                    return;
-                }
-
-                try {
-                    const autosaveResult = performGameSave({ saveRoot: 'autosaves' });
-                    const autosaveRoot = path.dirname(autosaveResult.saveDir);
-
-                    if (!fs.existsSync(autosaveRoot)) {
-                        return;
-                    }
-
-                    const dirEntries = fs.readdirSync(autosaveRoot, { withFileTypes: true });
-                    const autosaveDirs = dirEntries
-                        .filter(entry => entry.isDirectory())
-                        .map(entry => {
-                            const fullPath = path.join(autosaveRoot, entry.name);
-                            let stats;
-                            try {
-                                stats = fs.statSync(fullPath);
-                            } catch (error) {
-                                console.warn('Failed to stat autosave directory:', fullPath, error?.message || error);
-                                return null;
-                            }
-                            return {
-                                name: entry.name,
-                                path: fullPath,
-                                mtime: stats?.mtimeMs ?? stats?.mtime?.getTime?.() ?? 0
-                            };
-                        })
-                        .filter(Boolean)
-                        .sort((a, b) => a.mtime - b.mtime);
-
-                    while (autosaveDirs.length > retention) {
-                        const oldest = autosaveDirs.shift();
-                        try {
-                            fs.rmSync(oldest.path, { recursive: true, force: true });
-                        } catch (error) {
-                            console.warn('Failed to remove old autosave:', oldest.path, error?.message || error);
-                        }
-                    }
-                } catch (error) {
-                    if (error?.code === 'NO_PLAYER') {
-                        console.warn('Autosave skipped: no current player to save.');
-                        return;
-                    }
-                    console.warn('Autosave failed:', error?.message || error);
-                }
-            };
 
             try {
                 await runAutosaveIfEnabled();
@@ -12076,11 +12254,631 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/craft', (req, res) => {
-            res.json({
-                success: true,
-                message: 'Crafting endpoint not yet implemented.'
-            });
+        app.post('/api/craft', async (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No active player available for crafting.'
+                    });
+                }
+
+                try {
+                    await runAutosaveIfEnabled();
+                } catch (autosaveError) {
+                    console.warn('Autosave before crafting failed:', autosaveError?.message || autosaveError);
+                }
+
+                const payload = req.body && typeof req.body === 'object' ? req.body : {};
+                const slotEntries = Array.isArray(payload.slots) ? payload.slots : [];
+
+                const slotItems = slotEntries
+                    .map(entry => {
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        const thingId = typeof entry.thingId === 'string' ? entry.thingId.trim() : '';
+                        if (!thingId) {
+                            return null;
+                        }
+                        const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
+                        if (!thing) {
+                            return null;
+                        }
+                        const slotIndex = Number.isFinite(Number(entry.slotIndex))
+                            ? Number(entry.slotIndex)
+                            : 0;
+                        return { slotIndex, thing };
+                    })
+                    .filter(Boolean);
+
+                if (!slotItems.length) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Select at least one ingredient before crafting.'
+                    });
+                }
+
+                const locationId = currentPlayer.currentLocation || null;
+                const locationRecord = locationId
+                    ? (gameLocations.get(locationId) || (typeof Location.get === 'function' ? Location.get(locationId) : null))
+                    : null;
+                const resolvedLocationId = requireLocationId(locationRecord?.id || locationId, 'crafting action');
+
+                const intendedItemName = typeof payload.intendedItemName === 'string'
+                    ? payload.intendedItemName.trim()
+                    : '';
+                const craftingNotes = typeof payload.notes === 'string'
+                    ? payload.notes.trim()
+                    : '';
+                let craftingMode = 'craft';
+                if (payload.mode === 'process') {
+                    craftingMode = 'process';
+                } else if (payload.mode === 'salvage') {
+                    craftingMode = 'salvage';
+                } else if (payload.mode === 'harvest') {
+                    craftingMode = 'harvest';
+                }
+                const actionTypeInput = typeof payload.actionType === 'string' ? payload.actionType.trim().toLowerCase() : '';
+                const effectiveActionType = (() => {
+                    if (actionTypeInput === 'salvage' || actionTypeInput === 'harvest') {
+                        return actionTypeInput;
+                    }
+                    if (craftingMode === 'salvage' || craftingMode === 'harvest') {
+                        return craftingMode;
+                    }
+                    return craftingMode === 'process' ? 'process' : 'craft';
+                })();
+                const isSalvageAction = effectiveActionType === 'salvage';
+                const isHarvestAction = effectiveActionType === 'harvest';
+                if (isSalvageAction) {
+                    craftingMode = 'salvage';
+                } else if (isHarvestAction) {
+                    craftingMode = 'harvest';
+                }
+                const stationThingId = typeof payload.stationThingId === 'string' ? payload.stationThingId.trim() : '';
+                const stationThing = stationThingId
+                    ? (things.get(stationThingId) || (typeof Thing.getById === 'function' ? Thing.getById(stationThingId) : null))
+                    : null;
+                const stationName = (typeof payload.stationName === 'string' && payload.stationName.trim())
+                    ? payload.stationName.trim()
+                    : (stationThing?.name || (isSalvageAction ? 'Salvage Station' : 'Crafting Station'));
+
+                const salvageItemId = typeof payload.salvageItemId === 'string' ? payload.salvageItemId.trim() : '';
+                const salvageItemName = typeof payload.salvageItemName === 'string' ? payload.salvageItemName.trim() : '';
+                const salvageItemDescription = typeof payload.salvageItemDescription === 'string' ? payload.salvageItemDescription.trim() : '';
+                const salvageNotes = typeof payload.salvageNotes === 'string' ? payload.salvageNotes.trim() : '';
+                const harvestItemId = typeof payload.harvestItemId === 'string' ? payload.harvestItemId.trim() : '';
+                const harvestItemName = typeof payload.harvestItemName === 'string' ? payload.harvestItemName.trim() : '';
+                const harvestItemDescription = typeof payload.harvestItemDescription === 'string' ? payload.harvestItemDescription.trim() : '';
+                const harvestNotes = typeof payload.harvestNotes === 'string' ? payload.harvestNotes.trim() : '';
+
+                if ((isSalvageAction || isHarvestAction) && slotItems.length !== 1) {
+                    return res.status(400).json({
+                        success: false,
+                        error: isHarvestAction
+                            ? 'Harvesting requires exactly one target item.'
+                            : 'Salvaging requires exactly one target item.'
+                    });
+                }
+
+                const salvageTargetThing = (isSalvageAction || isHarvestAction) && slotItems[0]?.thing
+                    ? slotItems[0].thing
+                    : null;
+
+                const craftingItemsForPrompt = slotItems.map(({ thing }) => ({
+                    name: thing.name,
+                    description: thing.description,
+                    rarity: thing.rarity,
+                    thingType: thing.thingType
+                }));
+
+                const baseContext = await prepareBasePromptContext({ locationOverride: locationRecord });
+
+                const promptPayload = {
+                    ...baseContext,
+                    promptType: isSalvageAction ? 'plausibility-check-salvage' : 'plausibility-check-craft',
+                    intendedItemName: isSalvageAction
+                        ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
+                        : intendedItemName,
+                    stationName,
+                    craftingItems: craftingItemsForPrompt,
+                    craftingNotes
+                };
+
+                if (isSalvageAction) {
+                    promptPayload.salvageTarget = salvageTargetThing
+                        ? {
+                            name: salvageTargetThing.name,
+                            description: salvageTargetThing.description,
+                            rarity: salvageTargetThing.rarity,
+                            thingType: salvageTargetThing.thingType
+                        }
+                        : null;
+                    promptPayload.salvageTargetName = salvageTargetThing?.name || salvageItemName || null;
+                    promptPayload.salvageItemName = salvageTargetThing?.name || salvageItemName || null;
+                    promptPayload.salvageItemDescription = salvageTargetThing?.description || salvageItemDescription || null;
+                    promptPayload.salvageNotes = salvageNotes || craftingNotes;
+                    promptPayload.salvageStationName = stationName;
+                    promptPayload.salvageStationThing = stationThing
+                        ? {
+                            name: stationThing.name,
+                            description: stationThing.description
+                        }
+                        : null;
+                } else if (isHarvestAction) {
+                    promptPayload.promptType = 'plausibility-check-harvest';
+                    promptPayload.harvestTarget = salvageTargetThing
+                        ? {
+                            name: salvageTargetThing.name,
+                            description: salvageTargetThing.description,
+                            rarity: salvageTargetThing.rarity,
+                            thingType: salvageTargetThing.thingType
+                        }
+                        : null;
+                    promptPayload.harvestTargetName = salvageTargetThing?.name || harvestItemName || null;
+                    promptPayload.harvestItemName = salvageTargetThing?.name || harvestItemName || null;
+                    promptPayload.harvestItemDescription = salvageTargetThing?.description || harvestItemDescription || null;
+                    promptPayload.harvestNotes = harvestNotes || craftingNotes || '';
+                    promptPayload.harvestStationName = stationName;
+                }
+
+                const plausibilityRendered = promptEnv.render('base-context.xml.njk', promptPayload);
+
+                const plausibilityTemplate = parseXMLTemplate(plausibilityRendered);
+                if (!plausibilityTemplate?.systemPrompt || !plausibilityTemplate?.generationPrompt) {
+                    throw new Error('Crafting plausibility template did not produce prompts.');
+                }
+
+                const plausibilityResponse = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: plausibilityTemplate.systemPrompt },
+                        { role: 'user', content: plausibilityTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'craft_plausibility'
+                });
+
+                LLMClient.logPrompt({
+                    metadataLabel: 'craft_plausibility',
+                    systemPrompt: plausibilityTemplate.systemPrompt,
+                    generationPrompt: plausibilityTemplate.generationPrompt,
+                    response: plausibilityResponse
+                });
+
+                if (!plausibilityResponse || !plausibilityResponse.trim()) {
+                    throw new Error('Crafting plausibility analysis returned no response.');
+                }
+
+                const plausibility = parsePlausibilityOutcome(plausibilityResponse);
+                if (!plausibility) {
+                    throw new Error('Unable to parse crafting plausibility response.');
+                }
+
+                const craftingResults = parseCraftingResultsResponse(plausibilityResponse);
+
+                const actionOutcome = resolveActionOutcome({
+                    plausibility,
+                    player: currentPlayer
+                });
+                if (!actionOutcome) {
+                    throw new Error('Failed to resolve crafting outcome.');
+                }
+
+                const mappedLevel = mapOutcomeDegreeToCraftLevel(
+                    actionOutcome.degree,
+                    Number.isFinite(actionOutcome.roll?.die) ? actionOutcome.roll.die : null,
+                    actionOutcome.difficulty?.label || null
+                );
+                if (mappedLevel === 'implausible') {
+                    return res.status(400).json({
+                        success: false,
+                        error: plausibility.reason || 'That crafting attempt is implausible.'
+                    });
+                }
+
+                let selectedResult = mappedLevel ? craftingResults.get(mappedLevel) : null;
+                if (!selectedResult) {
+                    if (actionOutcome.success) {
+                        selectedResult = craftingResults.get('success')
+                            || craftingResults.get('major_success')
+                            || craftingResults.get('critical_success');
+                    } else {
+                        selectedResult = craftingResults.get('failure')
+                            || craftingResults.get('major_failure')
+                            || craftingResults.get('critical_failure')
+                            || craftingResults.get('barely_failed');
+                    }
+                }
+                if (!selectedResult && craftingResults.size) {
+                    selectedResult = craftingResults.values().next().value;
+                }
+                if (!selectedResult) {
+                    throw new Error('AI response did not include crafting results.');
+                }
+
+                const consumedNameList = Array.isArray(selectedResult.itemsConsumed)
+                    ? selectedResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
+                    : [];
+                if (isSalvageAction && !consumedNameList.length && salvageTargetThing?.name) {
+                    consumedNameList.push(salvageTargetThing.name);
+                }
+
+                const availableThings = slotItems.map(entry => entry.thing);
+                const remainingPool = [...availableThings];
+                const consumedThings = [];
+                const unmatchedConsumedNames = [];
+
+                const takeMatch = (name) => {
+                    if (!name) {
+                        return null;
+                    }
+                    const normalized = name.trim().toLowerCase();
+                    const idx = remainingPool.findIndex(candidate =>
+                        candidate &&
+                        typeof candidate.name === 'string' &&
+                        candidate.name.trim().toLowerCase() === normalized
+                    );
+                    if (idx >= 0) {
+                        return remainingPool.splice(idx, 1)[0];
+                    }
+                    return null;
+                };
+
+                consumedNameList.forEach(name => {
+                    const match = takeMatch(name);
+                    if (match) {
+                        consumedThings.push(match);
+                    } else {
+                        unmatchedConsumedNames.push(name);
+                    }
+                });
+
+                if (isSalvageAction && consumedThings.length === 0 && remainingPool.length) {
+                    consumedThings.push(remainingPool.shift());
+                }
+
+                if (!isSalvageAction && !isHarvestAction && consumedThings.length === 0 && consumedNameList.length === 0 && actionOutcome.success) {
+                    while (remainingPool.length) {
+                        consumedThings.push(remainingPool.shift());
+                    }
+                } else if (!isSalvageAction && !isHarvestAction && consumedThings.length === 0 && consumedNameList.length > 0) {
+                    while (remainingPool.length) {
+                        consumedThings.push(remainingPool.shift());
+                    }
+                }
+
+                const instantiateThingFromBlueprint = (itemBlueprint, {
+                    defaultName = 'Crafted Item',
+                    defaultDescription = null
+                } = {}) => {
+                    if (!itemBlueprint) {
+                        return null;
+                    }
+                    const metadata = sanitizeMetadataObject({
+                        rarity: itemBlueprint.rarity || null,
+                        itemType: itemBlueprint.type || null,
+                        value: itemBlueprint.value ?? null,
+                        weight: itemBlueprint.weight ?? null,
+                        properties: itemBlueprint.properties || null,
+                        attributeBonuses: Array.isArray(itemBlueprint.attributeBonuses) && itemBlueprint.attributeBonuses.length
+                            ? itemBlueprint.attributeBonuses
+                            : undefined,
+                        causeStatusEffect: itemBlueprint.causeStatusEffect || null,
+                        ownerId: currentPlayer.id
+                    });
+                    const rawType = (itemBlueprint.thingType || itemBlueprint.itemOrScenery || itemBlueprint.thingCategory || 'item').toLowerCase();
+                    const thingType = rawType === 'scenery' ? 'scenery' : 'item';
+                    const attributeBonuses = Array.isArray(itemBlueprint.attributeBonuses) && itemBlueprint.attributeBonuses.length
+                        ? itemBlueprint.attributeBonuses
+                        : null;
+
+                    return new Thing({
+                        name: itemBlueprint.name || defaultName,
+                        description: itemBlueprint.description || defaultDescription || `An item crafted at ${stationName}.`,
+                        thingType,
+                        rarity: itemBlueprint.rarity || null,
+                        itemTypeDetail: itemBlueprint.type || null,
+                        slot: itemBlueprint.slot || null,
+                        attributeBonuses,
+                        causeStatusEffect: itemBlueprint.causeStatusEffect || null,
+                        level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
+                        relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
+                        metadata,
+                        isVehicle: itemBlueprint.isVehicle,
+                        isCraftingStation: itemBlueprint.isCraftingStation,
+                        isProcessingStation: itemBlueprint.isProcessingStation,
+                        isHarvestable: itemBlueprint.isHarvestable,
+                        isSalvageable: itemBlueprint.isSalvageable
+                    });
+                };
+
+                const consumedThingIds = [];
+                const consumedThingNames = [];
+                consumedThings.forEach(thing => {
+                    if (!thing) {
+                        return;
+                    }
+                    let removed = false;
+                    if (typeof currentPlayer.removeInventoryItem === 'function') {
+                        removed = currentPlayer.removeInventoryItem(thing.id, { suppressNpcEquip: Boolean(currentPlayer.isNPC) });
+                    }
+                    if (removed) {
+                        consumedThingIds.push(thing.id);
+                        consumedThingNames.push(thing.name || thing.id);
+                        things.delete(thing.id);
+                    } else {
+                        unmatchedConsumedNames.push(thing.name || thing.id);
+                    }
+                });
+
+                let craftedThing = null;
+                const recoveredThingInstances = [];
+                if (isSalvageAction || isHarvestAction) {
+                    const salvageBlueprints = Array.isArray(selectedResult.itemsRecovered) && selectedResult.itemsRecovered.length
+                        ? selectedResult.itemsRecovered
+                        : (selectedResult.item ? [selectedResult.item] : []);
+                    const defaultDescription = salvageTargetThing?.name
+                        ? `Recovered material from ${salvageTargetThing.name}.`
+                        : 'Recovered component.';
+                    salvageBlueprints.forEach(blueprint => {
+                        const recoveredThing = instantiateThingFromBlueprint(blueprint, {
+                            defaultName: blueprint?.name || (isHarvestAction ? 'Harvested Material' : 'Recovered Component'),
+                            defaultDescription
+                        });
+                        if (!recoveredThing) {
+                            return;
+                        }
+                        things.set(recoveredThing.id, recoveredThing);
+                        if (typeof currentPlayer.addInventoryItem === 'function') {
+                            currentPlayer.addInventoryItem(recoveredThing, { suppressNpcEquip: true });
+                        }
+                        const recoveredMetadata = recoveredThing.metadata && typeof recoveredThing.metadata === 'object'
+                            ? { ...recoveredThing.metadata }
+                            : {};
+                        recoveredMetadata.ownerId = currentPlayer.id;
+                        recoveredMetadata.locationId = null;
+                        recoveredThing.metadata = recoveredMetadata;
+                        recoveredThingInstances.push(recoveredThing);
+                    });
+                } else if (selectedResult.item) {
+                    craftedThing = instantiateThingFromBlueprint(selectedResult.item);
+                    if (craftedThing) {
+                        things.set(craftedThing.id, craftedThing);
+                        if (typeof currentPlayer.addInventoryItem === 'function') {
+                            currentPlayer.addInventoryItem(craftedThing, { suppressNpcEquip: true });
+                        }
+                        const craftedMetadata = craftedThing.metadata && typeof craftedThing.metadata === 'object'
+                            ? { ...craftedThing.metadata }
+                            : {};
+                        craftedMetadata.ownerId = currentPlayer.id;
+                        craftedMetadata.locationId = null;
+                        craftedThing.metadata = craftedMetadata;
+                    }
+                }
+
+                const consumedNamesForPrompt = consumedThingNames.length
+                    ? consumedThingNames
+                    : consumedNameList;
+
+                const producedItemDescriptor = (() => {
+                    if (isSalvageAction) {
+                        if (recoveredThingInstances.length) {
+                            const descriptions = recoveredThingInstances
+                                .map(item => item.description)
+                                .filter(Boolean);
+                            return {
+                                name: recoveredThingInstances.map(item => item.name || 'Recovered Item').join(', '),
+                                description: descriptions.join(' ') || `Recovered components salvaged from ${salvageTargetThing?.name || 'an item'}.`
+                            };
+                        }
+                        if (Array.isArray(selectedResult.itemsRecovered) && selectedResult.itemsRecovered.length) {
+                            return {
+                                name: selectedResult.itemsRecovered.map(item => item?.name || 'Recovered Item').join(', '),
+                                description: `Recovered components salvaged from ${salvageTargetThing?.name || 'an item'}.`
+                            };
+                        }
+                        return null;
+                    }
+                    if (craftedThing) {
+                        return { name: craftedThing.name, description: craftedThing.description };
+                    }
+                    if (selectedResult.item) {
+                        return {
+                            name: selectedResult.item.name,
+                            description: selectedResult.item.description
+                        };
+                    }
+                    return null;
+                })();
+
+                let playerActionDescription = '';
+                let playerOtherEffect = selectedResult.other || '';
+
+                let playerActionResponse = '';
+                try {
+                    const playerActionRendered = promptEnv.render('base-context.xml.njk', {
+                        ...baseContext,
+                        promptType: 'player-action-craft',
+                        characterName: currentPlayer.name || 'The player',
+                            intendedItemName: isSalvageAction
+                                ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
+                                : intendedItemName,
+                            stationName,
+                            inputItems: craftingItemsForPrompt,
+                            success_or_failure: actionOutcome.label || actionOutcome.degree || '',
+                            producedItem: producedItemDescriptor,
+                            consumedItems: consumedNamesForPrompt.map(name => ({ name })),
+                            otherEffect: selectedResult.other || null,
+                            craftingNotes
+                        });
+
+                    const playerActionTemplate = parseXMLTemplate(playerActionRendered);
+                    if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
+                        throw new Error('Player action craft template missing prompts.');
+                    }
+
+                    playerActionResponse = await LLMClient.chatCompletion({
+                        messages: [
+                            { role: 'system', content: playerActionTemplate.systemPrompt },
+                            { role: 'user', content: playerActionTemplate.generationPrompt }
+                        ],
+                        metadataLabel: 'craft_player_action'
+                    });
+
+                    LLMClient.logPrompt({
+                        metadataLabel: 'craft_player_action',
+                        systemPrompt: playerActionTemplate.systemPrompt,
+                        generationPrompt: playerActionTemplate.generationPrompt,
+                        response: playerActionResponse
+                    });
+
+                    const narrative = parseCraftingNarrativeResponse(playerActionResponse);
+                    if (narrative?.description) {
+                        playerActionDescription = narrative.description;
+                    }
+                    if (narrative?.otherEffectDescription) {
+                        playerOtherEffect = narrative.otherEffectDescription;
+                    }
+                } catch (actionError) {
+                    console.warn('Failed to generate crafting narrative:', actionError?.message || actionError);
+                }
+
+                if (!playerActionDescription) {
+                    const attemptLabel = isSalvageAction
+                        ? 'salvaging'
+                        : (craftingMode === 'process' ? 'processing' : 'crafting');
+                    playerActionDescription = actionOutcome.success
+                        ? `${currentPlayer.name || 'The player'} successfully completes the ${attemptLabel} attempt at ${stationName}.`
+                        : `${currentPlayer.name || 'The player'} struggles with the ${attemptLabel} attempt and comes away empty-handed.`;
+                }
+
+                if (!playerOtherEffect && selectedResult.other) {
+                    playerOtherEffect = selectedResult.other;
+                }
+
+                const contentParts = [playerActionDescription];
+                if (playerOtherEffect && playerOtherEffect.trim()) {
+                    contentParts.push(playerOtherEffect.trim());
+                }
+                const narrativeContent = contentParts.join('\n\n');
+
+                const chatEntry = pushChatEntry({
+                    role: 'assistant',
+                    type: 'player-action',
+                    content: narrativeContent,
+                    metadata: {
+                        craftingMode,
+                        actionType: isSalvageAction ? 'salvage' : craftingMode,
+                        stationName,
+                        intendedItemName: (isSalvageAction
+                            ? (salvageTargetThing?.name || salvageItemName || intendedItemName || null)
+                            : intendedItemName) || null,
+                        craftingNotes: (isSalvageAction ? (salvageNotes || craftingNotes || null) : (craftingNotes || null)),
+                        salvageRecoveredItemIds: isSalvageAction ? recoveredThingInstances.map(item => item.id) : undefined
+                    }
+                }, null, resolvedLocationId);
+
+                if (chatEntry) {
+                    recordPlausibilityEntry({
+                        data: {
+                            raw: plausibilityResponse,
+                            structured: plausibility
+                        },
+                        parentId: chatEntry.id,
+                        locationId: resolvedLocationId
+                    });
+
+                    recordSkillCheckEntry({
+                        resolution: actionOutcome,
+                        parentId: chatEntry.id,
+                        locationId: resolvedLocationId
+                    });
+                }
+
+                const eventItems = [];
+                if (isHarvestAction) {
+                    if (recoveredThingInstances.length) {
+                        recoveredThingInstances.forEach(item => {
+                            eventItems.push({
+                                icon: '🌾',
+                                description: `${currentPlayer.name || 'The player'} harvested ${item.name}.`
+                            });
+                        });
+                    } else {
+                        eventItems.push({
+                            icon: '🌾',
+                            description: `${currentPlayer.name || 'The player'} attempted to harvest ${salvageTargetThing?.name || 'a resource'} but obtained nothing usable.`
+                        });
+                    }
+                } else if (isSalvageAction) {
+                    if (recoveredThingInstances.length) {
+                        recoveredThingInstances.forEach(item => {
+                            eventItems.push({
+                                icon: '♻️',
+                                description: `${currentPlayer.name || 'The player'} salvaged ${item.name}.`
+                            });
+                        });
+                    } else {
+                        eventItems.push({
+                            icon: '♻️',
+                            description: `${currentPlayer.name || 'The player'} salvaged ${salvageTargetThing?.name || 'an item'} but recovered nothing usable.`
+                        });
+                    }
+                } else if (craftedThing) {
+                    eventItems.push({
+                        icon: '🛠️',
+                        description: `${currentPlayer.name || 'The player'} crafted ${craftedThing.name}.`
+                    });
+                }
+                const consumedSummaryNames = consumedThingNames.length
+                    ? consumedThingNames
+                    : consumedNameList;
+                if (consumedSummaryNames.length) {
+                    consumedSummaryNames.forEach(name => {
+                        eventItems.push({
+                            icon: '♻️',
+                            description: `Consumed ${name}.`
+                        });
+                    });
+                }
+
+                if (eventItems.length) {
+                    recordEventSummaryEntry({
+                        label: isHarvestAction
+                            ? '🌾 Harvest Results'
+                            : (isSalvageAction ? '♻️ Salvage Results' : '🛠️ Crafting Results'),
+                        events: eventItems,
+                        parentId: chatEntry ? chatEntry.id : null,
+                        locationId: resolvedLocationId
+                    });
+                }
+
+
+
+                res.json({
+                    success: true,
+                    outcome: actionOutcome,
+                    resultLevel: mappedLevel,
+                    craftedItem: craftedThing ? craftedThing.toJSON() : null,
+                    recoveredItems: recoveredThingInstances.map(item => item.toJSON ? item.toJSON() : item),
+                    consumedThingIds,
+                    narrative: {
+                        description: playerActionDescription,
+                        otherEffect: playerOtherEffect || null
+                    },
+                    plausibility: {
+                        type: plausibility.type,
+                        reason: plausibility.reason || null
+                    },
+                    unmatchedConsumedNames
+                });
+            } catch (error) {
+                console.error('Error processing crafting request:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to process crafting request.'
+                });
+            }
         });
 
         // ==================== LOCATION GENERATION FUNCTIONALITY ====================

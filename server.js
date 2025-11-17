@@ -3420,7 +3420,7 @@ function difficultyToDC(label) {
     const normalized = label.trim().toLowerCase();
     switch (normalized) {
         case 'trivial':
-            return 5;
+            return 0;
         case 'easy':
             return 10;
         case 'medium':
@@ -3436,29 +3436,48 @@ function difficultyToDC(label) {
     }
 }
 
-function classifyOutcomeMargin(margin) {
+function classifyOutcomeMargin(margin, dieRoll = null, difficultyLabel = null) {
+    const qualifiesForCriticalSuccess = Number.isFinite(dieRoll) ? dieRoll >= 16 : true;
+    const qualifiesForCriticalFailure = Number.isFinite(dieRoll) ? dieRoll <= 4 : true;
+
+    let outcome;
     if (margin >= 10) {
-        return { label: 'critical success', degree: 'critical_success', success: true };
+        if (qualifiesForCriticalSuccess) {
+            outcome = { label: 'critical success', degree: 'critical_success', success: true };
+        } else {
+            outcome = { label: 'major success', degree: 'major_success', success: true };
+        }
+    } else if (margin >= 6) {
+        outcome = { label: 'major success', degree: 'major_success', success: true };
+    } else if (margin >= 3) {
+        outcome = { label: 'success', degree: 'success', success: true };
+    } else if (margin >= 0) {
+        outcome = { label: 'barely succeeded', degree: 'barely_succeeded', success: true };
+    } else if (margin <= -10) {
+        if (qualifiesForCriticalFailure) {
+            outcome = { label: 'critical failure', degree: 'critical_failure', success: false };
+        } else {
+            outcome = { label: 'major failure', degree: 'major_failure', success: false };
+        }
+    } else if (margin <= -6) {
+        outcome = { label: 'major failure', degree: 'major_failure', success: false };
+    } else if (margin <= -3) {
+        outcome = { label: 'minor failure', degree: 'minor_failure', success: false };
+    } else {
+        outcome = { label: 'barely failed', degree: 'barely_failed', success: false };
     }
-    if (margin >= 6) {
-        return { label: 'major success', degree: 'major_success', success: true };
+
+    const normalizedDifficulty = typeof difficultyLabel === 'string'
+        ? difficultyLabel.trim().toLowerCase()
+        : null;
+    if (normalizedDifficulty === 'trivial') {
+        const allowed = new Set(['success', 'major_success', 'critical_success']);
+        if (!allowed.has(outcome.degree)) {
+            outcome = { label: 'success', degree: 'success', success: true };
+        }
     }
-    if (margin >= 3) {
-        return { label: 'success', degree: 'success', success: true };
-    }
-    if (margin >= 0) {
-        return { label: 'barely succeeded', degree: 'barely_succeeded', success: true };
-    }
-    if (margin <= -10) {
-        return { label: 'critical failure', degree: 'critical_failure', success: false };
-    }
-    if (margin <= -6) {
-        return { label: 'major failure', degree: 'major_failure', success: false };
-    }
-    if (margin <= -3) {
-        return { label: 'minor failure', degree: 'minor_failure', success: false };
-    }
-    return { label: 'barely failed', degree: 'barely_failed', success: false };
+
+    return outcome;
 }
 
 function findAttributeKey(player, attributeName) {
@@ -3646,7 +3665,7 @@ function resolveActionOutcome({ plausibility, player }) {
     const dieRoll = rollResult.total;
     const total = dieRoll + skillValue + attributeBonus + circumstanceModifier;
     const margin = total - dc;
-    const outcome = classifyOutcomeMargin(margin);
+    const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty);
 
     console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
 
@@ -15135,6 +15154,7 @@ const apiScope = {
     buildNewGameDefaults,
     getSuggestedPlayerLevel,
     parseXMLTemplate,
+    parseThingsXml,
     queueNpcAssetsForLocation,
     resolveActionOutcome,
     resolveLocationStyle,
@@ -15151,6 +15171,7 @@ const apiScope = {
     serializeNpcForClient,
     buildThingProfiles,
     describeSettingForPrompt,
+    sanitizeMetadataObject,
     findActorByName,
     findThingByName,
     findRegionByLocationId,
@@ -15158,6 +15179,7 @@ const apiScope = {
     generateImageId,
     processJobQueue,
     runPlausibilityCheck,
+    parsePlausibilityOutcome,
     prepareBasePromptContext,
     normalizeChatEntry,
     pushChatEntry,

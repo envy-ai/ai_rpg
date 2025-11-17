@@ -2118,15 +2118,9 @@ p:not(:last-child) {
   left: 6px;
   bottom: 6px;
   display: flex;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #f8fafc;
-  font-size: 0.95rem;
-  line-height: 1;
+  gap: 2px;
+  padding: 0;
   pointer-events: none;
-  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.35);
 }
 
 .entity-image-badges--interactive {
@@ -2137,19 +2131,24 @@ p:not(:last-child) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 4px;
+  box-shadow: 0 3px 6px rgba(15, 23, 42, 0.25);
 }
 
 .entity-image-badge--action {
-  background: rgba(37, 99, 235, 0.2);
-  border-radius: 999px;
-  padding: 2px 6px;
+  border-radius: 6px;
+  padding: 1px 4px;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: transform 0.15s ease;
 
   &:hover,
   &:focus {
-    background: rgba(37, 99, 235, 0.4);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     outline: none;
   }
 

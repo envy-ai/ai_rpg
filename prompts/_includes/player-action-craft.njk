@@ -10,6 +10,10 @@ Regardless of their success or failure, they produced {% if producedItem %}the f
 {% for item in consumedItems %}- {{ item.name }}
 {% endfor %}
 
+{% if craftingNotes %}
+The player mentioned the following intent or approach before crafting: "{{ craftingNotes }}"
+{% endif %}
+
 Provide a description of the action in 1 paragraph of prose, strictly adhering to the outcome of the crafting attempt. It's generally not necessary to list which ingredients were used up unless something unexpected happened. Focus on the process of crafting and the final result.
 
 {% if otherEffect %}

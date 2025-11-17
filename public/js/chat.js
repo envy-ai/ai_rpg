@@ -694,7 +694,10 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown: true });
+        const shouldBypassMarkdown = entry.role === 'user'
+            && typeof entry.content === 'string'
+            && entry.content.charAt(0) === '#';
+        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown: !shouldBypassMarkdown });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -1690,7 +1693,10 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         const allowMarkdown = options.allowMarkdown !== false;
-        this.setMessageContent(contentDiv, content, { allowMarkdown });
+        const disableMarkdown = sender === 'user'
+            && typeof content === 'string'
+            && content.charAt(0) === '#';
+        this.setMessageContent(contentDiv, content, { allowMarkdown: allowMarkdown && !disableMarkdown });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
