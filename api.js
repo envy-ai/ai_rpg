@@ -10,6 +10,7 @@ const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const Events = require('./Events.js');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -12792,11 +12793,7 @@ module.exports = function registerApiRoutes(scope) {
                     playerOtherEffect = selectedResult.other;
                 }
 
-                const contentParts = [playerActionDescription];
-                if (playerOtherEffect && playerOtherEffect.trim()) {
-                    contentParts.push(playerOtherEffect.trim());
-                }
-                const narrativeContent = contentParts.join('\n\n');
+                const narrativeContent = playerActionDescription || '';
 
                 const chatEntry = pushChatEntry({
                     role: 'assistant',
@@ -12904,17 +12901,43 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (chatEntry && playerOtherEffect && playerOtherEffect.trim()) {
-                    recordEventSummaryEntry({
-                        label: '✨ Additional Effects',
-                        events: [{
-                            icon: '✨',
-                            description: playerOtherEffect.trim()
-                        }],
-                        parentId: chatEntry.id,
-                        locationId: resolvedLocationId
-                    });
+                let additionalEffectEntry = null;
+                if (playerOtherEffect && playerOtherEffect.trim()) {
+                    const trimmedEffect = playerOtherEffect.trim();
+                    additionalEffectEntry = pushChatEntry({
+                        role: 'assistant',
+                        type: 'player-action',
+                        content: trimmedEffect,
+                        parentId: chatEntry ? chatEntry.id : null
+                    }, null, resolvedLocationId);
+
+                    try {
+                        const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
+                        const hasAdditionalEvents = additionalEvents
+                            && (
+                                (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
+                                || (Array.isArray(additionalEvents.experienceAwards) && additionalEvents.experienceAwards.length)
+                                || (Array.isArray(additionalEvents.currencyChanges) && additionalEvents.currencyChanges.length)
+                                || (Array.isArray(additionalEvents.environmentalDamageEvents) && additionalEvents.environmentalDamageEvents.length)
+                                || (Array.isArray(additionalEvents.needBarChanges) && additionalEvents.needBarChanges.length)
+                            );
+                        if (hasAdditionalEvents) {
+                            recordEventSummaryEntry({
+                                label: '✨ Additional Effects',
+                                events: additionalEvents.events || null,
+                                experienceAwards: additionalEvents.experienceAwards || null,
+                                currencyChanges: additionalEvents.currencyChanges || null,
+                                environmentalDamageEvents: additionalEvents.environmentalDamageEvents || null,
+                                needBarChanges: additionalEvents.needBarChanges || null,
+                                parentId: (additionalEffectEntry && additionalEffectEntry.id) || (chatEntry ? chatEntry.id : null),
+                                locationId: resolvedLocationId
+                            });
+                        }
+                    } catch (extraEventError) {
+                        console.warn('Failed to process additional crafting effects:', extraEventError?.message || extraEventError);
+                    }
                 }
+
 
 
 

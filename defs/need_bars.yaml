@@ -125,9 +125,10 @@ need_bars:
       - resting or sleeping until fully recovered
       - took a powerful stimulant
     small_decrease:
-      - light activity
-    large_decrease:
       - strenuous activity
+    large_decrease:
+      - an all-nighter
+      - extreme magically or chemically induced tiredness
     effect_thresholds:
       0:
         name: Exhausted
