@@ -10,7 +10,6 @@ const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
-const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -306,6 +305,31 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function parseAbilityEffects(xmlContent) {
+            if (!xmlContent || typeof xmlContent !== 'string') {
+                return [];
+            }
+            try {
+                const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
+                const abilitiesNode = doc.getElementsByTagName('abilities')[0] || null;
+                if (!abilitiesNode) {
+                    return [];
+                }
+                const nodes = Array.from(abilitiesNode.getElementsByTagName('ability'));
+                return nodes.map(node => {
+                    const name = node.getAttribute('name') || node.getElementsByTagName('name')[0]?.textContent || null;
+                    const effect = node.getAttribute('effect') || node.getElementsByTagName('effect')[0]?.textContent || null;
+                    return {
+                        name: name ? name.trim() : null,
+                        effect: effect ? effect.trim() : ''
+                    };
+                }).filter(entry => entry.name);
+            } catch (error) {
+                console.warn('Failed to parse ability effects:', error?.message || error);
+                return [];
+            }
+        }
+
         function parseCraftingResultsResponse(xmlContent) {
             const results = new Map();
             if (!xmlContent || typeof xmlContent !== 'string') {
@@ -381,11 +405,14 @@ module.exports = function registerApiRoutes(scope) {
                         ? otherNode.textContent.trim()
                         : null;
 
+                    const serializedResult = serializeXmlNode(resultNode) || '';
+
                     results.set(level, {
                         itemsConsumed: consumedNames,
                         item: parsedItem,
                         itemsRecovered: recoveredItems,
-                        other: other && other.toLowerCase() !== 'n/a' ? other : null
+                        other: other && other.toLowerCase() !== 'n/a' ? other : null,
+                        abilities: parseAbilityEffects(serializedResult)
                     });
                 });
             } catch (error) {
@@ -12503,6 +12530,16 @@ module.exports = function registerApiRoutes(scope) {
                     consumedNameList.push(salvageTargetThing.name);
                 }
 
+                // Print created and consumed items for crafting log
+                console.log(`🎨 Crafting action at ${stationName}:`);
+                console.log(`   - Success: ${actionOutcome.success} (Degree: ${actionOutcome.degree || 'N/A'})`);
+                console.log(`   - Created items: ${Array.isArray(selectedResult.itemsRecovered) && selectedResult.itemsRecovered.length
+                    ? selectedResult.itemsRecovered.map(item => item.name || 'Unnamed Item').join(', ')
+                    : 'None'}`);
+                console.log(`   - Consumed items: ${consumedNameList.length ? consumedNameList.join(', ') : 'None'}`);
+                console.log(`   - Crafting mode: ${craftingMode}`);
+
+
                 const availableThings = slotItems.map(entry => entry.thing);
                 const remainingPool = [...availableThings];
                 const consumedThings = [];
@@ -12527,8 +12564,10 @@ module.exports = function registerApiRoutes(scope) {
                 consumedNameList.forEach(name => {
                     const match = takeMatch(name);
                     if (match) {
+                        console.log(`🗑️ Consuming item for crafting: ${match.name} (ID: ${match.id})`);
                         consumedThings.push(match);
                     } else {
+                        console.log(`❌ Unmatched consumed item: ${name}`);
                         unmatchedConsumedNames.push(name);
                     }
                 });
@@ -12596,19 +12635,16 @@ module.exports = function registerApiRoutes(scope) {
                 const consumedThingNames = [];
                 consumedThings.forEach(thing => {
                     if (!thing) {
+                        console.log(`❌ Consumed item is null or undefined.`);
                         return;
                     }
-                    let removed = false;
-                    if (typeof currentPlayer.removeInventoryItem === 'function') {
-                        removed = currentPlayer.removeInventoryItem(thing.id, { suppressNpcEquip: Boolean(currentPlayer.isNPC) });
-                    }
-                    if (removed) {
-                        consumedThingIds.push(thing.id);
-                        consumedThingNames.push(thing.name || thing.id);
-                        things.delete(thing.id);
-                    } else {
-                        unmatchedConsumedNames.push(thing.name || thing.id);
-                    }
+
+                    console.log('🗑️ Removing consumed item from world:', thing.name || 'Unnamed Item', `(ID: ${thing.id})`);
+
+                    consumedThingIds.push(thing.id);
+                    consumedThingNames.push(thing.name || thing.id);
+                    Thing.removeFromWorldById(thing.id);
+                    things.delete(thing.id);
                 });
 
                 let craftedThing = null;
@@ -12700,17 +12736,17 @@ module.exports = function registerApiRoutes(scope) {
                         ...baseContext,
                         promptType: 'player-action-craft',
                         characterName: currentPlayer.name || 'The player',
-                            intendedItemName: isSalvageAction
-                                ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
-                                : intendedItemName,
-                            stationName,
-                            inputItems: craftingItemsForPrompt,
-                            success_or_failure: actionOutcome.label || actionOutcome.degree || '',
-                            producedItem: producedItemDescriptor,
-                            consumedItems: consumedNamesForPrompt.map(name => ({ name })),
-                            otherEffect: selectedResult.other || null,
-                            craftingNotes
-                        });
+                        intendedItemName: isSalvageAction
+                            ? (salvageTargetThing?.name || salvageItemName || intendedItemName || 'Recovered components')
+                            : intendedItemName,
+                        stationName,
+                        inputItems: craftingItemsForPrompt,
+                        success_or_failure: actionOutcome.label || actionOutcome.degree || '',
+                        producedItem: producedItemDescriptor,
+                        consumedItems: consumedNamesForPrompt.map(name => ({ name })),
+                        otherEffect: selectedResult.other || null,
+                        craftingNotes
+                    });
 
                     const playerActionTemplate = parseXMLTemplate(playerActionRendered);
                     if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
@@ -12796,13 +12832,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const eventItems = [];
+                const recoveredNames = recoveredThingInstances.map(item => item.name || 'Recovered Item');
                 if (isHarvestAction) {
-                    if (recoveredThingInstances.length) {
-                        recoveredThingInstances.forEach(item => {
-                            eventItems.push({
-                                icon: '🌾',
-                                description: `${currentPlayer.name || 'The player'} harvested ${item.name}.`
-                            });
+                    if (recoveredNames.length) {
+                        eventItems.push({
+                            icon: '🌾',
+                            description: `${currentPlayer.name || 'The player'} harvested ${recoveredNames.join(', ')}.`
                         });
                     } else {
                         eventItems.push({
@@ -12811,12 +12846,10 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
                 } else if (isSalvageAction) {
-                    if (recoveredThingInstances.length) {
-                        recoveredThingInstances.forEach(item => {
-                            eventItems.push({
-                                icon: '♻️',
-                                description: `${currentPlayer.name || 'The player'} salvaged ${item.name}.`
-                            });
+                    if (recoveredNames.length) {
+                        eventItems.push({
+                            icon: '♻️',
+                            description: `${currentPlayer.name || 'The player'} salvaged ${recoveredNames.join(', ')}.`
                         });
                     } else {
                         eventItems.push({
@@ -12841,6 +12874,24 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     });
                 }
+                const expectedConsumption = !isHarvestAction && slotItems.length > 0;
+                if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {
+                    eventItems.push({
+                        icon: '✨',
+                        description: 'Through exceptional care, the ingredients were preserved.'
+                    });
+                }
+
+                if (actionOutcome.success && Array.isArray(selectedResult.abilities)) {
+                    selectedResult.abilities
+                        .filter(ability => ability && ability.name && ability.effect)
+                        .forEach(ability => {
+                            eventItems.push({
+                                icon: '✨',
+                                description: `${ability.name}: ${ability.effect}`
+                            });
+                        });
+                }
 
                 if (eventItems.length) {
                     recordEventSummaryEntry({
@@ -12849,6 +12900,18 @@ module.exports = function registerApiRoutes(scope) {
                             : (isSalvageAction ? '♻️ Salvage Results' : '🛠️ Crafting Results'),
                         events: eventItems,
                         parentId: chatEntry ? chatEntry.id : null,
+                        locationId: resolvedLocationId
+                    });
+                }
+
+                if (chatEntry && playerOtherEffect && playerOtherEffect.trim()) {
+                    recordEventSummaryEntry({
+                        label: '✨ Additional Effects',
+                        events: [{
+                            icon: '✨',
+                            description: playerOtherEffect.trim()
+                        }],
+                        parentId: chatEntry.id,
                         locationId: resolvedLocationId
                     });
                 }

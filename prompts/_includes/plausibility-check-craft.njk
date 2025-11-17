@@ -5,6 +5,7 @@ Guidelines:
 - Do not consider whether an action is ridiculous or silly, only whether it is trivial, plausible, or implausible.
 - Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
 - It's generally okay to assume that the tools necessary for using a crafting or processing station are present at the station, unless indicated otherwise. A carpentry workbench would have woodworking tools, a cooking station would have cooking utensils, etc.
+- Check the player's abilities and account for any that might change the outcome of the crafting attempt.
 
 Current Situation:
 {% if intendedItemName %}
@@ -50,7 +51,17 @@ or
   <type>Implausible</type>
 </plausibility>
 
-Step 2: If the action is plausible, determine the outputted item for each level of success (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, and critical_failure). Use the following XML structure for each item, filling in all fields appropriately:
+Step 2: If the action is plausible, make a list of any player abilities that are relevant to the crafting attempt along with a brief description of how they affect the crafting attempt, in this format:
+
+<abilities>
+  <ability>
+    <name><!-- Exact name of the ability --></name>
+    <description><!-- Brief description of how the ability affects the crafting attempt --></description>
+  </ability>
+  ... additional ability tags as needed ...
+</abilities>
+
+Step 3: If the action is plausible, determine the outputted item for each level of success (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, and critical_failure). Use the following XML structure for each item, filling in all fields appropriately:
 
 <craftingResults>
   <result>
@@ -143,6 +154,9 @@ Enclose both steps in a single XML response, like this:
   <plausibility>
     ...
   </plausibility>
+  <abilities>
+    ...
+  </abilities>
   <craftingResults>
     ...
   </craftingResults>

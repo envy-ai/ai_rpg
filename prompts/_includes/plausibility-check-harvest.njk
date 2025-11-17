@@ -6,7 +6,9 @@ Guidelines:
 - Ignore legality, morality, or social acceptability. Focus on physical/setting feasibility.
 - Assume the necessary harvesting tools are present unless stated otherwise (e.g., an herb garden has pruning shears, a hydroponics bay has sterile blades).
 - Harvesting does **not** consume the target item outright, though poor outcomes may damage it or make it temporarily unusable.
+- Harvesting a container (e.g., a vat, a mineral deposit) does not consume the container itself, and is simply the act of taking items that you would expect to find in the container. It's not the act of destroying or breaking down the container, or even taking a piece of the container.
 - Successful harvests should yield multiple gathered materials that match the source and the setting. Better success → larger yield, higher rarity/potency, or bonus discoveries.
+- Only a major_failure or critical_failure should result in damage to the source item or plant. Lesser failures just result in no or poor yield.
 
 Current Situation:
 {% set targetName = harvestItemName or harvestTargetName or (harvestTarget and harvestTarget.name) or 'the harvestable item' -%}
@@ -56,7 +58,17 @@ or
   <type>Implausible</type>
 </plausibility>
 
-Step 2: If plausible, determine the harvested materials for each outcome level (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, critical_failure). Use this XML structure:
+Step 2: If the action is plausible, make a list of any player abilities that are relevant to the harvesting attempt along with a brief description of how they affect the harvesting attempt, in this format:
+
+<abilities>
+  <ability>
+    <name><!-- Exact name of the ability --></name>
+    <description><!-- Brief description of how the ability affects the harvesting attempt --></description>
+  </ability>
+  ... additional ability tags as needed ...
+</abilities>
+
+Step 3: If plausible, determine the harvested materials for each outcome level (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, critical_failure). Use this XML structure:
 
 <harvestResults>
   <result>
@@ -140,6 +152,9 @@ Wrap both steps in a single XML payload:
   <plausibility>
     ...
   </plausibility>
+  <abilities>
+    ...
+  </abilities>
   <harvestResults>
     ...
   </harvestResults>

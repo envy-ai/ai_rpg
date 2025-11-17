@@ -1294,6 +1294,22 @@ p:not(:last-child) {
   background: rgba(148, 163, 184, 0.15);
   color: #e2e8f0;
 }
+.button-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: button-spin 0.75s linear infinite;
+}
+@keyframes button-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .button:hover,
 .button:focus {
@@ -1899,7 +1915,7 @@ p:not(:last-child) {
   flex-direction: column;
   gap: 10px;
   align-items: center;
-  justify-content: center;
+  justify-content: start;
   text-align: center;
   background: radial-gradient(circle at top, rgba(255, 255, 255, 0.12) 0%, rgba(15, 23, 42, 0.78) 100%);
   border: 1px solid rgba(148, 163, 184, 0.32);
@@ -3834,6 +3850,14 @@ body.modal-open {
   color: #f8fafc;
 }
 
+@media (min-width: 901px) {
+  .crafting-modal__inventory {
+    flex: 2;
+  }
+  .crafting-modal__workspace {
+    flex: 1;
+  }
+}
 .crafting-modal__section-header {
   display: flex;
   flex-direction: column;
@@ -3847,15 +3871,18 @@ body.modal-open {
 }
 
 .crafting-modal__inventory-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-content: flex-start;
   max-height: 55vh;
   overflow-y: auto;
   padding-right: 6px;
 }
 .crafting-modal__inventory-grid .inventory-card {
+  flex: 1 1 220px;
   cursor: grab;
+  justify-content: start;
 }
 .crafting-modal__inventory-grid .inventory-card.is-dragging {
   opacity: 0.7;

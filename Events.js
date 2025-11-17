@@ -28,7 +28,7 @@ const EVENT_PROMPT_ORDER = [
         { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
         { key: 'dummy_event', prompt: `Did something happen to one or more items? If so, respond in this format: [exact item or scenery name] -> [became NPC|altered temporarily|altered permanently|partially consumed|completely consumed|picked up|harvested|given|taken|appeared|dropped] -> [5-10 word description of what happened]` },
         { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
-        { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.` },
+        { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory permanently altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.` },
         { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.` },
         { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[exact name of the giver] -> [item] -> [exact name of the receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
         { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
@@ -2670,111 +2670,111 @@ class Events {
                         ? questData.objectives
                         : (questSummary ? [questSummary] : []);
 
-                const normalizeObjectiveKey = description => (
-                    typeof description === 'string' && description.trim()
-                        ? description.trim().toLowerCase()
-                        : ''
-                );
+                    const normalizeObjectiveKey = description => (
+                        typeof description === 'string' && description.trim()
+                            ? description.trim().toLowerCase()
+                            : ''
+                    );
 
-                const existingQuest = typeof player.getQuestByName === 'function'
-                    ? player.getQuestByName(questName)
-                    : null;
+                    const existingQuest = typeof player.getQuestByName === 'function'
+                        ? player.getQuestByName(questName)
+                        : null;
 
-                if (existingQuest) {
-                    existingQuest.description = questDescription;
-                    if (typeof questData.secretNotes === 'string') {
-                        existingQuest.secretNotes = questData.secretNotes;
-                    }
-                    existingQuest.rewardItems = rewardItems.slice();
-                    existingQuest.rewardCurrency = rewardCurrency;
-                    existingQuest.rewardXp = rewardXp;
-                    if (questOptions.giver) {
-                        existingQuest.giver = questOptions.giver;
-                    } else if (questOptions.giverName) {
-                        existingQuest.giverName = questOptions.giverName;
-                    }
+                    if (existingQuest) {
+                        existingQuest.description = questDescription;
+                        if (typeof questData.secretNotes === 'string') {
+                            existingQuest.secretNotes = questData.secretNotes;
+                        }
+                        existingQuest.rewardItems = rewardItems.slice();
+                        existingQuest.rewardCurrency = rewardCurrency;
+                        existingQuest.rewardXp = rewardXp;
+                        if (questOptions.giver) {
+                            existingQuest.giver = questOptions.giver;
+                        } else if (questOptions.giverName) {
+                            existingQuest.giverName = questOptions.giverName;
+                        }
 
-                    const existingObjectiveStates = new Map();
-                    if (Array.isArray(existingQuest.objectives)) {
-                        for (const objective of existingQuest.objectives) {
-                            const key = normalizeObjectiveKey(objective?.description);
-                            if (!key) {
+                        const existingObjectiveStates = new Map();
+                        if (Array.isArray(existingQuest.objectives)) {
+                            for (const objective of existingQuest.objectives) {
+                                const key = normalizeObjectiveKey(objective?.description);
+                                if (!key) {
+                                    continue;
+                                }
+                                const current = existingObjectiveStates.get(key);
+                                if (!current || (objective.completed && !current.completed)) {
+                                    existingObjectiveStates.set(key, {
+                                        description: objective.description,
+                                        optional: Boolean(objective.optional),
+                                        completed: Boolean(objective.completed)
+                                    });
+                                }
+                            }
+                        }
+
+                        existingQuest.objectives = [];
+                        const seenKeys = new Set();
+
+                        const addObjective = (description, optional = false, completed = false) => {
+                            existingQuest.addObjective(description, optional);
+                            if (completed) {
+                                const lastObjective = existingQuest.objectives[existingQuest.objectives.length - 1];
+                                if (lastObjective) {
+                                    lastObjective.completed = true;
+                                }
+                            }
+                        };
+
+                        for (const objective of objectiveDescriptions) {
+                            let description = '';
+                            let optional = false;
+                            let completed = false;
+                            if (typeof objective === 'string') {
+                                description = objective.trim();
+                            } else if (objective && typeof objective === 'object') {
+                                description = typeof objective.description === 'string'
+                                    ? objective.description.trim()
+                                    : '';
+                                optional = Boolean(objective.optional);
+                                completed = Boolean(objective.completed);
+                            }
+                            if (!description) {
                                 continue;
                             }
-                            const current = existingObjectiveStates.get(key);
-                            if (!current || (objective.completed && !current.completed)) {
-                                existingObjectiveStates.set(key, {
-                                    description: objective.description,
-                                    optional: Boolean(objective.optional),
-                                    completed: Boolean(objective.completed)
-                                });
+                            const key = normalizeObjectiveKey(description);
+                            const preserved = existingObjectiveStates.get(key);
+                            const shouldComplete = (preserved && preserved.completed) || completed;
+                            addObjective(description, optional, shouldComplete);
+                            if (key) {
+                                seenKeys.add(key);
                             }
                         }
-                    }
 
-                    existingQuest.objectives = [];
-                    const seenKeys = new Set();
-
-                    const addObjective = (description, optional = false, completed = false) => {
-                        existingQuest.addObjective(description, optional);
-                        if (completed) {
-                            const lastObjective = existingQuest.objectives[existingQuest.objectives.length - 1];
-                            if (lastObjective) {
-                                lastObjective.completed = true;
+                        for (const [key, state] of existingObjectiveStates.entries()) {
+                            if (!state.completed || seenKeys.has(key)) {
+                                continue;
                             }
-                        }
-                    };
-
-                    for (const objective of objectiveDescriptions) {
-                        let description = '';
-                        let optional = false;
-                        let completed = false;
-                        if (typeof objective === 'string') {
-                            description = objective.trim();
-                        } else if (objective && typeof objective === 'object') {
-                            description = typeof objective.description === 'string'
-                                ? objective.description.trim()
-                                : '';
-                            optional = Boolean(objective.optional);
-                            completed = Boolean(objective.completed);
-                        }
-                        if (!description) {
-                            continue;
-                        }
-                        const key = normalizeObjectiveKey(description);
-                        const preserved = existingObjectiveStates.get(key);
-                        const shouldComplete = (preserved && preserved.completed) || completed;
-                        addObjective(description, optional, shouldComplete);
-                        if (key) {
+                            addObjective(state.description, state.optional, true);
                             seenKeys.add(key);
                         }
-                    }
 
-                    for (const [key, state] of existingObjectiveStates.entries()) {
-                        if (!state.completed || seenKeys.has(key)) {
-                            continue;
+                        if (!Array.isArray(context.updatedQuests)) {
+                            context.updatedQuests = [];
                         }
-                        addObjective(state.description, state.optional, true);
-                        seenKeys.add(key);
+                        context.updatedQuests.push({
+                            id: existingQuest.id,
+                            name: existingQuest.name,
+                            summary: questSummary || existingQuest.description || existingQuest.name
+                        });
+                        continue;
                     }
 
-                    if (!Array.isArray(context.updatedQuests)) {
-                        context.updatedQuests = [];
-                    }
-                    context.updatedQuests.push({
-                        id: existingQuest.id,
-                        name: existingQuest.name,
-                        summary: questSummary || existingQuest.description || existingQuest.name
-                    });
-                    continue;
-                }
+                    const quest = new Quest(questOptions);
 
-                const quest = new Quest(questOptions);
-
-                for (const objective of objectiveDescriptions) {
-                    try {
-                        if (!objective) {
-                            continue;
+                    for (const objective of objectiveDescriptions) {
+                        try {
+                            if (!objective) {
+                                continue;
                             }
                             if (typeof objective === 'string') {
                                 if (objective.trim()) {

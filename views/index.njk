@@ -2408,6 +2408,11 @@
                     card.addEventListener('mouseleave', () => {
                         tooltipController.hide?.();
                     });
+                    card.addEventListener('click', () => {
+                        if (!assignItemToFirstAvailableSlot(clone.id)) {
+                            assignItemToCraftingSlot(0, clone.id);
+                        }
+                    });
                 }
 
                 container.appendChild(card);
@@ -10619,6 +10624,24 @@
                             }
                         }
                     });
+                    card.addEventListener('click', () => {
+                        if (!assignItemToFirstAvailableSlot(clone.id)) {
+                            assignItemToCraftingSlot(0, clone.id);
+                        }
+                    });
+                    const iconClickHandler = (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!assignItemToFirstAvailableSlot(clone.id)) {
+                            assignItemToCraftingSlot(0, clone.id);
+                        }
+                    };
+                    icon.addEventListener('click', iconClickHandler);
+                    icon.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            iconClickHandler(event);
+                        }
+                    });
                 }
 
                 bindThingTooltip(card, clone);
@@ -10850,33 +10873,6 @@
             };
         }
 
-        function removeThingElementsFromUi(thingId) {
-            if (!thingId) {
-                return;
-            }
-            if (thingDataCache instanceof Map) {
-                thingDataCache.delete(thingId);
-            }
-            const selector = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
-                ? `[data-thing-id="${CSS.escape(thingId)}"]`
-                : '[data-thing-id]';
-            const nodes = Array.from(document.querySelectorAll(selector))
-                .filter(node => node?.dataset?.thingId === thingId);
-            nodes.forEach(node => {
-                if (!node) {
-                    return;
-                }
-                const removable = node.closest('.thing-card')
-                    || node.closest('.inventory-card')
-                    || node.closest('.npc-view-equipment-item-card')
-                    || node.closest('.crafting-slot__item')
-                    || node;
-                try {
-                    removable.remove();
-                } catch (_) {}
-            });
-        }
-
         function toggleChatSendSpinner(isLoading) {
             try {
                 window.AIRPG_CHAT?.setSendButtonLoading?.(Boolean(isLoading));
@@ -10906,6 +10902,7 @@
             enqueueRefresh(() => window.AIRPG_CHAT?.refreshChatHistory?.(), 'chat');
             enqueueRefresh(() => window.refreshInventory?.(), 'inventory');
             enqueueRefresh(() => window.refreshParty?.(), 'party');
+            enqueueRefresh(() => window.loadCurrentLocation?.(), 'location');
 
             if (refreshTasks.length) {
                 await Promise.allSettled(refreshTasks);
@@ -10918,14 +10915,17 @@
                 return;
             }
 
-            craftingIsSubmitting = true;
-            updateCraftingActionState();
-            const originalText = craftingActionButton?.textContent;
-            if (craftingActionButton) {
-                craftingActionButton.textContent = 'Processing...';
-            }
+                craftingIsSubmitting = true;
+                updateCraftingActionState();
+                const originalText = craftingActionButton?.innerHTML;
+                if (craftingCancelButton) {
+                    craftingCancelButton.disabled = true;
+                }
+                if (craftingActionButton) {
+                    craftingActionButton.innerHTML = '<span class="button-spinner"></span> Processing...';
+                }
 
-            try {
+                try {
                 const response = await fetch('/api/craft', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -10944,8 +10944,11 @@
                 alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
             } finally {
                 craftingIsSubmitting = false;
+                if (craftingCancelButton) {
+                    craftingCancelButton.disabled = false;
+                }
                 if (craftingActionButton) {
-                    craftingActionButton.textContent = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
+                    craftingActionButton.innerHTML = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
                 }
                 updateCraftingActionState();
             }
@@ -11002,9 +11005,6 @@
                     const errorMessage = result?.error || `${actionLabel} failed (HTTP ${response.status})`;
                     alert(errorMessage);
                     return;
-                }
-                if (!isHarvestMode) {
-                    removeThingElementsFromUi(thingId);
                 }
                 await refreshCraftingRelatedViews();
             } catch (error) {

@@ -1005,6 +1005,7 @@ class Thing {
 
   // Instance methods
   delete() {
+    this.removeFromWorld();
     Thing.#indexByID.delete(this.#id);
     Thing.#removeThingFromNameIndex(this, this.#name);
   }
