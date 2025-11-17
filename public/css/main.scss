@@ -351,9 +351,12 @@ p:not(:last-child) {
     box-shadow: inset 0 0 0 1px rgba(102, 126, 234, 0.55);
   }
 
-  &.open .quest-toggle-icon {
-    transform: rotate(90deg);
-    color: rgba(255, 255, 255, 0.85);
+  &.open,
+  &[open] {
+    .quest-toggle-icon {
+      transform: rotate(90deg);
+      color: rgba(255, 255, 255, 0.85);
+    }
   }
 }
 
@@ -409,13 +412,6 @@ p:not(:last-child) {
   transition: transform 0.2s ease;
 }
 
-.quest-card[open] {
-  .quest-toggle-icon {
-    transform: rotate(90deg);
-    color: rgba(255, 255, 255, 0.85);
-  }
-}
-
 .quest-content {
   padding: 0 22px 22px;
   display: flex;
@@ -435,11 +431,22 @@ p:not(:last-child) {
   margin: 0;
 }
 
-.quest-objectives {
+// Shared stacked layout for columnar sections
+.quest-objectives,
+.location-exits-content,
+.location-npc-content,
+.location-thing-content,
+.load-game-body,
+.npc-inventory-filters,
+.npc-view-equipment,
+.npc-skill-list,
+.npc-ability-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
 
+.quest-objectives {
   h4 {
     margin: 0;
     font-size: 0.95rem;
@@ -510,15 +517,24 @@ p:not(:last-child) {
   letter-spacing: 0.01em;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.9);
-  background: linear-gradient(135deg, rgba(255, 122, 122, 0.24), rgba(255, 107, 150, 0.24));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 122, 122, 0.24),
+    rgba(255, 107, 150, 0.24)
+  );
   box-shadow: 0 10px 24px rgba(255, 107, 150, 0.18);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease,
+    border-color 0.15s ease;
 
   &:hover,
   &:focus {
     outline: none;
     transform: translateY(-1px);
-    background: linear-gradient(135deg, rgba(255, 122, 122, 0.42), rgba(255, 107, 150, 0.42));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 122, 122, 0.42),
+      rgba(255, 107, 150, 0.42)
+    );
     border-color: rgba(255, 136, 164, 0.65);
     box-shadow: 0 14px 32px rgba(255, 120, 150, 0.3);
   }
@@ -1336,12 +1352,6 @@ p:not(:last-child) {
   margin-top: 12px;
 }
 
-.location-exits-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .location-exits-list {
   display: flex;
   flex-direction: column;
@@ -1366,23 +1376,6 @@ p:not(:last-child) {
   border-color: rgba(129, 140, 248, 0.65);
   color: #ffffff;
   outline: none;
-}
-
-.location-exit-add-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.location-npc-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.location-thing-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .location-thing-category {
@@ -1423,7 +1416,11 @@ p:not(:last-child) {
   outline: none;
 }
 
-.button:disabled {
+.location-exit-add-button:disabled,
+.button:disabled,
+.location-npc-add-button:disabled,
+.npc-disposition-save-btn:disabled,
+.npc-needs-save-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -1458,12 +1455,6 @@ p:not(:last-child) {
 .button-secondary:focus {
   background: rgba(30, 41, 59, 0.95);
   border-color: rgba(203, 213, 225, 0.55);
-}
-
-.load-game-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .load-game-label {
@@ -1509,11 +1500,23 @@ p:not(:last-child) {
   color: rgba(226, 232, 240, 0.8);
 }
 
-.load-game-status[data-variant="error"] {
+.load-game-status[data-variant="error"],
+.npc-disposition-status.is-error,
+.npc-needs-status.is-error,
+.new-exit-status.is-error,
+.npc-edit-status.is-error,
+.location-edit-status.is-error,
+.region-edit-status.is-error {
   color: #fca5a5;
 }
 
-.load-game-status[data-variant="success"] {
+.load-game-status[data-variant="success"],
+.npc-disposition-status.is-success,
+.npc-needs-status.is-success,
+.new-exit-status.is-success,
+.npc-edit-status.is-success,
+.location-edit-status.is-success,
+.region-edit-status.is-success {
   color: #bbf7d0;
 }
 
@@ -1550,11 +1553,6 @@ p:not(:last-child) {
   border-color: rgba(16, 185, 129, 0.65);
   color: #ecfdf5;
   outline: none;
-}
-
-.location-npc-add-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .exit-button.exit-button-pending {
@@ -2118,9 +2116,12 @@ p:not(:last-child) {
   left: 6px;
   bottom: 6px;
   display: flex;
-  gap: 2px;
-  padding: 0;
+  gap: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.75);
   pointer-events: none;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
 }
 
 .entity-image-badges--interactive {
@@ -2131,18 +2132,13 @@ p:not(:last-child) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.7);
   color: #f8fafc;
   font-size: 0.95rem;
   line-height: 1;
-  padding: 1px 4px;
-  border-radius: 4px;
-  box-shadow: 0 3px 6px rgba(15, 23, 42, 0.25);
+  padding: 1px;
 }
 
 .entity-image-badge--action {
-  border-radius: 6px;
-  padding: 1px 4px;
   cursor: pointer;
   transition: transform 0.15s ease;
 
@@ -2271,7 +2267,7 @@ body.dark .thing-toggle {
   color: #e2e8f0;
 }
 
-.thing-toggle input[type='checkbox'] {
+.thing-toggle input[type="checkbox"] {
   margin-top: 0.2rem;
 }
 
@@ -4519,12 +4515,6 @@ body.modal-open {
   color: #f8fafc;
 }
 
-.npc-inventory-filters {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .npc-inventory-filter-input-wrapper .npc-selection-filter-input {
   width: 100%;
 }
@@ -4544,7 +4534,9 @@ body.modal-open {
   width: 100%;
 }
 
-.npc-inventory-filter-radios {
+.npc-inventory-filter-radios,
+.npc-disposition-control-row,
+.npc-needs-input-row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -4728,7 +4720,8 @@ body.modal-open {
   max-width: 720px;
 }
 
-.npc-disposition-body {
+.npc-disposition-body,
+.npc-needs-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -4736,7 +4729,8 @@ body.modal-open {
   overflow: hidden;
 }
 
-.npc-disposition-summary {
+.npc-disposition-summary,
+.npc-needs-summary {
   font-size: 0.9rem;
   line-height: 1.5;
   color: #cbd5f5;
@@ -4746,14 +4740,16 @@ body.modal-open {
   background: rgba(15, 23, 42, 0.55);
 }
 
-.npc-disposition-loading {
+.npc-disposition-loading,
+.npc-needs-loading {
   font-size: 0.95rem;
   color: #cbd5f5;
   text-align: center;
   padding: 12px 0;
 }
 
-.npc-disposition-list {
+.npc-disposition-list,
+.npc-needs-list {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
@@ -4762,7 +4758,8 @@ body.modal-open {
   padding-right: 4px;
 }
 
-.npc-disposition-empty {
+.npc-disposition-empty,
+.npc-needs-empty {
   text-align: center;
   color: #94a3b8;
   font-size: 0.9rem;
@@ -4798,7 +4795,8 @@ body.modal-open {
   color: #93c5fd;
 }
 
-.npc-disposition-description {
+.npc-disposition-description,
+.npc-needs-description {
   font-size: 0.85rem;
   color: #cbd5f5;
   line-height: 1.5;
@@ -4813,14 +4811,8 @@ body.modal-open {
   width: 100%;
 }
 
-.npc-disposition-control-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.npc-disposition-value-input {
+.npc-disposition-value-input,
+.npc-needs-value-input {
   display: flex;
   flex-direction: column;
   min-width: 120px;
@@ -4828,7 +4820,8 @@ body.modal-open {
   font-size: 0.85rem;
 }
 
-.npc-disposition-value-input input {
+.npc-disposition-value-input input,
+.npc-needs-value-input input {
   margin-top: 4px;
   background: rgba(15, 23, 42, 0.75);
   border: 1px solid rgba(148, 163, 184, 0.45);
@@ -4843,7 +4836,8 @@ body.modal-open {
   outline: none;
 }
 
-.npc-disposition-buttons {
+.npc-disposition-buttons,
+.npc-needs-buttons {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -4868,13 +4862,15 @@ body.modal-open {
   outline: none;
 }
 
-.npc-disposition-thresholds {
+.npc-disposition-thresholds,
+.npc-needs-thresholds {
   font-size: 0.75rem;
   color: #94a3b8;
   line-height: 1.4;
 }
 
-.npc-disposition-footer {
+.npc-disposition-footer,
+.npc-needs-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -4884,26 +4880,23 @@ body.modal-open {
   border-top: 1px solid rgba(148, 163, 184, 0.28);
 }
 
-.npc-disposition-status {
+.npc-disposition-status,
+.npc-needs-status {
   font-size: 0.85rem;
   color: #e2e8f0;
 }
 
-.npc-disposition-status.is-error {
-  color: #fca5a5;
-}
-
-.npc-disposition-status.is-success {
-  color: #bbf7d0;
-}
-
-.npc-disposition-actions {
+.npc-disposition-actions,
+.npc-needs-actions,
+.new-exit-actions {
   display: flex;
   gap: 10px;
 }
 
 .npc-disposition-cancel,
-.npc-disposition-save-btn {
+.npc-disposition-save-btn,
+.npc-needs-cancel,
+.npc-needs-save-btn {
   border-radius: 8px;
   padding: 8px 18px;
   font-weight: 600;
@@ -4940,54 +4933,8 @@ body.modal-open {
   outline: none;
 }
 
-.npc-disposition-save-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .npc-needs-modal .modal__dialog {
   max-width: 760px;
-}
-
-.npc-needs-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-height: 70vh;
-  overflow: hidden;
-}
-
-.npc-needs-summary {
-  font-size: 0.9rem;
-  line-height: 1.5;
-  color: #cbd5f5;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: rgba(15, 23, 42, 0.55);
-}
-
-.npc-needs-loading {
-  font-size: 0.95rem;
-  color: #cbd5f5;
-  text-align: center;
-  padding: 12px 0;
-}
-
-.npc-needs-list {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-right: 4px;
-}
-
-.npc-needs-empty {
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.9rem;
-  padding: 20px 0;
 }
 
 .npc-needs-entry {
@@ -5024,12 +4971,6 @@ body.modal-open {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.npc-needs-description {
-  font-size: 0.85rem;
-  color: #cbd5f5;
-  line-height: 1.5;
 }
 
 .npc-needs-progress {
@@ -5070,40 +5011,9 @@ body.modal-open {
   flex: 1 1 auto;
 }
 
-.npc-needs-input-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.npc-needs-value-input {
-  display: flex;
-  flex-direction: column;
-  min-width: 120px;
-  font-size: 0.85rem;
-  color: #cbd5f5;
-}
-
-.npc-needs-value-input input {
-  margin-top: 4px;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  border-radius: 6px;
-  padding: 6px 10px;
-  color: #e2e8f0;
-  font-size: 0.95rem;
-}
-
 .npc-needs-value-input input:focus {
   border-color: rgba(129, 140, 248, 0.65);
   outline: none;
-}
-
-.npc-needs-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .npc-needs-buttons button {
@@ -5123,50 +5033,6 @@ body.modal-open {
   border-color: rgba(99, 102, 241, 0.55);
   color: #ffffff;
   outline: none;
-}
-
-.npc-needs-thresholds {
-  font-size: 0.75rem;
-  color: #94a3b8;
-  line-height: 1.4;
-}
-
-.npc-needs-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.28);
-}
-
-.npc-needs-status {
-  font-size: 0.85rem;
-  color: #e2e8f0;
-}
-
-.npc-needs-status.is-error {
-  color: #fca5a5;
-}
-
-.npc-needs-status.is-success {
-  color: #bbf7d0;
-}
-
-.npc-needs-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.npc-needs-cancel,
-.npc-needs-save-btn {
-  border-radius: 8px;
-  padding: 8px 18px;
-  font-weight: 600;
-  border: 1px solid;
-  cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
 }
 
 .npc-needs-cancel {
@@ -5195,11 +5061,6 @@ body.modal-open {
   border-color: rgba(129, 140, 248, 0.75);
   color: #ffffff;
   outline: none;
-}
-
-.npc-needs-save-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .npc-memories-modal .modal__dialog,
@@ -5465,19 +5326,6 @@ body.modal-open {
   min-width: 200px;
 }
 
-.new-exit-status.is-error {
-  color: #fca5a5;
-}
-
-.new-exit-status.is-success {
-  color: #bbf7d0;
-}
-
-.new-exit-actions {
-  display: flex;
-  gap: 10px;
-}
-
 .new-exit-cancel,
 .new-exit-save {
   border-radius: 8px;
@@ -5516,11 +5364,6 @@ body.modal-open {
   outline: none;
 }
 
-.new-exit-save:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .npc-view-sections {
   display: grid;
   gap: 20px;
@@ -5557,12 +5400,6 @@ body.modal-open {
 
 .npc-view-attributes[hidden] {
   display: none;
-}
-
-.npc-view-equipment {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .npc-view-equipment-row {
@@ -5793,13 +5630,6 @@ body.modal-open {
   font-size: 0.85rem;
 }
 
-.npc-skill-list,
-.npc-ability-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .npc-skill-row {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr) auto;
@@ -5905,20 +5735,6 @@ body.modal-open {
   font-size: 0.85rem;
   min-height: 1.1em;
   color: #e2e8f0;
-}
-
-.npc-edit-status.is-error,
-.location-edit-status.is-error,
-.region-edit-status.is-error,
-.new-exit-status.is-error {
-  color: #fca5a5;
-}
-
-.npc-edit-status.is-success,
-.location-edit-status.is-success,
-.region-edit-status.is-success,
-.new-exit-status.is-success {
-  color: #bbf7d0;
 }
 
 .npc-edit-empty {
