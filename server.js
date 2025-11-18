@@ -3658,8 +3658,9 @@ function resolveActionOutcome({ plausibility, player }) {
     const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
 
     const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
-    //const attributeValue = attributeKey ? player.getModifiedAttribute(attributeKey) : null;
-    const attributeBonus = player.getAttributeBonus(attributeKey);
+    const baseAttributeBonusRaw = player.getAttributeBonus(attributeKey);
+    const baseAttributeBonus = Number.isFinite(baseAttributeBonusRaw) ? baseAttributeBonusRaw : 0;
+    const attributeBonus = skillValueInfo.key ? baseAttributeBonus : baseAttributeBonus * 2;
 
     const rollResult = diceModule.rollDice('1d20');
     const dieRoll = rollResult.total;
@@ -6140,8 +6141,6 @@ async function alterThingByPrompt({
     thing,
     changeDescription = '',
     newName = null,
-    location = null,
-    owner = null
 } = {}) {
     if (!thing || typeof thing !== 'object' || typeof thing.name !== 'string') {
         throw new Error('alterThingByPrompt requires a valid Thing instance.');
@@ -6151,30 +6150,15 @@ async function alterThingByPrompt({
 
     const metadata = thing.metadata || {};
 
-    let resolvedOwner = owner || null;
-    if (!resolvedOwner && metadata.ownerId) {
-        resolvedOwner = players.get(metadata.ownerId) || null;
+    let resolvedOwner = null;
+    let whoseInventory = thing.whoseInventory();
+    if (whoseInventory.length !== 0) {
+        resolvedOwner = whoseInventory[0];
     }
+    let resolvedLocation = Globals.location;
+    let resolvedRegion = Globals.region;
 
-    let resolvedLocation = location || null;
-    if (!resolvedLocation && metadata.locationId) {
-        try {
-            resolvedLocation = Location.get(metadata.locationId);
-        } catch (_) {
-            resolvedLocation = null;
-        }
-    }
-    if (!resolvedLocation && resolvedOwner?.currentLocation) {
-        try {
-            resolvedLocation = Location.get(resolvedOwner.currentLocation);
-        } catch (_) {
-            resolvedLocation = null;
-        }
-    }
-
-    const resolvedRegion = resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : null;
-
-    const baseContext = await prepareBasePromptContext({ locationOverride: resolvedLocation });
+    const baseContext = await prepareBasePromptContext();
     const itemForPrompt = buildThingPromptItem(thing);
     const originalState = thing.toJSON();
 

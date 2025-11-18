@@ -24,15 +24,7 @@ Item details: {{ harvestItemDescription }}
 The player provided additional notes or intentions: "{{ harvestNotes }}"
 {% endif %}
 
-
-Step 1: Determine whether the harvest is trivial, plausible, or implausible, using the same structure as other plausibility checks:
-
-<plausibility>
-  <reason>Brief reason it is trivial (e.g., "Clipping leaves from a cultivated herb bed is trivial with pruning shears.").</reason>
-  <type>Trivial</type>
-</plausibility>
-
-or
+Step 1: Determine whether the harvest is plausible or implausible, in this format:
 
 <plausibility>
   <type>Plausible</type>
@@ -40,7 +32,7 @@ or
     <reason>Why this skill/attribute/difficulty fit the harvest attempt (consider plant toughness, environmental hazards, need for steady hands, etc.).</reason>
     <skill>Most relevant known skill or a sensible new one (e.g., Herbalism, Field Medicine, Prospecting). Use N/A if none.</skill>
     <attribute>Relevant attribute (Dexterity, Intelligence, Wisdom, etc.).</attribute>
-    <difficulty>Easy / Medium / Hard / Very Hard / Legendary — account for the rarity of the resource, protective thorns, volatile sap, etc.</difficulty>
+    <difficulty>Trivial / Easy / Medium / Hard / Very Hard / Legendary — account for the rarity of the resource, protective thorns, volatile sap, etc.</difficulty>
     <curcumstanceModifiers>
       <circumstanceModifier>
         <amount>Integer -10 to 10</amount>
