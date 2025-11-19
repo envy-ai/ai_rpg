@@ -3462,7 +3462,7 @@ function classifyOutcomeMargin(margin, dieRoll = null, difficultyLabel = null) {
     } else if (margin <= -6) {
         outcome = { label: 'major failure', degree: 'major_failure', success: false };
     } else if (margin <= -3) {
-        outcome = { label: 'minor failure', degree: 'minor_failure', success: false };
+        outcome = { label: 'failure', degree: 'failure', success: false };
     } else {
         outcome = { label: 'barely failed', degree: 'barely_failed', success: false };
     }

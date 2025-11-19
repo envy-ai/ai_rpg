@@ -73,7 +73,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     </itemsConsumed>
     <!-- XML describing the physical crafted item. A typical critical_success would produce an item of higher rarity, better stats, and/or additional special properties compared to a normal success, and may not consume all of the input items. There may also be additional positive effects if it makes sense (additional crafted items, improvements to the work area, discoveries, or anything else that makes sense in the context of the scene) -->
     {% include "_includes/item.njk" %}
-    <other><!-- 1-2 sentences describing additional positive effects. --></other>
+    <other><!-- For critical successes only on very difficult/elaborate crafting attempts, describe an additional positive effect in 1-2 sentences. --></other>
   </result>
   <result>
     <level>major_success</level>
@@ -84,6 +84,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>success</level>
@@ -94,6 +95,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>barely_succeeded</level>
@@ -104,6 +106,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>barely_failed</level>
@@ -114,6 +117,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>failure</level>
@@ -124,6 +128,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>major_failure</level>
@@ -134,6 +139,7 @@ Step 3: If the action is plausible, determine the outputted item for each level 
     <item>
     [... item XML ...]
     </item>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>critical_failure</level>

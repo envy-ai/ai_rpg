@@ -74,7 +74,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
       {% include "_includes/item.njk" %}
       ... repeat item template for each recovered component ...
     </itemsRecovered>
-    <other><!-- 1-2 sentences describing additional positive effects (bonus schematics, improved station efficiency, etc.). --></other>
+    <other><!-- For critical successes only on very difficult salvages, describe an additional positive effect in 1-2 sentences. --></other>
   </result>
   <result>
     <level>major_success</level>
@@ -84,6 +84,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
       <item> ... item XML ... </item>
       ... more recovered items ...
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>success</level>
@@ -93,6 +94,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
       <item> ... item XML ... </item>
       ... more recovered items ...
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>barely_succeeded</level>
@@ -101,6 +103,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
       <!-- Lower quantity/quality components; some waste is expected. -->
       <item> ... item XML ... </item>
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>barely_failed</level>
@@ -110,6 +113,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
       <!-- Leave empty if nothing was recovered -->
       <item> ... item XML ... </item>
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>failure</level>
@@ -118,6 +122,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
     <itemsRecovered>
       <!-- Mostly scrap, junk quality. -->
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>major_failure</level>
@@ -125,13 +130,13 @@ Step 3: If the action is plausible, determine the components/materials recovered
     <itemsRecovered>
       <!-- Recovered items should be completely useless, even for melting down, etc. -->
     </itemsRecovered>
-    <other><!-- Optional note about collateral damage (damaged tools, sparks ignite clutter, etc.). --></other>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>critical_failure</level>
     <itemsConsumed>...</itemsConsumed>
     <itemsRecovered>...</itemsRecovered>
-    <other><!-- Mandatory: describe serious negative effect proportional to the item (explosion, toxic fumes, station ruined, injury, etc.). --></other>
+    <other><!-- Optional note about additional negative effects, collateral damage, etc. --></other>
   </result>
 </salvageResults>
 

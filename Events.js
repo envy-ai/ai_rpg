@@ -519,7 +519,6 @@ class Events {
     static defeatedEnemies = new SanitizedStringSet();
 
     static movedLocations = new SanitizedStringSet();
-    static _followupEventTexts = [];
 
     static _resetTrackingSets() {
         Events.animatedItems.clear();
@@ -538,7 +537,9 @@ class Events {
         Events.movedLocations.clear();
     }
 
-    static _enqueueFollowupEventCheck(text) {
+    static _enqueueFollowupEventCheck(text, followupQueue = null) {
+        const startOftext = typeof text === 'string' ? text.slice(0, 20) : '';
+        console.log(`Enqueuing follow-up event check for: ${startOftext}...`);
         if (typeof text !== 'string') {
             return;
         }
@@ -546,10 +547,71 @@ class Events {
         if (!trimmed) {
             return;
         }
-        if (!Array.isArray(this._followupEventTexts)) {
-            this._followupEventTexts = [];
+        if (!Array.isArray(followupQueue)) {
+            console.warn('Follow-up event queue is unavailable; skipping queued text.');
+            console.trace();
+            return;
         }
-        this._followupEventTexts.push(trimmed);
+        followupQueue.push(trimmed);
+    }
+
+    static async _runEventChecksForRewardProse(text, context = {}) {
+        if (isBlank(text)) {
+            return null;
+        }
+
+        const allowEnvironmentalEffects = typeof context.allowEnvironmentalEffects === 'boolean'
+            ? context.allowEnvironmentalEffects
+            : false;
+
+        const followup = await this.runEventChecks({
+            textToCheck: text,
+            stream: context.stream || null,
+            allowEnvironmentalEffects,
+            isNpcTurn: Boolean(context.isNpcTurn),
+            _depth: 1
+        });
+
+        if (!followup) {
+            return null;
+        }
+
+        const ensureArray = (key) => {
+            if (!Array.isArray(context[key])) {
+                context[key] = [];
+            }
+            return context[key];
+        };
+
+        const mergeArray = (key, values) => {
+            if (!Array.isArray(values) || !values.length) {
+                return;
+            }
+            ensureArray(key).push(...values);
+        };
+
+        mergeArray('experienceAwards', followup.experienceAwards);
+        mergeArray('currencyChanges', followup.currencyChanges);
+        mergeArray('environmentalDamageEvents', followup.environmentalDamageEvents);
+        mergeArray('needBarChanges', followup.needBarChanges);
+        mergeArray('questsAwarded', followup.questsAwarded);
+        mergeArray('questCompletionRewards', followup.questRewards);
+        mergeArray('completedQuestObjectives', followup.questObjectivesCompleted);
+
+        if (!Array.isArray(context.followupResults)) {
+            context.followupResults = [];
+        }
+        context.followupResults.push({
+            raw: followup.raw,
+            html: followup.html,
+            structured: followup.structured
+        });
+
+        if (followup.locationRefreshRequested) {
+            context.locationRefreshRequested = true;
+        }
+
+        return followup;
     }
 
     static _trackItemsFromParsing(parsedEntries = {}) {
@@ -707,15 +769,21 @@ class Events {
         return questResponseText;
     }
 
-    static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true, isNpcTurn = false, _depth = 0 } = {}) {
+    static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true, isNpcTurn = false, _depth = 0, followupQueue = null } = {}) {
+        const startOfText = typeof textToCheck === 'string' ? textToCheck.slice(0, 20) : '';
+        console.log(`✅ Starting event checks for text: ${startOfText}...`);
         if (isBlank(textToCheck)) {
+            console.warn('No text to check for events; skipping event analysis.');
             return null;
         }
 
         this._resetTrackingSets();
         const depth = Number.isFinite(_depth) ? _depth : 0;
-        if (depth === 0) {
-            this._followupEventTexts = [];
+        let activeFollowupQueue = Array.isArray(followupQueue) ? followupQueue : null;
+        if (!activeFollowupQueue) {
+            activeFollowupQueue = [];
+        } else if (depth === 0) {
+            activeFollowupQueue.length = 0;
         }
 
         const promptEnv = this._deps.promptEnv;
@@ -878,7 +946,9 @@ class Events {
                 needBarChanges: [],
                 allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                 isNpcTurn: Boolean(isNpcTurn),
-                stream
+                stream,
+                followupQueue: activeFollowupQueue,
+                _originatedFromEventChecks: true
             });
 
             if (Array.isArray(outcomeContext?.experienceAwards) && outcomeContext.experienceAwards.length) {
@@ -931,10 +1001,10 @@ class Events {
         );
 
         const followupResults = [];
-        if (depth === 0 && Array.isArray(this._followupEventTexts) && this._followupEventTexts.length) {
+        if (depth === 0 && Array.isArray(activeFollowupQueue) && activeFollowupQueue.length) {
             const seen = new Set();
-            while (this._followupEventTexts.length) {
-                const pendingTexts = this._followupEventTexts.splice(0, this._followupEventTexts.length);
+            while (activeFollowupQueue.length) {
+                const pendingTexts = activeFollowupQueue.splice(0, activeFollowupQueue.length);
                 for (const followupText of pendingTexts) {
                     if (typeof followupText !== 'string') {
                         continue;
@@ -950,7 +1020,8 @@ class Events {
                             stream,
                             allowEnvironmentalEffects,
                             isNpcTurn,
-                            _depth: depth + 1
+                            _depth: depth + 1,
+                            followupQueue: activeFollowupQueue
                         });
                         if (!followup) {
                             continue;
@@ -1142,6 +1213,12 @@ class Events {
         if (!Array.isArray(context.currencyChanges)) {
             context.currencyChanges = [];
         }
+        if (!Array.isArray(context.followupQueue)) {
+            context.followupQueue = [];
+        }
+        if (!Array.isArray(context.followupResults)) {
+            context.followupResults = [];
+        }
 
         const {
             generateItemsByNames,
@@ -1325,7 +1402,11 @@ class Events {
                 rewardProse = fallbackList;
             }
 
-            this._enqueueFollowupEventCheck(rewardProse);
+            if (context._originatedFromEventChecks) {
+                this._enqueueFollowupEventCheck(rewardProse, context.followupQueue);
+            } else {
+                await this._runEventChecksForRewardProse(rewardProse, context);
+            }
 
             context.questCompletionRewards.push({
                 questId: quest.id,
@@ -1458,6 +1539,10 @@ class Events {
     static async applyEventOutcomes(parsedEvents, context = {}) {
         if (!parsedEvents || !parsedEvents.parsed) {
             return context;
+        }
+
+        if (!Array.isArray(context.followupQueue)) {
+            context.followupQueue = [];
         }
 
         const config = this.config || {};

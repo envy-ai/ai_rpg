@@ -11,6 +11,7 @@ const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -458,20 +459,20 @@ module.exports = function registerApiRoutes(scope) {
                     resolved = 'success';
                     break;
                 case 'minor_failure':
-                    resolved = 'failure';
+                    resolved = 'barely_failed';
                     break;
                 case 'implausible_failure':
                     resolved = 'implausible';
                     break;
                 case 'critical_success':
-                    if (Number.isFinite(d20Roll) && d20Roll < 16) {
+                    if (Number.isFinite(d20Roll) && d20Roll <= 18) {
                         resolved = 'major_success';
                         break;
                     }
                     resolved = 'critical_success';
                     break;
                 case 'critical_failure':
-                    if (Number.isFinite(d20Roll) && d20Roll > 4) {
+                    if (Number.isFinite(d20Roll) && d20Roll >= 3) {
                         resolved = 'major_failure';
                         break;
                     }
@@ -2095,6 +2096,49 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             return pushChatEntry(entry, collector, resolvedLocationId);
+        }
+
+        function appendEventSummariesToChat({
+            summaryLabel = '📋 Events – Player Turn',
+            statusLabel = '🌀 Status Changes – Player Turn',
+            events = null,
+            experienceAwards = null,
+            currencyChanges = null,
+            environmentalDamageEvents = null,
+            needBarChanges = null,
+            plausibility = null,
+            timestamp = null,
+            parentId = null,
+            locationId = null
+        } = {}, collector = null) {
+            recordEventSummaryEntry({
+                label: summaryLabel,
+                events,
+                experienceAwards,
+                currencyChanges,
+                environmentalDamageEvents,
+                needBarChanges,
+                timestamp,
+                parentId,
+                locationId
+            }, collector);
+
+            recordStatusSummaryEntry({
+                label: statusLabel,
+                events,
+                timestamp,
+                parentId,
+                locationId
+            }, collector);
+
+            if (plausibility) {
+                recordPlausibilityEntry({
+                    data: plausibility,
+                    timestamp,
+                    parentId,
+                    locationId
+                }, collector);
+            }
         }
 
         function recordSkillCheckEntry({ resolution, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
@@ -6079,7 +6123,7 @@ module.exports = function registerApiRoutes(scope) {
             const travelFailureDegrees = new Set([
                 'critical_failure',
                 'major_failure',
-                'minor_failure',
+                'failure',
                 'barely_failed',
                 'implausible_failure'
             ]);
@@ -7175,8 +7219,13 @@ module.exports = function registerApiRoutes(scope) {
                                     stream,
                                     experienceAwards: [],
                                     currencyChanges: [],
+                                    environmentalDamageEvents: [],
+                                    needBarChanges: [],
                                     questCompletionRewards: [],
-                                    completedQuestObjectives: []
+                                    completedQuestObjectives: [],
+                                    followupResults: [],
+                                    allowEnvironmentalEffects: false,
+                                    isNpcTurn: false
                                 };
 
 
@@ -7203,6 +7252,22 @@ module.exports = function registerApiRoutes(scope) {
 
                                 appendArray('experienceAwards', questProcessingContext.experienceAwards);
                                 appendArray('currencyChanges', questProcessingContext.currencyChanges);
+                                appendArray('environmentalDamageEvents', questProcessingContext.environmentalDamageEvents);
+                                appendArray('needBarChanges', questProcessingContext.needBarChanges);
+
+                                if (Array.isArray(questProcessingContext.followupResults) && questProcessingContext.followupResults.length) {
+                                    if (!Array.isArray(responseData.followupEventChecks)) {
+                                        responseData.followupEventChecks = [];
+                                    }
+                                    responseData.followupEventChecks.push(...questProcessingContext.followupResults);
+                                    if (!eventResult) {
+                                        eventResult = { followupResults: [] };
+                                    }
+                                    if (!Array.isArray(eventResult.followupResults)) {
+                                        eventResult.followupResults = [];
+                                    }
+                                    eventResult.followupResults.push(...questProcessingContext.followupResults);
+                                }
 
                                 const questEventsContainer = (() => {
                                     if (responseData.events && typeof responseData.events === 'object') {
@@ -7347,34 +7412,19 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
 
-                    recordEventSummaryEntry({
-                        label: '📋 Events – Player Turn',
+                    appendEventSummariesToChat({
+                        summaryLabel: '📋 Events – Player Turn',
+                        statusLabel: '🌀 Status Changes – Player Turn',
                         events: responseData.events,
                         experienceAwards: responseData.experienceAwards,
                         currencyChanges: responseData.currencyChanges,
                         environmentalDamageEvents: responseData.environmentalDamageEvents,
                         needBarChanges: responseData.needBarChanges,
+                        plausibility: responseData.plausibility,
                         timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
                         parentId: aiResponseEntry?.id || null,
                         locationId: aiResponseLocationId
                     }, newChatEntries);
-
-                    recordStatusSummaryEntry({
-                        label: '🌀 Status Changes – Player Turn',
-                        events: responseData.events,
-                        timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                        parentId: aiResponseEntry?.id || null,
-                        locationId: aiResponseLocationId
-                    }, newChatEntries);
-
-                    if (responseData.plausibility) {
-                        recordPlausibilityEntry({
-                            data: responseData.plausibility,
-                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                            parentId: aiResponseEntry?.id || null,
-                            locationId: aiResponseLocationId
-                        }, newChatEntries);
-                    }
 
                     console.debug('[QuestDebug] processing questsAwarded:', responseData.questsAwarded);
                     if (Array.isArray(responseData.questsAwarded) && responseData.questsAwarded.length) {
@@ -12781,6 +12831,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (!playerActionDescription) {
+                    console.warn('Falling back to default crafting narrative.');
+                    console.trace();
                     const attemptLabel = isSalvageAction
                         ? 'salvaging'
                         : (craftingMode === 'process' ? 'processing' : 'crafting');
@@ -15428,15 +15480,18 @@ module.exports = function registerApiRoutes(scope) {
 
             const baseDir = resolveBaseDirectory();
             const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
-            const saveName = requestedSaveName
+            const baseSaveName = requestedSaveName
                 ? sanitizeSaveNameSegment(requestedSaveName, null)
                 : buildDefaultSaveName();
 
-            if (!saveName) {
+            if (!baseSaveName) {
                 const error = new Error('Failed to resolve a valid save name');
                 error.code = 'INVALID_SAVE_NAME';
                 throw error;
             }
+
+            const timestampPrefix = new Date().toISOString().replace(/[:.]/g, '-');
+            const saveName = `${timestampPrefix}_${baseSaveName}`;
 
             const saveDir = path.join(saveRootPath, saveName);
             const serialized = Utils.serializeGameState({

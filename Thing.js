@@ -1470,7 +1470,12 @@ class Thing {
       }
     }
 
-    let locationId = owners[0].location.id;
+    try {
+      let locationId = owners[0].location.id;
+    } catch (error) {
+      console.error(`Failed to get location ID for player ${owners[0].name} (${owners[0].id}): ${error.message}`);
+      console.trace();
+    }
     console.log("Current Location", owners[0].location);
     if (!locationId) {
       throw new Error(`Player ${owners[0].name} (${owners[0].id}) does not have a valid locationId`);

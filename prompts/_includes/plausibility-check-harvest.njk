@@ -73,7 +73,7 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
       {% include "_includes/item.njk" %}
       ... repeat item template for each harvested material ...
     </itemsRecovered>
-    <other><!-- 1-2 sentences describing additional positive effects (plant thrives, reveals new growth, grants an insight, etc.). --></other>
+    <other><!-- For critical successes only on very difficult harvests, describe an additional positive effect in 1-2 sentences. --></other>
   </result>
   <result>
     <level>major_success</level>
@@ -83,6 +83,7 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
       <item> ... item XML ... </item>
       ... more items ...
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>success</level>
@@ -100,6 +101,7 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
       <!-- Minimal/lesser-quality yield; plant may need time to recover before harvesting again. -->
       <item> ... item XML ... </item>
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>barely_failed</level>
@@ -109,6 +111,7 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
     <itemsRecovered>
       <!-- Optional scraps—damaged petals, bruised fruit, etc.—or leave empty to show no usable yield. -->
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>failure</level>
@@ -118,18 +121,20 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
     <itemsRecovered>
       <!-- Usually nothing, or unusable mush. -->
     </itemsRecovered>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>major_failure</level>
     <itemsConsumed>...</itemsConsumed>
     <itemsRecovered>...</itemsRecovered>
     <other><!-- Describe any collateral effects: branch snaps, plant lashes out, releases toxins, attracts predators, etc. --></other>
+    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
   <result>
     <level>critical_failure</level>
     <itemsConsumed>...</itemsConsumed>
     <itemsRecovered>...</itemsRecovered>
-    <other><!-- Mandatory: serious negative effect (injury, environmental backlash, plant goes dormant for a year, etc.). --></other>
+    <other><!-- Additional negative effect (should be relevant to the circumstances). --></other>
   </result>
 </harvestResults>
 
