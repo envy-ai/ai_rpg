@@ -437,8 +437,10 @@ module.exports = function registerApiRoutes(scope) {
                     const node = root.getElementsByTagName(tagName)[0] || null;
                     return node && typeof node.textContent === 'string' ? node.textContent.trim() : '';
                 };
+                const rootText = typeof root.textContent === 'string' ? root.textContent.trim() : '';
+                const description = getText('description') || rootText;
                 return {
-                    description: getText('description'),
+                    description,
                     otherEffectDescription: getText('otherEffectDescription')
                 };
             } catch (error) {
