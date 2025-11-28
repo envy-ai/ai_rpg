@@ -1,0 +1,213 @@
+{
+  "94": {
+    "inputs": {
+      "vae_name": "FLUX1/ae.sft"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "98": {
+    "inputs": {
+      "samples": [
+        "237",
+        0
+      ],
+      "vae": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "139": {
+    "inputs": {
+      "seed": 638991396152806
+    },
+    "class_type": "Seed Everywhere",
+    "_meta": {
+      "title": "Seed Everywhere"
+    }
+  },
+  "227": {
+    "inputs": {
+      "text": "{{ image.prompt | json }}"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "228": {
+    "inputs": {
+      "string": [
+        "227",
+        0
+      ],
+      "regex_pattern": "—",
+      "replace": "--",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "230": {
+    "inputs": {
+      "source": [
+        "232",
+        0
+      ],
+      "to_replace": "%",
+      "replace_with": " percent"
+    },
+    "class_type": "JWStringReplace",
+    "_meta": {
+      "title": "String Replace"
+    }
+  },
+  "232": {
+    "inputs": {
+      "string": [
+        "228",
+        0
+      ],
+      "regex_pattern": "[^\\x00-\\x7F]+",
+      "replace": " ",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": false,
+      "count": 0
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Regex Replace"
+    }
+  },
+  "233": {
+    "inputs": {
+      "ckpt_name": "z_image_turbo_bf16.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "234": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "235": {
+    "inputs": {
+      "format": "%Y-%m-%d-airpg/ComfyUI"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "237": {
+    "inputs": {
+      "seed": [
+        "139",
+        0
+      ],
+      "steps": {{ image.steps }},
+      "cfg": 1,
+      "sampler_name": "er_sde",
+      "scheduler": "bong_tangent",
+      "denoise": 1,
+      "model": [
+        "233",
+        0
+      ],
+      "positive": [
+        "241",
+        0
+      ],
+      "negative": [
+        "240",
+        0
+      ],
+      "latent_image": [
+        "238",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "238": {
+    "inputs": {
+      "width": {{ image.width }},
+      "height": {{ image.height }},
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "239": {
+    "inputs": {
+      "filename_prefix": [
+        "235",
+        0
+      ],
+      "images": [
+        "98",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "240": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "234",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "241": {
+    "inputs": {
+      "text": [
+        "230",
+        0
+      ],
+      "clip": [
+        "234",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  }
+}

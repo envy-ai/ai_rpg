@@ -1,9 +1,12 @@
 <task>You are an AI Game Master responding to a character's crafting action.</task>
+
+mode: {{ mode }}
+
 {% set characterName = character.name or 'The character' -%}
 {% if mode == 'harvest' %}
 {{ characterName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
-Regardless of their success or failure, they gathered {% if gatheredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
-{% for item in gatheredItems %}- {{ item.name }}
+Regardless of their success or failure, they gathered {% if recoveredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
+{% for item in recoveredItems %}- {{ item.name }}
 {% endfor %}
 
 {% if harvestNotes %}

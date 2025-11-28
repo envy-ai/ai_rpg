@@ -11,7 +11,6 @@ const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
-const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -12335,6 +12334,19 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         app.post('/api/craft', async (req, res) => {
+            let corpseProcessingRan = false;
+
+            res.on('finish', () => {
+                if (corpseProcessingRan) {
+                    return;
+                }
+                try {
+                    processNpcCorpses({ reason: 'craft:finish' });
+                } catch (error) {
+                    console.warn('Failed to process NPC corpses after crafting response:', error?.message || error);
+                }
+            });
+
             try {
                 if (!currentPlayer) {
                     return res.status(400).json({
@@ -12639,6 +12651,60 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const scaleAttributeBonusesForItem = (rawBonuses, { level = 1, rarity = null } = {}) => {
+                    if (!Array.isArray(rawBonuses) || !rawBonuses.length) {
+                        return [];
+                    }
+
+                    const normalizedEntries = [];
+                    for (const entry of rawBonuses) {
+                        if (!entry) {
+                            continue;
+                        }
+                        let attribute = null;
+                        let bonusValue = null;
+
+                        if (typeof entry === 'string') {
+                            attribute = entry.trim();
+                        } else if (typeof entry === 'object') {
+                            if (typeof entry.attribute === 'string') {
+                                attribute = entry.attribute.trim();
+                            } else if (typeof entry.name === 'string') {
+                                attribute = entry.name.trim();
+                            }
+                            const bonusRaw = entry.bonus ?? entry.value;
+                            const parsed = Number(bonusRaw);
+                            if (Number.isFinite(parsed)) {
+                                bonusValue = parsed;
+                            }
+                        }
+
+                        if (!attribute) {
+                            continue;
+                        }
+
+                        if (!Number.isFinite(bonusValue)) {
+                            const fallback = Number(entry?.bonus ?? entry?.value);
+                            bonusValue = Number.isFinite(fallback) ? fallback : 0;
+                        }
+
+                        normalizedEntries.push({ attribute, bonus: bonusValue });
+                    }
+
+                    if (!normalizedEntries.length) {
+                        return [];
+                    }
+
+                    const effectiveLevel = Number.isFinite(level) && level > 0 ? level : 1;
+
+                    return normalizedEntries.map(({ attribute, bonus }) => {
+                        const maxBonus = Thing.getMaxAttributeBonus(rarity, effectiveLevel);
+                        const scaled = maxBonus * bonus / 4;
+                        const rounded = Utils.roundAwayFromZero(scaled);
+                        return { attribute, bonus: rounded };
+                    });
+                };
+
                 const instantiateThingFromBlueprint = (itemBlueprint, {
                     defaultName = 'Crafted Item',
                     defaultDescription = null
@@ -12646,23 +12712,27 @@ module.exports = function registerApiRoutes(scope) {
                     if (!itemBlueprint) {
                         return null;
                     }
+                    const rawType = (itemBlueprint.thingType || itemBlueprint.itemOrScenery || itemBlueprint.thingCategory || 'item').toLowerCase();
+                    const thingType = rawType === 'scenery' ? 'scenery' : 'item';
+                    const levelForBonuses = Number.isFinite(itemBlueprint.level)
+                        ? itemBlueprint.level
+                        : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1);
+                    const attributeBonuses = thingType === 'item'
+                        ? scaleAttributeBonusesForItem(
+                            Array.isArray(itemBlueprint.attributeBonuses) ? itemBlueprint.attributeBonuses : [],
+                            { level: levelForBonuses, rarity: itemBlueprint.rarity }
+                        )
+                        : [];
                     const metadata = sanitizeMetadataObject({
                         rarity: itemBlueprint.rarity || null,
                         itemType: itemBlueprint.type || null,
                         value: itemBlueprint.value ?? null,
                         weight: itemBlueprint.weight ?? null,
                         properties: itemBlueprint.properties || null,
-                        attributeBonuses: Array.isArray(itemBlueprint.attributeBonuses) && itemBlueprint.attributeBonuses.length
-                            ? itemBlueprint.attributeBonuses
-                            : undefined,
+                        attributeBonuses: attributeBonuses.length ? attributeBonuses : undefined,
                         causeStatusEffect: itemBlueprint.causeStatusEffect || null,
                         ownerId: currentPlayer.id
                     });
-                    const rawType = (itemBlueprint.thingType || itemBlueprint.itemOrScenery || itemBlueprint.thingCategory || 'item').toLowerCase();
-                    const thingType = rawType === 'scenery' ? 'scenery' : 'item';
-                    const attributeBonuses = Array.isArray(itemBlueprint.attributeBonuses) && itemBlueprint.attributeBonuses.length
-                        ? itemBlueprint.attributeBonuses
-                        : null;
 
                     return new Thing({
                         name: itemBlueprint.name || defaultName,
@@ -12671,7 +12741,7 @@ module.exports = function registerApiRoutes(scope) {
                         rarity: itemBlueprint.rarity || null,
                         itemTypeDetail: itemBlueprint.type || null,
                         slot: itemBlueprint.slot || null,
-                        attributeBonuses,
+                        attributeBonuses: attributeBonuses.length ? attributeBonuses : null,
                         causeStatusEffect: itemBlueprint.causeStatusEffect || null,
                         level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
                         relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
@@ -12682,6 +12752,36 @@ module.exports = function registerApiRoutes(scope) {
                         isHarvestable: itemBlueprint.isHarvestable,
                         isSalvageable: itemBlueprint.isSalvageable
                     });
+                };
+
+                // Level formula: ceil(avg(top two ingredients + station + player counted twice)) plus relative delta.
+                const computeCraftedItemLevel = (itemBlueprint) => {
+                    if (!itemBlueprint || isSalvageAction || isHarvestAction) {
+                        return Number.isFinite(itemBlueprint?.level) ? itemBlueprint.level : null;
+                    }
+
+                    const fallbackLevel = Number.isFinite(currentPlayer?.level) && currentPlayer.level > 0
+                        ? currentPlayer.level
+                        : 1;
+                    const locationLevel = Number.isFinite(locationRecord?.baseLevel)
+                        ? locationRecord.baseLevel
+                        : fallbackLevel;
+                    const stationLevel = Number.isFinite(stationThing?.level)
+                        ? stationThing.level
+                        : locationLevel;
+                    const ingredientLevels = slotItems
+                        .map(({ thing }) => (Number.isFinite(thing?.level) && thing.level > 0) ? thing.level : fallbackLevel)
+                        .sort((a, b) => b - a);
+
+                    const topIngredient = ingredientLevels[0] ?? fallbackLevel;
+                    const secondIngredient = ingredientLevels[1] ?? topIngredient;
+                    const weightedSum = topIngredient + secondIngredient + stationLevel + (fallbackLevel * 2);
+                    const averaged = weightedSum / 5;
+                    const roundedBase = Math.ceil(averaged);
+                    const relativeDelta = Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : 0;
+                    const finalLevel = Math.max(1, roundedBase + relativeDelta);
+
+                    return finalLevel;
                 };
 
                 const consumedThingIds = [];
@@ -12710,7 +12810,13 @@ module.exports = function registerApiRoutes(scope) {
                         ? `Recovered material from ${salvageTargetThing.name}.`
                         : 'Recovered component.';
                     salvageBlueprints.forEach(blueprint => {
-                        const recoveredThing = instantiateThingFromBlueprint(blueprint, {
+                        const recoveredBlueprint = { ...blueprint };
+                        if (!Number.isFinite(recoveredBlueprint.level)) {
+                            recoveredBlueprint.level = Number.isFinite(salvageTargetThing?.level)
+                                ? salvageTargetThing.level
+                                : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1);
+                        }
+                        const recoveredThing = instantiateThingFromBlueprint(recoveredBlueprint, {
                             defaultName: blueprint?.name || (isHarvestAction ? 'Harvested Material' : 'Recovered Component'),
                             defaultDescription
                         });
@@ -12730,7 +12836,12 @@ module.exports = function registerApiRoutes(scope) {
                         recoveredThingInstances.push(recoveredThing);
                     });
                 } else if (selectedResult.item) {
-                    craftedThing = instantiateThingFromBlueprint(selectedResult.item);
+                    const craftedBlueprint = { ...selectedResult.item };
+                    const resolvedCraftLevel = computeCraftedItemLevel(craftedBlueprint);
+                    if (Number.isFinite(resolvedCraftLevel)) {
+                        craftedBlueprint.level = resolvedCraftLevel;
+                    }
+                    craftedThing = instantiateThingFromBlueprint(craftedBlueprint);
                     if (craftedThing) {
                         things.set(craftedThing.id, craftedThing);
                         if (typeof currentPlayer.addInventoryItem === 'function') {
@@ -12798,7 +12909,10 @@ module.exports = function registerApiRoutes(scope) {
                         producedItem: producedItemDescriptor,
                         consumedItems: consumedNamesForPrompt.map(name => ({ name })),
                         otherEffect: selectedResult.other || null,
-                        craftingNotes
+                        recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
+                        craftingNotes,
+                        targetName: salvageTargetThing?.name,
+                        mode: craftingMode
                     });
 
                     const playerActionTemplate = parseXMLTemplate(playerActionRendered);
@@ -12991,9 +13105,6 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to process additional crafting effects:', extraEventError?.message || extraEventError);
                     }
                 }
-
-
-
 
                 res.json({
                     success: true,
@@ -14107,6 +14218,7 @@ module.exports = function registerApiRoutes(scope) {
                 res.json(responsePayload);
             } catch (error) {
                 console.error('Failed to drop item:', error);
+                console.error(error.stack);
                 res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to drop item'

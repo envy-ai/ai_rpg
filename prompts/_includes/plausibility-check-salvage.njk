@@ -10,8 +10,7 @@ Guidelines:
 
 Current Situation:
 {% set targetName = salvageItemName or salvageTargetName or (salvageTarget and salvageTarget.name) or 'the chosen item' -%}
-{% set stationLabel = salvageStationName or stationName or 'a salvage workstation' -%}
-The player is attempting to salvage "{{ targetName }}" using "{{ stationLabel }}".
+The player is attempting to salvage "{{ targetName }}".
 {% if salvageTarget and salvageTarget.description %}
 Item details: {{ salvageTarget.description }}
 {% elif salvageItemDescription %}

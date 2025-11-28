@@ -32,6 +32,10 @@ banned_npc_names:
   - Lira
   - Kaelen
   - Valerius
+  - Roric
+  - Rorik
+  - Cora
+  - Barnaby
   - 734
   - 808
 banned_npc_name_regexes:

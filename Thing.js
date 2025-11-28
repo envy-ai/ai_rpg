@@ -1470,8 +1470,9 @@ class Thing {
       }
     }
 
+    let locationId;
     try {
-      let locationId = owners[0].location.id;
+      locationId = owners[0].location.id;
     } catch (error) {
       console.error(`Failed to get location ID for player ${owners[0].name} (${owners[0].id}): ${error.message}`);
       console.trace();

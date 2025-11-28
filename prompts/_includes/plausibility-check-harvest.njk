@@ -12,8 +12,7 @@ Guidelines:
 
 Current Situation:
 {% set targetName = harvestItemName or harvestTargetName or (harvestTarget and harvestTarget.name) or 'the harvestable item' -%}
-{% set stationLabel = harvestStationName or stationName or 'a harvesting workstation' -%}
-The player is attempting to harvest from "{{ targetName }}" using "{{ stationLabel }}".
+The player is attempting to harvest from "{{ targetName }}".
 {% if harvestTarget and harvestTarget.description %}
 Item details: {{ harvestTarget.description }}
 {% elif harvestItemDescription %}
