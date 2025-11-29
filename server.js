@@ -11558,10 +11558,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         let npcRenameMap = new Map();
         if (npcs.length) {
             Globals.updateSpinnerText({ message: `Naming NPCs for location ${location.name || location.id}...` });
+            console.log(`Naming NPCs for location ${location.name || location.id}...`);
+            console.trace();
             npcs = await enforceBannedNpcNames({
                 npcDataList: npcs,
-                existingNames,
-                conversationMessages: baseConversation
+                existingNames
             });
 
             npcRenameMap = computeNpcRenameMap(originalNpcNames, npcs);
@@ -11878,8 +11879,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             Globals.updateSpinnerText({ message: `Naming NPCs for region ${region.name || region.id}...` });
             parsedNpcs = await enforceBannedNpcNames({
                 npcDataList: parsedNpcs,
-                existingNames,
-                conversationMessages: baseConversation
+                existingNames
             });
 
             regionNpcRenameMap = computeNpcRenameMap(originalRegionNpcNames, parsedNpcs);
