@@ -213,6 +213,7 @@ class LLMClient {
         debug = false,
         frequencyPenalty = null,
         presencePenalty = null,
+        seed = Math.random(),
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -234,6 +235,7 @@ class LLMClient {
                 requiredTags,
                 waitAfterError,
                 dumpReasoningToConsole,
+                seed,
             });
         }
         const aiConfig = LLMClient.#cloneAiConfig();
@@ -285,6 +287,7 @@ class LLMClient {
             throw new Error('AI model is not configured.');
         }
         payload.model = resolvedModel;
+        payload.seed = seed;
 
         if (payload.model !== aiConfig.model) {
             console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
