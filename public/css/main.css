@@ -1294,6 +1294,7 @@ p:not(:last-child) {
   background: rgba(148, 163, 184, 0.15);
   color: #e2e8f0;
 }
+
 .button-spinner {
   width: 1rem;
   height: 1rem;
@@ -1302,6 +1303,7 @@ p:not(:last-child) {
   border-top-color: #fff;
   animation: button-spin 0.75s linear infinite;
 }
+
 @keyframes button-spin {
   from {
     transform: rotate(0deg);
@@ -1310,7 +1312,6 @@ p:not(:last-child) {
     transform: rotate(360deg);
   }
 }
-
 .button:hover,
 .button:focus {
   background: rgba(148, 163, 184, 0.28);
@@ -3795,6 +3796,102 @@ body.modal-open {
   background: rgba(37, 99, 235, 0.5);
   color: #ffffff;
   outline: none;
+}
+
+.quest-edit-modal .modal__dialog {
+  width: min(720px, 95vw);
+}
+
+.quest-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quest-edit-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #e2e8f0;
+}
+
+.quest-edit-form input[type=text],
+.quest-edit-form input[type=number],
+.quest-edit-form textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.5);
+  padding: 10px 12px;
+  color: #f8fafc;
+}
+
+.quest-edit-form .form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.quest-edit-objective-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.quest-edit-objectives {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quest-edit-objective-row {
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.quest-edit-objective-row input[type=text] {
+  margin: 0;
+}
+
+.quest-edit-flags {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.quest-edit-flag {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #cbd5f5;
+}
+
+.quest-edit-objective-row .btn {
+  justify-self: flex-end;
+}
+
+.quest-edit-button {
+  background: #3b82f6;
+  color: #f8fafc;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.quest-edit-button:hover,
+.quest-edit-button:focus {
+  background: #60a5fa;
+  transform: translateY(-1px);
 }
 
 .modal__body {

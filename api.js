@@ -11,6 +11,7 @@ const LLMClient = require('./LLMClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
+const Quest = require('./Quest.js');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -8155,6 +8156,108 @@ module.exports = function registerApiRoutes(scope) {
                 message: 'Quest abandoned successfully',
                 player: serializeNpcForClient(currentPlayer)
             });
+        });
+
+        app.post('/api/quest/edit', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const questId = typeof payload.questId === 'string' ? payload.questId.trim() : '';
+            if (!questId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'questId is required'
+                });
+            }
+
+            const quest = currentPlayer.getQuestById(questId);
+            if (!quest) {
+                return res.status(404).json({
+                    success: false,
+                    error: `Quest with id '${questId}' not found`
+                });
+            }
+
+            try {
+                const updatedName = typeof payload.name === 'string' ? payload.name.trim() : quest.name;
+                if (!updatedName) {
+                    throw new Error('Quest name must be a non-empty string.');
+                }
+
+                const updatedDescription = typeof payload.description === 'string' ? payload.description : quest.description;
+                const updatedSecretNotes = typeof payload.secretNotes === 'string' ? payload.secretNotes : quest.secretNotes;
+
+                const rewardCurrencyRaw = Number(payload.rewardCurrency);
+                const rewardXpRaw = Number(payload.rewardXp);
+                const updatedRewardCurrency = Number.isFinite(rewardCurrencyRaw) ? Math.max(0, Math.floor(rewardCurrencyRaw)) : quest.rewardCurrency;
+                const updatedRewardXp = Number.isFinite(rewardXpRaw) ? Math.max(0, Math.floor(rewardXpRaw)) : quest.rewardXp;
+
+                const rewardItems = (() => {
+                    if (Array.isArray(payload.rewardItems)) {
+                        return payload.rewardItems
+                            .map(item => (typeof item === 'string' ? item.trim() : ''))
+                            .filter(Boolean);
+                    }
+                    if (typeof payload.rewardItems === 'string') {
+                        return payload.rewardItems
+                            .split(/[\n,]/)
+                            .map(item => item.trim())
+                            .filter(Boolean);
+                    }
+                    return Array.isArray(quest.rewardItems) ? quest.rewardItems.slice() : [];
+                })();
+
+                const objectiveEntries = Array.isArray(payload.objectives) ? payload.objectives : null;
+                let updatedObjectives = null;
+                if (objectiveEntries) {
+                    updatedObjectives = objectiveEntries.map(entry => {
+                        if (!entry || typeof entry !== 'object' || typeof entry.description !== 'string' || !entry.description.trim()) {
+                            throw new Error('Each objective must include a non-empty description.');
+                        }
+                        const normalized = {
+                            id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : null,
+                            description: entry.description.trim(),
+                            completed: Boolean(entry.completed),
+                            optional: Boolean(entry.optional)
+                        };
+                        const objective = Quest.QuestObjective.fromJSON({
+                            id: normalized.id,
+                            description: normalized.description,
+                            completed: normalized.completed,
+                            optional: normalized.optional
+                        });
+                        return objective;
+                    });
+                }
+
+                quest.name = updatedName;
+                quest.description = updatedDescription || '';
+                quest.secretNotes = updatedSecretNotes || '';
+                quest.rewardCurrency = updatedRewardCurrency;
+                quest.rewardXp = updatedRewardXp;
+                quest.rewardItems = rewardItems;
+                if (updatedObjectives !== null) {
+                    quest.objectives = updatedObjectives;
+                }
+                quest.rewardClaimed = Boolean(payload.rewardClaimed ?? quest.rewardClaimed);
+                quest.giverName = typeof payload.giverName === 'string' ? payload.giverName.trim() : quest.giverName;
+
+                res.json({
+                    success: true,
+                    quest: quest.toJSON(),
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error?.message || 'Failed to update quest.'
+                });
+            }
         });
 
         app.get('/api/player/party', (req, res) => {

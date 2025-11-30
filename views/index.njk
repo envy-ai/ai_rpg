@@ -476,6 +476,58 @@
     </div>
 
     <div id="npcModalBackdrop" class="modal-backdrop" hidden></div>
+    <div id="questEditBackdrop" class="modal-backdrop" hidden></div>
+    <div id="questEditModal" class="modal quest-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="questEditTitle">Edit Quest</h2>
+                <button type="button" class="modal__close" id="questEditCloseBtn" aria-label="Close quest editor">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <form id="questEditForm" class="quest-edit-form">
+                    <div class="form-group">
+                        <label for="questEditName">Name</label>
+                        <input type="text" id="questEditName" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="questEditDescription">Description</label>
+                        <textarea id="questEditDescription" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="questEditSecretNotes">Secret Notes</label>
+                        <textarea id="questEditSecretNotes" name="secretNotes" rows="2"></textarea>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="questEditRewardCurrency">Reward Currency</label>
+                            <input type="number" id="questEditRewardCurrency" name="rewardCurrency" min="0" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="questEditRewardXp">Reward XP</label>
+                            <input type="number" id="questEditRewardXp" name="rewardXp" min="0" step="1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="questEditRewardItems">Reward Items (comma or newline separated)</label>
+                        <textarea id="questEditRewardItems" name="rewardItems" rows="2"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <div class="quest-edit-objective-header">
+                            <label>Objectives</label>
+                            <button type="button" id="questEditAddObjective" class="btn btn-secondary btn-sm">Add Objective</button>
+                        </div>
+                        <div id="questEditObjectives" class="quest-edit-objectives"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Quest</button>
+                        <button type="button" id="questEditCancel" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
     <div id="npcInventoryModal" class="modal npc-inventory-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -14403,6 +14455,20 @@
             const emptyCompleted = document.getElementById('questCompletedEmpty');
             const activeCountBadge = document.getElementById('questActiveCount');
             const completedCountBadge = document.getElementById('questCompletedCount');
+            const questEditModal = document.getElementById('questEditModal');
+            const questEditBackdrop = document.getElementById('questEditBackdrop');
+            const questEditForm = document.getElementById('questEditForm');
+            const questEditName = document.getElementById('questEditName');
+            const questEditDescription = document.getElementById('questEditDescription');
+            const questEditSecretNotes = document.getElementById('questEditSecretNotes');
+            const questEditRewardCurrency = document.getElementById('questEditRewardCurrency');
+            const questEditRewardXp = document.getElementById('questEditRewardXp');
+            const questEditRewardItems = document.getElementById('questEditRewardItems');
+            const questEditObjectives = document.getElementById('questEditObjectives');
+            const questEditAddObjective = document.getElementById('questEditAddObjective');
+            const questEditCancel = document.getElementById('questEditCancel');
+            const questEditCloseBtn = document.getElementById('questEditCloseBtn');
+            let questBeingEdited = null;
 
             const toElement = node => (node instanceof HTMLElement ? node : null);
             const activeRoot = toElement(activeContainer);
@@ -14447,6 +14513,104 @@
                     }
                 }
             }
+
+            const closeQuestEditModal = () => {
+                questBeingEdited = null;
+                if (questEditForm) {
+                    questEditForm.reset();
+                }
+                if (questEditObjectives) {
+                    questEditObjectives.innerHTML = '';
+                }
+                if (questEditModal) {
+                    questEditModal.setAttribute('hidden', '');
+                    questEditModal.setAttribute('aria-hidden', 'true');
+                }
+                if (questEditBackdrop) {
+                    questEditBackdrop.setAttribute('hidden', '');
+                }
+            };
+
+            const addObjectiveRow = (objective = {}) => {
+                if (!questEditObjectives) return;
+                const row = document.createElement('div');
+                row.className = 'quest-edit-objective-row';
+                if (objective.id) {
+                    row.dataset.id = objective.id;
+                }
+
+                const descInput = document.createElement('input');
+                descInput.type = 'text';
+                descInput.placeholder = 'Objective description';
+                descInput.value = objective.description || '';
+                descInput.required = true;
+
+                const flags = document.createElement('div');
+                flags.className = 'quest-edit-flags';
+
+                const optionalLabel = document.createElement('label');
+                optionalLabel.className = 'quest-edit-flag';
+                const optionalCheckbox = document.createElement('input');
+                optionalCheckbox.type = 'checkbox';
+                optionalCheckbox.checked = Boolean(objective.optional);
+                optionalLabel.appendChild(optionalCheckbox);
+                optionalLabel.appendChild(document.createTextNode('Optional'));
+
+                const completedLabel = document.createElement('label');
+                completedLabel.className = 'quest-edit-flag';
+                const completedCheckbox = document.createElement('input');
+                completedCheckbox.type = 'checkbox';
+                completedCheckbox.checked = Boolean(objective.completed);
+                completedLabel.appendChild(completedCheckbox);
+                completedLabel.appendChild(document.createTextNode('Completed'));
+
+                flags.appendChild(optionalLabel);
+                flags.appendChild(completedLabel);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'btn btn-link btn-sm';
+                removeBtn.textContent = 'Remove';
+                removeBtn.addEventListener('click', () => {
+                    row.remove();
+                });
+
+                row.appendChild(descInput);
+                row.appendChild(flags);
+                row.appendChild(removeBtn);
+                questEditObjectives.appendChild(row);
+            };
+
+            const openQuestEditModal = (quest = {}) => {
+                if (!questEditModal || !questEditForm) {
+                    return;
+                }
+                questBeingEdited = quest;
+                questEditModal.removeAttribute('hidden');
+                questEditModal.setAttribute('aria-hidden', 'false');
+                if (questEditBackdrop) {
+                    questEditBackdrop.removeAttribute('hidden');
+                }
+
+                if (questEditName) questEditName.value = quest.name || '';
+                if (questEditDescription) questEditDescription.value = quest.description || '';
+                if (questEditSecretNotes) questEditSecretNotes.value = quest.secretNotes || '';
+                if (questEditRewardCurrency) questEditRewardCurrency.value = Number(quest.rewardCurrency) || 0;
+                if (questEditRewardXp) questEditRewardXp.value = Number(quest.rewardXp) || 0;
+                if (questEditRewardItems) {
+                    const items = Array.isArray(quest.rewardItems) ? quest.rewardItems : [];
+                    questEditRewardItems.value = items.join(', ');
+                }
+
+                if (questEditObjectives) {
+                    questEditObjectives.innerHTML = '';
+                    if (Array.isArray(quest.objectives) && quest.objectives.length) {
+                        quest.objectives.forEach(obj => addObjectiveRow(obj));
+                    } else {
+                        addObjectiveRow();
+                    }
+                }
+            };
 
             const createQuestCard = (quest, { defaultOpen = false, compact = false, allowAbandon = false } = {}) => {
                 const details = document.createElement('details');
@@ -14597,6 +14761,17 @@
                         handleAbandonQuest(quest, event.currentTarget);
                     });
 
+                    const editButton = document.createElement('button');
+                    editButton.type = 'button';
+                    editButton.className = 'quest-abandon-button quest-edit-button';
+                    editButton.textContent = 'Edit';
+                    editButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openQuestEditModal(quest);
+                    });
+
+                    actions.appendChild(editButton);
                     actions.appendChild(abandonButton);
                     content.appendChild(actions);
                 }
@@ -14695,6 +14870,94 @@
             window.renderQuestPanel = renderQuestPanel;
             window.refreshQuestPanel = refreshQuestPanel;
             refreshQuestPanel();
+
+            const gatherObjectives = () => {
+                if (!questEditObjectives) {
+                    return [];
+                }
+                const rows = Array.from(questEditObjectives.querySelectorAll('.quest-edit-objective-row'));
+                return rows
+                    .map(row => {
+                        const descriptionInput = row.querySelector('input[type="text"]');
+                        const checkboxes = Array.from(row.querySelectorAll('.quest-edit-flag input[type="checkbox"]'));
+                        const optionalCheckbox = checkboxes[0] || null;
+                        const completedCheckbox = checkboxes[1] || null;
+                        const description = descriptionInput ? descriptionInput.value.trim() : '';
+                        if (!description) {
+                            return null;
+                        }
+                        return {
+                            id: row.dataset.id || undefined,
+                            description,
+                            optional: optionalCheckbox ? optionalCheckbox.checked : false,
+                            completed: completedCheckbox ? completedCheckbox.checked : false
+                        };
+                    })
+                    .filter(Boolean);
+            };
+
+            if (questEditAddObjective) {
+                questEditAddObjective.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    addObjectiveRow();
+                });
+            }
+
+            if (questEditCancel) {
+                questEditCancel.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    closeQuestEditModal();
+                });
+            }
+
+            if (questEditCloseBtn) {
+                questEditCloseBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    closeQuestEditModal();
+                });
+            }
+
+            if (questEditBackdrop) {
+                questEditBackdrop.addEventListener('click', closeQuestEditModal);
+            }
+
+            if (questEditForm) {
+                questEditForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (!questBeingEdited || !questBeingEdited.id) {
+                        window.alert('No quest selected to edit.');
+                        return;
+                    }
+                    const objectives = gatherObjectives();
+                    const payload = {
+                        questId: questBeingEdited.id,
+                        name: questEditName ? questEditName.value.trim() : questBeingEdited.name,
+                        description: questEditDescription ? questEditDescription.value : questBeingEdited.description,
+                        secretNotes: questEditSecretNotes ? questEditSecretNotes.value : questBeingEdited.secretNotes,
+                        rewardCurrency: questEditRewardCurrency ? Number(questEditRewardCurrency.value) : questBeingEdited.rewardCurrency,
+                        rewardXp: questEditRewardXp ? Number(questEditRewardXp.value) : questBeingEdited.rewardXp,
+                        rewardItems: questEditRewardItems ? questEditRewardItems.value : (questBeingEdited.rewardItems || []),
+                        objectives
+                    };
+
+                    try {
+                        const response = await fetch('/api/quest/edit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result?.success) {
+                            throw new Error(result?.error || 'Failed to update quest.');
+                        }
+                        closeQuestEditModal();
+                        await refreshQuestPanel();
+                    } catch (error) {
+                        console.error('Failed to edit quest:', error);
+                        window.alert(`Failed to edit quest: ${error.message || error}`);
+                    }
+                });
+            }
         }
 
         function initPlayerOverviewSync() {

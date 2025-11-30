@@ -9232,6 +9232,7 @@ async function enforceBannedNpcNames({
         });
     }
 
+    /*
     // Final validation - fall back to original names for any invalid ones
     npcDataList.forEach(npc => {
         if (!isNameValid(npc.name)) {
@@ -9239,6 +9240,7 @@ async function enforceBannedNpcNames({
             npc.name = npc.originalName;
         }
     });
+    */4
 
     return npcDataList;
 }
@@ -11039,6 +11041,13 @@ function chooseRegionName({
         if (typeof Region.getByName === 'function') {
             const existing = Region.getByName(trimmed);
             if (existing && existing !== region) {
+                continue;
+            }
+        }
+        // check against location names as well
+        if (typeof Location.getByName === 'function') {
+            const existingLocation = Location.getByName(trimmed);
+            if (existingLocation) {
                 continue;
             }
         }

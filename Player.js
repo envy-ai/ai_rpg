@@ -4371,18 +4371,7 @@ class Player {
      * Get a summary string of the player
      */
     toString() {
-        const statusEmoji = this.isAlive() ? '🟢' : '💀';
-
-        // Build attribute string using abbreviations if available
-        const attrs = this.getAttributeNames()
-            .map(name => {
-                const def = this.getAttributeDefinition(name);
-                const abbrev = def.abbreviation ?? name.charAt(0).toUpperCase();
-                return `${abbrev}:${this.#attributes[name]}`;
-            })
-            .join(' ');
-
-        return `${statusEmoji} ${this.#name} (Lvl ${this.#level}) HP:${this.#health}/${this.maxHealth} [${attrs}]`;
+        return this.#name;
     }
 
     finalizeTurn() {

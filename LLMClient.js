@@ -440,7 +440,7 @@ class LLMClient {
                             prefix: 'invalidXML',
                             metadataLabel,
                             error: xmlError,
-                            payload: responseContent || '',
+                            payload: messages + "\n\nResponse:\n\n" + (responseContent || ''),
                             onFailureMessage: 'Failed to write invalid XML log file'
                         });
                         if (filePath) {

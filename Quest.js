@@ -261,4 +261,5 @@ class Quest {
 
 }
 
+Quest.QuestObjective = QuestObjective;
 module.exports = Quest;
