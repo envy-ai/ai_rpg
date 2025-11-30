@@ -3919,7 +3919,7 @@ class AIRPGChat {
         }
 
         const mapTab = document.querySelector('[data-tab="map"]');
-        if (mapTab && mapTab.classList.contains('active')) {
+        if (mapTab && mapTab.classList.contains('active') && !isSelfEvent) {
             const mapContainer = document.getElementById('mapContainer');
             const activeRegionId = mapContainer?.dataset?.regionId || null;
             if (!activeRegionId || (payload.originRegionId && payload.originRegionId === activeRegionId)) {

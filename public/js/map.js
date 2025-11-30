@@ -32,6 +32,8 @@ function getCytoscape(container) {
 
 let cyInstance = null;
 let activeRegionId = null;
+let linkSourceNodeId = null;
+let linkModeActive = false;
 
 function ensureCytoscape(container) {
   if (cyInstance) {
@@ -340,6 +342,8 @@ function renderMap(region) {
   cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
   cy.nodes().forEach(node => node.toggleClass('visited', node.data('visited')));
   cy.layout({ name: 'fcose', animate: true, randomize: true }).run();
+  cy.boxSelectionEnabled(false);
+  cy.nodes().grabify();
 
   cy.nodes().removeClass('current');
   if (region.currentLocationId) {
@@ -368,6 +372,10 @@ function renderMap(region) {
       return;
     }
     if (node.hasClass('current')) {
+      return;
+    }
+    if (linkSourceNodeId) {
+      // Link mode tap handling is managed by tapend; ignore here.
       return;
     }
     if (typeof window.travelToAdjacentLocationFromMap === 'function') {
@@ -407,6 +415,119 @@ function renderMap(region) {
         focusAdventureTab: false,
         anchorPoint
       });
+    }
+  });
+
+  const resetLinkMode = () => {
+    linkSourceNodeId = null;
+    linkModeActive = false;
+    if (cyInstance) {
+      cyInstance.nodes().grabify();
+    }
+  };
+
+  const enterLinkMode = (sourceId) => {
+    linkSourceNodeId = sourceId;
+    linkModeActive = true;
+    if (cyInstance) {
+      cyInstance.nodes().ungrabify();
+    }
+  };
+
+  cy.on('tapstart', 'node', event => {
+    const { originalEvent } = event;
+    if (!originalEvent || !originalEvent.shiftKey) {
+      return;
+    }
+    const node = event.target;
+    if (!node || node.hasClass('region-exit')) {
+      return;
+    }
+    enterLinkMode(node.id());
+  });
+
+  cy.on('tapend', 'node', async event => {
+    if (!linkSourceNodeId) {
+      return;
+    }
+    const sourceId = linkSourceNodeId;
+    resetLinkMode();
+
+    const node = event.target;
+    if (!node || node.hasClass('region-exit')) {
+      return;
+    }
+    const targetId = node.id();
+    if (!targetId || targetId === sourceId) {
+      return;
+    }
+
+    const existingEdges = cyInstance ? cyInstance.$(
+      `edge[source = "${sourceId}"][target = "${targetId}"], edge[source = "${targetId}"][target = "${sourceId}"]`
+    ) : null;
+    if (existingEdges && existingEdges.length) {
+      window.alert('An exit already exists between these locations.');
+      return;
+    }
+
+    const addBidirectionalEdge = () => {
+      if (!cyInstance) {
+        return;
+      }
+      const forwardId = `${sourceId}_${targetId}`;
+      const reverseId = `${targetId}_${sourceId}`;
+      const forward = cyInstance.getElementById(forwardId);
+      const reverse = cyInstance.getElementById(reverseId);
+
+      if (forward && forward.nonempty()) {
+        forward.addClass('bidirectional');
+        forward.data('bidirectional', true);
+        return;
+      }
+      if (reverse && reverse.nonempty()) {
+        reverse.addClass('bidirectional');
+        reverse.data('bidirectional', true);
+        return;
+      }
+
+      cyInstance.add({
+        group: 'edges',
+        data: {
+          id: forwardId,
+          source: sourceId,
+          target: targetId,
+          bidirectional: true
+        },
+        classes: 'bidirectional'
+      });
+    };
+
+    try {
+      const response = await fetch(`/api/locations/${encodeURIComponent(sourceId)}/exits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'location',
+          locationId: targetId,
+          clientId: window.AIRPG_CLIENT_ID || null
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        const message = result?.error || `Failed to create exit between ${sourceId} and ${targetId}`;
+        window.alert(message);
+        return;
+      }
+      addBidirectionalEdge();
+    } catch (error) {
+      console.warn('Failed to create bidirectional exit:', error);
+      window.alert(`Failed to create exit: ${error?.message || error}`);
+    }
+  });
+
+  cy.on('tap', event => {
+    if (event.target === cy || event.target.group && event.target.group() === 'edges') {
+      resetLinkMode();
     }
   });
 }
