@@ -34,6 +34,9 @@ let cyInstance = null;
 let activeRegionId = null;
 let linkSourceNodeId = null;
 let linkModeActive = false;
+let lastGhostPosition = null;
+const LINK_GHOST_NODE_ID = '__link-ghost__';
+const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
 
 function ensureCytoscape(container) {
   if (cyInstance) {
@@ -109,6 +112,27 @@ function ensureCytoscape(container) {
       style: {
         'source-arrow-shape': 'triangle',
         'source-arrow-color': '#bae6fd'
+      }
+    },
+    {
+      selector: 'edge.link-ghost-edge',
+      style: {
+        'width': 2,
+        'curve-style': 'bezier',
+        'line-color': '#fbbf24',
+        'target-arrow-color': '#fbbf24',
+        'target-arrow-shape': 'triangle',
+        'line-style': 'dashed',
+        'opacity': 0.85
+      }
+    },
+    {
+      selector: 'node.link-ghost-node',
+      style: {
+        'width': 1,
+        'height': 1,
+        'opacity': 0,
+        'border-width': 0
       }
     },
     {
@@ -341,7 +365,21 @@ function renderMap(region) {
 
   cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
   cy.nodes().forEach(node => node.toggleClass('visited', node.data('visited')));
-  cy.layout({ name: 'fcose', animate: true, randomize: true }).run();
+  const runLayout = (options = {}) => {
+    if (!cyInstance) return;
+    const layout = cyInstance.layout({
+      name: 'fcose',
+      animate: true,
+      animationDuration: 600,
+      animationEasing: 'ease-out',
+      randomize: false,
+      fit: false,
+      ...options
+    });
+    layout.run();
+  };
+
+  runLayout({ randomize: true, fit: true });
   cy.boxSelectionEnabled(false);
   cy.nodes().grabify();
 
@@ -421,17 +459,320 @@ function renderMap(region) {
   const resetLinkMode = () => {
     linkSourceNodeId = null;
     linkModeActive = false;
+    lastGhostPosition = null;
+    if (cyInstance) {
+      cyInstance.remove(`#${LINK_GHOST_EDGE_ID}`);
+      cyInstance.remove(`#${LINK_GHOST_NODE_ID}`);
+    }
     if (cyInstance) {
       cyInstance.nodes().grabify();
     }
   };
 
-  const enterLinkMode = (sourceId) => {
+  const ensureGhostLink = (sourceId, position) => {
+    if (!cyInstance || !position) {
+      return;
+    }
+
+    cyInstance.remove(`#${LINK_GHOST_EDGE_ID}`);
+    cyInstance.remove(`#${LINK_GHOST_NODE_ID}`);
+
+    const ghostNode = cyInstance.add({
+      group: 'nodes',
+      data: { id: LINK_GHOST_NODE_ID },
+      position,
+      classes: 'link-ghost-node',
+      grabbable: false,
+      locked: true
+    });
+
+    const ghostEdge = cyInstance.add({
+      group: 'edges',
+      data: {
+        id: LINK_GHOST_EDGE_ID,
+        source: sourceId,
+        target: LINK_GHOST_NODE_ID
+      },
+      classes: 'link-ghost-edge'
+    });
+    ghostEdge.style({ visibility: 'visible', opacity: 0.95 });
+    lastGhostPosition = position;
+  };
+
+  const toModelPosition = (event) => {
+    if (!cyInstance || !container) {
+      return null;
+    }
+    if (event?.position) {
+      return event.position;
+    }
+    const original = event?.originalEvent;
+    if (!original || !Number.isFinite(original.clientX) || !Number.isFinite(original.clientY)) {
+      return null;
+    }
+    const rect = container.getBoundingClientRect();
+    const pan = cyInstance.pan();
+    const zoom = cyInstance.zoom();
+    return {
+      x: (original.clientX - rect.left - pan.x) / zoom,
+      y: (original.clientY - rect.top - pan.y) / zoom
+    };
+  };
+
+  const addStubNodeAndEdge = ({ sourceId, created, position }) => {
+    if (!cyInstance || !sourceId || !created) {
+      return;
+    }
+
+    const nodeId = created.destinationId || created.stubId || null;
+    if (!nodeId) {
+      return;
+    }
+    const label = created.name || 'New Stub';
+
+    let node = cyInstance.getElementById(nodeId);
+    if (!node || node.empty()) {
+      node = cyInstance.add({
+        group: 'nodes',
+        data: {
+          id: nodeId,
+          label,
+          isStub: true,
+          visited: false
+        },
+        position: position || undefined
+      });
+    } else if (position) {
+      node.position(position);
+    }
+    node.addClass('stub');
+
+    const edgeId = `${sourceId}_${nodeId}`;
+    let edge = cyInstance.getElementById(edgeId);
+    if (!edge || edge.empty()) {
+      edge = cyInstance.add({
+        group: 'edges',
+        data: {
+          id: edgeId,
+          source: sourceId,
+          target: nodeId,
+          bidirectional: true
+        },
+        classes: 'bidirectional'
+      });
+    } else {
+      edge.addClass('bidirectional');
+      edge.data('bidirectional', true);
+    }
+
+    runLayout();
+  };
+
+  const createStubExit = async ({ sourceId, position, name, description, type }) => {
+    const payload = {
+      type,
+      name,
+      description: description || '',
+      clientId: window.AIRPG_CLIENT_ID || null
+    };
+
+    if (type === 'region') {
+      payload.parentRegionId = activeRegionId || null;
+    } else {
+      payload.targetRegionId = activeRegionId || null;
+    }
+
+    const response = await fetch(`/api/locations/${encodeURIComponent(sourceId)}/exits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.success) {
+      const message = result?.error || 'Failed to create stub';
+      throw new Error(message);
+    }
+
+    if (result?.created) {
+      addStubNodeAndEdge({ sourceId, created: result.created, position });
+    }
+  };
+
+  const openCreateStubModal = ({ sourceId, position }) => {
+    if (!sourceId || !position) {
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'map-stub-modal__overlay';
+    overlay.setAttribute('role', 'presentation');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.background = 'rgba(0, 0, 0, 0.45)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '2000';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'map-stub-modal__dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.style.background = '#0f172a';
+    dialog.style.color = '#e2e8f0';
+    dialog.style.borderRadius = '12px';
+    dialog.style.boxShadow = '0 18px 55px rgba(0,0,0,0.35)';
+    dialog.style.padding = '18px';
+    dialog.style.width = '360px';
+    dialog.style.maxWidth = '90vw';
+    dialog.style.border = '1px solid rgba(255,255,255,0.08)';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Create stub';
+    title.style.margin = '0 0 12px';
+    title.style.fontSize = '18px';
+    title.style.fontWeight = '600';
+
+    const form = document.createElement('form');
+    form.className = 'map-stub-modal__form';
+    form.style.display = 'flex';
+    form.style.flexDirection = 'column';
+    form.style.gap = '10px';
+
+    const nameLabel = document.createElement('label');
+    nameLabel.textContent = 'Name';
+    nameLabel.style.fontSize = '13px';
+    nameLabel.style.fontWeight = '600';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.required = true;
+    nameInput.style.width = '100%';
+    nameInput.style.padding = '8px';
+    nameInput.style.borderRadius = '8px';
+    nameInput.style.border = '1px solid rgba(255,255,255,0.15)';
+    nameInput.style.background = '#0b1220';
+    nameInput.style.color = '#e2e8f0';
+    nameLabel.appendChild(nameInput);
+
+    const descLabel = document.createElement('label');
+    descLabel.textContent = 'Description (optional)';
+    descLabel.style.fontSize = '13px';
+    descLabel.style.fontWeight = '600';
+    const descInput = document.createElement('textarea');
+    descInput.rows = 3;
+    descInput.style.width = '100%';
+    descInput.style.padding = '8px';
+    descInput.style.borderRadius = '8px';
+    descInput.style.border = '1px solid rgba(255,255,255,0.15)';
+    descInput.style.background = '#0b1220';
+    descInput.style.color = '#e2e8f0';
+    descLabel.appendChild(descInput);
+
+    const typeLabel = document.createElement('label');
+    typeLabel.textContent = 'Type';
+    typeLabel.style.fontSize = '13px';
+    typeLabel.style.fontWeight = '600';
+    const typeSelect = document.createElement('select');
+    typeSelect.style.width = '100%';
+    typeSelect.style.padding = '8px';
+    typeSelect.style.borderRadius = '8px';
+    typeSelect.style.border = '1px solid rgba(255,255,255,0.15)';
+    typeSelect.style.background = '#0b1220';
+    typeSelect.style.color = '#e2e8f0';
+    const optionLocation = document.createElement('option');
+    optionLocation.value = 'location';
+    optionLocation.textContent = 'Location';
+    const optionRegion = document.createElement('option');
+    optionRegion.value = 'region';
+    optionRegion.textContent = 'Region';
+    typeSelect.appendChild(optionLocation);
+    typeSelect.appendChild(optionRegion);
+    typeLabel.appendChild(typeSelect);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.gap = '8px';
+    actions.style.marginTop = '4px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '8px 12px';
+    cancelBtn.style.borderRadius = '8px';
+    cancelBtn.style.border = '1px solid rgba(255,255,255,0.2)';
+    cancelBtn.style.background = 'transparent';
+    cancelBtn.style.color = '#e2e8f0';
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.textContent = 'Create';
+    submitBtn.style.padding = '8px 12px';
+    submitBtn.style.borderRadius = '8px';
+    submitBtn.style.border = 'none';
+    submitBtn.style.background = '#38bdf8';
+    submitBtn.style.color = '#0b1220';
+    submitBtn.style.fontWeight = '700';
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(submitBtn);
+
+    form.appendChild(nameLabel);
+    form.appendChild(descLabel);
+    form.appendChild(typeLabel);
+    form.appendChild(actions);
+
+    dialog.appendChild(title);
+    dialog.appendChild(form);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      overlay.remove();
+    };
+
+    overlay.addEventListener('click', (evt) => {
+      if (evt.target === overlay) {
+        close();
+      }
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      close();
+    });
+
+    form.addEventListener('submit', async (evt) => {
+      evt.preventDefault();
+      const name = nameInput.value.trim();
+      const description = descInput.value.trim();
+      const type = typeSelect.value === 'region' ? 'region' : 'location';
+      if (!name) {
+        nameInput.focus();
+        return;
+      }
+      submitBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        await createStubExit({ sourceId, position, name, description, type });
+        close();
+      } catch (error) {
+        window.alert(error?.message || 'Failed to create stub');
+        submitBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+    });
+
+    nameInput.focus();
+  };
+
+  const enterLinkMode = (sourceId, position) => {
     linkSourceNodeId = sourceId;
     linkModeActive = true;
     if (cyInstance) {
       cyInstance.nodes().ungrabify();
     }
+    ensureGhostLink(sourceId, position);
   };
 
   cy.on('tapstart', 'node', event => {
@@ -443,7 +784,8 @@ function renderMap(region) {
     if (!node || node.hasClass('region-exit')) {
       return;
     }
-    enterLinkMode(node.id());
+    const startPosition = toModelPosition(event) || node.position();
+    enterLinkMode(node.id(), startPosition);
   });
 
   cy.on('tapend', 'node', async event => {
@@ -451,13 +793,44 @@ function renderMap(region) {
       return;
     }
     const sourceId = linkSourceNodeId;
+    const dropPosition = toModelPosition(event) || event.position || event.cyPosition || lastGhostPosition || null;
+
+    const findTargetNode = () => {
+      if (!cyInstance) {
+        return null;
+      }
+      const pos = toModelPosition(event) || event.position || event.cyPosition || null;
+      if (!pos) {
+        return null;
+      }
+      const candidates = cyInstance.nodes().filter(n => {
+        if (n.id && n.id() === LINK_GHOST_NODE_ID) return false;
+        if (n.hasClass('region-exit')) return false;
+        const bb = n.boundingBox();
+        return pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2;
+      });
+      return candidates && candidates.length ? candidates[0] : null;
+    };
+
+    let node = event.target;
+    if (node && node.id && node.id() === LINK_GHOST_NODE_ID) {
+      const fallbackNode = findTargetNode();
+      node = fallbackNode;
+    }
+
     resetLinkMode();
 
-    const node = event.target;
+    if (!node || node.hasClass('link-ghost-node')) {
+      openCreateStubModal({ sourceId, position: dropPosition });
+      return;
+    }
     if (!node || node.hasClass('region-exit')) {
       return;
     }
     const targetId = node.id();
+    if (!targetId || node.hasClass('link-ghost-node')) {
+      return;
+    }
     if (!targetId || targetId === sourceId) {
       return;
     }
@@ -500,6 +873,7 @@ function renderMap(region) {
         },
         classes: 'bidirectional'
       });
+      runLayout();
     };
 
     try {
@@ -530,6 +904,32 @@ function renderMap(region) {
       resetLinkMode();
     }
   });
+
+  const updateGhostLinkPosition = (event) => {
+    if (!linkModeActive || !linkSourceNodeId) {
+      return;
+    }
+    const position = toModelPosition(event) || event.cyPosition || event.position || null;
+    if (!position) {
+      return;
+    }
+    ensureGhostLink(linkSourceNodeId, position);
+  };
+
+  cy.on('mousemove', updateGhostLinkPosition);
+  cy.on('tapdrag', updateGhostLinkPosition);
+
+  const domPointerMoveHandler = (evt) => {
+    if (!linkModeActive || !linkSourceNodeId) {
+      return;
+    }
+    const position = toModelPosition({ originalEvent: evt });
+    if (!position) {
+      return;
+    }
+    ensureGhostLink(linkSourceNodeId, position);
+  };
+  container.addEventListener('pointermove', domPointerMoveHandler);
 }
 
 function showMapError(message) {
