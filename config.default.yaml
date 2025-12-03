@@ -26,8 +26,13 @@ ai:
   lowTemperature: 0.0
   temperature: 0.6
   highTemperature: 1.0
-  baseTimeoutSeconds: 120
+  baseTimeoutSeconds: 300
   retryAttempts: 3
+  stream: true
+  stream_start_timeout: 45
+  stream_continue_timeout: 10
+  increment_start_timeout: 15
+  increment_continue_timeout: 5
 
   debug: false
   reasoning: false

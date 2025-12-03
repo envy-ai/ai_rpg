@@ -30,9 +30,9 @@ Here's a list of existing NPCs already present in this location:
 #}
 
 <task>
-First, make a list of names of existing NPCs from the gameState tag.
+{# First, make a list of names of existing NPCs from the gameState tag. #}
 
-Then, generate {{ numNpcs }} additional NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. **IMPORTANT: The generated NPC must be entirely new and not match any existing NPC from the gameState, not just those in the current location. Check thoroughly against the entire list of existing NPCs.**
+First, generate {{ numNpcs }} additional NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. **IMPORTANT: The generated NPC must be entirely new and not match any existing NPC from the gameState, not just those in the current location. Check thoroughly against the entire list of existing NPCs.**
 
 Then, generate 3 short memories for each newly generated NPC, from their perspective, about recent significant events they have experienced. These should be no more than 2 sentences long each, and should include interactions with other NPCs, places, things, etc.
 
@@ -49,12 +49,12 @@ These user notes are important for generating the NPCs:
 Format your response as follows:
 
 <response>
-<existingNpcs>
+{#<existingNpcs>
 <npcName>Exact name of an existing NPC</npcName>
 <npcName>Exact name of an existing NPC</npcName>
 <!-- ...and so on. Every existing NPC in the gameState should be listed here. -->
 </existingNpcs>
-<npcs>
+#}<npcs>
 <npc>
 <name>Full name of the NPC</name>
 <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors. Replace their name with %NAME%.</description>

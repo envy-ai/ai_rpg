@@ -31,6 +31,48 @@ class Utils {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
   }
 
+  static longestCommonSubstringLength(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') {
+      throw new TypeError('Utils.longestCommonSubstringLength requires two string arguments.');
+    }
+    if (!a.length || !b.length) {
+      return 0;
+    }
+
+    // Keep memory to O(min(len(a), len(b)))
+    let shorter = a;
+    let longer = b;
+    if (b.length < a.length) {
+      shorter = b;
+      longer = a;
+    }
+
+    const prev = new Array(shorter.length + 1).fill(0);
+    const curr = new Array(shorter.length + 1).fill(0);
+    let longest = 0;
+
+    for (let i = 1; i <= longer.length; i += 1) {
+      const longChar = longer.charAt(i - 1);
+      for (let j = 1; j <= shorter.length; j += 1) {
+        if (longChar === shorter.charAt(j - 1)) {
+          curr[j] = prev[j - 1] + 1;
+          if (curr[j] > longest) {
+            longest = curr[j];
+          }
+        } else {
+          curr[j] = 0;
+        }
+      }
+      // swap buffers
+      for (let k = 1; k < curr.length; k += 1) {
+        prev[k] = curr[k];
+        curr[k] = 0;
+      }
+    }
+
+    return longest;
+  }
+
   static #getDomParserInstance() {
     if (!sharedDomParser) {
       sharedDomParser = new DOMParser({ onError: () => { } });

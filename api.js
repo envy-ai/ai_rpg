@@ -12,6 +12,7 @@ const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
+const e = require('express');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -134,11 +135,11 @@ module.exports = function registerApiRoutes(scope) {
             })();
 
             millisecond_timestamp = Date.now();
-            console.log(`⬅️ ${routeLabel} request received at ${new Date().toISOString()}`);
+            //console.log(`⬅️ ${routeLabel} request received at ${new Date().toISOString()}`);
 
             res.on('finish', () => {
                 const duration = (Date.now() - millisecond_timestamp) / 1000;
-                console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
+                //console.log(`✅ ${routeLabel} request finished at ${new Date().toISOString()} (Duration: ${duration}s)`);
             });
 
             next();
@@ -359,6 +360,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (!level) {
                         return;
                     }
+                    const includeOther = level === 'critical_success' || level === 'critical_failure';
 
                     const itemsConsumedNode = resultNode.getElementsByTagName('itemsConsumed')[0] || null;
                     const consumedNames = itemsConsumedNode
@@ -403,7 +405,10 @@ module.exports = function registerApiRoutes(scope) {
                     const parsedItem = recoveredItems[0] || null;
 
                     const otherNode = resultNode.getElementsByTagName('other')[0] || null;
-                    const other = otherNode && typeof otherNode.textContent === 'string'
+                    if (!includeOther && otherNode && otherNode.parentNode) {
+                        otherNode.parentNode.removeChild(otherNode);
+                    }
+                    const other = includeOther && otherNode && typeof otherNode.textContent === 'string'
                         ? otherNode.textContent.trim()
                         : null;
 
@@ -740,6 +745,41 @@ module.exports = function registerApiRoutes(scope) {
                 locationId,
                 regionId
             };
+        }
+
+        function listNpcsAtLocation(locationId) {
+            if (!locationId) {
+                return [];
+            }
+            const npcIds = new Set();
+            const location = gameLocations.get(locationId);
+            if (location && Array.isArray(location.npcIds)) {
+                location.npcIds.forEach(id => {
+                    if (typeof id === 'string' && id.trim()) {
+                        npcIds.add(id.trim());
+                    }
+                });
+            }
+            for (const npc of players.values()) {
+                if (!npc?.isNPC) {
+                    continue;
+                }
+                if (npc.currentLocation && npc.currentLocation === locationId) {
+                    const npcId = typeof npc.id === 'string' ? npc.id.trim() : null;
+                    if (npcId) {
+                        npcIds.add(npcId);
+                    }
+                }
+            }
+            const summaries = [];
+            for (const npcId of npcIds) {
+                const npc = players.get(npcId);
+                summaries.push({
+                    id: npcId,
+                    name: (typeof npc?.name === 'string' && npc.name.trim()) ? npc.name.trim() : npcId
+                });
+            }
+            return summaries;
         }
 
         function processNpcCorpses({ reason = 'unspecified' } = {}) {
@@ -4898,7 +4938,7 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'npc_memories',
+                    metadataLabel: `npc_memories_${npc.name.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown'}`,
                     timeoutMs: baseTimeoutMilliseconds * timeoutScale
                 };
 
@@ -5638,11 +5678,14 @@ module.exports = function registerApiRoutes(scope) {
                 if (Globals.config.repetition_buster) {
                     // extract final prose from numbered list
                     const finalProseMatch = raw.match(/<finalPro.e>([\s\S]*?)/i);
-                    if (finalProseMatch && finalProseMatch[1]) {
-                        //Strip closing tag and anything after
-                        raw = finalProseMatch[1].replace(/<\/finalPro.e>.*/i, '').trim();
-                    }
 
+                    // if finalProseMatch contains the closing tag, split it at the closing tag
+                    // and discard the closing tag and anything after it
+                    if (finalProseMatch && finalProseMatch[1]) {
+                        raw = finalProseMatch[1].split(/<\/finalPro.e>/i)[0].trim();
+                    } else if (finalProseMatch.length >= 2) {
+                        raw = finalProseMatch[1];
+                    }
                 }
 
                 const debug = {
@@ -5984,6 +6027,35 @@ module.exports = function registerApiRoutes(scope) {
             Globals.processedMove = false;
             let currentUserMessage = null;
             let currentTurnLog = [];
+            const findRecentProseEntries = (limit = 5) => {
+                if (!Array.isArray(chatHistory) || !chatHistory.length) {
+                    return [];
+                }
+                const results = [];
+                for (let idx = chatHistory.length - 1; idx >= 0; idx -= 1) {
+                    const entry = chatHistory[idx];
+                    if (!entry || entry.role !== 'assistant') {
+                        continue;
+                    }
+                    const entryType = typeof entry.type === 'string' ? entry.type : null;
+                    if (entryType && entryType !== 'player-action') {
+                        continue;
+                    }
+                    const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                    if (!content) {
+                        continue;
+                    }
+                    results.push(entry);
+                    if (results.length >= limit) {
+                        break;
+                    }
+                }
+                return results;
+            };
+            const recentProseEntries = findRecentProseEntries(5);
+            const recentProseContents = recentProseEntries
+                .map(entry => (typeof entry.content === 'string' ? entry.content.trim() : ''))
+                .filter(Boolean);
 
             res.on('finish', () => {
                 if (corpseProcessingRan) {
@@ -6024,6 +6096,41 @@ module.exports = function registerApiRoutes(scope) {
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
             eventsProcessedThisTurn = false;
+            let promptTemplateName = null;
+            let promptVariablesSnapshot = null;
+            const renderPlayerActionPrompt = (forceRepetitionBuster = null) => {
+                if (!promptTemplateName || !promptVariablesSnapshot) {
+                    return null;
+                }
+                const originalRepetitionSetting = Globals.config.repetition_buster;
+                if (forceRepetitionBuster !== null && forceRepetitionBuster !== undefined) {
+                    Globals.config.repetition_buster = forceRepetitionBuster;
+                }
+                try {
+                    const rendered = promptEnv.render(promptTemplateName, promptVariablesSnapshot);
+                    const promptData = parseXMLTemplate(rendered);
+                    const systemPrompt = typeof promptData.systemPrompt === 'string'
+                        ? promptData.systemPrompt.trim()
+                        : '';
+                    const generationPrompt = typeof promptData.generationPrompt === 'string'
+                        ? promptData.generationPrompt.trim()
+                        : '';
+                    const messages = [];
+                    if (systemPrompt) {
+                        messages.push({ role: 'system', content: systemPrompt });
+                    }
+                    if (generationPrompt) {
+                        messages.push({ role: 'user', content: generationPrompt });
+                    }
+                    const temperature = typeof promptData.temperature === 'number' ? promptData.temperature : null;
+                    return { messages, temperature };
+                } catch (error) {
+                    console.warn('Failed to render player action prompt for repetition mitigation:', error?.message || error);
+                    return null;
+                } finally {
+                    Globals.config.repetition_buster = originalRepetitionSetting;
+                }
+            };
 
             try {
                 await runAutosaveIfEnabled();
@@ -6696,6 +6803,8 @@ module.exports = function registerApiRoutes(scope) {
                             characterName: 'The player',
                             additionalLore: additionalLore.trim(),
                         };
+                        promptTemplateName = templateName;
+                        promptVariablesSnapshot = promptVariables;
                         promptType = promptVariables.promptType;
                         if (attackContextForPlausibility) {
                             const isAttack = Boolean(attackContextForPlausibility.isAttack);
@@ -7023,6 +7132,34 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
+                        try {
+                            const hitSimilarity = recentProseContents.some(prior => {
+                                const lcsLength = Utils.longestCommonSubstringLength(prior, aiResponse);
+                                return lcsLength > 100;
+                            });
+                            if (hitSimilarity) {
+                                const rerendered = renderPlayerActionPrompt(true);
+                                if (rerendered && Array.isArray(rerendered.messages) && rerendered.messages.length) {
+                                    const rerunOptions = { ...requestOptions, messages: rerendered.messages };
+                                    if (rerendered.temperature !== null) {
+                                        rerunOptions.temperature = rerendered.temperature;
+                                    }
+                                    let rerunResponse = await LLMClient.chatCompletion(rerunOptions);
+                                    if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
+                                        const rerunMatch = rerunResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
+                                        if (rerunMatch && rerunMatch[1]) {
+                                            rerunResponse = rerunMatch[1].trim();
+                                        }
+                                        aiResponse = rerunResponse.trim();
+                                    }
+                                }
+                            }
+                        } catch (repetitionError) {
+                            console.warn('Repetition mitigation failed:', repetitionError?.message || repetitionError);
+                        }
+                    }
+
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
 
                     // Store AI response in history
@@ -7075,6 +7212,22 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.attackCheck = attackCheckInfo;
                     } else {
                         console.log("No attack check info to attach")
+                    }
+
+                    if (stream.isEnabled && !playerActionStreamSent) {
+                        const preEventPreview = { ...responseData };
+                        delete preEventPreview.npcTurns;
+                        preEventPreview.streamMeta = {
+                            ...streamState,
+                            playerAction: true,
+                            enabled: true,
+                            phase: 'player:pre-events'
+                        };
+                        const streamedNow = stream.playerAction(preEventPreview);
+                        if (streamedNow) {
+                            streamState.playerAction = true;
+                            playerActionStreamSent = true;
+                        }
                     }
 
                     let eventResult = null;
@@ -11732,6 +11885,142 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        const getStubLocationById = (stubId) => {
+            if (!stubId) return null;
+            const fromMap = gameLocations.get(stubId);
+            if (fromMap && fromMap.isStub) {
+                return fromMap;
+            }
+            const fromStore = Location.get(stubId);
+            if (fromStore && fromStore.isStub) {
+                return fromStore;
+            }
+            return null;
+        };
+
+        app.get('/api/stubs/:id', (req, res) => {
+            try {
+                const stubIdRaw = req.params.id;
+                const stubId = typeof stubIdRaw === 'string' ? stubIdRaw.trim() : '';
+                if (!stubId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub ID is required'
+                    });
+                }
+                const stubLocation = getStubLocationById(stubId);
+                if (!stubLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Stub '${stubId}' not found`
+                    });
+                }
+
+                const npcSummaries = listNpcsAtLocation(stubId);
+                const targetRegionId = stubLocation.stubMetadata?.targetRegionId || stubLocation.stubMetadata?.regionId || null;
+                const targetRegionName = targetRegionId
+                    ? (pendingRegionStubs.get(targetRegionId)?.name
+                        || regions.get(targetRegionId)?.name
+                        || stubLocation.stubMetadata?.targetRegionName
+                        || null)
+                    : null;
+
+                return res.json({
+                    success: true,
+                    stub: {
+                        id: stubId,
+                        name: stubLocation.name || stubLocation.stubMetadata?.shortDescription || stubLocation.stubMetadata?.targetRegionName || stubId,
+                        isRegionEntryStub: Boolean(stubLocation.stubMetadata?.isRegionEntryStub),
+                        targetRegionId: targetRegionId || null,
+                        targetRegionName,
+                        npcs: npcSummaries
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to fetch stub info:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to fetch stub info'
+                });
+            }
+        });
+
+        app.delete('/api/stubs/:id', (req, res) => {
+            try {
+                const stubIdRaw = req.params.id;
+                const stubId = typeof stubIdRaw === 'string' ? stubIdRaw.trim() : '';
+                if (!stubId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub ID is required'
+                    });
+                }
+                const stubLocation = getStubLocationById(stubId);
+                if (!stubLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Stub '${stubId}' not found`
+                    });
+                }
+
+                const npcSummaries = listNpcsAtLocation(stubId);
+                const deletedNpcIds = [];
+                for (const npc of npcSummaries) {
+                    const result = deleteNpcById(npc.id, { skipNotFound: true, reason: 'stub_deleted', deleteInventory: true });
+                    if (result?.success) {
+                        deletedNpcIds.push(npc.id);
+                    }
+                }
+
+                const removedExitIds = [];
+                const targetRegionId = stubLocation?.stubMetadata?.targetRegionId || stubLocation?.stubMetadata?.regionId || null;
+
+                for (const location of gameLocations.values()) {
+                    if (!location || location === stubLocation || typeof location.getAvailableDirections !== 'function') {
+                        continue;
+                    }
+                    const directions = location.getAvailableDirections();
+                    for (const direction of directions) {
+                        const exit = location.getExit(direction);
+                        if (exit && (exit.destination === stubId || (targetRegionId && exit.destinationRegion === targetRegionId))) {
+                            try {
+                                removeExitStrict(location, direction, exit.id || null);
+                                if (exit.id) {
+                                    removedExitIds.push(exit.id);
+                                }
+                            } catch (error) {
+                                console.warn(`Failed to remove inbound exit ${exit.id || direction} pointing to stub ${stubId}:`, error?.message || error);
+                            }
+                        }
+                    }
+                }
+
+                if (targetRegionId && pendingRegionStubs.has(targetRegionId)) {
+                    pendingRegionStubs.delete(targetRegionId);
+                }
+
+                const stubRemoval = deleteStubLocation(stubLocation);
+                if (stubRemoval?.removedExitIds?.length) {
+                    removedExitIds.push(...stubRemoval.removedExitIds);
+                }
+
+                res.json({
+                    success: true,
+                    stubId,
+                    targetRegionId: targetRegionId || null,
+                    removedExitIds: Array.from(new Set(removedExitIds.filter(Boolean))),
+                    deletedNpcIds,
+                    npcSummaries
+                });
+            } catch (error) {
+                console.error('Failed to delete stub:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to delete stub'
+                });
+            }
+        });
+
         app.post('/api/locations/:id/npcs', async (req, res) => {
             try {
                 const locationId = req.params.id;
@@ -13430,7 +13719,8 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== THING MANAGEMENT API ENDPOINTS ====================
 
-        const THING_BOOLEAN_FLAG_KEYS = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+        const THING_FLAG_KEY_TO_FLAG = Thing.booleanFlagMap;
+        const THING_BOOLEAN_FLAG_KEYS = Thing.booleanFlagKeys;
 
         function parseThingBooleanFlagValue(value, key) {
             if (value === undefined) {
@@ -13485,31 +13775,22 @@ module.exports = function registerApiRoutes(scope) {
             if (!entries.length) {
                 return;
             }
-            const metadata = thing.metadata || {};
             let mutated = false;
             for (const [key, value] of entries) {
-                if (value === null) {
-                    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
-                        delete metadata[key];
+                const flagName = THING_FLAG_KEY_TO_FLAG[key] || null;
+                const enabled = value === null ? false : Boolean(value);
+                if (flagName && typeof thing.hasFlag === 'function' && typeof thing.setFlag === 'function') {
+                    const current = thing.hasFlag(flagName);
+                    if (current !== enabled) {
+                        thing.setFlag(flagName, enabled);
                         mutated = true;
                     }
-                    if (thing[key] !== null) {
-                        thing[key] = null;
+                } else if (key in thing) {
+                    if (thing[key] !== enabled) {
+                        thing[key] = enabled;
                         mutated = true;
                     }
-                    continue;
                 }
-                if (thing[key] !== value) {
-                    thing[key] = value;
-                    mutated = true;
-                }
-                if (metadata[key] !== value) {
-                    metadata[key] = value;
-                    mutated = true;
-                }
-            }
-            if (mutated) {
-                thing.metadata = metadata;
             }
         }
 

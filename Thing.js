@@ -6,6 +6,7 @@ const Utils = require('./Utils.js');
 const { count } = require('console');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const Globals = require('./Globals.js');
+const SanitizedStringSet = require('./SanitizedStringSet.js');
 
 /**
  * Thing class for AI RPG
@@ -30,11 +31,20 @@ class Thing {
   #causeStatusEffect;
   #level;
   #relativeLevel;
-  isVehicle = null;
-  isCraftingStation = null;
-  isProcessingStation = null;
-  isHarvestable = null;
-  isSalvageable = null;
+  #flags = new SanitizedStringSet();
+  static #booleanFlagMap = Object.freeze({
+    isVehicle: 'vehicle',
+    isCraftingStation: 'crafting_station',
+    isProcessingStation: 'processing_station',
+    isHarvestable: 'harvestable',
+    isSalvageable: 'salvageable'
+  });
+  static get booleanFlagMap() {
+    return this.#booleanFlagMap;
+  }
+  static get booleanFlagKeys() {
+    return Object.keys(this.#booleanFlagMap);
+  }
 
   // Static indexing maps
   static #indexByID = new Map();
@@ -528,7 +538,8 @@ class Thing {
     isCraftingStation = null,
     isProcessingStation = null,
     isHarvestable = null,
-    isSalvageable = null
+    isSalvageable = null,
+    flags = new SanitizedStringSet()
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -564,11 +575,12 @@ class Thing {
     this.#causeStatusEffect = null;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
-    this.isVehicle = Thing.#normalizeBooleanFlag(isVehicle);
-    this.isCraftingStation = Thing.#normalizeBooleanFlag(isCraftingStation);
-    this.isProcessingStation = Thing.#normalizeBooleanFlag(isProcessingStation);
-    this.isHarvestable = Thing.#normalizeBooleanFlag(isHarvestable);
-    this.isSalvageable = Thing.#normalizeBooleanFlag(isSalvageable);
+    this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
+    this.isVehicle = isVehicle;
+    this.isCraftingStation = isCraftingStation;
+    this.isProcessingStation = isProcessingStation;
+    this.isHarvestable = isHarvestable;
+    this.isSalvageable = isSalvageable;
 
     this.#applyMetadataFieldsFromMetadata();
 
@@ -638,6 +650,51 @@ class Thing {
     return player ? player.getEquippedSlotForThing(this.#id) : null;
   }
 
+  get isVehicle() {
+    return this.#flags.has(Thing.#booleanFlagMap.isVehicle);
+  }
+  set isVehicle(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isVehicle, enabled, 'isVehicle');
+  }
+
+  get isCraftingStation() {
+    return this.#flags.has(Thing.#booleanFlagMap.isCraftingStation);
+  }
+  set isCraftingStation(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isCraftingStation, enabled, 'isCraftingStation');
+  }
+
+  get isProcessingStation() {
+    return this.#flags.has(Thing.#booleanFlagMap.isProcessingStation);
+  }
+  set isProcessingStation(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isProcessingStation, enabled, 'isProcessingStation');
+  }
+
+  get isHarvestable() {
+    return this.#flags.has(Thing.#booleanFlagMap.isHarvestable);
+  }
+  set isHarvestable(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isHarvestable, enabled, 'isHarvestable');
+  }
+
+  get isSalvageable() {
+    return this.#flags.has(Thing.#booleanFlagMap.isSalvageable);
+  }
+  set isSalvageable(value) {
+    const normalized = Thing.#normalizeBooleanFlag(value);
+    const enabled = normalized === null ? false : normalized;
+    this.#setBooleanFlag(Thing.#booleanFlagMap.isSalvageable, enabled, 'isSalvageable');
+  }
+
   get rarity() {
     return this.#rarity;
   }
@@ -654,6 +711,17 @@ class Thing {
   set itemTypeDetail(newTypeDetail) {
     this.#itemTypeDetail = typeof newTypeDetail === 'string' ? newTypeDetail.trim() : null;
     this.#lastUpdated = new Date().toISOString();
+  }
+
+  #setBooleanFlag(flagName, enabled, metadataKey) {
+    this.setFlag(flagName, enabled);
+    if (metadataKey) {
+      if (enabled) {
+        this.#metadata[metadataKey] = true;
+      } else {
+        delete this.#metadata[metadataKey];
+      }
+    }
   }
 
   get metadata() {
@@ -679,6 +747,38 @@ class Thing {
       this.#syncFieldsToMetadata();
       this.#lastUpdated = new Date().toISOString();
     }
+  }
+
+  hasFlag(flag) {
+    if (typeof flag !== 'string') {
+      throw new TypeError('Flag name must be a string.');
+    }
+    const trimmed = flag.trim();
+    if (!trimmed) {
+      throw new Error('Flag name cannot be empty.');
+    }
+    return this.#flags.has(trimmed);
+  }
+
+  setFlag(flag, enabled = true) {
+    if (typeof flag !== 'string') {
+      throw new TypeError('Flag name must be a string.');
+    }
+    const trimmed = flag.trim();
+    if (!trimmed) {
+      throw new Error('Flag name cannot be empty.');
+    }
+    if (typeof enabled !== 'boolean') {
+      throw new TypeError('Flag value must be a boolean.');
+    }
+
+    if (enabled) {
+      this.#flags.add(trimmed);
+    } else {
+      this.#flags.delete(trimmed);
+    }
+
+    this.#lastUpdated = new Date().toISOString();
   }
 
   get attributeBonuses() {
@@ -1033,6 +1133,7 @@ class Thing {
       isProcessingStation: normalizeBoolean(this.isProcessingStation),
       isHarvestable: normalizeBoolean(this.isHarvestable),
       isSalvageable: normalizeBoolean(this.isSalvageable),
+      flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
       statusEffects: this.getStatusEffects()
     };
@@ -1068,6 +1169,7 @@ class Thing {
       causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null,
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
+      flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions
     });
 
@@ -1168,6 +1270,18 @@ class Thing {
     const effect = this.#normalizeCauseStatusEffect(meta.causeStatusEffect);
     this.#causeStatusEffect = effect;
 
+    const metadataFlags = Array.isArray(meta.flags) ? meta.flags : [];
+    if (metadataFlags.length) {
+      const mergedFlags = new SanitizedStringSet();
+      for (const existing of this.#flags) {
+        mergedFlags.add(existing);
+      }
+      for (const entry of metadataFlags) {
+        mergedFlags.add(entry);
+      }
+      this.#flags = mergedFlags;
+    }
+
     if (Number.isFinite(meta.level)) {
       this.#level = Math.max(1, Math.min(20, Math.round(meta.level)));
     } else if (this.#level === undefined) {
@@ -1190,10 +1304,10 @@ class Thing {
       this.isProcessingStation = Thing.#normalizeBooleanFlag(meta.isProcessingStation);
     }
     if (meta.isHarvestable !== undefined) {
-      this.isHarvestable = Thing.#normalizeBooleanFlag(meta.isHarvestable);
+      this.isHarvestable = meta.isHarvestable;
     }
     if (meta.isSalvageable !== undefined) {
-      this.isSalvageable = Thing.#normalizeBooleanFlag(meta.isSalvageable);
+      this.isSalvageable = meta.isSalvageable;
     }
 
     this.#syncFieldsToMetadata();
@@ -1230,50 +1344,12 @@ class Thing {
       delete this.#metadata.relativeLevel;
     }
 
-    const normalizedVehicle = Thing.#normalizeBooleanFlag(this.isVehicle);
-    if (normalizedVehicle === null) {
-      delete this.#metadata.isVehicle;
-      this.isVehicle = null;
-    } else {
-      this.#metadata.isVehicle = normalizedVehicle;
-      this.isVehicle = normalizedVehicle;
-    }
-
-    const normalizedCrafting = Thing.#normalizeBooleanFlag(this.isCraftingStation);
-    if (normalizedCrafting === null) {
-      delete this.#metadata.isCraftingStation;
-      this.isCraftingStation = null;
-    } else {
-      this.#metadata.isCraftingStation = normalizedCrafting;
-      this.isCraftingStation = normalizedCrafting;
-    }
-
-    const normalizedProcessing = Thing.#normalizeBooleanFlag(this.isProcessingStation);
-    if (normalizedProcessing === null) {
-      delete this.#metadata.isProcessingStation;
-      this.isProcessingStation = null;
-    } else {
-      this.#metadata.isProcessingStation = normalizedProcessing;
-      this.isProcessingStation = normalizedProcessing;
-    }
-
-    const normalizedHarvestable = Thing.#normalizeBooleanFlag(this.isHarvestable);
-    if (normalizedHarvestable === null) {
-      delete this.#metadata.isHarvestable;
-      this.isHarvestable = null;
-    } else {
-      this.#metadata.isHarvestable = normalizedHarvestable;
-      this.isHarvestable = normalizedHarvestable;
-    }
-
-    const normalizedSalvageable = Thing.#normalizeBooleanFlag(this.isSalvageable);
-    if (normalizedSalvageable === null) {
-      delete this.#metadata.isSalvageable;
-      this.isSalvageable = null;
-    } else {
-      this.#metadata.isSalvageable = normalizedSalvageable;
-      this.isSalvageable = normalizedSalvageable;
-    }
+    // Boolean flags: persist when true, default to false when absent.
+    this.isVehicle = this.isVehicle;
+    this.isCraftingStation = this.isCraftingStation;
+    this.isProcessingStation = this.isProcessingStation;
+    this.isHarvestable = this.isHarvestable;
+    this.isSalvageable = this.isSalvageable;
   }
 
   #normalizeStatusEffects(effects = []) {

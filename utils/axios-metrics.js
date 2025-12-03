@@ -82,7 +82,7 @@ function attachAxiosMetricsLogger(axiosInstance, { logPrefix = DEFAULT_LOG_PREFI
     }
 
     if (parts.length > 2) {
-      console.log(parts.join(' | '));
+      //console.log(parts.join(' | '));
     }
   };
 

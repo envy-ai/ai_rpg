@@ -20,6 +20,8 @@ Regardless of their success or failure, they recovered {% if recoveredItems.leng
 {% if salvageNotes %}
 The player mentioned the following intent or approach before salvaging: "{{ salvageNotes }}"
 {% endif %}
+{% elif mode == 'repair' or mode == 'upgrade' %}
+{{ characterName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 {% else %}
 
 {{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:

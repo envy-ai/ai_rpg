@@ -537,6 +537,17 @@ class Events {
         Events.movedLocations.clear();
     }
 
+    static _isItemAlreadyTracked(name) {
+        if (typeof name !== 'string') {
+            return false;
+        }
+        const trimmed = name.trim();
+        if (!trimmed) {
+            return false;
+        }
+        return this.newItems.has(trimmed) || this.obtainedItems.has(trimmed);
+    }
+
     static _enqueueFollowupEventCheck(text, followupQueue = null) {
         const startOftext = typeof text === 'string' ? text.slice(0, 20) : '';
         console.log(`Enqueuing follow-up event check for: ${startOftext}...`);
@@ -3424,14 +3435,18 @@ class Events {
                     // If we just processed a move, skip generating new items, as the location generator handles this
                     return;
                 }
-                await this._ensureItemsExist(items, context.location);
+                const filteredItems = items
+                    .map(item => (typeof item === 'string' ? item.trim() : ''))
+                    .filter(name => !!name && !this._isItemAlreadyTracked(name));
 
+                if (!filteredItems.length) {
+                    return;
+                }
 
+                await this._ensureItemsExist(filteredItems, context.location);
 
-                for (const item of items) {
-                    if (typeof item === 'string' && item.trim()) {
-                        this.newItems.add(item);
-                    }
+                for (const item of filteredItems) {
+                    this.newItems.add(item);
                 }
             },
             scenery_appear: async function (items = [], context = {}) {
@@ -3445,7 +3460,9 @@ class Events {
                 }
 
                 // Filter out all items that are in newItems
-                const filteredItems = items.filter(item => !this.newItems.has(item) && !this.alteredItems.has(item));
+                const filteredItems = items
+                    .map(item => (typeof item === 'string' ? item.trim() : ''))
+                    .filter(item => !!item && !this.alteredItems.has(item) && !this._isItemAlreadyTracked(item));
 
                 try {
                     await this._generateItemsIntoWorld(filteredItems, context.location, { treatAsScenery: true });
@@ -3454,9 +3471,7 @@ class Events {
                 }
 
                 for (const item of filteredItems) {
-                    if (typeof item === 'string' && item.trim()) {
-                        this.newItems.add(item);
-                    }
+                    this.newItems.add(item);
                 }
             },
             harvestable_resource_appear: async function (items = [], context = {}) {
@@ -3464,16 +3479,22 @@ class Events {
                     return;
                 }
 
+                const filteredItems = items
+                    .map(item => (typeof item === 'string' ? item.trim() : ''))
+                    .filter(item => !!item && !this._isItemAlreadyTracked(item));
+
+                if (!filteredItems.length) {
+                    return;
+                }
+
                 try {
-                    await this._generateItemsIntoWorld(items, context.location, { treatAsResource: true });
+                    await this._generateItemsIntoWorld(filteredItems, context.location, { treatAsResource: true });
                 } catch (error) {
                     console.warn('Failed to generate harvestable resources:', error.message);
                 }
 
-                for (const item of items) {
-                    if (typeof item === 'string' && item.trim()) {
-                        this.newItems.add(item);
-                    }
+                for (const item of filteredItems) {
+                    this.newItems.add(item);
                 }
             },
             alter_npc: async function (entries = [], context = {}) {
@@ -5126,6 +5147,9 @@ class Events {
                 continue;
             }
             names.push(trimmed);
+            if (!allowObtained && this._isItemAlreadyTracked(trimmed)) {
+                continue;
+            }
         }
 
         if (!names.length) {

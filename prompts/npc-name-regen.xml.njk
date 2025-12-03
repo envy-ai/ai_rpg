@@ -18,12 +18,12 @@ Here is a list of NPC names that use banned words:
   <race>{{ npc.race }}</race>
   <gender>{{ npc.gender }}</gender>
   <shortDescription>{{ npc.shortDescription }}</shortDescription>
-  <description>{{ npc.description }}</description>
+  {# <description>{{ npc.description }}</description> #}
 </npc>
 {% endfor %}
 </npcsToRegenerateName>
 
-For each NPC, generate a set of 20 new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. Write their original description and short description with the old name replaced by the placeholder '%NAME%'. Return them in this format, being sure to quote the index attribute values carefully:
+For each NPC, generate a set of 20 new, different candidate names that fit the setting and culture of the location, and does not use any of the banned words. The names should be unique among all NPCs in this region. {#Write their original description and short description with the old name replaced by the placeholder '%NAME%'.#}Return them in this format, being sure to quote the index attribute values carefully:
 
 <npcs>
   <npc>
@@ -55,7 +55,7 @@ For each NPC, generate a set of 20 new, different candidate names that fit the s
     </weirdNames>
 
     <shortDescription>short description</shortDescription>
-    <description>description</description>
+    {# <description>description</description> #}
   </npc>
   <npc>
     ... the rest of the npcs listed in namesToRegenerate ...

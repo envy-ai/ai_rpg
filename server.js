@@ -285,6 +285,8 @@ function extractPersonality(primary = null, fallback = null) {
 }
 
 axios.interceptors.request.use(request_config => {
+    return request_config;
+    /*
     if (!config?.ai?.preventReasoning) {
         return request_config;
     }
@@ -308,6 +310,7 @@ axios.interceptors.request.use(request_config => {
         console.warn('Prompt seeding interceptor failed:', err.message);
     }
     return request_config;
+    */
 });
 
 function getImagePromptTemplateName(kind, fallback) {
@@ -1677,49 +1680,6 @@ function queueLocationThingImages(location) {
             }
         }
 
-        /*
-        for (const thing of things.values()) {
-            if (!thing || thing.thingType !== 'item') {
-                continue;
-            }
-
-            const metadata = thing.metadata || {};
-            const ownerId = metadata.ownerId || null;
-            const locationId = metadata.locationId || null;
-
-            if (ownerId && ownerId !== currentPlayer.id) {
-                continue;
-            }
-
-            if (locationId === location.id) {
-                candidateIds.add(thing.id);
-            }
-        }
-        */
-
-        if (!candidateIds.size) {
-            return;
-        }
-
-        for (const thingId of candidateIds) {
-            const thing = things.get(thingId) || (typeof Thing.getById === 'function' ? Thing.getById(thingId) : null);
-            if (!thing || thing.thingType !== 'item') {
-                continue;
-            }
-
-            const metadata = thing.metadata || {};
-            if (metadata.ownerId && metadata.ownerId !== currentPlayer.id) {
-                continue;
-            }
-
-            if (!shouldGenerateThingImage(thing)) {
-                continue;
-            }
-
-            if (!thing.imageId || !hasExistingImage(thing.imageId)) {
-                thing.imageId = null;
-            }
-        }
     } catch (error) {
         console.warn(`Failed to queue thing images for ${location.name || location.id}:`, error.message);
     }
@@ -5499,7 +5459,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         const inventoryContent = await LLMClient.chatCompletion({
             messages,
             timeoutScale,
-            metadataLabel: 'inventory_generation'
+            metadataLabel: `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`
         });
 
         if (!inventoryContent) {
@@ -5826,7 +5786,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
 
         const created = [];
 
-        for (const name of missing) {
+        const generationTasks = missing.map(async (name) => {
             const seed = seedLookup.get(name.toLowerCase()) || {};
             const requestedThingType = typeof seed.itemOrScenery === 'string'
                 ? seed.itemOrScenery.trim().toLowerCase()
@@ -5863,7 +5823,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const requestStart = Date.now();
                 const inventoryContent = await LLMClient.chatCompletion({
                     messages,
-                    metadataLabel: 'thing_generation'
+                    metadataLabel: `thing_generation_${name.replace(/\s+/g, '_').toLowerCase()}`,
                 });
 
                 if (!inventoryContent || !inventoryContent.trim()) {
@@ -5950,9 +5910,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const booleanFlags = extractThingBooleanFlags(itemData);
                 Object.assign(metadata, booleanFlags);
 
-                //console.log(itemData);
-                //console.log("Itemdata ^^");
-
                 const thing = new Thing({
                     name,
                     description: composedDescription,
@@ -5997,8 +5954,6 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     }
                 }
 
-                created.push(thing);
-
                 try {
                     const logDir = path.join(__dirname, 'logs');
                     if (!fs.existsSync(logDir)) {
@@ -6025,8 +5980,18 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 } catch (logError) {
                     console.warn('Failed to log item generation:', logError.message);
                 }
+
+                return thing;
             } catch (itemError) {
                 console.warn(`Failed to generate detailed items from event for "${name}":`, itemError.message);
+                return null;
+            }
+        });
+
+        const settled = await Promise.allSettled(generationTasks);
+        for (const result of settled) {
+            if (result.status === 'fulfilled' && result.value) {
+                created.push(result.value);
             }
         }
 
@@ -6052,12 +6017,12 @@ function buildThingPromptItem(thing) {
     }
 
     const metadata = thing.metadata || {};
-    const resolveBooleanFlag = (primaryValue, fallbackValue) => {
-        const primaryResolved = normalizeThingBooleanFlagValue(primaryValue);
-        if (primaryResolved !== null) {
-            return primaryResolved;
+    const resolveBooleanFlag = (key) => {
+        const flagName = THING_BOOLEAN_FLAG_MAP[key] || null;
+        if (flagName && typeof thing.hasFlag === 'function') {
+            return thing.hasFlag(flagName);
         }
-        const fallbackResolved = normalizeThingBooleanFlagValue(fallbackValue);
+        const fallbackResolved = normalizeThingBooleanFlagValue(metadata[key]);
         return fallbackResolved !== null ? fallbackResolved : false;
     };
     const rawSlot = typeof thing.slot === 'string'
@@ -6126,11 +6091,11 @@ function buildThingPromptItem(thing) {
         value: metadata.value ?? '',
         weight: metadata.weight ?? '',
         relativeLevel: metadata.relativeLevel ?? thing.relativeLevel ?? 0,
-        isVehicle: resolveBooleanFlag(thing.isVehicle, metadata.isVehicle),
-        isCraftingStation: resolveBooleanFlag(thing.isCraftingStation, metadata.isCraftingStation),
-        isProcessingStation: resolveBooleanFlag(thing.isProcessingStation, metadata.isProcessingStation),
-        isHarvestable: resolveBooleanFlag(thing.isHarvestable, metadata.isHarvestable),
-        isSalvageable: resolveBooleanFlag(thing.isSalvageable, metadata.isSalvageable),
+        isVehicle: resolveBooleanFlag('isVehicle'),
+        isCraftingStation: resolveBooleanFlag('isCraftingStation'),
+        isProcessingStation: resolveBooleanFlag('isProcessingStation'),
+        isHarvestable: resolveBooleanFlag('isHarvestable'),
+        isSalvageable: resolveBooleanFlag('isSalvageable'),
         attributeBonuses: attributeBonuses,
         causeStatusEffect: thing.causeStatusEffect || metadata.causeStatusEffect || null,
         properties: metadata.properties || ''
@@ -7807,7 +7772,7 @@ function parseNpcSkillAssignments(xmlContent) {
     }
 }
 
-async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutScale = 1 }) {
+async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutScale = 1, npcNames = [] }) {
     console.log(`Requesting NPC skill assignments from LLM... (timeoutScale=${timeoutScale})`);
     try {
         const availableSkillsMap = Player.getAvailableSkills();
@@ -7848,10 +7813,13 @@ async function requestNpcSkillAssignments({ baseMessages = [], logPath, timeoutS
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const requestStart = Date.now();
+        const labelSuffix = Array.isArray(npcNames) && npcNames.length
+            ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
+            : '';
         const skillResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale,
-            metadataLabel: 'npc_skill_assignments'
+            metadataLabel: `npc_skill_assignments${labelSuffix}`
         });
 
         if (!skillResponse || !skillResponse.trim()) {
@@ -8067,7 +8035,7 @@ function parseNpcAbilityAssignments(xmlContent) {
     }
 }
 
-async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeoutScale = 1 }) {
+async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeoutScale = 1, npcNames = [] }) {
     try {
         const abilitiesPrompt = renderNpcAbilitiesPrompt();
         if (!abilitiesPrompt) {
@@ -8083,10 +8051,13 @@ async function requestNpcAbilityAssignments({ baseMessages = [], logPath, timeou
 
 
         const requestStart = Date.now();
+        const labelSuffix = Array.isArray(npcNames) && npcNames.length
+            ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
+            : '';
         const abilityResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale: timeoutScale,
-            metadataLabel: 'npc_ability_assignments'
+            metadataLabel: `npc_ability_assignments${labelSuffix}`
         });
 
         if (!abilityResponse || !abilityResponse.trim()) {
@@ -8932,7 +8903,8 @@ function sanitizeMetadataObject(meta) {
     return cleaned;
 }
 
-const THING_BOOLEAN_FLAG_KEYS = ['isVehicle', 'isCraftingStation', 'isProcessingStation', 'isHarvestable', 'isSalvageable'];
+const THING_BOOLEAN_FLAG_MAP = Thing.booleanFlagMap;
+const THING_BOOLEAN_FLAG_KEYS = Thing.booleanFlagKeys;
 
 function normalizeThingBooleanFlagValue(value) {
     if (value === undefined || value === null) {
@@ -8980,16 +8952,22 @@ function extractThingBooleanFlags(source = {}) {
 function resolveThingBooleanFlagsFromInstance(thing) {
     const flags = {};
     for (const key of THING_BOOLEAN_FLAG_KEYS) {
-        const primaryValue = thing ? normalizeThingBooleanFlagValue(thing[key]) : null;
-        if (primaryValue !== null) {
-            flags[key] = primaryValue;
+        const flagName = THING_BOOLEAN_FLAG_MAP[key] || null;
+        const current = flagName && typeof thing?.hasFlag === 'function'
+            ? thing.hasFlag(flagName)
+            : null;
+        if (current !== null) {
+            flags[key] = Boolean(current);
             continue;
         }
-        if (thing?.metadata && Object.prototype.hasOwnProperty.call(thing.metadata, key)) {
-            const metadataValue = normalizeThingBooleanFlagValue(thing.metadata[key]);
-            if (metadataValue !== null) {
-                flags[key] = metadataValue;
+        const metadataValue = normalizeThingBooleanFlagValue(thing?.metadata?.[key]);
+        if (metadataValue !== null) {
+            if (flagName && typeof thing?.setFlag === 'function') {
+                thing.setFlag(flagName, Boolean(metadataValue));
             }
+            flags[key] = Boolean(metadataValue);
+        } else {
+            flags[key] = false;
         }
     }
     return flags;
@@ -11590,40 +11568,47 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         }
 
         let npcSkillAssignments = new Map();
-        let skillConversation = [...baseConversation];
-        if (npcs.length) {
-            try {
-                Globals.updateSpinnerText({ message: `Generating NPC skills for location ${location.name || location.id}...` });
-                const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
-                const skillResult = await requestNpcSkillAssignments({
-                    baseMessages: baseConversation,
-                    logPath: skillsLogPath,
-                    timeoutScale: npctimeoutScale
-                });
-                const rawAssignments = skillResult.assignments || new Map();
-                npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
-                skillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : skillConversation;
-            } catch (skillError) {
-                console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
-                console.debug(skillError);
-            }
-        }
-
         let npcAbilityAssignments = new Map();
+
         if (npcs.length) {
-            try {
-                Globals.updateSpinnerText({ message: `Generating NPC abilities for location ${location.name || location.id}...` });
-                const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
-                const abilityResult = await requestNpcAbilityAssignments({
-                    baseMessages: skillConversation,
-                    logPath: abilitiesLogPath,
-                    timeoutScale: npctimeoutScale
-                });
-                const rawAbilityAssignments = abilityResult.assignments || new Map();
-                npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
-            } catch (abilityError) {
-                console.warn(`Failed to generate abilities for location NPCs (${location.id}):`, abilityError.message);
-            }
+            const skillsPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC skills for location ${location.name || location.id}...` });
+                    const skillsLogPath = path.join(logDir, `location_${location.id}_npc_skills.log`);
+                    const skillResult = await requestNpcSkillAssignments({
+                        baseMessages: baseConversation,
+                        logPath: skillsLogPath,
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcs.map(npc => npc?.name || '').filter(Boolean)
+                    });
+                    const rawAssignments = skillResult.assignments || new Map();
+                    npcSkillAssignments = rekeyNpcLookupMap(rawAssignments, npcRenameMap) || new Map();
+                    return Array.isArray(skillResult.conversation) ? skillResult.conversation : baseConversation;
+                } catch (skillError) {
+                    console.warn(`Failed to generate skills for location NPCs (${location.id}):`, skillError.message);
+                    console.debug(skillError);
+                    return baseConversation;
+                }
+            })();
+
+            const abilitiesPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC abilities for location ${location.name || location.id}...` });
+                    const abilitiesLogPath = path.join(logDir, `location_${location.id}_npc_abilities.log`);
+                    const abilityResult = await requestNpcAbilityAssignments({
+                        baseMessages: baseConversation,
+                        logPath: abilitiesLogPath,
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcs.map(npc => npc?.name || '').filter(Boolean)
+                    });
+                    const rawAbilityAssignments = abilityResult.assignments || new Map();
+                    npcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, npcRenameMap) || new Map();
+                } catch (abilityError) {
+                    console.warn(`Failed to generate abilities for location NPCs (${location.id}):`, abilityError.message);
+                }
+            })();
+
+            await Promise.all([skillsPromise, abilitiesPromise]);
         }
 
         const created = [];
@@ -13684,14 +13669,33 @@ async function generateLocationFromPrompt(options = {}) {
 
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
-        try {
-            Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
-            await generateLocationThingsForLocation({
-                location
-            });
-        } catch (thingError) {
-            console.warn('Failed to generate location things:', thingError.message);
-        }
+        const thingsPromise = (async () => {
+            try {
+                Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
+                return await generateLocationThingsForLocation({ location });
+            } catch (thingError) {
+                console.warn('Failed to generate location things:', thingError.message);
+                return [];
+            }
+        })();
+
+        const npcsPromise = (async () => {
+            try {
+                Globals.updateSpinnerText({ message: `Generating NPCs for location ${location.name || location.id}...` });
+                return await generateLocationNPCs({
+                    location,
+                    systemPrompt,
+                    generationPrompt,
+                    aiResponse,
+                    regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null)
+                });
+            } catch (npcError) {
+                console.warn('Failed to generate NPCs for location:', npcError.message);
+                return [];
+            }
+        })();
+
+        const [generatedThings = [], generatedNpcs = []] = await Promise.all([thingsPromise, npcsPromise]);
 
         const newlyCreatedStubs = [];
 
@@ -13740,15 +13744,6 @@ async function generateLocationFromPrompt(options = {}) {
             }
         }
 
-        Globals.updateSpinnerText({ message: `Generating NPCs for location ${location.name || location.id}...` });
-        await generateLocationNPCs({
-            location,
-            systemPrompt,
-            generationPrompt,
-            aiResponse,
-            regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null)
-        });
-
         return {
             location: location,
             aiResponse: aiResponse,
@@ -13756,7 +13751,9 @@ async function generateLocationFromPrompt(options = {}) {
             generationOptions: templateOptions,
             newStubs: newlyCreatedStubs,
             isStubExpansion,
-            generationHints: location.generationHints
+            generationHints: location.generationHints,
+            generatedThings,
+            generatedNpcs
         };
 
     } catch (error) {

@@ -3,8 +3,114 @@ const Globals = require('./Globals.js');
 const { response } = require('express');
 const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
+const readline = require('readline');
 
 class LLMClient {
+    static #streamProgress = {
+        active: new Map(),
+        timer: null,
+        lastLines: 0,
+        lastWidth: 0
+    };
+    static #streamCounter = 0;
+
+    static #isInteractive() {
+        return process.stdout && process.stdout.isTTY;
+    }
+
+    static #renderStreamProgress() {
+        if (!LLMClient.#isInteractive()) {
+            return;
+        }
+        const stdout = process.stdout;
+        const entries = Array.from(LLMClient.#streamProgress.active.values());
+        const { moveCursor, clearLine } = readline;
+
+        // Move cursor up to rewrite previous lines
+        if (LLMClient.#streamProgress.lastLines > 0) {
+            moveCursor(stdout, 0, -LLMClient.#streamProgress.lastLines);
+        }
+
+        let maxWidth = 0;
+        const lines = entries.map(entry => {
+            const elapsedSec = Math.round((Date.now() - entry.startTs) / 1000);
+            const line = `📡 ${entry.label} – ${entry.bytes} bytes – ${elapsedSec}s`;
+            if (line.length > maxWidth) {
+                maxWidth = line.length;
+            }
+            return line;
+        });
+        maxWidth = Math.max(maxWidth, LLMClient.#streamProgress.lastWidth);
+
+        for (const line of lines) {
+            clearLine(stdout, 0);
+            stdout.write(line.padEnd(maxWidth, ' ') + '\n');
+        }
+
+        // Clear leftover lines if we rendered fewer than last time
+        const extras = Math.max(0, LLMClient.#streamProgress.lastLines - lines.length);
+        for (let i = 0; i < extras; i += 1) {
+            clearLine(stdout, 0);
+            stdout.write('\n');
+        }
+
+        LLMClient.#streamProgress.lastLines = lines.length;
+        LLMClient.#streamProgress.lastWidth = maxWidth;
+    }
+
+    static #ensureProgressTicker() {
+        if (!LLMClient.#isInteractive()) {
+            return;
+        }
+        if (LLMClient.#streamProgress.timer) {
+            return;
+        }
+        LLMClient.#streamProgress.timer = setInterval(() => {
+            if (!LLMClient.#streamProgress.active.size) {
+                if (LLMClient.#streamProgress.lastLines > 0) {
+                    // Clear previous lines then stop ticking
+                    const { moveCursor, clearLine } = readline;
+                    moveCursor(process.stdout, 0, -LLMClient.#streamProgress.lastLines);
+                    for (let i = 0; i < LLMClient.#streamProgress.lastLines; i += 1) {
+                        clearLine(process.stdout, 0);
+                        process.stdout.write('\n');
+                    }
+                    LLMClient.#streamProgress.lastLines = 0;
+                    LLMClient.#streamProgress.lastWidth = 0;
+                }
+                clearInterval(LLMClient.#streamProgress.timer);
+                LLMClient.#streamProgress.timer = null;
+                return;
+            }
+            LLMClient.#renderStreamProgress();
+        }, 1000);
+    }
+
+    static #trackStreamStart(label) {
+        if (!LLMClient.#isInteractive()) {
+            return null;
+        }
+        const idNum = ++LLMClient.#streamCounter;
+        const id = `${label || 'chat'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const startTs = Date.now();
+        const labelWithCounter = `${label || 'chat'}[${idNum}]`;
+        LLMClient.#streamProgress.active.set(id, { label: labelWithCounter, bytes: 0, startTs });
+        LLMClient.#ensureProgressTicker();
+        return id;
+    }
+
+    static #trackStreamBytes(id, bytes) {
+        if (!id) return;
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (!entry) return;
+        entry.bytes += bytes;
+    }
+
+    static #trackStreamEnd(id) {
+        if (!id) return;
+        LLMClient.#streamProgress.active.delete(id);
+    }
+
     static ensureAiConfig() {
         const globalConfig = Globals?.config;
         if (!globalConfig || typeof globalConfig !== 'object') {
@@ -191,6 +297,12 @@ class LLMClient {
         return 0.7;
     }
 
+    static #resolveBoolean(value, fallback) {
+        if (value === true) return true;
+        if (value === false) return false;
+        return Boolean(fallback);
+    }
+
     static async chatCompletion({
         messages,
         maxTokens,
@@ -214,6 +326,7 @@ class LLMClient {
         frequencyPenalty = null,
         presencePenalty = null,
         seed = Math.random(),
+        stream = undefined,
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -240,8 +353,10 @@ class LLMClient {
         }
         const aiConfig = LLMClient.#cloneAiConfig();
 
+        let currentTime = Date.now();
+
         //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
-        console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
+        //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
         if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
             const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
             console.log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
@@ -288,6 +403,11 @@ class LLMClient {
         }
         payload.model = resolvedModel;
         payload.seed = seed;
+        const resolvedStream = LLMClient.#resolveBoolean(
+            stream,
+            payload.stream !== undefined ? payload.stream : aiConfig.stream
+        );
+        payload.stream = resolvedStream !== false;
 
         if (payload.model !== aiConfig.model) {
             console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
@@ -318,6 +438,18 @@ class LLMClient {
         }
 
         const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
+        let streamStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
+            ? aiConfig.stream_start_timeout * 1000
+            : 40000;
+        let streamContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
+            ? aiConfig.stream_continue_timeout * 1000
+            : 10000;
+        const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
+            ? aiConfig.increment_start_timeout * 1000
+            : 0;
+        const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
+            ? aiConfig.increment_continue_timeout * 1000
+            : 0;
 
         const requestHeaders = {
             'Authorization': `Bearer ${resolvedApiKey}`,
@@ -325,24 +457,39 @@ class LLMClient {
             ...headers
         };
 
-        const axiosOptions = {
+        const baseAxiosOptions = {
             headers: requestHeaders,
-            timeout: resolvedTimeout
+            timeout: payload.stream ? undefined : resolvedTimeout,
+            responseType: payload.stream ? 'stream' : undefined
         };
 
         if (metadataLabel && metadata) {
-            axiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
+            baseAxiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
         } else if (metadataLabel) {
-            axiosOptions.metadata = { aiMetricsLabel: metadataLabel };
+            baseAxiosOptions.metadata = { aiMetricsLabel: metadataLabel };
         } else if (metadata) {
-            axiosOptions.metadata = metadata;
+            baseAxiosOptions.metadata = metadata;
         }
 
         let attempt = 0;
         let responseContent = '';
         while (attempt <= retryAttempts) {
+            let streamTrackerId = null;
+            let startTimer = null;
+            const controller = new AbortController();
+            const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
             try {
+                streamTrackerId = payload.stream ? LLMClient.#trackStreamStart(metadataLabel) : null;
+                if (payload.stream) {
+                    startTimer = setTimeout(() => {
+                        controller.abort(new Error('Stream start timeout'));
+                    }, streamStartTimeoutMs);
+                }
                 const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                if (startTimer) {
+                    clearTimeout(startTimer);
+                    startTimer = null;
+                }
 
                 // On any 5xx response, wait waitAfterError seconds and then retry
                 if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
@@ -354,10 +501,76 @@ class LLMClient {
                     throw new Error(`Server error from LLM (status ${response.status}).`);
                 }
 
+                const handleStream = (streamId) => new Promise((resolve, reject) => {
+                    let buffer = '';
+                    let assembled = '';
+                    let timer = null;
+
+                    const clear = () => {
+                        if (timer) {
+                            clearTimeout(timer);
+                            timer = null;
+                        }
+                    };
+
+                    const resetTimer = (ms) => {
+                        clear();
+                        timer = setTimeout(() => {
+                            reject(new Error('Stream timeout'));
+                        }, ms);
+                    };
+
+                    resetTimer(streamStartTimeoutMs);
+
+                    response.data.on('data', chunk => {
+                        resetTimer(streamContinueTimeoutMs);
+                        buffer += chunk.toString('utf8');
+                        LLMClient.#trackStreamBytes(streamId, chunk.length);
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        for (const line of lines) {
+                            const trimmed = line.trim();
+                            if (!trimmed || !trimmed.startsWith('data:')) continue;
+                            const payloadStr = trimmed.slice(5).trim();
+                            if (payloadStr === '[DONE]') {
+                                continue;
+                            }
+                            try {
+                                const parsed = JSON.parse(payloadStr);
+                                const delta = parsed?.choices?.[0]?.delta?.content
+                                    || parsed?.choices?.[0]?.message?.content
+                                    || '';
+                                if (delta) {
+                                    assembled += delta;
+                                }
+                            } catch (parseError) {
+                                // ignore malformed chunks, but log for visibility
+                                console.warn('Failed to parse stream chunk:', parseError?.message || parseError);
+                            }
+                        }
+                    });
+
+                    response.data.on('end', () => {
+                        clear();
+                        LLMClient.#trackStreamEnd(streamId);
+                        resolve(assembled);
+                    });
+                    response.data.on('error', err => {
+                        clear();
+                        LLMClient.#trackStreamEnd(streamId);
+                        reject(err);
+                    });
+                });
+
+                if (payload.stream) {
+                    responseContent = await handleStream(streamTrackerId);
+                } else {
+                    responseContent = response.data?.choices?.[0]?.message?.content || '';
+                }
+
                 if (typeof onResponse === 'function') {
                     onResponse(response);
                 }
-                responseContent = response.data?.choices?.[0]?.message?.content || '';
                 if (debug) {
                     console.log('Raw LLM response content:', responseContent);
                 }
@@ -468,14 +681,26 @@ class LLMClient {
                             throw new Error(errorMsg);
                         }
                     }
+                    let totalTime = Date.now() - currentTime;
+                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
                     return responseContent;
                 } else {
+                    let totalTime = Date.now() - currentTime;
+                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
                     return responseContent;
                 }
 
             } catch (error) {
                 console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
                 //console.debug(error);
+
+                if (streamTrackerId) {
+                    LLMClient.#trackStreamEnd(streamTrackerId);
+                }
+                if (startTimer) {
+                    clearTimeout(startTimer);
+                    startTimer = null;
+                }
 
                 if (error.status == 429) {
                     console.log('Rate limit exceeded. Waiting before retrying...');
@@ -505,8 +730,14 @@ class LLMClient {
 
             console.error(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
             attempt++;
+            if (payload.stream) {
+                streamStartTimeoutMs += incrementStartTimeoutMs;
+                streamContinueTimeoutMs += incrementContinueTimeoutMs;
+            }
         }
 
+        let totalTime = Date.now() - currentTime;
+        console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
         return responseContent;
     }
 }

@@ -35,6 +35,7 @@ let activeRegionId = null;
 let linkSourceNodeId = null;
 let linkModeActive = false;
 let lastGhostPosition = null;
+let edgeContextMenu = null;
 const LINK_GHOST_NODE_ID = '__link-ghost__';
 const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
 
@@ -285,6 +286,7 @@ function renderMap(region) {
       const destinationId = exit.destination;
       const destinationRegionId = exit.destinationRegion || null;
       const isRegionExit = Boolean(destinationRegionId) && !locationIdSet.has(destinationId);
+      const isRegionStubTarget = isRegionExit && Boolean(destinationId);
 
       if (isRegionExit) {
         if (!destinationRegionId) {
@@ -306,7 +308,9 @@ function renderMap(region) {
               symbolImage,
               regionName,
               targetRegionId: destinationRegionId,
-              expanded
+              expanded,
+              isStub: Boolean(isRegionStubTarget),
+              stubId: isRegionStubTarget ? destinationId : null
             },
             classes: expanded ? 'region-exit region-exit-expanded' : 'region-exit region-exit-unexpanded'
           });
@@ -336,6 +340,7 @@ function renderMap(region) {
         const existing = internalEdgeMap.get(reverseKey);
         existing.data.bidirectional = true;
         existing.classes = 'bidirectional';
+        existing.data.reverseExitId = existing.data.reverseExitId || exit.id || null;
         continue;
       }
 
@@ -345,7 +350,8 @@ function renderMap(region) {
             id: `${loc.id}_${destinationId}`,
             source: loc.id,
             target: destinationId,
-            bidirectional: isBidirectional
+            bidirectional: isBidirectional,
+            forwardExitId: exit.id || null
           },
           classes: isBidirectional ? 'bidirectional' : undefined
         });
@@ -423,9 +429,10 @@ function renderMap(region) {
 
   cy.on('cxttap', 'node', event => {
     const node = event.target;
-    if (!node || node.hasClass('region-exit')) {
+    if (!node) {
       return;
     }
+    const isStubNode = Boolean(node.data('isStub'));
     const locationId = node.id();
     if (!locationId) {
       return;
@@ -434,20 +441,26 @@ function renderMap(region) {
       event.originalEvent.preventDefault?.();
       event.originalEvent.stopPropagation?.();
     }
-    if (typeof window.openLocationContextMenuForLocationId === 'function') {
-      let anchorPoint = null;
+    const anchorPoint = (() => {
       if (event.originalEvent && Number.isFinite(event.originalEvent.clientX) && Number.isFinite(event.originalEvent.clientY)) {
-        anchorPoint = {
-          x: event.originalEvent.clientX,
-          y: event.originalEvent.clientY
-        };
-      } else if (event.renderedPosition && container) {
-        const rect = container.getBoundingClientRect();
-        anchorPoint = {
-          x: rect.left + event.renderedPosition.x,
-          y: rect.top + event.renderedPosition.y
-        };
+        return { x: event.originalEvent.clientX, y: event.originalEvent.clientY };
       }
+      if (event.renderedPosition && container) {
+        const rect = container.getBoundingClientRect();
+        return { x: rect.left + event.renderedPosition.x, y: rect.top + event.renderedPosition.y };
+      }
+      return null;
+    })();
+    if (isStubNode) {
+      if (anchorPoint) {
+        openStubContextMenu(node, anchorPoint);
+      }
+      return;
+    }
+    if (node.hasClass('region-exit')) {
+      return;
+    }
+    if (typeof window.openLocationContextMenuForLocationId === 'function') {
       window.openLocationContextMenuForLocationId(locationId, {
         useFloatingMenu: true,
         focusAdventureTab: false,
@@ -529,6 +542,7 @@ function renderMap(region) {
       return;
     }
     const label = created.name || 'New Stub';
+    const isRegionStub = created.type === 'region';
 
     let node = cyInstance.getElementById(nodeId);
     if (!node || node.empty()) {
@@ -538,14 +552,15 @@ function renderMap(region) {
           id: nodeId,
           label,
           isStub: true,
-          visited: false
+          visited: false,
+          ...(isRegionStub ? { regionName: created.name || label, targetRegionId: created.destinationId || null } : {})
         },
         position: position || undefined
       });
     } else if (position) {
       node.position(position);
     }
-    node.addClass('stub');
+    node.addClass(isRegionStub ? 'region-exit region-exit-unexpanded' : 'stub');
 
     const edgeId = `${sourceId}_${nodeId}`;
     let edge = cyInstance.getElementById(edgeId);
@@ -566,6 +581,25 @@ function renderMap(region) {
     }
 
     runLayout();
+  };
+
+  const findExitIdForDestination = (locationData, destinationId) => {
+    if (!locationData || !destinationId) {
+      return null;
+    }
+    const exits = locationData.exits || null;
+    if (Array.isArray(exits)) {
+      const match = exits.find(ex => ex && ex.destination === destinationId);
+      return match?.id || null;
+    }
+    if (exits && typeof exits === 'object') {
+      for (const exit of Object.values(exits)) {
+        if (exit && exit.destination === destinationId) {
+          return exit.id || null;
+        }
+      }
+    }
+    return null;
   };
 
   const createStubExit = async ({ sourceId, position, name, description, type }) => {
@@ -596,6 +630,11 @@ function renderMap(region) {
 
     if (result?.created) {
       addStubNodeAndEdge({ sourceId, created: result.created, position });
+      const exitId = findExitIdForDestination(result?.location, result?.created?.destinationId || null);
+      const edge = cyInstance ? cyInstance.getElementById(`${sourceId}_${result?.created?.destinationId}`) : null;
+      if (edge && edge.nonempty() && exitId) {
+        edge.data('forwardExitId', exitId);
+      }
     }
   };
 
@@ -893,6 +932,11 @@ function renderMap(region) {
         return;
       }
       addBidirectionalEdge();
+      const exitId = findExitIdForDestination(result?.location, targetId);
+      const edge = cyInstance ? cyInstance.getElementById(`${sourceId}_${targetId}`) : null;
+      if (edge && edge.nonempty() && exitId) {
+        edge.data('forwardExitId', exitId);
+      }
     } catch (error) {
       console.warn('Failed to create bidirectional exit:', error);
       window.alert(`Failed to create exit: ${error?.message || error}`);
@@ -930,6 +974,288 @@ function renderMap(region) {
     ensureGhostLink(linkSourceNodeId, position);
   };
   container.addEventListener('pointermove', domPointerMoveHandler);
+
+  const findEdgeAtPosition = (position) => {
+    if (!cyInstance || !position) {
+      return null;
+    }
+    const edges = cyInstance.edges().filter(edge => {
+      if (edge.hasClass('link-ghost-edge')) {
+        return false;
+      }
+      const bb = edge.boundingBox();
+      return position.x >= bb.x1 && position.x <= bb.x2 && position.y >= bb.y1 && position.y <= bb.y2;
+    });
+    return edges && edges.length ? edges[0] : null;
+  };
+
+  const findNodeAtPosition = (position) => {
+    if (!cyInstance || !position) {
+      return null;
+    }
+    const nodes = cyInstance.nodes().filter(node => {
+      if (node.hasClass('link-ghost-node')) {
+        return false;
+      }
+      const bb = node.boundingBox();
+      return position.x >= bb.x1 && position.x <= bb.x2 && position.y >= bb.y1 && position.y <= bb.y2;
+    });
+    return nodes && nodes.length ? nodes[0] : null;
+  };
+
+  const closeEdgeMenu = () => {
+    if (edgeContextMenu) {
+      edgeContextMenu.remove();
+      edgeContextMenu = null;
+    }
+  };
+
+  const fetchStubInfo = async (stubId) => {
+    if (!stubId) return null;
+    const response = await fetch(`/api/stubs/${encodeURIComponent(stubId)}`);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.success || !result?.stub) {
+      throw new Error(result?.error || `Failed to load stub '${stubId}'`);
+    }
+    return result.stub;
+  };
+
+  const deleteStub = async (stubId) => {
+    const response = await fetch(`/api/stubs/${encodeURIComponent(stubId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: window.AIRPG_CLIENT_ID || null })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.success) {
+      throw new Error(result?.error || `Failed to delete stub '${stubId}'`);
+    }
+    return result;
+  };
+
+  const deleteEdgeAndExit = async (edge) => {
+    if (!edge || !cyInstance) {
+      return;
+    }
+    const sourceId = edge.data('source');
+    const targetId = edge.data('target');
+    const forwardExitId = edge.data('forwardExitId') || null;
+    const reverseExitId = edge.data('reverseExitId') || null;
+
+    const performDelete = async (originId, exitId) => {
+      if (!originId || !exitId) return;
+      const clientId = window.AIRPG_CLIENT_ID || null;
+      if (!clientId) {
+        console.warn('Client ID missing; deletion will not be tagged as self-initiated.');
+      }
+      const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : '';
+      const response = await fetch(`/api/locations/${encodeURIComponent(originId)}/exits/${encodeURIComponent(exitId)}${query}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result?.error || `Failed to delete exit '${exitId}'`);
+      }
+    };
+
+    if (forwardExitId) {
+      await performDelete(sourceId, forwardExitId);
+    } else if (reverseExitId) {
+      await performDelete(targetId, reverseExitId);
+    } else {
+      throw new Error('No exit id available for deletion.');
+    }
+
+    cyInstance.remove(edge);
+    runLayout();
+  };
+
+  const openEdgeContextMenu = (edge, anchorPoint) => {
+    closeEdgeMenu();
+    const menu = document.createElement('div');
+    menu.className = 'map-edge-menu';
+    menu.style.position = 'fixed';
+    menu.style.left = `${anchorPoint.x}px`;
+    menu.style.top = `${anchorPoint.y}px`;
+    menu.style.background = '#0f172a';
+    menu.style.color = '#e2e8f0';
+    menu.style.border = '1px solid rgba(255,255,255,0.15)';
+    menu.style.borderRadius = '10px';
+    menu.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
+    menu.style.padding = '6px';
+    menu.style.zIndex = '2100';
+    menu.style.minWidth = '160px';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete exit';
+    deleteBtn.style.width = '100%';
+    deleteBtn.style.padding = '8px 10px';
+    deleteBtn.style.border = 'none';
+    deleteBtn.style.background = 'transparent';
+    deleteBtn.style.color = '#f87171';
+    deleteBtn.style.textAlign = 'left';
+    deleteBtn.style.cursor = 'pointer';
+    deleteBtn.addEventListener('mouseover', () => {
+      deleteBtn.style.background = 'rgba(248,113,113,0.08)';
+    });
+    deleteBtn.addEventListener('mouseout', () => {
+      deleteBtn.style.background = 'transparent';
+    });
+    deleteBtn.addEventListener('click', async () => {
+      try {
+        await deleteEdgeAndExit(edge);
+      } catch (error) {
+        window.alert(error?.message || 'Failed to delete exit');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
+    menu.appendChild(deleteBtn);
+    document.body.appendChild(menu);
+    edgeContextMenu = menu;
+
+    const onOutside = (evt) => {
+      if (!edgeContextMenu) return;
+      if (!edgeContextMenu.contains(evt.target)) {
+        closeEdgeMenu();
+        document.removeEventListener('mousedown', onOutside);
+        document.removeEventListener('contextmenu', onOutside);
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('contextmenu', onOutside);
+  };
+
+  const openStubContextMenu = (node, anchorPoint) => {
+    closeEdgeMenu();
+    const stubId = node?.data ? (node.data('stubId') || node.id()) : (node?.id?.() || null);
+    if (!stubId) {
+      return;
+    }
+    const menu = document.createElement('div');
+    menu.className = 'map-edge-menu';
+    menu.style.position = 'fixed';
+    menu.style.left = `${anchorPoint.x}px`;
+    menu.style.top = `${anchorPoint.y}px`;
+    menu.style.background = '#0f172a';
+    menu.style.color = '#e2e8f0';
+    menu.style.border = '1px solid rgba(255,255,255,0.15)';
+    menu.style.borderRadius = '10px';
+    menu.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
+    menu.style.padding = '6px';
+    menu.style.zIndex = '2100';
+    menu.style.minWidth = '180px';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete stub';
+    deleteBtn.style.width = '100%';
+    deleteBtn.style.padding = '8px 10px';
+    deleteBtn.style.border = 'none';
+    deleteBtn.style.background = 'transparent';
+    deleteBtn.style.color = '#f87171';
+    deleteBtn.style.textAlign = 'left';
+    deleteBtn.style.cursor = 'pointer';
+    deleteBtn.addEventListener('mouseover', () => {
+      deleteBtn.style.background = 'rgba(248,113,113,0.08)';
+    });
+    deleteBtn.addEventListener('mouseout', () => {
+      deleteBtn.style.background = 'transparent';
+    });
+    deleteBtn.addEventListener('click', async () => {
+      try {
+        const info = await fetchStubInfo(stubId);
+        const npcList = Array.isArray(info?.npcs) ? info.npcs : [];
+        if (npcList.length) {
+          const npcNames = npcList.map(npc => `- ${npc.name || npc.id}`).join('\n');
+          const confirmed = window.confirm(
+            `This stub has NPCs present:\n${npcNames}\n\nDeleting the stub will remove these NPCs and all connected exits. Continue?`
+          );
+          if (!confirmed) {
+            return;
+          }
+        } else {
+          const confirmed = window.confirm('Delete this stub and all connected exits?');
+          if (!confirmed) {
+            return;
+          }
+        }
+        await deleteStub(stubId);
+        const connected = node.connectedEdges();
+        if (connected && connected.length) {
+          cyInstance.remove(connected);
+        }
+        cyInstance.remove(node);
+        runLayout();
+      } catch (error) {
+        window.alert(error?.message || 'Failed to delete stub');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
+    menu.appendChild(deleteBtn);
+    document.body.appendChild(menu);
+    edgeContextMenu = menu;
+
+    const onOutside = (evt) => {
+      if (!edgeContextMenu) return;
+      if (!edgeContextMenu.contains(evt.target)) {
+        closeEdgeMenu();
+        document.removeEventListener('mousedown', onOutside);
+        document.removeEventListener('contextmenu', onOutside);
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('contextmenu', onOutside);
+  };
+
+  cy.on('cxttap', 'edge', event => {
+    const edge = event.target;
+    if (!edge || edge.hasClass('link-ghost-edge')) {
+      return;
+    }
+    const originalEvent = event.originalEvent;
+    if (originalEvent) {
+      originalEvent.preventDefault?.();
+      originalEvent.stopPropagation?.();
+    }
+    let anchorPoint = null;
+    if (originalEvent && Number.isFinite(originalEvent.clientX) && Number.isFinite(originalEvent.clientY)) {
+      anchorPoint = { x: originalEvent.clientX, y: originalEvent.clientY };
+    } else if (event.renderedPosition && container) {
+      const rect = container.getBoundingClientRect();
+      anchorPoint = {
+        x: rect.left + event.renderedPosition.x,
+        y: rect.top + event.renderedPosition.y
+      };
+    }
+    if (anchorPoint) {
+      openEdgeContextMenu(edge, anchorPoint);
+    }
+  });
+
+  container.addEventListener('contextmenu', evt => {
+    const position = toModelPosition({ originalEvent: evt });
+    const node = findNodeAtPosition(position);
+    if (node && node.data('isStub')) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      openStubContextMenu(node, { x: evt.clientX, y: evt.clientY });
+      return;
+    }
+    const edge = findEdgeAtPosition(position);
+    if (!edge) {
+      return;
+    }
+    evt.preventDefault();
+    evt.stopPropagation();
+    openEdgeContextMenu(edge, { x: evt.clientX, y: evt.clientY });
+  });
 }
 
 function showMapError(message) {
