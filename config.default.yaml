@@ -28,11 +28,22 @@ ai:
   highTemperature: 1.0
   baseTimeoutSeconds: 300
   retryAttempts: 3
+
+  # Streaming -- enable if API supports it (it probably does)
   stream: true
+
+  # If the stream doesn't start in this many seconds, we consider it a failure
   stream_start_timeout: 45
+
+  # If a stream that's already started stalls for this many seconds, we consider it a failure
   stream_continue_timeout: 10
+
+  # Each time we retry a streaming request, increment these timeouts by these amounts (in seconds)
   increment_start_timeout: 15
+
+  # Each time we retry a streaming request, increment the continue timeout by this amount (in seconds)
   increment_continue_timeout: 5
+  # Note that these timeouts will be reset for each new request.
 
   debug: false
   reasoning: false

@@ -11891,39 +11891,45 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         }
 
         let regionNpcSkillAssignments = new Map();
-        let regionSkillConversation = [...baseConversation];
-        if (parsedNpcs.length) {
-            try {
-                Globals.updateSpinnerText({ message: `Generating NPC skills for region ${region.name || region.id}...` });
-                const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
-                const skillResult = await requestNpcSkillAssignments({
-                    baseMessages: baseConversation,
-                    logPath: skillsLogPath,
-                    timeoutScale: npctimeoutScale
-                });
-                const rawAssignments = skillResult.assignments || new Map();
-                regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
-                regionSkillConversation = Array.isArray(skillResult.conversation) ? skillResult.conversation : regionSkillConversation;
-            } catch (skillError) {
-                console.warn(`Failed to generate skills for region NPCs (${region.id}):`, skillError.message);
-            }
-        }
-
         let regionNpcAbilityAssignments = new Map();
         if (parsedNpcs.length) {
-            try {
-                Globals.updateSpinnerText({ message: `Generating NPC abilities for region ${region.name || region.id}...` });
-                const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
-                const abilityResult = await requestNpcAbilityAssignments({
-                    baseMessages: regionSkillConversation,
-                    logPath: abilitiesLogPath,
-                    timeoutScale: npctimeoutScale
-                });
-                const rawAbilityAssignments = abilityResult.assignments || new Map();
-                regionNpcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, regionNpcRenameMap) || new Map();
-            } catch (abilityError) {
-                console.warn(`Failed to generate abilities for region NPCs (${region.id}):`, abilityError.message);
-            }
+            const npcNamesForLabel = parsedNpcs.map(npc => npc?.name || '').filter(Boolean);
+
+            const skillsPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC skills for region ${region.name || region.id}...` });
+                    const skillsLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_skills.log`);
+                    const skillResult = await requestNpcSkillAssignments({
+                        baseMessages: baseConversation,
+                        logPath: skillsLogPath,
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcNamesForLabel
+                    });
+                    const rawAssignments = skillResult.assignments || new Map();
+                    regionNpcSkillAssignments = rekeyNpcLookupMap(rawAssignments, regionNpcRenameMap) || new Map();
+                } catch (skillError) {
+                    console.warn(`Failed to generate skills for region NPCs (${region.id}):`, skillError.message);
+                }
+            })();
+
+            const abilitiesPromise = (async () => {
+                try {
+                    Globals.updateSpinnerText({ message: `Generating NPC abilities for region ${region.name || region.id}...` });
+                    const abilitiesLogPath = path.join(__dirname, 'logs', `region_${region.id}_npc_abilities.log`);
+                    const abilityResult = await requestNpcAbilityAssignments({
+                        baseMessages: baseConversation,
+                        logPath: abilitiesLogPath,
+                        timeoutScale: npctimeoutScale,
+                        npcNames: npcNamesForLabel
+                    });
+                    const rawAbilityAssignments = abilityResult.assignments || new Map();
+                    regionNpcAbilityAssignments = rekeyNpcLookupMap(rawAbilityAssignments, regionNpcRenameMap) || new Map();
+                } catch (abilityError) {
+                    console.warn(`Failed to generate abilities for region NPCs (${region.id}):`, abilityError.message);
+                }
+            })();
+
+            await Promise.all([skillsPromise, abilitiesPromise]);
         }
 
         const previousRegionNpcIds = Array.isArray(region.npcIds) ? [...region.npcIds] : [];

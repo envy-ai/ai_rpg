@@ -73,6 +73,46 @@ class Utils {
     return longest;
   }
 
+  static hasKgramOverlap(a, b, { k = 10, minMatches = 1 } = {}) {
+    if (typeof a !== 'string' || typeof b !== 'string') {
+      throw new TypeError('Utils.hasKgramOverlap requires two string arguments.');
+    }
+    const normalizeTokens = (text) => text
+      .split(/\s+/)
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    const tokensA = normalizeTokens(a);
+    const tokensB = normalizeTokens(b);
+    if (tokensA.length < k || tokensB.length < k) {
+      return false;
+    }
+
+    const buildKgrams = (tokens) => {
+      const kgrams = new Set();
+      for (let i = 0; i <= tokens.length - k; i += 1) {
+        kgrams.add(tokens.slice(i, i + k).join(' '));
+      }
+      return kgrams;
+    };
+
+    const small = tokensA.length <= tokensB.length ? tokensA : tokensB;
+    const large = small === tokensA ? tokensB : tokensA;
+
+    const smallKgrams = buildKgrams(small);
+    let matches = 0;
+    for (let i = 0; i <= large.length - k; i += 1) {
+      const gram = large.slice(i, i + k).join(' ');
+      if (smallKgrams.has(gram)) {
+        matches += 1;
+        if (matches >= minMatches) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   static #getDomParserInstance() {
     if (!sharedDomParser) {
       sharedDomParser = new DOMParser({ onError: () => { } });

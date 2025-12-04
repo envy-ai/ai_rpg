@@ -10,7 +10,8 @@ class LLMClient {
         active: new Map(),
         timer: null,
         lastLines: 0,
-        lastWidth: 0
+        lastWidth: 0,
+        lastBroadcastHadEntries: false
     };
     static #streamCounter = 0;
 
@@ -19,43 +20,46 @@ class LLMClient {
     }
 
     static #renderStreamProgress() {
-        if (!LLMClient.#isInteractive()) {
-            return;
-        }
-        const stdout = process.stdout;
         const entries = Array.from(LLMClient.#streamProgress.active.values());
-        const { moveCursor, clearLine } = readline;
+        if (LLMClient.#isInteractive()) {
+            const stdout = process.stdout;
+            const { moveCursor, clearLine } = readline;
 
-        // Move cursor up to rewrite previous lines
-        if (LLMClient.#streamProgress.lastLines > 0) {
-            moveCursor(stdout, 0, -LLMClient.#streamProgress.lastLines);
-        }
-
-        let maxWidth = 0;
-        const lines = entries.map(entry => {
-            const elapsedSec = Math.round((Date.now() - entry.startTs) / 1000);
-            const line = `📡 ${entry.label} – ${entry.bytes} bytes – ${elapsedSec}s`;
-            if (line.length > maxWidth) {
-                maxWidth = line.length;
+            if (LLMClient.#streamProgress.lastLines > 0) {
+                moveCursor(stdout, 0, -LLMClient.#streamProgress.lastLines);
             }
-            return line;
-        });
-        maxWidth = Math.max(maxWidth, LLMClient.#streamProgress.lastWidth);
 
-        for (const line of lines) {
-            clearLine(stdout, 0);
-            stdout.write(line.padEnd(maxWidth, ' ') + '\n');
+            let maxWidth = 0;
+            const lines = entries.map(entry => {
+                const elapsedSec = Math.round((Date.now() - entry.startTs) / 1000);
+                const line = `📡 ${entry.label} – ${entry.bytes} bytes – ${elapsedSec}s`;
+                if (line.length > maxWidth) {
+                    maxWidth = line.length;
+                }
+                return line;
+            });
+            maxWidth = Math.max(maxWidth, LLMClient.#streamProgress.lastWidth);
+
+            for (const line of lines) {
+                clearLine(stdout, 0);
+                stdout.write(line.padEnd(maxWidth, ' ') + '\n');
+            }
+
+            const extras = Math.max(0, LLMClient.#streamProgress.lastLines - lines.length);
+            for (let i = 0; i < extras; i += 1) {
+                clearLine(stdout, 0);
+                stdout.write('\n');
+            }
+
+            LLMClient.#streamProgress.lastLines = lines.length;
+            LLMClient.#streamProgress.lastWidth = maxWidth;
         }
 
-        // Clear leftover lines if we rendered fewer than last time
-        const extras = Math.max(0, LLMClient.#streamProgress.lastLines - lines.length);
-        for (let i = 0; i < extras; i += 1) {
-            clearLine(stdout, 0);
-            stdout.write('\n');
+        const shouldBroadcast = LLMClient.#streamProgress.active.size > 0
+            || LLMClient.#streamProgress.lastBroadcastHadEntries;
+        if (shouldBroadcast) {
+            LLMClient.#broadcastProgress();
         }
-
-        LLMClient.#streamProgress.lastLines = lines.length;
-        LLMClient.#streamProgress.lastWidth = maxWidth;
     }
 
     static #ensureProgressTicker() {
@@ -77,6 +81,9 @@ class LLMClient {
                     }
                     LLMClient.#streamProgress.lastLines = 0;
                     LLMClient.#streamProgress.lastWidth = 0;
+                }
+                if (LLMClient.#streamProgress.lastBroadcastHadEntries) {
+                    LLMClient.#broadcastProgress(true);
                 }
                 clearInterval(LLMClient.#streamProgress.timer);
                 LLMClient.#streamProgress.timer = null;
@@ -109,6 +116,35 @@ class LLMClient {
     static #trackStreamEnd(id) {
         if (!id) return;
         LLMClient.#streamProgress.active.delete(id);
+        if (!LLMClient.#streamProgress.active.size) {
+            LLMClient.#streamProgress.lastBroadcastHadEntries = false;
+        }
+    }
+
+    static #broadcastProgress(isFinal = false) {
+        const hub = Globals?.realtimeHub;
+        if (!hub || typeof hub.emit !== 'function') {
+            return;
+        }
+        const entries = Array.from(LLMClient.#streamProgress.active.values()).map(entry => ({
+            label: entry.label,
+            bytes: entry.bytes,
+            seconds: Math.round((Date.now() - entry.startTs) / 1000)
+        }));
+        if (entries.length === 0 && !isFinal) {
+            return;
+        }
+        const payload = {
+            type: 'prompt_progress',
+            entries,
+            done: isFinal || entries.length === 0
+        };
+        try {
+            hub.emit(null, 'prompt_progress', payload);
+            LLMClient.#streamProgress.lastBroadcastHadEntries = entries.length > 0 && !isFinal;
+        } catch (error) {
+            console.warn('Failed to broadcast prompt progress:', error?.message || error);
+        }
     }
 
     static ensureAiConfig() {
@@ -525,7 +561,6 @@ class LLMClient {
                     response.data.on('data', chunk => {
                         resetTimer(streamContinueTimeoutMs);
                         buffer += chunk.toString('utf8');
-                        LLMClient.#trackStreamBytes(streamId, chunk.length);
                         const lines = buffer.split('\n');
                         buffer = lines.pop() || '';
                         for (const line of lines) {
@@ -542,6 +577,8 @@ class LLMClient {
                                     || '';
                                 if (delta) {
                                     assembled += delta;
+                                    const deltaBytes = Buffer.byteLength(delta, 'utf8');
+                                    LLMClient.#trackStreamBytes(streamId, deltaBytes);
                                 }
                             } catch (parseError) {
                                 // ignore malformed chunks, but log for visibility
@@ -682,11 +719,19 @@ class LLMClient {
                         }
                     }
                     let totalTime = Date.now() - currentTime;
-                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
+                    const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
+                        ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
+                        : null;
+                    const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
+                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
                     return responseContent;
                 } else {
                     let totalTime = Date.now() - currentTime;
-                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
+                    const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
+                        ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
+                        : null;
+                    const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
+                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
                     return responseContent;
                 }
 
@@ -737,7 +782,11 @@ class LLMClient {
         }
 
         let totalTime = Date.now() - currentTime;
-        console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.`);
+        const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
+            ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
+            : null;
+        const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
+        console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
         return responseContent;
     }
 }

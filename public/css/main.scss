@@ -3070,6 +3070,12 @@ body.dark .thing-toggle-hint {
     margin-right: auto;
   }
 
+  &.prompt-progress-message {
+    border: 1px solid rgba(125, 211, 252, 0.3);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+
   &.error {
     background: $error-bg !important;
     border-left: 3px solid $error-border;
@@ -3548,6 +3554,40 @@ body.dark .thing-toggle-hint {
 
     &:hover {
       color: $white;
+    }
+  }
+}
+
+.prompt-progress-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 6px 8px;
+    text-align: left;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  th {
+    background: rgba(59, 130, 246, 0.1);
+    color: #bfdbfe;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 12px;
+  }
+
+  tbody {
+    tr:nth-child(odd) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    tr:hover {
+      background: rgba(59, 130, 246, 0.08);
     }
   }
 }

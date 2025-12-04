@@ -6052,7 +6052,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 return results;
             };
-            const recentProseEntries = findRecentProseEntries(5);
+            const recentProseEntries = findRecentProseEntries(30);
             const recentProseContents = recentProseEntries
                 .map(entry => (typeof entry.content === 'string' ? entry.content.trim() : ''))
                 .filter(Boolean);
@@ -7134,10 +7134,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
                         try {
-                            const hitSimilarity = recentProseContents.some(prior => {
-                                const lcsLength = Utils.longestCommonSubstringLength(prior, aiResponse);
-                                return lcsLength > 100;
-                            });
+                    const hitSimilarity = recentProseContents.some(prior => Utils.hasKgramOverlap(prior, aiResponse, { k: 10, minMatches: 1 }));
                             if (hitSimilarity) {
                                 const rerendered = renderPlayerActionPrompt(true);
                                 if (rerendered && Array.isArray(rerendered.messages) && rerendered.messages.length) {

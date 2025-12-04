@@ -62,6 +62,7 @@ class AIRPGChat {
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
+        this.promptProgressMessage = null;
     }
 
     setupQuestConfirmationModal() {
@@ -1530,6 +1531,9 @@ class AIRPGChat {
             case 'chat_history_updated':
                 this.handleChatHistoryUpdated(payload);
                 break;
+            case 'prompt_progress':
+                this.handlePromptProgress(payload);
+                break;
             case 'quest_confirmation_request':
                 this.handleQuestConfirmationRequest(payload);
                 break;
@@ -1537,6 +1541,87 @@ class AIRPGChat {
                 console.log('Realtime update:', payload);
                 break;
         }
+    }
+
+    renderPromptProgress(entries = []) {
+        if (!Array.isArray(entries)) {
+            return;
+        }
+        if (!entries.length) {
+            if (this.promptProgressMessage && this.promptProgressMessage.parentNode) {
+                this.promptProgressMessage.parentNode.removeChild(this.promptProgressMessage);
+            }
+            this.promptProgressMessage = null;
+            return;
+        }
+
+        const formatBytes = (value) => {
+            if (!Number.isFinite(value)) return '-';
+            return value.toLocaleString();
+        };
+
+        const table = document.createElement('table');
+        table.className = 'prompt-progress-table';
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th>Prompt</th><th>Bytes</th><th>Seconds</th></tr>';
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        entries.forEach(entry => {
+            const row = document.createElement('tr');
+            const labelCell = document.createElement('td');
+            labelCell.textContent = entry.label || 'prompt';
+            const bytesCell = document.createElement('td');
+            bytesCell.textContent = formatBytes(Number(entry.bytes));
+            const secondsCell = document.createElement('td');
+            secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
+            row.appendChild(labelCell);
+            row.appendChild(bytesCell);
+            row.appendChild(secondsCell);
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+
+        if (!this.promptProgressMessage) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system-message prompt-progress-message';
+            const senderDiv = document.createElement('div');
+            senderDiv.className = 'message-sender';
+            senderDiv.textContent = '⏳ AI Prompts';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.appendChild(table);
+            const timestampDiv = document.createElement('div');
+            timestampDiv.className = 'message-timestamp';
+            timestampDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
+            messageDiv.appendChild(senderDiv);
+            messageDiv.appendChild(contentDiv);
+            messageDiv.appendChild(timestampDiv);
+            this.chatLog.appendChild(messageDiv);
+            this.promptProgressMessage = messageDiv;
+        } else {
+            const contentDiv = this.promptProgressMessage.querySelector('.message-content');
+            if (contentDiv) {
+                contentDiv.innerHTML = '';
+                contentDiv.appendChild(table);
+            }
+            const tsDiv = this.promptProgressMessage.querySelector('.message-timestamp');
+            if (tsDiv) {
+                tsDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
+            }
+        }
+        this.scrollToBottom();
+    }
+
+    handlePromptProgress(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return;
+        }
+        const entries = Array.isArray(payload.entries) ? payload.entries : [];
+        if (payload.done && (!entries.length)) {
+            this.renderPromptProgress([]);
+            return;
+        }
+        this.renderPromptProgress(entries);
     }
 
     ensureRequestContext(requestId) {
