@@ -45,6 +45,7 @@ const OpenAIImageClient = require('./OpenAIImageClient.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
+const ModLoader = require('./ModLoader.js');
 
 Globals.baseDir = __dirname;
 
@@ -147,6 +148,11 @@ const baseTimeoutMilliseconds = resolveBaseTimeoutMilliseconds();
 const app = express();
 const server = http.createServer(app);
 const realtimeHub = new RealtimeHub({ logger: console });
+
+// Initialize ModLoader early to setup static serving
+const modLoader = new ModLoader(__dirname);
+modLoader.setupStaticServing(app, express);
+
 const questConfirmationTimeoutRaw = Number(config?.quests?.confirmationTimeoutMs);
 const questConfirmationTimeout = Number.isFinite(questConfirmationTimeoutRaw) && questConfirmationTimeoutRaw > 0
     ? questConfirmationTimeoutRaw
@@ -14928,6 +14934,14 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
     //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
+    
+    // Get mod scripts and styles if modLoader is available
+    const modScripts = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientScripts === 'function')
+        ? apiScope.modLoader.getModClientScripts()
+        : [];
+    const modStyles = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientStyles === 'function')
+        ? apiScope.modLoader.getModClientStyles()
+        : [];
 
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
@@ -14938,7 +14952,9 @@ app.get('/', (req, res) => {
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,
         rarityDefinitions,
-        checkMovePlausibility: config.check_move_plausibility || 'never'
+        checkMovePlausibility: config.check_move_plausibility || 'never',
+        modScripts: modScripts,
+        modStyles: modStyles
     });
 });
 
@@ -15148,6 +15164,7 @@ const apiScope = {
     Events,
     diceModule,
     promptEnv,
+    modLoader,
     viewsEnv,
     createImageJob,
     generateInventoryForCharacter,
@@ -15237,6 +15254,13 @@ defineApiStateProperty('currentTurnToken', () => currentTurnToken, value => { cu
 
 const registerApiRoutes = require('./api');
 registerApiRoutes(apiScope);
+
+// Load mods synchronously
+console.log('🔧 Loading Mod System...');
+const modLoadResults = modLoader.loadMods(apiScope);
+if (modLoadResults.failed.length > 0) {
+    console.warn(`⚠️  ${modLoadResults.failed.length} mod(s) failed to load.`);
+}
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
