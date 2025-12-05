@@ -34,6 +34,8 @@ Target: {{ attackOutcome.target.name }}
 Defeated: {{ attackOutcome.target.defeated }}
 % health lost: {{ attackOutcome.target.healthLostPercent }}
 % health remaining: {{ attackOutcome.target.remainingHealthPercent }}
+
+Please note that characters are assumed to avoid making ranged attacks that would cause catastrophic damage to bystanders, items, or scenery if their attack misses its target. Just because a ranged attack misses doesn't mean it has to damage something important.
 {% endif %}
 
 Provide a response in prose, strictly adhering to the outcome of the attack. Use the % health lost and % health remaining to describe the degree of damage. Use your judgement to determine whether "defeated" means killed, rendered unconscious, or just unable to continue fighting.  Note that the target may choose to surrender or stop fighting even if they aren't defeated. {% if isAttack %}Be sure to describe the player's attack action, adhering strictly to the outcome above. Do not describe the defender retaliating, as that is determined at a later time. It's not necessary or desirable for all party members to act or speak every turn. In particular, it is better to have them not act than 1have them repeat their previous action. {% endif %}

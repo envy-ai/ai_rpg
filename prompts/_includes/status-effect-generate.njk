@@ -1,0 +1,37 @@
+<description>
+  Generate structured status effects for each provided source description.
+  Each effect should have a concise description and any relevant attribute or skill modifiers that fit the current context.
+  Keep modifiers between -4 and +4. Omit attributes or skills that are unaffected.
+</description>
+
+<statusEffectSeeds>
+{% for seed in statusEffectSeeds %}
+  <seed>{{ seed.description }}</seed>
+{% endfor %}
+</statusEffectSeeds>
+
+Respond in the following format:
+
+<statusEffects>
+  <effect>
+    <name><!-- Name of the status effect, based on source description --></name>
+    <sourceDescription>{{ seed.description }}</sourceDescription>
+    <description><!-- Concise, 1-2 sentence description of the effect --></description>
+    <attributes>
+      <attribute>
+        <name><!-- Attribute name --></name>
+        <modifier><!-- a positive or negative integer --></modifier>
+      </attribute>
+      <!-- Additional atttribute modifiers, or omit if no attribute modifiers -->
+    </attributes>
+    <skills>
+      <skill>
+        <name><!-- Skill name --></name>
+        <modifier><!-- a positive or negative integer --></modifier>
+      </skill>
+      <!-- Additional skill modifiers, or omit if no skill modifiers -->
+    </skills>
+  </effect>
+  <!-- Additional status effects, one per effect seed -->
+</statusEffects>
+

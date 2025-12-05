@@ -1419,8 +1419,12 @@ p:not(:last-child) {
 }
 
 @keyframes button-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .button:hover,
@@ -3072,7 +3076,11 @@ body.dark .thing-toggle-hint {
 
   &.prompt-progress-message {
     border: 1px solid rgba(125, 211, 252, 0.3);
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
+    background: linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.9),
+      rgba(30, 41, 59, 0.9)
+    );
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   }
 
@@ -4105,8 +4113,8 @@ body.modal-open {
   color: #e2e8f0;
 }
 
-.quest-edit-form input[type='text'],
-.quest-edit-form input[type='number'],
+.quest-edit-form input[type="text"],
+.quest-edit-form input[type="number"],
 .quest-edit-form textarea {
   width: 100%;
   border-radius: 10px;
@@ -4145,7 +4153,7 @@ body.modal-open {
   align-items: center;
 }
 
-.quest-edit-objective-row input[type='text'] {
+.quest-edit-objective-row input[type="text"] {
   margin: 0;
 }
 

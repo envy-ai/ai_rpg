@@ -93,7 +93,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null } = {}) {
         if (!LLMClient.#isInteractive()) {
             return null;
         }
@@ -101,16 +101,35 @@ class LLMClient {
         const id = `${label || 'chat'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const startTs = Date.now();
         const labelWithCounter = `${label || 'chat'}[${idNum}]`;
-        LLMClient.#streamProgress.active.set(id, { label: labelWithCounter, bytes: 0, startTs });
+        const startDeadline = Number.isFinite(startTimeoutMs) ? startTs + startTimeoutMs : null;
+        const continueDeadline = null; // set after first bytes arrive
+        LLMClient.#streamProgress.active.set(id, {
+            label: labelWithCounter,
+            bytes: 0,
+            startTs,
+            startDeadline,
+            continueDeadline,
+            firstByteTs: null
+        });
         LLMClient.#ensureProgressTicker();
         return id;
     }
 
-    static #trackStreamBytes(id, bytes) {
+    static #trackStreamBytes(id, bytes, continueTimeoutMs = null) {
         if (!id) return;
         const entry = LLMClient.#streamProgress.active.get(id);
         if (!entry) return;
+        const now = Date.now();
+        if (!entry.firstByteTs) {
+            entry.firstByteTs = now;
+        }
         entry.bytes += bytes;
+        entry.startDeadline = null;
+        if (Number.isFinite(continueTimeoutMs)) {
+            entry.continueDeadline = now + continueTimeoutMs;
+        } else {
+            entry.continueDeadline = now;
+        }
     }
 
     static #trackStreamEnd(id) {
@@ -119,6 +138,8 @@ class LLMClient {
         if (!LLMClient.#streamProgress.active.size) {
             LLMClient.#streamProgress.lastBroadcastHadEntries = false;
         }
+        // Emit a final progress update so clients can clear any in-flight UI.
+        LLMClient.#broadcastProgress(true);
     }
 
     static #broadcastProgress(isFinal = false) {
@@ -126,11 +147,23 @@ class LLMClient {
         if (!hub || typeof hub.emit !== 'function') {
             return;
         }
-        const entries = Array.from(LLMClient.#streamProgress.active.values()).map(entry => ({
-            label: entry.label,
-            bytes: entry.bytes,
-            seconds: Math.round((Date.now() - entry.startTs) / 1000)
-        }));
+        const now = Date.now();
+        const entries = Array.from(LLMClient.#streamProgress.active.values()).map(entry => {
+            const deadline = entry.continueDeadline || entry.startDeadline || null;
+            const timeoutSeconds = deadline ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
+            const latencyMs = entry.firstByteTs ? (entry.firstByteTs - entry.startTs) : null;
+            const elapsedAfterFirst = entry.firstByteTs ? Math.max(1, (now - entry.firstByteTs) / 1000) : null;
+            const avgBps = elapsedAfterFirst ? Math.round(entry.bytes / elapsedAfterFirst) : null;
+            return {
+                label: entry.label,
+                bytes: entry.bytes,
+                seconds: Math.round((now - entry.startTs) / 1000),
+                timeoutSeconds,
+                retries: entry.retries ?? 0,
+                latencyMs,
+                avgBps
+            };
+        });
         if (entries.length === 0 && !isFinal) {
             return;
         }
@@ -515,7 +548,7 @@ class LLMClient {
             const controller = new AbortController();
             const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
             try {
-                streamTrackerId = payload.stream ? LLMClient.#trackStreamStart(metadataLabel) : null;
+                streamTrackerId = payload.stream ? LLMClient.#trackStreamStart(metadataLabel, { startTimeoutMs: streamStartTimeoutMs, continueTimeoutMs: streamContinueTimeoutMs }) : null;
                 if (payload.stream) {
                     startTimer = setTimeout(() => {
                         controller.abort(new Error('Stream start timeout'));
@@ -578,7 +611,7 @@ class LLMClient {
                                 if (delta) {
                                     assembled += delta;
                                     const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                    LLMClient.#trackStreamBytes(streamId, deltaBytes);
+                                    LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs);
                                 }
                             } catch (parseError) {
                                 // ignore malformed chunks, but log for visibility
@@ -778,6 +811,10 @@ class LLMClient {
             if (payload.stream) {
                 streamStartTimeoutMs += incrementStartTimeoutMs;
                 streamContinueTimeoutMs += incrementContinueTimeoutMs;
+                // bump retry count on all active streams
+                LLMClient.#streamProgress.active.forEach(entry => {
+                    entry.retries = (entry.retries || 0) + 1;
+                });
             }
         }
 

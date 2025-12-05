@@ -2885,14 +2885,14 @@ body.dark .thing-toggle-hint {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   margin-right: auto;
 }
-.message.error {
-  background: rgba(255, 100, 100, 0.3) !important;
-  border-left: 3px solid #ff6b6b;
-}
 .message.prompt-progress-message {
   border: 1px solid rgba(125, 211, 252, 0.3);
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.message.error {
+  background: rgba(255, 100, 100, 0.3) !important;
+  border-left: 3px solid #ff6b6b;
 }
 .message.loading {
   opacity: 0.7;
@@ -2912,40 +2912,6 @@ body.dark .thing-toggle-hint {
 }
 .message .message-content p:not(:first-child) {
   margin-top: 0.75em;
-}
-
-.prompt-progress-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 6px;
-  font-size: 13px;
-}
-
-.prompt-progress-table th,
-.prompt-progress-table td {
-  padding: 6px 8px;
-  text-align: left;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.prompt-progress-table th {
-  background: rgba(59, 130, 246, 0.1);
-  color: #bfdbfe;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-size: 12px;
-}
-
-.prompt-progress-table tbody tr:nth-child(odd) {
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.prompt-progress-table tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.prompt-progress-table tbody tr:hover {
-  background: rgba(59, 130, 246, 0.08);
 }
 .message .message-content ul,
 .message .message-content ol {
@@ -3374,6 +3340,35 @@ body.dark .thing-toggle-hint {
 }
 .form-group .toggle-password:hover {
   color: #ffffff;
+}
+
+.prompt-progress-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 13px;
+}
+.prompt-progress-table th,
+.prompt-progress-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+.prompt-progress-table th {
+  background: rgba(59, 130, 246, 0.1);
+  color: #bfdbfe;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 12px;
+}
+.prompt-progress-table tbody tr:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.02);
+}
+.prompt-progress-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.05);
+}
+.prompt-progress-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .form-actions {

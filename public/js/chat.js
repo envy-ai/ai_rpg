@@ -1547,6 +1547,11 @@ class AIRPGChat {
         if (!Array.isArray(entries)) {
             return;
         }
+        const canScroll = Boolean(this.chatLog);
+        const isNearBottom = canScroll
+            ? (this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop) <= 4
+            : false;
+
         if (!entries.length) {
             if (this.promptProgressMessage && this.promptProgressMessage.parentNode) {
                 this.promptProgressMessage.parentNode.removeChild(this.promptProgressMessage);
@@ -1563,7 +1568,7 @@ class AIRPGChat {
         const table = document.createElement('table');
         table.className = 'prompt-progress-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th>Prompt</th><th>Bytes</th><th>Seconds</th></tr>';
+        thead.innerHTML = '<tr><th>Prompt</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
         entries.forEach(entry => {
@@ -1574,9 +1579,21 @@ class AIRPGChat {
             bytesCell.textContent = formatBytes(Number(entry.bytes));
             const secondsCell = document.createElement('td');
             secondsCell.textContent = Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-';
+            const timeoutCell = document.createElement('td');
+            timeoutCell.textContent = Number.isFinite(entry.timeoutSeconds) ? `${Math.max(0, Math.round(entry.timeoutSeconds))}s` : '-';
+            const latencyCell = document.createElement('td');
+            latencyCell.textContent = Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-';
+            const avgCell = document.createElement('td');
+            avgCell.textContent = Number.isFinite(entry.avgBps) ? `${entry.avgBps}` : '-';
+            const retryCell = document.createElement('td');
+            retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
             row.appendChild(labelCell);
             row.appendChild(bytesCell);
             row.appendChild(secondsCell);
+            row.appendChild(timeoutCell);
+            row.appendChild(latencyCell);
+            row.appendChild(avgCell);
+            row.appendChild(retryCell);
             tbody.appendChild(row);
         });
         table.appendChild(tbody);
@@ -1608,8 +1625,16 @@ class AIRPGChat {
             if (tsDiv) {
                 tsDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
             }
+            // Ensure the bubble stays at the bottom
+            if (this.promptProgressMessage.parentNode === this.chatLog) {
+                this.chatLog.removeChild(this.promptProgressMessage);
+            }
+            this.chatLog.appendChild(this.promptProgressMessage);
         }
-        this.scrollToBottom();
+
+        if (isNearBottom) {
+            this.scrollToBottom();
+        }
     }
 
     handlePromptProgress(payload) {
@@ -1621,7 +1646,13 @@ class AIRPGChat {
             this.renderPromptProgress([]);
             return;
         }
-        this.renderPromptProgress(entries);
+        if (entries.length) {
+            if (!this.promptProgressMessage) {
+                this.renderPromptProgress(entries);
+                return;
+            }
+            this.renderPromptProgress(entries);
+        }
     }
 
     ensureRequestContext(requestId) {
@@ -3283,7 +3314,43 @@ class AIRPGChat {
                 diffParts.push(`Defender Level ${difficulty.defenderLevel}`);
             }
             if (difficulty.defenseSkill && difficulty.defenseSkill.name) {
-                diffParts.push(`Best Defense: ${this.escapeHtml(String(difficulty.defenseSkill.name))}`);
+                const defenseSkill = difficulty.defenseSkill;
+                const defenseSegments = [this.escapeHtml(String(defenseSkill.name))];
+
+                if (typeof defenseSkill.value === 'number' && !Number.isNaN(defenseSkill.value)) {
+                    const modifier = formatSigned(defenseSkill.value);
+                    defenseSegments.push(modifier !== null ? modifier : String(defenseSkill.value));
+                }
+
+                const rawValueAvailable = typeof defenseSkill.rawValue === 'number' && !Number.isNaN(defenseSkill.rawValue);
+                const capValue = typeof defenseSkill.cap === 'number' && !Number.isNaN(defenseSkill.cap)
+                    ? defenseSkill.cap
+                    : null;
+                const wasCapped = rawValueAvailable
+                    && typeof defenseSkill.value === 'number'
+                    && !Number.isNaN(defenseSkill.value)
+                    && defenseSkill.rawValue !== defenseSkill.value;
+
+                if (wasCapped) {
+                    const rawText = formatSigned(defenseSkill.rawValue) ?? String(defenseSkill.rawValue);
+                    const capText = capValue !== null
+                        ? (formatSigned(capValue) ?? String(capValue))
+                        : null;
+                    const levelText = typeof difficulty.defenderLevel === 'number'
+                        ? `5 + Lvl ${difficulty.defenderLevel}`
+                        : null;
+                    const capDetails = [];
+                    if (capText !== null) {
+                        capDetails.push(`cap ${capText}`);
+                    }
+                    if (levelText) {
+                        capDetails.push(levelText);
+                    }
+                    const capTrail = capDetails.length ? `; ${capDetails.join(' • ')}` : '';
+                    defenseSegments.push(`(capped from ${rawText}${capTrail})`);
+                }
+
+                diffParts.push(`Best Defense: ${defenseSegments.join(' ')}`);
             }
             if (diffParts.length) {
                 lines.push(`<li><strong>Difficulty:</strong> ${diffParts.join(' • ')}</li>`);

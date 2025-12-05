@@ -1222,6 +1222,9 @@ module.exports = function registerApiRoutes(scope) {
             }
         };
 
+        let summaryQueueProcessing = null;
+        let summaryQueueFlushRequested = false;
+
         const processSummaryQueue = async (options = {}) => {
             if (!summariesEnabled()) {
                 return;
@@ -1259,6 +1262,30 @@ module.exports = function registerApiRoutes(scope) {
             await runSummaryBatch(tailBatch, { wordLength });
         };
 
+        const scheduleSummaryQueueProcessing = (options = {}) => {
+            const { flushRemainder = false } = options;
+            summaryQueueFlushRequested = summaryQueueFlushRequested || flushRemainder;
+
+            if (summaryQueueProcessing) {
+                return;
+            }
+
+            summaryQueueProcessing = (async () => {
+                try {
+                    await processSummaryQueue({ flushRemainder: summaryQueueFlushRequested });
+                } catch (error) {
+                    console.warn('Failed to process summary queue asynchronously:', error.message);
+                } finally {
+                    summaryQueueProcessing = null;
+                    summaryQueueFlushRequested = false;
+
+                    if (Utils.getChatSummaryQueueLength() >= getSummaryBatchSize()) {
+                        scheduleSummaryQueueProcessing();
+                    }
+                }
+            })();
+        };
+
         const summarizeChatEntry = async (entry, { location = null, type = null } = {}) => {
             if (!entry || !entry.id || !entry.content) {
                 return null;
@@ -1289,7 +1316,7 @@ module.exports = function registerApiRoutes(scope) {
                 timestamp: entry.timestamp || null
             });
 
-            await processSummaryQueue();
+            scheduleSummaryQueueProcessing();
 
             return null;
         };
@@ -1335,11 +1362,11 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                await processSummaryQueue();
+                scheduleSummaryQueueProcessing();
             }
 
             if (Utils.getChatSummaryQueueLength() > 0) {
-                await processSummaryQueue({ flushRemainder: true });
+                scheduleSummaryQueueProcessing({ flushRemainder: true });
             }
         };
 
@@ -3528,7 +3555,12 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const defenderLevel = Number.isFinite(defender?.level) ? defender.level : 0;
-            const hitDifficulty = 10 + defenderLevel + (Number.isFinite(bestDefense.value) ? bestDefense.value : 0);
+            const defenseCap = defenderLevel + 5;
+            const normalizedDefenseValue = Number.isFinite(bestDefense.value) ? bestDefense.value : 0;
+            const cappedDefenseValue = Math.min(normalizedDefenseValue, defenseCap);
+            const defenseWasCapped = normalizedDefenseValue > cappedDefenseValue;
+
+            const hitDifficulty = 10 + defenderLevel + cappedDefenseValue;
 
             const hitRollTotal = dieRoll + attackSkillValue + attackAttributeInfo.modifier + totalCircumstanceModifier;
             const hitDegreeRaw = (hitRollTotal - hitDifficulty) / 5;
@@ -3619,7 +3651,10 @@ module.exports = function registerApiRoutes(scope) {
                     defenderLevel,
                     defenseSkill: bestDefense.name ? {
                         name: bestDefense.name,
-                        value: bestDefense.value,
+                        value: cappedDefenseValue,
+                        rawValue: normalizedDefenseValue,
+                        cap: defenseCap,
+                        capped: defenseWasCapped,
                         source: bestDefense.source
                     } : null
                 },
@@ -6168,16 +6203,14 @@ module.exports = function registerApiRoutes(scope) {
                     return;
                 }
 
-                try {
-                    await generateNpcMemoriesForLocationChange({
-                        previousLocationId: initialPlayerLocationId,
-                        newLocationId: currentLocationId,
-                        player,
-                        isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
-                    });
-                } catch (error) {
+                generateNpcMemoriesForLocationChange({
+                    previousLocationId: initialPlayerLocationId,
+                    newLocationId: currentLocationId,
+                    player,
+                    isNonEventTravel: !(currentActionIsTravel && travelMetadataIsEventDriven)
+                }).catch(error => {
                     console.warn('Failed to update NPC memories after travel:', error.message || error);
-                }
+                });
             };
 
             const respond = async (payload, statusCode = 200) => {
@@ -12407,15 +12440,13 @@ module.exports = function registerApiRoutes(scope) {
                 if (!(lastActionWasTravel && consecutiveTravelActions >= 2)
                     && previousLocationIdForMemories
                     && previousLocationIdForMemories !== destinationLocation.id) {
-                    try {
-                        await generateNpcMemoriesForLocationChange({
-                            previousLocationId: previousLocationIdForMemories,
-                            newLocationId: destinationLocation.id,
-                            player: currentPlayer
-                        });
-                    } catch (memoryError) {
+                    generateNpcMemoriesForLocationChange({
+                        previousLocationId: previousLocationIdForMemories,
+                        newLocationId: destinationLocation.id,
+                        player: currentPlayer
+                    }).catch(memoryError => {
                         console.warn('Failed to generate NPC memories after direct move:', memoryError.message || memoryError);
-                    }
+                    });
                 } else if (lastActionWasTravel && consecutiveTravelActions >= 2) {
                     console.log('🧠 Skipping NPC memory generation: consecutive travel actions detected during move request.');
                 }
