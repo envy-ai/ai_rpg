@@ -17,7 +17,7 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 // Import Player class
 const Player = require('./Player.js');
 
-// Import Location and LocationExit classes  
+// Import Location and LocationExit classes
 const Location = require('./Location.js');
 const LocationExit = require('./LocationExit.js');
 
@@ -175,7 +175,9 @@ const generatedImages = new Map(); // Store image metadata by ID
 // Image generation job queue and tracking
 const imageJobs = new Map(); // Store job status by ID
 const jobQueue = []; // Queue of pending jobs
-let isProcessingJob = false; // Flag to prevent concurrent processing
+const activeImageJobs = new Set(); // Track currently processing job IDs
+const maxConcurrentImageJobs = config.imagegen?.maxConcurrentJobs || 1; // Allow up to 3 concurrent jobs
+let isProcessingJob = false; // Legacy flag for backward compatibility
 
 // Job status constants
 const JOB_STATUS = {
@@ -625,25 +627,42 @@ async function withRetry(operation, maxRetries = 3, delay = 1000) {
     throw lastError;
 }
 
-// Process the job queue
+// Process the job queue - supports concurrent processing
 async function processJobQueue() {
-    if (isProcessingJob || jobQueue.length === 0 || !comfyUIClient) {
+    // Check if we can process more jobs
+    if (jobQueue.length === 0 || !comfyUIClient) {
         return;
     }
 
-    isProcessingJob = true;
-
-    let jobId = null;
-    let job = null;
-
-    try {
-        jobId = jobQueue.shift();
-        job = imageJobs.get(jobId);
+    // Process jobs up to the concurrency limit
+    while (jobQueue.length > 0 && activeImageJobs.size < maxConcurrentImageJobs) {
+        const jobId = jobQueue.shift();
+        const job = imageJobs.get(jobId);
 
         if (!job || job.status !== JOB_STATUS.QUEUED) {
-            return;
+            continue;
         }
 
+        // Mark job as active
+        activeImageJobs.add(jobId);
+        isProcessingJob = activeImageJobs.size > 0;
+
+        processSingleJob(job).finally(() => {
+            // Remove from active set when done
+            activeImageJobs.delete(jobId);
+            isProcessingJob = activeImageJobs.size > 0;
+
+            // Check if more jobs can be processed
+            if (jobQueue.length > 0) {
+                setTimeout(() => processJobQueue(), 100);
+            }
+        });
+    }
+}
+
+// Process a single job (extracted from original processJobQueue)
+async function processSingleJob(job) {
+    try {
         // Update job status
         job.status = JOB_STATUS.PROCESSING;
         job.startedAt = new Date().toISOString();
@@ -755,9 +774,7 @@ async function processJobQueue() {
         }
 
     } finally {
-        isProcessingJob = false;
-
-        const currentJob = job && job.id ? job : (jobId ? imageJobs.get(jobId) : null);
+        const currentJob = job;
         if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
             pendingLocationImages.delete(currentJob.payload.locationId);
         }
@@ -802,10 +819,6 @@ async function processJobQueue() {
                     delete location.pendingImageJobId;
                 }
             }
-        }
-
-        if (jobQueue.length > 0) {
-            setTimeout(() => processJobQueue(), 100);
         }
     }
 }
