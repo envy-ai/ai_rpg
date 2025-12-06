@@ -2800,7 +2800,28 @@ class Player {
     }
 
     getStatusEffects() {
-        return this.#statusEffects.map(effect => effect.toJSON());
+        const baseEffects = this.#statusEffects.map(effect => effect.toJSON());
+
+        const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
+        const equippedEffects = [];
+        for (const item of equippedItems) {
+            if (!item) continue;
+            const equipEffect = item.causeStatusEffectOnEquipper
+                || (item.causeStatusEffect?.applyToEquipper ? item.causeStatusEffect : null)
+                || null;
+            if (equipEffect && (equipEffect.description || equipEffect.name)) {
+                const effectPayload = {
+                    name: equipEffect.name || null,
+                    description: equipEffect.description || equipEffect.text || equipEffect.name || '',
+                    duration: equipEffect.duration ?? null,
+                    attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
+                    skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : []
+                };
+                equippedEffects.push(effectPayload);
+            }
+        }
+
+        return [...baseEffects, ...equippedEffects];
     }
 
     setStatusEffects(effects = []) {

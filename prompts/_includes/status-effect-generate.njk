@@ -9,6 +9,7 @@
     <description>{{ seed.description }}</description>
     {% if seed.name %}<name>{{ seed.name }}</name>{% endif %}
     <level>{{ seed.level }}</level>
+    <modifierRange>A positive or negative number with absolute value between {{ (seed.level / 2) | round }} and {{ (seed.level * 1.5) | round }}</modifierRange>
   </seed>
 {% endfor %}
 </statusEffectSeeds>
@@ -28,14 +29,14 @@ Respond in the following format:
     <attributes>
       <attribute>
         <name><!-- Attribute name (use only attributes listed in the current setting) --></name>
-        <modifier><!-- a positive or negative integer --></modifier>
+        <modifier><!-- a positive or negative integer within the modifier range for this effect --></modifier>
       </attribute>
       <!-- Additional atttribute modifiers, or omit if no attribute modifiers -->
     </attributes>
     <skills>
       <skill>
         <name><!-- Skill name (use only skills listed in the current setting) --></name>
-        <modifier><!-- a positive or negative integer --></modifier>
+        <modifier><!-- a positive or negative integer within the modifier range for this effect --></modifier>
       </skill>
       <!-- Additional skill modifiers, or omit if no skill modifiers -->
     </skills>

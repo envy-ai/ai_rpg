@@ -30,6 +30,7 @@ class Thing {
   #slot;
   #attributeBonuses;
   #causeStatusEffect; // array of normalized cause status effect entries
+  #enableStatusEffectEnrichment = true;
   #level;
   #relativeLevel;
   #flags = new SanitizedStringSet();
@@ -541,7 +542,8 @@ class Thing {
     isProcessingStation = null,
     isHarvestable = null,
     isSalvageable = null,
-    flags = new SanitizedStringSet()
+    flags = new SanitizedStringSet(),
+    enrichStatusEffects = true
   } = {}) {
     // Validate required parameters
     if (!name || typeof name !== 'string') {
@@ -575,6 +577,7 @@ class Thing {
     this.#slot = null;
     this.#attributeBonuses = [];
     this.#causeStatusEffect = [];
+    this.#enableStatusEffectEnrichment = enrichStatusEffects !== false;
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
@@ -907,6 +910,9 @@ class Thing {
   }
 
   #triggerStatusEffectEnrichment() {
+    if (!this.#enableStatusEffectEnrichment) {
+      return;
+    }
     if (this.#isEnrichingStatusEffects) {
       return;
     }
@@ -1359,7 +1365,8 @@ class Thing {
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
-      ...booleanFlagOptions
+      ...booleanFlagOptions,
+      enrichStatusEffects: false
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {
