@@ -78,6 +78,10 @@ imagegen:
   endpoint:
   model: "qwen-image"
 
+  # Maximum number of image generation jobs to run simultaneously
+  # Increase for faster parallel processing if your image gen server supports it
+  maxConcurrentJobs: 1
+
   # For Illustrious or SDXL based models, you might want to use these templates (regardless of engine):
   #prompt_generator_templates:
   #character: player-portrait-illustrious.xml.njk
