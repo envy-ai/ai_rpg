@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Player = require('./Player.js');
 const Utils = require('./Utils.js');
+const StatusEffect = require('./StatusEffect.js');
 const Region = require('./Region.js');
 const Globals = require('./Globals.js');
 
@@ -976,10 +977,15 @@ class Location {
     for (const entry of effects) {
       if (!entry) continue;
 
+      if (entry instanceof StatusEffect) {
+        normalized.push(entry);
+        continue;
+      }
+
       if (typeof entry === 'string') {
         const description = entry.trim();
         if (!description) continue;
-        normalized.push({ description, duration: 1 });
+        normalized.push(new StatusEffect({ description, duration: 1 }));
         continue;
       }
 
@@ -988,16 +994,27 @@ class Location {
           ? entry.description.trim()
           : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
         if (!descriptionValue) continue;
-        const rawDuration = entry.duration;
-        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
-        normalized.push({
+        const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
+        const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
+        const duration = entry.duration !== undefined ? entry.duration : null;
+        const name = typeof entry.name === 'string' ? entry.name : undefined;
+        normalized.push(new StatusEffect({
+          name,
           description: descriptionValue,
-          duration: duration === null ? null : Math.max(0, duration)
-        });
+          attributes,
+          skills,
+          duration
+        }));
       }
     }
 
-    return normalized;
+    normalized.sort((a, b) => {
+      const nameA = (a.name || a.description || '').toLowerCase();
+      const nameB = (b.name || b.description || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    return normalized.slice(0, 60);
   }
 
   static #normalizeRandomEvents(events = []) {
@@ -1048,7 +1065,7 @@ class Location {
   }
 
   getStatusEffects() {
-    return this.#statusEffects.map(effect => ({ ...effect }));
+    return this.#statusEffects.map(effect => effect.toJSON());
   }
 
   setStatusEffects(effects = []) {
@@ -1117,14 +1134,17 @@ class Location {
         continue;
       }
       if (!Number.isFinite(effect.duration)) {
-        retained.push({ ...effect });
+        retained.push(effect);
         continue;
       }
-      if (effect.duration <= 0) {
+      if (effect.duration === 0) {
         changed = true;
         continue;
       }
-      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      retained.push(new StatusEffect({
+        ...effect.toJSON(),
+        duration: effect.duration - 1
+      }));
       changed = true;
     }
     if (changed) {
@@ -1135,7 +1155,7 @@ class Location {
 
   clearExpiredStatusEffects() {
     const before = this.#statusEffects.length;
-    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
     if (this.#statusEffects.length !== before) {
       this.#lastUpdated = new Date();
     }

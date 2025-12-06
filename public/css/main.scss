@@ -1856,11 +1856,32 @@ p:not(:last-child) {
 
 .tooltip-thing-bonus-attr {
   font-weight: 500;
+  text-transform: capitalize;
 }
 
 .tooltip-thing-bonus-value {
   font-weight: 600;
   color: rgba(148, 197, 255, 0.95);
+}
+
+.tooltip-thing hr {
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  margin: 6px 0;
+}
+
+.tooltip-thing-status {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.tooltip-thing-status .tooltip-status-desc {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.tooltip-status-desc {
+  font-style: italic;
 }
 
 .inventory-layout {
@@ -5869,6 +5890,66 @@ body.modal-open {
 
 .thing-edit-status-duration {
   width: 100%;
+}
+
+.thing-modifier-section {
+  margin-top: 8px;
+  margin-left: 8px;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(94, 234, 212, 0.55);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
+.thing-modifier-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  h5 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #cbd5f5;
+  }
+}
+
+.thing-modifier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.thing-modifier-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.5fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.thing-modifier-select,
+.thing-modifier-value {
+  width: 100%;
+  min-height: 38px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.65);
+  color: #f8fafc;
+  border-radius: 10px;
+  font-size: 0.95rem;
+}
+
+.thing-modifier-select:focus,
+.thing-modifier-value:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.thing-modifier-value {
+  text-align: center;
 }
 
 .thing-edit-cause-effect {

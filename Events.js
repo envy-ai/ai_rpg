@@ -4,6 +4,7 @@ const Thing = require('./Thing.js');
 const Globals = require('./Globals.js');
 const Quest = require('./Quest.js');
 const LLMClient = require('./LLMClient.js');
+const StatusEffect = require('./StatusEffect.js');
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -42,7 +43,7 @@ const EVENT_PROMPT_ORDER = [
         //[
         { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
         { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
-        { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML.` },
+        { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.` },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
         { key: 'npc_first_appearance', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
@@ -493,7 +494,10 @@ function flattenAndFilter(list) {
 }
 
 function makeStatusEffect(description, duration = null) {
-    return { description, duration };
+    return new StatusEffect({
+        description,
+        duration
+    });
 }
 
 class Events {
@@ -1885,14 +1889,22 @@ class Events {
                 return { name: name.trim(), description: description ? description.trim() : null };
             }).filter(Boolean),
             status_effect_change: raw => splitPipeList(raw).map(entry => {
-                const [entity, detail, action] = splitArrowParts(entry, 3);
+                const [entity, detail, action, levelRaw] = splitArrowParts(entry, 4);
                 if (!entity || !detail || !action) {
                     return null;
+                }
+                let level = null;
+                if (levelRaw !== undefined && levelRaw !== null) {
+                    const parsed = Number(levelRaw);
+                    if (Number.isFinite(parsed)) {
+                        level = parsed;
+                    }
                 }
                 return {
                     entity: entity.trim(),
                     detail: detail.trim(),
-                    action: action.trim().toLowerCase()
+                    action: action.trim().toLowerCase(),
+                    level
                 };
             }).filter(Boolean),
             npc_arrival_departure: raw => splitPipeList(raw).map(entry => {
@@ -3903,12 +3915,33 @@ class Events {
                     }
                 }
             },
-            status_effect_change: function (entries = [], context = {}) {
+            status_effect_change: async function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {
                     return;
                 }
-                const { findActorByName } = this._deps;
+                const { findActorByName, promptEnv, parseXMLTemplate, prepareBasePromptContext } = this._deps;
                 console.log('Processing status_effect_change entries:', entries);
+
+                const gainEntries = entries.filter(entry => entry?.action === 'gained' && entry.detail);
+                let generatedEffects = null;
+                if (gainEntries.length) {
+                    try {
+                        const fallbackLevel = Number.isFinite(Globals.location?.baseLevel)
+                            ? Globals.location.baseLevel
+                            : null;
+                        generatedEffects = StatusEffect.generateFromDescriptions(
+                            gainEntries.map(entry => ({
+                                name: entry.detail,
+                                description: entry.detail,
+                                level: Number.isFinite(entry.level) ? entry.level : fallbackLevel
+                            })),
+                            { promptEnv, parseXMLTemplate, prepareBasePromptContext }
+                        );
+                    } catch (error) {
+                        console.warn('Failed to generate status effects via LLM:', error?.message || error);
+                    }
+                }
+
                 for (const entry of entries) {
                     entry.description = entry.detail;
                     if (entry.entity) {
@@ -3919,7 +3952,25 @@ class Events {
                         continue;
                     }
                     if (entry.action === 'gained' && typeof entity.addStatusEffect === 'function') {
-                        entity.addStatusEffect(makeStatusEffect(entry.detail, this.DEFAULT_STATUS_DURATION));
+                        let effectToApply = null;
+                        if (generatedEffects instanceof Promise) {
+                            // If generation is async, wait once and reuse.
+                            generatedEffects = generatedEffects.catch(err => {
+                                console.warn('Status effect generation promise failed:', err?.message || err);
+                                return null;
+                            });
+                        }
+                        if (generatedEffects && typeof generatedEffects.then === 'function') {
+                            // eslint-disable-next-line no-await-in-loop
+                            generatedEffects = await generatedEffects;
+                        }
+                        if (generatedEffects instanceof Map && generatedEffects.has(entry.detail)) {
+                            effectToApply = generatedEffects.get(entry.detail);
+                        }
+                        if (!effectToApply) {
+                            effectToApply = makeStatusEffect(entry.detail, this.DEFAULT_STATUS_DURATION);
+                        }
+                        entity.addStatusEffect(effectToApply);
                     } else if (entry.action === 'lost' && typeof entity.removeStatusEffect === 'function') {
                         entity.removeStatusEffect(entry.detail);
                     }

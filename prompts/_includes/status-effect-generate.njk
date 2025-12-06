@@ -1,37 +1,44 @@
-<description>
-  Generate structured status effects for each provided source description.
-  Each effect should have a concise description and any relevant attribute or skill modifiers that fit the current context.
-  Keep modifiers between -4 and +4. Omit attributes or skills that are unaffected.
-</description>
+<task>
+  Generate structured status effects for each provided seed.
+  Each effect should have a concise description and any relevant attribute or skill modifiers that fit the current context.  Omit attributes or skills that are unaffected.
+</task>
 
 <statusEffectSeeds>
 {% for seed in statusEffectSeeds %}
-  <seed>{{ seed.description }}</seed>
+  <seed>
+    <description>{{ seed.description }}</description>
+    {% if seed.name %}<name>{{ seed.name }}</name>{% endif %}
+    <level>{{ seed.level }}</level>
+  </seed>
 {% endfor %}
 </statusEffectSeeds>
+
+Guidelines:
+- Skill and attribute modifiers should reflect the nature and level of the status effect. Treat the seed level as a reasomnable baseline for the magnitude of these modifiers.
+- Multiple modifiers are fine. A single status effect may have multiple attribute and skill modifiers as appropriate (or one, or none at all if it makes sense).
 
 Respond in the following format:
 
 <statusEffects>
   <effect>
-    <name><!-- Name of the status effect, based on source description --></name>
-    <sourceDescription>{{ seed.description }}</sourceDescription>
+    <sourceDescription><!-- seed description --></sourceDescription>
+    <name><!-- Optional explicit name; use provided seed name when present --></name>
     <description><!-- Concise, 1-2 sentence description of the effect --></description>
+    <duration><!-- Positive integer number of turns for the effect to last. Use 1 if instant and -1 if permanent --></duration>
     <attributes>
       <attribute>
-        <name><!-- Attribute name --></name>
+        <name><!-- Attribute name (use only attributes listed in the current setting) --></name>
         <modifier><!-- a positive or negative integer --></modifier>
       </attribute>
       <!-- Additional atttribute modifiers, or omit if no attribute modifiers -->
     </attributes>
     <skills>
       <skill>
-        <name><!-- Skill name --></name>
+        <name><!-- Skill name (use only skills listed in the current setting) --></name>
         <modifier><!-- a positive or negative integer --></modifier>
       </skill>
       <!-- Additional skill modifiers, or omit if no skill modifiers -->
     </skills>
   </effect>
-  <!-- Additional status effects, one per effect seed -->
+  <!-- Additional status effects, one per seed -->
 </statusEffects>
-

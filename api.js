@@ -3313,13 +3313,29 @@ module.exports = function registerApiRoutes(scope) {
         const resolveActorSkillInfo = (actor, skillName) => {
             const sanitized = sanitizeNamedValue(skillName);
             if (!actor || !sanitized) {
-                return { key: null, value: 0 };
+                return { key: null, value: 0, modifiers: [] };
             }
+
+            const collectModifiers = (skillKey) => {
+                if (!skillKey || typeof actor.getSkillModifiers !== 'function') {
+                    return [];
+                }
+                try {
+                    return actor.getSkillModifiers(skillKey) || [];
+                } catch (_) {
+                    return [];
+                }
+            };
 
             if (typeof actor.getSkillValue === 'function') {
                 const directValue = actor.getSkillValue(sanitized);
                 if (Number.isFinite(directValue)) {
-                    return { key: sanitized, value: directValue };
+                    const modifiers = collectModifiers(sanitized);
+                    const modifierTotal = modifiers.reduce((sum, entry) => {
+                        const numeric = Number(entry?.modifier);
+                        return Number.isFinite(numeric) ? sum + numeric : sum;
+                    }, 0);
+                    return { key: sanitized, value: directValue + modifierTotal, modifiers };
                 }
             }
 
@@ -3330,7 +3346,12 @@ module.exports = function registerApiRoutes(scope) {
                         const normalized = sanitized.toLowerCase();
                         for (const [name, value] of skillMap.entries()) {
                             if (typeof name === 'string' && name.toLowerCase() === normalized && Number.isFinite(value)) {
-                                return { key: name, value };
+                                const modifiers = collectModifiers(name);
+                                const modifierTotal = modifiers.reduce((sum, entry) => {
+                                    const numeric = Number(entry?.modifier);
+                                    return Number.isFinite(numeric) ? sum + numeric : sum;
+                                }, 0);
+                                return { key: name, value: value + modifierTotal, modifiers };
                             }
                         }
                     }
@@ -3339,7 +3360,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            return { key: sanitized, value: 0 };
+            return { key: sanitized, value: 0, modifiers: [] };
         };
 
         const resolveActorAttributeKey = (actor, attributeName) => {
@@ -3633,7 +3654,8 @@ module.exports = function registerApiRoutes(scope) {
                     detail: rollResult.detail || null,
                     attackSkill: {
                         name: attackSkillInfo.key,
-                        value: attackSkillValue
+                        value: attackSkillValue,
+                        modifiers: Array.isArray(attackSkillInfo.modifiers) ? attackSkillInfo.modifiers : []
                     },
                     attackAttribute: {
                         name: attackAttributeInfo.key,
@@ -7167,7 +7189,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
                         try {
-                    const hitSimilarity = recentProseContents.some(prior => Utils.hasKgramOverlap(prior, aiResponse, { k: 10, minMatches: 1 }));
+                            const hitSimilarity = recentProseContents.some(prior => Utils.hasKgramOverlap(prior, aiResponse, { k: 10, minMatches: 1 }));
                             if (hitSimilarity) {
                                 const rerendered = renderPlayerActionPrompt(true);
                                 if (rerendered && Array.isArray(rerendered.messages) && rerendered.messages.length) {
@@ -10402,7 +10424,7 @@ module.exports = function registerApiRoutes(scope) {
         // Update player stats
         app.post('/api/player/update-stats', (req, res) => {
             try {
-                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints } = req.body;
+                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints, statusEffects } = req.body;
 
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -10464,6 +10486,26 @@ module.exports = function registerApiRoutes(scope) {
                     currentPlayer.setUnspentSkillPoints(parseInt(unspentSkillPoints));
                 }
 
+                if (Object.prototype.hasOwnProperty.call(req.body, 'statusEffects')) {
+                    if (Array.isArray(statusEffects)) {
+                        try {
+                            currentPlayer.setStatusEffects(statusEffects);
+                        } catch (statusError) {
+                            return res.status(400).json({
+                                success: false,
+                                error: statusError.message
+                            });
+                        }
+                    } else if (statusEffects === null) {
+                        currentPlayer.setStatusEffects([]);
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'statusEffects must be an array or null'
+                        });
+                    }
+                }
+
                 if (typeof currentPlayer.syncSkillsWithAvailable === 'function') {
                     currentPlayer.syncSkillsWithAvailable();
                 }
@@ -10490,16 +10532,66 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/player/status', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found. Please create a player first.'
+                });
+            }
+
+            const hasStatusEffects = Object.prototype.hasOwnProperty.call(req.body || {}, 'statusEffects');
+            if (!hasStatusEffects) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'statusEffects is required'
+                });
+            }
+
+            const { statusEffects } = req.body || {};
+
+            try {
+                if (Array.isArray(statusEffects)) {
+                    currentPlayer.setStatusEffects(statusEffects);
+                } else if (statusEffects === null) {
+                    currentPlayer.setStatusEffects([]);
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'statusEffects must be an array or null'
+                    });
+                }
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Player status effects updated successfully',
+                player: serializeNpcForClient(currentPlayer)
+            });
+        });
+
         // Create new player from stats form
         app.post('/api/player/create-from-stats', async (req, res) => {
             try {
-                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints } = req.body;
+                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints, statusEffects } = req.body;
 
                 // Validate required fields
                 if (!name || !name.trim()) {
                     return res.status(400).json({
                         success: false,
                         error: 'Player name is required'
+                    });
+                }
+
+                if (statusEffects !== undefined && statusEffects !== null && !Array.isArray(statusEffects)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'statusEffects must be an array when provided'
                     });
                 }
 
@@ -10532,6 +10624,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
                     playerData.unspentSkillPoints = Math.max(0, parseInt(unspentSkillPoints));
+                }
+
+                if (Array.isArray(statusEffects)) {
+                    playerData.statusEffects = statusEffects;
+                } else if (statusEffects === null) {
+                    playerData.statusEffects = [];
                 }
 
                 // Create the player
@@ -11077,6 +11175,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasName = hasOwn.call(body, 'name');
                 const hasDescription = hasOwn.call(body, 'description');
                 const hasLevel = hasOwn.call(body, 'level');
+                const hasStatusEffects = hasOwn.call(body, 'statusEffects');
 
                 if (!hasDescription) {
                     return res.status(400).json({ success: false, error: 'Description is required' });
@@ -11106,6 +11205,26 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({ success: false, error: 'Level must be a number' });
                 }
                 const resolvedLevel = Math.max(1, Math.round(numericLevel));
+
+                if (hasStatusEffects) {
+                    if (Array.isArray(body.statusEffects)) {
+                        try {
+                            location.setStatusEffects(body.statusEffects);
+                        } catch (statusError) {
+                            return res.status(400).json({
+                                success: false,
+                                error: statusError.message
+                            });
+                        }
+                    } else if (body.statusEffects === null) {
+                        location.setStatusEffects([]);
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'statusEffects must be an array or null'
+                        });
+                    }
+                }
 
                 const previousName = location.name;
                 const previousDescription = location.description;
@@ -13143,6 +13262,24 @@ module.exports = function registerApiRoutes(scope) {
                             { level: levelForBonuses, rarity: itemBlueprint.rarity }
                         )
                         : [];
+                    const targetEffect = itemBlueprint.causeStatusEffectOnTarget
+                        || (itemBlueprint.causeStatusEffect?.applyToTarget ? itemBlueprint.causeStatusEffect : null)
+                        || null;
+                    const equipperEffect = itemBlueprint.causeStatusEffectOnEquipper
+                        || (itemBlueprint.causeStatusEffect?.applyToEquipper ? itemBlueprint.causeStatusEffect : null)
+                        || null;
+                    const combinedCauseEffect = (() => {
+                        if (targetEffect || equipperEffect) {
+                            const payload = targetEffect || equipperEffect || {};
+                            return {
+                                ...payload,
+                                applyToTarget: Boolean(targetEffect),
+                                applyToEquipper: Boolean(equipperEffect)
+                            };
+                        }
+                        return itemBlueprint.causeStatusEffect || null;
+                    })();
+
                     const metadata = sanitizeMetadataObject({
                         rarity: itemBlueprint.rarity || null,
                         itemType: itemBlueprint.type || null,
@@ -13150,7 +13287,8 @@ module.exports = function registerApiRoutes(scope) {
                         weight: itemBlueprint.weight ?? null,
                         properties: itemBlueprint.properties || null,
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : undefined,
-                        causeStatusEffect: itemBlueprint.causeStatusEffect || null,
+                        causeStatusEffectOnTarget: targetEffect || undefined,
+                        causeStatusEffectOnEquipper: equipperEffect || undefined,
                         ownerId: currentPlayer.id
                     });
 
@@ -13162,7 +13300,7 @@ module.exports = function registerApiRoutes(scope) {
                         itemTypeDetail: itemBlueprint.type || null,
                         slot: itemBlueprint.slot || null,
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : null,
-                        causeStatusEffect: itemBlueprint.causeStatusEffect || null,
+                        causeStatusEffect: combinedCauseEffect,
                         level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
                         relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
                         metadata,
@@ -13836,6 +13974,8 @@ module.exports = function registerApiRoutes(scope) {
                     slot,
                     attributeBonuses,
                     causeStatusEffect,
+                    causeStatusEffectOnTarget,
+                    causeStatusEffectOnEquipper,
                     level,
                     relativeLevel,
                     statusEffects
@@ -13852,7 +13992,17 @@ module.exports = function registerApiRoutes(scope) {
                     metadata,
                     slot,
                     attributeBonuses,
-                    causeStatusEffect,
+                    causeStatusEffect: (function buildCauseEffect() {
+                        if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
+                            const payload = causeStatusEffectOnTarget || causeStatusEffectOnEquipper || causeStatusEffect || {};
+                            return {
+                                ...payload,
+                                applyToTarget: Boolean(causeStatusEffectOnTarget),
+                                applyToEquipper: Boolean(causeStatusEffectOnEquipper)
+                            };
+                        }
+                        return causeStatusEffect;
+                    }()),
                     level,
                     relativeLevel,
                     statusEffects,
@@ -14009,6 +14159,8 @@ module.exports = function registerApiRoutes(scope) {
                     slot,
                     attributeBonuses,
                     causeStatusEffect,
+                    causeStatusEffectOnTarget,
+                    causeStatusEffectOnEquipper,
                     level,
                     relativeLevel,
                     statusEffects
@@ -14078,8 +14230,18 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (causeStatusEffect !== undefined) {
-                    thing.causeStatusEffect = causeStatusEffect;
+                if (causeStatusEffect !== undefined
+                    || causeStatusEffectOnTarget !== undefined
+                    || causeStatusEffectOnEquipper !== undefined) {
+                    if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
+                        thing.causeStatusEffect = {
+                            ...(causeStatusEffectOnTarget || causeStatusEffectOnEquipper || causeStatusEffect || {}),
+                            applyToTarget: Boolean(causeStatusEffectOnTarget),
+                            applyToEquipper: Boolean(causeStatusEffectOnEquipper)
+                        };
+                    } else {
+                        thing.causeStatusEffect = causeStatusEffect;
+                    }
                 }
 
                 if (level !== undefined) {

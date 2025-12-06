@@ -3,10 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const Utils = require('./Utils.js');
+const Globals = require('./Globals.js');
 const { count } = require('console');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
-const Globals = require('./Globals.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const StatusEffect = require('./StatusEffect.js');
 
 /**
  * Thing class for AI RPG
@@ -28,10 +29,11 @@ class Thing {
   #statusEffects;
   #slot;
   #attributeBonuses;
-  #causeStatusEffect;
+  #causeStatusEffect; // array of normalized cause status effect entries
   #level;
   #relativeLevel;
   #flags = new SanitizedStringSet();
+  #isEnrichingStatusEffects = false;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -572,7 +574,7 @@ class Thing {
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#slot = null;
     this.#attributeBonuses = [];
-    this.#causeStatusEffect = null;
+    this.#causeStatusEffect = [];
     this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
@@ -591,7 +593,7 @@ class Thing {
       this.attributeBonuses = attributeBonuses;
     }
     if (causeStatusEffect !== null && causeStatusEffect !== undefined) {
-      this.causeStatusEffect = causeStatusEffect;
+      this.#ingestCauseStatusEffects(causeStatusEffect);
     }
     if (Number.isFinite(level)) {
       this.level = level;
@@ -600,6 +602,7 @@ class Thing {
       this.relativeLevel = relativeLevel;
     }
     this.#syncFieldsToMetadata();
+    this.#triggerStatusEffectEnrichment();
 
     // Add to static indexes
     Thing.#indexByID.set(this.#id, this);
@@ -821,13 +824,53 @@ class Thing {
   }
 
   get causeStatusEffect() {
-    return this.#causeStatusEffect ? { ...this.#causeStatusEffect } : null;
+    if (!Array.isArray(this.#causeStatusEffect) || !this.#causeStatusEffect.length) {
+      return null;
+    }
+    if (this.#causeStatusEffect.length === 1) {
+      const entry = this.#causeStatusEffect[0];
+      return {
+        ...entry.effect.toJSON(),
+        applyToTarget: Boolean(entry.applyToTarget),
+        applyToEquipper: Boolean(entry.applyToEquipper)
+      };
+    }
+    const first = this.#causeStatusEffect[0];
+    const baseKey = (first.effect.description || first.effect.name || '').toLowerCase();
+    const allSame = this.#causeStatusEffect.every(e => (e.effect.description || e.effect.name || '').toLowerCase() === baseKey);
+    if (!allSame) {
+      return null;
+    }
+    const combined = {
+      ...first.effect.toJSON(),
+      applyToTarget: false,
+      applyToEquipper: false
+    };
+    this.#causeStatusEffect.forEach(entry => {
+      if (entry.applyToTarget) combined.applyToTarget = true;
+      if (entry.applyToEquipper) combined.applyToEquipper = true;
+    });
+    return combined;
   }
 
   set causeStatusEffect(effect) {
-    this.#causeStatusEffect = this.#normalizeCauseStatusEffect(effect);
+    this.#causeStatusEffect = [];
+    if (Array.isArray(effect)) {
+      effect.forEach(entry => {
+        const applyToTarget = Boolean(entry?.applyToTarget);
+        const applyToEquipper = Boolean(entry?.applyToEquipper);
+        const normalized = this.#normalizeCauseStatusEffectEntry(entry, { applyToTarget, applyToEquipper });
+        this.#upsertCauseStatusEffectEntry(normalized);
+      });
+    } else if (effect) {
+      const applyToTarget = Boolean(effect.applyToTarget);
+      const applyToEquipper = Boolean(effect.applyToEquipper);
+      const normalized = this.#normalizeCauseStatusEffectEntry(effect, { applyToTarget, applyToEquipper });
+      this.#upsertCauseStatusEffectEntry(normalized);
+    }
     this.#syncFieldsToMetadata();
     this.#lastUpdated = new Date().toISOString();
+    this.#triggerStatusEffectEnrichment();
   }
 
   get level() {
@@ -851,6 +894,129 @@ class Thing {
 
   get relativeLevel() {
     return this.#relativeLevel;
+  }
+
+  get causeStatusEffectOnTarget() {
+    const entry = this.#getCauseStatusEffectEntry('target');
+    return entry ? entry.effect.toJSON() : null;
+  }
+
+  get causeStatusEffectOnEquipper() {
+    const entry = this.#getCauseStatusEffectEntry('equipper');
+    return entry ? entry.effect.toJSON() : null;
+  }
+
+  #triggerStatusEffectEnrichment() {
+    if (this.#isEnrichingStatusEffects) {
+      return;
+    }
+    this.#isEnrichingStatusEffects = true;
+    this.#enrichStatusEffectsUsingGlobals()
+      .catch(error => {
+        console.warn('Failed to enrich status effects for thing:', error?.message || error);
+      })
+      .finally(() => {
+        this.#isEnrichingStatusEffects = false;
+      });
+  }
+
+  async #enrichStatusEffectsUsingGlobals() {
+    let promptEnv = null;
+    let parseXMLTemplate = null;
+    let prepareBasePromptContext = null;
+    try {
+      promptEnv = typeof Globals.getPromptEnv === 'function' ? Globals.getPromptEnv() : null;
+    } catch (error) {
+      return;
+    }
+    try {
+      parseXMLTemplate = typeof Globals.parseXMLTemplate === 'function' ? Globals.parseXMLTemplate : null;
+    } catch (_) {
+      return;
+    }
+    try {
+      prepareBasePromptContext = typeof Globals.getBasePromptContext === 'function' ? Globals.getBasePromptContext : null;
+    } catch (_) {
+      return;
+    }
+
+    if (!promptEnv || typeof promptEnv.render !== 'function' || typeof parseXMLTemplate !== 'function' || typeof prepareBasePromptContext !== 'function') {
+      return;
+    }
+
+    const seeds = [];
+    const seen = new Set();
+    const itemLevel = Number.isFinite(this.#level) ? this.#level : null;
+
+    const addSeed = (effect) => {
+      if (!effect) return;
+      const description = effect.description || effect.name;
+      if (!description) return;
+      const key = description.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      seeds.push({ name: effect.name || null, description, level: itemLevel });
+    };
+
+    addSeed(this.causeStatusEffectOnTarget);
+    addSeed(this.causeStatusEffectOnEquipper);
+    const combinedCause = this.causeStatusEffect;
+    if (combinedCause) addSeed(combinedCause);
+    if (Array.isArray(this.#statusEffects)) {
+      this.#statusEffects.forEach(addSeed);
+    }
+
+    if (!seeds.length) {
+      return;
+    }
+
+    const generatedMap = await StatusEffect.generateFromDescriptions(seeds, {
+      promptEnv,
+      parseXMLTemplate,
+      prepareBasePromptContext
+    });
+    if (!(generatedMap instanceof Map)) {
+      return;
+    }
+
+    const applyGenerated = (effect) => {
+      if (!effect) return effect;
+      const key = effect.description || effect.name;
+      if (!key) return effect;
+      const generated = generatedMap.get(key);
+      if (!generated) return effect;
+      const attributes = Array.isArray(generated.attributes) && generated.attributes.length
+        ? generated.attributes
+        : (Array.isArray(effect.attributes) ? effect.attributes : []);
+      const skills = Array.isArray(generated.skills) && generated.skills.length
+        ? generated.skills
+        : (Array.isArray(effect.skills) ? effect.skills : []);
+      return {
+        name: generated.name || effect.name || null,
+        description: generated.description || effect.description || null,
+        duration: effect.duration ?? null,
+        attributes,
+        skills
+      };
+    };
+
+    const updatedCauseEntries = [];
+    const targetEffect = applyGenerated(this.causeStatusEffectOnTarget);
+    if (targetEffect) {
+      updatedCauseEntries.push({ ...targetEffect, applyToTarget: true });
+    }
+    const equipperEffect = applyGenerated(this.causeStatusEffectOnEquipper);
+    if (equipperEffect) {
+      updatedCauseEntries.push({ ...equipperEffect, applyToEquipper: true });
+    }
+    if (updatedCauseEntries.length) {
+      this.causeStatusEffect = updatedCauseEntries;
+    }
+
+    if (Array.isArray(this.#statusEffects) && this.#statusEffects.length) {
+      const updated = this.#statusEffects.map(applyGenerated);
+      this.setStatusEffects(updated);
+    }
   }
 
   set relativeLevel(value) {
@@ -1125,7 +1291,15 @@ class Thing {
       itemTypeDetail: this.#itemTypeDetail,
       slot: this.#slot || undefined,
       attributeBonuses: this.#attributeBonuses.length ? this.attributeBonuses : undefined,
-      causeStatusEffect: this.#causeStatusEffect ? { ...this.#causeStatusEffect } : undefined,
+      causeStatusEffectOnTarget: (() => {
+        const entry = this.#getCauseStatusEffectEntry('target');
+        return entry ? entry.effect.toJSON() : undefined;
+      })(),
+      causeStatusEffectOnEquipper: (() => {
+        const entry = this.#getCauseStatusEffectEntry('equipper');
+        return entry ? entry.effect.toJSON() : undefined;
+      })(),
+      causeStatusEffect: this.causeStatusEffect,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
       isVehicle: normalizeBoolean(this.isVehicle),
@@ -1166,7 +1340,22 @@ class Thing {
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       slot: data.slot ?? (data.metadata?.slot ?? null),
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
-      causeStatusEffect: data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null,
+      causeStatusEffect: (function resolveCauseStatusEffect() {
+        const target = data.causeStatusEffectOnTarget ?? data.metadata?.causeStatusEffectOnTarget;
+        const equipper = data.causeStatusEffectOnEquipper ?? data.metadata?.causeStatusEffectOnEquipper;
+        const legacy = data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null;
+        const entries = [];
+        if (target) {
+          entries.push({ ...target, applyToTarget: true });
+        }
+        if (equipper) {
+          entries.push({ ...equipper, applyToEquipper: true });
+        }
+        if (legacy && !entries.length) {
+          entries.push(legacy);
+        }
+        return entries.length ? entries : null;
+      }()),
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
@@ -1234,29 +1423,98 @@ class Thing {
     return bonuses;
   }
 
-  #normalizeCauseStatusEffect(effect) {
+  #normalizeCauseStatusEffectEntry(effect, { applyToTarget = false, applyToEquipper = false } = {}) {
     if (!effect || typeof effect !== 'object') {
       return null;
     }
 
     const name = typeof effect.name === 'string' ? effect.name.trim() : null;
-    const description = typeof effect.description === 'string' ? effect.description.trim() : null;
-    const duration = effect.duration !== undefined && effect.duration !== null
-      ? String(effect.duration).trim()
-      : null;
-
-    if (!name && !description) {
+    const descriptionRaw = typeof effect.description === 'string' ? effect.description.trim() : null;
+    const description = descriptionRaw || name;
+    if (!description) {
       return null;
     }
 
-    const normalized = {};
-    if (name) normalized.name = name;
-    if (description) normalized.description = description;
-    if (duration && duration.toLowerCase() !== 'n/a') {
-      normalized.duration = duration;
-    }
+    const attributes = Array.isArray(effect.attributes) ? effect.attributes : undefined;
+    const skills = Array.isArray(effect.skills) ? effect.skills : undefined;
+    const duration = effect.duration !== undefined ? effect.duration : null;
 
-    return Object.keys(normalized).length ? normalized : null;
+    const statusEffect = new StatusEffect({
+      name,
+      description,
+      attributes,
+      skills,
+      duration
+    });
+
+    const entry = {
+      effect: statusEffect,
+      applyToTarget: Boolean(applyToTarget),
+      applyToEquipper: Boolean(applyToEquipper)
+    };
+
+    if (!entry.applyToTarget && !entry.applyToEquipper) {
+      entry.applyToTarget = true;
+    }
+    return entry;
+  }
+
+  #upsertCauseStatusEffectEntry(entry) {
+    if (!entry || !entry.effect) {
+      return;
+    }
+    if (!Array.isArray(this.#causeStatusEffect)) {
+      this.#causeStatusEffect = [];
+    }
+    const key = (entry.effect.description || entry.effect.name || '').trim().toLowerCase();
+    const existingIndex = this.#causeStatusEffect.findIndex(e =>
+      (e?.effect?.description || e?.effect?.name || '').trim().toLowerCase() === key
+    );
+    if (existingIndex >= 0) {
+      const existing = this.#causeStatusEffect[existingIndex];
+      this.#causeStatusEffect[existingIndex] = {
+        effect: entry.effect,
+        applyToTarget: Boolean(existing.applyToTarget || entry.applyToTarget),
+        applyToEquipper: Boolean(existing.applyToEquipper || entry.applyToEquipper)
+      };
+    } else {
+      this.#causeStatusEffect.push(entry);
+    }
+  }
+
+  #getCauseStatusEffectEntry(targetType = null) {
+    if (!Array.isArray(this.#causeStatusEffect) || !this.#causeStatusEffect.length) {
+      return null;
+    }
+    if (!targetType) {
+      return this.#causeStatusEffect[0] || null;
+    }
+    if (targetType === 'target') {
+      return this.#causeStatusEffect.find(entry => entry.applyToTarget) || null;
+    }
+    if (targetType === 'equipper') {
+      return this.#causeStatusEffect.find(entry => entry.applyToEquipper) || null;
+    }
+    return null;
+  }
+
+  #ingestCauseStatusEffects(effects) {
+    if (!effects) {
+      return;
+    }
+    if (Array.isArray(effects)) {
+      effects.forEach(entry => {
+        const applyToTarget = Boolean(entry?.applyToTarget);
+        const applyToEquipper = Boolean(entry?.applyToEquipper);
+        const normalized = this.#normalizeCauseStatusEffectEntry(entry, { applyToTarget, applyToEquipper });
+        this.#upsertCauseStatusEffectEntry(normalized);
+      });
+      return;
+    }
+    const applyToTarget = Boolean(effects.applyToTarget);
+    const applyToEquipper = Boolean(effects.applyToEquipper);
+    const normalized = this.#normalizeCauseStatusEffectEntry(effects, { applyToTarget, applyToEquipper });
+    this.#upsertCauseStatusEffectEntry(normalized);
   }
 
   #applyMetadataFieldsFromMetadata() {
@@ -1267,8 +1525,16 @@ class Thing {
     const bonuses = this.#normalizeAttributeBonuses(meta.attributeBonuses);
     this.#attributeBonuses = bonuses;
 
-    const effect = this.#normalizeCauseStatusEffect(meta.causeStatusEffect);
-    this.#causeStatusEffect = effect;
+    this.#causeStatusEffect = [];
+    const effectTarget = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnTarget, { applyToTarget: true });
+    const effectEquipper = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnEquipper, { applyToEquipper: true });
+    const legacyEffect = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffect, {
+      applyToTarget: Boolean(meta?.causeStatusEffect?.applyToTarget),
+      applyToEquipper: Boolean(meta?.causeStatusEffect?.applyToEquipper)
+    });
+    this.#upsertCauseStatusEffectEntry(effectTarget);
+    this.#upsertCauseStatusEffectEntry(effectEquipper);
+    this.#upsertCauseStatusEffectEntry(legacyEffect);
 
     const metadataFlags = Array.isArray(meta.flags) ? meta.flags : [];
     if (metadataFlags.length) {
@@ -1326,11 +1592,19 @@ class Thing {
       delete this.#metadata.attributeBonuses;
     }
 
-    if (this.#causeStatusEffect) {
-      this.#metadata.causeStatusEffect = { ...this.#causeStatusEffect };
+    const targetEntry = this.#getCauseStatusEffectEntry('target');
+    const equipperEntry = this.#getCauseStatusEffectEntry('equipper');
+    if (targetEntry) {
+      this.#metadata.causeStatusEffectOnTarget = targetEntry.effect.toJSON();
     } else {
-      delete this.#metadata.causeStatusEffect;
+      delete this.#metadata.causeStatusEffectOnTarget;
     }
+    if (equipperEntry) {
+      this.#metadata.causeStatusEffectOnEquipper = equipperEntry.effect.toJSON();
+    } else {
+      delete this.#metadata.causeStatusEffectOnEquipper;
+    }
+    delete this.#metadata.causeStatusEffect;
 
     if (Number.isFinite(this.#level)) {
       this.#metadata.level = this.#level;
@@ -1361,10 +1635,17 @@ class Thing {
     for (const entry of effects) {
       if (!entry) continue;
 
+      if (entry instanceof StatusEffect) {
+        normalized.push(entry);
+        continue;
+      }
+
       if (typeof entry === 'string') {
         const description = entry.trim();
-        if (!description) continue;
-        normalized.push({ description, duration: 1 });
+        if (!description) {
+          throw new Error('Status effect description must not be empty');
+        }
+        normalized.push(new StatusEffect({ description, duration: 1 }));
         continue;
       }
 
@@ -1372,17 +1653,34 @@ class Thing {
         const descriptionValue = typeof entry.description === 'string'
           ? entry.description.trim()
           : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
-        if (!descriptionValue) continue;
-        const rawDuration = entry.duration;
-        const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
-        normalized.push({
+        if (!descriptionValue) {
+          throw new Error('Status effect entry is missing a description');
+        }
+        const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
+        const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
+        const duration = entry.duration !== undefined ? entry.duration : null;
+        const name = typeof entry.name === 'string' ? entry.name : undefined;
+
+        normalized.push(new StatusEffect({
+          name,
           description: descriptionValue,
-          duration: duration === null ? null : Math.max(0, duration)
-        });
+          attributes,
+          skills,
+          duration
+        }));
+        continue;
       }
+
+      throw new Error('Invalid status effect entry');
     }
 
-    return normalized;
+    normalized.sort((a, b) => {
+      const nameA = (a.name || a.description || '').toLowerCase();
+      const nameB = (b.name || b.description || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    return normalized.slice(0, 60);
   }
 
   whoseInventory() {
@@ -1399,12 +1697,13 @@ class Thing {
   }
 
   getStatusEffects() {
-    return this.#statusEffects.map(effect => ({ ...effect }));
+    return this.#statusEffects.map(effect => effect.toJSON());
   }
 
   setStatusEffects(effects = []) {
     this.#statusEffects = this.#normalizeStatusEffects(effects);
     this.#lastUpdated = new Date().toISOString();
+    this.#triggerStatusEffectEnrichment();
     return this.getStatusEffects();
   }
 
@@ -1437,6 +1736,7 @@ class Thing {
 
     if (updated) {
       this.#lastUpdated = new Date().toISOString();
+      this.#triggerStatusEffectEnrichment();
     }
 
     return normalized[normalized.length - 1];
@@ -1468,14 +1768,17 @@ class Thing {
         continue;
       }
       if (!Number.isFinite(effect.duration)) {
-        retained.push({ ...effect });
+        retained.push(effect);
         continue;
       }
-      if (effect.duration <= 0) {
+      if (effect.duration === 0) {
         changed = true;
         continue;
       }
-      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      retained.push(new StatusEffect({
+        ...effect.toJSON(),
+        duration: effect.duration - 1
+      }));
       changed = true;
     }
     if (changed) {
@@ -1486,7 +1789,7 @@ class Thing {
 
   clearExpiredStatusEffects() {
     const before = this.#statusEffects.length;
-    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
     if (this.#statusEffects.length !== before) {
       this.#lastUpdated = new Date().toISOString();
     }

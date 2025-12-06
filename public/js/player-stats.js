@@ -7,9 +7,219 @@ document.addEventListener('DOMContentLoaded', function () {
   const abilitiesSection = document.getElementById('abilitiesSection');
   const abilitiesList = document.getElementById('abilitiesList');
   const abilitiesEmpty = document.getElementById('abilitiesEmpty');
+  const playerStatusEffectsList = document.getElementById('playerStatusEffectsList');
+  const playerStatusEffectAddBtn = document.getElementById('playerStatusEffectAddBtn');
   const MAX_HEALTH_DISPLAY_ID = 'player-max-health-display';
   const DEFAULT_HEALTH_ATTRIBUTE = 'constitution';
   let playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
+
+  const playerStatusModifierTemplates = {
+    buildOptions(selectEl) {
+      if (!selectEl) {
+        return;
+      }
+      selectEl.innerHTML = '';
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = 'Select attribute or skill';
+      selectEl.appendChild(defaultOpt);
+
+      const attributes = Array.from(document.querySelectorAll('.attribute-group label'))
+        .map(label => {
+          const forAttr = label?.getAttribute('for') || '';
+          const key = forAttr.replace('attr-', '').trim();
+          const labelText = label.textContent?.trim() || key;
+          return key ? { key, label: labelText } : null;
+        })
+        .filter(Boolean);
+
+      const skills = Array.from(document.querySelectorAll('.skill-name'))
+        .map(node => node?.textContent?.trim())
+        .filter(Boolean)
+        .map(name => ({ key: name, label: name }));
+
+      const addGroup = (label, values, prefix) => {
+        if (!values.length) return;
+        const group = document.createElement('optgroup');
+        group.label = label;
+        values.forEach(entry => {
+          const option = document.createElement('option');
+          option.value = `${prefix}:${entry.key}`;
+          option.textContent = entry.label || entry.key;
+          group.appendChild(option);
+        });
+        selectEl.appendChild(group);
+      };
+
+      addGroup('Attributes', attributes, 'attr');
+      addGroup('Skills', skills, 'skill');
+    },
+    createRow(initial) {
+      const row = document.createElement('div');
+      row.className = 'thing-modifier-row';
+
+      const select = document.createElement('select');
+      select.className = 'thing-modifier-select';
+      this.buildOptions(select);
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'thing-modifier-value';
+      input.placeholder = '+/-';
+      input.step = '1';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'npc-edit-remove-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => row.remove());
+
+      row.appendChild(select);
+      row.appendChild(input);
+      row.appendChild(removeBtn);
+
+      if (initial) {
+        if (initial.attribute) {
+          select.value = `attr:${initial.attribute}`;
+        } else if (initial.skill) {
+          select.value = `skill:${initial.skill}`;
+        }
+        if (Number.isFinite(initial.modifier)) {
+          input.value = initial.modifier;
+        }
+      }
+
+      return row;
+    },
+    renderList(container, entries = []) {
+      if (!container) return;
+      container.innerHTML = '';
+      if (!Array.isArray(entries) || !entries.length) {
+        container.appendChild(this.createRow(null));
+        return;
+      }
+      entries.forEach(entry => container.appendChild(this.createRow(entry)));
+    },
+    collect(container) {
+      const result = { attributes: [], skills: [] };
+      if (!container) return result;
+      container.querySelectorAll('.thing-modifier-row').forEach(row => {
+        const select = row.querySelector('.thing-modifier-select');
+        const input = row.querySelector('.thing-modifier-value');
+        const selection = select?.value || '';
+        const [type, key] = selection.split(':');
+        const modRaw = input?.value ?? '';
+        const modifier = Number(modRaw);
+        if (!key || !Number.isFinite(modifier)) {
+          return;
+        }
+        if (type === 'attr') {
+          result.attributes.push({ attribute: key, modifier });
+        } else if (type === 'skill') {
+          result.skills.push({ skill: key, modifier });
+        }
+      });
+      return result;
+    }
+  };
+
+  function createPlayerStatusEffectRow(effect = {}) {
+    if (!playerStatusEffectsList) {
+      return null;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'thing-edit-row thing-edit-status-row';
+
+    const descriptionInput = document.createElement('textarea');
+    descriptionInput.className = 'thing-edit-status-description';
+    descriptionInput.rows = 2;
+    descriptionInput.placeholder = 'Description';
+    descriptionInput.value = effect.description || effect.text || effect.name || '';
+
+    const durationInput = document.createElement('input');
+    durationInput.type = 'text';
+    durationInput.className = 'thing-edit-status-duration';
+    durationInput.placeholder = 'Duration';
+    if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
+      durationInput.value = String(effect.duration);
+    }
+
+    const modifiersContainer = document.createElement('div');
+    modifiersContainer.className = 'thing-modifier-list';
+    const addModifierBtn = document.createElement('button');
+    addModifierBtn.type = 'button';
+    addModifierBtn.className = 'npc-edit-add-btn';
+    addModifierBtn.textContent = 'Add Modifier';
+    addModifierBtn.addEventListener('click', () => {
+      modifiersContainer.appendChild(playerStatusModifierTemplates.createRow(null));
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'npc-edit-remove-btn';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => row.remove());
+
+    row.appendChild(descriptionInput);
+    row.appendChild(durationInput);
+    row.appendChild(modifiersContainer);
+    row.appendChild(addModifierBtn);
+    row.appendChild(removeBtn);
+
+    playerStatusEffectsList.appendChild(row);
+
+    const existingModifiers = [
+      ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
+      ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+    ];
+    playerStatusModifierTemplates.renderList(modifiersContainer, existingModifiers);
+
+    return row;
+  }
+
+  function renderPlayerStatusEffects(effects = []) {
+    if (!playerStatusEffectsList) {
+      return;
+    }
+    playerStatusEffectsList.innerHTML = '';
+    const entries = Array.isArray(effects) ? effects : [];
+    if (!entries.length) {
+      createPlayerStatusEffectRow({});
+      return;
+    }
+    entries.forEach(effect => createPlayerStatusEffectRow(effect));
+  }
+
+  function collectPlayerStatusEffects() {
+    if (!playerStatusEffectsList) {
+      return [];
+    }
+    const effects = [];
+    playerStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
+      const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
+      if (!description) {
+        return;
+      }
+      const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
+      const effect = { description };
+      if (durationRaw) {
+        const numeric = Number.parseInt(durationRaw, 10);
+        effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
+      }
+      const modifierContainer = row.querySelector('.thing-modifier-list');
+      const modifiers = playerStatusModifierTemplates.collect(modifierContainer);
+      if (modifiers.attributes.length) {
+        effect.attributes = modifiers.attributes;
+      }
+      if (modifiers.skills.length) {
+        effect.skills = modifiers.skills;
+      }
+      effects.push(effect);
+    });
+    return effects;
+  }
+
 
   function resolveAttributeKey(attributes = {}, key = '') {
     if (!key) {
@@ -90,6 +300,12 @@ document.addEventListener('DOMContentLoaded', function () {
   if (resetButton) {
     setupResetButton();
   }
+  if (playerStatusEffectAddBtn) {
+    playerStatusEffectAddBtn.addEventListener('click', () => {
+      const row = createPlayerStatusEffectRow({});
+      row?.querySelector('.thing-edit-status-description')?.focus();
+    });
+  }
 
   const levelInput = document.getElementById('player-level');
   if (levelInput) {
@@ -98,6 +314,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   updateMaxHealthDisplayFromForm();
+  renderPlayerStatusEffects([]);
+  primePlayerStatusEffects();
 
   /**
    * Setup form submission handler
@@ -177,6 +395,8 @@ document.addEventListener('DOMContentLoaded', function () {
         playerData.unspentSkillPoints = points;
       }
     }
+
+    playerData.statusEffects = collectPlayerStatusEffects();
 
     playerData.calculatedMaxHealth = calculateMaxHealthValue(playerData.level, playerData.attributes, playerHealthAttributeKey);
 
@@ -378,6 +598,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     renderAbilities(playerData.abilities || []);
+    renderPlayerStatusEffects(playerData.statusEffects || []);
 
     const unspentField = document.getElementById('unspent-skill-points-input');
     if (unspentField) {
@@ -419,6 +640,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     renderAbilities([]);
+    renderPlayerStatusEffects([]);
     showStatusMessage('Stats reset to default values', 'info');
     updateMaxHealthDisplayFromForm();
   }
@@ -446,6 +668,23 @@ document.addEventListener('DOMContentLoaded', function () {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  async function primePlayerStatusEffects() {
+    if (!playerStatusEffectsList) {
+      return;
+    }
+    try {
+      const response = await fetch('/api/player');
+      const data = await response.json();
+      if (response.ok && data?.success && data.player) {
+        updateFormWithPlayerData(data.player);
+        return;
+      }
+    } catch (error) {
+      console.warn('Failed to fetch player for status effects:', error);
+    }
+    renderPlayerStatusEffects([]);
   }
 
   function renderAbilities(abilities = []) {

@@ -13,6 +13,7 @@ const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const StatusEffect = require('./StatusEffect.js');
 
 // Import Player class
 const Player = require('./Player.js');
@@ -1937,6 +1938,8 @@ function buildThingProfiles(location) {
         const metadata = thing.metadata || {};
         const statusEffects = typeof thing.getStatusEffects === 'function' ? thing.getStatusEffects() : [];
         const booleanFlags = resolveThingBooleanFlagsFromInstance(thing);
+        const causeStatusEffectOnTarget = thing.causeStatusEffectOnTarget || null;
+        const causeStatusEffectOnEquipper = thing.causeStatusEffectOnEquipper || null;
 
         profiles.push({
             id: thing.id,
@@ -1948,7 +1951,8 @@ function buildThingProfiles(location) {
             itemTypeDetail: thing.itemTypeDetail || null,
             slot: thing.slot || null,
             attributeBonuses: thing.attributeBonuses || [],
-            causeStatusEffect: thing.causeStatusEffect || null,
+            causeStatusEffectOnTarget,
+            causeStatusEffectOnEquipper,
             metadata: metadata || {},
             statusEffects,
             ...booleanFlags
@@ -2231,6 +2235,12 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
     const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
         .filter(name => typeof name === 'string' && name.trim())
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    const availableSkillsMap = typeof Player.getAvailableSkills === 'function' ? Player.getAvailableSkills() : null;
+    const skillNamesForPrompt = availableSkillsMap instanceof Map
+        ? Array.from(availableSkillsMap.keys())
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        : [];
     const equipmentSlotTypesForPrompt = getGearSlotTypes();
     const gearSlotNamesForPrompt = getGearSlotNames();
 
@@ -2448,8 +2458,11 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             isScenery,
             thingType: normalizedThingType || (isScenery ? 'scenery' : null),
             rarity: item.rarity || null,
+            level: Number.isFinite(item.level) ? item.level
+                : (Number.isFinite(Number(item?.metadata?.level)) ? Number(item.metadata.level) : null),
             attributeBonuses: Array.isArray(item.attributeBonuses) ? item.attributeBonuses : [],
-            causeStatusEffect: item.causeStatusEffect || null,
+            causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
+            causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
             value: item.metadata.value,
             weight: item.metadata.weight,
             properties: item.metadata.properties
@@ -2858,6 +2871,11 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
 
     const experiencePointValues = getExperiencePointValues();
 
+    if (settingContext && typeof settingContext === 'object') {
+        settingContext.attributes = attributeEntriesForPrompt;
+        settingContext.skills = skillNamesForPrompt;
+    }
+
     const context = {
         setting: settingContext,
         config: config,
@@ -3240,6 +3258,7 @@ async function prepareBasePromptContext(options = {}) {
     await populateNpcSelectedMemories(baseContext);
     return baseContext;
 }
+Globals.getBasePromptContext = prepareBasePromptContext;
 
 function parsePlausibilityOutcome(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
@@ -5256,6 +5275,8 @@ function parseXMLTemplate(xmlContent) {
         throw error;
     }
 }
+Globals.getPromptEnv = () => promptEnv;
+Globals.parseXMLTemplate = parseXMLTemplate;
 
 // Function to render player portrait prompt from template
 function renderPlayerPortraitPrompt(player) {
@@ -5468,7 +5489,12 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
 
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
-        const items = parseThingsXml(inventoryContent, { isInventory: true });
+        const items = await parseThingsXml(inventoryContent, {
+            isInventory: true,
+            promptEnv,
+            parseXMLTemplate,
+            prepareBasePromptContext
+        });
 
         const createdThings = [];
         for (const item of items) {
@@ -5479,17 +5505,28 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             if (item.rarity) detailParts.push(`Rarity: ${item.rarity}`);
             if (item.value) detailParts.push(`Value: ${item.value}`);
             if (item.weight) detailParts.push(`Weight: ${item.weight}`);
-            if (item.causeStatusEffect) {
-                const effectName = item.causeStatusEffect.name || 'Status Effect';
-                const effectDetail = item.causeStatusEffect.description || '';
+            const effectSummaries = [];
+            if (item.causeStatusEffectOnTarget) {
+                const effectName = item.causeStatusEffectOnTarget.name || 'Status Effect';
+                const effectDetail = item.causeStatusEffectOnTarget.description || '';
                 const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
-                detailParts.push(`Status Effect: ${combined}`);
+                effectSummaries.push(`Target: ${combined}`);
+            }
+            if (item.causeStatusEffectOnEquipper) {
+                const effectName = item.causeStatusEffectOnEquipper.name || 'Status Effect';
+                const effectDetail = item.causeStatusEffectOnEquipper.description || '';
+                const combined = [effectName, effectDetail].filter(Boolean).join(' - ');
+                effectSummaries.push(`Equipper: ${combined}`);
+            }
+            if (effectSummaries.length) {
+                detailParts.push(`Status Effect: ${effectSummaries.join(' | ')}`);
             }
             const relativeLevel = Number.isFinite(item.relativeLevel)
                 ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
                 : 0;
             const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
             const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
+            item.level = computedLevel;
             if (item.properties) detailParts.push(`Properties: ${item.properties}`);
 
             const scaledAttributeBonuses = scaleAttributeBonusesForItem(
@@ -5526,7 +5563,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                     properties: item.properties || null,
                     slot: item.slot || null,
                     attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                    causeStatusEffect: item.causeStatusEffect || null,
+                    causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
+                    causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
                     relativeLevel,
                     level: computedLevel
                 });
@@ -5831,7 +5869,12 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 }
 
                 const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-                const parsedItems = parseThingsXml(inventoryContent, { isInventory: true }) || [];
+                const parsedItems = await parseThingsXml(inventoryContent, {
+                    isInventory: true,
+                    promptEnv,
+                    parseXMLTemplate,
+                    prepareBasePromptContext
+                }) || [];
                 const itemData = parsedItems.find(it => it?.name) || null;
                 if (!itemData) {
                     throw new Error('No item data returned by AI');
@@ -5848,11 +5891,21 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 if (itemData?.weight) detailParts.push(`Weight: ${itemData.weight}`);
                 if (itemData?.slot && itemData.slot.toLowerCase() !== 'n/a') detailParts.push(`Slot: ${itemData.slot}`);
                 if (itemData?.properties) detailParts.push(`Properties: ${itemData.properties}`);
-                if (itemData?.causeStatusEffect) {
-                    const effectName = itemData.causeStatusEffect.name || 'Status Effect';
-                    const effectDescription = itemData.causeStatusEffect.description || '';
+                const effectSummaries = [];
+                if (itemData?.causeStatusEffectOnTarget) {
+                    const effectName = itemData.causeStatusEffectOnTarget.name || 'Status Effect';
+                    const effectDescription = itemData.causeStatusEffectOnTarget.description || '';
                     const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
-                    detailParts.push(`Status Effect: ${effectCombined}`);
+                    effectSummaries.push(`Target: ${effectCombined}`);
+                }
+                if (itemData?.causeStatusEffectOnEquipper) {
+                    const effectName = itemData.causeStatusEffectOnEquipper.name || 'Status Effect';
+                    const effectDescription = itemData.causeStatusEffectOnEquipper.description || '';
+                    const effectCombined = [effectName, effectDescription].filter(Boolean).join(' - ');
+                    effectSummaries.push(`Equipper: ${effectCombined}`);
+                }
+                if (effectSummaries.length) {
+                    detailParts.push(`Status Effect: ${effectSummaries.join(' | ')}`);
                 }
                 let relativeLevel = null;
                 if (Number.isFinite(itemData?.relativeLevel)) {
@@ -5903,7 +5956,8 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     properties: itemData?.properties || null,
                     slot: itemData?.slot || null,
                     attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                    causeStatusEffect: itemData?.causeStatusEffect || null,
+                    causeStatusEffectOnTarget: itemData?.causeStatusEffectOnTarget || null,
+                    causeStatusEffectOnEquipper: itemData?.causeStatusEffectOnEquipper || null,
                     relativeLevel,
                     level: computedLevel
                 });
@@ -5918,7 +5972,20 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     type: itemData?.type,
                     slot: itemData?.slot,
                     attributeBonuses: scaledAttributeBonuses,
-                    causeStatusEffect: itemData?.causeStatusEffect,
+                    causeStatusEffect: (function buildCauseEffects() {
+                        const target = itemData?.causeStatusEffectOnTarget
+                            ? { ...itemData.causeStatusEffectOnTarget, applyToTarget: true }
+                            : null;
+                        const equipper = itemData?.causeStatusEffectOnEquipper
+                            ? { ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true }
+                            : null;
+                        const legacy = itemData?.causeStatusEffect || null;
+                        const entries = [];
+                        if (target) entries.push(target);
+                        if (equipper) entries.push(equipper);
+                        if (legacy && !entries.length) entries.push(legacy);
+                        return entries.length ? entries : null;
+                    }()),
                     level: computedLevel,
                     relativeLevel,
                     metadata,
@@ -5984,6 +6051,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 return thing;
             } catch (itemError) {
                 console.warn(`Failed to generate detailed items from event for "${name}":`, itemError.message);
+                console.warn(itemError);
                 return null;
             }
         });
@@ -6000,12 +6068,14 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 await ensureUniqueThingNames({ things: created, location: resolvedLocation, owner, region: resolvedRegion });
             } catch (error) {
                 console.warn('Failed to enforce unique thing names for generated items:', error.message);
+                console.warn(error);
             }
         }
 
         return created;
     } catch (error) {
         console.warn('Failed to prepare item generation context:', error.message);
+        console.warn(error);
         const fallbacks = [];
         return fallbacks;
     }
@@ -6078,6 +6148,9 @@ function buildThingPromptItem(thing) {
         return { attribute, bonus: finalBonus };
     });
 
+    const causeStatusEffectOnTarget = thing.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null;
+    const causeStatusEffectOnEquipper = thing.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null;
+
     return {
         name: thing.name,
         description: thing.description || '',
@@ -6097,7 +6170,8 @@ function buildThingPromptItem(thing) {
         isHarvestable: resolveBooleanFlag('isHarvestable'),
         isSalvageable: resolveBooleanFlag('isSalvageable'),
         attributeBonuses: attributeBonuses,
-        causeStatusEffect: thing.causeStatusEffect || metadata.causeStatusEffect || null,
+        causeStatusEffectOnTarget,
+        causeStatusEffectOnEquipper,
         properties: metadata.properties || ''
     };
 }
@@ -6212,7 +6286,11 @@ async function alterThingByPrompt({
         throw new Error('Empty item alteration response from AI.');
     }
 
-    const parsedItems = parseThingsXml(aiResponse);
+    const parsedItems = await parseThingsXml(aiResponse, {
+        promptEnv,
+        parseXMLTemplate,
+        prepareBasePromptContext
+    });
     if (!Array.isArray(parsedItems) || !parsedItems.length) {
         throw new Error('Thing alteration response did not include an item definition.');
     }
@@ -9923,7 +10001,7 @@ function renderLocationThingsPrompt(context = {}) {
     }
 }
 
-function parseThingsXml(xmlContent, { isInventory = false } = {}) {
+async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = null, parseXMLTemplate = null, prepareBasePromptContext = null } = {}) {
     try {
         const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
 
@@ -9961,22 +10039,49 @@ function parseThingsXml(xmlContent, { isInventory = false } = {}) {
                     .filter(Boolean)
                 : [];
 
-            const statusEffectNode = node.getElementsByTagName('statusEffect')[0];
-            let causeStatusEffect = null;
-            if (statusEffectNode) {
-                const effectName = statusEffectNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                const effectDescription = statusEffectNode.getElementsByTagName('description')[0]?.textContent?.trim();
-                const effectDuration = statusEffectNode.getElementsByTagName('duration')[0]?.textContent?.trim();
+            const parseStatusEffectTag = (tagName) => {
+                const nodeRef = node.getElementsByTagName(tagName)[0];
+                if (!nodeRef) {
+                    return null;
+                }
+                const effectName = nodeRef.getElementsByTagName('name')[0]?.textContent?.trim();
+                const effectDescription = nodeRef.getElementsByTagName('description')[0]?.textContent?.trim();
+                const effectDuration = nodeRef.getElementsByTagName('duration')[0]?.textContent?.trim();
                 const effectPayload = {};
                 if (effectName) effectPayload.name = effectName;
                 if (effectDescription) effectPayload.description = effectDescription;
                 if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
                     effectPayload.duration = effectDuration;
                 }
-                if (Object.keys(effectPayload).length) {
-                    causeStatusEffect = effectPayload;
+                return Object.keys(effectPayload).length ? effectPayload : null;
+            };
+
+            const causeStatusEffectOnTarget = parseStatusEffectTag('causeStatusEffectOnTarget');
+            const causeStatusEffectOnEquipper = parseStatusEffectTag('causeStatusEffectOnEquipper');
+
+            const causeStatusEffect = (() => {
+                if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
+                    const payload = causeStatusEffectOnTarget || causeStatusEffectOnEquipper;
+                    return {
+                        ...payload,
+                        applyToTarget: Boolean(causeStatusEffectOnTarget),
+                        applyToEquipper: Boolean(causeStatusEffectOnEquipper)
+                    };
                 }
-            }
+                const legacyStatusEffectNode = node.getElementsByTagName('statusEffect')[0];
+                if (!legacyStatusEffectNode) {
+                    return null;
+                }
+                const legacy = parseStatusEffectTag('statusEffect');
+                if (!legacy) {
+                    return null;
+                }
+                return {
+                    ...legacy,
+                    applyToTarget: true,
+                    applyToEquipper: false
+                };
+            })();
 
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
@@ -10014,6 +10119,8 @@ function parseThingsXml(xmlContent, { isInventory = false } = {}) {
                 relativeLevel,
                 attributeBonuses,
                 causeStatusEffect,
+                causeStatusEffectOnTarget,
+                causeStatusEffectOnEquipper,
                 isVehicle: parseBooleanTag('isVehicle'),
                 isCraftingStation: parseBooleanTag('isCraftingStation'),
                 isProcessingStation: parseBooleanTag('isProcessingStation'),
@@ -10022,6 +10129,10 @@ function parseThingsXml(xmlContent, { isInventory = false } = {}) {
             };
 
             items.push(entry);
+        }
+
+        if (!promptEnv || typeof promptEnv.render !== 'function' || typeof parseXMLTemplate !== 'function' || typeof prepareBasePromptContext !== 'function') {
+            return items;
         }
 
         return items;
@@ -10159,7 +10270,11 @@ async function generateLocationThingsForLocation({ location } = {}) {
         console.warn('Failed to log location things generation:', logError.message);
     }
 
-    const parsedItems = parseThingsXml(aiResponse);
+    const parsedItems = await parseThingsXml(aiResponse, {
+        promptEnv,
+        parseXMLTemplate,
+        prepareBasePromptContext
+    });
     if (!parsedItems.length) {
         return [];
     }
@@ -10208,6 +10323,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         const relativeLevel = Number.isFinite(metadata.relativeLevel) ? metadata.relativeLevel : 0;
         const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
         metadata.level = computedLevel;
+        itemData.level = computedLevel;
 
         const scaledAttributeBonuses = thingType === 'item'
             ? scaleAttributeBonusesForItem(

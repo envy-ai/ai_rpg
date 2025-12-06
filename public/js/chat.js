@@ -3417,7 +3417,21 @@ class AIRPGChat {
             if (roll.attackSkill && typeof roll.attackSkill.value === 'number') {
                 const skillName = roll.attackSkill.name ? `${this.escapeHtml(String(roll.attackSkill.name))} ` : '';
                 const modifier = formatSigned(roll.attackSkill.value);
-                rollSegments.push(`${skillName}${modifier !== null ? modifier : roll.attackSkill.value}`);
+                let skillText = `${skillName}${modifier !== null ? modifier : roll.attackSkill.value}`;
+                const skillMods = Array.isArray(roll.attackSkill.modifiers) ? roll.attackSkill.modifiers : [];
+                if (skillMods.length) {
+                    const modDetails = skillMods
+                        .map(entry => {
+                            const label = entry?.effectName ? String(entry.effectName) : 'Status Effect';
+                            const mod = formatSigned(entry?.modifier);
+                            return mod ? `${mod} (${this.escapeHtml(label)})` : null;
+                        })
+                        .filter(Boolean);
+                    if (modDetails.length) {
+                        skillText += `<br><small>${modDetails.join('<br>')}</small>`;
+                    }
+                }
+                rollSegments.push(skillText);
             }
             if (roll.attackAttribute && typeof roll.attackAttribute.modifier === 'number') {
                 const attrName = roll.attackAttribute.name ? `${this.escapeHtml(String(roll.attackAttribute.name))} ` : '';

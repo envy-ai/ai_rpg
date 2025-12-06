@@ -23,11 +23,16 @@
         <bonus><!--Bonus value (between -4 and +4)--></bonus>
     </attributeBonus>
 </attributeBonuses>
-<causeStatusEffect>
+<causeStatusEffectOnTarget>
     <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed -->
     <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
     <description><!--1-2 sentence description of the status effect--></description>
     <duration><!--Duration if item is consumable; N/A if equippable--></duration>
-</causeStatusEffect>
+</causeStatusEffectOnTarget>
+<causeStatusEffectOnEquipper>
+    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped -->
+    <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
+    <description><!--1-2 sentence description of the status effect--></description>
+</causeStatusEffectOnEquipper>
 <properties><!--Any special properties or effects of the item--></properties>
 </item>

@@ -19,10 +19,15 @@
       <bonus>{{ bonus.bonus }}</bonus>
     </attributeBonus>{% endfor %}{% endif %}
   </attributeBonuses>
-  {% if item.causeStatusEffect %}<causeStatusEffect>
-    <name>{{ item.causeStatusEffect.name }}</name>
-    <description>{{ item.causeStatusEffect.description }}</description>
-    <duration>{{ item.causeStatusEffect.duration }}</duration>
-  </causeStatusEffect>{% endif %}
+{% if item.causeStatusEffectOnTarget %}<causeStatusEffectOnTarget>
+    <name>{{ item.causeStatusEffectOnTarget.name }}</name>
+    <description>{{ item.causeStatusEffectOnTarget.description }}</description>
+    <duration>{{ item.causeStatusEffectOnTarget.duration }}</duration>
+  </causeStatusEffectOnTarget>{% endif %}
+{% if item.causeStatusEffectOnEquipper %}<causeStatusEffectOnEquipper>
+    <name>{{ item.causeStatusEffectOnEquipper.name }}</name>
+    <description>{{ item.causeStatusEffectOnEquipper.description }}</description>
+    <duration>{{ item.causeStatusEffectOnEquipper.duration }}</duration>
+  </causeStatusEffectOnEquipper>{% endif %}
   <properties>{{ item.properties }}</properties>
 {% if changeDescription %}</originalItem>{% else %}</item>{% endif %}

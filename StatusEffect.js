@@ -2,15 +2,16 @@ const Utils = require('./Utils.js');
 const LLMClient = require('./LLMClient.js');
 
 class StatusEffect {
-    constructor({ name, description, attributes, skills } = {}) {
+    constructor({ name, description, attributes, skills, duration } = {}) {
         if (!description || typeof description !== 'string') {
             throw new Error('StatusEffect description must be a non-empty string');
         }
 
-        this.name = name.trim();
+        this.name = typeof name === 'string' ? name.trim() : '';
         this.description = description.trim();
         this.attributes = this.#normalizeModifiers(attributes, 'attribute');
         this.skills = this.#normalizeModifiers(skills, 'skill');
+        this.duration = this.#normalizeDuration(duration);
     }
 
     #normalizeModifiers(list, keyName) {
@@ -40,9 +41,34 @@ class StatusEffect {
         });
     }
 
-    update({ name, description, attributes, skills } = {}) {
+    #normalizeDuration(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        // If value is 'instant', treat as 1 turn
+        if (typeof value === 'string' && value.toLowerCase() === 'instant') {
+            return 1;
+        }
+
+        // If value is 'permanent', treat as -1 turns
+        if (typeof value === 'string' && value.toLowerCase() === 'permanent') {
+            return -1;
+        }
+
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return 1;
+        }
+        return Math.max(0, Math.floor(numeric));
+    }
+
+    update({ name, description, attributes, skills, duration } = {}) {
         if (typeof name === 'string' && name.trim()) {
             this.name = name.trim();
+        }
+        if (typeof description === 'string' && description.trim()) {
+            this.description = description.trim();
         }
         if (attributes !== undefined) {
             this.attributes = this.#normalizeModifiers(attributes, 'attribute');
@@ -50,14 +76,19 @@ class StatusEffect {
         if (skills !== undefined) {
             this.skills = this.#normalizeModifiers(skills, 'skill');
         }
+        if (duration !== undefined) {
+            this.duration = this.#normalizeDuration(duration);
+        }
         return this;
     }
 
     toJSON() {
         return {
+            name: this.name,
             description: this.description,
             attributes: this.attributes,
-            skills: this.skills
+            skills: this.skills,
+            duration: this.duration
         };
     }
 
@@ -69,7 +100,8 @@ class StatusEffect {
             name: data.name,
             description: data.description,
             attributes: data.attributes,
-            skills: data.skills
+            skills: data.skills,
+            duration: data.duration
         });
     }
 
@@ -82,14 +114,23 @@ class StatusEffect {
             throw new Error('generateFromDescriptions requires a non-empty array of descriptions');
         }
         const seeds = descriptions.map((entry, index) => {
-            if (typeof entry !== 'string') {
-                throw new Error(`Status effect description at index ${index} is not a string`);
+            if (typeof entry === 'string') {
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    throw new Error(`Status effect description at index ${index} is empty`);
+                }
+                return { description: trimmed, name: null, level: null };
             }
-            const trimmed = entry.trim();
-            if (!trimmed) {
-                throw new Error(`Status effect description at index ${index} is empty`);
+            if (entry && typeof entry === 'object') {
+                const description = typeof entry.description === 'string' ? entry.description.trim() : '';
+                const name = typeof entry.name === 'string' ? entry.name.trim() : null;
+                const level = Number.isFinite(entry.level) ? entry.level : null;
+                if (!description) {
+                    throw new Error(`Status effect description at index ${index} is empty`);
+                }
+                return { description, name: name || null, level };
             }
-            return { description: trimmed };
+            throw new Error(`Status effect description at index ${index} is not valid`);
         });
 
         if (!promptEnv || typeof promptEnv.render !== 'function') {
@@ -123,6 +164,16 @@ class StatusEffect {
             metadataLabel: 'status_effect_generate'
         });
 
+        if (typeof LLMClient.logPrompt === 'function') {
+            LLMClient.logPrompt({
+                prefix: 'status_effect',
+                metadataLabel: 'status_effect_generate',
+                systemPrompt: messages[0]?.content || '',
+                generationPrompt: messages[1]?.content || '',
+                response
+            });
+        }
+
         const doc = Utils.parseXmlDocument(response, 'text/xml');
         const errorNode = doc.getElementsByTagName('parsererror')[0];
         if (errorNode) {
@@ -149,9 +200,20 @@ class StatusEffect {
                 throw new Error(`Duplicate status effect generated for "${sourceDescription}"`);
             }
 
+            const name = textFromTag(node, 'name')?.trim() || null;
             const description = textFromTag(node, 'description')?.trim();
             if (!description) {
                 throw new Error(`Generated status effect for "${sourceDescription}" is missing description`);
+            }
+
+            const durationText = textFromTag(node, 'duration');
+            let duration = null;
+            if (durationText !== null && durationText !== undefined && durationText.trim() !== '') {
+                const parsedDuration = Number(durationText);
+                if (!Number.isFinite(parsedDuration)) {
+                    throw new Error(`Status effect "${sourceDescription}" duration is invalid`);
+                }
+                duration = Math.max(0, Math.floor(parsedDuration));
             }
 
             const attributes = Array.from(node.getElementsByTagName('attribute')).map(attrNode => {
@@ -179,7 +241,9 @@ class StatusEffect {
             });
 
             results.set(sourceDescription, new StatusEffect({
+                name,
                 description,
+                duration,
                 attributes,
                 skills
             }));

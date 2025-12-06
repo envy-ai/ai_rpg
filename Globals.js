@@ -9,6 +9,18 @@ class Globals {
   static realtimeHub = null;
   static travelHistory = [];
 
+  static getBasePromptContext = function () {
+    throw new Error('Globals.getBasePromptContext called before being set.');
+  }
+
+  static getPromptEnv = function () {
+    throw new Error('Globals.getPromptEnv called before being set.');
+  }
+
+  static parseXMLTemplate = function () {
+    throw new Error('Globals.parseXMLTemplate called before being set.');
+  }
+
   static get currentPlayer() {
     const Player = require('./Player.js');
     if (Globals.#currentPlayerOverride) {

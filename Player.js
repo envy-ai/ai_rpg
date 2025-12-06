@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
+const StatusEffect = require('./StatusEffect.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
@@ -1548,7 +1549,7 @@ class Player {
         }
 
         const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
-        const bonus = equippedItems.reduce((total, item) => {
+        const equipmentBonus = equippedItems.reduce((total, item) => {
             if (!item) {
                 return total;
             }
@@ -1566,7 +1567,56 @@ class Player {
             return total;
         }, 0);
 
-        return baseValue + bonus;
+        const normalizeAttributeName = (name) => (typeof name === 'string' ? name.trim().toLowerCase() : '');
+        const targetAttr = normalizeAttributeName(attributeName);
+        const collectStatusAttributeBonus = (effects) => {
+            if (!Array.isArray(effects)) {
+                return 0;
+            }
+            return effects.reduce((sum, effect) => {
+                const attrs = Array.isArray(effect?.attributes) ? effect.attributes : [];
+                for (const entry of attrs) {
+                    const attrName = normalizeAttributeName(entry?.attribute || entry?.name);
+                    if (!attrName || attrName !== targetAttr) {
+                        continue;
+                    }
+                    const numeric = Number(entry?.modifier ?? entry?.bonus ?? entry?.value);
+                    if (Number.isFinite(numeric)) {
+                        sum += numeric;
+                    }
+                }
+                return sum;
+            }, 0);
+        };
+
+        const statusBonus = collectStatusAttributeBonus(this.#statusEffects);
+
+        const location = this.location;
+        const locationEffects = location && typeof location.getStatusEffects === 'function'
+            ? location.getStatusEffects()
+            : [];
+        const locationBonus = collectStatusAttributeBonus(locationEffects);
+
+        const equipperEffectBonus = equippedItems.reduce((sum, item) => {
+            const effect = item?.causeStatusEffect;
+            if (!effect || !effect.applyToEquipper) {
+                return sum;
+            }
+            const attrs = Array.isArray(effect.attributes) ? effect.attributes : [];
+            for (const entry of attrs) {
+                const attrName = normalizeAttributeName(entry?.attribute || entry?.name);
+                if (!attrName || attrName !== targetAttr) {
+                    continue;
+                }
+                const numeric = Number(entry?.modifier ?? entry?.bonus ?? entry?.value);
+                if (Number.isFinite(numeric)) {
+                    sum += numeric;
+                }
+            }
+            return sum;
+        }, 0);
+
+        return baseValue + equipmentBonus + statusBonus + locationBonus + equipperEffectBonus;
     }
 
     getAttributeBonus(attributeName) {
@@ -2646,46 +2696,50 @@ class Player {
 
         const normalized = [];
         for (const entry of effects) {
-            if (!entry) {
+            if (entry instanceof StatusEffect) {
+                normalized.push(entry);
                 continue;
             }
 
             if (typeof entry === 'string') {
                 const description = entry.trim();
                 if (!description) {
-                    continue;
+                    throw new Error('Status effect description must not be empty');
                 }
-                normalized.push({ description, duration: 1 });
+                normalized.push(new StatusEffect({ description, duration: 1 }));
                 continue;
             }
 
-            if (typeof entry === 'object') {
+            if (entry && typeof entry === 'object') {
                 const descriptionValue = typeof entry.description === 'string'
                     ? entry.description.trim()
                     : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
 
                 if (!descriptionValue) {
-                    continue;
+                    throw new Error('Status effect entry is missing a description');
                 }
 
-                const rawDuration = entry.duration;
-                const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
+                const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
+                const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
+                const duration = entry.duration !== undefined ? entry.duration : null;
 
-                normalized.push({
+                normalized.push(new StatusEffect({
+                    name: entry.name,
                     description: descriptionValue,
-                    duration: duration === null ? null : Math.max(0, duration)
-                });
+                    attributes,
+                    skills,
+                    duration
+                }));
+                continue;
             }
+
+            throw new Error('Invalid status effect entry');
         }
 
         normalized.sort((a, b) => {
-            const levelDiff = (a.level || 0) - (b.level || 0);
-            if (levelDiff !== 0) {
-                return levelDiff;
-            }
-            if (!a?.name) return -1;
-            if (!b?.name) return 1;
-            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            const nameA = (a.name || a.description || '').toLowerCase();
+            const nameB = (b.name || b.description || '').toLowerCase();
+            return nameA.localeCompare(nameB);
         });
 
         return normalized.slice(0, 60);
@@ -2746,7 +2800,7 @@ class Player {
     }
 
     getStatusEffects() {
-        return this.#statusEffects.map(effect => ({ ...effect }));
+        return this.#statusEffects.map(effect => effect.toJSON());
     }
 
     setStatusEffects(effects = []) {
@@ -2822,19 +2876,19 @@ class Player {
             }
 
             if (!Number.isFinite(effect.duration)) {
-                retained.push({ ...effect });
+                retained.push(effect);
                 continue;
             }
 
-            if (effect.duration <= 0) {
+            if (effect.duration === 0) {
                 changed = true;
                 continue;
             }
 
-            retained.push({
-                description: effect.description,
+            retained.push(new StatusEffect({
+                ...effect.toJSON(),
                 duration: effect.duration - 1
-            });
+            }));
             changed = true;
         }
 
@@ -2846,7 +2900,7 @@ class Player {
 
     clearExpiredStatusEffects() {
         const before = this.#statusEffects.length;
-        this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+        this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
         if (this.#statusEffects.length !== before) {
             this.#lastUpdated = new Date().toISOString();
         }
@@ -4096,6 +4150,62 @@ class Player {
             return null;
         }
         return this.#skills.get(skillName.trim()) ?? null;
+    }
+
+    getSkillModifiers(skillName, { includeEquipped = true } = {}) {
+        if (typeof skillName !== 'string') {
+            throw new Error('getSkillModifiers requires a skill name string');
+        }
+        const normalizedSkill = skillName.trim().toLowerCase();
+        if (!normalizedSkill) {
+            throw new Error('getSkillModifiers requires a non-empty skill name');
+        }
+
+        const results = [];
+        const collect = (effect, sourceLabel) => {
+            if (!effect) return;
+            const skills = Array.isArray(effect.skills) ? effect.skills : [];
+            for (const entry of skills) {
+                if (!entry || typeof entry.skill !== 'string') {
+                    continue;
+                }
+                const entryName = entry.skill.trim().toLowerCase();
+                if (!entryName || entryName !== normalizedSkill) {
+                    continue;
+                }
+                const modifier = Number(entry.modifier);
+                if (!Number.isFinite(modifier)) {
+                    continue;
+                }
+                const effectName = effect.name || effect.description || sourceLabel || 'Status Effect';
+                results.push({ effectName, modifier });
+            }
+        };
+
+        for (const effect of this.#statusEffects) {
+            collect(effect, 'status');
+        }
+
+        const location = this.location;
+        if (location && typeof location.getStatusEffects === 'function') {
+            const locEffects = location.getStatusEffects();
+            if (Array.isArray(locEffects)) {
+                locEffects.forEach(locEffect => collect(locEffect, 'location'));
+            }
+        }
+
+        if (includeEquipped) {
+            const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
+            for (const item of equippedItems) {
+                const equipEffect = item?.causeStatusEffect;
+                if (!equipEffect || !equipEffect.applyToEquipper) {
+                    continue;
+                }
+                collect(equipEffect, item.name || 'equipped item');
+            }
+        }
+
+        return results;
     }
 
     setSkillValue(skillName, value) {

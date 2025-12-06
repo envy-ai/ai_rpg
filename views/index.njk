@@ -302,6 +302,14 @@
                         </div>
 
                         <div class="config-section">
+                            <div class="npc-edit-section-header">
+                                <h2>Status Effects</h2>
+                                <button type="button" class="npc-edit-add-btn" id="playerStatusEffectAddBtn">Add Effect</button>
+                            </div>
+                            <div id="playerStatusEffectsList" class="thing-edit-status-effects"></div>
+                        </div>
+
+                        <div class="config-section">
                             <h2>Primary Attributes</h2>
                             <div class="attributes-grid">
                                 {% set attributes = player.attributeInfo if player else {} %}
@@ -1129,8 +1137,8 @@
                     <div id="thingEditAttributeBonusesList" class="thing-edit-bonus-list"></div>
                 </div>
 
-                <div class="npc-edit-section">
-                    <h3>On-Hit Status Effect</h3>
+                <div class="npc-edit-section" id="thingOnHitSection">
+                    <h3 id="thingOnHitTitle">On-Hit Status Effect</h3>
                     <div class="thing-edit-cause-effect">
                         <div class="npc-edit-field">
                             <label for="thingEditCauseStatusEffectName">Name</label>
@@ -1145,14 +1153,34 @@
                             <input id="thingEditCauseStatusEffectDuration" type="text" autocomplete="off" placeholder="e.g. 3 or permanent">
                         </div>
                     </div>
+                    <div class="thing-modifier-section">
+                        <div class="thing-modifier-header">
+                            <h5>Modifiers</h5>
+                            <button type="button" class="npc-edit-add-btn" id="thingCauseEffectTargetAddModifierBtn">Add Modifier</button>
+                        </div>
+                        <div id="thingCauseEffectTargetModifiers" class="thing-modifier-list"></div>
+                    </div>
                 </div>
 
-                <div class="npc-edit-section">
-                    <div class="npc-edit-section-header">
-                        <h3>Status Effects</h3>
-                        <button type="button" class="npc-edit-add-btn" id="thingStatusEffectAddBtn">Add Effect</button>
+                <div class="npc-edit-section" id="thingEquipSection">
+                    <h3>On-Equip Status Effect</h3>
+                    <div class="thing-edit-cause-effect">
+                        <div class="npc-edit-field">
+                            <label for="thingEditCauseStatusEffectEquipperName">Name</label>
+                            <input id="thingEditCauseStatusEffectEquipperName" type="text" autocomplete="off">
+                        </div>
+                        <div class="npc-edit-field npc-edit-field--wide">
+                            <label for="thingEditCauseStatusEffectEquipperDescription">Description</label>
+                            <textarea id="thingEditCauseStatusEffectEquipperDescription" rows="2"></textarea>
+                        </div>
                     </div>
-                    <div id="thingEditStatusEffectsList" class="thing-edit-status-effects"></div>
+                    <div class="thing-modifier-section">
+                        <div class="thing-modifier-header">
+                            <h5>Modifiers</h5>
+                            <button type="button" class="npc-edit-add-btn" id="thingCauseEffectEquipperAddModifierBtn">Add Modifier</button>
+                        </div>
+                        <div id="thingCauseEffectEquipperModifiers" class="thing-modifier-list"></div>
+                    </div>
                 </div>
 
                 <div class="npc-edit-footer">
@@ -1193,6 +1221,13 @@
                 <div class="location-edit-field location-edit-field--static">
                     <span class="location-edit-label">Absolute Level</span>
                     <span id="locationEditAbsoluteLevel" class="location-edit-value">—</span>
+                </div>
+                <div class="location-edit-section">
+                    <div class="npc-edit-section-header">
+                        <h3>Status Effects</h3>
+                        <button type="button" class="npc-edit-add-btn" id="locationStatusEffectAddBtn">Add Effect</button>
+                    </div>
+                    <div id="locationEditStatusEffectsList" class="thing-edit-status-effects"></div>
                 </div>
                 <footer class="location-edit-footer">
                     <div class="location-edit-status" id="locationEditStatus" role="status" aria-live="polite"></div>
@@ -4358,11 +4393,58 @@
             }
 
             const nameHtml = `<div class="${nameClasses.join(' ')}">${escapeHtml(thing.name || 'Unknown Object')}</div>`;
+            const resolvedLevel = Number.isFinite(thing?.level)
+                ? thing.level
+                : (Number.isFinite(Number(thing?.metadata?.level)) ? Number(thing.metadata.level) : null);
+            const levelHtml = Number.isFinite(resolvedLevel)
+                ? `<div class="tooltip-thing-level">Level ${escapeHtml(String(resolvedLevel))}</div>`
+                : '';
             const metaHtml = metaParts.length
                 ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
                 : '';
             const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
 
+            const formatModifiersList = (attributes = [], skills = []) => {
+                const combined = [
+                    ...(Array.isArray(attributes) ? attributes : []),
+                    ...(Array.isArray(skills) ? skills : [])
+                ];
+                const valid = combined
+                    .map(mod => {
+                        const key = mod.attribute || mod.skill || mod.name;
+                        const val = Number.isFinite(mod.modifier) ? mod.modifier : (Number.isFinite(mod.value) ? mod.value : null);
+                        if (!key || !Number.isFinite(val)) {
+                            return null;
+                        }
+                        const formattedVal = val > 0 ? `+${val}` : `${val}`;
+                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(key)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedVal)}</span></li>`;
+                    })
+                    .filter(Boolean);
+                if (!valid.length) {
+                    return '';
+                }
+                return `<ul class="tooltip-thing-bonuses-list">${valid.join('')}</ul>`;
+            };
+
+            const renderEffectSection = (effect, title) => {
+                if (!effect || (!effect.description && !effect.name)) {
+                    return '';
+                }
+                const description = effect.description || effect.text || effect.name || '';
+                const mods = formatModifiersList(effect.attributes, effect.skills);
+                return `
+                    <div class="tooltip-thing-status">
+                        <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
+                        <div class="tooltip-status-desc">${escapeHtml(description)}</div>
+                        ${mods}
+                    </div>
+                `;
+            };
+
+            const statusSections = [];
+            statusSections.push(renderEffectSection(thing.causeStatusEffectOnTarget, 'INFLICT STATUS EFFECT'));
+            statusSections.push(renderEffectSection(thing.causeStatusEffectOnEquipper, 'EQUIP STATUS EFFECT'));
+            const statusEffectsHtml = statusSections.filter(Boolean).join('');
             const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
             const bonusesHtml = attributeBonuses.length
                 ? `<div class="tooltip-thing-bonuses">
@@ -4392,8 +4474,10 @@
             return `
                 <div class="tooltip-thing ${cardClass}">
                     ${nameHtml}
+                    ${levelHtml}
                     ${metaHtml}
                     ${descriptionHtml}
+                    ${statusEffectsHtml ? '<hr>' + statusEffectsHtml : ''}
                     ${bonusesHtml}
                     ${detailsHtml}
                 </div>
@@ -4557,6 +4641,8 @@
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
         const locationEditCloseBtn = document.getElementById('locationEditCloseBtn');
         const locationEditSaveBtn = document.getElementById('locationEditSaveBtn');
+        const locationStatusEffectsList = document.getElementById('locationEditStatusEffectsList');
+        const locationStatusEffectAddBtn = document.getElementById('locationStatusEffectAddBtn');
         const summonNpcModal = document.getElementById('summonNpcModal');
         const summonNpcForm = document.getElementById('summonNpcForm');
         const summonNpcSelect = document.getElementById('summonNpcSelect');
@@ -4613,6 +4699,9 @@
         const thingEditLevelInput = document.getElementById('thingEditLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingOnHitSection = document.getElementById('thingOnHitSection');
+        const thingOnHitTitle = document.getElementById('thingOnHitTitle');
+        const thingEquipSection = document.getElementById('thingEquipSection');
         const thingEditIsVehicleInput = document.getElementById('thingEditIsVehicle');
         const thingEditIsCraftingStationInput = document.getElementById('thingEditIsCraftingStation');
         const thingEditIsProcessingStationInput = document.getElementById('thingEditIsProcessingStation');
@@ -4625,12 +4714,122 @@
         const thingCauseEffectNameInput = document.getElementById('thingEditCauseStatusEffectName');
         const thingCauseEffectDescriptionInput = document.getElementById('thingEditCauseStatusEffectDescription');
         const thingCauseEffectDurationInput = document.getElementById('thingEditCauseStatusEffectDuration');
-        const thingStatusEffectsList = document.getElementById('thingEditStatusEffectsList');
-        const thingStatusEffectAddBtn = document.getElementById('thingStatusEffectAddBtn');
+        const thingCauseEffectTargetModifiers = document.getElementById('thingCauseEffectTargetModifiers');
+        const thingCauseEffectTargetAddModifierBtn = document.getElementById('thingCauseEffectTargetAddModifierBtn');
+        const thingCauseEffectEquipperNameInput = document.getElementById('thingEditCauseStatusEffectEquipperName');
+        const thingCauseEffectEquipperDescriptionInput = document.getElementById('thingEditCauseStatusEffectEquipperDescription');
+        const thingCauseEffectEquipperDurationInput = document.getElementById('thingEditCauseStatusEffectEquipperDuration');
+        const thingCauseEffectEquipperModifiers = document.getElementById('thingCauseEffectEquipperModifiers');
+        const thingCauseEffectEquipperAddModifierBtn = document.getElementById('thingCauseEffectEquipperAddModifierBtn');
         const thingEditCancelBtn = document.getElementById('thingEditCancelBtn');
         const thingEditCloseBtn = document.getElementById('thingEditCloseBtn');
         const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
         const thingEditStatus = document.getElementById('thingEditStatus');
+        const thingModifierTemplates = {
+            buildOptions(selectEl) {
+                if (!selectEl) return;
+                selectEl.innerHTML = '';
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = 'Select attribute or skill';
+                selectEl.appendChild(defaultOpt);
+
+                const addGroup = (label, values, prefix) => {
+                    if (!Array.isArray(values) || !values.length) return;
+                    const group = document.createElement('optgroup');
+                    group.label = label;
+                    values.forEach(entry => {
+                        const option = document.createElement('option');
+                        option.value = `${prefix}:${entry.key || entry.name}`;
+                        option.textContent = entry.label || entry.name || entry.key;
+                        group.appendChild(option);
+                    });
+                    selectEl.appendChild(group);
+                };
+
+                const attributes = Array.isArray(attributeOptions) && attributeOptions.length
+                    ? attributeOptions.map(entry => ({
+                        key: entry.key,
+                        label: entry.label || entry.key
+                    }))
+                    : [];
+                const skills = Array.isArray(window.availableSkillsList)
+                    ? window.availableSkillsList
+                        .filter(entry => entry && entry.name)
+                        .map(entry => ({ key: entry.name, label: entry.name }))
+                    : [];
+
+                addGroup('Attributes', attributes, 'attr');
+                addGroup('Skills', skills, 'skill');
+            },
+            createRow(initial) {
+                const row = document.createElement('div');
+                row.className = 'thing-modifier-row';
+
+                const select = document.createElement('select');
+                select.className = 'thing-modifier-select';
+                this.buildOptions(select);
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'thing-modifier-value';
+                input.placeholder = '+/-';
+                input.step = '1';
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'npc-edit-remove-btn';
+                removeBtn.textContent = 'Remove';
+                removeBtn.addEventListener('click', () => row.remove());
+
+                row.appendChild(select);
+                row.appendChild(input);
+                row.appendChild(removeBtn);
+
+                if (initial) {
+                    if (initial.attribute) {
+                        select.value = `attr:${initial.attribute}`;
+                    } else if (initial.skill) {
+                        select.value = `skill:${initial.skill}`;
+                    }
+                    if (Number.isFinite(initial.modifier)) {
+                        input.value = initial.modifier;
+                    }
+                }
+
+                return row;
+            },
+            renderList(container, entries = []) {
+                if (!container) return;
+                container.innerHTML = '';
+                if (!Array.isArray(entries) || !entries.length) {
+                    container.appendChild(this.createRow(null));
+                    return;
+                }
+                entries.forEach(entry => container.appendChild(this.createRow(entry)));
+            },
+            collect(container) {
+                const result = { attributes: [], skills: [] };
+                if (!container) return result;
+                container.querySelectorAll('.thing-modifier-row').forEach(row => {
+                    const select = row.querySelector('.thing-modifier-select');
+                    const input = row.querySelector('.thing-modifier-value');
+                    const selection = select?.value || '';
+                    const [type, key] = selection.split(':');
+                    const modRaw = input?.value ?? '';
+                    const modifier = Number(modRaw);
+                    if (!key || !Number.isFinite(modifier)) {
+                        return;
+                    }
+                    if (type === 'attr') {
+                        result.attributes.push({ attribute: key, modifier });
+                    } else if (type === 'skill') {
+                        result.skills.push({ skill: key, modifier });
+                    }
+                });
+                return result;
+            }
+        };
 
         const craftingModalBackdrop = document.getElementById('craftingModalBackdrop');
         const craftingModal = document.getElementById('craftingModal');
@@ -5165,114 +5364,86 @@
             return bonuses;
         }
 
-        function populateThingCauseStatusEffect(effect = null) {
+        function populateThingCauseStatusEffect(effectOnTarget = null, effectOnEquipper = null) {
             if (thingCauseEffectNameInput) {
-                thingCauseEffectNameInput.value = effect?.name || '';
+                thingCauseEffectNameInput.value = effectOnTarget?.name || '';
             }
             if (thingCauseEffectDescriptionInput) {
-                thingCauseEffectDescriptionInput.value = effect?.description || effect?.text || '';
+                thingCauseEffectDescriptionInput.value = effectOnTarget?.description || effectOnTarget?.text || '';
             }
             if (thingCauseEffectDurationInput) {
-                if (effect && effect.duration !== undefined && effect.duration !== null) {
-                    thingCauseEffectDurationInput.value = String(effect.duration);
+                if (effectOnTarget && effectOnTarget.duration !== undefined && effectOnTarget.duration !== null) {
+                    thingCauseEffectDurationInput.value = String(effectOnTarget.duration);
                 } else {
                     thingCauseEffectDurationInput.value = '';
                 }
             }
+
+            if (thingCauseEffectEquipperNameInput) {
+                thingCauseEffectEquipperNameInput.value = effectOnEquipper?.name || '';
+            }
+            if (thingCauseEffectEquipperDescriptionInput) {
+                thingCauseEffectEquipperDescriptionInput.value = effectOnEquipper?.description || effectOnEquipper?.text || '';
+            }
+            if (thingCauseEffectEquipperDurationInput) {
+                if (effectOnEquipper && effectOnEquipper.duration !== undefined && effectOnEquipper.duration !== null) {
+                    thingCauseEffectEquipperDurationInput.value = String(effectOnEquipper.duration);
+                } else {
+                    thingCauseEffectEquipperDurationInput.value = '';
+                }
+            }
+
+            if (thingCauseEffectTargetModifiers) {
+                thingModifierTemplates.renderList(thingCauseEffectTargetModifiers, [
+                    ...(Array.isArray(effectOnTarget?.attributes) ? effectOnTarget.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+                ]);
+            }
+
+            if (thingCauseEffectEquipperModifiers) {
+                thingModifierTemplates.renderList(thingCauseEffectEquipperModifiers, [
+                    ...(Array.isArray(effectOnEquipper?.attributes) ? effectOnEquipper.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+                ]);
+            }
         }
 
         function collectThingCauseStatusEffect() {
-            const name = thingCauseEffectNameInput?.value?.trim();
-            const description = thingCauseEffectDescriptionInput?.value?.trim();
-            const durationRaw = thingCauseEffectDurationInput?.value?.trim();
-
-            if (!name && !description && !durationRaw) {
-                return null;
-            }
-
-            const effect = {};
-            if (name) {
-                effect.name = name;
-            }
-            if (description) {
-                effect.description = description;
-            }
-            if (durationRaw) {
-                const numeric = Number.parseInt(durationRaw, 10);
-                effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-            }
-            return Object.keys(effect).length ? effect : null;
-        }
-
-        function createThingStatusEffectRow(effect = {}) {
-            if (!thingStatusEffectsList) {
-                return null;
-            }
-
-            const row = document.createElement('div');
-            row.className = 'thing-edit-row thing-edit-status-row';
-
-            const descriptionInput = document.createElement('textarea');
-            descriptionInput.className = 'thing-edit-status-description';
-            descriptionInput.rows = 2;
-            descriptionInput.placeholder = 'Description';
-            descriptionInput.value = effect.description || effect.text || effect.name || '';
-
-            const durationInput = document.createElement('input');
-            durationInput.type = 'text';
-            durationInput.className = 'thing-edit-status-duration';
-            durationInput.placeholder = 'Duration';
-            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
-                durationInput.value = String(effect.duration);
-            }
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(descriptionInput);
-            row.appendChild(durationInput);
-            row.appendChild(removeBtn);
-
-            thingStatusEffectsList.appendChild(row);
-
-            return row;
-        }
-
-        function renderThingStatusEffects(effects = []) {
-            if (!thingStatusEffectsList) {
-                return;
-            }
-            thingStatusEffectsList.innerHTML = '';
-            const entries = Array.isArray(effects) ? effects : [];
-            if (!entries.length) {
-                createThingStatusEffectRow({});
-                return;
-            }
-            entries.forEach(effect => createThingStatusEffectRow(effect));
-        }
-
-        function collectThingStatusEffects() {
-            if (!thingStatusEffectsList) {
-                return [];
-            }
-            const effects = [];
-            thingStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
-                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
-                if (!description) {
-                    return;
+            const collectSingle = (nameInput, descInput, durationInput) => {
+                const name = nameInput?.value?.trim();
+                const description = descInput?.value?.trim();
+                const durationRaw = durationInput?.value?.trim();
+                if (!name && !description && !durationRaw) {
+                    return null;
                 }
-                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
-                const effect = { description };
+                const effect = {};
+                if (name) effect.name = name;
+                if (description) effect.description = description;
                 if (durationRaw) {
                     const numeric = Number.parseInt(durationRaw, 10);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
                 }
-                effects.push(effect);
-            });
-            return effects;
+                return Object.keys(effect).length ? effect : null;
+            };
+
+            return {
+                target: (() => {
+                    const base = collectSingle(thingCauseEffectNameInput, thingCauseEffectDescriptionInput, thingCauseEffectDurationInput);
+                    if (!base) return null;
+                    const modifiers = thingModifierTemplates.collect(thingCauseEffectTargetModifiers);
+                    if (modifiers.attributes.length) base.attributes = modifiers.attributes;
+                    if (modifiers.skills.length) base.skills = modifiers.skills;
+                    return base;
+                })(),
+                equipper: (() => {
+                    const base = collectSingle(thingCauseEffectEquipperNameInput, thingCauseEffectEquipperDescriptionInput, thingCauseEffectEquipperDurationInput);
+                    if (!base) return null;
+                    const modifiers = thingModifierTemplates.collect(thingCauseEffectEquipperModifiers);
+                    if (modifiers.attributes.length) base.attributes = modifiers.attributes;
+                    if (modifiers.skills.length) base.skills = modifiers.skills;
+                    return base;
+                })()
+            };
         }
 
         function populateThingRarityOptions(selectedRarity = '') {
@@ -5355,6 +5526,28 @@
 
             if (!thingEditSlotSelect.value && normalized) {
                 thingEditSlotSelect.value = normalized;
+            }
+        }
+
+        function isThingEquippable() {
+            const typeValue = (thingEditTypeSelect?.value || '').toLowerCase();
+            const slotValue = (thingEditSlotSelect?.value || '').trim();
+            return typeValue === 'item' && Boolean(slotValue);
+        }
+
+        function updateThingStatusEffectVisibility() {
+            const equippable = isThingEquippable();
+            if (thingEquipSection) {
+                if (equippable) {
+                    thingEquipSection.removeAttribute('hidden');
+                    thingEquipSection.classList.remove('is-hidden');
+                } else {
+                    thingEquipSection.setAttribute('hidden', '');
+                    thingEquipSection.classList.add('is-hidden');
+                }
+            }
+            if (thingOnHitTitle) {
+                thingOnHitTitle.textContent = equippable ? 'On-Hit Status Effect' : 'Status Effect';
             }
         }
 
@@ -5454,12 +5647,17 @@
             renderThingAttributeBonuses(bonuses);
             refreshAllAttributeSelects();
 
-            const causeStatusEffect = thing?.causeStatusEffect || thing?.metadata?.causeStatusEffect || null;
-            populateThingCauseStatusEffect(causeStatusEffect);
+            const causeStatusEffectOnTarget = thing?.causeStatusEffectOnTarget
+                || thing?.metadata?.causeStatusEffectOnTarget
+                || (thing?.causeStatusEffect?.applyToTarget ? thing.causeStatusEffect : null)
+                || null;
+            const causeStatusEffectOnEquipper = thing?.causeStatusEffectOnEquipper
+                || thing?.metadata?.causeStatusEffectOnEquipper
+                || (thing?.causeStatusEffect?.applyToEquipper ? thing.causeStatusEffect : null)
+                || null;
+            populateThingCauseStatusEffect(causeStatusEffectOnTarget, causeStatusEffectOnEquipper);
 
-            const statusEffects = Array.isArray(thing?.statusEffects) ? thing.statusEffects : [];
-            renderThingStatusEffects(statusEffects);
-
+            updateThingStatusEffectVisibility();
             updateThingEditStatus('');
         }
 
@@ -8605,10 +8803,7 @@
             if (thingAttributeBonusesList) {
                 thingAttributeBonusesList.innerHTML = '';
             }
-            if (thingStatusEffectsList) {
-                thingStatusEffectsList.innerHTML = '';
-            }
-            populateThingCauseStatusEffect(null);
+            populateThingCauseStatusEffect(null, null);
             if (thingEditRarityInput) {
                 thingEditRarityInput.innerHTML = '';
             }
@@ -9116,11 +9311,23 @@
             });
         }
 
-        if (thingStatusEffectAddBtn) {
-            thingStatusEffectAddBtn.addEventListener('click', () => {
-                const row = createThingStatusEffectRow({});
-                row?.querySelector('.thing-edit-status-description')?.focus();
+        if (thingCauseEffectTargetAddModifierBtn && thingCauseEffectTargetModifiers) {
+            thingCauseEffectTargetAddModifierBtn.addEventListener('click', () => {
+                thingCauseEffectTargetModifiers.appendChild(thingModifierTemplates.createRow(null));
             });
+        }
+
+        if (thingCauseEffectEquipperAddModifierBtn && thingCauseEffectEquipperModifiers) {
+            thingCauseEffectEquipperAddModifierBtn.addEventListener('click', () => {
+                thingCauseEffectEquipperModifiers.appendChild(thingModifierTemplates.createRow(null));
+            });
+        }
+
+        if (thingEditSlotSelect) {
+            thingEditSlotSelect.addEventListener('change', () => updateThingStatusEffectVisibility());
+        }
+        if (thingEditTypeSelect) {
+            thingEditTypeSelect.addEventListener('change', () => updateThingStatusEffectVisibility());
         }
 
         if (npcModalBackdrop) {
@@ -9568,10 +9775,17 @@
                 payload.attributeBonuses = attributeBonusesValue;
 
                 const causeStatusEffectValue = collectThingCauseStatusEffect();
-                payload.causeStatusEffect = causeStatusEffectValue;
-
-                const statusEffectsValue = collectThingStatusEffects();
-                payload.statusEffects = statusEffectsValue;
+                if (causeStatusEffectValue) {
+                    if (causeStatusEffectValue.target) {
+                        payload.causeStatusEffectOnTarget = causeStatusEffectValue.target;
+                    }
+                    if (causeStatusEffectValue.equipper) {
+                        payload.causeStatusEffectOnEquipper = causeStatusEffectValue.equipper;
+                    }
+                } else {
+                    payload.causeStatusEffectOnTarget = null;
+                    payload.causeStatusEffectOnEquipper = null;
+                }
 
                 if (!payload.thingType) {
                     payload.thingType = 'item';
@@ -12392,6 +12606,103 @@
             }
         }
 
+        function createLocationStatusEffectRow(effect = {}) {
+            if (!locationStatusEffectsList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'thing-edit-row thing-edit-status-row';
+
+            const descriptionInput = document.createElement('textarea');
+            descriptionInput.className = 'thing-edit-status-description';
+            descriptionInput.rows = 2;
+            descriptionInput.placeholder = 'Description';
+            descriptionInput.value = effect.description || effect.text || effect.name || '';
+
+            const durationInput = document.createElement('input');
+            durationInput.type = 'text';
+            durationInput.className = 'thing-edit-status-duration';
+            durationInput.placeholder = 'Duration';
+            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
+                durationInput.value = String(effect.duration);
+            }
+
+            const modifiersContainer = document.createElement('div');
+            modifiersContainer.className = 'thing-modifier-list';
+            const addModifierBtn = document.createElement('button');
+            addModifierBtn.type = 'button';
+            addModifierBtn.className = 'npc-edit-add-btn';
+            addModifierBtn.textContent = 'Add Modifier';
+            addModifierBtn.addEventListener('click', () => {
+                modifiersContainer.appendChild(thingModifierTemplates.createRow(null));
+            });
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(descriptionInput);
+            row.appendChild(durationInput);
+            row.appendChild(modifiersContainer);
+            row.appendChild(addModifierBtn);
+            row.appendChild(removeBtn);
+
+            locationStatusEffectsList.appendChild(row);
+
+            const existingModifiers = [
+                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
+                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+            ];
+            thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
+
+            return row;
+        }
+
+        function renderLocationStatusEffects(effects = []) {
+            if (!locationStatusEffectsList) {
+                return;
+            }
+            locationStatusEffectsList.innerHTML = '';
+            const entries = Array.isArray(effects) ? effects : [];
+            if (!entries.length) {
+                createLocationStatusEffectRow({});
+                return;
+            }
+            entries.forEach(effect => createLocationStatusEffectRow(effect));
+        }
+
+        function collectLocationStatusEffects() {
+            if (!locationStatusEffectsList) {
+                return [];
+            }
+            const effects = [];
+            locationStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
+                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
+                if (!description) {
+                    return;
+                }
+                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
+                const effect = { description };
+                if (durationRaw) {
+                    const numeric = Number.parseInt(durationRaw, 10);
+                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
+                }
+                const modifierContainer = row.querySelector('.thing-modifier-list');
+                const modifiers = thingModifierTemplates.collect(modifierContainer);
+                if (modifiers.attributes.length) {
+                    effect.attributes = modifiers.attributes;
+                }
+                if (modifiers.skills.length) {
+                    effect.skills = modifiers.skills;
+                }
+                effects.push(effect);
+            });
+            return effects;
+        }
+
         function openLocationEditModal() {
             const targetLocation = getLocationMenuContext();
             if (!locationEditModal || !targetLocation) {
@@ -12404,6 +12715,7 @@
             const numericLevel = Number.isFinite(targetLocation.baseLevel)
                 ? targetLocation.baseLevel
                 : null;
+            const statusEffects = Array.isArray(targetLocation.statusEffects) ? targetLocation.statusEffects : [];
 
             if (locationEditNameInput) {
                 locationEditNameInput.value = name;
@@ -12414,6 +12726,7 @@
             if (locationEditLevelInput) {
                 locationEditLevelInput.value = numericLevel ?? '';
             }
+            renderLocationStatusEffects(statusEffects);
             updateLocationAbsoluteLevelDisplay(numericLevel);
 
             setLocationEditStatus('', null);
@@ -12464,6 +12777,9 @@
                 return;
             }
             payload.level = Math.max(1, Math.round(levelValue));
+
+            const statusEffectsValue = collectLocationStatusEffects();
+            payload.statusEffects = statusEffectsValue;
 
             setLocationEditStatus('Saving changes...', null);
             if (locationEditSaveBtn) {
@@ -13507,6 +13823,12 @@
         }
         if (locationEditForm) {
             locationEditForm.addEventListener('submit', submitLocationEditForm);
+        }
+        if (locationStatusEffectAddBtn) {
+            locationStatusEffectAddBtn.addEventListener('click', () => {
+                const row = createLocationStatusEffectRow({});
+                row?.querySelector('.thing-edit-status-description')?.focus();
+            });
         }
 
         if (summonNpcCancelBtn) {
