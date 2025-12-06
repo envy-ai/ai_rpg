@@ -12,3 +12,4 @@ temp/*
 imagegen/test*
 **/*.old
 config.yaml.polaris
+mods/*
