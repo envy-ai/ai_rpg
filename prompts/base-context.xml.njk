@@ -99,6 +99,10 @@ The below context is an account of the current game state, including the setting
     <locations>
       {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>
+    <connectedRegions>
+      {% for reg in regionContext.connectedRegions %}<regionName>{{ reg.name }}</regionName>
+      {% endfor %}
+    </connectedRegions>
   </currentRegion>
   <currentLocation>
     <name>{{ currentLocation.name }}</name>

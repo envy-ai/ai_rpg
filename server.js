@@ -2352,11 +2352,23 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
 
-            //console.log('Exit info:', directionKey, exitInfo);
-
-            const label = exitInfo.relativeName;
+            let label = exitInfo.relativeName;
+            if (!label) {
+                const destinationName = typeof exitInfo.destination === 'string' ? exitInfo.destination : null;
+                const Location = require('./Location.js');
+                try {
+                    const destination = destinationName
+                        ? (Location.get(destinationName) || gameLocations.get?.(destinationName) || null)
+                        : null;
+                    if (destination && destination.name) {
+                        label = destination.name;
+                    }
+                } catch (_) {
+                    // ignore lookup failures
+                }
+            }
             exitSummaries.push({
-                name: label,
+                name: label || directionKey || 'Unknown Exit',
                 isVehicle: Boolean(exitInfo.isVehicle),
                 vehicleType: typeof exitInfo.vehicleType === 'string' ? exitInfo.vehicleType : null
             });
@@ -2420,12 +2432,112 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }
     }
 
+    const connectedNames = new Set();
+    const collectRegionName = (value) => {
+        if (!value) return;
+        const name = typeof value === 'string'
+            ? value.trim()
+            : (typeof value.name === 'string' ? value.name.trim() : '');
+        if (name) {
+            connectedNames.add(name);
+        }
+    };
+
+    if (Array.isArray(regionStatus?.connectedRegions)) {
+        for (const entry of regionStatus.connectedRegions) {
+            collectRegionName(entry);
+        }
+    }
+
+    if (Array.isArray(regionStatus?.locationIds)) {
+        const Location = require('./Location.js');
+        for (const id of regionStatus.locationIds) {
+            if (!id) continue;
+            const loc = gameLocations.get(id) || Location.get(id);
+            if (!loc || typeof loc.getAvailableDirections !== 'function' || typeof loc.getExit !== 'function') {
+                continue;
+            }
+            const directions = loc.getAvailableDirections();
+            for (const dir of directions) {
+                const exit = loc.getExit(dir);
+                if (!exit) continue;
+                try {
+                    const destinationRegionId = typeof exit.destinationRegion === 'string'
+                        ? exit.destinationRegion.trim()
+                        : null;
+                    if (destinationRegionId) {
+                        const targetRegion = regions.get(destinationRegionId) || null;
+                        if (targetRegion?.name) {
+                            collectRegionName(targetRegion.name);
+                            continue;
+                        }
+                        const pending = pendingRegionStubs.get(destinationRegionId) || null;
+                        if (pending?.name) {
+                            collectRegionName(pending.name);
+                            continue;
+                        }
+                    }
+                    const exitRegion = exit.region || exit.associatedRegionStub || null;
+                    if (exitRegion && typeof exitRegion.name === 'string' && exitRegion.name.trim()) {
+                        collectRegionName(exitRegion.name);
+                        continue;
+                    }
+                    const destLoc = exit.location;
+                    if (destLoc && typeof destLoc.region === 'object' && destLoc.region?.name) {
+                        collectRegionName(destLoc.region.name);
+                        continue;
+                    }
+                    if (destLoc?.stubMetadata) {
+                        const stubTargetName = destLoc.stubMetadata.targetRegionName
+                            || destLoc.stubMetadata.regionName
+                            || destLoc.stubMetadata.name;
+                        if (stubTargetName) {
+                            collectRegionName(stubTargetName);
+                            continue;
+                        }
+                    }
+                    if (destLoc && typeof destLoc.name === 'string') {
+                        const destRegion = typeof destLoc.region === 'object' ? destLoc.region : null;
+                        if (destRegion && destRegion.name) {
+                            collectRegionName(destRegion.name);
+                        }
+                    }
+                } catch (_) {
+                    // ignore failures to resolve exit/region
+                }
+            }
+        }
+    }
+
+    const currentRegionId = region?.id || regionStatus?.id || null;
+    if (currentRegionId) {
+        for (const pending of pendingRegionStubs.values()) {
+            if (!pending) continue;
+            const sourceMatches = pending.sourceRegionId === currentRegionId
+                || pending.originRegionId === currentRegionId
+                || pending.parentRegionId === currentRegionId;
+            if (!sourceMatches) {
+                continue;
+            }
+            const pendingName = pending.name
+                || pending.targetRegionName
+                || pending.originalName
+                || pending.description;
+            if (pendingName) {
+                collectRegionName(pendingName);
+            }
+        }
+    }
+
+    const connectedRegions = Array.from(connectedNames).map(name => ({ name }));
+
     const currentRegionContext = {
         name: regionStatus?.name || location?.stubMetadata?.regionName || 'Unknown Region',
         description: regionStatus?.description || location?.stubMetadata?.regionDescription || 'No region description available.',
         statusEffects: normalizeStatusEffects(region || regionStatus),
         locations: regionLocations,
-        secrets: regionStatus?.secrets || []
+        secrets: regionStatus?.secrets || [],
+        connectedRegions
     };
 
     const mapItemContext = (item, equippedSlot = null) => {
@@ -12489,6 +12601,22 @@ async function renderLocationGeneratorPrompt(options = {}) {
             };
         }
 
+        const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+        const availableSkillsMap = typeof Player.getAvailableSkills === 'function' ? Player.getAvailableSkills() : null;
+        const skillNamesForPrompt = availableSkillsMap instanceof Map
+            ? Array.from(availableSkillsMap.keys())
+                .filter(name => typeof name === 'string' && name.trim())
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+            : [];
+
+        if (settingContext && typeof settingContext === 'object') {
+            settingContext.attributes = attributeEntriesForPrompt;
+            settingContext.skills = skillNamesForPrompt;
+        }
+
         let entryProse = '';
         if (Array.isArray(chatHistory)) {
             const startIdx = Math.max(0, chatHistory.length - 10);
@@ -12622,6 +12750,15 @@ async function renderLocationGeneratorPrompt(options = {}) {
             maxTokens: parsedXML.maxTokens
         };
     } catch (error) {
+        try {
+            if (typeof error.Update === 'function') {
+                error.Update({ path: 'prompts/base-context.xml.njk' });
+            } else if (typeof error.update === 'function') {
+                error.update({ path: 'prompts/base-context.xml.njk' });
+            }
+        } catch (_) {
+            // ignore secondary failures while updating error metadata
+        }
         console.error('Error rendering location generator template:', error);
         return null;
     }
@@ -12670,6 +12807,22 @@ async function renderRegionGeneratorPrompt(options = {}) {
                 ...defaultSettingContext,
                 description: overrideSetting
             };
+        }
+
+        const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+        const availableSkillsMap = typeof Player.getAvailableSkills === 'function' ? Player.getAvailableSkills() : null;
+        const skillNamesForPrompt = availableSkillsMap instanceof Map
+            ? Array.from(availableSkillsMap.keys())
+                .filter(name => typeof name === 'string' && name.trim())
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+            : [];
+
+        if (settingContext && typeof settingContext === 'object') {
+            settingContext.attributes = attributeEntriesForPrompt;
+            settingContext.skills = skillNamesForPrompt;
         }
 
         const normalizeRegionContext = (region) => {
@@ -12802,6 +12955,15 @@ async function renderRegionGeneratorPrompt(options = {}) {
             maxTokens: parsedXML.maxTokens
         };
     } catch (error) {
+        try {
+            if (typeof error.Update === 'function') {
+                error.Update({ path: 'prompts/base-context.xml.njk' });
+            } else if (typeof error.update === 'function') {
+                error.update({ path: 'prompts/base-context.xml.njk' });
+            }
+        } catch (_) {
+            // ignore secondary failures while updating error metadata
+        }
         console.error('Error rendering region generator template:', error);
         return null;
     }
@@ -13648,11 +13810,27 @@ async function generateLocationFromPrompt(options = {}) {
             }
 
             const locations = Array.from(locationNames).map(name => ({ name }));
+            const connectedNames = new Set();
+
+            const collectRegionName = (value) => {
+                if (!value) return;
+                const name = typeof value === 'string' ? value.trim() : (typeof value.name === 'string' ? value.name.trim() : '');
+                if (name) connectedNames.add(name);
+            };
+
+            if (Array.isArray(regionData.connectedRegions)) {
+                for (const entry of regionData.connectedRegions) {
+                    collectRegionName(entry);
+                }
+            }
+
+            const connectedRegions = Array.from(connectedNames).map(name => ({ name }));
 
             return {
                 name: normalizedName,
                 description: normalizedDescription,
-                locations
+                locations,
+                connectedRegions
             };
         };
 

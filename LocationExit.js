@@ -94,11 +94,13 @@ class LocationExit {
     const location = Location.get(this.#destination);
     if (location && location.regionId) {
       return location.regionId;
-    } else {
-      console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination}`);
-      console.trace();
-      return null;
     }
+    if (this.#destinationRegion) {
+      return this.#destinationRegion;
+    }
+    console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination}`);
+    console.trace();
+    return null;
   }
 
   /**
