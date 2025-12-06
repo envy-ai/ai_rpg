@@ -6,6 +6,9 @@
     <title>{{ title | default("AI RPG Chat") }}</title>
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/map.css">
+    {% if modStyles %}{% for mod in modStyles %}{% for style in mod.styles %}
+    <link rel="stylesheet" href="{{ style }}">
+    {% endfor %}{% endfor %}{% endif %}
 </head>
 <body>
     <div class="container">
@@ -1354,6 +1357,9 @@
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
     <script defer src="/js/player-stats.js"></script>
+    {% if modScripts %}{% for mod in modScripts %}{% for script in mod.scripts %}
+    <script src="{{ script }}"></script>
+    {% endfor %}{% endfor %}{% endif %}
     <script>
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
         window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
