@@ -13,6 +13,7 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
 const e = require('express');
+const console = require('console');
 
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
@@ -333,7 +334,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function parseCraftingResultsResponse(xmlContent) {
+        async function parseCraftingResultsResponse(xmlContent) {
             const results = new Map();
             if (!xmlContent || typeof xmlContent !== 'string') {
                 return results;
@@ -345,12 +346,20 @@ module.exports = function registerApiRoutes(scope) {
                     || doc.getElementsByTagName('harvestResults')[0]
                     || null;
                 if (!parent) {
+                    console.warn('No craftingResults, salvageResults, or harvestResults parent node found.');
                     return results;
                 }
                 const parentTagName = String(parent.nodeName || '').toLowerCase();
                 const resultNodes = Array.from(parent.getElementsByTagName('result'));
-                resultNodes.forEach(resultNode => {
+
+                // warn if no resultNodes
+                if (resultNodes.length === 0) {
+                    console.warn('No <result> nodes found in crafting results parsing.');
+                }
+
+                for (const resultNode of resultNodes) {
                     if (!resultNode) {
+                        console.warn('Skipping null result node in crafting results parsing.');
                         return;
                     }
                     const levelNode = resultNode.getElementsByTagName('level')[0] || null;
@@ -358,6 +367,7 @@ module.exports = function registerApiRoutes(scope) {
                         ? levelNode.textContent.trim().toLowerCase()
                         : '';
                     if (!level) {
+                        console.warn('Skipping result node with empty level in crafting results parsing.');
                         return;
                     }
                     const includeOther = level === 'critical_success' || level === 'critical_failure';
@@ -370,16 +380,20 @@ module.exports = function registerApiRoutes(scope) {
                         : [];
 
                     const recoveredItems = [];
-                    const pushParsedItemNode = (itemNode) => {
+                    const pushParsedItemNode = async (itemNode) => {
                         if (!itemNode) {
+                            console.warn('Skipping null item node in crafting results parsing.');
                             return;
                         }
                         const serializedItem = serializeXmlNode(itemNode);
                         if (!serializedItem) {
+                            console.warn('Skipping item node with empty serialization in crafting results parsing.');
                             return;
                         }
                         const wrapped = `<items>${serializedItem}</items>`;
-                        const parsedItems = parseThingsXml(wrapped, { isInventory: true }) || [];
+                        //console.log('Wrapped item XML for parsing:', wrapped);
+                        const parsedItems = await parseThingsXml(wrapped) || [];
+                        //console.log('Parsed items from crafting results:', parsedItems);
                         parsedItems.forEach(entry => {
                             if (entry) {
                                 recoveredItems.push(entry);
@@ -391,14 +405,16 @@ module.exports = function registerApiRoutes(scope) {
                     if (recoveredParent) {
                         const innerItems = Array.from(recoveredParent.getElementsByTagName('item'));
                         if (innerItems.length) {
-                            innerItems.forEach(pushParsedItemNode);
+                            for (const itemNode of innerItems) {
+                                await pushParsedItemNode(itemNode);
+                            }
                         }
                     }
 
                     if (!recoveredItems.length) {
                         const itemNode = resultNode.getElementsByTagName('item')[0] || null;
                         if (itemNode) {
-                            pushParsedItemNode(itemNode);
+                            await pushParsedItemNode(itemNode);
                         }
                     }
 
@@ -421,9 +437,10 @@ module.exports = function registerApiRoutes(scope) {
                         other: other && other.toLowerCase() !== 'n/a' ? other : null,
                         abilities: parseAbilityEffects(serializedResult)
                     });
-                });
+                }
             } catch (error) {
                 console.warn('Failed to parse crafting results response:', error?.message || error);
+                console.warn(error);
             }
             return results;
         }
@@ -13085,7 +13102,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Unable to parse crafting plausibility response.');
                 }
 
-                const craftingResults = parseCraftingResultsResponse(plausibilityResponse);
+                const craftingResults = await parseCraftingResultsResponse(plausibilityResponse);
 
                 const actionOutcome = resolveActionOutcome({
                     plausibility,
@@ -13107,6 +13124,19 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                console.log(`🛠️ Crafting plausibility check: success=${actionOutcome.success}, degree=${actionOutcome.degree}, mappedLevel=${mappedLevel}`);
+                // dump craftingResults for debugging
+                //console.log('Raw crafting results from AI response:', craftingResults);
+                /*
+                console.log('Crafting Results from AI:', Array.from(craftingResults.entries()).map(([key, value]) => ({
+                resultLevel: key,
+                    itemsRecovered: Array.isArray(value.itemsRecovered)
+                        ? value.itemsRecovered.map(item => item.name || 'Unnamed Item')
+                        : [],
+                        itemsConsumed: Array.isArray(value.itemsConsumed)
+                            ? value.itemsConsumed
+                            : []
+                })));*/
                 let selectedResult = mappedLevel ? craftingResults.get(mappedLevel) : null;
                 if (!selectedResult) {
                     if (actionOutcome.success) {

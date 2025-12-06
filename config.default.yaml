@@ -15,6 +15,7 @@ ai:
   # LocalAI - "http://localhost:8080/v1"
   # Ollama - "http://localhost:11434/v1"
   # nano-gpt - "https://nano-gpt.com/api/v1"
+  # OpenRouter - "https://openrouter.ai/api/v1"
   endpoint: "https://nano-gpt.com/api/v1"
 
   # Your API key (keep this secure!)

@@ -1175,6 +1175,7 @@ let baseContextMemoryCache = {
     turnKey: null,
     selections: new Map()
 };
+let chooseImportantMemoriesInFlight = null;
 
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
@@ -3090,7 +3091,7 @@ function cloneSelectedEntries(entries) {
 
 function populateNpcSelectedMemoriesSync(baseContext) {
     if (!baseContext || !config) {
-        return;
+        return { actors: [], maxMemories: 0, turnKey: null };
     }
 
     const maxConfigured = Number(config.max_memories_to_recall);
@@ -3164,6 +3165,7 @@ function populateNpcSelectedMemoriesSync(baseContext) {
     }
 
     baseContext.maxMemoriesToRecall = maxMemories;
+    return { actors, maxMemories, turnKey };
 }
 
 function extractIndicesFromText(rawText, maxCount) {
@@ -3227,161 +3229,119 @@ function parseChooseImportantMemoriesResponse(responseText, maxCount) {
     return selections;
 }
 
+function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey }) {
+    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
+    if (!canCallAi || !actors.length) {
+        return;
+    }
+
+    const needsSelection = actors.filter(({ actorId, important }) => {
+        const cacheEntry = baseContextMemoryCache.selections.get(actorId);
+        return important.length > maxMemories && cacheEntry?.fromFallback === true;
+    });
+
+    if (!needsSelection.length) {
+        return;
+    }
+
+    const payload = {
+        npcs: needsSelection.map(({ actor, important }) => ({
+            name: actor.name || actor.id || 'Unknown NPC',
+            memories: important
+        })),
+        textToCheck: baseContext.gameHistory || '',
+        max_memories_to_recall: maxMemories
+    };
+
+    const maybeStartJob = async () => {
+        let parsedTemplate = null;
+        try {
+            const renderedTemplate = promptEnv.render('choose_important_memories.njk', payload);
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            console.warn('Failed to prepare choose_important_memories prompt:', error.message);
+            return;
+        }
+
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            console.warn('choose_important_memories prompt missing system or generation content; skipping request.');
+            return;
+        }
+
+        const messages = [
+            { role: 'system', content: parsedTemplate.systemPrompt },
+            { role: 'user', content: parsedTemplate.generationPrompt }
+        ];
+
+        const requestStart = Date.now();
+        let responseText = null;
+        try {
+            responseText = await LLMClient.chatCompletion({
+                messages,
+                metadataLabel: 'choose_important_memories'
+            });
+        } catch (error) {
+            console.warn('choose_important_memories request failed:', error.message);
+            return;
+        }
+
+        const selectionsByName = parseChooseImportantMemoriesResponse(responseText, maxMemories);
+        if (!(selectionsByName instanceof Map) || selectionsByName.size === 0) {
+            return;
+        }
+
+        if (baseContextMemoryCache.turnKey !== turnKey) {
+            return;
+        }
+
+        for (const entry of needsSelection) {
+            const { actorId, important, actor } = entry;
+            const normalizedName = (actor.name || actor.id || '').trim().toLowerCase();
+            const selectedIndices = selectionsByName.get(normalizedName) || [];
+            if (!selectedIndices.length) {
+                continue;
+            }
+            const indicesToUse = selectedIndices.slice(0, maxMemories);
+            const selected = createSelectedEntries(indicesToUse, important);
+            baseContextMemoryCache.selections.set(actorId, {
+                signature: `${actorId}::${important.join('||')}`,
+                selected: cloneSelectedEntries(selected),
+                fromFallback: false
+            });
+        }
+
+        const promptForLog = [
+            '--- SYSTEM PROMPT ---',
+            parsedTemplate.systemPrompt || '(none)',
+            '',
+            '--- GENERATION PROMPT ---',
+            parsedTemplate.generationPrompt || '(none)'
+        ].join('\n');
+        logChooseImportantMemories({
+            prompt: promptForLog,
+            responseText,
+            durationSeconds: (Date.now() - requestStart) / 1000
+        });
+    };
+
+    if (!chooseImportantMemoriesInFlight) {
+        chooseImportantMemoriesInFlight = maybeStartJob()
+            .catch(error => {
+                console.warn('choose_important_memories background task failed:', error.message);
+            })
+            .finally(() => {
+                chooseImportantMemoriesInFlight = null;
+            });
+    }
+}
+
 async function populateNpcSelectedMemories(baseContext) {
     if (!baseContext || !config || !Globals.gameLoaded) {
         return;
     }
 
-    const maxConfigured = Number(config.max_memories_to_recall);
-    const maxMemories = Number.isInteger(maxConfigured) && maxConfigured > 0 ? maxConfigured : 10;
-
-    const turnKey = getBaseContextTurnKey();
-    if (baseContextMemoryCache.turnKey !== turnKey) {
-        baseContextMemoryCache.turnKey = turnKey;
-        baseContextMemoryCache.selections = new Map();
-    }
-
-    const actors = [];
-    const registerActor = (actor, groupLabel) => {
-        if (!actor || typeof actor !== 'object') {
-            return;
-        }
-        const actorId = actor.id || `${groupLabel}:${actor.name || ''}`.trim();
-        if (!actorId) {
-            return;
-        }
-        const important = sanitizeImportantMemories(actor.importantMemories
-            || actor.memories
-            || []);
-        actor.importantMemories = important;
-        actor.selectedImportantMemories = Array.isArray(actor.selectedImportantMemories)
-            ? actor.selectedImportantMemories
-            : [];
-        actors.push({ actor, actorId, groupLabel, important });
-    };
-
-    if (Array.isArray(baseContext.npcs)) {
-        baseContext.npcs.forEach(npc => registerActor(npc, 'npc'));
-    }
-    if (Array.isArray(baseContext.party)) {
-        baseContext.party.forEach(member => registerActor(member, 'party'));
-    }
-
-    const pendingActors = [];
-
-    for (const entry of actors) {
-        const { actor, actorId, important } = entry;
-        if (!important.length) {
-            actor.selectedImportantMemories = [];
-            continue;
-        }
-
-        const signature = `${actorId}::${important.join('||')}`;
-        const cached = baseContextMemoryCache.selections.get(actorId);
-
-        if (cached && cached.signature === signature && cached.fromFallback !== true) {
-            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
-            continue;
-        }
-
-        if (cached && cached.signature === signature && cached.fromFallback === true) {
-            actor.selectedImportantMemories = cloneSelectedEntries(cached.selected);
-        }
-
-        if (important.length <= maxMemories) {
-            const selected = createSelectedEntries(important.map((_, index) => index), important);
-            actor.selectedImportantMemories = selected;
-            baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(selected), fromFallback: false });
-            continue;
-        }
-
-        pendingActors.push({ actor, actorId, important, signature });
-    }
-
-    if (!pendingActors.length) {
-        baseContext.maxMemoriesToRecall = maxMemories;
-        return;
-    }
-
-    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
-    let selectionsByName = new Map();
-
-    if (canCallAi) {
-        let textToCheck = baseContext.gameHistory || '';
-
-        baseContext.gameHistory = textToCheck;
-        const templatePayload = {
-            npcs: pendingActors.map(({ actor, important }) => ({
-                name: actor.name || actor.id || 'Unknown NPC',
-                memories: important
-            })),
-            textToCheck: baseContext.gameHistory || '',
-            max_memories_to_recall: maxMemories
-        };
-
-        let parsedTemplate = null;
-        try {
-            const renderedTemplate = promptEnv.render('choose_important_memories.njk', templatePayload);
-            parsedTemplate = parseXMLTemplate(renderedTemplate);
-        } catch (error) {
-            console.warn('Failed to prepare choose_important_memories prompt:', error.message);
-        }
-
-        if (parsedTemplate?.systemPrompt && parsedTemplate?.generationPrompt) {
-            try {
-                const messages = [
-                    { role: 'system', content: parsedTemplate.systemPrompt },
-                    { role: 'user', content: parsedTemplate.generationPrompt }
-                ];
-
-                const requestStart = Date.now();
-                const responseText = await LLMClient.chatCompletion({
-                    messages,
-                    metadataLabel: 'choose_important_memories'
-                });
-
-                selectionsByName = parseChooseImportantMemoriesResponse(responseText, maxMemories);
-
-                const promptForLog = [
-                    '--- SYSTEM PROMPT ---',
-                    parsedTemplate.systemPrompt || '(none)',
-                    '',
-                    '--- GENERATION PROMPT ---',
-                    parsedTemplate.generationPrompt || '(none)'
-                ].join('\n');
-                logChooseImportantMemories({
-                    prompt: promptForLog,
-                    responseText,
-                    durationSeconds: (Date.now() - requestStart) / 1000
-                });
-            } catch (error) {
-                console.warn('choose_important_memories request failed:', error.message);
-            }
-        }
-    } else {
-        console.warn('Skipping choose_important_memories prompt: AI configuration incomplete.');
-    }
-
-    for (const entry of pendingActors) {
-        const { actor, actorId, important, signature } = entry;
-        const normalizedName = (actor.name || actor.id || '').trim().toLowerCase();
-        const selectedIndices = selectionsByName.get(normalizedName) || [];
-
-        let indicesToUse = selectedIndices.slice(0, maxMemories);
-        if (!indicesToUse.length) {
-            const fallback = [];
-            for (let i = 0; i < Math.min(maxMemories, important.length); i += 1) {
-                fallback.push(i);
-            }
-            indicesToUse = fallback;
-        }
-
-        const selected = createSelectedEntries(indicesToUse, important);
-        actor.selectedImportantMemories = selected;
-        baseContextMemoryCache.selections.set(actorId, { signature, selected: cloneSelectedEntries(selected), fromFallback: false });
-    }
-
-    baseContext.maxMemoriesToRecall = maxMemories;
+    const { actors, maxMemories, turnKey } = populateNpcSelectedMemoriesSync(baseContext);
+    kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
 }
 
 async function prepareBasePromptContext(options = {}) {
@@ -10146,9 +10106,19 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
 
         const items = [];
 
+        // Warn and return if no item nodes found
+        if (itemNodes.length === 0) {
+            console.warn('No item, thing, or scenery nodes found in provided XML content.');
+            console.trace();
+            return items;
+        }
+
         for (const node of itemNodes) {
+            //console.log('Processing node:');
             const nameNode = node.getElementsByTagName('name')[0];
             if (!nameNode) {
+                console.warn('Skipping item node with no <name> child node.');
+                console.trace();
                 continue;
             }
 
@@ -10159,6 +10129,8 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                         const attr = bonusNode.getElementsByTagName('attribute')[0]?.textContent?.trim();
                         const bonusRaw = bonusNode.getElementsByTagName('bonus')[0]?.textContent?.trim();
                         if (!attr) {
+                            console.warn('Skipping attributeBonus node with no <attribute> child node.');
+                            console.trace();
                             return null;
                         }
                         const bonus = Number(bonusRaw);
@@ -10173,6 +10145,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             const parseStatusEffectTag = (tagName) => {
                 const nodeRef = node.getElementsByTagName(tagName)[0];
                 if (!nodeRef) {
+                    // Empty nodes are fine.
                     return null;
                 }
                 const effectName = nodeRef.getElementsByTagName('name')[0]?.textContent?.trim();
@@ -10187,33 +10160,44 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 return Object.keys(effectPayload).length ? effectPayload : null;
             };
 
+            //console.log('Parsing status effects for item:', nameNode.textContent.trim());
+
             const causeStatusEffectOnTarget = parseStatusEffectTag('causeStatusEffectOnTarget');
             const causeStatusEffectOnEquipper = parseStatusEffectTag('causeStatusEffectOnEquipper');
 
-            const causeStatusEffect = (() => {
-                if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
-                    const payload = causeStatusEffectOnTarget || causeStatusEffectOnEquipper;
+            /*
+            if (node.getElementsByTagName('statusEffect').length > 0) {
+                const causeStatusEffect = (() => {
+                    if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
+                        const payload = causeStatusEffectOnTarget || causeStatusEffectOnEquipper;
+                        return {
+                            ...payload,
+                            applyToTarget: Boolean(causeStatusEffectOnTarget),
+                            applyToEquipper: Boolean(causeStatusEffectOnEquipper)
+                        };
+                    }
+                    const legacyStatusEffectNode = node.getElementsByTagName('statusEffect')[0];
+                    if (!legacyStatusEffectNode) {
+                        console.warn('Skipping statusEffect node with no corresponding element.');
+                        console.trace();
+                        return null;
+                    }
+                    const legacy = parseStatusEffectTag('statusEffect');
+                    if (!legacy) {
+                        console.warn('Skipping statusEffect node with no valid content.');
+                        console.trace();
+                        return null;
+                    }
                     return {
-                        ...payload,
-                        applyToTarget: Boolean(causeStatusEffectOnTarget),
-                        applyToEquipper: Boolean(causeStatusEffectOnEquipper)
+                        ...legacy,
+                        applyToTarget: true,
+                        applyToEquipper: false
                     };
-                }
-                const legacyStatusEffectNode = node.getElementsByTagName('statusEffect')[0];
-                if (!legacyStatusEffectNode) {
-                    return null;
-                }
-                const legacy = parseStatusEffectTag('statusEffect');
-                if (!legacy) {
-                    return null;
-                }
-                return {
-                    ...legacy,
-                    applyToTarget: true,
-                    applyToEquipper: false
-                };
-            })();
-
+                })();
+            }
+            
+            console.log('Parsed status effects for item:', nameNode.textContent.trim(), causeStatusEffect);
+            */
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
@@ -10233,7 +10217,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 const text = node.getElementsByTagName(tag)[0]?.textContent?.trim().toLowerCase();
                 return text === 'true';
             };
-
+            //console.log('Creating entry for item:', nameNode.textContent.trim());
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
@@ -10249,7 +10233,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 properties: node.getElementsByTagName('properties')[0]?.textContent?.trim() || '',
                 relativeLevel,
                 attributeBonuses,
-                causeStatusEffect,
+                //causeStatusEffect,
                 causeStatusEffectOnTarget,
                 causeStatusEffectOnEquipper,
                 isVehicle: parseBooleanTag('isVehicle'),
@@ -10259,16 +10243,14 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 isSalvageable: parseBooleanTag('isSalvageable')
             };
 
+            //console.log('Parsed item entry:', entry);
             items.push(entry);
-        }
-
-        if (!promptEnv || typeof promptEnv.render !== 'function' || typeof parseXMLTemplate !== 'function' || typeof prepareBasePromptContext !== 'function') {
-            return items;
         }
 
         return items;
     } catch (error) {
         console.warn('Failed to parse things XML:', error.message);
+        console.trace();
         return [];
     }
 }
@@ -15249,7 +15231,7 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
     //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
-    
+
     // Get mod scripts and styles if modLoader is available
     const modScripts = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientScripts === 'function')
         ? apiScope.modLoader.getModClientScripts()
@@ -15320,19 +15302,19 @@ app.post('/config', (req, res) => {
                 if (parts.length >= 3) {
                     const modName = parts[1];
                     const configKey = parts.slice(2).join('.');
-                    
+
                     let modConfigEntry = modConfigsToSave.find(m => m.name === modName);
                     if (!modConfigEntry) {
                         modConfigEntry = { name: modName, config: {} };
                         modConfigsToSave.push(modConfigEntry);
                     }
-                    
+
                     // Handle numeric values if they look like numbers
                     // Ideally we'd use the schema to know type, but for now simple heuristic
                     // or let the mod loader validate/cast if we implemented that.
                     // For now, simple string/trim.
                     // NOTE: This could be improved by looking up schema in modLoader
-                     modConfigEntry.config[configKey] = value;
+                    modConfigEntry.config[configKey] = value;
                 }
                 continue;
             }
@@ -15357,7 +15339,7 @@ app.post('/config', (req, res) => {
                 current[finalKey] = value;
             }
         }
-        
+
         // Save mod configurations
         for (const modConf of modConfigsToSave) {
             try {
@@ -15366,7 +15348,7 @@ app.post('/config', (req, res) => {
                 // Better: Get current config, update provided keys.
                 const currentModConfig = modLoader.getModConfig(modConf.name);
                 const newModConfig = { ...currentModConfig, ...modConf.config };
-                
+
                 modLoader.saveModConfig(modConf.name, newModConfig);
                 console.log(`Saved configuration for mod: ${modConf.name}`);
             } catch (err) {
