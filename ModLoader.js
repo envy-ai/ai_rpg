@@ -199,36 +199,79 @@ class ModLoader {
             },
 
             // Reference to the mod loader for inter-mod communication
-            modLoader: this
+            modLoader: this,
+
+            // Mod configuration
+            modConfig: this.getModConfig(modName)
         });
 
         return modScope;
     }
 
     /**
-     * Get information about a loaded mod
-     * @param {string} modName - Name of the mod
-     * @returns {Object|null} Mod info or null if not loaded
+     * Get configuration for a specific mod
+     * @param {string} modName 
      */
-    getMod(modName) {
-        return this.loadedMods.get(modName) || null;
+    getModConfig(modName) {
+        const modInfo = this.loadedMods.get(modName);
+        if (!modInfo) return {};
+
+        const configPath = path.join(modInfo.dir, 'config.json');
+        let config = {};
+
+        // Load saved config if exists
+        if (fs.existsSync(configPath)) {
+            try {
+                config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            } catch (e) {
+                console.warn(`Failed to load config for mod ${modName}:`, e.message);
+            }
+        }
+
+        // Apply defaults from schema if available
+        if (modInfo.mod.configSchema) {
+            for (const [key, schema] of Object.entries(modInfo.mod.configSchema)) {
+                if (config[key] === undefined && schema.default !== undefined) {
+                    config[key] = schema.default;
+                }
+            }
+        }
+
+        return config;
     }
 
     /**
-     * Get all loaded mod names
-     * @returns {string[]} Array of mod names
+     * Get configurations and schemas for all loaded mods
+     * @returns {Array} Array of { name, schema, config }
      */
-    getLoadedModNames() {
-        return Array.from(this.loadedMods.keys());
+    getModConfigs() {
+        const configs = [];
+        for (const [modName, modInfo] of this.loadedMods) {
+            if (modInfo.mod.configSchema) {
+                configs.push({
+                    name: modName,
+                    displayName: modInfo.meta?.name || modName,
+                    schema: modInfo.mod.configSchema,
+                    config: this.getModConfig(modName)
+                });
+            }
+        }
+        return configs;
     }
 
     /**
-     * Check if a mod is loaded
-     * @param {string} modName - Name of the mod
-     * @returns {boolean}
+     * Save configuration for a mod
+     * @param {string} modName 
+     * @param {Object} newConfig 
      */
-    isModLoaded(modName) {
-        return this.loadedMods.has(modName);
+    saveModConfig(modName, newConfig) {
+        const modInfo = this.loadedMods.get(modName);
+        if (!modInfo) {
+            throw new Error(`Mod ${modName} not found`);
+        }
+        const configPath = path.join(modInfo.dir, 'config.json');
+        fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2), 'utf8');
+
     }
 
     /**

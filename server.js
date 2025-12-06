@@ -14983,6 +14983,7 @@ app.get('/config', (req, res) => {
     res.render('config.njk', {
         title: 'AI RPG Configuration',
         config: config,
+        modConfigs: modLoader.getModConfigs(),
         currentPage: 'config',
         savedMessage,
         errorMessage
@@ -14993,9 +14994,34 @@ app.post('/config', (req, res) => {
     try {
         // Update configuration with form data
         const updatedConfig = { ...config };
+        const modConfigsToSave = [];
 
         // Parse nested form data (e.g., "server.host" -> config.server.host)
         for (const [key, value] of Object.entries(req.body)) {
+            // Handle mod configurations separately
+            if (key.startsWith('mods.')) {
+                const parts = key.split('.');
+                // Expected format: mods.<modName>.<configKey>
+                if (parts.length >= 3) {
+                    const modName = parts[1];
+                    const configKey = parts.slice(2).join('.');
+                    
+                    let modConfigEntry = modConfigsToSave.find(m => m.name === modName);
+                    if (!modConfigEntry) {
+                        modConfigEntry = { name: modName, config: {} };
+                        modConfigsToSave.push(modConfigEntry);
+                    }
+                    
+                    // Handle numeric values if they look like numbers
+                    // Ideally we'd use the schema to know type, but for now simple heuristic
+                    // or let the mod loader validate/cast if we implemented that.
+                    // For now, simple string/trim.
+                    // NOTE: This could be improved by looking up schema in modLoader
+                     modConfigEntry.config[configKey] = value;
+                }
+                continue;
+            }
+
             const keys = key.split('.');
             let current = updatedConfig;
 
@@ -15014,6 +15040,22 @@ app.post('/config', (req, res) => {
                 current[finalKey] = parseFloat(value);
             } else {
                 current[finalKey] = value;
+            }
+        }
+        
+        // Save mod configurations
+        for (const modConf of modConfigsToSave) {
+            try {
+                // Get current config to merge with (so we don't overwrite valid defaults with missing keys if partial update)
+                // But form submit usually sends all fields.
+                // Better: Get current config, update provided keys.
+                const currentModConfig = modLoader.getModConfig(modConf.name);
+                const newModConfig = { ...currentModConfig, ...modConf.config };
+                
+                modLoader.saveModConfig(modConf.name, newModConfig);
+                console.log(`Saved configuration for mod: ${modConf.name}`);
+            } catch (err) {
+                console.error(`Failed to save config for mod ${modConf.name}:`, err.message);
             }
         }
 

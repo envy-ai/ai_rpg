@@ -81,6 +81,60 @@
                     </div>
                 </div>
                 
+                <!-- Mod Configurations -->
+                {% for mod in modConfigs %}
+                <div class="config-section">
+                    <h2>🧩 {{ mod.displayName }}</h2>
+                    <div class="form-grid">
+                        {% for key, schema in mod.schema %}
+                        <div class="form-group {% if schema.fullWidth %}full-width{% endif %}">
+                            <label for="mod-{{ mod.name }}-{{ key }}">{{ schema.label }}</label>
+                            
+                            {% if schema.type == 'select' %}
+                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}">
+                                    {% for option in schema.options %}
+                                        <option value="{{ option }}" {% if option == mod.config[key] %}selected{% endif %}>{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% elif schema.type == 'modelSelect' %}
+                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}">
+                                    <option value="" {% if not mod.config[key] %}selected{% endif %}>Values Default ({{ config.ai.model }})</option>
+                                    {% for option in modelOptions %}
+                                        <option value="{{ option }}" {% if option == mod.config[key] %}selected{% endif %}>{{ option }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% elif schema.type == 'number' %}
+                                <input type="number" 
+                                       id="mod-{{ mod.name }}-{{ key }}" 
+                                       name="mods.{{ mod.name }}.{{ key }}" 
+                                       value="{{ mod.config[key] }}"
+                                       {% if schema.min is defined %}min="{{ schema.min }}"{% endif %}
+                                       {% if schema.max is defined %}max="{{ schema.max }}"{% endif %}
+                                       {% if schema.step is defined %}step="{{ schema.step }}"{% endif %}>
+                            {% elif schema.type == 'checkbox' %}
+                                <div class="checkbox-wrapper">
+                                    <input type="checkbox" 
+                                           id="mod-{{ mod.name }}-{{ key }}" 
+                                           name="mods.{{ mod.name }}.{{ key }}" 
+                                           value="true"
+                                           {% if mod.config[key] %}checked{% endif %}>
+                                </div>
+                            {% else %}
+                                <input type="text" 
+                                       id="mod-{{ mod.name }}-{{ key }}" 
+                                       name="mods.{{ mod.name }}.{{ key }}" 
+                                       value="{{ mod.config[key] }}">
+                            {% endif %}
+                            
+                            {% if schema.description %}
+                                <span class="help-text">{{ schema.description }}</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+                
                 <!-- Action Buttons -->
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
@@ -132,5 +186,33 @@
     </div>
     
     <script src="/js/config.js"></script>
+    <script>
+        // Dynamically enhance mod model selectors if needed
+        document.addEventListener('DOMContentLoaded', () => {
+            const modelOptionsInput = document.getElementById('model-options');
+            let globalModelOptions = [];
+            
+            try {
+                if (modelOptionsInput && modelOptionsInput.value) {
+                    globalModelOptions = JSON.parse(modelOptionsInput.value || '[]');
+                }
+            } catch (e) {
+                console.warn('Failed to parse global model options for mods:', e);
+            }
+
+            // Find all mod configuration selects that look like model selectors (heuristic: label contains "Model")
+            // Or better yet, we can check if the schema has type 'model_select' in the future.
+            // For now, let's look for known keys or just rely on standard select.
+            
+            // Actually, if the schema provided options, they are rendered. 
+            // If we want to inject global model options into a mod select simply,
+            // we'd need to update the mod schema to support 'dynamic_options': 'models' or similar.
+            // For this iteration, we'll assume the mod provides a text input for model or a simple select.
+            // BUT the user asked to "setup distinct text ai model" and "use this model instead of default".
+            // It would be nice to offer the same dropdown as the main AI config.
+            
+            // Let's rely on the mod schema defining options for now. The mod implementation will handle getting the list.
+        });
+    </script>
 </body>
 </html>
