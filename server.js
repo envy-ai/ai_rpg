@@ -17,7 +17,6 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 // Import Player class
 const Player = require('./Player.js');
 
-// Import Location and LocationExit classes
 const Location = require('./Location.js');
 const LocationExit = require('./LocationExit.js');
 
