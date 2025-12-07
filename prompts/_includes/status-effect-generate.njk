@@ -40,6 +40,13 @@ Respond in the following format:
       </skill>
       <!-- Additional skill modifiers, or omit if no skill modifiers -->
     </skills>
+    <needBars>
+      <needBar>
+        <name><!-- Name of the need bar affected (the exact name of a need bar, or Health) --></name>
+        <delta><!-- a positive or negative integer within the modifier range for this effect indicating how much the need bar changes per round. Positive is good, negative is bad. --></delta>
+      </needBar>
+      <!-- Additional need bar modifiers, or omit if no need bar modifiers -->
+    </needBars>
   </effect>
   <!-- Additional status effects, one per seed -->
 </statusEffects>

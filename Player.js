@@ -696,6 +696,50 @@ class Player {
         return this.getById(id);
     }
 
+    /**
+     * Apply need bar deltas from active status effects for all players.
+     * Returns an array of adjustment records applied.
+     */
+    static applyStatusEffectNeedBarsToAll() {
+        const adjustments = [];
+        for (const player of this.#instances) {
+            if (!player || typeof player.getStatusEffects !== 'function') {
+                continue;
+            }
+            const effects = player.getStatusEffects() || [];
+            for (const effect of effects) {
+                if (!effect || !Array.isArray(effect.needBars)) {
+                    continue;
+                }
+                for (const entry of effect.needBars) {
+                    if (!entry) continue;
+                    const name = typeof entry.name === 'string' ? entry.name.trim() : null;
+                    const delta = Number(entry.delta);
+                    if (!name || !Number.isFinite(delta)) {
+                        continue;
+                    }
+                    try {
+                        const before = player.getNeedBarValue(name);
+                        const next = (before ?? 0) + delta;
+                        player.setNeedBarValue(name, next, { allowPlayerOnly: false });
+                        const after = player.getNeedBarValue(name);
+                        adjustments.push({
+                            playerId: player.id || null,
+                            playerName: player.name || null,
+                            bar: name,
+                            previousValue: before,
+                            newValue: after,
+                            delta
+                        });
+                    } catch (error) {
+                        console.warn(`Failed to apply need bar delta "${name}" for ${player.name || player.id || 'player'}:`, error?.message || error);
+                    }
+                }
+            }
+        }
+        return adjustments;
+    }
+
     static #notifyNpcInventoryChange(player, payload = {}) {
         if (!player || !player.isNPC || !this.#npcInventoryChangeHandler) {
             return;
@@ -2721,6 +2765,7 @@ class Player {
 
                 const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
                 const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
+                const needBars = Array.isArray(entry.needBars) ? entry.needBars : undefined;
                 const duration = entry.duration !== undefined ? entry.duration : null;
 
                 normalized.push(new StatusEffect({
@@ -2728,6 +2773,7 @@ class Player {
                     description: descriptionValue,
                     attributes,
                     skills,
+                    needBars,
                     duration
                 }));
                 continue;

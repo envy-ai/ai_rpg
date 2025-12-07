@@ -1195,7 +1195,8 @@ module.exports = function registerApiRoutes(scope) {
             try {
                 const requestOptions = {
                     messages,
-                    metadataLabel: 'summarize_batch'
+                    metadataLabel: 'summarize_batch',
+                    runInBackground: true
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -4021,7 +4022,7 @@ module.exports = function registerApiRoutes(scope) {
 
         function applyAttackDamageToTarget({ attackContext, attackOutcome, attacker }) {
             if (!attackContext?.isAttack || !attackOutcome?.hit) {
-                return { application: null, targetActor: null };
+                return { application: null, targetActor: null, appliedStatusEffects: [] };
             }
 
             const declaredDamage = Number.isFinite(attackOutcome?.damage?.total)
@@ -4029,7 +4030,7 @@ module.exports = function registerApiRoutes(scope) {
                 : 0;
 
             if (!Number.isFinite(declaredDamage) || declaredDamage <= 0) {
-                return { application: null, targetActor: null };
+                return { application: null, targetActor: null, appliedStatusEffects: [] };
             }
 
             const targetId = attackContext?.target?.id
@@ -4051,7 +4052,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (!targetActor || typeof targetActor.modifyHealth !== 'function') {
-                return { application: null, targetActor: null };
+                return { application: null, targetActor: null, appliedStatusEffects: [] };
             }
 
             const startingHealth = Number.isFinite(targetActor.health) ? targetActor.health : 0;
@@ -4120,7 +4121,38 @@ module.exports = function registerApiRoutes(scope) {
                 remainingHealthPercent
             };
 
-            return { application, targetActor };
+            const appliedStatusEffects = [];
+            const weaponEffect = (() => {
+                if (!attacker || typeof attacker.getEquippedItemIdForType !== 'function') {
+                    return null;
+                }
+                const weaponId = attacker.getEquippedItemIdForType('weapon');
+                if (!weaponId) {
+                    return null;
+                }
+                const weaponThing = Thing.getById(weaponId);
+                if (!weaponThing || !weaponThing.causeStatusEffectOnTarget) {
+                    return null;
+                }
+                return weaponThing.causeStatusEffectOnTarget;
+            })();
+
+            if (weaponEffect && typeof targetActor.addStatusEffect === 'function') {
+                try {
+                    const applied = targetActor.addStatusEffect(weaponEffect, weaponEffect.duration ?? 1);
+                    if (applied) {
+                        appliedStatusEffects.push({
+                            name: weaponEffect.name || 'Status Effect',
+                            description: weaponEffect.description || '',
+                            duration: weaponEffect.duration ?? 1
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Failed to apply weapon status effect on target:', error.message);
+                }
+            }
+
+            return { application, targetActor, appliedStatusEffects };
         }
 
         function parseNpcQueueResponse(responseText) {
@@ -5013,7 +5045,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: `npc_memories_${npc.name.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown'}`,
-                    timeoutMs: baseTimeoutMilliseconds * timeoutScale
+                    timeoutMs: baseTimeoutMilliseconds * timeoutScale,
+                    runInBackground: true
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -5873,6 +5906,16 @@ module.exports = function registerApiRoutes(scope) {
                             attacker: npc
                         });
                         attackDamageApplication = damageResult.application;
+                        if (Array.isArray(damageResult.appliedStatusEffects) && damageResult.appliedStatusEffects.length) {
+                            attackOutcome.appliedStatusEffects = damageResult.appliedStatusEffects;
+                            attackContext.appliedStatusEffects = damageResult.appliedStatusEffects;
+                            const targetName = attackContext?.target?.name || 'the target';
+                            newChatEntries.push({
+                                role: 'system',
+                                content: `Applied status effect to ${targetName}: ${damageResult.appliedStatusEffects.map(effect => effect.name || 'Status Effect').join(', ')}`,
+                                ephemeral: true
+                            });
+                        }
                     }
 
                     if (isAttack) {
@@ -6101,6 +6144,12 @@ module.exports = function registerApiRoutes(scope) {
             Globals.processedMove = false;
             let currentUserMessage = null;
             let currentTurnLog = [];
+
+            try {
+                Player.applyStatusEffectNeedBarsToAll();
+            } catch (error) {
+                console.warn('Failed to apply status effect need bar deltas at turn start:', error?.message || error);
+            }
             const findRecentProseEntries = (limit = 5) => {
                 if (!Array.isArray(chatHistory) || !chatHistory.length) {
                     return [];
@@ -6785,6 +6834,16 @@ module.exports = function registerApiRoutes(scope) {
                         attacker: currentPlayer
                     });
                     attackDamageApplication = damageResult.application;
+                    if (Array.isArray(damageResult.appliedStatusEffects) && damageResult.appliedStatusEffects.length) {
+                        attackOutcome.appliedStatusEffects = damageResult.appliedStatusEffects;
+                        attackContextForPlausibility.appliedStatusEffects = damageResult.appliedStatusEffects;
+                        const targetName = attackContextForPlausibility?.target?.name || 'the target';
+                        newChatEntries.push({
+                            role: 'system',
+                            content: `Applied status effect to ${targetName}: ${damageResult.appliedStatusEffects.map(effect => effect.name || 'Status Effect').join(', ')}`,
+                            ephemeral: true
+                        });
+                    }
                 }
 
                 if (attackDamageApplication) {
@@ -13620,12 +13679,43 @@ module.exports = function registerApiRoutes(scope) {
                     ? consumedThingNames
                     : consumedNameList;
                 if (consumedSummaryNames.length) {
-                    consumedSummaryNames.forEach(name => {
+                consumedSummaryNames.forEach(name => {
+                    eventItems.push({
+                        icon: '♻️',
+                        description: `Consumed ${name}.`
+                    });
+                });
+
+                const appliedConsumeEffects = [];
+                if (actionOutcome.success && Array.isArray(consumedThings)) {
+                    for (const thing of consumedThings) {
+                        const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
+                        if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
+                            try {
+                                const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                if (applied) {
+                                    appliedConsumeEffects.push(applied);
+                                }
+                            } catch (error) {
+                                console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
+                            }
+                        }
+                    }
+                }
+                if (appliedConsumeEffects.length) {
+                    appliedConsumeEffects.forEach(effect => {
                         eventItems.push({
-                            icon: '♻️',
-                            description: `Consumed ${name}.`
+                            type: 'status_effect_change',
+                            icon: '✨',
+                            description: `Gained status effect: ${effect.name || effect.description || 'Unknown Effect'}`,
+                            effect: {
+                                name: effect.name || null,
+                                description: effect.description || '',
+                                duration: effect.duration ?? null
+                            }
                         });
                     });
+                }
                 }
                 const expectedConsumption = !isHarvestAction && slotItems.length > 0;
                 if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {

@@ -11,7 +11,8 @@ class LLMClient {
         timer: null,
         lastLines: 0,
         lastWidth: 0,
-        lastBroadcastHadEntries: false
+        lastBroadcastHadEntries: false,
+        hadEntries: false
     };
     static #streamCounter = 0;
 
@@ -93,7 +94,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false } = {}) {
         if (!LLMClient.#isInteractive()) {
             return null;
         }
@@ -109,7 +110,8 @@ class LLMClient {
             startTs,
             startDeadline,
             continueDeadline,
-            firstByteTs: null
+            firstByteTs: null,
+            isBackground: Boolean(isBackground)
         });
         LLMClient.#ensureProgressTicker();
         return id;
@@ -161,11 +163,16 @@ class LLMClient {
                 timeoutSeconds,
                 retries: entry.retries ?? 0,
                 latencyMs,
-                avgBps
+                avgBps,
+                isBackground: Boolean(entry.isBackground)
             };
         });
         if (entries.length === 0 && !isFinal) {
             return;
+        }
+        const hasForegroundEntries = entries.some(entry => !entry.isBackground);
+        if (hasForegroundEntries) {
+            LLMClient.#streamProgress.hadEntries = true;
         }
         const payload = {
             type: 'prompt_progress',
@@ -175,6 +182,16 @@ class LLMClient {
         try {
             hub.emit(null, 'prompt_progress', payload);
             LLMClient.#streamProgress.lastBroadcastHadEntries = entries.length > 0 && !isFinal;
+            const activeForeground = Array.from(LLMClient.#streamProgress.active.values())
+                .filter(entry => !entry.isBackground);
+            const allDone = isFinal && activeForeground.length === 0;
+            if (allDone && LLMClient.#streamProgress.hadEntries) {
+                hub.emit(null, 'prompt_progress_cleared', {
+                    type: 'prompt_progress_cleared',
+                    timestamp: new Date().toISOString()
+                });
+                LLMClient.#streamProgress.hadEntries = false;
+            }
         } catch (error) {
             console.warn('Failed to broadcast prompt progress:', error?.message || error);
         }
@@ -396,6 +413,7 @@ class LLMClient {
         presencePenalty = null,
         seed = Math.random(),
         stream = undefined,
+        runInBackground = false,
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -548,7 +566,13 @@ class LLMClient {
             const controller = new AbortController();
             const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
             try {
-                streamTrackerId = payload.stream ? LLMClient.#trackStreamStart(metadataLabel, { startTimeoutMs: streamStartTimeoutMs, continueTimeoutMs: streamContinueTimeoutMs }) : null;
+                streamTrackerId = payload.stream
+                    ? LLMClient.#trackStreamStart(metadataLabel, {
+                        startTimeoutMs: streamStartTimeoutMs,
+                        continueTimeoutMs: streamContinueTimeoutMs,
+                        isBackground: Boolean(runInBackground)
+                    })
+                    : null;
                 if (payload.stream) {
                     startTimer = setTimeout(() => {
                         controller.abort(new Error('Stream start timeout'));

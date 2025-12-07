@@ -1444,6 +1444,7 @@ class Thing {
 
     const attributes = Array.isArray(effect.attributes) ? effect.attributes : undefined;
     const skills = Array.isArray(effect.skills) ? effect.skills : undefined;
+    const needBars = Array.isArray(effect.needBars) ? effect.needBars : undefined;
     const duration = effect.duration !== undefined ? effect.duration : null;
 
     const statusEffect = new StatusEffect({
@@ -1451,6 +1452,7 @@ class Thing {
       description,
       attributes,
       skills,
+      needBars,
       duration
     });
 

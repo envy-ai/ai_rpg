@@ -1534,6 +1534,9 @@ class AIRPGChat {
             case 'prompt_progress':
                 this.handlePromptProgress(payload);
                 break;
+            case 'prompt_progress_cleared':
+                this.handlePromptProgressCleared(payload);
+                break;
             case 'quest_confirmation_request':
                 this.handleQuestConfirmationRequest(payload);
                 break;
@@ -1634,6 +1637,49 @@ class AIRPGChat {
 
         if (isNearBottom) {
             this.scrollToBottom();
+        }
+    }
+
+    async handlePromptProgressCleared(payload) {
+        // Remove any existing prompt progress UI and refresh adventure tab sections without a full reload.
+        this.renderPromptProgress([]);
+
+        const refreshTasks = [];
+
+        try {
+            refreshTasks.push(this.refreshChatHistory());
+        } catch (error) {
+            console.warn('Failed to queue chat history refresh after prompt clear:', error);
+        }
+
+        try {
+            refreshTasks.push(this.checkLocationUpdate());
+        } catch (error) {
+            console.warn('Failed to queue location refresh after prompt clear:', error);
+        }
+
+        try {
+            if (typeof window.refreshQuestPanel === 'function') {
+                refreshTasks.push(Promise.resolve(window.refreshQuestPanel()));
+            }
+        } catch (error) {
+            console.warn('Failed to queue quest panel refresh after prompt clear:', error);
+        }
+
+        try {
+            if (typeof window.refreshParty === 'function') {
+                refreshTasks.push(Promise.resolve(window.refreshParty()));
+            }
+        } catch (error) {
+            console.warn('Failed to queue party refresh after prompt clear:', error);
+        }
+
+        if (refreshTasks.length) {
+            try {
+                await Promise.allSettled(refreshTasks);
+            } catch (error) {
+                console.warn('Background section refreshes after prompt clear encountered errors:', error);
+            }
         }
     }
 

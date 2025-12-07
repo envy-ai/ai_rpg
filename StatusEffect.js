@@ -2,7 +2,7 @@ const Utils = require('./Utils.js');
 const LLMClient = require('./LLMClient.js');
 
 class StatusEffect {
-    constructor({ name, description, attributes, skills, duration } = {}) {
+    constructor({ name, description, attributes, skills, needBars, duration } = {}) {
         if (!description || typeof description !== 'string') {
             throw new Error('StatusEffect description must be a non-empty string');
         }
@@ -11,6 +11,7 @@ class StatusEffect {
         this.description = description.trim();
         this.attributes = this.#normalizeModifiers(attributes, 'attribute');
         this.skills = this.#normalizeModifiers(skills, 'skill');
+        this.needBars = this.#normalizeNeedBars(needBars);
         this.duration = this.#normalizeDuration(duration);
     }
 
@@ -41,6 +42,30 @@ class StatusEffect {
         });
     }
 
+    #normalizeNeedBars(list) {
+        if (list === undefined || list === null) {
+            return [];
+        }
+        if (!Array.isArray(list)) {
+            throw new Error('StatusEffect need bar modifiers must be an array if provided');
+        }
+
+        return list.map(entry => {
+            if (!entry || typeof entry !== 'object') {
+                throw new Error('StatusEffect need bar modifier entries must be objects');
+            }
+            const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+            if (!name) {
+                throw new Error('StatusEffect need bar modifier is missing a name');
+            }
+            const delta = Number(entry.delta);
+            if (!Number.isFinite(delta)) {
+                throw new Error(`StatusEffect need bar "${name}" has invalid delta`);
+            }
+            return { name, delta };
+        });
+    }
+
     #normalizeDuration(value) {
         if (value === null || value === undefined) {
             return null;
@@ -63,7 +88,7 @@ class StatusEffect {
         return Math.max(0, Math.floor(numeric));
     }
 
-    update({ name, description, attributes, skills, duration } = {}) {
+    update({ name, description, attributes, skills, needBars, duration } = {}) {
         if (typeof name === 'string' && name.trim()) {
             this.name = name.trim();
         }
@@ -75,6 +100,9 @@ class StatusEffect {
         }
         if (skills !== undefined) {
             this.skills = this.#normalizeModifiers(skills, 'skill');
+        }
+        if (needBars !== undefined) {
+            this.needBars = this.#normalizeNeedBars(needBars);
         }
         if (duration !== undefined) {
             this.duration = this.#normalizeDuration(duration);
@@ -88,6 +116,7 @@ class StatusEffect {
             description: this.description,
             attributes: this.attributes,
             skills: this.skills,
+            needBars: this.needBars,
             duration: this.duration
         };
     }
@@ -101,6 +130,7 @@ class StatusEffect {
             description: data.description,
             attributes: data.attributes,
             skills: data.skills,
+            needBars: data.needBars,
             duration: data.duration
         });
     }
@@ -240,12 +270,25 @@ class StatusEffect {
                 return { skill: skillName, modifier: modifierValue };
             });
 
+            const needBars = Array.from(node.getElementsByTagName('needBar')).map(needNode => {
+                const barName = textFromTag(needNode, 'name')?.trim();
+                const deltaValue = Number(textFromTag(needNode, 'delta'));
+                if (!barName) {
+                    throw new Error(`Status effect "${sourceDescription}" need bar entry missing name`);
+                }
+                if (!Number.isFinite(deltaValue)) {
+                    throw new Error(`Status effect "${sourceDescription}" need bar "${barName}" has invalid delta`);
+                }
+                return { name: barName, delta: deltaValue };
+            });
+
             results.set(sourceDescription, new StatusEffect({
                 name,
                 description,
                 duration,
                 attributes,
-                skills
+                skills,
+                needBars
             }));
         }
 

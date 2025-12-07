@@ -3278,7 +3278,8 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
         try {
             responseText = await LLMClient.chatCompletion({
                 messages,
-                metadataLabel: 'choose_important_memories'
+                metadataLabel: 'choose_important_memories',
+                runInBackground: true
             });
         } catch (error) {
             console.warn('choose_important_memories request failed:', error.message);
@@ -10157,6 +10158,41 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
                     effectPayload.duration = effectDuration;
                 }
+
+                const attributes = Array.from(nodeRef.getElementsByTagName('attribute')).map(attrNode => {
+                    const attrName = attrNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                    const modRaw = attrNode.getElementsByTagName('modifier')[0]?.textContent?.trim();
+                    const modifier = Number(modRaw);
+                    if (!attrName || !Number.isFinite(modifier)) {
+                        return null;
+                    }
+                    return { attribute: attrName, modifier };
+                }).filter(Boolean);
+
+                const skills = Array.from(nodeRef.getElementsByTagName('skill')).map(skillNode => {
+                    const skillName = skillNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                    const modRaw = skillNode.getElementsByTagName('modifier')[0]?.textContent?.trim();
+                    const modifier = Number(modRaw);
+                    if (!skillName || !Number.isFinite(modifier)) {
+                        return null;
+                    }
+                    return { skill: skillName, modifier };
+                }).filter(Boolean);
+
+                const needBars = Array.from(nodeRef.getElementsByTagName('needBar')).map(needNode => {
+                    const barName = needNode.getElementsByTagName('name')[0]?.textContent?.trim();
+                    const deltaRaw = needNode.getElementsByTagName('delta')[0]?.textContent?.trim();
+                    const delta = Number(deltaRaw);
+                    if (!barName || !Number.isFinite(delta)) {
+                        return null;
+                    }
+                    return { name: barName, delta };
+                }).filter(Boolean);
+
+                if (attributes.length) effectPayload.attributes = attributes;
+                if (skills.length) effectPayload.skills = skills;
+                if (needBars.length) effectPayload.needBars = needBars;
+
                 return Object.keys(effectPayload).length ? effectPayload : null;
             };
 
@@ -13156,6 +13192,7 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
             metadataLabel: 'image_prompt_generation',
             validateXML: false,
             waitAfterError: 20,
+            runInBackground: true
         });
 
         if (!responseText || !responseText.trim()) {

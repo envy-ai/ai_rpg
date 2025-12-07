@@ -4438,11 +4438,33 @@
                 }
                 const description = effect.description || effect.text || effect.name || '';
                 const mods = formatModifiersList(effect.attributes, effect.skills);
+                const needBars = Array.isArray(effect.needBars) ? effect.needBars : [];
+                const needBarItems = needBars
+                    .map(entry => {
+                        if (!entry) return null;
+                        const name = entry.name || entry.bar || entry.id || null;
+                        const delta = Number.isFinite(entry.delta) ? entry.delta : (Number.isFinite(entry.modifier) ? entry.modifier : null);
+                        if (!name || !Number.isFinite(delta)) {
+                            return null;
+                        }
+                        const formattedDelta = delta > 0 ? `+${delta}` : `${delta}`;
+                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedDelta)}</span></li>`;
+                    })
+                    .filter(Boolean);
+                const needBarsSection = needBarItems.length
+                    ? `<div class="tooltip-thing-bonuses">
+                            <div class="tooltip-thing-bonuses-title">Regen/Drain Effects</div>
+                            <ul class="tooltip-thing-bonuses-list">
+                                ${needBarItems.join('')}
+                            </ul>
+                       </div>`
+                    : '';
                 return `
                     <div class="tooltip-thing-status">
                         <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
                         <div class="tooltip-status-desc">${escapeHtml(description)}</div>
                         ${mods}
+                        ${needBarsSection}
                     </div>
                 `;
             };
@@ -4737,7 +4759,7 @@
                 selectEl.innerHTML = '';
                 const defaultOpt = document.createElement('option');
                 defaultOpt.value = '';
-                defaultOpt.textContent = 'Select attribute or skill';
+                defaultOpt.textContent = 'Select attribute, skill, or need bar';
                 selectEl.appendChild(defaultOpt);
 
                 const addGroup = (label, values, prefix) => {
@@ -4765,8 +4787,16 @@
                         .map(entry => ({ key: entry.name, label: entry.name }))
                     : [];
 
+                const needBars = Array.isArray(window.needBarDefinitions)
+                    ? window.needBarDefinitions
+                        .filter(entry => entry && entry.id && entry.name)
+                        .map(entry => ({ key: entry.id, label: entry.name }))
+                    : [];
+                needBars.unshift({ key: 'health', label: 'Health' });
+
                 addGroup('Attributes', attributes, 'attr');
                 addGroup('Skills', skills, 'skill');
+                addGroup('Need Bars', needBars, 'need');
             },
             createRow(initial) {
                 const row = document.createElement('div');
@@ -4797,9 +4827,14 @@
                         select.value = `attr:${initial.attribute}`;
                     } else if (initial.skill) {
                         select.value = `skill:${initial.skill}`;
+                    } else if (initial.name) {
+                        select.value = `need:${initial.name}`;
                     }
-                    if (Number.isFinite(initial.modifier)) {
-                        input.value = initial.modifier;
+                    const numeric = Number.isFinite(initial.modifier)
+                        ? initial.modifier
+                        : (Number.isFinite(initial.delta) ? initial.delta : null);
+                    if (numeric !== null) {
+                        input.value = numeric;
                     }
                 }
 
@@ -4815,7 +4850,7 @@
                 entries.forEach(entry => container.appendChild(this.createRow(entry)));
             },
             collect(container) {
-                const result = { attributes: [], skills: [] };
+                const result = { attributes: [], skills: [], needBars: [] };
                 if (!container) return result;
                 container.querySelectorAll('.thing-modifier-row').forEach(row => {
                     const select = row.querySelector('.thing-modifier-select');
@@ -4831,6 +4866,8 @@
                         result.attributes.push({ attribute: key, modifier });
                     } else if (type === 'skill') {
                         result.skills.push({ skill: key, modifier });
+                    } else if (type === 'need') {
+                        result.needBars.push({ name: key, delta: modifier });
                     }
                 });
                 return result;
@@ -5402,14 +5439,16 @@
             if (thingCauseEffectTargetModifiers) {
                 thingModifierTemplates.renderList(thingCauseEffectTargetModifiers, [
                     ...(Array.isArray(effectOnTarget?.attributes) ? effectOnTarget.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                    ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+                    ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnTarget?.needBars) ? effectOnTarget.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
                 ]);
             }
 
             if (thingCauseEffectEquipperModifiers) {
                 thingModifierTemplates.renderList(thingCauseEffectEquipperModifiers, [
                     ...(Array.isArray(effectOnEquipper?.attributes) ? effectOnEquipper.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                    ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+                    ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnEquipper?.needBars) ? effectOnEquipper.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
                 ]);
             }
         }
@@ -5439,6 +5478,7 @@
                     const modifiers = thingModifierTemplates.collect(thingCauseEffectTargetModifiers);
                     if (modifiers.attributes.length) base.attributes = modifiers.attributes;
                     if (modifiers.skills.length) base.skills = modifiers.skills;
+                    if (modifiers.needBars.length) base.needBars = modifiers.needBars;
                     return base;
                 })(),
                 equipper: (() => {
@@ -5447,6 +5487,7 @@
                     const modifiers = thingModifierTemplates.collect(thingCauseEffectEquipperModifiers);
                     if (modifiers.attributes.length) base.attributes = modifiers.attributes;
                     if (modifiers.skills.length) base.skills = modifiers.skills;
+                    if (modifiers.needBars.length) base.needBars = modifiers.needBars;
                     return base;
                 })()
             };
