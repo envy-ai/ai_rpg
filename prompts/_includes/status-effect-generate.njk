@@ -17,6 +17,8 @@
 Guidelines:
 - Skill and attribute modifiers should reflect the nature and level of the status effect. Treat the seed level as a reasomnable baseline for the magnitude of these modifiers.
 - Multiple modifiers are fine. A single status effect may have multiple attribute and skill modifiers as appropriate (or one, or none at all if it makes sense).
+- Use need bar changes to reflect ongoing effects of the status effect. For example, a "Poisoned" effect might decrease Health over time, while a "Blessed" effect might slowly restore Mana.
+- Need bar deltas are *in addition to* any natural regeneration or depletion that occurs. For example, if Health normally regenerates at +1 per turn, and a status effect has a -2 delta to Health, the net effect is -1 Health per turn. Hence, negatives are *always* bad, and positives are *always* good.
 
 Respond in the following format:
 
@@ -29,21 +31,21 @@ Respond in the following format:
     <attributes>
       <attribute>
         <name><!-- Attribute name (use only attributes listed in the current setting) --></name>
-        <modifier><!-- a positive or negative integer within the modifier range for this effect --></modifier>
+        <modifier><!-- a positive or negative (non-zero) integer within the modifier range for this effect --></modifier>
       </attribute>
       <!-- Additional atttribute modifiers, or omit if no attribute modifiers -->
     </attributes>
     <skills>
       <skill>
         <name><!-- Skill name (use only skills listed in the current setting) --></name>
-        <modifier><!-- a positive or negative integer within the modifier range for this effect --></modifier>
+        <modifier><!-- a positive or negative (non-zero) integer within the modifier range for this effect --></modifier>
       </skill>
       <!-- Additional skill modifiers, or omit if no skill modifiers -->
     </skills>
     <needBars>
       <needBar>
         <name><!-- Name of the need bar affected (the exact name of a need bar, or Health) --></name>
-        <delta><!-- a positive or negative integer within the modifier range for this effect indicating how much the need bar changes per round. Positive is good, negative is bad. --></delta>
+        <delta><!-- a positive or negative (non-zero) integer within the modifier range for this effect indicating how much the need bar changes per round. Positive is good, negative is bad. --></delta>
       </needBar>
       <!-- Additional need bar modifiers, or omit if no need bar modifiers -->
     </needBars>

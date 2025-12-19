@@ -1020,6 +1020,15 @@
                     <div id="npcEditAbilities" class="npc-ability-list"></div>
                 </div>
 
+                <div class="npc-edit-section">
+                    <div class="npc-edit-section-header">
+                        <h3>Status Effects</h3>
+                        <button type="button" class="npc-edit-add-btn" id="npcStatusEffectAddBtn">Add Effect</button>
+                    </div>
+                    <div id="npcEditStatusEffectsList" class="thing-edit-status-effects"></div>
+                    <p class="npc-edit-hint">Intrinsic status effects only; gear effects are applied automatically.</p>
+                </div>
+
                 <div class="npc-edit-footer">
                     <div id="npcEditStatus" class="npc-edit-status" role="status" aria-live="polite"></div>
                     <div class="npc-edit-actions">
@@ -1365,6 +1374,7 @@
         window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
         window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
         window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
+        window.needBarDefinitions = {{ (needBarDefinitions or []) | dump | safe }};
         const __knownSkillNameSet = new Set(
             (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
                 .map(skill => {
@@ -2067,6 +2077,13 @@
             }
             if (Array.isArray(actor.importantMemories)) {
                 clone.importantMemories = actor.importantMemories.slice(0);
+            }
+            if (actor.attributeInfo && typeof actor.attributeInfo === 'object') {
+                const copied = {};
+                for (const [key, info] of Object.entries(actor.attributeInfo)) {
+                    copied[key] = info && typeof info === 'object' ? { ...info } : info;
+                }
+                clone.attributeInfo = copied;
             }
             return clone;
         }
@@ -4436,8 +4453,28 @@
                 if (!effect || (!effect.description && !effect.name)) {
                     return '';
                 }
+                const nameText = effect.name || '';
                 const description = effect.description || effect.text || effect.name || '';
-                const mods = formatModifiersList(effect.attributes, effect.skills);
+                const mods = (() => {
+                    const combined = [
+                        ...(Array.isArray(effect.attributes) ? effect.attributes : []),
+                        ...(Array.isArray(effect.skills) ? effect.skills : [])
+                    ];
+                    const valid = combined
+                        .map(mod => {
+                            const key = mod.attribute || mod.skill || mod.name;
+                            const val = Number.isFinite(mod.modifier) ? mod.modifier : (Number.isFinite(mod.value) ? mod.value : null);
+                            if (!key || !Number.isFinite(val)) {
+                                return null;
+                            }
+                            const formattedVal = val > 0 ? `+${val}` : `${val}`;
+                            const valClass = val > 0 ? 'positive' : (val < 0 ? 'negative' : 'neutral');
+                            return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(key)}</span><span class="tooltip-thing-bonus-value ${valClass}">${escapeHtml(formattedVal)}</span></li>`;
+                        })
+                        .filter(Boolean);
+                    return valid.length ? valid : [];
+                })();
+
                 const needBars = Array.isArray(effect.needBars) ? effect.needBars : [];
                 const needBarItems = needBars
                     .map(entry => {
@@ -4447,24 +4484,22 @@
                         if (!name || !Number.isFinite(delta)) {
                             return null;
                         }
-                        const formattedDelta = delta > 0 ? `+${delta}` : `${delta}`;
-                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedDelta)}</span></li>`;
+                        const formattedDelta = (delta > 0 ? `+${delta}` : `${delta}`) + '/turn';
+                        const valClass = delta > 0 ? 'positive' : (delta < 0 ? 'negative' : 'neutral');
+                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span><span class="tooltip-thing-bonus-value ${valClass}">${escapeHtml(formattedDelta)}</span></li>`;
                     })
                     .filter(Boolean);
-                const needBarsSection = needBarItems.length
-                    ? `<div class="tooltip-thing-bonuses">
-                            <div class="tooltip-thing-bonuses-title">Regen/Drain Effects</div>
-                            <ul class="tooltip-thing-bonuses-list">
-                                ${needBarItems.join('')}
-                            </ul>
-                       </div>`
+
+                const allItems = [...mods, ...needBarItems];
+                const combinedList = allItems.length
+                    ? `<ul class="tooltip-thing-bonuses-list">${allItems.join('')}</ul>`
                     : '';
+
                 return `
                     <div class="tooltip-thing-status">
                         <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
-                        <div class="tooltip-status-desc">${escapeHtml(description)}</div>
-                        ${mods}
-                        ${needBarsSection}
+                        <div class="tooltip-status-desc">${nameText ? `<strong>${escapeHtml(nameText)}</strong> – ` : ''}${escapeHtml(description)}</div>
+                        ${combinedList}
                     </div>
                 `;
             };
@@ -4484,7 +4519,8 @@
                                 const formattedBonus = Number.isFinite(rawBonus)
                                     ? (rawBonus > 0 ? `+${rawBonus}` : `${rawBonus}`)
                                     : escapeHtml(bonus?.bonus ?? bonus?.value ?? '0');
-                                return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(attrName)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedBonus)}</span></li>`;
+                                const valClass = rawBonus > 0 ? 'positive' : (rawBonus < 0 ? 'negative' : 'neutral');
+                                return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(attrName)}</span><span class="tooltip-thing-bonus-value ${valClass}">${escapeHtml(formattedBonus)}</span></li>`;
                             }).join('')}
                         </ul>
                     </div>`
@@ -4625,6 +4661,8 @@
         const npcEditAbilitiesContainer = document.getElementById('npcEditAbilities');
         const npcAddSkillBtn = document.getElementById('npcAddSkillBtn');
         const npcAddAbilityBtn = document.getElementById('npcAddAbilityBtn');
+        const npcStatusEffectsList = document.getElementById('npcEditStatusEffectsList');
+        const npcStatusEffectAddBtn = document.getElementById('npcStatusEffectAddBtn');
         const npcEditCancelBtn = document.getElementById('npcEditCancelBtn');
         const npcEditCloseBtn = document.getElementById('npcEditCloseBtn');
         const npcEditStatus = document.getElementById('npcEditStatus');
@@ -6782,6 +6820,124 @@
             entries.forEach(ability => createAbilityRow(ability));
         }
 
+        function createNpcStatusEffectRow(effect = {}) {
+            if (!npcStatusEffectsList) {
+                return null;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'thing-edit-row thing-edit-status-row';
+
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.className = 'thing-edit-status-name';
+            nameInput.placeholder = 'Name (optional)';
+            nameInput.autocomplete = 'off';
+            nameInput.value = effect.name || '';
+
+            const descriptionInput = document.createElement('textarea');
+            descriptionInput.className = 'thing-edit-status-description';
+            descriptionInput.rows = 2;
+            descriptionInput.placeholder = 'Description';
+            descriptionInput.value = effect.description || effect.text || '';
+
+            const durationInput = document.createElement('input');
+            durationInput.type = 'text';
+            durationInput.className = 'thing-edit-status-duration';
+            durationInput.placeholder = 'Duration (e.g. 3 or permanent)';
+            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
+                durationInput.value = String(effect.duration);
+            }
+
+            const modifiersContainer = document.createElement('div');
+            modifiersContainer.className = 'thing-modifier-list';
+
+            const addModifierBtn = document.createElement('button');
+            addModifierBtn.type = 'button';
+            addModifierBtn.className = 'npc-edit-add-btn';
+            addModifierBtn.textContent = 'Add Modifier';
+            addModifierBtn.addEventListener('click', () => {
+                modifiersContainer.appendChild(thingModifierTemplates.createRow(null));
+            });
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'npc-edit-remove-btn';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => row.remove());
+
+            row.appendChild(nameInput);
+            row.appendChild(descriptionInput);
+            row.appendChild(durationInput);
+            row.appendChild(modifiersContainer);
+            row.appendChild(addModifierBtn);
+            row.appendChild(removeBtn);
+
+            npcStatusEffectsList.appendChild(row);
+
+            const existingModifiers = [
+                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
+                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                ...(Array.isArray(effect.needBars) ? effect.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
+            ];
+            thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
+
+            return row;
+        }
+
+        function renderNpcStatusEffects(effects = []) {
+            if (!npcStatusEffectsList) {
+                return;
+            }
+            npcStatusEffectsList.innerHTML = '';
+            const entries = Array.isArray(effects) ? effects : [];
+            if (!entries.length) {
+                createNpcStatusEffectRow({});
+                return;
+            }
+            entries.forEach(effect => createNpcStatusEffectRow(effect));
+        }
+
+        function collectNpcStatusEffects() {
+            if (!npcStatusEffectsList) {
+                return [];
+            }
+            const effects = [];
+            npcStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
+                const name = row.querySelector('.thing-edit-status-name')?.value?.trim();
+                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
+                if (!name && !description) {
+                    return;
+                }
+                const effect = {};
+                if (name) {
+                    effect.name = name;
+                }
+                effect.description = description || name || '';
+
+                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
+                if (durationRaw) {
+                    const numeric = Number.parseInt(durationRaw, 10);
+                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
+                }
+
+                const modifierContainer = row.querySelector('.thing-modifier-list');
+                const modifiers = thingModifierTemplates.collect(modifierContainer);
+                if (modifiers.attributes.length) {
+                    effect.attributes = modifiers.attributes;
+                }
+                if (modifiers.skills.length) {
+                    effect.skills = modifiers.skills;
+                }
+                if (modifiers.needBars.length) {
+                    effect.needBars = modifiers.needBars;
+                }
+
+                effects.push(effect);
+            });
+            return effects;
+        }
+
         function showNpcEditModal(npc) {
             if (!isNpcEditorAvailable() || !npc) {
                 return;
@@ -6854,6 +7010,10 @@
             populateNpcAttributes(npc.attributes || {});
             populateNpcSkills(npc.skills || {});
             populateNpcAbilities(Array.isArray(npc.abilities) ? npc.abilities : []);
+            const intrinsicStatusEffects = Array.isArray(npc.intrinsicStatusEffects)
+                ? npc.intrinsicStatusEffects
+                : (Array.isArray(npc.statusEffects) ? npc.statusEffects : []);
+            renderNpcStatusEffects(intrinsicStatusEffects);
             populateHealthAttributeOptions(npc.attributes || {}, npc.healthAttribute || '');
             updateNpcMaxHealth();
 
@@ -8993,6 +9153,13 @@
             });
         }
 
+        if (npcStatusEffectAddBtn) {
+            npcStatusEffectAddBtn.addEventListener('click', () => {
+                const row = createNpcStatusEffectRow({});
+                row?.querySelector('.thing-edit-status-description')?.focus();
+            });
+        }
+
         if (npcEditCancelBtn) {
             npcEditCancelBtn.addEventListener('click', () => {
                 closeNpcEditModal();
@@ -9550,6 +9717,9 @@
                     });
                 }
                 payload.abilities = abilityEntries;
+
+                const statusEffectsPayload = collectNpcStatusEffects();
+                payload.statusEffects = statusEffectsPayload;
 
                 const knownSkillSet = typeof window.getKnownSkillNameSet === 'function'
                     ? window.getKnownSkillNameSet()
@@ -11352,11 +11522,25 @@
             if (emptyState) {
                 emptyState.setAttribute('hidden', '');
             }
-            entries.forEach(({ term, detail }) => {
+            entries.forEach(({ term, detail, modifierDetail }) => {
                 const dt = document.createElement('dt');
                 dt.textContent = term;
                 const dd = document.createElement('dd');
-                dd.textContent = detail;
+                if (modifierDetail) {
+                    dd.classList.add('npc-view-attribute-entry');
+                    const baseSpan = document.createElement('span');
+                    baseSpan.className = 'npc-view-attr-base';
+                    baseSpan.textContent = detail;
+                    dd.appendChild(baseSpan);
+                    if (modifierDetail.text) {
+                        const modSpan = document.createElement('span');
+                        modSpan.textContent = modifierDetail.text;
+                        modSpan.className = modifierDetail.className;
+                        dd.appendChild(modSpan);
+                    }
+                } else {
+                    dd.textContent = detail;
+                }
                 container.appendChild(dt);
                 container.appendChild(dd);
             });
@@ -11482,7 +11666,7 @@
             });
         }
 
-        function showNpcViewModal(npc) {
+        async function showNpcViewModal(npc) {
             if (!npc || !npcViewModal || !npcModalBackdrop) {
                 return;
             }
@@ -11495,7 +11679,21 @@
                 ? window.currentNpcData
                 : (window.currentNpcData = new Map());
 
-            const latestNpc = npc && npc.id ? (npcDataCache.get(npc.id) || npc) : npc;
+            let latestNpc = npc && npc.id ? (npcDataCache.get(npc.id) || npc) : npc;
+            if ((!latestNpc?.attributeInfo || typeof latestNpc.attributeInfo !== 'object') && latestNpc?.id) {
+                try {
+                    const response = await fetch(`/api/npcs/${encodeURIComponent(latestNpc.id)}`, { cache: 'no-store' });
+                    const result = await response.json();
+                    if (result?.success && result.npc) {
+                        latestNpc = result.npc;
+                        if (npcDataCache && latestNpc.id) {
+                            npcDataCache.set(latestNpc.id, cloneActorRecord(latestNpc) || { ...latestNpc });
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to fetch detailed NPC status for view:', error?.message || error);
+                }
+            }
             currentNpcViewId = latestNpc?.id || npc?.id || null;
 
             npcModalBackdrop.removeAttribute('hidden');
@@ -11640,18 +11838,23 @@
             if (latestNpc?.attributeInfo && typeof latestNpc.attributeInfo === 'object') {
                 for (const [key, info] of Object.entries(latestNpc.attributeInfo)) {
                     const label = info?.label || formatAttributeName(key);
-                    const rawValue = info?.modifiedValue !== undefined ? info.modifiedValue : info?.value;
-                    const value = Number.isFinite(Number(rawValue)) ? Number(rawValue) : rawValue;
-                    const rawModifier = info?.modifiedModifier !== undefined ? info.modifiedModifier : info?.modifier;
-                    const modifier = Number.isFinite(Number(rawModifier)) ? Number(rawModifier) : null;
-                    const parts = [];
-                    if (value !== undefined && value !== null) {
-                        parts.push(value);
-                    }
-                    if (modifier !== null) {
-                        parts.push(`${modifier >= 0 ? '+' : ''}${modifier}`);
-                    }
-                    attributeEntries.push({ term: label, detail: parts.join(' ') || '—' });
+                    const baseValue = Number.isFinite(Number(info?.value)) ? Number(info.value) : info?.value;
+                    const modValue = Number.isFinite(Number(info?.modifiedValue)) ? Number(info.modifiedValue) : baseValue;
+
+                    const baseText = (baseValue !== undefined && baseValue !== null) ? `${baseValue}` : '—';
+                    let modifierDetail = null;
+
+                    const delta = (Number.isFinite(modValue) && Number.isFinite(baseValue))
+                        ? modValue - baseValue
+                        : 0;
+                    const className = delta > 0
+                        ? 'npc-view-attr-mod higher'
+                        : (delta < 0 ? 'npc-view-attr-mod lower' : 'npc-view-attr-mod same');
+
+                    const modText = `(${modValue !== undefined && modValue !== null ? modValue : baseValue ?? '—'})`;
+                    modifierDetail = { text: modText, className };
+
+                    attributeEntries.push({ term: label, detail: baseText, modifierDetail });
                 }
             } else if (latestNpc?.attributes && typeof latestNpc.attributes === 'object') {
                 for (const [key, value] of Object.entries(latestNpc.attributes)) {
@@ -11803,21 +12006,58 @@
             if (Array.isArray(latestNpc?.statusEffects)) {
                 latestNpc.statusEffects.forEach(effect => {
                     if (!effect) return;
-                    if (typeof effect === 'string') {
-                        statusEntries.push(effect);
-                        return;
-                    }
-                    const descriptionText = effect.description || effect.text || effect.name || '';
+                    const descriptionText = typeof effect === 'string'
+                        ? effect
+                        : (effect.description || effect.text || effect.name || '');
                     if (!descriptionText) {
                         return;
                     }
-                    const durationText = Number.isFinite(Number(effect.duration))
-                        ? ` (Duration ${Number(effect.duration)})`
+                    let durationText = '';
+                    if (effect.source === 'equipped') {
+                        durationText = ' (Continuous)';
+                    } else if (Number.isFinite(Number(effect.duration))) {
+                        durationText = ` (Duration ${Number(effect.duration)})`;
+                    }
+
+                    const rows = [];
+                    const formatValue = (val) => {
+                        const num = Number(val);
+                        if (!Number.isFinite(num)) return null;
+                        return num > 0 ? `+${num}` : `${num}`;
+                    };
+
+                    const addRows = (label, list, keyName) => {
+                        if (!Array.isArray(list) || !list.length) return;
+                        list.forEach(entry => {
+                            if (!entry) return;
+                            const name = entry[keyName] || entry.name;
+                            const value = formatValue(entry.modifier ?? entry.delta ?? entry.value);
+                            if (!name || value === null) return;
+                            const valueClass = Number(value) >= 0 ? 'positive' : 'negative';
+                            rows.push(`<tr><td>${escapeHtml(label)}</td><td class="npc-view-status-name">${escapeHtml(String(name))}</td><td class="npc-view-status-mod ${valueClass}">${escapeHtml(value)}</td></tr>`);
+                        });
+                    };
+
+                    addRows('Attribute', effect.attributes, 'attribute');
+                    addRows('Skill', effect.skills, 'skill');
+                    addRows('Regen/Drain', effect.needBars, 'name');
+
+                    const tableHtml = rows.length
+                        ? `<table class="npc-view-status-table"><tbody>${rows.join('')}</tbody></table>`
                         : '';
-                    statusEntries.push(`${descriptionText}${durationText}`);
+
+                    const nameText = effect.name || null;
+                    const headerText = nameText ? `<strong>${escapeHtml(nameText)}</strong> – ${escapeHtml(descriptionText)}${escapeHtml(durationText)}` : `${escapeHtml(descriptionText)}${escapeHtml(durationText)}`;
+                    const content = `
+                        <div class="npc-view-status-entry">
+                            <div class="npc-view-status-header">${headerText}</div>
+                            ${tableHtml}
+                        </div>
+                    `;
+                    statusEntries.push(content);
                 });
             }
-            renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries);
+            renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries, { allowHTML: true });
         }
 
             document.addEventListener('keydown', (event) => {

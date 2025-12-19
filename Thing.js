@@ -997,12 +997,16 @@ class Thing {
       const skills = Array.isArray(generated.skills) && generated.skills.length
         ? generated.skills
         : (Array.isArray(effect.skills) ? effect.skills : []);
+      const needBars = Array.isArray(generated.needBars) && generated.needBars.length
+        ? generated.needBars
+        : (Array.isArray(effect.needBars) ? effect.needBars : []);
       return {
         name: generated.name || effect.name || null,
         description: generated.description || effect.description || null,
-        duration: effect.duration ?? null,
+        duration: effect.duration ?? generated.duration ?? null,
         attributes,
-        skills
+        skills,
+        needBars
       };
     };
 

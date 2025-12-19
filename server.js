@@ -1746,6 +1746,14 @@ function serializeNpcForClient(npc, options = {}) {
     } catch (_) {
         statusEffects = [];
     }
+    let intrinsicStatusEffects = [];
+    try {
+        intrinsicStatusEffects = typeof npc.getIntrinsicStatusEffects === 'function'
+            ? npc.getIntrinsicStatusEffects()
+            : [];
+    } catch (_) {
+        intrinsicStatusEffects = [];
+    }
 
     let attributes = {};
     try {
@@ -1885,6 +1893,7 @@ function serializeNpcForClient(npc, options = {}) {
         abilities,
         importantMemories,
         statusEffects,
+        intrinsicStatusEffects,
         unspentSkillPoints,
         inventory,
         currency,
@@ -15286,6 +15295,7 @@ app.get('/', (req, res) => {
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,
         rarityDefinitions,
+        needBarDefinitions: Player.getNeedBarDefinitionsForContext(),
         checkMovePlausibility: config.check_move_plausibility || 'never',
         modScripts: modScripts,
         modStyles: modStyles

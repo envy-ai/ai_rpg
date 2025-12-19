@@ -707,15 +707,25 @@ class Player {
                 continue;
             }
             const effects = player.getStatusEffects() || [];
+            if (!player.isNPC) {
+                console.log(`Applying status effect need bar deltas for player ${player.name || player.id || 'unknown'}`);
+                console.log(effects);
+            }
             for (const effect of effects) {
+                if (!player.isNPC) console.log(` - Processing effect ${effect.name || effect.id || 'unknown'}`);
                 if (!effect || !Array.isArray(effect.needBars)) {
+                    if (!player.isNPC) console.log(`  - Effect ${effect?.name || effect?.id || 'unknown'} has no need bar deltas`);
                     continue;
                 }
                 for (const entry of effect.needBars) {
-                    if (!entry) continue;
+                    if (!entry) {
+                        if (!player.isNPC) console.log(`    - Skipping invalid need bar entry`);
+                        continue;
+                    }
                     const name = typeof entry.name === 'string' ? entry.name.trim() : null;
                     const delta = Number(entry.delta);
                     if (!name || !Number.isFinite(delta)) {
+                        if (!player.isNPC) console.log(`    - Skipping invalid need bar entry with name "${entry.name}" and delta "${entry.delta}"`);
                         continue;
                     }
                     try {
@@ -723,6 +733,7 @@ class Player {
                         const next = (before ?? 0) + delta;
                         player.setNeedBarValue(name, next, { allowPlayerOnly: false });
                         const after = player.getNeedBarValue(name);
+                        if (!player.isNPC) console.log(`    - Applied delta of ${delta} to need bar "${name}": ${before} -> ${after}`);
                         adjustments.push({
                             playerId: player.id || null,
                             playerName: player.name || null,
@@ -2734,6 +2745,10 @@ class Player {
     }
 
     #normalizeStatusEffects(effects = []) {
+        if (!this.isNPC) {
+            console.log('Normalizing status effects:', effects);
+            console.trace();
+        }
         if (!Array.isArray(effects)) {
             return [];
         }
@@ -2845,8 +2860,16 @@ class Player {
         return normalized;
     }
 
+    get isNpc() {
+        throw new Error('Use isNPC property instead of isNpc');
+    }
+
     getStatusEffects() {
-        const baseEffects = this.#statusEffects.map(effect => effect.toJSON());
+        const baseEffects = this.#getIntrinsicStatusEffects();
+
+        if (!this.#isNPC) {
+            console.log('Getting status effects, base effects:', baseEffects);
+        }
 
         const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
         const equippedEffects = [];
@@ -2861,13 +2884,30 @@ class Player {
                     description: equipEffect.description || equipEffect.text || equipEffect.name || '',
                     duration: equipEffect.duration ?? null,
                     attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
-                    skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : []
+                    skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : [],
+                    needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : []
                 };
                 equippedEffects.push(effectPayload);
             }
         }
 
         return [...baseEffects, ...equippedEffects];
+    }
+
+    /**
+     * Return only the player's intrinsic (non-gear) status effects.
+     */
+    getIntrinsicStatusEffects() {
+        return this.#getIntrinsicStatusEffects();
+    }
+
+    /**
+     * Return only the player's intrinsic status effects (excludes dynamic gear effects).
+     */
+    #getIntrinsicStatusEffects() {
+        return this.#statusEffects
+            .map(effect => (typeof effect?.toJSON === 'function' ? effect.toJSON() : null))
+            .filter(Boolean);
     }
 
     setStatusEffects(effects = []) {
@@ -3016,7 +3056,7 @@ class Player {
             throw new Error(`Need bar '${identifier}' not found`);
         }
 
-        if (!allowPlayerOnly && bar.playerOnly) {
+        if (!allowPlayerOnly && bar.playerOnly && this.#isNPC) {
             throw new Error(`Need bar '${identifier}' is restricted to the player`);
         }
 
@@ -3799,7 +3839,7 @@ class Player {
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
-            statusEffects: this.getStatusEffects(),
+            statusEffects: this.#getIntrinsicStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
             currency: this.#currency,

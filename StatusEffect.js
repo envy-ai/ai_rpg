@@ -246,41 +246,56 @@ class StatusEffect {
                 duration = Math.max(0, Math.floor(parsedDuration));
             }
 
-            const attributes = Array.from(node.getElementsByTagName('attribute')).map(attrNode => {
-                const attributeName = textFromTag(attrNode, 'name')?.trim();
-                const modifierValue = Number(textFromTag(attrNode, 'modifier'));
-                if (!attributeName) {
-                    throw new Error(`Status effect "${sourceDescription}" attribute entry missing name`);
-                }
-                if (!Number.isFinite(modifierValue)) {
-                    throw new Error(`Status effect "${sourceDescription}" attribute "${attributeName}" has invalid modifier`);
-                }
-                return { attribute: attributeName, modifier: modifierValue };
-            });
+            const attributes = Array.from(node.getElementsByTagName('attribute'))
+                .map(attrNode => {
+                    const attributeName = textFromTag(attrNode, 'name')?.trim();
+                    const modifierValue = Number(textFromTag(attrNode, 'modifier'));
+                    if (!attributeName) {
+                        throw new Error(`Status effect "${sourceDescription}" attribute entry missing name`);
+                    }
+                    if (!Number.isFinite(modifierValue)) {
+                        throw new Error(`Status effect "${sourceDescription}" attribute "${attributeName}" has invalid modifier`);
+                    }
+                    if (modifierValue === 0) {
+                        return null;
+                    }
+                    return { attribute: attributeName, modifier: modifierValue };
+                })
+                .filter(Boolean);
 
-            const skills = Array.from(node.getElementsByTagName('skill')).map(skillNode => {
-                const skillName = textFromTag(skillNode, 'name')?.trim();
-                const modifierValue = Number(textFromTag(skillNode, 'modifier'));
-                if (!skillName) {
-                    throw new Error(`Status effect "${sourceDescription}" skill entry missing name`);
-                }
-                if (!Number.isFinite(modifierValue)) {
-                    throw new Error(`Status effect "${sourceDescription}" skill "${skillName}" has invalid modifier`);
-                }
-                return { skill: skillName, modifier: modifierValue };
-            });
+            const skills = Array.from(node.getElementsByTagName('skill'))
+                .map(skillNode => {
+                    const skillName = textFromTag(skillNode, 'name')?.trim();
+                    const modifierValue = Number(textFromTag(skillNode, 'modifier'));
+                    if (!skillName) {
+                        throw new Error(`Status effect "${sourceDescription}" skill entry missing name`);
+                    }
+                    if (!Number.isFinite(modifierValue)) {
+                        throw new Error(`Status effect "${sourceDescription}" skill "${skillName}" has invalid modifier`);
+                    }
+                    if (modifierValue === 0) {
+                        return null;
+                    }
+                    return { skill: skillName, modifier: modifierValue };
+                })
+                .filter(Boolean);
 
-            const needBars = Array.from(node.getElementsByTagName('needBar')).map(needNode => {
-                const barName = textFromTag(needNode, 'name')?.trim();
-                const deltaValue = Number(textFromTag(needNode, 'delta'));
-                if (!barName) {
-                    throw new Error(`Status effect "${sourceDescription}" need bar entry missing name`);
-                }
-                if (!Number.isFinite(deltaValue)) {
-                    throw new Error(`Status effect "${sourceDescription}" need bar "${barName}" has invalid delta`);
-                }
-                return { name: barName, delta: deltaValue };
-            });
+            const needBars = Array.from(node.getElementsByTagName('needBar'))
+                .map(needNode => {
+                    const barName = textFromTag(needNode, 'name')?.trim();
+                    const deltaValue = Number(textFromTag(needNode, 'delta'));
+                    if (!barName) {
+                        throw new Error(`Status effect "${sourceDescription}" need bar entry missing name`);
+                    }
+                    if (!Number.isFinite(deltaValue)) {
+                        throw new Error(`Status effect "${sourceDescription}" need bar "${barName}" has invalid delta`);
+                    }
+                    if (deltaValue === 0) {
+                        return null;
+                    }
+                    return { name: barName, delta: deltaValue };
+                })
+                .filter(Boolean);
 
             results.set(sourceDescription, new StatusEffect({
                 name,

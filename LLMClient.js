@@ -559,8 +559,8 @@ class LLMClient {
         }
 
         let attempt = 0;
-        let responseContent = '';
         while (attempt <= retryAttempts) {
+            let responseContent = '';
             let streamTrackerId = null;
             let startTimer = null;
             const controller = new AbortController();
@@ -599,6 +599,12 @@ class LLMClient {
                     let assembled = '';
                     let timer = null;
 
+                    const rejectWithPartial = (err) => {
+                        const error = err instanceof Error ? err : new Error(String(err));
+                        error.partialResponse = assembled;
+                        reject(error);
+                    };
+
                     const clear = () => {
                         if (timer) {
                             clearTimeout(timer);
@@ -609,7 +615,7 @@ class LLMClient {
                     const resetTimer = (ms) => {
                         clear();
                         timer = setTimeout(() => {
-                            reject(new Error('Stream timeout'));
+                            rejectWithPartial(new Error('Stream timeout'));
                         }, ms);
                     };
 
@@ -634,6 +640,7 @@ class LLMClient {
                                     || '';
                                 if (delta) {
                                     assembled += delta;
+                                    responseContent = assembled;
                                     const deltaBytes = Buffer.byteLength(delta, 'utf8');
                                     LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs);
                                 }
@@ -647,12 +654,13 @@ class LLMClient {
                     response.data.on('end', () => {
                         clear();
                         LLMClient.#trackStreamEnd(streamId);
+                        responseContent = assembled;
                         resolve(assembled);
                     });
                     response.data.on('error', err => {
                         clear();
                         LLMClient.#trackStreamEnd(streamId);
-                        reject(err);
+                        rejectWithPartial(err);
                     });
                 });
 
@@ -793,6 +801,9 @@ class LLMClient {
                 }
 
             } catch (error) {
+                if (!responseContent && typeof error?.partialResponse === 'string') {
+                    responseContent = error.partialResponse;
+                }
                 console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
                 //console.debug(error);
 

@@ -1862,6 +1862,15 @@ p:not(:last-child) {
 .tooltip-thing-bonus-value {
   font-weight: 600;
   color: rgba(148, 197, 255, 0.95);
+  &.positive {
+    color: #34d399;
+  }
+  &.negative {
+    color: #f87171;
+  }
+  &.neutral {
+    color: rgba(148, 197, 255, 0.95);
+  }
 }
 
 .tooltip-thing hr {
@@ -5588,6 +5597,60 @@ body.modal-open {
 .npc-view-attributes dd {
   margin: 0;
   color: rgba(203, 213, 225, 0.85);
+}
+
+.npc-view-attr-mod {
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.npc-view-attr-mod.higher {
+  color: #34d399;
+}
+
+.npc-view-attr-mod.lower {
+  color: #f87171;
+}
+
+.npc-view-attr-mod.same {
+  color: rgba(203, 213, 225, 0.8);
+}
+
+.npc-view-status-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.npc-view-status-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.npc-view-status-table td:first-child {
+  font-weight: 600;
+  width: 28%;
+}
+
+.npc-view-status-table td:nth-child(2) {
+  width: 48%;
+  text-transform: capitalize;
+}
+
+.npc-view-status-table td:last-child {
+  text-align: right;
+  font-weight: 700;
+}
+
+.npc-view-status-mod {
+  font-weight: 700;
+  &.positive {
+    color: #34d399;
+  }
+  &.negative {
+    color: #f87171;
+  }
 }
 
 .npc-view-attributes[hidden] {

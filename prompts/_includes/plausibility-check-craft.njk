@@ -61,109 +61,18 @@ Step 2: If the action is plausible, make a list of any player abilities that are
   ... additional ability tags as needed ...
 </abilities>
 
-Step 3: If the action is plausible, determine the outputted item for each level of success (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, and critical_failure). Use the following XML structure for each item, filling in all fields appropriately:
+Step 3: If the action is plausible, determine the outputted item for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately:
 
 <craftingResults>
   <result>
-    <level>critical_success</level>
+    <level>success</level>
     <itemsConsumed>
-      <!-- In this section, list all of the items consumed in the crafting attempt. Crafting may consume some, all, or none of the input items depending on the recipe and the level of success. -->
+      <!-- In this section, list all of the items consumed in the crafting attempt. Crafting may consume some, all, or none of the input items depending on the recipe and the level of success. Generally, crafting tools used in the process are not consumed, as well as items where only a portion is used. -->
       <itemName><!-- exact name of consumed item --></itemName>
       ... more itemName tags as needed ...
     </itemsConsumed>
-    <!-- XML describing the physical crafted item. A typical critical_success would produce an item of higher rarity, better stats, and/or additional special properties compared to a normal success, and may not consume all of the input items. There may also be additional positive effects if it makes sense (additional crafted items, improvements to the work area, discoveries, or anything else that makes sense in the context of the scene) -->
+    <!-- XML describing the physical crafted item. A success would produce an item roughly the same quality/rarity as the ingredients and be just fine for its intended use. -->
     {% include "_includes/item.njk" %}
-    <other><!-- For critical successes only on very difficult/elaborate crafting attempts, describe an additional positive effect in 1-2 sentences. --></other>
-  </result>
-  <result>
-    <level>major_success</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item. A typical major_success would produce an item of higher rarity, better stats, and/or additional special properties compared to a normal success, and may not consume all of the input items. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>success</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item. A success would produce an item roughly the same quality/rarity as the ingredients and be just fine for its intended use. Occasionally, some consumable ingredients may be partially consumed or left over. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>barely_succeeded</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>  
-    <!-- XML describing the physical crafted item. A "barely_succeeded" result would produce an item of lower quality/rarity than its ingredients, still functional for its intended use but not as good as the expected result. Barely succeeding using epic ingredients will still produce a functional item of at least uncommon or rare quality, while barely succeeding using junk items will produce a barely functional junk item. It should be possible to improve the item to a better quality. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>barely_failed</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item, if any. A "barely_failed" does not produce an item that works for its intended use, however, it should be relatively easy to recover from this level of failure. An example may be an incompletely assembled item and not all of the crafting components being consumed, or an item that can be made functional with a bit of additional work. You may also choose to omit the <item> tag altogether and not consume the components. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>failure</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item, if any. A "failure" does not produce an item that works for its intended use, and typically one or more component is wasted in the crafting process. You may also choose to omit the <item> tag altogether and consume some of the components, or create a non-functional item of significantly lower quality than the ingredients. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>major_failure</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item, if any. A "major_failure" produces either no item or non-functional junk, and consumes all consumable ingredients, along with possibly some non-consumable ingredients that are broken in the process. Any item produced will be of junk quality. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>critical_failure</level>
-    <itemsConsumed>
-      ...
-    </itemsConsumed>
-    <!-- XML describing the physical crafted item, if any. This is the same as a major_failure, except that there may be other negative effects in addition to wasting the crafting components, such as injury, damage to the work area, bad status effects, etc. The degree of these effects should be appropriate to the item being crafted. For instance, critically failing at crafting explosives might result in an explosion, while critically failing at cooking would probably result in a first degree burn or a cut finger. Don't be overly harsh with critical failures unless the character is doing something dangerous. -->
-    <item>
-    [... item XML ...]
-    </item>
-    <other><!-- 1-2 sentences describing other negative effects --></other>
   </result>
 </craftingResults>
-
-Enclose both steps in a single XML response, like this:
-
-<response>
-  <plausibility>
-    ...
-  </plausibility>
-  <abilities>
-    ...
-  </abilities>
-  <craftingResults>
-    ...
-  </craftingResults>
 </response>

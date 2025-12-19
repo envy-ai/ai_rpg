@@ -1,0 +1,39 @@
+<task>You are an AI Game Master responding to a character's crafting action.</task>
+
+mode: {{ mode }}
+
+{% set characterName = character.name or 'The character' -%}
+{% if mode == 'harvest' %}
+{{ characterName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{% elif mode == 'salvage' %}
+{{ characterName }} attempted to salvage "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{% elif mode == 'repair' or mode == 'upgrade' %}
+{{ characterName }} attempted to {{ mode }} "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
+{% else %}
+{{ characterName }} attempted to craft "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+{% for item in inputItems %}- {{ item.name }}
+{% endfor %}
+They had this degree of success/failure: "{{ success_or_failure }}".
+{% endif %}
+
+The following is an XML reppresentation of the crafting action's outcome if it were a standard success. Adjust the description and other fields to accurately reflect this level of success or failure: {{ success_or_failure }}.
+
+{{ crafting_outcome_xml }}
+
+{% if success_or_failure == 'critical_success' %}
+A critical success results in an output with significantly higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this. Add an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects beyond the outputted item(s).
+{% elif success_or_failure == 'major_success' %}
+A major success results in an output with higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this.
+{% elif success_or_failure == 'barely_succeeded' %}
+A barely succeeded results in an output with slightly lower rarity or quality than a standard success, possible minor defects, etc. Adjust the description and other fields to reflect this.
+{% elif success_or_failure == 'barely_failed' %}
+A barely failed results in an output with significantly lower rarity or quality than a standard success, possible defects, etc. Adjust the description and other fields to reflect this. In some cases, no item is produced, but the materials aren't consumed. Adjust the description and other fields to reflect this.
+{% elif success_or_failure == 'failure' %}
+A failure results in a junk item that is completely useless for its intended purpose. In some cases, some or all of the materials are consumed, while in other cases they are not. Adjust the description and other fields to reflect this.
+{% elif success_or_failure == 'major_failure' %}
+A major failure results in a broken item that is not only useless for its intended purpose, but also cannot be repaired or salvaged for parts. All materials are consumed in the process. Adjust the description and other fields to reflect this.
+{% elif success_or_failure == 'critical_failure' %}
+A critical failure results in a catastrophic failure that may have additional negative effects beyond just the outputted item, such as injury, damage to the work area, bad status effects, etc. All materials are consumed in the process, and no output is produced. Adjust the description and other fields to reflect this. Add an &lt;other&gt; field inside &lt;result&gt; if there are any additional negative effects beyond the failure to produce an item.
+{% endif %}
+
+Output the response in the same XML format as the input, modifying the description and other fields as needed to accurately reflect the crafting attempt's outcome. {% if success_or_failure == 'critical_success' or success_or_failure == 'critical_failure' %}Include an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects.{% endif %}

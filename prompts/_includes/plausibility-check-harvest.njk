@@ -59,31 +59,9 @@ Step 2: If the action is plausible, make a list of any player abilities that are
   ... additional ability tags as needed ...
 </abilities>
 
-Step 3: If plausible, determine the harvested materials for each outcome level (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, critical_failure). Use this XML structure:
+Step 3: If the action is plausible, determine harvested materials for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately:
 
 <harvestResults>
-  <result>
-    <level>critical_success</level>
-    <itemsConsumed>
-      <!-- Harvesting does not consume the source. Leave this empty or include expendable reagents/tools if applicable. -->
-    </itemsConsumed>
-    <itemsRecovered>
-      <!-- High-quality materials (e.g., pristine petals, mana-infused sap, multiple rare pods). -->
-      {% include "_includes/item.njk" %}
-      ... repeat item template for each harvested material ...
-    </itemsRecovered>
-    <other><!-- For critical successes only on very difficult harvests, describe an additional positive effect in 1-2 sentences. --></other>
-  </result>
-  <result>
-    <level>major_success</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Several high-quality yields, maybe a bonus side product. -->
-      <item> ... item XML ... </item>
-      ... more items ...
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
   <result>
     <level>success</level>
     <itemsConsumed>...</itemsConsumed>
@@ -93,47 +71,6 @@ Step 3: If plausible, determine the harvested materials for each outcome level (
       ... more items ...
     </itemsRecovered>
   </result>
-  <result>
-    <level>barely_succeeded</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Minimal/lesser-quality yield; plant may need time to recover before harvesting again. -->
-      <item> ... item XML ... </item>
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>barely_failed</level>
-    <itemsConsumed>
-      <!-- Typically empty or limited to expendables; the plant might be temporarily disturbed. -->
-    </itemsConsumed>
-    <itemsRecovered>
-      <!-- Optional scraps—damaged petals, bruised fruit, etc.—or leave empty to show no usable yield. -->
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>failure</level>
-    <itemsConsumed>
-      <!-- Harvest still shouldn’t destroy the source, but you may note temporary wilting, defensive spores, etc. -->
-    </itemsConsumed>
-    <itemsRecovered>
-      <!-- Usually nothing, or unusable mush. -->
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>major_failure</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>...</itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>critical_failure</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>...</itemsRecovered>
-    <other><!-- Additional negative effect (should be relevant to the circumstances). --></other>
-  </result>
 </harvestResults>
 
 Key distinctions from salvage:
@@ -141,7 +78,7 @@ Key distinctions from salvage:
 - Extremely poor outcomes should describe how the target is harmed or becomes unusable for a while, but do not imply it vanishes outright unless the prompt explicitly says so.
 - Use harvested outputs that match the narrative — e.g., "Glowcap Spores", "Regal Rose Petals", "Crystallized Nectar".
 
-Wrap both steps in a single XML payload:
+Wrap all steps in a single XML payload:
 
 <response>
   <plausibility>

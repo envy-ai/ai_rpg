@@ -360,7 +360,7 @@ module.exports = function registerApiRoutes(scope) {
                 for (const resultNode of resultNodes) {
                     if (!resultNode) {
                         console.warn('Skipping null result node in crafting results parsing.');
-                        return;
+                        continue;
                     }
                     const levelNode = resultNode.getElementsByTagName('level')[0] || null;
                     const level = levelNode && typeof levelNode.textContent === 'string'
@@ -368,7 +368,7 @@ module.exports = function registerApiRoutes(scope) {
                         : '';
                     if (!level) {
                         console.warn('Skipping result node with empty level in crafting results parsing.');
-                        return;
+                        continue;
                     }
                     const includeOther = level === 'critical_success' || level === 'critical_failure';
 
@@ -431,6 +431,7 @@ module.exports = function registerApiRoutes(scope) {
                     const serializedResult = serializeXmlNode(resultNode) || '';
 
                     results.set(level, {
+                        rawXml: serializedResult || null,
                         itemsConsumed: consumedNames,
                         item: parsedItem,
                         itemsRecovered: recoveredItems,
@@ -443,6 +444,70 @@ module.exports = function registerApiRoutes(scope) {
                 console.warn(error);
             }
             return results;
+        }
+
+        async function renderCraftOutcomeForDegree({
+            baseContext,
+            baseOutcomeXml,
+            successOrFailure,
+            mode = 'craft',
+            stationName = null,
+            intendedItemName = null,
+            targetName = null,
+            inputItems = []
+        } = {}) {
+            if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
+                throw new Error('craft-success-degree requires a non-empty base outcome XML payload.');
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'craft-success-degree',
+                crafting_outcome_xml: baseOutcomeXml,
+                success_or_failure: successOrFailure,
+                mode,
+                stationName,
+                intendedItemName,
+                targetName,
+                inputItems
+            });
+
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Craft success-degree template did not produce prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: `craft_success_degree_${mode || 'craft'}`
+            };
+
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const response = await LLMClient.chatCompletion(requestOptions);
+
+            LLMClient.logPrompt({
+                metadataLabel: requestOptions.metadataLabel,
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                response
+            });
+
+            if (!response || !response.trim()) {
+                throw new Error('Craft success-degree returned no response.');
+            }
+
+            const results = await parseCraftingResultsResponse(response);
+            if (!results.size) {
+                throw new Error('Craft success-degree response did not include any results.');
+            }
+
+            return { raw: response, results };
         }
 
         function parseCraftingNarrativeResponse(xmlContent) {
@@ -6145,11 +6210,13 @@ module.exports = function registerApiRoutes(scope) {
             let currentUserMessage = null;
             let currentTurnLog = [];
 
+            let statusNeedAdjustments = [];
             try {
-                Player.applyStatusEffectNeedBarsToAll();
+                statusNeedAdjustments = Player.applyStatusEffectNeedBarsToAll() || [];
             } catch (error) {
                 console.warn('Failed to apply status effect need bar deltas at turn start:', error?.message || error);
             }
+
             const findRecentProseEntries = (limit = 5) => {
                 if (!Array.isArray(chatHistory) || !chatHistory.length) {
                     return [];
@@ -6197,6 +6264,24 @@ module.exports = function registerApiRoutes(scope) {
             };
             let playerActionStreamSent = false;
             const newChatEntries = [];
+
+            if (Array.isArray(statusNeedAdjustments) && statusNeedAdjustments.length) {
+                const lines = statusNeedAdjustments.map(entry => {
+                    const actorName = entry.playerName || 'Character';
+                    const barName = entry.bar || 'Need';
+                    const deltaText = Number.isFinite(entry.delta) ? `${entry.delta > 0 ? '+' : ''}${entry.delta}` : '';
+                    const newValText = Number.isFinite(entry.newValue) ? `${entry.newValue}` : null;
+                    const changeText = newValText ? `${barName}: ${deltaText} (now ${newValText})` : `${barName}: ${deltaText}`;
+                    return `${actorName} • ${changeText}`;
+                }).filter(Boolean);
+                if (lines.length) {
+                    newChatEntries.push({
+                        role: 'system',
+                        content: `Status effects adjusted needs:\n${lines.join('\n')}`,
+                        ephemeral: true
+                    });
+                }
+            }
 
             let location = null;
 
@@ -9384,6 +9469,28 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Get an NPC's full status
+        app.get('/api/npcs/:id', (req, res) => {
+            try {
+                const npcId = req.params.id;
+                if (!npcId || typeof npcId !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Character ID is required' });
+                }
+                const npc = players.get(npcId);
+                if (!npc) {
+                    return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
+                }
+                const status = typeof npc.getStatus === 'function' ? npc.getStatus() : npc.toJSON();
+                if (typeof npc.getIntrinsicStatusEffects === 'function') {
+                    status.intrinsicStatusEffects = npc.getIntrinsicStatusEffects();
+                }
+                return res.json({ success: true, npc: status });
+            } catch (error) {
+                console.warn('Failed to fetch NPC status:', error?.message || error);
+                return res.status(500).json({ success: false, error: 'Failed to fetch character status' });
+            }
+        });
+
         // Update an NPC's core data (experimental editing UI)
         app.put('/api/npcs/:id', async (req, res) => {
             try {
@@ -9415,7 +9522,8 @@ module.exports = function registerApiRoutes(scope) {
                     isDead,
                     personalityType,
                     personalityTraits,
-                    personalityNotes
+                    personalityNotes,
+                    statusEffects
                 } = req.body || {};
 
                 if (typeof name === 'string' && name.trim()) {
@@ -9593,6 +9701,14 @@ module.exports = function registerApiRoutes(scope) {
                         npc.setAbilities(abilities);
                     } catch (abilityError) {
                         console.warn(`Failed to update abilities for NPC ${npcId}:`, abilityError.message);
+                    }
+                }
+
+                if (Array.isArray(statusEffects)) {
+                    try {
+                        npc.setStatusEffects(statusEffects);
+                    } catch (statusError) {
+                        console.warn(`Failed to update status effects for NPC ${npcId}:`, statusError.message);
                     }
                 }
 
@@ -13162,6 +13278,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const craftingResults = await parseCraftingResultsResponse(plausibilityResponse);
+                const baseSuccessResult = craftingResults.get('success');
+                if (!baseSuccessResult) {
+                    throw new Error('Craft plausibility response missing a standard success result.');
+                }
 
                 const actionOutcome = resolveActionOutcome({
                     plausibility,
@@ -13196,21 +13316,38 @@ module.exports = function registerApiRoutes(scope) {
                             ? value.itemsConsumed
                             : []
                 })));*/
-                let selectedResult = mappedLevel ? craftingResults.get(mappedLevel) : null;
-                if (!selectedResult) {
-                    if (actionOutcome.success) {
-                        selectedResult = craftingResults.get('success')
-                            || craftingResults.get('major_success')
-                            || craftingResults.get('critical_success');
-                    } else {
-                        selectedResult = craftingResults.get('failure')
-                            || craftingResults.get('major_failure')
-                            || craftingResults.get('critical_failure')
-                            || craftingResults.get('barely_failed');
+                let effectiveResults = craftingResults;
+
+                if (mappedLevel && mappedLevel !== 'success') {
+                    const degreeMode = isHarvestAction ? 'harvest' : (isSalvageAction ? 'salvage' : craftingMode);
+                    const degreeTargetName = isHarvestAction
+                        ? (promptPayload.harvestTargetName || harvestItemName || harvestItemDescription || 'harvest target')
+                        : (isSalvageAction
+                            ? (promptPayload.salvageTargetName || salvageItemName || salvageItemDescription || 'salvage target')
+                            : (intendedItemName || stationName || 'crafted item'));
+
+                    const degreeResult = await renderCraftOutcomeForDegree({
+                        baseContext,
+                        baseOutcomeXml: plausibilityResponse,
+                        successOrFailure: mappedLevel,
+                        mode: degreeMode,
+                        stationName,
+                        intendedItemName: promptPayload.intendedItemName || intendedItemName,
+                        targetName: degreeTargetName,
+                        inputItems: craftingItemsForPrompt
+                    });
+                    effectiveResults = degreeResult.results;
+                    if (!effectiveResults.has(mappedLevel)) {
+                        throw new Error(`Craft success-degree response missing result for level '${mappedLevel}'.`);
                     }
                 }
-                if (!selectedResult && craftingResults.size) {
-                    selectedResult = craftingResults.values().next().value;
+
+                let selectedResult = mappedLevel ? effectiveResults.get(mappedLevel) : null;
+                if (!selectedResult) {
+                    selectedResult = effectiveResults.get('success') || null;
+                }
+                if (!selectedResult && effectiveResults.size) {
+                    selectedResult = effectiveResults.values().next().value;
                 }
                 if (!selectedResult) {
                     throw new Error('AI response did not include crafting results.');

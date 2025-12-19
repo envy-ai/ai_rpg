@@ -58,33 +58,9 @@ Step 2: If the action is plausible, make a list of any player abilities that are
   ... additional ability tags as needed ...
 </abilities>
 
-Step 3: If the action is plausible, determine the components/materials recovered for each outcome level (critical_success, major_success, success, barely_succeeded, barely_failed, failure, major_failure, and critical_failure). Use this XML structure:
+Step 3: If the action is plausible, determine the components/materials recovered for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately:
 
 <salvageResults>
-  <result>
-    <level>critical_success</level>
-    <itemsConsumed>
-      <!-- List everything destroyed during salvage. Typically this is just the original item. -->
-      <itemName><!-- exact name of consumed item --></itemName>
-      ... more itemName tags as needed ...
-    </itemsConsumed>
-    <itemsRecovered>
-      <!-- Provide multiple recovered components/materials, each as a full item description. A critical success generally indicates the recovery of at least one component that's of significantly higher quality or rarity than the consumed item. Some recovered items may be salvageable themselves. -->
-      {% include "_includes/item.njk" %}
-      ... repeat item template for each recovered component ...
-    </itemsRecovered>
-    <other><!-- For critical successes only on very difficult salvages, describe an additional positive effect in 1-2 sentences. --></other>
-  </result>
-  <result>
-    <level>major_success</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Several high-quality components/materials; possibly a rare bonus find. -->
-      <item> ... item XML ... </item>
-      ... more recovered items ...
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
   <result>
     <level>success</level>
     <itemsConsumed>...</itemsConsumed>
@@ -95,51 +71,9 @@ Step 3: If the action is plausible, determine the components/materials recovered
     </itemsRecovered>
     <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
   </result>
-  <result>
-    <level>barely_succeeded</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Lower quantity/quality components; some waste is expected. -->
-      <item> ... item XML ... </item>
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>barely_failed</level>
-    <!-- Barely failed salvage may indicate a failure to break down the item at all, meaning itemsconsumed is empty, so they can try again. -->
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Leave empty if nothing was recovered -->
-      <item> ... item XML ... </item>
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>failure</level>
-    <!-- A failure or worse consumes the target item without yielding useful components. -->
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Mostly scrap, junk quality. -->
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>major_failure</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>
-      <!-- Recovered items should be completely useless, even for melting down, etc. -->
-    </itemsRecovered>
-    <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
-  </result>
-  <result>
-    <level>critical_failure</level>
-    <itemsConsumed>...</itemsConsumed>
-    <itemsRecovered>...</itemsRecovered>
-    <other><!-- Optional note about additional negative effects, collateral damage, etc. --></other>
-  </result>
 </salvageResults>
 
-Enclose both steps in a single XML payload:
+Enclose all steps in a single XML payload:
 
 <response>
   <plausibility>
