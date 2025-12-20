@@ -75,4 +75,17 @@ Step 3: If the action is plausible, determine the outputted item for a normal (n
     {% include "_includes/item.njk" %}
   </result>
 </craftingResults>
+
+Wrap all steps in a single XML payload:
+
+<response>
+  <plausibility>
+    ...
+  </plausibility>
+  <abilities>
+    ...
+  </abilities>
+  <harvestResults>
+    ...
+  </harvestResults>
 </response>

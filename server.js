@@ -10072,6 +10072,34 @@ function renderLocationThingsPrompt(context = {}) {
         const generatedThingRarity = providedGeneratedRarity || Thing.generateRandomRarityDefinition();
         const itemCount = Number.isFinite(context.itemCount) ? Math.max(0, Math.round(context.itemCount)) : null;
         const sceneryCount = Number.isFinite(context.sceneryCount) ? Math.max(0, Math.round(context.sceneryCount)) : null;
+        const collectRecentThings = () => {
+            const allThings = Thing.getAll();
+            if (!Array.isArray(allThings)) {
+                throw new Error('Thing.getAll did not return an array while preparing location things prompt context.');
+            }
+            const withTimestamps = allThings
+                .map(thing => {
+                    if (!thing) {
+                        return null;
+                    }
+                    const createdAt = thing.createdAt;
+                    const createdMs = createdAt ? Date.parse(createdAt) : Number.NaN;
+                    if (!Number.isFinite(createdMs)) {
+                        //console.warn('Skipping thing with invalid createdAt when building recentThings list:', thing.id || thing.name || 'unknown');
+                        return null;
+                    }
+                    return {
+                        name: typeof thing.name === 'string' && thing.name.trim() ? thing.name.trim() : 'Unnamed Thing',
+                        rarity: typeof thing.rarity === 'string' && thing.rarity.trim() ? thing.rarity.trim() : 'common',
+                        createdAt,
+                        createdMs
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => b.createdMs - a.createdMs);
+
+            return withTimestamps.slice(0, 100).map(({ createdMs, ...rest }) => rest);
+        };
 
         const templatePayload = {
             setting: safeSetting,
@@ -10091,7 +10119,8 @@ function renderLocationThingsPrompt(context = {}) {
             generatedThingRarity,
             rarityList: providedRarityList,
             itemCount,
-            sceneryCount
+            sceneryCount,
+            recentThings: collectRecentThings()
         };
 
         const rendered = promptEnv.render(templateName, templatePayload);

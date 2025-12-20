@@ -941,6 +941,9 @@ class AIRPGChat {
         }
 
         if (typeof structured.type !== 'string' || !structured.type.trim()) {
+            console.log('Plausibility payload missing type:', plausibility);
+            console.log('Plausibility structured data:', structured);
+            console.trace();
             throw new Error('Plausibility structured data missing outcome type.');
         }
 

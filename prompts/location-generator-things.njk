@@ -38,6 +38,11 @@ I'd like you to generate a set of items and scenery that would be found in the a
 [... more items and scenery as appropriate ...]
 </things>
 
+Here is a list of recently created items and scenery:
+{% for thing in recentThings %}- {{ thing.name }} ({{ thing.rarity }})
+{% endfor %}
+Use the above list as a guide to generate something new and different, avoiding duplicates.
+
 You should generate a mix of items and scenery at the number and rarity levels according to these lists:
 
 Items:
