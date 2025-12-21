@@ -1,0 +1,26 @@
+1.0-beta2-rc1:
+ - Added changelog
+ - Added world map that I'm not really satisfied with
+ - Added fast travel in region map
+ - Shift-drag from node in region map to create a new exit (either to an existing node, or to a blank space, creating a new one)
+ - Right-click map nodes and exits for context menu. Exits and stubs may be deleted this way.
+ - Added a stamina bar to both players and NPCs
+ - Rebalancd sleep to reflect long-term tiredness, while stamina reflects short term tiredness
+ - Made many improvements to prompts
+ - Improved concurrency of some prompts for a speed-up
+ - Added a box to the chat area that shows running prompts
+ - Added a sample Z-image comfy workflow for using z-image to generate images locally
+ - Added special crafting, salvaging, processing and harvesting icons to items and scenery. Crafting and processing bring up a modal interface. Note that using these is completely optional and you can still craft and harvest via typing in the chat window.
+ - Rebalanced item stats
+ - Items stats can now alter skills
+ - Items can now apply status effects when equipped or inflict them when used on someone else
+ - Status effects can now effect skills and attribute scores.
+ - Status effects can now add ongoing increases and decreases to need bars, making things like poison and regenerate functional.
+ - Quests have been improved, de-janked, and made editable.
+ - Lots of new slash commands have been added. Type /help in chat for a list.
+ - Modding support added (Thanks @fantik!)
+ - Added frequently requested Scene Illustration functionality as default mod (Thanks @fantik!)
+ - Fixed issue in scene illustration where party member info wasn't being passed
+ - Concurrent image generation for remote image gen APIs (thanks @fantik!)
+ - Fixed adding new skills from player Edit interface
+ - Items on adventure tab can be dragged directly into player/NPC inventories
