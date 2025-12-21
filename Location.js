@@ -353,6 +353,24 @@ class Location {
     return Array.from(Location.#indexById.values());
   }
 
+  /**
+   * Remove a location from internal id/name indices.
+   * Useful when deleting stubs so stale lookups do not linger.
+   */
+  static removeFromIndex(locationOrId) {
+    if (!locationOrId) {
+      return;
+    }
+    const id = typeof locationOrId === 'string' ? locationOrId : locationOrId.id;
+    if (id) {
+      Location.#indexById.delete(id);
+    }
+    const name = typeof locationOrId === 'object' ? locationOrId.name : null;
+    if (name && typeof name === 'string') {
+      Location.#indexByName.delete(name.toLowerCase());
+    }
+  }
+
   static findByName(name) {
     if (!name || typeof name !== 'string') {
       return null;

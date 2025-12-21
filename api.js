@@ -9242,6 +9242,15 @@ module.exports = function registerApiRoutes(scope) {
                     exit.destinationRegionExpanded = destinationRegionExpanded;
                     exit.destinationIsStub = destinationIsStub;
                     exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
+
+                    if (!exit.destinationName) {
+                        exit.destinationName = exit.name
+                            || exit.relativeName
+                            || exit.destinationRegionName
+                            || exit.description
+                            || exit.destination
+                            || 'Unknown destination';
+                    }
                 }
             }
 
@@ -11573,6 +11582,10 @@ module.exports = function registerApiRoutes(scope) {
 
             if (stubId && gameLocations.has(stubId)) {
                 gameLocations.delete(stubId);
+                if (typeof Location.removeFromIndex === 'function') {
+                    Location.removeFromIndex(stubId);
+                    Location.removeFromIndex(stubLocation);
+                }
             }
 
             return {
@@ -12323,7 +12336,22 @@ module.exports = function registerApiRoutes(scope) {
                     const directions = location.getAvailableDirections();
                     for (const direction of directions) {
                         const exit = location.getExit(direction);
-                        if (exit && (exit.destination === stubId || (targetRegionId && exit.destinationRegion === targetRegionId))) {
+                        if (!exit) {
+                            continue;
+                        }
+
+                        const isDirectStubExit = exit.destination === stubId;
+                        const pointsToStubRegion = Boolean(
+                            targetRegionId
+                            && exit.destinationRegion === targetRegionId
+                            && (
+                                !exit.destination // region-only reference
+                                || exit.destination === stubId
+                                || (getStubLocationById(exit.destination)?.stubMetadata?.targetRegionId === targetRegionId)
+                            )
+                        );
+
+                        if (isDirectStubExit || pointsToStubRegion) {
                             try {
                                 removeExitStrict(location, direction, exit.id || null);
                                 if (exit.id) {

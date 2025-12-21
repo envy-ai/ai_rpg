@@ -12,7 +12,7 @@ Guidelines:
 
 Current Situation:
 {% set targetName = harvestItemName or harvestTargetName or (harvestTarget and harvestTarget.name) or 'the harvestable item' -%}
-The player is attempting to harvest from "{{ targetName }}".
+The player is attempting to harvest from "{{ targetName }}". If this item is a container or other storage such as a crate, box, shelf, palette, etc., they are harvesting items that would reasonably be found on or inside it, not the container itself.
 {% if harvestTarget and harvestTarget.description %}
 Item details: {{ harvestTarget.description }}
 {% elif harvestItemDescription %}
