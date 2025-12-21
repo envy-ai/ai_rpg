@@ -2333,6 +2333,10 @@
                 chatSidebarElements.currency.textContent = `${currencyLabel}: ${currencyValue !== null ? currencyValue : '?'}`;
             }
 
+            if (chatSidebarElements.card && data?.id && typeof window.registerInventoryDropTarget === 'function') {
+                window.registerInventoryDropTarget(chatSidebarElements.card, { ownerId: data.id, ownerType: 'player' });
+            }
+
             const description = (data?.shortDescription || data?.description || 'No description available.').trim();
             if (chatSidebarElements.description) {
                 chatSidebarElements.description.textContent = description;
@@ -3192,17 +3196,17 @@
             return result;
         }
 
-        async function moveThingToNpcInventory(thing, npcId, { locationId = null } = {}) {
+        async function moveThingToInventory(thing, { ownerId = null, ownerType = 'npc', locationId = null } = {}) {
             if (!thing || !thing.id) {
                 throw new Error('Missing item information.');
             }
-            if (!npcId) {
-                throw new Error('NPC identifier is required.');
+            if (!ownerId) {
+                throw new Error('Owner identifier is required.');
             }
 
             const payload = {
-                ownerId: npcId,
-                ownerType: 'npc'
+                ownerId,
+                ownerType
             };
             if (locationId) {
                 payload.locationId = locationId;
@@ -3220,14 +3224,19 @@
             }
 
             const ownerData = result.owner || null;
-            if (ownerData && window.currentNpcData instanceof Map) {
-                window.currentNpcData.set(ownerData.id, ownerData);
+            if (ownerData) {
+                if (ownerType === 'npc' && window.currentNpcData instanceof Map) {
+                    window.currentNpcData.set(ownerData.id, ownerData);
+                }
+                if (ownerType === 'player' && window.currentPlayerData && ownerData.id === window.currentPlayerData.id) {
+                    window.currentPlayerData = ownerData;
+                }
             }
 
             const updatedThing = result.thing || thing;
             thingDataCache.set(updatedThing.id, updatedThing);
 
-            if (window.lastRenderedLocation) {
+            if (window.lastRenderedLocation && locationId && window.lastRenderedLocation.id === locationId) {
                 if (Array.isArray(window.lastRenderedLocation.things)) {
                     window.lastRenderedLocation.things = window.lastRenderedLocation.things.filter(entry => entry && entry.id !== thing.id);
                 }
@@ -3255,24 +3264,28 @@
                         await window.loadCurrentLocation?.();
                     }
                 } catch (error) {
-                    console.warn('Failed to update location after moving item to NPC inventory:', error);
+                    console.warn('Failed to update location after moving item to inventory:', error);
                 }
             } else if (result.location && result.location.id && window.lastRenderedLocation && window.lastRenderedLocation.id === result.location.id) {
                 try {
                     await window.updateLocationDisplay?.(result.location);
                     window.lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
                 } catch (error) {
-                    console.warn('Failed to refresh location after moving item to NPC inventory:', error);
+                    console.warn('Failed to refresh location after moving item to inventory:', error);
                 }
             }
 
             try {
                 await window.refreshParty?.();
             } catch (partyError) {
-                console.warn('Failed to refresh party after moving item to NPC inventory:', partyError);
+                console.warn('Failed to refresh party after moving item to inventory:', partyError);
             }
 
             return result;
+        }
+
+        async function moveThingToNpcInventory(thing, npcId, { locationId = null } = {}) {
+            return moveThingToInventory(thing, { ownerId: npcId, ownerType: 'npc', locationId });
         }
 
         let teleportLocationOptionsCache = null;
@@ -14171,6 +14184,72 @@
             }
         });
 
+        let draggedLocationThing = null;
+
+        const resetThingDragState = () => {
+            draggedLocationThing = null;
+            document.querySelectorAll('.inventory-drop-target.is-drop-hover').forEach(el => {
+                el.classList.remove('is-drop-hover');
+            });
+        };
+
+        async function handleGiveThingToOwner({ ownerId, ownerType }) {
+            if (!draggedLocationThing || !draggedLocationThing.id || !ownerId) {
+                return;
+            }
+            try {
+                const thingRecord = thingDataCache.get(draggedLocationThing.id) || draggedLocationThing.thing || { id: draggedLocationThing.id };
+                const result = await moveThingToInventory(thingRecord, {
+                    ownerId,
+                    ownerType,
+                    locationId: draggedLocationThing.locationId || null
+                });
+                if (draggedLocationThing) {
+                    const el = draggedLocationThing.element;
+                    if (el && el.parentElement) {
+                        el.parentElement.removeChild(el);
+                    }
+                }
+                document.dispatchEvent(new Event('inventory:updated'));
+            } catch (error) {
+                console.warn('Failed to move item into inventory:', error);
+                window.alert(error?.message || 'Failed to move item into inventory.');
+            } finally {
+                resetThingDragState();
+            }
+        }
+
+        function registerInventoryDropTarget(element, { ownerId, ownerType }) {
+            if (!element || !ownerId) {
+                return;
+            }
+            element.classList.add('inventory-drop-target');
+
+            element.addEventListener('dragover', (event) => {
+                if (!draggedLocationThing) return;
+                event.preventDefault();
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragenter', (event) => {
+                if (!draggedLocationThing) return;
+                event.preventDefault();
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragleave', () => {
+                element.classList.remove('is-drop-hover');
+            });
+
+            element.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                element.classList.remove('is-drop-hover');
+                await handleGiveThingToOwner({ ownerId, ownerType });
+            });
+        }
+
+        window.registerInventoryDropTarget = registerInventoryDropTarget;
+
         window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationTooltip = document.getElementById('locationTooltip');
@@ -14615,6 +14694,24 @@
                                     });
                                     card.addEventListener('mouseleave', () => {
                                         tooltipController.hide();
+                                    });
+                                }
+
+                                if (thing.thingType !== 'scenery' && thing.id) {
+                                    card.draggable = true;
+                                    card.dataset.thingId = thing.id;
+                                    card.addEventListener('dragstart', () => {
+                                        draggedLocationThing = {
+                                            id: thing.id,
+                                            locationId: location.id || null,
+                                            element: card,
+                                            thing
+                                        };
+                                        card.classList.add('is-dragging');
+                                    });
+                                    card.addEventListener('dragend', () => {
+                                        card.classList.remove('is-dragging');
+                                        // Do not reset draggedLocationThing here; drop handler will handle cleanup
                                     });
                                 }
 
@@ -15778,6 +15875,10 @@
                     card.appendChild(role);
                     card.appendChild(meta);
                     card.appendChild(stats);
+
+                    if (typeof window.registerInventoryDropTarget === 'function') {
+                        window.registerInventoryDropTarget(card, { ownerId: member.id, ownerType: 'npc' });
+                    }
 
                     partyGrid.appendChild(card);
 

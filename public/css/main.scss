@@ -5849,6 +5849,17 @@ body.modal-open {
   min-width: 64px;
 }
 
+.inventory-drop-target {
+  position: relative;
+  transition: outline-color 120ms ease, background-color 120ms ease;
+}
+
+.inventory-drop-target.is-drop-hover {
+  outline: 2px dashed rgba(56, 189, 248, 0.7);
+  outline-offset: 2px;
+  background: rgba(56, 189, 248, 0.08);
+}
+
 .npc-view-empty {
   font-size: 0.85rem;
   color: rgba(148, 163, 184, 0.75);

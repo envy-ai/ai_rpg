@@ -2745,10 +2745,10 @@ class Player {
     }
 
     #normalizeStatusEffects(effects = []) {
-        if (!this.isNPC) {
-            console.log('Normalizing status effects:', effects);
-            console.trace();
-        }
+        // if (!this.isNPC) {
+        //     console.log('Normalizing status effects:', effects);
+        //     console.trace();
+        // }
         if (!Array.isArray(effects)) {
             return [];
         }
@@ -2867,9 +2867,9 @@ class Player {
     getStatusEffects() {
         const baseEffects = this.#getIntrinsicStatusEffects();
 
-        if (!this.#isNPC) {
-            console.log('Getting status effects, base effects:', baseEffects);
-        }
+        // if (!this.#isNPC) {
+        //     console.log('Getting status effects, base effects:', baseEffects);
+        // }
 
         const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
         const equippedEffects = [];

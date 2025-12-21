@@ -14677,6 +14677,7 @@ module.exports = function registerApiRoutes(scope) {
                 const previousMetadata = thing.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
                 const previousOwnerId = normalizeText(previousMetadata.ownerId || previousMetadata.ownerID || previousMetadata.owner);
                 const previousLocationId = normalizeText(previousMetadata.locationId || previousMetadata.locationID);
+                const isAlreadyOwnedByTarget = previousOwnerId && previousOwnerId === owner.id;
 
                 if (previousOwnerId && previousOwnerId !== owner.id) {
                     const previousOwner = resolveOwnerById(previousOwnerId);
@@ -14686,7 +14687,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const candidateLocationIds = new Set();
-                if (requestedLocationId) {
+                // Only attempt to remove from the requested location if the item isn't already owned by the target.
+                if (requestedLocationId && !isAlreadyOwnedByTarget) {
                     candidateLocationIds.add(requestedLocationId);
                 }
                 if (previousLocationId) {
@@ -14721,8 +14723,7 @@ module.exports = function registerApiRoutes(scope) {
                     const changed = removeThingFromLocation(location);
                     ensuredLocationRemoval = ensuredLocationRemoval || changed;
                 }
-
-                if (requestedLocationId && !ensuredLocationRemoval) {
+                if (requestedLocationId && !isAlreadyOwnedByTarget && !ensuredLocationRemoval) {
                     return res.status(409).json({
                         success: false,
                         error: `Thing '${thingId}' was not present in location '${requestedLocationId}'.`
