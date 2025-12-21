@@ -713,6 +713,10 @@
                             <h3>Player Inventory</h3>
                             <p class="crafting-modal__hint" id="craftingModalHint">Drag items into the slots to craft.</p>
                         </div>
+                        <div class="npc-selection-filter npc-inventory-filter-input-wrapper crafting-inventory-filter">
+                            <label class="sr-only" for="craftingInventoryFilterInput">Filter items</label>
+                            <input type="search" id="craftingInventoryFilterInput" class="npc-selection-filter-input" placeholder="Filter items" aria-label="Filter items for crafting or processing">
+                        </div>
                         <div id="craftingInventoryGrid" class="crafting-modal__inventory-grid"></div>
                         <div id="craftingInventoryEmpty" class="crafting-modal__empty">Player inventory is not available.</div>
                     </section>
@@ -4933,6 +4937,7 @@
         const craftingModalCloseBtn = document.getElementById('craftingModalCloseBtn');
         const craftingInventoryGrid = document.getElementById('craftingInventoryGrid');
         const craftingInventoryEmpty = document.getElementById('craftingInventoryEmpty');
+        const craftingInventoryFilterInput = document.getElementById('craftingInventoryFilterInput');
         const craftingSlotsContainer = document.getElementById('craftingSlots');
         const craftingActionButton = document.getElementById('craftingActionButton');
         const craftingCancelButton = document.getElementById('craftingCancelButton');
@@ -4945,6 +4950,7 @@
         let craftingInventoryCardRefs = new Map();
         let craftingIsSubmitting = false;
         let salvageIsSubmitting = false;
+        let craftingInventoryAllItems = [];
         let craftingSourceThing = null;
         let craftingIsOpen = false;
 
@@ -9211,6 +9217,9 @@
                 closeCraftingModal();
             });
         }
+        if (craftingInventoryFilterInput) {
+            craftingInventoryFilterInput.addEventListener('input', () => renderCraftingInventory());
+        }
 
         if (craftingModalBackdrop) {
             craftingModalBackdrop.addEventListener('click', () => {
@@ -11031,15 +11040,28 @@
             updateCraftingActionState();
         }
 
-        function renderCraftingInventory(items = []) {
+        function renderCraftingInventory(items = null) {
             if (!craftingInventoryGrid || !craftingInventoryEmpty) {
                 return;
+            }
+
+            if (Array.isArray(items)) {
+                craftingInventoryAllItems = items;
             }
 
             craftingInventoryGrid.innerHTML = '';
             craftingInventoryLookup = new Map();
             craftingInventoryCardRefs = new Map();
-            const safeItems = Array.isArray(items) ? items : [];
+            const safeItems = Array.isArray(craftingInventoryAllItems) ? craftingInventoryAllItems : [];
+
+            const filterValue = (craftingInventoryFilterInput?.value || '').toLowerCase().trim();
+            const filteredItems = filterValue
+                ? safeItems.filter(item => {
+                    const name = (item?.name || '').toLowerCase();
+                    const desc = (item?.description || '').toLowerCase();
+                    return name.includes(filterValue) || desc.includes(filterValue);
+                })
+                : safeItems;
 
             if (!safeItems.length) {
                 craftingInventoryEmpty.removeAttribute('hidden');
@@ -11050,7 +11072,13 @@
             craftingInventoryEmpty.setAttribute('hidden', '');
             craftingInventoryGrid.removeAttribute('hidden');
 
-            safeItems.forEach(item => {
+            const itemsToRender = filteredItems.length ? filteredItems : [];
+
+            if (!itemsToRender.length) {
+                craftingInventoryGrid.innerHTML = '<div class="crafting-modal__empty">No items match your filter.</div>';
+            }
+
+            itemsToRender.forEach(item => {
                 const clone = cloneThingRecord(item) || { ...item };
                 if (clone.id) {
                     craftingInventoryLookup.set(clone.id, clone);
