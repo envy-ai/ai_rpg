@@ -6193,6 +6193,98 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        async function ensureRegionSecretsForCurrentRegion() {
+            const currentRegion = Globals?.region || null;
+            if (!currentRegion || (Array.isArray(currentRegion.secrets) && currentRegion.secrets.length)) {
+                return null;
+            }
+
+            try {
+                const baseContext = await prepareBasePromptContext({});
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'region_generate_secrets'
+                });
+
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    throw new Error('Region secrets template did not produce prompts.');
+                }
+
+                const response = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'region_secrets'
+                });
+
+                LLMClient.logPrompt({
+                    metadataLabel: 'region_secrets',
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    response
+                });
+
+                const secrets = (() => {
+                    const collected = [];
+                    if (!response || typeof response !== 'string') {
+                        return collected;
+                    }
+                    try {
+                        const doc = Utils.parseXmlDocument(response, 'text/xml');
+                        const errorNode = doc.getElementsByTagName('parsererror')[0];
+                        if (errorNode) {
+                            console.warn('Failed to parse region secrets XML:', errorNode.textContent || 'Unknown parse error');
+                            return collected;
+                        }
+                        const secretsNode = doc.getElementsByTagName('secrets')[0] || null;
+                        if (!secretsNode) {
+                            return collected;
+                        }
+                        const secretNodes = Array.from(secretsNode.getElementsByTagName('secret'));
+                        for (const node of secretNodes) {
+                            const text = node?.textContent;
+                            const trimmed = typeof text === 'string' ? text.trim() : '';
+                            if (trimmed) {
+                                collected.push(trimmed);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Error extracting region secrets:', error?.message || error);
+                    }
+                    return collected;
+                })();
+
+                if (secrets.length) {
+                    try {
+                        currentRegion.secrets = secrets;
+                    } catch (error) {
+                        console.warn('Failed to assign secrets to current region:', error?.message || error);
+                        currentRegion.secrets = secrets;
+                    }
+                    return secrets;
+                }
+            } catch (error) {
+                console.warn('Failed to generate region secrets:', error?.message || error);
+            }
+
+            return null;
+        }
+
+        function triggerRegionSecretsForCurrentRegion() {
+            try {
+                const pending = ensureRegionSecretsForCurrentRegion();
+                if (pending && typeof pending.catch === 'function') {
+                    pending.catch(error => {
+                        console.warn('Async region secrets generation failed:', error?.message || error);
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to trigger region secrets generation:', error?.message || error);
+            }
+        }
+
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
             const requestBody = req.body || {};
@@ -6216,6 +6308,8 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Failed to apply status effect need bar deltas at turn start:', error?.message || error);
             }
+
+            triggerRegionSecretsForCurrentRegion();
 
             const findRecentProseEntries = (limit = 5) => {
                 if (!Array.isArray(chatHistory) || !chatHistory.length) {
@@ -9306,7 +9400,8 @@ module.exports = function registerApiRoutes(scope) {
                     name: region.name,
                     description: region.description,
                     parentRegionId: region.parentRegionId || null,
-                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
+                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                    secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
                 };
 
                 let parentRegionName = null;
@@ -11105,7 +11200,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: canonicalRegion.name,
                         description: canonicalRegion.description,
                         parentRegionId: canonicalRegion.parentRegionId || null,
-                        averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null
+                        averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null,
+                        secrets: Array.isArray(canonicalRegion.secrets) ? [...canonicalRegion.secrets] : []
                     };
 
                     let parentRegionName = null;
@@ -12771,6 +12867,23 @@ module.exports = function registerApiRoutes(scope) {
                     queueLocationThingImages(destinationLocation);
                 } catch (thingQueueError) {
                     console.warn('Failed to queue thing images after moving:', thingQueueError.message);
+                }
+
+                // Populate region secrets if missing when entering a non-stub region
+                try {
+                    const destinationRegionId = destinationLocation.regionId
+                        || destinationLocation.stubMetadata?.regionId
+                        || destinationLocation.stubMetadata?.targetRegionId
+                        || null;
+                    if (destinationRegionId && regions.has(destinationRegionId)) {
+                        const destinationRegion = regions.get(destinationRegionId);
+                        if (!destinationRegion?.isStub && Array.isArray(destinationRegion?.secrets) && destinationRegion.secrets.length === 0) {
+                            Globals.region = destinationRegion;
+                            triggerRegionSecretsForCurrentRegion();
+                        }
+                    }
+                } catch (secretError) {
+                    console.warn('Failed to ensure region secrets after move:', secretError?.message || secretError);
                 }
 
                 const lastActionWasTravel = Boolean(currentPlayer?.lastActionWasTravel);

@@ -4975,7 +4975,8 @@ async function expandRegionEntryStub(stubLocation) {
                 locationIds: [],
                 entranceLocationId: null,
                 parentRegionId: parentRegionId,
-                averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null
+                averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null,
+                secrets
             });
 
             regions.set(region.id, region);
@@ -5304,6 +5305,16 @@ function addDiceFilters(env) {
     env.addFilter('roll_detail', function (notation, seedOrOpts) {
         const opts = typeof seedOrOpts === 'string' ? { seed: seedOrOpts } : (seedOrOpts || {});
         return diceModule.rollDice(notation, opts).detail;
+    });
+
+    env.addFilter('floor', function (value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? Math.floor(num) : value;
+    });
+
+    env.addFilter('ceil', function (value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? Math.ceil(num) : value;
     });
 }
 
