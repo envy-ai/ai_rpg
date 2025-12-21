@@ -47,3 +47,4 @@ banned_npc_name_regexes:
   - "/Jax/"
   - "/Lira/"
   - "/Griz/"
+  - "/Scuttl/"

@@ -1537,6 +1537,25 @@ function collectNpcNamesForContext(entry = null) {
 }
 
 function pushChatEntry(entry, collector = null, locationId = null) {
+    const scrubGeneratedBrackets = (text) => {
+        if (typeof text !== 'string') {
+            return text;
+        }
+        return text
+            .replace(/\s*\[location:[^\]]*]/gi, '')
+            .replace(/\s*\[seen by[^\]]*]/gi, '')
+            .trim();
+    };
+
+    if (entry && typeof entry === 'object') {
+        if (typeof entry.content === 'string') {
+            entry.content = scrubGeneratedBrackets(entry.content);
+        }
+        if (typeof entry.summary === 'string') {
+            entry.summary = scrubGeneratedBrackets(entry.summary);
+        }
+    }
+
     const normalized = normalizeChatEntry(entry);
     if (!normalized) {
         return null;
