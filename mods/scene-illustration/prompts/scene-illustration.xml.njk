@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Scene Illustration Prompt Generator</role>
+    
+    <systemPrompt>
+You are a specialized prompt generator for creating fantasy RPG scene illustrations.
+Your task is to create vivid, detailed image prompts that capture the current moment in the story.
+
+Write in clear, descriptive sentences rather than a list of keywords. Focus on describing the subjects, their poses and emotions, the action, the lighting, the camera angle, and the overall atmosphere as if you are describing a photograph to someone who cannot see it.
+
+Focus on:
+- The action or mood of the current scene
+- Character positions, poses, expressions, and interactions
+- Environmental details from the location
+- Lighting, atmosphere, and weather appropriate to the setting
+- Camera angle and composition
+- Artistic style consistent with the fantasy genre
+
+Do not include:
+- Character speech, dialogue, or quoted words - describe actions and expressions instead
+- Text, speech bubbles, or captions in the image
+- UI elements or game interfaces
+- Modern technology unless specified in setting
+    </systemPrompt>
+    
+    <generationPrompt>
+
+<context>
+<setting>
+    <name>{{ setting.name }}</name>
+    <description>{{ setting.description }}</description>
+    <genre>{{ setting.genre }}</genre>
+    <theme>{{ setting.theme }}</theme>
+    <magicLevel>{{ setting.magicLevel }}</magicLevel>
+    <techLevel>{{ setting.techLevel }}</techLevel>
+    <tone>{{ setting.tone }}</tone>
+</setting>
+
+<location>
+    <name>{{ location.name }}</name>
+    <description>{{ location.description }}</description>
+</location>
+
+{% if region %}
+<region>
+    <name>{{ region.name }}</name>
+    <description>{{ region.description }}</description>
+</region>
+{% endif %}
+
+<charactersPresent>
+{% if player %}
+    <player>
+        <name>{{ player.name }}</name>
+        <description>{{ player.description }}</description>
+        <class>{{ player.class }}</class>
+        <race>{{ player.race }}</race>
+    </player>
+{% endif %}
+{% for npc in npcs %}
+    <npc>
+        <name>{{ npc.name }}</name>
+        <description>{{ npc.description }}</description>
+        <class>{{ npc.class | default('Unknown') }}</class>
+        <race>{{ npc.race | default('Unknown') }}</race>
+    </npc>
+{% endfor %}
+{% for member in party %}
+    <partyMember>
+        <name>{{ member.name }}</name>
+        <description>{{ member.description }}</description>
+        <class>{{ member.class | default('Unknown') }}</class>
+        <race>{{ member.race | default('Unknown') }}</race>
+    </partyMember>
+{% endfor %}
+</charactersPresent>
+
+<recentEvents>
+{% for message in recentMessages %}
+<message role="{{ message.role }}">{{ message.content }}</message>
+{% endfor %}
+</recentEvents>
+
+{% if scenery %}
+<sceneryItems>
+{% for item in scenery %}
+    <sceneryItem>
+        <name>{{ item.name }}</name>
+        <description>{{ item.description }}</description>
+    </sceneryItem>
+{% endfor %}
+</sceneryItems>
+{% endif %}
+</context>
+
+<task>
+Based on the above context, create a detailed image prompt in 2-4 paragraphs that captures the current scene.
+
+Write in clear, descriptive sentences - not keywords or bullet points. Describe the scene as if you are explaining a photograph to someone who cannot see it.
+
+Focus especially on:
+1. The subjects (characters) - their physical appearance, poses, expressions, and body language
+2. The action happening in this moment - what are they doing, not what they are saying
+3. The environment and atmosphere - lighting, colors, mood, weather
+4. Camera angle and composition - how the scene is framed
+5. Any relevant scenery or items that add to the visual narrative
+
+IMPORTANT: Never include character speech, dialogue, or quoted words in your prompt. If characters are speaking in the recent events, describe their expressions, gestures, and body language instead - not what they are saying.
+
+Write the prompt as pure visual description - what the viewer would see in an illustration of this moment.
+Do not reference game mechanics, stats, or meta-information.
+</task>
+
+{% if additionalInstructions %}
+<additionalInstructions>{{ additionalInstructions }}</additionalInstructions>
+{% endif %}
+
+    </generationPrompt>
+</template>

@@ -1,0 +1,104 @@
+/* Scene Illustration Mod Styles */
+
+/* Animation keyframes */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeOutDown {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+}
+
+/* Scene illustration button styling */
+.message-action--scene-illustration {
+    background: linear-gradient(135deg, #9c27b0, #673ab7) !important;
+    border: none !important;
+}
+
+.message-action--scene-illustration:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ab47bc, #7e57c2) !important;
+    transform: scale(1.1);
+}
+
+.message-action--scene-illustration:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+/* Notification toasts */
+.scene-illustration-notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    animation: fadeInUp 0.3s ease-out;
+    max-width: 320px;
+}
+
+.scene-illustration-notification.success {
+    background: linear-gradient(135deg, #4caf50, #2e7d32);
+    color: white;
+}
+
+.scene-illustration-notification.error {
+    background: linear-gradient(135deg, #f44336, #c62828);
+    color: white;
+}
+
+.scene-illustration-notification.fade-out {
+    animation: fadeOutDown 0.3s ease-out forwards;
+}
+
+/* Scene Illustration Image Styling */
+/* Scene Illustration Image Styling */
+.scene-illustration-container,
+.message-content .scene-illustration-container {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 10px;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    animation: fadeInUp 0.5s ease-out;
+}
+
+/* Specific class targeting */
+.scene-illustration-image {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    border-radius: 8px;
+    margin: 0 auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    cursor: zoom-in;
+}
+
+/* Generic fallback for Markdown-rendered images in chat */
+.message .message-content img {
+    max-width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    border-radius: 8px;
+    margin-top: 10px;
+    cursor: zoom-in;
+}
