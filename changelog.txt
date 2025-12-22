@@ -1,5 +1,6 @@
 1.0-beta2-rc1:
  - Added changelog
+ - Added under-the-hood prompt streaming and intelligent timeouts to speed up load times
  - Added world map that I'm not really satisfied with
  - Added fast travel in region map
  - Shift-drag from node in region map to create a new exit (either to an existing node, or to a blank space, creating a new one)
@@ -24,3 +25,7 @@
  - Concurrent image generation for remote image gen APIs (thanks @fantik!)
  - Fixed adding new skills from player Edit interface
  - Items on adventure tab can be dragged directly into player/NPC inventories
+ - Regions now have a short list of secrets not shown to the player
+ - Improved regeneration of slop names to make the new names more interesting and varied.
+ - Lots of bugfixes not listed here
+ - New bugs

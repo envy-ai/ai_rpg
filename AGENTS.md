@@ -9,3 +9,4 @@
 - Always prefer updating scss files over css files. If no corresponding scss file exists, create one.
 - Don't do anything with git unless specifically asked (if it's necessary, ask permission first).
 - Lint/syntax check any files you alter, if applicable.
+- Be aware of things in Globals.js to avoid reinventing the wheel to get the current player, location, region, etc.

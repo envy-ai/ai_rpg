@@ -13,3 +13,4 @@ imagegen/test*
 **/*.old
 config.yaml.polaris
 mods/*
+mods/scene-illustrations/data/*
