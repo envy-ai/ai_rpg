@@ -617,12 +617,20 @@ class LLMClient {
                         timer = setTimeout(() => {
                             rejectWithPartial(new Error('Stream timeout'));
                         }, ms);
+                        const entry = streamId ? LLMClient.#streamProgress.active.get(streamId) : null;
+                        if (entry) {
+                            const deadlineTs = Date.now() + ms;
+                            if (entry.firstByteTs) {
+                                entry.continueDeadline = deadlineTs;
+                            } else {
+                                entry.startDeadline = deadlineTs;
+                            }
+                        }
                     };
 
                     resetTimer(streamStartTimeoutMs);
 
                     response.data.on('data', chunk => {
-                        resetTimer(streamContinueTimeoutMs);
                         buffer += chunk.toString('utf8');
                         const lines = buffer.split('\n');
                         buffer = lines.pop() || '';
@@ -639,6 +647,7 @@ class LLMClient {
                                     || parsed?.choices?.[0]?.message?.content
                                     || '';
                                 if (delta) {
+                                    resetTimer(streamContinueTimeoutMs);
                                     assembled += delta;
                                     responseContent = assembled;
                                     const deltaBytes = Buffer.byteLength(delta, 'utf8');

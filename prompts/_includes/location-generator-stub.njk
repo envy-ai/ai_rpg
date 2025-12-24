@@ -30,6 +30,13 @@ GUIDELINES:
 - Wild areas will often have a sparse mix of hostiles and friendly NPCs, so consider balancing numNpcs and numHostiles appropriately.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 
+{% if config.character_gen_instructions %}
+When generating character concepts for this location, follow these additional user notes:
+<userNotes>
+{{ config.character_gen_instructions }}
+</userNotes>
+{% endif %}
+
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 

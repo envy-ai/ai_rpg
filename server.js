@@ -1541,9 +1541,11 @@ function pushChatEntry(entry, collector = null, locationId = null) {
         if (typeof text !== 'string') {
             return text;
         }
+        // Remove leftover bracketed metadata and any trailing "Events – Player Turn" summaries
         return text
             .replace(/\s*\[location:[^\]]*]/gi, '')
             .replace(/\s*\[seen by[^\]]*]/gi, '')
+            .replace(/\s*📋\s*Events\s*[–-]\s*Player\s+Turn[\s\S]*$/i, '')
             .trim();
     };
 
@@ -6704,6 +6706,7 @@ function renderLocationNpcPrompt(location, options = {}) {
             regionTheme: options.regionTheme || null,
             desiredCount: options.desiredCount || 3,
             numNpcs: resolvedNumNpcs,
+            config: Globals.config || {},
             numHostiles: resolvedNumHostiles,
             existingNpcsInThisLocation: options.existingNpcsInThisLocation || [],
             existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
@@ -6734,7 +6737,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
             bannedWords: options.bannedWords || getBannedNpcWords(),
-            characterConcepts: options.characterConcepts || []
+            characterConcepts: options.characterConcepts || [],
+            config: Globals.config || {}
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -9252,6 +9256,11 @@ async function enforceBannedNpcNames({
         if (npc?.name) {
             namesBeingChecked.add(npc.name);
             npc.originalName = npc.name; // Preserve original name for fallback
+
+            // Replace occurrences of the name in the description with %NAME% (case-sensitive)
+            if (typeof npc.description === 'string' && npc.description.includes(npc.name)) {
+                npc.description = npc.description.split(npc.name).join('%NAME%');
+            }
         }
     });
 
@@ -13132,7 +13141,13 @@ async function generatePlayerImage(player, options = {}) {
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
-            const logPath = path.join(logDir, `player_${player.id}_portrait.log`);
+            const safeName = typeof player.name === 'string' && player.name.trim()
+                ? player.name.trim().replace(/[^a-zA-Z0-9_-]/g, '_')
+                : null;
+            const portraitLogFilename = safeName
+                ? `player_${safeName}_${player.id}_portrait.log`
+                : `player_${player.id}_portrait.log`;
+            const logPath = path.join(logDir, portraitLogFilename);
             const parts = [
                 formatDurationLine(promptDurationSeconds),
                 '=== PORTRAIT SYSTEM PROMPT ===',

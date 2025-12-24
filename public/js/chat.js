@@ -63,6 +63,7 @@ class AIRPGChat {
 
         window.AIRPG_CHAT = this;
         this.promptProgressMessage = null;
+        this.promptProgressHideTimer = null;
     }
 
     setupQuestConfirmationModal() {
@@ -545,6 +546,8 @@ class AIRPGChat {
             return;
         }
 
+        const existingPromptProgress = this.promptProgressMessage;
+
         this.messageRegistry.clear();
         const fragment = document.createDocumentFragment();
 
@@ -647,6 +650,10 @@ class AIRPGChat {
             this.chatLog.appendChild(placeholder);
         } else {
             this.chatLog.appendChild(fragment);
+        }
+
+        if (existingPromptProgress) {
+            this.chatLog.appendChild(existingPromptProgress);
         }
         this.scrollToBottom();
     }
@@ -1559,11 +1566,25 @@ class AIRPGChat {
             : false;
 
         if (!entries.length) {
-            if (this.promptProgressMessage && this.promptProgressMessage.parentNode) {
-                this.promptProgressMessage.parentNode.removeChild(this.promptProgressMessage);
+            if (this.promptProgressHideTimer) {
+                clearTimeout(this.promptProgressHideTimer);
+                this.promptProgressHideTimer = null;
             }
-            this.promptProgressMessage = null;
+            if (this.promptProgressMessage) {
+                this.promptProgressHideTimer = setTimeout(() => {
+                    if (this.promptProgressMessage && this.promptProgressMessage.parentNode) {
+                        this.promptProgressMessage.parentNode.removeChild(this.promptProgressMessage);
+                    }
+                    this.promptProgressMessage = null;
+                    this.promptProgressHideTimer = null;
+                }, 3000);
+            }
             return;
+        }
+
+        if (this.promptProgressHideTimer) {
+            clearTimeout(this.promptProgressHideTimer);
+            this.promptProgressHideTimer = null;
         }
 
         const formatBytes = (value) => {
