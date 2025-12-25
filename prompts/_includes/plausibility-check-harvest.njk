@@ -29,7 +29,7 @@ Step 1: Determine whether the harvest is plausible or implausible, in this forma
   <type>Plausible</type>
   <skillCheck>
     <reason>Why this skill/attribute/difficulty fit the harvest attempt (consider plant toughness, environmental hazards, need for steady hands, etc.).</reason>
-    <skill>Most relevant known skill or a sensible new one (e.g., Herbalism, Field Medicine, Prospecting). Use N/A if none.</skill>
+    <skill>One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)</skill>
     <attribute>Relevant attribute (Dexterity, Intelligence, Wisdom, etc.).</attribute>
     <difficulty>Trivial / Easy / Medium / Hard / Very Hard / Legendary — account for the rarity of the resource, protective thorns, volatile sap, etc.</difficulty>
     <curcumstanceModifiers>

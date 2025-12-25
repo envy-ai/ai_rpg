@@ -31,7 +31,7 @@ Step 1: Determine whether the crafting/processing action is plausible or implaus
   <type>Plausible</type>
   <skillCheck>
     <reason>Brief explanation of why this skill/attribute and difficulty level are appropriate for the crafting attempt</reason>
-    <skill>Exact name of the most relevant skill the player has (If none are relevant, make up a new one. If the action doesn't require any particular skill, respond with N/A)</skill>
+    <skill>One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)</skill>
     <attribute>Relevant attribute</attribute>
     <difficulty>Difficulty level (Trivial, Easy, Medium, Hard, Very Hard, Legendary). Do not account for the player's current state, because that's accounted for in the circumstance modifiers. What you should account for is the appropriateness and quality of the ingredients. If the character is attempting to craft a woodsman's axe out of a rusty shovel head, an old stick, and a piece of twine, it should be a higher difficulty level and the possible outcomes should reflect the ingredients. Note that ingredient quality should *not* be reflected in circumstance modifiers, as it's already being accounted for here.</difficulty>
     <curcumstanceModifiers>

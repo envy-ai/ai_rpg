@@ -738,6 +738,26 @@
             </footer>
         </div>
     </div>
+    <div id="salvageIntentBackdrop" class="modal-backdrop" hidden></div>
+    <div id="salvageIntentModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="salvageIntentTitle">Salvage Goal</h2>
+                <button type="button" class="modal__close" id="salvageIntentCloseBtn" aria-label="Close salvage dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p id="salvageIntentMessage" class="modal__instruction">Optionally describe what you hope to recover. Leave blank to continue.</p>
+                <label for="salvageIntentInput" class="sr-only">Desired outcome</label>
+                <textarea id="salvageIntentInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally describe what you hope to recover."></textarea>
+            </div>
+            <footer class="modal__footer">
+                <button type="button" class="button button-secondary" id="salvageIntentCancelBtn">Cancel</button>
+                <button type="button" class="button button-primary" id="salvageIntentSubmitBtn">Continue</button>
+            </footer>
+        </div>
+    </div>
     <div id="npcMemoriesModal" class="modal npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -4942,6 +4962,14 @@
         const craftingActionButton = document.getElementById('craftingActionButton');
         const craftingCancelButton = document.getElementById('craftingCancelButton');
         const craftingNotesInput = document.getElementById('craftingNotesInput');
+        const salvageIntentBackdrop = document.getElementById('salvageIntentBackdrop');
+        const salvageIntentModal = document.getElementById('salvageIntentModal');
+        const salvageIntentTitle = document.getElementById('salvageIntentTitle');
+        const salvageIntentMessage = document.getElementById('salvageIntentMessage');
+        const salvageIntentInput = document.getElementById('salvageIntentInput');
+        const salvageIntentSubmitBtn = document.getElementById('salvageIntentSubmitBtn');
+        const salvageIntentCancelBtn = document.getElementById('salvageIntentCancelBtn');
+        const salvageIntentCloseBtn = document.getElementById('salvageIntentCloseBtn');
 
         let currentCraftingMode = 'craft';
         let currentCraftingSlotCount = 4;
@@ -4953,6 +4981,7 @@
         let craftingInventoryAllItems = [];
         let craftingSourceThing = null;
         let craftingIsOpen = false;
+        let salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
 
         let locationMenuContextOverride = null;
 
@@ -9227,8 +9256,33 @@
             });
         }
 
+        if (salvageIntentSubmitBtn) {
+            salvageIntentSubmitBtn.addEventListener('click', () => submitSalvageIntent());
+        }
+
+        if (salvageIntentCancelBtn) {
+            salvageIntentCancelBtn.addEventListener('click', () => closeSalvageIntentModal());
+        }
+
+        if (salvageIntentCloseBtn) {
+            salvageIntentCloseBtn.addEventListener('click', () => closeSalvageIntentModal());
+        }
+
+        if (salvageIntentBackdrop) {
+            salvageIntentBackdrop.addEventListener('click', () => closeSalvageIntentModal());
+        }
+
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && craftingIsOpen) {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            const salvageModalOpen = salvageIntentModal && salvageIntentModal.getAttribute('aria-hidden') === 'false';
+            if (salvageModalOpen) {
+                event.preventDefault();
+                closeSalvageIntentModal();
+                return;
+            }
+            if (craftingIsOpen) {
                 event.preventDefault();
                 closeCraftingModal();
             }
@@ -10921,12 +10975,7 @@
             if (thingDataCache instanceof Map && thingDataCache.has(thingId)) {
                 targetThing = thingDataCache.get(thingId);
             }
-            const thingName = targetThing?.name?.trim() || 'this item';
-            const confirmation = window.confirm(`Salvage "${thingName}"? This destroys the item but may yield useful components.`);
-            if (!confirmation) {
-                return;
-            }
-            submitSalvageRequest({ thingId, thing: targetThing, mode: 'salvage' });
+            openSalvageIntentModal({ mode: 'salvage', thingId, thing: targetThing });
         }
 
         function attemptHarvestFromBadge(hostElement) {
@@ -10942,12 +10991,70 @@
             if (thingDataCache instanceof Map && thingDataCache.has(thingId)) {
                 targetThing = thingDataCache.get(thingId);
             }
-            const thingName = targetThing?.name?.trim() || 'this resource';
-            const confirmation = window.confirm(`Harvest from "${thingName}"? This collects materials without destroying the source.`);
-            if (!confirmation) {
+            openSalvageIntentModal({ mode: 'harvest', thingId, thing: targetThing });
+        }
+
+        function openSalvageIntentModal({ mode = 'salvage', thingId = null, thing = null } = {}) {
+            if (!salvageIntentModal || !salvageIntentBackdrop || !thingId) {
                 return;
             }
-            submitSalvageRequest({ thingId, thing: targetThing, mode: 'harvest' });
+            const isHarvestMode = mode === 'harvest';
+            salvageIntentContext = { mode: isHarvestMode ? 'harvest' : 'salvage', thingId, thing };
+            const fallbackName = isHarvestMode ? 'this resource' : 'this item';
+            const thingName = thing?.name?.trim() || fallbackName;
+
+            if (salvageIntentTitle) {
+                salvageIntentTitle.textContent = isHarvestMode ? 'Harvest Goal' : 'Salvage Goal';
+            }
+            if (salvageIntentMessage) {
+                salvageIntentMessage.textContent = isHarvestMode
+                    ? `Harvest from "${thingName}". Optionally describe what you hope to obtain.`
+                    : `Salvage "${thingName}". Optionally describe what you hope to recover.`;
+            }
+            if (salvageIntentInput) {
+                salvageIntentInput.value = '';
+                salvageIntentInput.placeholder = isHarvestMode
+                    ? 'Optionally describe what you hope to harvest.'
+                    : 'Optionally describe what you hope to salvage.';
+            }
+            if (salvageIntentSubmitBtn) {
+                salvageIntentSubmitBtn.textContent = isHarvestMode ? 'Start Harvest' : 'Start Salvage';
+            }
+            salvageIntentBackdrop.removeAttribute('hidden');
+            salvageIntentModal.removeAttribute('hidden');
+            salvageIntentModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            if (salvageIntentInput) {
+                requestAnimationFrame(() => salvageIntentInput.focus());
+            }
+        }
+
+        function closeSalvageIntentModal() {
+            if (!salvageIntentModal || !salvageIntentBackdrop) {
+                return;
+            }
+            salvageIntentModal.setAttribute('aria-hidden', 'true');
+            salvageIntentModal.setAttribute('hidden', '');
+            salvageIntentBackdrop.setAttribute('hidden', '');
+            salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
+            if (salvageIntentInput) {
+                salvageIntentInput.value = '';
+            }
+            const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
+            if (!anyOpenModal) {
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        async function submitSalvageIntent() {
+            const { mode, thingId, thing } = salvageIntentContext || {};
+            if (!thingId) {
+                closeSalvageIntentModal();
+                return;
+            }
+            const notes = (salvageIntentInput?.value || '').trim();
+            closeSalvageIntentModal();
+            await submitSalvageRequest({ thingId, thing, mode, notes });
         }
 
         function openCraftingModal({ mode = 'craft', sourceThing = null } = {}) {
@@ -11478,7 +11585,7 @@
             }
         }
 
-        async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage' } = {}) {
+        async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage', notes = '' } = {}) {
             const normalizedMode = mode === 'harvest' ? 'harvest' : 'salvage';
             const isHarvestMode = normalizedMode === 'harvest';
             if (!thingId) {
@@ -11497,7 +11604,7 @@
                     mode: payloadMode,
                     actionType: payloadMode,
                     slotCount: 1,
-                    notes: '',
+                    notes: notes || '',
                     itemIds: [thingId],
                     slots: [{
                         slotIndex: 0,
@@ -11511,12 +11618,12 @@
                     payload.harvestItemId = thingId;
                     payload.harvestItemName = thing?.name || null;
                     payload.harvestItemDescription = thing?.description || null;
-                    payload.harvestNotes = '';
+                    payload.harvestNotes = notes || '';
                 } else {
                     payload.salvageItemId = thingId;
                     payload.salvageItemName = thing?.name || null;
                     payload.salvageItemDescription = thing?.description || null;
-                    payload.salvageNotes = '';
+                    payload.salvageNotes = notes || '';
                 }
 
                 const response = await fetch('/api/craft', {

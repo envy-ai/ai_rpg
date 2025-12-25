@@ -28,7 +28,7 @@ Step 1: Determine whether the salvage is plausible or implausible, in this forma
   <type>Plausible</type>
   <skillCheck>
     <reason>Why this skill/attribute/difficulty fit the salvage attempt (focus on durability, complexity, hazards, etc.).</reason>
-    <skill>Most relevant known skill or a new reasonable one; use N/A if none.</skill>
+    <skill>One of the following skills: {{ setting.skills | join(', ') }} (Or, if none are relevant, respond with N/A.)</skill>
     <attribute>Relevant attribute (Strength, Dexterity, Intelligence, etc.).</attribute>
     <difficulty>Trivial / Easy / Medium / Hard / Very Hard / Legendary — account for item complexity and suitability of the station.</difficulty>
     <curcumstanceModifiers>

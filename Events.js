@@ -3020,50 +3020,58 @@ class Events {
                 };
 
                 const player = context.player || this.currentPlayer;
+                const tasks = [];
+
                 for (const entry of entries) {
-                    const itemName = normalizeString(entry.item);
-                    const npcName = normalizeString(entry.npc);
-                    if (!npcName) {
-                        continue;
-                    }
-                    const item = itemName ? findThingByName(itemName) : null;
-                    if (!item) {
-                        throw new Error(`item_to_npc could not find item "${itemName || '<unknown>'}"`);
-                    }
-
-                    let location = context.location || null;
-                    if (!location && item.metadata?.locationId) {
-                        location = resolveLocation(item.metadata.locationId);
-                    }
-                    if (!location && player?.currentLocation) {
-                        location = resolveLocation(player.currentLocation);
-                    }
-                    if (!location) {
-                        throw new Error(`item_to_npc could not resolve location for "${npcName}" transformation.`);
-                    }
-
-                    const transformationContext = { ...context, location };
-                    if (!transformationContext.region && typeof findRegionByLocationId === 'function') {
-                        try {
-                            transformationContext.region = findRegionByLocationId(location.id) || null;
-                        } catch (_) {
-                            transformationContext.region = null;
+                    tasks.push((async () => {
+                        const itemName = normalizeString(entry.item);
+                        const npcName = normalizeString(entry.npc);
+                        if (!npcName) {
+                            return;
                         }
-                    }
+                        const item = itemName ? findThingByName(itemName) : null;
+                        if (!item) {
+                            throw new Error(`item_to_npc could not find item "${itemName || '<unknown>'}"`);
+                        }
 
-                    this._detachThingFromWorld(item);
-                    if (itemName) {
-                        this.animatedItems.add(itemName);
-                        this.destroyedItems.add(itemName);
-                    }
-                    if (npcName) {
-                        this.newCharacters.add(npcName);
-                        this.arrivedCharacters.add(npcName);
-                    }
-                    const npc = await ensureNpcByName(npcName, transformationContext);
-                    if (!npc) {
-                        throw new Error(`item_to_npc failed to create NPC "${npcName}"`);
-                    }
+                        let location = context.location || null;
+                        if (!location && item.metadata?.locationId) {
+                            location = resolveLocation(item.metadata.locationId);
+                        }
+                        if (!location && player?.currentLocation) {
+                            location = resolveLocation(player.currentLocation);
+                        }
+                        if (!location) {
+                            throw new Error(`item_to_npc could not resolve location for "${npcName}" transformation.`);
+                        }
+
+                        const transformationContext = { ...context, location };
+                        if (!transformationContext.region && typeof findRegionByLocationId === 'function') {
+                            try {
+                                transformationContext.region = findRegionByLocationId(location.id) || null;
+                            } catch (_) {
+                                transformationContext.region = null;
+                            }
+                        }
+
+                        this._detachThingFromWorld(item);
+                        if (itemName) {
+                            this.animatedItems.add(itemName);
+                            this.destroyedItems.add(itemName);
+                        }
+                        if (npcName) {
+                            this.newCharacters.add(npcName);
+                            this.arrivedCharacters.add(npcName);
+                        }
+                        const npc = await ensureNpcByName(npcName, transformationContext);
+                        if (!npc) {
+                            throw new Error(`item_to_npc failed to create NPC "${npcName}"`);
+                        }
+                    })());
+                }
+
+                if (tasks.length) {
+                    await Promise.all(tasks);
                 }
             },
             consume_item: function (items = [], context = {}) {
@@ -3364,57 +3372,59 @@ class Events {
                     return duplicate;
                 };
 
+                const tasks = [];
+
                 for (const entry of entries) {
-                    if (!entry) {
-                        console.warn('pick_up_item event entry is invalid:', entry);
-                        console.trace();
-                        continue;
-                    }
+                    tasks.push((async () => {
+                        if (!entry) {
+                            console.warn('pick_up_item event entry is invalid:', entry);
+                            console.trace();
+                            return;
+                        }
 
-                    const itemName = typeof entry.item === 'string' ? entry.item.trim() : '';
-                    if (!itemName) {
-                        console.warn('pick_up_item event entry has no valid item name:', entry);
-                        console.trace();
-                        continue;
-                    }
+                        const itemName = typeof entry.item === 'string' ? entry.item.trim() : '';
+                        if (!itemName) {
+                            console.warn('pick_up_item event entry has no valid item name:', entry);
+                            console.trace();
+                            return;
+                        }
 
-                    if (this.obtainedItems.has(itemName)) {
-                        console.warn('pick_up_item event entry has already been obtained:', entry);
-                        console.trace();
-                        continue;
-                    }
+                        if (this.obtainedItems.has(itemName)) {
+                            console.warn('pick_up_item event entry has already been obtained:', entry);
+                            console.trace();
+                            return;
+                        }
 
-                    const actor = typeof findActorByName === 'function' ? findActorByName(entry.name) : null;
-                    if (!actor || typeof actor.addInventoryItem !== 'function') {
-                        console.warn('pick_up_item event could not find valid actor for entry:', entry);
-                        console.trace();
-                        continue;
-                    }
+                        const actor = typeof findActorByName === 'function' ? findActorByName(entry.name) : null;
+                        if (!actor || typeof actor.addInventoryItem !== 'function') {
+                            console.warn('pick_up_item event could not find valid actor for entry:', entry);
+                            console.trace();
+                            return;
+                        }
 
-                    let thing = resolveAvailableThing(itemName);
+                        let thing = resolveAvailableThing(itemName);
 
-                    if (!thing) {
-                        await this._ensureItemsExist([itemName], context.location, {
-                            allowObtained: false,
-                            recordNewItems: false
-                        });
-                        thing = resolveAvailableThing(itemName);
-                    }
+                        if (!thing) {
+                            await this._ensureItemsExist([itemName], context.location, {
+                                allowObtained: false,
+                                recordNewItems: false
+                            });
+                            thing = resolveAvailableThing(itemName);
+                        }
 
-                    /*
-                    if (!thing) {
-                        thing = createDuplicateThing(itemName);
-                    }
-                    */
+                        if (!thing) {
+                            throw new Error(`Unable to resolve or create item "${itemName}" for pick_up_item.`);
+                        }
 
-                    if (!thing) {
-                        throw new Error(`Unable to resolve or create item "${itemName}" for pick_up_item.`);
-                    }
+                        this._detachThingFromKnownLocation(thing);
+                        actor.addInventoryItem(thing);
+                        thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                        this.obtainedItems.add(itemName);
+                    })());
+                }
 
-                    this._detachThingFromKnownLocation(thing);
-                    actor.addInventoryItem(thing);
-                    thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
-                    this.obtainedItems.add(itemName);
+                if (tasks.length) {
+                    await Promise.all(tasks);
                 }
             },
             drop_item: function (entries = [], context = {}) {

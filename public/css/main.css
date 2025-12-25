@@ -3967,6 +3967,10 @@ body.modal-open {
   gap: 20px;
 }
 
+.modal__instruction {
+  color: #f8fafc;
+}
+
 .modal__footer {
   display: flex;
   justify-content: flex-end;
@@ -5563,6 +5567,17 @@ body.modal-open {
   text-align: right;
   font-variant-numeric: tabular-nums;
   min-width: 64px;
+}
+
+.inventory-drop-target {
+  position: relative;
+  transition: outline-color 120ms ease, background-color 120ms ease;
+}
+
+.inventory-drop-target.is-drop-hover {
+  outline: 2px dashed rgba(56, 189, 248, 0.7);
+  outline-offset: 2px;
+  background: rgba(56, 189, 248, 0.08);
 }
 
 .npc-view-empty {
