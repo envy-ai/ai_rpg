@@ -489,7 +489,10 @@ class LLMClient {
             throw new Error('AI model is not configured.');
         }
         payload.model = resolvedModel;
-        payload.seed = seed;
+        if (!Globals.config.ai.supress_seed) {
+            payload.seed = seed;
+        }
+
         const resolvedStream = LLMClient.#resolveBoolean(
             stream,
             payload.stream !== undefined ? payload.stream : aiConfig.stream

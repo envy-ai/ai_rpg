@@ -632,6 +632,12 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const responseText = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                metadataLabel: requestOptions.metadataLabel,
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                response: responseText
+            });
             const seeds = extractRandomEventSeeds(responseText);
             if (!seeds.length) {
                 throw new Error(`Random event seed generation for ${mode} returned no events.`);
