@@ -5,7 +5,52 @@ const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
 
+class Semaphore {
+    constructor(maxConcurrent = 1) {
+        this.maxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0 ? maxConcurrent : 1;
+        this.current = 0;
+        this.queue = [];
+    }
+
+    async acquire() {
+        if (this.current < this.maxConcurrent) {
+            this.current += 1;
+            return;
+        }
+        return new Promise(resolve => {
+            this.queue.push(resolve);
+        });
+    }
+
+    release() {
+        if (this.current > 0) {
+            this.current -= 1;
+        }
+        this.dispatch();
+    }
+
+    setLimit(newLimit) {
+        const normalized = Number.isInteger(newLimit) && newLimit > 0 ? newLimit : this.maxConcurrent;
+        if (normalized !== this.maxConcurrent) {
+            this.maxConcurrent = normalized;
+            this.dispatch();
+        }
+    }
+
+    dispatch() {
+        while (this.current < this.maxConcurrent && this.queue.length) {
+            const next = this.queue.shift();
+            if (typeof next === 'function') {
+                this.current += 1;
+                next();
+            }
+        }
+    }
+}
+
 class LLMClient {
+    static #semaphores = new Map();
+    static #semaphoreLimit = null;
     static #streamProgress = {
         active: new Map(),
         timer: null,
@@ -207,6 +252,35 @@ class LLMClient {
             throw new Error('Globals.config.ai is not set; AI configuration unavailable.');
         }
         return aiConfig;
+    }
+
+    static getMaxConcurrent(aiConfigOverride = null) {
+        const config = aiConfigOverride || LLMClient.ensureAiConfig();
+        const raw = Number(config?.max_concurrent_requests);
+        if (Number.isInteger(raw) && raw > 0) {
+            return raw;
+        }
+        return 1;
+    }
+
+    static #ensureSemaphore(key, maxConcurrent) {
+        const limit = Number.isInteger(maxConcurrent) && maxConcurrent > 0
+            ? maxConcurrent
+            : 1;
+        const resolvedKey = key || 'default';
+        const existing = LLMClient.#semaphores.get(resolvedKey);
+        if (!existing) {
+            const sem = new Semaphore(limit);
+            LLMClient.#semaphores.set(resolvedKey, sem);
+            console.log(`🔒 LLMClient semaphore initialized for ${resolvedKey} with maxConcurrent=${limit}`);
+            return sem;
+        }
+        if (LLMClient.#semaphoreLimit !== limit) {
+            LLMClient.#semaphoreLimit = limit;
+            existing.setLimit(limit);
+            console.log(`🔒 LLMClient semaphore limit updated for ${resolvedKey} to maxConcurrent=${limit}`);
+        }
+        return existing;
     }
 
     static writeLogFile({
@@ -414,6 +488,7 @@ class LLMClient {
         seed = Math.random(),
         stream = undefined,
         runInBackground = false,
+        maxConcurrent = null,
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -439,28 +514,29 @@ class LLMClient {
             });
         }
         const aiConfig = LLMClient.#cloneAiConfig();
-
         let currentTime = Date.now();
+        let semaphore = null;
+        try {
 
-        //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
-        //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
-        if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
-            const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
-            console.log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
-            for (const [key, value] of Object.entries(overrides)) {
-                console.log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
-                aiConfig[key] = value;
+            //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
+            //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
+            if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
+                const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
+                console.log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
+                for (const [key, value] of Object.entries(overrides)) {
+                    console.log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
+                    aiConfig[key] = value;
+                }
             }
-        }
 
-        dumpReasoningToConsole = true;
+            dumpReasoningToConsole = true;
 
-        if (metadataLabel) {
-            console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
-        } else {
-            console.log('🧠 LLMClient.chatCompletion called without metadataLabel.');
-            console.trace();
-        }
+            if (metadataLabel) {
+                console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
+            } else {
+                console.log('🧠 LLMClient.chatCompletion called without metadataLabel.');
+                console.trace();
+            }
 
         const payload = additionalPayload && typeof additionalPayload === 'object'
             ? { ...additionalPayload }
@@ -527,6 +603,14 @@ class LLMClient {
             throw new Error('AI API key is not configured.');
         }
 
+        const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
+        const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
+            ? maxConcurrent
+            : configuredMaxConcurrent;
+        const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
+        semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent);
+        await semaphore.acquire();
+
         const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
         let streamStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
             ? aiConfig.stream_start_timeout * 1000
@@ -562,10 +646,14 @@ class LLMClient {
         }
 
         let attempt = 0;
+        let responseContent = '';
+        let streamTrackerId = null;
+        let startTimer = null;
+        let lastTotalTokens = null;
         while (attempt <= retryAttempts) {
-            let responseContent = '';
-            let streamTrackerId = null;
-            let startTimer = null;
+            responseContent = '';
+            streamTrackerId = null;
+            startTimer = null;
             const controller = new AbortController();
             const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
             try {
@@ -585,6 +673,9 @@ class LLMClient {
                 if (startTimer) {
                     clearTimeout(startTimer);
                     startTimer = null;
+                }
+                if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
+                    lastTotalTokens = response.data.usage.total_tokens;
                 }
 
                 // On any 5xx response, wait waitAfterError seconds and then retry
@@ -795,22 +886,8 @@ class LLMClient {
                             throw new Error(errorMsg);
                         }
                     }
-                    let totalTime = Date.now() - currentTime;
-                    const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
-                        ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
-                        : null;
-                    const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
-                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
-                    return responseContent;
-                } else {
-                    let totalTime = Date.now() - currentTime;
-                    const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
-                        ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
-                        : null;
-                    const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
-                    console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
-                    return responseContent;
                 }
+                break;
 
             } catch (error) {
                 if (!responseContent && typeof error?.partialResponse === 'string') {
@@ -870,8 +947,15 @@ class LLMClient {
             ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
             : null;
         const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
-        console.log(`Prompt '${metadataLabel}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}`);
+        const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
+        const label = metadataLabel || 'unknown';
+        console.log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
         return responseContent;
+        } finally {
+            if (semaphore) {
+                semaphore.release();
+            }
+        }
     }
 }
 

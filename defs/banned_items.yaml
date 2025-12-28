@@ -1,0 +1,4 @@
+banned_items:
+  - N/A
+banned_item_regexes:
+  - /[Ll]eather-?bound [Jj]ournal/

@@ -29,6 +29,7 @@ ai:
   highTemperature: 1.0
   baseTimeoutSeconds: 300
   retryAttempts: 3
+  max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)
   stream: true

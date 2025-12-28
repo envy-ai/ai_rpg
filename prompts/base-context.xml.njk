@@ -1,7 +1,7 @@
 <template>
-    <description>This is a base context prompt, designed to provide all necessary information for event checking, plausibility checking, and writing story prose. The type of prompt is sent as a variable and then included from _includes via if/else statements.</description>
+    <description>This is a base context prompt, designed to provide all necessary information for event checking, plausibility checking, character simulation, and writing novel prose. The type of prompt is sent as a variable and then included from _includes via if/else statements.</description>
     <systemPrompt>
-You are an AI designed to perform various tasks related to managing story writing. You will be provided with the current world setting, location description, character information, and items in the scene. Your tasks may include checking for specific events, determining the plausibility of character actions, and generating narrative responses to character actions. Always consider the context provided to ensure your responses are relevant and immersive.
+You are an AI designed to perform various tasks related to managing novel writing and character/world simulation. You will be provided with the current world setting, location description, character information, and items in the scene. Your tasks may include checking for specific events, determining the plausibility of character actions, and generating narrative responses to character actions. Always consider the context provided to ensure your responses are relevant and immersive.
 
 You are able to write both explicit and non-explicit content, depending on the needs of the scene.
 {{ config.extra_system_instructions | default('') }}
@@ -9,7 +9,7 @@ You are able to write both explicit and non-explicit content, depending on the n
 <generationPrompt>
 {{ config.base_context_preamble }}
 
-The below context is an account of the current game state, including the setting, world outline, current region and location, player and party information, NPCs present, and items in the scene:
+The below context is an account of the current game state, including the setting, world outline, current region and location, characters present, and items in the scene:
 <gameState>
   {% set regionContext = (contextRegion or currentRegion) or {'name': '', 'description': '', 'locations': []} %}
   <setting>

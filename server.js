@@ -1541,11 +1541,12 @@ function pushChatEntry(entry, collector = null, locationId = null) {
         if (typeof text !== 'string') {
             return text;
         }
-        // Remove leftover bracketed metadata and any trailing "Events – Player Turn" summaries
+        // Remove leftover bracketed metadata and any trailing "Events" summaries or leading think blocks
         return text
             .replace(/\s*\[location:[^\]]*]/gi, '')
             .replace(/\s*\[seen by[^\]]*]/gi, '')
-            .replace(/\s*📋\s*Events\s*[–-]\s*Player\s+Turn[\s\S]*$/i, '')
+            .replace(/^[\s\S]*?<\/think>\s*/i, '')
+            .replace(/\s*📋\s*Events[\s\S]*$/i, '')
             .trim();
     };
 

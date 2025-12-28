@@ -729,6 +729,24 @@ class Player {
                         continue;
                     }
                     try {
+                        const normalizedName = name.trim().toLowerCase();
+                        if (normalizedName === 'health') {
+                            const beforeHealth = player.health;
+                            const nextHealth = Math.max(0, beforeHealth + delta);
+                            player.setHealth(nextHealth);
+                            const afterHealth = player.health;
+                            if (!player.isNPC) console.log(`    - Applied delta of ${delta} to health: ${beforeHealth} -> ${afterHealth}`);
+                            adjustments.push({
+                                playerId: player.id || null,
+                                playerName: player.name || null,
+                                bar: 'Health',
+                                previousValue: beforeHealth,
+                                newValue: afterHealth,
+                                delta
+                            });
+                            continue;
+                        }
+
                         const before = player.getNeedBarValue(name);
                         const next = (before ?? 0) + delta;
                         player.setNeedBarValue(name, next, { allowPlayerOnly: false });

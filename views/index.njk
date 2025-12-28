@@ -9288,6 +9288,50 @@
             }
         });
 
+        function setupCtrlEnterSubmission() {
+            const handleCtrlEnter = (event) => {
+                if (event.isComposing || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) {
+                    return;
+                }
+
+                const active = document.activeElement;
+
+                const triggerSubmitForScope = (root) => {
+                    if (!root) return false;
+                    const submitBtn = root.querySelector('button[type="submit"]:not([disabled])')
+                        || root.querySelector('.button-primary:not([disabled])');
+                    if (submitBtn) {
+                        event.preventDefault();
+                        submitBtn.click();
+                        return true;
+                    }
+                    return false;
+                };
+
+                // Prefer the nearest form to the focused element
+                const form = active?.closest?.('form');
+                if (form && triggerSubmitForScope(form)) {
+                    return;
+                }
+
+                // If a modal is open, try its primary action
+                const openModal = document.querySelector('.modal[aria-hidden="false"]');
+                if (openModal && triggerSubmitForScope(openModal)) {
+                    return;
+                }
+
+                // Fallback: chat send button when focus is in the message input
+                if (messageInput && (active === messageInput || messageInput.contains(active)) && sendButton && !sendButton.disabled) {
+                    event.preventDefault();
+                    sendButton.click();
+                }
+            };
+
+            document.addEventListener('keydown', handleCtrlEnter);
+        }
+
+        setupCtrlEnterSubmission();
+
         if (npcDispositionCancelBtn) {
             npcDispositionCancelBtn.addEventListener('click', () => {
                 closeNpcDispositionModal();
