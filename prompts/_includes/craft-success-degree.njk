@@ -21,11 +21,11 @@ The following is an XML reppresentation of the crafting action's outcome if it w
 {{ crafting_outcome_xml }}
 
 {% if success_or_failure == 'critical_success' %}
-A critical success results in an output with significantly higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this. Add an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects beyond the outputted item(s).
+A critical success results in an output with significantly higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this. Add an &lt;other&gt; field inside &lt;result&gt; if there are any additional effects beyond the outputted item(s). Be sure to consider the *intent* of the crafting attempt. A critical success should never thwart the player's intent (for instance, if making a pile of bricks, a critical success shouldn't result in a single giant brick, or bricks being fused together).
 {% elif success_or_failure == 'major_success' %}
-A major success results in an output with higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this.
+A major success results in an output with higher rarity or quality than a standard success, additional items, some crafting components not being used, etc. Adjust the description and other fields to reflect this. Be sure to consider the *intent* of the crafting attempt. A major success should never thwart the player's intent (for instance, if making a pile of bricks, a critical success shouldn't result in a single giant brick, or bricks being fused together).
 {% elif success_or_failure == 'barely_succeeded' %}
-A barely succeeded results in an output with slightly lower rarity or quality than a standard success, possible minor defects, etc. Adjust the description and other fields to reflect this.
+A barely succeeded results in an output with slightly lower rarity or quality than a standard success, possible minor defects, etc. Adjust the description and other fields to reflect this. Be sure to consider the *intent* of the crafting attempt. A barely succeeded result generally shouldn't thwart the player's intent, and the crafted item should still be mostly usable (if not great) for its intended purpose.
 {% elif success_or_failure == 'barely_failed' %}
 A barely failed results in an output with significantly lower rarity or quality than a standard success, possible defects, etc. Adjust the description and other fields to reflect this. In some cases, no item is produced, but the materials aren't consumed. Adjust the description and other fields to reflect this.
 {% elif success_or_failure == 'failure' %}

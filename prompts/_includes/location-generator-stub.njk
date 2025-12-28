@@ -12,7 +12,7 @@
 </stub>
 {% endif %}
 
-<task>You are an AI assistant that expands partially discovered locations in a roleplaying game world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
+<task>You are an AI assistant that expands partially discovered locations in a fictional world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
 
 {% if entryProse %}Here is how the location was described upon entry:
 <entryProse>
@@ -54,7 +54,7 @@ Return ONLY the following fields, in this format:
     <event><!-- 1-2 sentence description of an event --></event>
   </randomStoryEvents>
   <characterConcepts>
-    <!-- Generate 10 interesting character concepts appropriate for this location. These are not full NPCs, just brief concepts that could be used to create NPCs later. Format them one per line, as follows: -->
+    <!-- If the location is not abandoned, generate 10 interesting character concepts appropriate for this location (if it's abandoned, just leave this section empty). These are not full NPCs, just brief concepts that could be used to create NPCs later. Format them one per line, as follows: -->
     - <!-- 1-2 sentence description of a character concept -->
     - <!-- 1-2 sentence description of a character concept -->
   </characterConcepts>

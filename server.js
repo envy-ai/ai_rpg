@@ -3342,17 +3342,14 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
             });
         }
 
-        const promptForLog = [
-            '--- SYSTEM PROMPT ---',
-            parsedTemplate.systemPrompt || '(none)',
-            '',
-            '--- GENERATION PROMPT ---',
-            parsedTemplate.generationPrompt || '(none)'
-        ].join('\n');
-        logChooseImportantMemories({
-            prompt: promptForLog,
-            responseText,
-            durationSeconds: (Date.now() - requestStart) / 1000
+        LLMClient.logPrompt({
+            prefix: 'choose_important_memories',
+            metadataLabel: 'choose_important_memories',
+            systemPrompt: parsedTemplate.systemPrompt || '',
+            generationPrompt: parsedTemplate.generationPrompt || '',
+            response: responseText || '',
+            model: undefined,
+            endpoint: undefined
         });
     };
 
@@ -3801,33 +3798,6 @@ function resolveActionOutcome({ plausibility, player }) {
     };
 }
 
-function logPlausibilityCheck({ systemPrompt, generationPrompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `plausibility_check_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== PLAUSIBILITY SYSTEM PROMPT ===',
-            systemPrompt || '(none)',
-            '',
-            '=== PLAUSIBILITY GENERATION PROMPT ===',
-            generationPrompt || '(none)',
-            '',
-            '=== PLAUSIBILITY RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log plausibility check:', error.message);
-    }
-}
-
 async function runPlausibilityCheck({ actionText, locationId, attackContext = null }) {
     if (!actionText || !actionText.trim()) {
         return null;
@@ -3888,16 +3858,26 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
         ];
 
         const requestStart = Date.now();
-        const plausibilityResponse = await LLMClient.chatCompletion({
+        const requestOptions = {
             messages,
             metadataLabel: 'plausibility_check'
-        });
+        };
+        const plausibilityResponse = await LLMClient.chatCompletion(requestOptions);
 
-        logPlausibilityCheck({
+        LLMClient.logPrompt({
+            prefix: 'plausibility_check',
+            metadataLabel: requestOptions.metadataLabel || 'plausibility_check',
             systemPrompt: parsedTemplate.systemPrompt,
             generationPrompt: parsedTemplate.generationPrompt,
-            responseText: plausibilityResponse,
-            durationSeconds: (Date.now() - requestStart) / 1000
+            response: plausibilityResponse,
+            model: requestOptions.model,
+            endpoint: requestOptions.endpoint,
+            sections: [
+                {
+                    title: 'Duration',
+                    content: formatDurationLine((Date.now() - requestStart) / 1000)
+                }
+            ]
         });
 
         const structured = parsePlausibilityOutcome(plausibilityResponse);
@@ -5621,7 +5601,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             throw new Error('Empty inventory response from AI');
         }
 
-        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+            const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         const items = await parseThingsXml(inventoryContent, {
             isInventory: true,
@@ -5993,9 +5973,11 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 ];
 
                 const requestStart = Date.now();
+                let requestPayloadForLog = null;
                 const inventoryContent = await LLMClient.chatCompletion({
                     messages,
                     metadataLabel: `thing_generation_${name.replace(/\s+/g, '_').toLowerCase()}`,
+                    captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
                 });
 
                 if (!inventoryContent || !inventoryContent.trim()) {
@@ -6155,32 +6137,24 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                     }
                 }
 
-                try {
-                    const logDir = path.join(__dirname, 'logs');
-                    if (!fs.existsSync(logDir)) {
-                        fs.mkdirSync(logDir, { recursive: true });
-                    }
-                    const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
-                    const logPath = path.join(logDir, `event_item_${Date.now()}_${safeName}.log`);
-                    const logParts = [
-                        formatDurationLine(apiDurationSeconds),
-                        '=== ITEM GENERATION SYSTEM PROMPT ===',
-                        parsedTemplate.systemPrompt,
-                        '',
-                        '=== ITEM GENERATION PROMPT ===',
-                        parsedTemplate.generationPrompt,
-                        '',
-                        '=== ITEM GENERATION RESPONSE ===',
-                        inventoryContent,
-                        '',
-                        '=== GENERATED ITEM ===',
-                        JSON.stringify(thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name }, null, 2),
-                        ''
-                    ];
-                    fs.writeFileSync(logPath, logParts.join("\n"), 'utf8');
-                } catch (logError) {
-                    console.warn('Failed to log item generation:', logError.message);
-                }
+                LLMClient.logPrompt({
+                    prefix: 'event_item',
+                    metadataLabel: 'event_item',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: inventoryContent || '',
+                    sections: [
+                        {
+                            title: 'Duration',
+                            content: formatDurationLine(apiDurationSeconds)
+                        },
+                        {
+                            title: 'Generated Item',
+                            content: JSON.stringify(thing.toJSON ? thing.toJSON() : { id: thing.id, name: thing.name }, null, 2)
+                        }
+                    ],
+                    requestPayload: requestPayloadForLog
+                });
 
                 return thing;
             } catch (itemError) {
@@ -6408,10 +6382,12 @@ async function alterThingByPrompt({
     ];
 
     const requestStart = Date.now();
+    let requestPayloadForLog = null;
     const aiResponse = await LLMClient.chatCompletion({
         messages,
         temperature: parsedTemplate.temperature,
-        metadataLabel: 'alter_thing'
+        metadataLabel: 'alter_thing',
+        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
     });
 
     const apiDurationSeconds = (Date.now() - requestStart) / 1000;
@@ -6631,38 +6607,28 @@ async function alterThingByPrompt({
         }
     }
 
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-        const safeName = (thing.name || targetName || 'item')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '_')
-            .replace(/^_+|_+$/g, '') || 'item';
-        const logPath = path.join(logDir, `event_item_alter_${Date.now()}_${safeName}.log`);
-        const logParts = [
-            formatDurationLine(apiDurationSeconds),
-            '=== ITEM ALTERATION SYSTEM PROMPT ===',
-            parsedTemplate.systemPrompt,
-            '',
-            '=== ITEM ALTERATION PROMPT ===',
-            parsedTemplate.generationPrompt,
-            '',
-            '=== ITEM ALTERATION RESPONSE ===',
-            aiResponse,
-            '',
-            '=== ORIGINAL ITEM STATE ===',
-            JSON.stringify(originalState, null, 2),
-            '',
-            '=== UPDATED ITEM ===',
-            JSON.stringify(thing.toJSON(), null, 2),
-            ''
-        ];
-        fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-    } catch (logError) {
-        console.warn('Failed to log item alteration:', logError.message);
-    }
+    LLMClient.logPrompt({
+        prefix: 'event_item_alter',
+        metadataLabel: 'event_item_alter',
+        systemPrompt: parsedTemplate.systemPrompt || '',
+        generationPrompt: parsedTemplate.generationPrompt || '',
+        response: aiResponse || '',
+        requestPayload: requestPayloadForLog,
+        sections: [
+            {
+                title: 'Duration',
+                content: formatDurationLine(apiDurationSeconds)
+            },
+            {
+                title: 'Original Item State',
+                content: JSON.stringify(originalState, null, 2)
+            },
+            {
+                title: 'Updated Item',
+                content: JSON.stringify(thing.toJSON(), null, 2)
+            }
+        ]
+    });
 
     return {
         originalName,
@@ -10803,30 +10769,6 @@ function logRegionNameRegeneration({ prompt, responseText, durationSeconds }) {
     }
 }
 
-function logChooseImportantMemories({ prompt, responseText, durationSeconds }) {
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const logPath = path.join(logDir, `choose_important_memories_${timestamp}.log`);
-        const parts = [
-            formatDurationLine(durationSeconds),
-            '=== CHOOSE IMPORTANT MEMORIES PROMPT ===',
-            prompt || '(none)',
-            '',
-            '=== CHOOSE IMPORTANT MEMORIES RESPONSE ===',
-            responseText || '(no response)',
-            ''
-        ];
-        fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-    } catch (error) {
-        console.warn('Failed to log choose_important_memories:', error.message);
-    }
-}
-
 function rotateNameCandidates(names, rotationCount = 3) {
     if (!Array.isArray(names) || names.length === 0) {
         return Array.isArray(names) ? names.slice() : [];
@@ -12617,6 +12559,24 @@ function renderThingImagePrompt(thing) {
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
 
+        LLMClient.logPrompt({
+            prefix: 'item_image',
+            metadataLabel: 'item_image',
+            systemPrompt: parsedTemplate.systemPrompt || '',
+            generationPrompt: parsedTemplate.generationPrompt || '',
+            response: parsedTemplate.renderedTemplate || '',
+            sections: [
+                {
+                    title: 'Template Context',
+                    content: JSON.stringify(variables, null, 2)
+                },
+                {
+                    title: 'Rendered Template',
+                    content: renderedTemplate || ''
+                }
+            ]
+        });
+
         /*
         try {
             if (logPath) {
@@ -13652,52 +13612,6 @@ async function generateThingImage(thing, options = {}) {
         const promptTemplate = renderThingImagePrompt(thing);
         const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
         const { prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
-
-        const thingLogTimestamp = Date.now();
-        try {
-            const logsDir = path.join(__dirname, 'logs');
-            if (!fs.existsSync(logsDir)) {
-                fs.mkdirSync(logsDir, { recursive: true });
-            }
-
-            const safeThingId = String(thing.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
-            const logCategory = thing.thingType === 'item' ? 'item' : (thing.thingType === 'scenery' ? 'scenery' : 'thing');
-            const safeThingName = typeof thing.name === 'string'
-                ? thing.name.replace(/[^a-zA-Z0-9_-]/g, '_')
-                : '';
-            const filename = safeThingName
-                ? `${logCategory}_image_${thingLogTimestamp}_${safeThingId}_${safeThingName}.log`
-                : `${logCategory}_image_${thingLogTimestamp}_${safeThingId}.log`;
-            const thingLogPath = path.join(logsDir, filename);
-
-            // no need for this at the moment.
-            //const logStack = new Error('Thing image log trace').stack || 'No stack trace available';
-
-            const logSections = [
-                '=== STACK TRACE ===',
-                //logStack,
-                '',
-                `Timestamp: ${new Date(thingLogTimestamp).toISOString()}`,
-                `Thing ID: ${thing.id}`,
-                `Thing Name: ${thing.name || ''}`,
-                `Thing Type: ${thing.thingType || thing.type || 'unknown'}`,
-                '=== SYSTEM PROMPT ===',
-                promptTemplate.systemPrompt || '(none)',
-                '',
-                '=== GENERATION PROMPT ===',
-                promptTemplate.generationPrompt || '(none)',
-                '',
-                '=== RENDERED TEMPLATE ===',
-                promptTemplate.renderedTemplate || '(none)',
-                '',
-                '=== FINAL IMAGE PROMPT ===',
-                finalImagePrompt,
-                ''
-            ];
-            fs.writeFileSync(thingLogPath, logSections.join('\n'), 'utf8');
-        } catch (logError) {
-            console.warn('Failed to log thing image prompt:', logError.message);
-        }
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();

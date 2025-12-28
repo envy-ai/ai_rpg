@@ -1362,16 +1362,21 @@ p:not(:last-child) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  border: none;
+  padding: 0;
+  margin: 0;
 }
 
-.load-game-source-select {
-  width: 100%;
-  background: rgba(15, 23, 42, 0.65);
-  color: #f1f5f9;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 0.95rem;
+.load-game-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f8fafc;
+  font-weight: 400;
+}
+
+.load-game-radio input[type=radio] {
+  accent-color: #38bdf8;
 }
 
 .load-game-select {

@@ -9,12 +9,12 @@ Guidelines:
 
 Current Situation:
 {% if intendedItemName %}
-The player is attempting to craft an item called "{{ intendedItemName }}" using the crafting/processing station "{{ stationName }}" out of the following items:
+The player is attempting to craft an item called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %} out of the following items:
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}
 {% else %}
-The player is attempting to craft an item using the crafting/processing station "{{ stationName }}" out of the following items:
+The player is attempting to craft an item {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %}  out of the following items:
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}
@@ -25,7 +25,7 @@ The player provided additional notes about their goal: "{{ craftingNotes }}"
 {% endif %}
 
 
-Step 1: Determine whether the crafting/processing action is plausible or implausible, in this format.
+Step 1: Determine whether the crafting/processing action is plausible or implausible, in this format. {% if stationName == 'no workstation' %}Consider the if the necessary tools are reasonably available to the character given the context. (For instance, assembling a robot in a swamp with no work area would be implausible, but assembling a hut would be plausible.){% endif %}
 
 <plausibility>
   <type>Plausible</type>

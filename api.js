@@ -3107,34 +3107,6 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        function logPlayerActionPrompt({ systemPrompt, generationPrompt, responseText = null }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `player_action_${timestamp}.log`);
-                const parts = [
-                    '=== PLAYER ACTION SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== PLAYER ACTION GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    ''
-                ];
-                if (responseText !== null) {
-                    parts.push('=== PLAYER ACTION RESPONSE ===');
-                    parts.push(responseText || '(empty response)');
-                    parts.push('');
-                }
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log player action prompt:', error.message);
-            }
-        }
-
         function logNpcActionPrompt({ npcName, systemPrompt, generationPrompt }) {
             try {
                 const logDir = path.join(__dirname, 'logs');
@@ -3268,10 +3240,14 @@ module.exports = function registerApiRoutes(scope) {
 
                 const raw = await LLMClient.chatCompletion(requestOptions);
 
-                logAttackPrecheck({
+                LLMClient.logPrompt({
+                    prefix: 'attack_precheck',
+                    metadataLabel: requestOptions.metadataLabel || 'attack_precheck',
                     systemPrompt: parsedTemplate.systemPrompt,
                     generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: raw
+                    response: raw,
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
                 });
 
                 if (!raw.trim()) {
@@ -3290,33 +3266,6 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Attack precheck failed:', error.message);
                 return true;
-            }
-        }
-
-        function logAttackPrecheck({ systemPrompt, generationPrompt, responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `attack_precheck_${timestamp}.log`);
-                const parts = [
-                    '=== ATTACK PRECHECK SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== ATTACK PRECHECK GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== ATTACK PRECHECK RESPONSE ===',
-                    responseText || '(no response)',
-                    ''
-                ];
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log attack precheck:', error.message);
             }
         }
 
@@ -5854,9 +5803,14 @@ module.exports = function registerApiRoutes(scope) {
 
                 let raw = await LLMClient.chatCompletion(requestOptions);
                 if (!actor.isNPC && playerPromptLog) {
-                    logPlayerActionPrompt({
-                        ...playerPromptLog,
-                        responseText: raw
+                    LLMClient.logPrompt({
+                        prefix: 'player_action',
+                        metadataLabel: aiMetricsLabel,
+                        systemPrompt: playerPromptLog.systemPrompt || '',
+                        generationPrompt: playerPromptLog.generationPrompt || '',
+                        response: raw,
+                        model: requestOptions.model,
+                        endpoint: requestOptions.endpoint
                     });
                 }
 
@@ -7433,17 +7387,25 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {
 
                     if (playerActionLogPayload) {
-                        logPlayerActionPrompt({
-                            systemPrompt: playerActionLogPayload.systemPrompt || null,
-                            generationPrompt: playerActionLogPayload.generationPrompt || null,
-                            responseText: aiResponse
+                        LLMClient.logPrompt({
+                            prefix: 'player_action',
+                            metadataLabel: 'player_action',
+                            systemPrompt: playerActionLogPayload.systemPrompt || '',
+                            generationPrompt: playerActionLogPayload.generationPrompt || '',
+                            response: aiResponse,
+                            model: requestOptions.model,
+                            endpoint: requestOptions.endpoint
                         });
                         playerActionLogPayload = null;
                     } else if (debugInfo?.systemMessage || debugInfo?.generationPrompt) {
-                        logPlayerActionPrompt({
-                            systemPrompt: debugInfo.systemMessage || null,
-                            generationPrompt: debugInfo.generationPrompt || null,
-                            responseText: aiResponse
+                        LLMClient.logPrompt({
+                            prefix: 'player_action',
+                            metadataLabel: 'player_action',
+                            systemPrompt: debugInfo.systemMessage || '',
+                            generationPrompt: debugInfo.generationPrompt || '',
+                            response: aiResponse,
+                            model: requestOptions.model,
+                            endpoint: requestOptions.endpoint
                         });
                     }
 
@@ -13782,15 +13744,31 @@ module.exports = function registerApiRoutes(scope) {
                     craftedThing = instantiateThingFromBlueprint(craftedBlueprint);
                     if (craftedThing) {
                         things.set(craftedThing.id, craftedThing);
-                        if (typeof currentPlayer.addInventoryItem === 'function') {
-                            currentPlayer.addInventoryItem(craftedThing, { suppressNpcEquip: true });
-                        }
                         const craftedMetadata = craftedThing.metadata && typeof craftedThing.metadata === 'object'
                             ? { ...craftedThing.metadata }
                             : {};
-                        craftedMetadata.ownerId = currentPlayer.id;
-                        craftedMetadata.locationId = null;
-                        craftedThing.metadata = craftedMetadata;
+
+                        if ((craftedThing.thingType || craftedBlueprint.itemOrScenery) === 'scenery') {
+                            craftedMetadata.locationId = resolvedLocationId;
+                            craftedMetadata.ownerId = null;
+                            craftedThing.metadata = craftedMetadata;
+
+                            const locationTarget = locationRecord || (resolvedLocationId ? gameLocations.get(resolvedLocationId) : null);
+                            if (locationTarget && typeof locationTarget.addThingId === 'function') {
+                                try {
+                                    locationTarget.addThingId(craftedThing.id);
+                                } catch (error) {
+                                    console.warn(`Failed to attach crafted scenery ${craftedThing.name || craftedThing.id} to location:`, error?.message || error);
+                                }
+                            }
+                        } else {
+                            if (typeof currentPlayer.addInventoryItem === 'function') {
+                                currentPlayer.addInventoryItem(craftedThing, { suppressNpcEquip: true });
+                            }
+                            craftedMetadata.ownerId = currentPlayer.id;
+                            craftedMetadata.locationId = null;
+                            craftedThing.metadata = craftedMetadata;
+                        }
                     }
                 }
 

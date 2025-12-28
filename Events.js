@@ -27,23 +27,23 @@ const EVENT_PROMPT_ORDER = [
         // Item stuff
         //[
         { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
-        { key: 'dummy_event', prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] -> [action] -> [brief description]. Actions are one of:picked up,dropped,given to someone,taken from someone,put on,equipped,partially consumed,completely consumed, altered permanently, altered temporarily. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob -> put on -> Jacket". Right: "Jacket -> put on -> Bob put on the Jacket"` },
+        { key: 'dummy_event', prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] -> [action] -> [brief description]. Actions are one of:picked up, dropped, given to someone, taken from someone, put on (as in worn or donned), equipped, partially consumed, completely consumed, altered permanently, altered temporarily, aggregated. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob -> put on -> Jacket". Right: "Jacket -> put on -> Bob put on the Jacket"` },
         { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
         { key: 'alter_item', prompt: `Was an item or piece of scenery in the scene or any inventory PERMANENTLY altered in any way (e.g., upgraded, modified, enchanted, broken, filled with items, etc.)? If so, answer in the format "[exact item name] -> [new item name or same item name] -> [1 sentence description of alteration]". If multiple items were altered, separate multiple entries with vertical bars. If it doesn't make sense for the name to change, use the same name for new item name. Note that if a meaningful fraction of an an object was consumed (a slice of cake, but not a single piece of wood from a large pile), this is considered an alteration. If the *entire* thing was consumed, this is considered completely consumed and not alteration. Being given, taken, worn, equipped, removed, dropped, etc, is not considered an alteration.` },
-        { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left), either by being used as components in crafting, by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.` },
+        { key: 'consume_item', prompt: `Were any items or pieces of scenery completely used up (leaving none left) or aggregated or assembled into something else, either by becoming a part of something else (like a crafted item, a pile of items, etc), by being eaten or drunk, or by being otherwise completely destroyed? If so, list them in this format: "[exact name of item] -> [how item was consumed]" separated by vertical bars. Otherwise, answer N/A. Harvesting, gathering, or otherwise picking up an item does NOT consume it.` },
         { key: 'transfer_item', prompt: `Did anyone hand, trade, or give an item to someone else? If so, list "[exact name of the giver] -> [item] -> [exact name of the receiver]". If there are multiple entries, separate them with vertical bars. Otherwise, answer N/A.` },
         { key: 'pick_up_item', prompt: `Of any items not listed as consumed or altered, did anyone obtain one or more tangible carryable items or resources (not buildings or furniture) by any method other than harvesting or gathering? If so, list the full name of the person who obtained the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
         { key: 'harvest_gather', prompt: `Did anyone harvest or gather from any natural or man-made resources or collections (for instance, a berry bush, a pile of wood, a copper vein, a crate of spare parts, etc)? If so, answer with the full name of the person who did so as seen in the location context ("player" if it was the player) and the exact name of the item(s) they would obtain from harvesting or gathering. If multiple items would be gathered this way, separate with vertical bars. Format like this: "[name] -> [item] | [name] -> [item]", up to three items at a time. Otherwise, answer N/A. For example, if harvesting from a "Raspberry Bush", the item obtained would be "Raspberries", "Ripe Raspberries", or similar.` },
         { key: 'item_appear', prompt: `Did any new inanimate items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact item name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A. Note that even if an item was crafted with multiple ingredients, it should only be listed once here as a new item.` },
-        { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> [item] | [name] -> [item]". Otherwise, answer N/A.` },
-        { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, or other non-carryable items appear in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
-        { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
+        { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Items are not considered dropped/placed/set down if they're being used to assemble something in the scene (furniture, a pile of items, or other scenery) and should not be listed here. Use the format: "[exact character name] -> [exact item name] | [exact character name] -> [exact item name]". Otherwise, answer N/A.` },
+        { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, piles/stacks of things, or other non-carryable items appear (assembled, built, dropped, manifested, etc) in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
+        { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
         //],
         // NPC stuff
         //[
         { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
         { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
-        { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[entity] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.` },
+        { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.` },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
         { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
         { key: 'npc_first_appearance', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
@@ -61,7 +61,8 @@ const EVENT_PROMPT_ORDER = [
         { key: 'disposition_check', prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.` },
         { key: 'time_passed', prompt: `In decimal hours, how much time has passed since the last turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.` },
         { key: 'triggered_abilities', prompt: `Were any character's triggered abilities triggered this turn? If so, list them in the format "[exact character name] -> [exact ability name]", separated by '|' if multiple. If none, answer N/A.` },
-        { key: 'dummy_event', prompt: `Did any of the answers to the above questions feel ambiguous? Which ones, and why?` }
+        { key: 'dummy_event', prompt: `Did any of the answers to the above questions feel ambiguous? Which ones, and why?` },
+        { key: 'dummy_event', prompt: `Taken as a whole, do any of your answers conflict with other answers? Which ones, and why?` }
     ]
 ];
 
@@ -876,6 +877,8 @@ class Events {
                 { role: 'user', content: parsedTemplate.generationPrompt }
             ];
 
+            let requestPayloadForLog = null;
+            let responsePayloadForLog = null;
             const requestOptions = {
                 messages,
                 metadataLabel: 'event_checks',
@@ -884,6 +887,9 @@ class Events {
                 temperature: 0,
                 validateXML: false,
                 dumpReasoningToConsole: true,
+                stream: true,
+                // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+                // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
             };
 
             const [responseText, questResponseText] = await Promise.all([
@@ -894,7 +900,9 @@ class Events {
                 systemPrompt: parsedTemplate.systemPrompt,
                 generationPrompt: parsedTemplate.generationPrompt,
                 responseText,
-                label: `group_${groupIndex + 1}`
+                label: `group_${groupIndex + 1}`,
+                requestPayload: requestPayloadForLog,
+                responsePayload: responsePayloadForLog
             });
 
             return {
@@ -5373,36 +5381,18 @@ class Events {
         });
     }
 
-    static logEventCheck({ systemPrompt, generationPrompt, responseText, label = null }) {
-        const { fs, path, baseDir } = this._deps;
-        if (!fs || !path || !baseDir) {
-            return;
-        }
-        try {
-            const logDir = path.join(baseDir, 'logs');
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const suffix = label ? `_${label}` : '';
-            const logPath = path.join(logDir, `event_checks_${timestamp}${suffix}.log`);
-            const contents = [
-                label ? `=== EVENT CHECK GROUP: ${label} ===` : '=== EVENT CHECK GROUP ===',
-                '',
-                '=== EVENT CHECK SYSTEM PROMPT ===',
-                systemPrompt || '(none)',
-                '',
-                '=== EVENT CHECK GENERATION PROMPT ===',
-                generationPrompt || '(none)',
-                '',
-                '=== EVENT CHECK RESPONSE ===',
-                responseText || '(no response)',
-                ''
-            ].join('\n');
-            fs.writeFileSync(logPath, contents, 'utf8');
-        } catch (error) {
-            console.warn('Failed to log event check:', error.message);
-        }
+    static logEventCheck({ systemPrompt, generationPrompt, responseText, label = null, requestPayload = null, responsePayload = null }) {
+        const metadataLabel = 'event_checks';
+        const prefix = label ? `event_checks_${label}` : 'event_checks';
+        LLMClient.logPrompt({
+            prefix,
+            metadataLabel,
+            systemPrompt: systemPrompt || '',
+            generationPrompt: generationPrompt || '',
+            response: responseText || '',
+            requestPayload,
+            responsePayload
+        });
     }
 
     static get config() {

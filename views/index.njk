@@ -64,18 +64,18 @@
                                                 <div class="location-exits-list" id="locationExitsList">
                                                     <div class="no-exits">No exits discovered yet.</div>
                                                 </div>
-                                                <button type="button" class="location-exit-add-button" id="newExitButton" disabled>New Exit</button>
+                                            <button type="button" class="location-exit-add-button" id="newExitButton" disabled>🚪 New Exit</button>
+                                        </div>
+                                    </details>
+                                    <details class="location-section location-npcs" open>
+                                        <summary>NPCs</summary>
+                                        <div class="location-npc-content">
+                                            <div class="location-entity-grid" id="locationNPCs">
+                                                <div class="location-npc-empty">No notable NPCs present.</div>
                                             </div>
-                                        </details>
-                                        <details class="location-section location-npcs" open>
-                                            <summary>NPCs</summary>
-                                            <div class="location-npc-content">
-                                                <div class="location-entity-grid" id="locationNPCs">
-                                                    <div class="location-npc-empty">No notable NPCs present.</div>
-                                                </div>
-                                                <button type="button" class="location-npc-add-button" id="addNpcButton" disabled>Add NPC</button>
-                                            </div>
-                                        </details>
+                                            <button type="button" class="location-npc-add-button" id="addNpcButton" disabled>👤 Add NPC</button>
+                                        </div>
+                                    </details>
                                         <details class="location-section location-things" open>
                                             <summary>Items &amp; Scenery</summary>
                                             <div class="location-thing-content">
@@ -84,14 +84,16 @@
                                                     <div class="location-entity-grid" id="locationScenery">
                                                         <div class="location-thing-empty">No notable scenery present.</div>
                                                     </div>
+                                                    <button type="button" class="location-npc-add-button location-thing-add-button" id="craftSceneryButton" disabled>🔨 Craft Scenery</button>
                                                 </div>
                                                 <div class="location-thing-category">
                                                     <h5 class="location-thing-heading">Items</h5>
                                                     <div class="location-entity-grid" id="locationItems">
                                                         <div class="location-thing-empty">No notable items present.</div>
                                                     </div>
+                                                    <button type="button" class="location-npc-add-button location-thing-add-button" id="craftItemButton" disabled>🛠️ Craft Item</button>
                                                 </div>
-                                                <button type="button" class="location-npc-add-button location-thing-add-button" id="addThingButton" disabled>New Item</button>
+                                                <button type="button" class="location-npc-add-button location-thing-add-button" id="addThingButton" disabled>✨ New Item/Scenery</button>
                                             </div>
                                         </details>
                                     </div>
@@ -872,13 +874,17 @@
                 </button>
             </header>
             <div class="modal__body load-game-body">
-                <div class="load-game-source-control">
-                    <label for="loadGameSourceSelect" class="load-game-label">Save type</label>
-                    <select id="loadGameSourceSelect" class="load-game-source-select" aria-label="Select save list">
-                        <option value="saves">Manual saves</option>
-                        <option value="autosaves">Autosaves</option>
-                    </select>
-                </div>
+                <fieldset class="load-game-source-control">
+                    <legend class="load-game-label">Save type</legend>
+                    <label class="load-game-radio">
+                        <input type="radio" name="loadGameSource" value="saves" checked>
+                        Manual saves
+                    </label>
+                    <label class="load-game-radio">
+                        <input type="radio" name="loadGameSource" value="autosaves">
+                        Autosaves
+                    </label>
+                </fieldset>
                 <label for="loadGameSelect" class="load-game-label">Choose a game</label>
                 <select id="loadGameSelect" class="load-game-select" size="6" aria-describedby="loadGameStatus"></select>
                 <div id="loadGameStatus" class="load-game-status" role="status" aria-live="polite"></div>
@@ -4668,9 +4674,11 @@
         const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
         const addNpcButton = document.getElementById('addNpcButton');
         const addThingButton = document.getElementById('addThingButton');
+        const craftSceneryButton = document.getElementById('craftSceneryButton');
+        const craftItemButton = document.getElementById('craftItemButton');
         const loadGameModal = document.getElementById('loadGameModal');
         const loadGameSelect = document.getElementById('loadGameSelect');
-        const loadGameSourceSelect = document.getElementById('loadGameSourceSelect');
+        const loadGameSourceRadios = Array.from(document.querySelectorAll('input[name="loadGameSource"]'));
         const loadGameStatus = document.getElementById('loadGameStatus');
         const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
         const loadGameConfirmBtn = document.getElementById('loadGameConfirmBtn');
@@ -7905,9 +7913,9 @@
             const normalizedSource = source === 'autosaves' ? 'autosaves' : 'saves';
             currentLoadGameSource = normalizedSource;
 
-            if (loadGameSourceSelect && loadGameSourceSelect.value !== normalizedSource) {
-                loadGameSourceSelect.value = normalizedSource;
-            }
+            loadGameSourceRadios.forEach(radio => {
+                radio.checked = radio.value === normalizedSource;
+            });
 
             const requestId = ++loadGameFetchToken;
             const pluralLabel = getLoadGameSourceLabel({ source: normalizedSource, plural: true });
@@ -7983,9 +7991,9 @@
 
             loadGameSaves = [];
             currentLoadGameSource = initialSource === 'autosaves' ? 'autosaves' : 'saves';
-            if (loadGameSourceSelect) {
-                loadGameSourceSelect.value = currentLoadGameSource;
-            }
+            loadGameSourceRadios.forEach(radio => {
+                radio.checked = radio.value === currentLoadGameSource;
+            });
             if (loadGameSelect) {
                 loadGameSelect.innerHTML = '';
                 loadGameSelect.disabled = true;
@@ -8025,9 +8033,9 @@
                 loadGameSelect.innerHTML = '';
                 loadGameSelect.disabled = false;
             }
-            if (loadGameSourceSelect) {
-                loadGameSourceSelect.value = 'saves';
-            }
+            loadGameSourceRadios.forEach(radio => {
+                radio.checked = radio.value === 'saves';
+            });
             if (loadGameConfirmBtn) {
                 loadGameConfirmBtn.disabled = false;
                 loadGameConfirmBtn.textContent = 'Load Game';
@@ -9094,10 +9102,15 @@
             });
         }
 
-        if (loadGameSourceSelect) {
-            loadGameSourceSelect.addEventListener('change', (event) => {
-                const selectedSource = event.target.value === 'autosaves' ? 'autosaves' : 'saves';
-                refreshLoadGameList(selectedSource);
+        if (loadGameSourceRadios && loadGameSourceRadios.length) {
+            loadGameSourceRadios.forEach(radio => {
+                radio.addEventListener('change', (event) => {
+                    if (!event.target.checked) {
+                        return;
+                    }
+                    const selectedSource = event.target.value === 'autosaves' ? 'autosaves' : 'saves';
+                    refreshLoadGameList(selectedSource);
+                });
             });
         }
 
@@ -9536,6 +9549,18 @@
         if (addThingButton) {
             addThingButton.addEventListener('click', () => {
                 openAddThingModal();
+            });
+        }
+
+        if (craftSceneryButton) {
+            craftSceneryButton.addEventListener('click', () => {
+                openCraftingModal({ mode: 'craft', sourceThing: null });
+            });
+        }
+
+        if (craftItemButton) {
+            craftItemButton.addEventListener('click', () => {
+                openCraftingModal({ mode: 'craft', sourceThing: null });
             });
         }
 
@@ -11542,6 +11567,7 @@
                 mode: currentCraftingMode,
                 notes: craftingNotesInput?.value?.trim() || '',
                 stationThingId: craftingSourceThing?.id || null,
+                stationName: craftingSourceThing ? craftingSourceThing.name : 'no workstation',
                 slotCount: currentCraftingSlotCount,
                 itemIds: slots.map(entry => entry.thingId),
                 slots
@@ -14566,6 +14592,15 @@
                     if (addThingButton) {
                         addThingButton.disabled = false;
                     }
+                    if (craftSceneryButton) {
+                        craftSceneryButton.disabled = false;
+                    }
+                    if (craftItemButton) {
+                        craftItemButton.disabled = false;
+                    }
+                    if (craftSceneryButton) {
+                        craftSceneryButton.disabled = false;
+                    }
                     if (locationExitsList) {
                         const rawExitEntries = Object.entries(location.exits || {});
                         if (rawExitEntries.length === 0) {
@@ -14959,6 +14994,15 @@
                     }
                     if (addThingButton) {
                         addThingButton.disabled = true;
+                    }
+                    if (craftSceneryButton) {
+                        craftSceneryButton.disabled = true;
+                    }
+                    if (craftItemButton) {
+                        craftItemButton.disabled = true;
+                    }
+                    if (craftSceneryButton) {
+                        craftSceneryButton.disabled = true;
                     }
                     npcDataCache.clear();
                     closeNpcContextMenu();

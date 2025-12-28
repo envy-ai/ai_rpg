@@ -72,7 +72,7 @@ class LLMClient {
             const { moveCursor, clearLine } = readline;
 
             if (LLMClient.#streamProgress.lastLines > 0) {
-                moveCursor(stdout, 0, -LLMClient.#streamProgress.lastLines);
+                //moveCursor(stdout, 0, -LLMClient.#streamProgress.lastLines);
             }
 
             let maxWidth = 0;
@@ -87,14 +87,14 @@ class LLMClient {
             maxWidth = Math.max(maxWidth, LLMClient.#streamProgress.lastWidth);
 
             for (const line of lines) {
-                clearLine(stdout, 0);
-                stdout.write(line.padEnd(maxWidth, ' ') + '\n');
+                //clearLine(stdout, 0);
+                //stdout.write(line.padEnd(maxWidth, ' ') + '\n');
             }
 
             const extras = Math.max(0, LLMClient.#streamProgress.lastLines - lines.length);
             for (let i = 0; i < extras; i += 1) {
-                clearLine(stdout, 0);
-                stdout.write('\n');
+                //clearLine(stdout, 0);
+                //stdout.write('\n');
             }
 
             LLMClient.#streamProgress.lastLines = lines.length;
@@ -302,7 +302,7 @@ class LLMClient {
             const safeLabel = metadataLabel
                 ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
                 : 'unknown';
-            const filePath = path.join(logDir, `ERROR_${prefix}_${safeLabel}_${Date.now()}.log`);
+            const filePath = path.join(logDir, `ERROR_${prefix}_${Date.now()}.log`);
 
             let dataToWrite = payload;
             if (serializeJson) {
@@ -332,7 +332,11 @@ class LLMClient {
         response = '',
         reasoning = '',
         sections = [],
-        totalTokens = null
+        totalTokens = null,
+        model = null,
+        endpoint = null,
+        requestPayload = null,
+        responsePayload = null
     } = {}) {
         try {
             const fs = require('fs');
@@ -346,9 +350,75 @@ class LLMClient {
             const safeLabel = metadataLabel
                 ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
                 : 'unknown';
-            const filePath = path.join(logDir, `${prefix}_${safeLabel}_${Date.now()}.log`);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filePath = path.join(logDir, `${timestamp}_${prefix}_${safeLabel}.log`);
 
             const lines = [];
+
+            const resolveModelAndEndpoint = () => {
+                const globalConfig = Globals?.config || {};
+                const aiConfigSource = globalConfig.ai || {};
+                let aiConfig;
+                try {
+                    aiConfig = JSON.parse(JSON.stringify(aiConfigSource));
+                } catch (_) {
+                    aiConfig = { ...aiConfigSource };
+                }
+
+                if (metadataLabel && globalConfig.prompt_ai_overrides && globalConfig.prompt_ai_overrides[metadataLabel]) {
+                    const overrides = globalConfig.prompt_ai_overrides[metadataLabel];
+                    Object.entries(overrides).forEach(([key, value]) => {
+                        aiConfig[key] = value;
+                    });
+                }
+
+                const resolvedModel = model || aiConfig.model || null;
+                let resolvedEndpoint = endpoint || aiConfig.endpoint || null;
+                if (resolvedEndpoint) {
+                    try {
+                        resolvedEndpoint = LLMClient.resolveChatEndpoint(resolvedEndpoint);
+                    } catch (_) {
+                        // leave as provided if normalization fails
+                    }
+                }
+
+                return { resolvedModel, resolvedEndpoint };
+            };
+
+            const { resolvedModel, resolvedEndpoint } = resolveModelAndEndpoint();
+            if (resolvedModel || resolvedEndpoint || Number.isFinite(totalTokens)) {
+                lines.push('=== MODEL INFO ===');
+                if (resolvedModel) {
+                    lines.push(`Model: ${resolvedModel}`);
+                }
+                if (resolvedEndpoint) {
+                    lines.push(`API: ${resolvedEndpoint}`);
+                }
+                if (Number.isFinite(totalTokens)) {
+                    lines.push(`Tokens: ${totalTokens}`);
+                }
+                lines.push('');
+            }
+
+            if (requestPayload && typeof requestPayload === 'object') {
+                try {
+                    lines.push('=== REQUEST PAYLOAD ===');
+                    lines.push(JSON.stringify(requestPayload, null, 2));
+                    lines.push('');
+                } catch (_) {
+                    // ignore payload serialization issues
+                }
+            }
+
+            if (responsePayload && typeof responsePayload === 'object') {
+                try {
+                    lines.push('=== RESPONSE JSON ===');
+                    lines.push(JSON.stringify(responsePayload, null, 2));
+                    lines.push('');
+                } catch (_) {
+                    // ignore payload serialization issues
+                }
+            }
 
             if (Number.isFinite(totalTokens)) {
                 lines.push(`=== TOTAL TOKENS: ${totalTokens} ===`, '');
@@ -468,6 +538,10 @@ class LLMClient {
         return Boolean(fallback);
     }
 
+    static #generateSeed() {
+        return Math.floor(Math.random() * 1e12) + 1;
+    }
+
     static async chatCompletion({
         messages,
         maxTokens,
@@ -490,8 +564,10 @@ class LLMClient {
         debug = false,
         frequencyPenalty = null,
         presencePenalty = null,
-        seed = Math.random(),
+        seed = LLMClient.#generateSeed(),
         stream = undefined,
+        captureRequestPayload = null,
+        captureResponsePayload = null,
         runInBackground = false,
         maxConcurrent = null,
     } = {}) {
@@ -543,419 +619,438 @@ class LLMClient {
                 console.trace();
             }
 
-        const payload = additionalPayload && typeof additionalPayload === 'object'
-            ? { ...additionalPayload }
-            : {};
+            const payload = additionalPayload && typeof additionalPayload === 'object'
+                ? { ...additionalPayload }
+                : {};
 
-        payload.reasoning = true;
+            payload.reasoning = true;
+            const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
 
-        if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
-            payload.frequency_penalty = frequencyPenalty !== null ? frequencyPenalty : aiConfig.frequency_penalty;
-        }
-
-        if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
-            payload.presence_penalty = presencePenalty !== null ? presencePenalty : aiConfig.presence_penalty;
-        }
-
-        if (Array.isArray(messages)) {
-            payload.messages = messages;
-        }
-
-        if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
-            throw new Error('LLMClient.chatCompletion requires at least one message.');
-        }
-
-        const resolvedModel = model || payload.model || aiConfig.model;
-        if (!resolvedModel) {
-            throw new Error('AI model is not configured.');
-        }
-        payload.model = resolvedModel;
-        if (!Globals.config.ai.supress_seed) {
-            payload.seed = seed;
-        }
-
-        const resolvedStream = LLMClient.#resolveBoolean(
-            stream,
-            payload.stream !== undefined ? payload.stream : aiConfig.stream
-        );
-        payload.stream = resolvedStream !== false;
-
-        if (payload.model !== aiConfig.model) {
-            console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
-            console.trace();
-        }
-
-        if (maxTokens !== undefined) {
-            if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
-                throw new Error('maxTokens must be a positive number when provided.');
+            if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {
+                payload.frequency_penalty = frequencyPenalty !== null ? frequencyPenalty : aiConfig.frequency_penalty;
             }
-            payload.max_tokens = maxTokens;
-        } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
-            payload.max_tokens = aiConfig.maxTokens;
-        }
 
-        const resolvedTemperature = LLMClient.resolveTemperature(
-            temperature,
-            payload.temperature !== undefined ? payload.temperature : aiConfig.temperature
-        );
-        payload.temperature = resolvedTemperature;
+            if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
+                payload.presence_penalty = presencePenalty !== null ? presencePenalty : aiConfig.presence_penalty;
+            }
 
-        retryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0 ? retryAttempts : Globals.config.ai.retryAttempts || 0;
+            if (Array.isArray(messages)) {
+                payload.messages = messages;
+            }
 
-        const resolvedEndpoint = LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
-        const resolvedApiKey = apiKey || aiConfig.apiKey;
-        if (!resolvedApiKey) {
-            throw new Error('AI API key is not configured.');
-        }
+            if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+                throw new Error('LLMClient.chatCompletion requires at least one message.');
+            }
 
-        const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
-        const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
-            ? maxConcurrent
-            : configuredMaxConcurrent;
-        const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
-        semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent);
-        await semaphore.acquire();
+            const resolvedModel = model || payload.model || aiConfig.model;
+            if (!resolvedModel) {
+                throw new Error('AI model is not configured.');
+            }
+            payload.model = resolvedModel;
+            if (!Globals.config.ai.supress_seed) {
+                payload.seed = resolvedSeed;
+            }
 
-        const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
-        let streamStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
-            ? aiConfig.stream_start_timeout * 1000
-            : 40000;
-        let streamContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
-            ? aiConfig.stream_continue_timeout * 1000
-            : 10000;
-        const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
-            ? aiConfig.increment_start_timeout * 1000
-            : 0;
-        const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
-            ? aiConfig.increment_continue_timeout * 1000
-            : 0;
+            const resolvedStream = LLMClient.#resolveBoolean(
+                stream,
+                payload.stream !== undefined ? payload.stream : aiConfig.stream
+            );
+            payload.stream = resolvedStream !== false;
 
-        const requestHeaders = {
-            'Authorization': `Bearer ${resolvedApiKey}`,
-            'Content-Type': 'application/json',
-            ...headers
-        };
+            // if (payload.model !== aiConfig.model) {
+            //     console.log(`Using overridden model: ${payload.model} (default is ${aiConfig.model})`);
+            //     console.trace();
+            // }
 
-        const baseAxiosOptions = {
-            headers: requestHeaders,
-            timeout: payload.stream ? undefined : resolvedTimeout,
-            responseType: payload.stream ? 'stream' : undefined
-        };
+            console.log(`Using model: ${payload.model}`);
 
-        if (metadataLabel && metadata) {
-            baseAxiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
-        } else if (metadataLabel) {
-            baseAxiosOptions.metadata = { aiMetricsLabel: metadataLabel };
-        } else if (metadata) {
-            baseAxiosOptions.metadata = metadata;
-        }
-
-        let attempt = 0;
-        let responseContent = '';
-        let streamTrackerId = null;
-        let startTimer = null;
-        let lastTotalTokens = null;
-        while (attempt <= retryAttempts) {
-            responseContent = '';
-            streamTrackerId = null;
-            startTimer = null;
-            const controller = new AbortController();
-            const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
-            try {
-                streamTrackerId = payload.stream
-                    ? LLMClient.#trackStreamStart(metadataLabel, {
-                        startTimeoutMs: streamStartTimeoutMs,
-                        continueTimeoutMs: streamContinueTimeoutMs,
-                        isBackground: Boolean(runInBackground)
-                    })
-                    : null;
-                if (payload.stream) {
-                    startTimer = setTimeout(() => {
-                        controller.abort(new Error('Stream start timeout'));
-                    }, streamStartTimeoutMs);
+            if (maxTokens !== undefined) {
+                if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
+                    throw new Error('maxTokens must be a positive number when provided.');
                 }
-                const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
-                if (startTimer) {
-                    clearTimeout(startTimer);
-                    startTimer = null;
-                }
-                if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
-                    lastTotalTokens = response.data.usage.total_tokens;
-                }
+                payload.max_tokens = maxTokens;
+            } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
+                payload.max_tokens = aiConfig.maxTokens;
+            }
 
-                // On any 5xx response, wait waitAfterError seconds and then retry
-                if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
-                    console.error(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
-                    if (waitAfterError > 0) {
-                        console.log(`Waiting ${waitAfterError} seconds before retrying...`);
-                        await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+            const resolvedTemperature = LLMClient.resolveTemperature(
+                temperature,
+                payload.temperature !== undefined ? payload.temperature : aiConfig.temperature
+            );
+            payload.temperature = resolvedTemperature;
+
+            if (typeof captureRequestPayload === 'function') {
+                try {
+                    captureRequestPayload(JSON.parse(JSON.stringify(payload)));
+                } catch (_) {
+                    captureRequestPayload(payload);
+                }
+            }
+
+            retryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0 ? retryAttempts : Globals.config.ai.retryAttempts || 0;
+
+            const resolvedEndpoint = LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+            const resolvedApiKey = apiKey || aiConfig.apiKey;
+            if (!resolvedApiKey) {
+                throw new Error('AI API key is not configured.');
+            }
+
+            const configuredMaxConcurrent = LLMClient.getMaxConcurrent(aiConfig);
+            const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
+                ? maxConcurrent
+                : configuredMaxConcurrent;
+            const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
+            semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent);
+            await semaphore.acquire();
+
+            const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
+            let streamStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
+                ? aiConfig.stream_start_timeout * 1000
+                : 40000;
+            let streamContinueTimeoutMs = Number.isFinite(aiConfig.stream_continue_timeout)
+                ? aiConfig.stream_continue_timeout * 1000
+                : 10000;
+            const incrementStartTimeoutMs = Number.isFinite(aiConfig.increment_start_timeout)
+                ? aiConfig.increment_start_timeout * 1000
+                : 0;
+            const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
+                ? aiConfig.increment_continue_timeout * 1000
+                : 0;
+
+            const requestHeaders = {
+                'Authorization': `Bearer ${resolvedApiKey}`,
+                'Content-Type': 'application/json',
+                ...headers
+            };
+
+            const baseAxiosOptions = {
+                headers: requestHeaders,
+                timeout: payload.stream ? undefined : resolvedTimeout,
+                responseType: payload.stream ? 'stream' : undefined
+            };
+
+            if (metadataLabel && metadata) {
+                baseAxiosOptions.metadata = { ...metadata, aiMetricsLabel: metadataLabel };
+            } else if (metadataLabel) {
+                baseAxiosOptions.metadata = { aiMetricsLabel: metadataLabel };
+            } else if (metadata) {
+                baseAxiosOptions.metadata = metadata;
+            }
+
+            let attempt = 0;
+            let responseContent = '';
+            let streamTrackerId = null;
+            let startTimer = null;
+            let lastTotalTokens = null;
+            while (attempt <= retryAttempts) {
+                responseContent = '';
+                streamTrackerId = null;
+                startTimer = null;
+                const controller = new AbortController();
+                const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
+                try {
+                    streamTrackerId = payload.stream
+                        ? LLMClient.#trackStreamStart(metadataLabel, {
+                            startTimeoutMs: streamStartTimeoutMs,
+                            continueTimeoutMs: streamContinueTimeoutMs,
+                            isBackground: Boolean(runInBackground)
+                        })
+                        : null;
+                    if (payload.stream) {
+                        startTimer = setTimeout(() => {
+                            controller.abort(new Error('Stream start timeout'));
+                        }, streamStartTimeoutMs);
                     }
-                    throw new Error(`Server error from LLM (status ${response.status}).`);
-                }
-
-                const handleStream = (streamId) => new Promise((resolve, reject) => {
-                    let buffer = '';
-                    let assembled = '';
-                    let timer = null;
-
-                    const rejectWithPartial = (err) => {
-                        const error = err instanceof Error ? err : new Error(String(err));
-                        error.partialResponse = assembled;
-                        reject(error);
-                    };
-
-                    const clear = () => {
-                        if (timer) {
-                            clearTimeout(timer);
-                            timer = null;
-                        }
-                    };
-
-                    const resetTimer = (ms) => {
-                        clear();
-                        timer = setTimeout(() => {
-                            rejectWithPartial(new Error('Stream timeout'));
-                        }, ms);
-                        const entry = streamId ? LLMClient.#streamProgress.active.get(streamId) : null;
-                        if (entry) {
-                            const deadlineTs = Date.now() + ms;
-                            if (entry.firstByteTs) {
-                                entry.continueDeadline = deadlineTs;
-                            } else {
-                                entry.startDeadline = deadlineTs;
-                            }
-                        }
-                    };
-
-                    resetTimer(streamStartTimeoutMs);
-
-                    response.data.on('data', chunk => {
-                        buffer += chunk.toString('utf8');
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || '';
-                        for (const line of lines) {
-                            const trimmed = line.trim();
-                            if (!trimmed || !trimmed.startsWith('data:')) continue;
-                            const payloadStr = trimmed.slice(5).trim();
-                            if (payloadStr === '[DONE]') {
-                                continue;
-                            }
-                            try {
-                                const parsed = JSON.parse(payloadStr);
-                                const delta = parsed?.choices?.[0]?.delta?.content
-                                    || parsed?.choices?.[0]?.message?.content
-                                    || '';
-                                if (delta) {
-                                    resetTimer(streamContinueTimeoutMs);
-                                    assembled += delta;
-                                    responseContent = assembled;
-                                    const deltaBytes = Buffer.byteLength(delta, 'utf8');
-                                    LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs);
-                                }
-                            } catch (parseError) {
-                                // ignore malformed chunks, but log for visibility
-                                console.warn('Failed to parse stream chunk:', parseError?.message || parseError);
-                            }
-                        }
-                    });
-
-                    response.data.on('end', () => {
-                        clear();
-                        LLMClient.#trackStreamEnd(streamId);
-                        responseContent = assembled;
-                        resolve(assembled);
-                    });
-                    response.data.on('error', err => {
-                        clear();
-                        LLMClient.#trackStreamEnd(streamId);
-                        rejectWithPartial(err);
-                    });
-                });
-
-                if (payload.stream) {
-                    responseContent = await handleStream(streamTrackerId);
-                } else {
-                    responseContent = response.data?.choices?.[0]?.message?.content || '';
-                }
-
-                if (typeof onResponse === 'function') {
-                    onResponse(response);
-                }
-                if (debug) {
-                    console.log('Raw LLM response content:', responseContent);
-                }
-                // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
-                let thinkTags = [];
-                if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
-                    thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
-                    console.warn('⚠️ Response content contains <think></think> tags');
-                }
-                // Check if <think></think> tags are present and remove them and anything inside
-                const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
-                responseContent = responseContent.replace(thinkTagPattern, '').trim();
-
-
-                if (responseContent.trim() === '') {
-                    console.error(`Empty response content received (attempt ${attempt + 1}).`);
-                    if (thinkTags.length > 0) {
-                        console.warn('⚠️ Contents of <think></think> tags:', thinkTags);
+                    const response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                    if (startTimer) {
+                        clearTimeout(startTimer);
+                        startTimer = null;
                     }
-                    throw new Error('Received empty response content from LLM.');
-                }
+                    if (response?.data?.usage && Number.isFinite(response.data.usage.total_tokens)) {
+                        lastTotalTokens = response.data.usage.total_tokens;
+                    }
 
-                if (dumpReasoningToConsole && thinkTags.length > 0) {
-                    console.log('💡 Dumping reasoning from <think></think> tags to console:');
-                    thinkTags.forEach(tag => console.log(` - ${tag}`));
-                }
-
-                if (debug) {
-                    try {
-                        const fs = require('fs');
-                        const path = require('path');
-                        const baseDir = Globals?.baseDir || process.cwd();
-                        const logDir = path.join(baseDir, 'logs');
-                        if (!fs.existsSync(logDir)) {
-                            fs.mkdirSync(logDir, { recursive: true });
+                    if (!payload.stream && typeof captureResponsePayload === 'function') {
+                        try {
+                            captureResponsePayload(JSON.parse(JSON.stringify(response.data)));
+                        } catch (_) {
+                            captureResponsePayload(response.data);
                         }
-                        const safeLabel = metadataLabel
-                            ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
-                            : 'unknown';
-                        const timestamp = Date.now();
-                        const filePath = path.join(logDir, `debug_${safeLabel}_${timestamp}.log`);
+                    }
 
-                        const logPayload = {
-                            timestamp,
-                            metadataLabel,
-                            parameters: {
-                                maxTokens,
-                                temperature: resolvedTemperature,
-                                model: payload.model,
-                                endpoint: resolvedEndpoint,
-                                timeoutMs: resolvedTimeout,
-                                frequencyPenalty,
-                                presencePenalty,
-                                timeoutScale,
-                                retryAttempts,
-                                waitAfterError,
-                                validateXML,
-                                requiredTags,
-                                dumpReasoningToConsole
-                            },
-                            aiConfigOverride: aiConfig,
-                            requestPayload: payload,
-                            rawResponse: response.data,
-                            messages
+                    // On any 5xx response, wait waitAfterError seconds and then retry
+                    if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
+                        console.error(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
+                        if (waitAfterError > 0) {
+                            console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                            await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                        }
+                        throw new Error(`Server error from LLM (status ${response.status}).`);
+                    }
+
+                    const handleStream = (streamId) => new Promise((resolve, reject) => {
+                        let buffer = '';
+                        let assembled = '';
+                        let timer = null;
+
+                        const rejectWithPartial = (err) => {
+                            const error = err instanceof Error ? err : new Error(String(err));
+                            error.partialResponse = assembled;
+                            reject(error);
                         };
 
-                        fs.writeFileSync(filePath, JSON.stringify(logPayload, null, 2), 'utf8');
-                        console.log(`Debug log written to ${filePath}`);
-                    } catch (debugError) {
-                        console.warn('Failed to write debug log file:', debugError.message);
-                    }
-                }
+                        const clear = () => {
+                            if (timer) {
+                                clearTimeout(timer);
+                                timer = null;
+                            }
+                        };
 
-                if (validateXML) {
-                    try {
-                        Utils.parseXmlDocument(responseContent);
-                    } catch (xmlError) {
-                        console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
-                        const filePath = LLMClient.writeLogFile({
-                            prefix: 'invalidXML',
-                            metadataLabel,
-                            error: xmlError,
-                            payload: messages + "\n\nResponse:\n\n" + (responseContent || ''),
-                            onFailureMessage: 'Failed to write invalid XML log file'
+                        const resetTimer = (ms) => {
+                            clear();
+                            timer = setTimeout(() => {
+                                rejectWithPartial(new Error('Stream timeout'));
+                            }, ms);
+                            const entry = streamId ? LLMClient.#streamProgress.active.get(streamId) : null;
+                            if (entry) {
+                                const deadlineTs = Date.now() + ms;
+                                if (entry.firstByteTs) {
+                                    entry.continueDeadline = deadlineTs;
+                                } else {
+                                    entry.startDeadline = deadlineTs;
+                                }
+                            }
+                        };
+
+                        resetTimer(streamStartTimeoutMs);
+
+                        response.data.on('data', chunk => {
+                            buffer += chunk.toString('utf8');
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            for (const line of lines) {
+                                const trimmed = line.trim();
+                                if (!trimmed || !trimmed.startsWith('data:')) continue;
+                                const payloadStr = trimmed.slice(5).trim();
+                                if (payloadStr === '[DONE]') {
+                                    continue;
+                                }
+                                try {
+                                    const parsed = JSON.parse(payloadStr);
+                                    const delta = parsed?.choices?.[0]?.delta?.content
+                                        || parsed?.choices?.[0]?.message?.content
+                                        || '';
+                                    if (delta) {
+                                        resetTimer(streamContinueTimeoutMs);
+                                        assembled += delta;
+                                        responseContent = assembled;
+                                        const deltaBytes = Buffer.byteLength(delta, 'utf8');
+                                        LLMClient.#trackStreamBytes(streamId, deltaBytes, streamContinueTimeoutMs);
+                                    }
+                                } catch (parseError) {
+                                    // ignore malformed chunks, but log for visibility
+                                    console.warn('Failed to parse stream chunk:', parseError?.message || parseError);
+                                }
+                            }
                         });
-                        if (filePath) {
-                            console.warn(`Invalid XML response logged to ${filePath}`);
-                        }
-                        throw xmlError;
+
+                        response.data.on('end', () => {
+                            clear();
+                            LLMClient.#trackStreamEnd(streamId);
+                            responseContent = assembled;
+                            resolve(assembled);
+                        });
+                        response.data.on('error', err => {
+                            clear();
+                            LLMClient.#trackStreamEnd(streamId);
+                            rejectWithPartial(err);
+                        });
+                    });
+
+                    if (payload.stream) {
+                        responseContent = await handleStream(streamTrackerId);
+                    } else {
+                        responseContent = response.data?.choices?.[0]?.message?.content || '';
                     }
 
-                    // use regex to check for required tags
-                    for (const tag of requiredTags) {
-                        const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
-                        if (!tagPattern.test(responseContent)) {
-                            const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
-                            const filePath = LLMClient.writeLogFile({
-                                prefix: 'missingTag',
+                    if (typeof onResponse === 'function') {
+                        onResponse(response);
+                    }
+                    if (debug) {
+                        console.log('Raw LLM response content:', responseContent);
+                    }
+                    // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
+                    let thinkTags = [];
+                    if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
+                        thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
+                        console.warn('⚠️ Response content contains <think></think> tags');
+                    }
+                    // Check if <think></think> tags are present and remove them and anything inside
+                    const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
+                    responseContent = responseContent.replace(thinkTagPattern, '').trim();
+
+
+                    if (responseContent.trim() === '') {
+                        console.error(`Empty response content received (attempt ${attempt + 1}).`);
+                        if (thinkTags.length > 0) {
+                            console.warn('⚠️ Contents of <think></think> tags:', thinkTags);
+                        }
+                        throw new Error('Received empty response content from LLM.');
+                    }
+
+                    if (dumpReasoningToConsole && thinkTags.length > 0) {
+                        console.log('💡 Dumping reasoning from <think></think> tags to console:');
+                        thinkTags.forEach(tag => console.log(` - ${tag}`));
+                    }
+
+                    if (debug) {
+                        try {
+                            const fs = require('fs');
+                            const path = require('path');
+                            const baseDir = Globals?.baseDir || process.cwd();
+                            const logDir = path.join(baseDir, 'logs');
+                            if (!fs.existsSync(logDir)) {
+                                fs.mkdirSync(logDir, { recursive: true });
+                            }
+                            const safeLabel = metadataLabel
+                                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                                : 'unknown';
+                            const timestamp = Date.now();
+                            const filePath = path.join(logDir, `debug_${safeLabel}_${timestamp}.log`);
+
+                            const logPayload = {
+                                timestamp,
                                 metadataLabel,
-                                error: errorMsg,
-                                payload: responseContent || '',
-                                onFailureMessage: 'Failed to write missing tag log file'
+                                parameters: {
+                                    maxTokens,
+                                    temperature: resolvedTemperature,
+                                    model: payload.model,
+                                    endpoint: resolvedEndpoint,
+                                    timeoutMs: resolvedTimeout,
+                                    frequencyPenalty,
+                                    presencePenalty,
+                                    timeoutScale,
+                                    retryAttempts,
+                                    waitAfterError,
+                                    validateXML,
+                                    requiredTags,
+                                    dumpReasoningToConsole
+                                },
+                                aiConfigOverride: aiConfig,
+                                requestPayload: payload,
+                                rawResponse: response.data,
+                                messages
+                            };
+
+                            fs.writeFileSync(filePath, JSON.stringify(logPayload, null, 2), 'utf8');
+                            console.log(`Debug log written to ${filePath}`);
+                        } catch (debugError) {
+                            console.warn('Failed to write debug log file:', debugError.message);
+                        }
+                    }
+
+                    if (validateXML) {
+                        try {
+                            Utils.parseXmlDocument(responseContent);
+                        } catch (xmlError) {
+                            console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
+                            const filePath = LLMClient.writeLogFile({
+                                prefix: 'invalidXML',
+                                metadataLabel,
+                                error: xmlError,
+                                payload: messages + "\n\nResponse:\n\n" + (responseContent || ''),
+                                onFailureMessage: 'Failed to write invalid XML log file'
                             });
                             if (filePath) {
                                 console.warn(`Invalid XML response logged to ${filePath}`);
                             }
-                            console.error(errorMsg);
-                            throw new Error(errorMsg);
+                            throw xmlError;
+                        }
+
+                        // use regex to check for required tags
+                        for (const tag of requiredTags) {
+                            const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
+                            if (!tagPattern.test(responseContent)) {
+                                const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
+                                const filePath = LLMClient.writeLogFile({
+                                    prefix: 'missingTag',
+                                    metadataLabel,
+                                    error: errorMsg,
+                                    payload: responseContent || '',
+                                    onFailureMessage: 'Failed to write missing tag log file'
+                                });
+                                if (filePath) {
+                                    console.warn(`Invalid XML response logged to ${filePath}`);
+                                }
+                                console.error(errorMsg);
+                                throw new Error(errorMsg);
+                            }
                         }
                     }
-                }
-                break;
+                    break;
 
-            } catch (error) {
-                if (!responseContent && typeof error?.partialResponse === 'string') {
-                    responseContent = error.partialResponse;
-                }
-                console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
-                //console.debug(error);
+                } catch (error) {
+                    if (!responseContent && typeof error?.partialResponse === 'string') {
+                        responseContent = error.partialResponse;
+                    }
+                    console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
+                    //console.debug(error);
 
-                if (streamTrackerId) {
-                    LLMClient.#trackStreamEnd(streamTrackerId);
-                }
-                if (startTimer) {
-                    clearTimeout(startTimer);
-                    startTimer = null;
-                }
+                    if (streamTrackerId) {
+                        LLMClient.#trackStreamEnd(streamTrackerId);
+                    }
+                    if (startTimer) {
+                        clearTimeout(startTimer);
+                        startTimer = null;
+                    }
 
-                if (error.status == 429) {
-                    console.log('Rate limit exceeded. Waiting before retrying...');
-                    if (waitAfterError > 0) {
-                        console.log(`Waiting ${waitAfterError} seconds before retrying...`);
-                        await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                    if (error.status == 429) {
+                        console.log('Rate limit exceeded. Waiting before retrying...');
+                        if (waitAfterError > 0) {
+                            console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                            await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
+                        }
+                    }
+
+                    const filePath = LLMClient.writeLogFile({
+                        prefix: 'chatCompletionError',
+                        metadataLabel,
+                        error: error,
+                        payload: responseContent || '',
+                        onFailureMessage: 'Failed to write chat completion error log file'
+                    });
+                    if (filePath) {
+                        console.warn(`Chat completion error response logged to ${filePath}`);
+                    }
+
+                    if (attempt === retryAttempts) {
+                        console.error('Max retry attempts reached. Failing the chat completion request.');
+                        console.debug(error);
+                        return '';
                     }
                 }
 
-                const filePath = LLMClient.writeLogFile({
-                    prefix: 'chatCompletionError',
-                    metadataLabel,
-                    error: error,
-                    payload: responseContent || '',
-                    onFailureMessage: 'Failed to write chat completion error log file'
-                });
-                if (filePath) {
-                    console.warn(`Chat completion error response logged to ${filePath}`);
-                }
-
-                if (attempt === retryAttempts) {
-                    console.error('Max retry attempts reached. Failing the chat completion request.');
-                    console.debug(error);
-                    return '';
+                console.error(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
+                attempt++;
+                if (payload.stream) {
+                    streamStartTimeoutMs += incrementStartTimeoutMs;
+                    streamContinueTimeoutMs += incrementContinueTimeoutMs;
+                    // bump retry count on all active streams
+                    LLMClient.#streamProgress.active.forEach(entry => {
+                        entry.retries = (entry.retries || 0) + 1;
+                    });
                 }
             }
 
-            console.error(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
-            attempt++;
-            if (payload.stream) {
-                streamStartTimeoutMs += incrementStartTimeoutMs;
-                streamContinueTimeoutMs += incrementContinueTimeoutMs;
-                // bump retry count on all active streams
-                LLMClient.#streamProgress.active.forEach(entry => {
-                    entry.retries = (entry.retries || 0) + 1;
-                });
-            }
-        }
-
-        let totalTime = Date.now() - currentTime;
-        const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
-            ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
-            : null;
-        const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
-        const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
-        const label = metadataLabel || 'unknown';
-        console.log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
-        return responseContent;
+            let totalTime = Date.now() - currentTime;
+            const finalBytes = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
+                ? LLMClient.#streamProgress.active.get(streamTrackerId).bytes
+                : null;
+            const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
+            const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
+            const label = metadataLabel || 'unknown';
+            console.log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
+            return responseContent;
         } finally {
             if (semaphore) {
                 semaphore.release();

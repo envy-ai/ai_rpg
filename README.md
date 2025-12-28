@@ -43,13 +43,13 @@ This is still in alpha! Expect bugs! If you want to help, when you find somethin
 
 ### Recommended specs
 
-- A large, sophisticated model such as GLM 4.6 or Deepseek 3.1 Terminus (in non-thinking mode)
+- A large, sophisticated model such as GLM 4.7 or Deepseek 3.1 Terminus (in non-thinking mode)
 - qwen-image, either through an API or on ComfyUI.
 - 128k+ of LLM context
 
 ### Known working LLMs
 
-- GLM 4.6
+- GLM 4.x
 - Deepseek 3.1 Terminus
 - <a href='https://huggingface.co/mradermacher/Circuitry_24B_V.2-GGUF'>Circuitry 24B Q_6</a>
 - <a href='https://huggingface.co/TheDrummer/Gemma-3-R1-12B-v1-GGUF'>TheDrummer's Gemma 3 12B</a>
@@ -69,7 +69,7 @@ Plenty of other LLMs will work as well. Some will not. Drop by the <a href='http
    mkdir airpg
    cd airpg
    git clone https://github.com/envy-ai/ai_rpg .
-   git checkout 1.0-beta2-rc1
+   git checkout 1.0-beta2
    ```
 
 4. Install dependencies:
