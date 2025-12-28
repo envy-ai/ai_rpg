@@ -331,7 +331,8 @@ class LLMClient {
         generationPrompt = '',
         response = '',
         reasoning = '',
-        sections = []
+        sections = [],
+        totalTokens = null
     } = {}) {
         try {
             const fs = require('fs');
@@ -348,6 +349,10 @@ class LLMClient {
             const filePath = path.join(logDir, `${prefix}_${safeLabel}_${Date.now()}.log`);
 
             const lines = [];
+
+            if (Number.isFinite(totalTokens)) {
+                lines.push(`=== TOTAL TOKENS: ${totalTokens} ===`, '');
+            }
 
             if (systemPrompt) {
                 lines.push('=== SYSTEM PROMPT ===', systemPrompt, '');

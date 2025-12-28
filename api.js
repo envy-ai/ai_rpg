@@ -4930,6 +4930,13 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const raw = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'prompt',
+                    metadataLabel: requestOptions.metadataLabel || 'npc_plausibility',
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    response: raw
+                });
                 const actionPlan = parseNpcActionPlan(raw);
                 const structured = actionPlan
                     ? {
