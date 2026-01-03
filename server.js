@@ -59,6 +59,33 @@ let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 
+const mergeDeep = (target, source) => {
+    if (!source || typeof source !== 'object') {
+        return target;
+    }
+    const output = { ...target };
+    for (const [key, value] of Object.entries(source)) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            output[key] = mergeDeep(target[key] && typeof target[key] === 'object' ? target[key] : {}, value);
+        } else {
+            output[key] = value;
+        }
+    }
+    return output;
+};
+
+function loadMergedConfig() {
+    const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
+    const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
+    const defaultConfig = yaml.load(defaultConfigRaw) || {};
+
+    const configPath = path.join(__dirname, 'config.yaml');
+    const configRaw = fs.readFileSync(configPath, 'utf8');
+    const overrideConfig = yaml.load(configRaw) || {};
+
+    return mergeDeep(defaultConfig, overrideConfig);
+}
+
 // On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
@@ -82,35 +109,50 @@ fs.readdirSync(logsDir)
 // Load configuration
 let config;
 try {
-    const defaultConfigPath = path.join(__dirname, 'config.default.yaml');
-    const defaultConfigRaw = fs.readFileSync(defaultConfigPath, 'utf8');
-    const defaultConfig = yaml.load(defaultConfigRaw) || {};
-
-    const configPath = path.join(__dirname, 'config.yaml');
-    const configRaw = fs.readFileSync(configPath, 'utf8');
-    const overrideConfig = yaml.load(configRaw) || {};
-
-    const mergeDeep = (target, source) => {
-        if (!source || typeof source !== 'object') {
-            return target;
-        }
-        const output = { ...target };
-        for (const [key, value] of Object.entries(source)) {
-            if (value && typeof value === 'object' && !Array.isArray(value)) {
-                output[key] = mergeDeep(target[key] && typeof target[key] === 'object' ? target[key] : {}, value);
-            } else {
-                output[key] = value;
-            }
-        }
-        return output;
-    };
-
-    config = mergeDeep(defaultConfig, overrideConfig);
+    config = loadMergedConfig();
     Globals.config = config;
 } catch (error) {
     console.error('Error loading configuration:', error.message);
     process.exit(1);
 }
+
+function reloadConfigAndDefs() {
+    const merged = loadMergedConfig();
+
+    if (config && typeof config === 'object') {
+        for (const key of Object.keys(config)) {
+            delete config[key];
+        }
+        Object.assign(config, merged);
+    } else {
+        config = merged;
+    }
+
+    Globals.config = config;
+
+    cachedBannedNpcWords = null;
+    cachedBannedNpcRegexes = null;
+    cachedBannedLocationNames = null;
+    cachedExperiencePointValues = null;
+
+    const invalidateCache = (env) => {
+        if (env && typeof env.invalidateCache === 'function') {
+            env.invalidateCache();
+        }
+    };
+
+    invalidateCache(viewsEnv);
+    invalidateCache(promptEnv);
+    invalidateCache(imagePromptEnv);
+
+    return {
+        success: true,
+        message: 'Configuration and definitions reloaded.',
+        timestamp: new Date().toISOString()
+    };
+}
+
+Globals.reloadConfigAndDefs = reloadConfigAndDefs;
 
 function resolveMaxTokens(...values) {
     let candidate = 0;
@@ -7475,26 +7517,17 @@ async function equipBestGearForCharacter({
     const durationSeconds = (Date.now() - requestStart) / 1000;
     const assignments = parseEquipBestAssignments(equipResponse);
 
-    try {
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-        const logPath = path.join(logDir, `equip_best_${character.id}.log`);
-        const logParts = [
-            formatDurationLine(durationSeconds),
-            '=== EQUIP-BEST PROMPT ===',
-            generationPrompt,
-            '\n=== EQUIP-BEST RESPONSE ===',
-            equipResponse,
-            '\n=== PARSED ASSIGNMENTS ===',
-            JSON.stringify(assignments, null, 2),
-            '\n'
-        ];
-        fs.writeFileSync(logPath, logParts.join('\n'), 'utf8');
-    } catch (logError) {
-        console.warn('Failed to log equip-best response:', logError.message);
-    }
+    LLMClient.logPrompt({
+        prefix: 'equip_best',
+        metadataLabel: 'equip_best',
+        systemPrompt: systemPrompt || '',
+        generationPrompt: generationPrompt || '',
+        response: equipResponse || '',
+        sections: [
+            { title: 'Duration', content: formatDurationLine(durationSeconds) },
+            { title: 'Parsed Assignments', content: JSON.stringify(assignments, null, 2) }
+        ]
+    });
 
     if (!assignments.length) {
         return;

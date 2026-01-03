@@ -47,6 +47,9 @@ ai:
   increment_continue_timeout: 5
   # Note that these timeouts will be reset for each new request.
 
+  # The seed argument causes problems on some platforms, so it's suppressed by default.
+  supress_seed: true
+
   debug: false
   reasoning: false
 

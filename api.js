@@ -3081,32 +3081,6 @@ module.exports = function registerApiRoutes(scope) {
             return result;
         }
 
-        function logAttackCheck({ systemPrompt, generationPrompt, responseText }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `attack_check_${timestamp}.log`);
-                const parts = [
-                    '=== ATTACK CHECK SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== ATTACK CHECK GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    '',
-                    '=== ATTACK CHECK RESPONSE ===',
-                    responseText || '(no response)',
-                    ''
-                ];
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log attack check:', error.message);
-            }
-        }
-
         function logNpcActionPrompt({ npcName, systemPrompt, generationPrompt }) {
             try {
                 const logDir = path.join(__dirname, 'logs');
@@ -3179,10 +3153,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 const attackResponse = await LLMClient.chatCompletion(requestOptions);
 
-                logAttackCheck({
+                LLMClient.logPrompt({
+                    prefix: 'attack_check',
+                    metadataLabel: 'attack_check',
                     systemPrompt: parsedTemplate.systemPrompt,
                     generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: attackResponse
+                    response: attackResponse
                 });
 
                 if (!attackResponse.trim()) {
