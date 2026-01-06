@@ -14,3 +14,5 @@ imagegen/test*
 config.yaml.polaris
 mods/*
 mods/scene-illustrations/data/*
+imagegen/qwen_image_2512_nova.json
+imagegen/qwen_image_2512_nova.json.njk
