@@ -111,8 +111,8 @@ Write the prompt as pure visual description - what the viewer would see in an il
 Do not reference game mechanics, stats, or meta-information.
 </task>
 
-{% if additionalInstructions %}
-<additionalInstructions>{{ additionalInstructions }}</additionalInstructions>
+{% if config.mods.sceneIllustration.addition_instructions %}
+<additionalInstructions>{{ config.mods.sceneIllustration.addition_instructions }}</additionalInstructions>
 {% endif %}
 
     </generationPrompt>

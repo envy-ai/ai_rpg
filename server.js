@@ -1948,7 +1948,24 @@ function serializeNpcForClient(npc, options = {}) {
         isPlayer: !Boolean(npc.isNPC),
         isHostile: Boolean(npc.isHostile),
         isDead: Boolean(npc.isDead),
-        isInPlayerParty: Boolean(npc.isInPlayerParty),
+        isInPlayerParty: (() => {
+            const direct = Boolean(npc.isInPlayerParty);
+            if (direct) return true;
+            if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
+                try {
+                    const ids = currentPlayer.getPartyMembers();
+                    if (Array.isArray(ids)) {
+                        return ids.includes(npc.id);
+                    }
+                    if (ids && typeof ids.has === 'function') {
+                        return ids.has(npc.id);
+                    }
+                } catch (_) {
+                    // fall through to false
+                }
+            }
+            return false;
+        })(),
         isHostileToPlayer: hostileToPlayer,
         locationId: npc.currentLocation,
         corpseCountdown: Number.isFinite(npc.corpseCountdown) ? npc.corpseCountdown : (npc.corpseCountdown ?? null),
@@ -2977,7 +2994,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         if (!seen || !seen.length) {
             return '';
         }
-        return ` [Seen by ${seen.join(', ')}]`;
+        return ` [Seen by ONLY ${seen.join(', ')}]`;
     };
 
     const formatLocationSuffix = (entry) => {
@@ -5643,7 +5660,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             throw new Error('Empty inventory response from AI');
         }
 
-            const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         const items = await parseThingsXml(inventoryContent, {
             isInventory: true,

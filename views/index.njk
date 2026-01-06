@@ -2567,6 +2567,9 @@
                     }
                     triggerHealthChangeEffect(portrait, previous, member);
                     npcDataCache.set(member.id, cloneActorRecord(member) || { ...member });
+                    if (typeof window.registerInventoryDropTarget === 'function') {
+                        window.registerInventoryDropTarget(card, { ownerId: member.id, ownerType: 'npc' });
+                    }
                 }
             });
         }
@@ -4404,7 +4407,51 @@
             }
 
             menu.addEventListener('click', (event) => event.stopPropagation());
-            card.addEventListener('click', () => {
+            const shiftDropContexts = new Set(['npc-inventory', 'npc-equipment', 'player-inventory', 'location']);
+            const suppressSelectionIfShiftDrop = (event) => {
+                if (event.button === 0 && event.shiftKey && shiftDropContexts.has(options.context)) {
+                    event.preventDefault();
+                    try {
+                        const sel = window.getSelection && window.getSelection();
+                        sel?.removeAllRanges?.();
+                    } catch (_) {
+                        // ignore selection errors
+                    }
+                }
+            };
+            card.addEventListener('mousedown', suppressSelectionIfShiftDrop);
+            card.addEventListener('click', async (event) => {
+                if (event.button === 0 && event.shiftKey && shiftDropContexts.has(options.context)) {
+                    if (event.target && event.target.closest('.thing-card-menu-button')) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    try {
+                        const cachedThing = thingDataCache.get(thing.id) || thing;
+                        if (options.context === 'location') {
+                            const playerId = window.currentPlayerData?.id || null;
+                            if (!playerId) {
+                                throw new Error('No active player to receive the item.');
+                            }
+                            const locationId = options.locationId || window.lastRenderedLocation?.id || null;
+                            await moveThingToInventory(cachedThing, {
+                                ownerId: playerId,
+                                ownerType: 'player',
+                                locationId
+                            });
+                        } else {
+                            await dropThingToCurrentLocation(cachedThing, options);
+                        }
+                        if (thingMenuState.openMenu) {
+                            closeThingContextMenu();
+                        }
+                        return;
+                    } catch (error) {
+                        console.warn('Ctrl-click drop failed:', error);
+                        alert(error?.message || 'Failed to drop item.');
+                    }
+                }
                 if (thingMenuState.openMenu) {
                     closeThingContextMenu();
                 }
@@ -14850,6 +14897,9 @@
                                     }
                                     triggerHealthChangeEffect(portrait, previous, npc);
                                     npcDataCache.set(npc.id, cloneActorRecord(npc) || { ...npc });
+                                    if (typeof window.registerInventoryDropTarget === 'function') {
+                                        window.registerInventoryDropTarget(card, { ownerId: npc.id, ownerType: 'npc' });
+                                    }
                                 }
                             });
                         }

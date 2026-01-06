@@ -401,12 +401,24 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     };
 
-                    const recoveredParent = resultNode.getElementsByTagName('itemsRecovered')[0] || null;
-                    if (recoveredParent) {
-                        const innerItems = Array.from(recoveredParent.getElementsByTagName('item'));
-                        if (innerItems.length) {
-                            for (const itemNode of innerItems) {
+                    const craftedParent = resultNode.getElementsByTagName('itemsCrafted')[0] || null;
+                    if (craftedParent) {
+                        const craftedItems = Array.from(craftedParent.getElementsByTagName('item'));
+                        if (craftedItems.length) {
+                            for (const itemNode of craftedItems) {
                                 await pushParsedItemNode(itemNode);
+                            }
+                        }
+                    }
+
+                    if (!recoveredItems.length) {
+                        const recoveredParent = resultNode.getElementsByTagName('itemsRecovered')[0] || null;
+                        if (recoveredParent) {
+                            const innerItems = Array.from(recoveredParent.getElementsByTagName('item'));
+                            if (innerItems.length) {
+                                for (const itemNode of innerItems) {
+                                    await pushParsedItemNode(itemNode);
+                                }
                             }
                         }
                     }
@@ -13676,6 +13688,7 @@ module.exports = function registerApiRoutes(scope) {
                     things.delete(thing.id);
                 });
 
+                const craftedThingInstances = [];
                 let craftedThing = null;
                 const recoveredThingInstances = [];
                 if (isSalvageAction || isHarvestAction) {
@@ -13711,41 +13724,51 @@ module.exports = function registerApiRoutes(scope) {
                         recoveredThing.metadata = recoveredMetadata;
                         recoveredThingInstances.push(recoveredThing);
                     });
-                } else if (selectedResult.item) {
-                    const craftedBlueprint = { ...selectedResult.item };
-                    const resolvedCraftLevel = computeCraftedItemLevel(craftedBlueprint);
-                    if (Number.isFinite(resolvedCraftLevel)) {
-                        craftedBlueprint.level = resolvedCraftLevel;
-                    }
-                    craftedThing = instantiateThingFromBlueprint(craftedBlueprint);
-                    if (craftedThing) {
-                        things.set(craftedThing.id, craftedThing);
-                        const craftedMetadata = craftedThing.metadata && typeof craftedThing.metadata === 'object'
-                            ? { ...craftedThing.metadata }
+                } else {
+                    const craftedBlueprints = Array.isArray(selectedResult.itemsRecovered) && selectedResult.itemsRecovered.length
+                        ? selectedResult.itemsRecovered
+                        : (selectedResult.item ? [selectedResult.item] : []);
+
+                    craftedBlueprints.forEach(blueprint => {
+                        const craftedBlueprint = { ...blueprint };
+                        const resolvedCraftLevel = computeCraftedItemLevel(craftedBlueprint);
+                        if (Number.isFinite(resolvedCraftLevel)) {
+                            craftedBlueprint.level = resolvedCraftLevel;
+                        }
+                        const crafted = instantiateThingFromBlueprint(craftedBlueprint);
+                        if (!crafted) {
+                            return;
+                        }
+                        things.set(crafted.id, crafted);
+                        const craftedMetadata = crafted.metadata && typeof crafted.metadata === 'object'
+                            ? { ...crafted.metadata }
                             : {};
 
-                        if ((craftedThing.thingType || craftedBlueprint.itemOrScenery) === 'scenery') {
+                        if ((crafted.thingType || craftedBlueprint.itemOrScenery) === 'scenery') {
                             craftedMetadata.locationId = resolvedLocationId;
                             craftedMetadata.ownerId = null;
-                            craftedThing.metadata = craftedMetadata;
+                            crafted.metadata = craftedMetadata;
 
                             const locationTarget = locationRecord || (resolvedLocationId ? gameLocations.get(resolvedLocationId) : null);
                             if (locationTarget && typeof locationTarget.addThingId === 'function') {
                                 try {
-                                    locationTarget.addThingId(craftedThing.id);
+                                    locationTarget.addThingId(crafted.id);
                                 } catch (error) {
-                                    console.warn(`Failed to attach crafted scenery ${craftedThing.name || craftedThing.id} to location:`, error?.message || error);
+                                    console.warn(`Failed to attach crafted scenery ${crafted.name || crafted.id} to location:`, error?.message || error);
                                 }
                             }
                         } else {
                             if (typeof currentPlayer.addInventoryItem === 'function') {
-                                currentPlayer.addInventoryItem(craftedThing, { suppressNpcEquip: true });
+                                currentPlayer.addInventoryItem(crafted, { suppressNpcEquip: true });
                             }
                             craftedMetadata.ownerId = currentPlayer.id;
                             craftedMetadata.locationId = null;
-                            craftedThing.metadata = craftedMetadata;
+                            crafted.metadata = craftedMetadata;
                         }
-                    }
+                        craftedThingInstances.push(crafted);
+                    });
+
+                    craftedThing = craftedThingInstances[0] || null;
                 }
 
                 const consumedNamesForPrompt = consumedThingNames.length
@@ -13771,8 +13794,21 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         return null;
                     }
-                    if (craftedThing) {
-                        return { name: craftedThing.name, description: craftedThing.description };
+                    if (craftedThingInstances.length) {
+                        const names = craftedThingInstances.map(item => item.name || 'Crafted Item');
+                        const descriptions = craftedThingInstances.map(item => item.description || '').filter(Boolean);
+                        return {
+                            name: names.join(', '),
+                            description: descriptions.join(' ') || null
+                        };
+                    }
+                    if (selectedResult.itemsRecovered && selectedResult.itemsRecovered.length) {
+                        const names = selectedResult.itemsRecovered.map(item => item?.name || 'Crafted Item');
+                        const descriptions = selectedResult.itemsRecovered.map(item => item?.description || '').filter(Boolean);
+                        return {
+                            name: names.join(', '),
+                            description: descriptions.join(' ') || null
+                        };
                     }
                     if (selectedResult.item) {
                         return {
@@ -13890,6 +13926,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const eventItems = [];
                 const recoveredNames = recoveredThingInstances.map(item => item.name || 'Recovered Item');
+                const craftedNames = craftedThingInstances.map(item => item.name || 'Crafted Item');
                 if (isHarvestAction) {
                     if (recoveredNames.length) {
                         eventItems.push({
@@ -13914,10 +13951,10 @@ module.exports = function registerApiRoutes(scope) {
                             description: `${currentPlayer.name || 'The player'} salvaged ${salvageTargetThing?.name || 'an item'} but recovered nothing usable.`
                         });
                     }
-                } else if (craftedThing) {
+                } else if (craftedThingInstances.length) {
                     eventItems.push({
                         icon: '🛠️',
-                        description: `${currentPlayer.name || 'The player'} crafted ${craftedThing.name}.`
+                        description: `${currentPlayer.name || 'The player'} crafted ${craftedNames.join(', ')}.`
                     });
                 }
                 const consumedSummaryNames = consumedThingNames.length
@@ -14034,6 +14071,7 @@ module.exports = function registerApiRoutes(scope) {
                     outcome: actionOutcome,
                     resultLevel: mappedLevel,
                     craftedItem: craftedThing ? craftedThing.toJSON() : null,
+                    craftedItems: craftedThingInstances.map(item => item.toJSON ? item.toJSON() : item),
                     recoveredItems: recoveredThingInstances.map(item => item.toJSON ? item.toJSON() : item),
                     consumedThingIds,
                     narrative: {
@@ -14598,15 +14636,11 @@ module.exports = function registerApiRoutes(scope) {
                 if (causeStatusEffect !== undefined
                     || causeStatusEffectOnTarget !== undefined
                     || causeStatusEffectOnEquipper !== undefined) {
-                    if (causeStatusEffectOnTarget || causeStatusEffectOnEquipper) {
-                        thing.causeStatusEffect = {
-                            ...(causeStatusEffectOnTarget || causeStatusEffectOnEquipper || causeStatusEffect || {}),
-                            applyToTarget: Boolean(causeStatusEffectOnTarget),
-                            applyToEquipper: Boolean(causeStatusEffectOnEquipper)
-                        };
-                    } else {
-                        thing.causeStatusEffect = causeStatusEffect;
-                    }
+                    thing.setCauseStatusEffects({
+                        target: causeStatusEffectOnTarget ?? null,
+                        equipper: causeStatusEffectOnEquipper ?? null,
+                        legacy: causeStatusEffect ?? null
+                    });
                 }
 
                 if (level !== undefined) {

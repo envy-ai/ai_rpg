@@ -292,7 +292,8 @@ module.exports.register = function(scope) {
             npcs: getNpcsAtLocation(location?.id),
             party: getPartyMembers(),
             recentMessages: getRecentMessages(5, messageTimestamp),
-            scenery: location?.scenery || []
+            scenery: location?.scenery || [],
+            config
         };
     }
 

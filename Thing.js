@@ -909,6 +909,21 @@ class Thing {
     return entry ? entry.effect.toJSON() : null;
   }
 
+  setCauseStatusEffects({ target = null, equipper = null, legacy = null } = {}) {
+    this.#causeStatusEffect = [];
+    const targetEntry = this.#normalizeCauseStatusEffectEntry(target, { applyToTarget: true });
+    const equipperEntry = this.#normalizeCauseStatusEffectEntry(equipper, { applyToEquipper: true });
+    const legacyEntry = this.#normalizeCauseStatusEffectEntry(legacy, {
+      applyToTarget: Boolean(legacy?.applyToTarget),
+      applyToEquipper: Boolean(legacy?.applyToEquipper)
+    });
+    this.#upsertCauseStatusEffectEntry(targetEntry);
+    this.#upsertCauseStatusEffectEntry(equipperEntry);
+    this.#upsertCauseStatusEffectEntry(legacyEntry);
+    this.#syncFieldsToMetadata();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   #triggerStatusEffectEnrichment() {
     if (!this.#enableStatusEffectEnrichment) {
       return;

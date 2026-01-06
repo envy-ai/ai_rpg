@@ -816,8 +816,8 @@ p:not(:last-child) {
   }
 
   &__image {
-    max-width: 100%;
-    max-height: 100%;
+    max-width: min(100%, 100vw);
+    max-height: 100vh;
     border-radius: 16px;
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1498,7 +1498,7 @@ p:not(:last-child) {
   font-weight: 400;
 }
 
-.load-game-radio input[type='radio'] {
+.load-game-radio input[type="radio"] {
   accent-color: #38bdf8;
 }
 
