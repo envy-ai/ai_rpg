@@ -13,6 +13,7 @@ const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
 const e = require('express');
+const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
 
 let eventsProcessedThisTurn = false;
@@ -7057,6 +7058,26 @@ module.exports = function registerApiRoutes(scope) {
                                     }
                                 }
                             }
+                        }
+
+                        // Add lorebook entries to additionalLore
+                        try {
+                            const lorebookManager = getLorebookManager();
+                            if (lorebookManager) {
+                                const locationName = baseContext.currentLocation?.name || '';
+                                const regionName = baseContext.currentRegion?.name || '';
+                                const npcNames = Array.isArray(baseContext.npcs) ? baseContext.npcs.map(n => n.name || '').join(' ') : '';
+                                const contextText = `${actionText} ${locationName} ${regionName} ${npcNames}`;
+                                const loreEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+                                if (loreEntries.length > 0) {
+                                    const formattedLore = lorebookManager.formatEntriesForPrompt(loreEntries);
+                                    if (formattedLore) {
+                                        additionalLore += (additionalLore ? '\n\n' : '') + formattedLore;
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('[Lorebook] Failed to get entries for player action:', err.message);
                         }
 
                         console.log("additionalLore:", additionalLore);
@@ -16122,6 +16143,166 @@ module.exports = function registerApiRoutes(scope) {
                 });
             } catch (error) {
                 res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // ==================== LOREBOOK API ====================
+
+        // Get list of all lorebooks
+        app.get('/api/lorebooks', (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const lorebooks = manager.getLorebookList();
+                res.json({
+                    success: true,
+                    lorebooks
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Get lorebook details including entries
+        app.get('/api/lorebooks/:filename', (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const { filename } = req.params;
+                const details = manager.getLorebookDetails(filename);
+                if (!details) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Lorebook not found'
+                    });
+                }
+                res.json({
+                    success: true,
+                    lorebook: details
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Enable a lorebook
+        app.post('/api/lorebooks/:filename/enable', async (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const { filename } = req.params;
+                await manager.enableLorebook(filename);
+                res.json({
+                    success: true,
+                    message: `Lorebook enabled: ${filename}`,
+                    activeEntries: manager.allEntries.length
+                });
+            } catch (error) {
+                res.status(error.message.includes('not found') ? 404 : 500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Disable a lorebook
+        app.post('/api/lorebooks/:filename/disable', async (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const { filename } = req.params;
+                await manager.disableLorebook(filename);
+                res.json({
+                    success: true,
+                    message: `Lorebook disabled: ${filename}`,
+                    activeEntries: manager.allEntries.length
+                });
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Delete a lorebook
+        app.delete('/api/lorebooks/:filename', async (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const { filename } = req.params;
+                await manager.deleteLorebook(filename);
+                res.json({
+                    success: true,
+                    message: `Lorebook deleted: ${filename}`
+                });
+            } catch (error) {
+                res.status(error.message.includes('not found') ? 404 : 500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        // Upload a new lorebook
+        app.post('/api/lorebooks/upload', async (req, res) => {
+            try {
+                const manager = getLorebookManager();
+                if (!manager) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Lorebook manager not initialized'
+                    });
+                }
+                const { filename, content } = req.body;
+                if (!filename || !content) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Missing filename or content'
+                    });
+                }
+                const result = await manager.saveLorebook(filename, content);
+                res.json({
+                    success: true,
+                    message: `Lorebook uploaded: ${result.filename}`,
+                    entryCount: result.entryCount
+                });
+            } catch (error) {
+                res.status(400).json({
                     success: false,
                     error: error.message
                 });

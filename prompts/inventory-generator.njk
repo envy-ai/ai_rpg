@@ -36,7 +36,15 @@ Here is a list of available equipment slot types:
 </character>
 </context>
 
-I'd like you to generate a set of 1 to 5 items that would be found in the above character's inventory in the above setting. The items should be appropriate for the setting and the character's role within it. Output them in the format below:
+{% if lorebookEntries and lorebookEntries.length > 0 %}
+<worldLore>
+{% for entry in lorebookEntries %}
+<loreEntry>{{ entry.content }}</loreEntry>
+{% endfor %}
+</worldLore>
+{% endif %}
+
+I'd like you to generate a set of 1 to 5 items that would be found in the above character's inventory in the above setting. The items should be appropriate for the setting and the character's role within it.{% if lorebookEntries and lorebookEntries.length > 0 %} Incorporate relevant elements from the world lore provided above.{% endif %} Output them in the format below:
 
 <items>
 {% include "_includes/item.njk" %}

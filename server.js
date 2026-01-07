@@ -47,6 +47,7 @@ const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
+const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 
 Globals.baseDir = __dirname;
 
@@ -153,6 +154,13 @@ function reloadConfigAndDefs() {
 }
 
 Globals.reloadConfigAndDefs = reloadConfigAndDefs;
+Globals.reloadLorebooks = async () => {
+    const manager = getLorebookManager();
+    if (manager) {
+        return await manager.reload();
+    }
+    throw new Error('Lorebook manager not initialized');
+};
 
 function resolveMaxTokens(...values) {
     let candidate = 0;
@@ -5616,6 +5624,25 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         }
         const settingDescription = describeSettingForPrompt(settingSnapshot);
 
+        // Get lorebook entries for character inventory generation
+        let lorebookEntries = [];
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const locationName = location?.name || '';
+                const locationDesc = location?.description || location?.stubMetadata?.blueprintDescription || '';
+                const regionName = region?.name || '';
+                const regionDesc = region?.description || '';
+                const characterName = character?.name || '';
+                const characterDesc = character?.description || '';
+                const characterClass = characterDescriptor?.class || characterDescriptor?.role || '';
+                const contextText = `${locationName} ${locationDesc} ${regionName} ${regionDesc} ${characterName} ${characterDesc} ${characterClass}`;
+                lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for character inventory generation:', err.message);
+        }
+
         const renderedTemplate = renderInventoryPrompt({
             setting: settingDescription,
             region: region ? { name: region.name, description: region.description } : null,
@@ -5627,7 +5654,8 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 class: characterDescriptor.class || characterDescriptor.role || 'citizen',
                 level: character.level || 1,
                 race: characterDescriptor.race || 'human'
-            }
+            },
+            lorebookEntries
         });
 
         if (!renderedTemplate) {
@@ -5986,13 +6014,34 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             ? baseContext.gearSlots
             : getGearSlotNames();
 
+        // Get lorebook entries for item generation
+        let lorebookEntries = [];
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const locationName = resolvedLocation?.name || baseContext.currentLocation?.name || '';
+                const locationDesc = resolvedLocation?.description || baseContext.currentLocation?.description || '';
+                const regionName = resolvedRegion?.name || baseContext.currentRegion?.name || '';
+                const regionDesc = resolvedRegion?.description || baseContext.currentRegion?.description || '';
+                const contextText = `${locationName} ${locationDesc} ${regionName} ${regionDesc}`;
+                lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for item generation:', err.message);
+        }
+
+        const formattedLorebook = lorebookEntries.length > 0
+            ? (getLorebookManager()?.formatEntriesForPrompt(lorebookEntries) || '')
+            : '';
+
         const promptTemplateBase = {
             ...baseContext,
             promptType: 'thing-generator-single',
             equipmentSlots: equipmentSlotTypes,
             gearSlots: gearSlotNames,
             attributes: attributeList,
-            attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt
+            attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+            additionalLore: formattedLorebook
         };
 
         const created = [];
@@ -6726,6 +6775,21 @@ function renderLocationNpcPrompt(location, options = {}) {
             Math.max(0, Math.round(resolvedNumNpcs / 2))
         );
 
+        // Get lorebook entries for location NPC generation
+        let lorebookEntries = [];
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const locationName = location?.name || '';
+                const locationDesc = location?.description || '';
+                const regionTheme = options.regionTheme || '';
+                const contextText = `${locationName} ${locationDesc} ${regionTheme}`;
+                lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for location NPC generation:', err.message);
+        }
+
         return promptEnv.render(templateName, {
             locationName: location.name || 'Unknown Location',
             locationDescription: location.description || 'No description provided.',
@@ -6738,7 +6802,8 @@ function renderLocationNpcPrompt(location, options = {}) {
             existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
-            bannedWords: options.bannedWords || getBannedNpcWords()
+            bannedWords: options.bannedWords || getBannedNpcWords(),
+            lorebookEntries
         });
     } catch (error) {
         console.error('Error rendering location NPC template:', error);
@@ -6757,6 +6822,21 @@ function renderRegionNpcPrompt(region, options = {}) {
         } : { id: null, name: 'Unknown Region', description: '' };
         */
 
+        // Get lorebook entries for region NPC generation
+        let lorebookEntries = [];
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const regionName = region?.name || '';
+                const regionDesc = region?.description || '';
+                const concepts = Array.isArray(options.characterConcepts) ? options.characterConcepts.join(' ') : '';
+                const contextText = `${regionName} ${regionDesc} ${concepts}`;
+                lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for region NPC generation:', err.message);
+        }
+
         return promptEnv.render(templateName, {
             region: region,
             allLocationsInRegion: options.allLocationsInRegion || [],
@@ -6764,7 +6844,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
             bannedWords: options.bannedWords || getBannedNpcWords(),
             characterConcepts: options.characterConcepts || [],
-            config: Globals.config || {}
+            config: Globals.config || {},
+            lorebookEntries
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -6903,6 +6984,28 @@ async function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = n
             };
         })();
 
+        // Get lorebook entries for single NPC generation
+        let additionalLore = '';
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const locationName = safeLocation?.name || '';
+                const locationDesc = safeLocation?.description || '';
+                const regionName = safeRegion?.name || '';
+                const regionDesc = safeRegion?.description || '';
+                const npcName = npcSeed?.name || '';
+                const npcClass = npcSeed?.class || '';
+                const npcRole = npcSeed?.role || '';
+                const contextText = `${locationName} ${locationDesc} ${regionName} ${regionDesc} ${npcName} ${npcClass} ${npcRole}`;
+                const loreEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+                if (loreEntries.length > 0) {
+                    additionalLore = lorebookManager.formatEntriesForPrompt(loreEntries);
+                }
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for single NPC generation:', err.message);
+        }
+
         return promptEnv.render('base-context.xml.njk', {
             ...baseContext,
             promptType: 'npc-generator-single',
@@ -6912,7 +7015,8 @@ async function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = n
             npc: npcSeed,
             attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
             oldItem: oldItemContext,
-            setting: baseContext.setting
+            setting: baseContext.setting,
+            additionalLore: additionalLore
         });
     } catch (error) {
         console.error('Error rendering single NPC template:', error);
@@ -10176,7 +10280,8 @@ function renderLocationThingsPrompt(context = {}) {
             rarityList: providedRarityList,
             itemCount,
             sceneryCount,
-            recentThings: collectRecentThings()
+            recentThings: collectRecentThings(),
+            lorebookEntries: context.lorebookEntries || []
         };
 
         const rendered = promptEnv.render(templateName, templatePayload);
@@ -10456,6 +10561,22 @@ async function generateLocationThingsForLocation({ location } = {}) {
         scenery: convertCounts(rarityCounters.scenery)
     };
 
+    // Get lorebook entries for location things generation
+    let lorebookEntries = [];
+    try {
+        const lorebookManager = getLorebookManager();
+        if (lorebookManager) {
+            const locationName = location?.name || '';
+            const locationDesc = stripHtml(locationDescription) || locationDescription || '';
+            const regionName = region?.name || '';
+            const regionDesc = region?.description || '';
+            const contextText = `${locationName} ${locationDesc} ${regionName} ${regionDesc}`;
+            lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+        }
+    } catch (err) {
+        console.warn('[Lorebook] Failed to get entries for location things generation:', err.message);
+    }
+
     const parsedTemplate = renderLocationThingsPrompt({
         settingDescription: describeSettingForPrompt(settingSnapshot),
         region: region ? { name: region.name, description: region.description } : null,
@@ -10465,7 +10586,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
         },
         rarityList,
         itemCount,
-        sceneryCount
+        sceneryCount,
+        lorebookEntries
     });
 
     if (!parsedTemplate || !parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
@@ -12820,6 +12942,25 @@ async function renderLocationGeneratorPrompt(options = {}) {
             ? { ...baseContext.currentPlayer, previousLocation: previousLocationPayload }
             : { previousLocation: previousLocationPayload };
 
+        // Get lorebook entries for location generation
+        let lorebookEntries = [];
+        let additionalLore = '';
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const regionName = currentRegionContext?.name || '';
+                const regionDesc = currentRegionContext?.description || '';
+                const theme = settingContext?.theme || '';
+                const contextText = `${regionName} ${regionDesc} ${theme} ${options.locationTheme || ''} ${options.shortDescription || ''}`;
+                lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+                if (lorebookEntries.length > 0) {
+                    additionalLore = lorebookManager.formatEntriesForPrompt(lorebookEntries);
+                }
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for location generation:', err.message);
+        }
+
         const payload = {
             ...baseContext,
             setting: settingContext,
@@ -12840,7 +12981,9 @@ async function renderLocationGeneratorPrompt(options = {}) {
             originDirection: isStubExpansion ? (options.originDirection || null) : null,
             stubName: isStubExpansion ? (options.stubName || null) : null,
             stubId: isStubExpansion ? (options.stubId || null) : null,
-            isStubExpansion
+            isStubExpansion,
+            lorebookEntries,
+            additionalLore: additionalLore
         };
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
@@ -13029,6 +13172,25 @@ async function renderRegionGeneratorPrompt(options = {}) {
 
         const existingLocationNames = normalizeExistingLocations(options.existingLocations);
 
+        // Get lorebook entries for region generation
+        let additionalLore = '';
+        try {
+            const lorebookManager = getLorebookManager();
+            if (lorebookManager) {
+                const settingName = settingContext?.name || '';
+                const theme = settingContext?.theme || '';
+                const prevRegion = previousLocationPayload?.region?.name || '';
+                const regionName = options.regionName || '';
+                const contextText = `${settingName} ${theme} ${prevRegion} ${regionName} ${options.regionDescription || ''} ${options.regionNotes || ''}`;
+                const lorebookEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+                if (lorebookEntries.length > 0) {
+                    additionalLore = lorebookManager.formatEntriesForPrompt(lorebookEntries);
+                }
+            }
+        } catch (err) {
+            console.warn('[Lorebook] Failed to get entries for region generation:', err.message);
+        }
+
         const payload = {
             ...baseContext,
             contextRegion: baseContext.currentRegion,
@@ -13045,7 +13207,8 @@ async function renderRegionGeneratorPrompt(options = {}) {
             minRegionExits,
             minNewRegionExits,
             entryProse: options.entryProse || null,
-            existingLocations: existingLocationNames
+            existingLocations: existingLocationNames,
+            additionalLore: additionalLore
         };
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
@@ -15517,6 +15680,14 @@ app.get('/settings', (req, res) => {
     });
 });
 
+// Lorebooks management page
+app.get('/lorebooks', (req, res) => {
+    res.render('lorebooks.njk', {
+        title: 'Lorebook Manager',
+        currentPage: 'lorebooks'
+    });
+});
+
 Events.initialize({
     axios,
     path,
@@ -15660,7 +15831,8 @@ const apiScope = {
     baseTimeoutMilliseconds,
     imageFileExists,
     realtimeHub,
-    addJobSubscriber
+    addJobSubscriber,
+    
 };
 
 function defineApiStateProperty(name, getter, setter) {
@@ -15760,6 +15932,17 @@ async function startServer() {
     } catch (error) {
         console.error('❌ Failed to initialize image engine:', error.message);
         throw error;
+    }
+
+    // Step 2.5: Initialize Lorebook Manager
+    try {
+        const lorebooksPath = config.lorebook?.directory || './lorebooks';
+        await initializeLorebookManager(lorebooksPath);
+        const manager = getLorebookManager();
+        console.log(`📖 Lorebook manager initialized (${manager.lorebooks.size} lorebooks, ${manager.allEntries.length} active entries)`);
+    } catch (error) {
+        console.error('⚠️  Failed to initialize lorebook manager:', error.message);
+        // Non-fatal - continue without lorebooks
     }
 
     // Step 3: Prepare realtime hub and start the server

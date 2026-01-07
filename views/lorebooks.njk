@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default("Lorebook Manager") }}</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/lorebooks.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Lorebook Manager</h1>
+            <p>Manage world info lorebooks for AI-assisted world building</p>
+            {% include "_navigation.njk" %}
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+
+        <div class="lorebooks-grid">
+            <!-- Lorebooks List Panel -->
+            <div class="lorebooks-list">
+                <div class="list-header">
+                    <h2>Available Lorebooks</h2>
+                    <button type="button" id="uploadBtn" class="btn btn-primary btn-sm">
+                        Upload New
+                    </button>
+                </div>
+
+                <div id="lorebooksList">
+                    <div class="empty-state">
+                        <p>No lorebooks found.<br>Upload a SillyTavern-compatible lorebook to get started.</p>
+                    </div>
+                </div>
+
+                <div class="list-footer">
+                    <div class="stats">
+                        <span id="totalBooks">0</span> lorebooks &bull;
+                        <span id="enabledBooks">0</span> enabled &bull;
+                        <span id="totalEntries">0</span> active entries
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lorebook Details Panel -->
+            <div class="lorebook-details">
+                <div id="detailsEmpty" class="empty-state">
+                    <p>Select a lorebook to view its details and entries.</p>
+                </div>
+
+                <div id="detailsContent" style="display: none;">
+                    <div class="details-header">
+                        <h2 id="detailsName">Lorebook Name</h2>
+                        <div class="details-meta">
+                            <span class="meta-item"><span id="detailsEntryCount">0</span> entries</span>
+                            <span class="meta-item">~<span id="detailsTokens">0</span> tokens</span>
+                        </div>
+                    </div>
+
+                    <div class="details-actions">
+                        <button type="button" id="toggleBtn" class="btn btn-primary">Enable</button>
+                        <button type="button" id="deleteBtn" class="btn btn-danger">Delete</button>
+                    </div>
+
+                    <div class="entries-section">
+                        <h3>Entries Preview</h3>
+                        <div id="entriesList" class="entries-list">
+                            <!-- Entries will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2>Upload Lorebook</h2>
+                <button type="button" class="modal__close" id="closeUploadModal">&times;</button>
+            </header>
+            <div class="modal__body">
+                <p class="modal__help">
+                    Upload a SillyTavern-compatible lorebook JSON file. The file should contain
+                    an "entries" object with world info entries.
+                </p>
+                <div class="form-group">
+                    <label for="lorebookFile">Select File</label>
+                    <input type="file" id="lorebookFile" accept=".json">
+                </div>
+                <div class="form-group">
+                    <label for="lorebookFilename">Filename (optional)</label>
+                    <input type="text" id="lorebookFilename" placeholder="Will use original filename if not specified">
+                    <div class="help-text">Custom name for the lorebook file</div>
+                </div>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="cancelUpload">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmUpload">Upload</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal" hidden>
+        <div class="modal__dialog modal__dialog--small">
+            <header class="modal__header">
+                <h2>Delete Lorebook</h2>
+                <button type="button" class="modal__close" id="closeDeleteModal">&times;</button>
+            </header>
+            <div class="modal__body">
+                <p>Are you sure you want to delete "<span id="deleteLorebookName"></span>"?</p>
+                <p class="modal__warning">This action cannot be undone.</p>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="cancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmDelete">Delete</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <script src="/js/lorebooks.js"></script>
+</body>
+</html>

@@ -31,7 +31,15 @@ Equipment slots:
 </location>
 </context>
 
-I'd like you to generate a set of items and scenery that would be found in the above location in the above setting. The items should be appropriate for the setting. Output them in the format below:
+{% if lorebookEntries and lorebookEntries.length > 0 %}
+<worldLore>
+{% for entry in lorebookEntries %}
+<loreEntry>{{ entry.content }}</loreEntry>
+{% endfor %}
+</worldLore>
+{% endif %}
+
+I'd like you to generate a set of items and scenery that would be found in the above location in the above setting. The items should be appropriate for the setting.{% if lorebookEntries and lorebookEntries.length > 0 %} Incorporate relevant elements from the world lore provided above.{% endif %} Output them in the format below:
 
 <things>
 {% include "_includes/item.njk" %}

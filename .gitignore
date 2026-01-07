@@ -16,3 +16,9 @@ mods/*
 mods/scene-illustrations/data/*
 imagegen/qwen_image_2512_nova.json
 imagegen/qwen_image_2512_nova.json.njk
+# Lorebook state and data
+lorebooks/*.json
+lorebooks/lorebook-state.json
+
+# Keep directory structure
+!lorebooks/.gitkeep
