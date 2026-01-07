@@ -2669,7 +2669,13 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function maybeTriggerRandomEvent({ stream = null, locationOverride = null, entryCollector = null, forceType = null } = {}) {
+            const config = Globals?.config || {};
             const frequencyConfig = config?.random_event_frequency || {};
+
+            if (frequencyConfig.enabled === false) {
+                console.info('Random events skipped: random_event_frequency.enabled is false.');
+                return null;
+            }
 
             const toPercent = (value) => {
                 const numeric = Number(value);
@@ -3121,6 +3127,12 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runAttackCheckPrompt({ actionText, locationOverride, characterName = 'The player' }) {
+            const config = Globals?.config || {};
+            if (config?.plausibility_checks?.enabled === false) {
+                console.info('Attack check skipped: plausibility_checks.enabled is false.');
+                return null;
+            }
+
             if (!actionText || !actionText.trim()) {
                 return null;
             }
@@ -3191,6 +3203,12 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runAttackPrecheck({ actionText }) {
+            const config = Globals?.config || {};
+            if (config?.plausibility_checks?.enabled === false) {
+                console.info('Attack precheck skipped: plausibility_checks.enabled is false.');
+                return true;
+            }
+
             if (!actionText || !actionText.trim()) {
                 return true;
             }
@@ -4314,6 +4332,57 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog } = {}) {
+            const filterNpcNamesToContext = (names, locationCandidate = null) => {
+                if (!Array.isArray(names) || !names.length) {
+                    return [];
+                }
+
+                const allowed = new Set();
+                const player = Globals.currentPlayer || null;
+
+                let location = locationCandidate;
+                if (!location && player?.currentLocation) {
+                    try {
+                        location = Location.get(player.currentLocation) || null;
+                    } catch (error) {
+                        console.warn('filterNpcNamesToContext: failed to resolve current location:', error.message);
+                    }
+                }
+                if (location && typeof location === 'string') {
+                    location = Location.get(location);
+                }
+
+                if (location && typeof location.getNPCNames === 'function') {
+                    for (const npcName of location.getNPCNames()) {
+                        if (typeof npcName === 'string' && npcName.trim()) {
+                            allowed.add(npcName.trim().toLowerCase());
+                        }
+                    }
+                }
+
+                if (player && typeof player.getPartyMembers === 'function') {
+                    for (const memberId of player.getPartyMembers()) {
+                        const member = Player.get(memberId);
+                        if (member?.name && member.name.trim()) {
+                            allowed.add(member.name.trim().toLowerCase());
+                        }
+                    }
+                }
+
+                if (!allowed.size) {
+                    console.warn('filterNpcNamesToContext: no eligible NPCs found in party or location.');
+                    return [];
+                }
+
+                return names.filter(name => {
+                    if (typeof name !== 'string') {
+                        return false;
+                    }
+                    const normalized = name.trim().toLowerCase();
+                    return normalized && allowed.has(normalized);
+                });
+            };
+
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
@@ -4344,6 +4413,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const raw = await LLMClient.chatCompletion(requestOptions);
                 const names = parseNpcQueueResponse(raw);
+                const filteredNames = filterNpcNamesToContext(names, locationOverride);
 
                 logNextNpcListPrompt({
                     systemPrompt: parsedTemplate.systemPrompt,
@@ -4351,7 +4421,7 @@ module.exports = function registerApiRoutes(scope) {
                     responseText: raw
                 });
 
-                return { raw, names };
+                return { raw, names: filteredNames };
             } catch (error) {
                 console.warn('Failed to run next NPC list prompt:', error.message);
                 return { raw: '', names: [] };
@@ -4837,6 +4907,24 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function runNpcPlausibilityPrompt({ npc, locationOverride = null } = {}) {
+            const config = Globals?.config || {};
+            if (config?.plausibility_checks?.enabled === false) {
+                console.info('NPC plausibility skipped: plausibility_checks.enabled is false.');
+                return {
+                    raw: '',
+                    structured: {
+                        description: 'Plausibility checks disabled by configuration',
+                        difficulty: 'Trivial',
+                        plausibility: {
+                            type: 'Trivial',
+                            reason: 'Plausibility checks disabled by configuration'
+                        },
+                        type: 'Trivial',
+                        reason: 'Plausibility checks disabled by configuration'
+                    }
+                };
+            }
+
             if (!npc) {
                 return { raw: '', structured: null };
             }
@@ -6771,6 +6859,7 @@ module.exports = function registerApiRoutes(scope) {
                 const baseDebugInfo = {
                     usedForcedEventAction: Boolean(isForcedEventAction)
                 };
+                const plausibilityChecksEnabled = Globals.config?.plausibility_checks?.enabled !== false;
                 let debugInfo = null;
                 let playerActionLogPayload = null;
 
@@ -6789,7 +6878,7 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to update status effects before action:', tickError.message);
                     }
 
-                    if (!isCreativeModeAction && !isForcedEventAction) {
+                    if (!isCreativeModeAction && !isForcedEventAction && plausibilityChecksEnabled) {
                         try {
                             stream.status('player_action:attack_check', 'Checking for potential attacks.');
                             const attackActionText = typeof sanitizedUserContent === 'string'
@@ -6869,6 +6958,14 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                             console.debug(plausibilityError);
                         }
+                    } else if (!plausibilityChecksEnabled) {
+                        plausibilityInfo = {
+                            raw: '',
+                            structured: {
+                                type: 'trivial',
+                                reason: 'Plausibility checks disabled by configuration'
+                            }
+                        };
                     }
                 }
 
@@ -7680,7 +7777,7 @@ module.exports = function registerApiRoutes(scope) {
                                 appendArray('environmentalDamageEvents', questProcessingContext.environmentalDamageEvents);
                                 appendArray('needBarChanges', questProcessingContext.needBarChanges);
 
-                                if (Array.isArray(questProcessingContext.followupResults) && questProcessingContext.followupResults.length) {
+                                if (Array.isArray(questProcessingContext?.followupResults) && questProcessingContext.followupResults.length) {
                                     if (!Array.isArray(responseData.followupEventChecks)) {
                                         responseData.followupEventChecks = [];
                                     }
@@ -7892,7 +7989,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    if (Array.isArray(eventResult.questRewards) && eventResult.questRewards.length) {
+                    if (Array.isArray(eventResult?.questRewards) && eventResult.questRewards.length) {
                         responseData.questRewards = eventResult.questRewards;
                         for (const rewardEntry of eventResult.questRewards) {
                             if (!rewardEntry || typeof rewardEntry.message !== 'string') {
@@ -7930,7 +8027,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    if (Array.isArray(eventResult.questObjectivesCompleted) && eventResult.questObjectivesCompleted.length) {
+                    if (Array.isArray(eventResult?.questObjectivesCompleted) && eventResult.questObjectivesCompleted.length) {
                         responseData.questObjectivesCompleted = eventResult.questObjectivesCompleted;
 
                         const groupedObjectives = new Map();
@@ -7970,7 +8067,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    if (Array.isArray(eventResult.followupResults) && eventResult.followupResults.length) {
+                    if (Array.isArray(eventResult?.followupResults) && eventResult.followupResults.length) {
                         responseData.followupEventChecks = eventResult.followupResults;
                     }
 

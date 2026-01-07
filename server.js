@@ -3862,6 +3862,16 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
         return null;
     }
 
+    if (Globals?.config?.plausibility_checks?.enabled === false) {
+        return {
+            raw: '',
+            structured: {
+                type: 'trivial',
+                reason: 'Plausibility checks disabled by configuration'
+            }
+        };
+    }
+
     const trimmedAction = typeof actionText === 'string' ? actionText.trimStart() : '';
     if (trimmedAction.startsWith('!!')) {
         return null;

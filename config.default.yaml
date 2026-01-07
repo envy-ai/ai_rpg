@@ -143,10 +143,23 @@ imagegen:
     location:
     scenery:
 random_event_frequency:
+  enabled: true
   common: 0.05
   rare: 0.01
-  regionSpecific: 0.6
-  locationSpecific: 0.6
+  regionSpecific: 0.05
+  locationSpecific: 0.05
+
+# If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
+event_checks:
+  enabled: true
+
+# If false, everything is trivially plausible and the combat system doesn't activate. Damage may still occur from event checks.
+plausibility_checks:
+  enabled: true
+
+# Set this to false to disable quest completion prose generation (this is separate from quest generation and checking, so you will still receive quests and rewards, just not prose descriptions of their completion)
+quest_completion_prose:
+  enabled: true
 # Game Master configuration
 gamemaster:
   # Fallback system prompt

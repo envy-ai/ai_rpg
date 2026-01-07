@@ -14892,6 +14892,12 @@
                                 locationNPCs.appendChild(card);
 
                                 if (npc && npc.id) {
+                                    const partyIds = Array.isArray(window.currentPlayerData?.partyMembers)
+                                        ? window.currentPlayerData.partyMembers
+                                        : null;
+                                    if (partyIds) {
+                                        npc.isInPlayerParty = partyIds.includes(npc.id);
+                                    }
                                     if (typeof registerNpcContextMenu === 'function') {
                                         registerNpcContextMenu(card, npc);
                                     }

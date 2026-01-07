@@ -327,6 +327,7 @@ The below context is an account of the current game state, including the setting
       </needBar>
       {% endfor %}
     </needBars>
+    {% if not suppressQuestList %}
     <quests>
       {% for quest in currentPlayer.currentQuests %}
       <quest>
@@ -342,6 +343,7 @@ The below context is an account of the current game state, including the setting
       </quest>
       {% endfor %}
     </quests>
+    {% endif %}
   </player>
   <playerParty>
     {% for member in party %}

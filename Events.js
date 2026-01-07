@@ -23,9 +23,9 @@ const EVENT_PROMPT_ORDER = [
         { key: 'move_new_location', prompt: `The starting location is %CURRENT_LOCATION%. If you answered question 3 with 'moved within location to somewhere not fully visible (sublocation)', come up with an appropriate sub-location and reply in the form [describe what is different from %CURRENT_LOCATION%] -> [change the name and put it here] -> [the word "sublocation"] -> [type of vehicle or "none"] -> [description of what makes this new destination distinct in 1-2 sentences]. The sublocation may not have the same name as the current location. Otherwise answer N/A.` },
         { key: 'move_location', prompt: `The starting location is %CURRENT_LOCATION%. Did the player travel to or end up in a different existing location? If so, answer with the exact name; otherwise answer N/A. If you don't know where they ended up, pick an existing location nearby.` },
         { key: 'alter_location', prompt: `Was the current location permanently altered in a significant way (major changes to the location itself, not npcs, items, or scenery)? If so, answer in the format "[current location name] -> [new location name] -> [1 sentence description of alteration]". If not (or if the player moved from one location to another, which isn't an alteration), answer N/A. Pay close attention to things that are listed as sceneryItems in the location context, as these are not the location itself. Note that it is not necessary to change the name of the location if it remains appropriate after the alteration; in this case, simply repeat the same name for new location name.` },
-        //],
-        // Item stuff
-        //[
+    ],
+    // Item stuff
+    [
         { key: 'currency', prompt: `Did the player gain or lose currency? If so, how much? Respond with a positive or negative integer. Otherwise, respond N/A. Do not include currency changes in any answers below, as currency is tracked separately from items.` },
         { key: 'dummy_event', prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] -> [action] -> [brief description]. Actions are one of:picked up, dropped, given to someone, taken from someone, put on (as in worn or donned), equipped, partially consumed, completely consumed, altered permanently, altered temporarily, aggregated. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob -> put on -> Jacket". Right: "Jacket -> put on -> Bob put on the Jacket"` },
         { key: 'item_to_npc', prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.` },
@@ -38,20 +38,23 @@ const EVENT_PROMPT_ORDER = [
         { key: 'drop_item', prompt: `Of any items not listed above, were any items dropped, placed, or set down from an entity's inventory onto the scene? If so, list the full name of the person who dropped the item as seen in the location context ("player" if it was the player) and the exact names of those items (capitalized as Proper Nouns) separated by vertical bars. Items are not considered dropped/placed/set down if they're being used to assemble something in the scene (furniture, a pile of items, or other scenery) and should not be listed here. Use the format: "[exact character name] -> [exact item name] | [exact character name] -> [exact item name]". Otherwise, answer N/A.` },
         { key: 'scenery_appear', prompt: `Of anything you did not list above, did any new scenery, furniture, buildings, workstations, containers, piles/stacks of things, or other non-carryable items appear (assembled, built, dropped, manifested, etc) in the scene for the first time, either as newly created items or items that were mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
         { key: 'harvestable_resource_appear', prompt: `Of anything you did not list above, did any harvestable or gatherable resources (e.g., plants, minerals, fields, planters, machines that create resources or other harvestable/gatherable scenery) appear in the scene for the first time, either as newly created scenery or scenery that was mentioned as already existing but had not been previously described in the scene context? If so, list them in the format format as "[exact thing name] -> [description]" with multiple items separated by vertical bars. Otherwise, answer N/A.` },
-        //],
-        // NPC stuff
-        //[
+    ],
+    // NPC stuff
+    [
         { key: 'attack_damage', prompt: `Did any entity attack any other entity?  If so, answer in the format "[attacker] -> [target]". If there are multiple attackers, separate multiple entries with vertical bars. Note that an attack only took place if the attacker did something that could cause physical damage to the target. Things like shoving, grappling, healing spells, buffs, debuffs, or other contact that's not intended to cause physical damage don't count. If no attack, answer N/A.` },
         { key: 'alter_npc', prompt: `Were any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) physically changed permanently in any way, such as being transformed, upgraded, downgraded, enhanced, damaged, repaired, healed, modified, or otherwise physically altered in a significant way, by anything other than damage from an attack? If so, answer in the format "[exact character name] -> [injury|status effect|gear|attire|mental change|temporary physical change|physical transformation] -> [1-2 sentence description of the change]". If multiple characters were altered, separate multiple entries with vertical bars. Note that things like temporary magical polymorphs and being turned to stone (where it's possible that it may be reversed) are better expressed as status effects and should not be mentioned here. If no characters were altered (which will be the case most of the time), answer N/A.` },
         { key: 'status_effect_change', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) gain or lose any temporary status effects that you didn't list above as permanent changes? If so, list them in this format: "[exact entity name] -> [10 or fewer word description of effect] -> [gained/lost] [-> integer status effect level, if gained]". If there are multiple entries, separate them with vertical bars. Otherwise answer N/A.  Don't use redundant wording in the status effect description. We already know if the status is gained or lost, so just say 'Bob -> drunk -> gained -> 5' or 'Bob -> drunk -> lost'. When losing a status effect, use the exact name listed with the character XML. The status effect level should generally be the level of the cause of the status effect, be it an item or character. If the effect isn't from an item or a result of something a character did, just use the location level.` },
-        { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
-        { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
+        { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) leave the scene? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Decide what location they went to. Use the format: "[name] -> left -> [destination region] -> [destination location]". If you don't know exactly where they went, what makes the most sense. Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'left' }) },
+        { key: 'npc_arrival_departure', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) arrive at this location from elsewhere? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Use the format: "[name] -> arrived". Otherwise, answer N/A.`, postProcess: entry => ({ ...entry, action: entry?.action || 'arrived' }) },
         { key: 'npc_first_appearance', prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.` },
         { key: 'npc_first_appearance', prompt: `List all entities (NPCs, animals, monsters, robots, etc.) that the player interacted with in textToCheck which aren't already listed in your answers above, in the player's party, or in the location's context. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.` },
         { key: 'party_change', prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.` },
         { key: 'environmental_status_damage', prompt: `Did any animate entities take environmental damage or damage from an ongoing status effect? Were they healed by the environment or an ongoing status effect? If so, answer in the format "[exact name] -> [damage|healing] -> [low|medium|high] -> [1 sentence describing why damage was taken]". If there are multiple instances of damage, separate multiple entries with vertical bars. Otherwise, answer N/A.` },
         { key: 'heal_recover', prompt: `Did anyone heal or recover health? If so, answer in the format "[character] -> [small|medium|large|all] -> [reason]". If there are multiple characters, separate multiple entries with vertical bars. Otherwise, answer N/A. Health recovery from natural regeneration, food, resting tends to be small or medium, whereas healing from potions, spells, bed rest, or medical treatment tends to be medium or large. Consider the context of the event, the skill of the healer (if applicable), the rarity and properties of any healing items used, etc.` },
         { key: 'needbar_change', prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.` },
+    ],
+    // Misc stuff
+    [
         { key: 'in_combat', prompt: `Could the player be considered to be in physical combat at the moment? This can be true even if the player did not attack and was not directly attacked. Answer Yes or No.` },
         { key: 'received_quest', prompt: `Did the player become aware of one or more quests or tasks this turn (by reading them, hearing about them, having them directly requested, etc), even if they didn't actively acknowledge or accept it? Also include quests that the player thought of themselves ("I need to go collect some iron so I can craft a new dagger", etc). If so, answer in the following format: "[exact name of quest giver] -> [1 sentence description of quest] | ..."` },
         //        { key: 'completed_quest_objective', prompt: `Based on the entire provided context (including gameHistory), has the player already completed one or more quest objectives listed in the xml &lt;quests&gt; block? If so, answer in the following format: "[exact name of quest] -> [index completed objective] | ..."` },
@@ -741,6 +744,12 @@ class Events {
     }
 
     static async runQuestChecks() {
+        const config = this.config || Globals.config || {};
+        if (config?.event_checks?.enabled === false) {
+            console.info('Quest checks skipped: event_checks.enabled is false.');
+            return null;
+        }
+
         const promptEnv = this._deps.promptEnv;
         const parseXMLTemplate = this._deps.parseXMLTemplate;
         const prepareBasePromptContext = this._deps.prepareBasePromptContext;
@@ -748,9 +757,47 @@ class Events {
 
         const baseContext = await prepareBasePromptContext();
 
+        // Build a stable quest list for prompt rendering using the player's canonical quest order.
+        let currentQuestPromptList = [];
+        const player = this.currentPlayer;
+        if (player && Array.isArray(player.currentQuests) && typeof player.getQuestByIndex === 'function') {
+            const questIndexMap = new Map();
+            for (let idx = 0; ; idx += 1) {
+                const quest = player.getQuestByIndex(idx);
+                if (!quest) {
+                    break;
+                }
+                const questId = quest.id || `quest_${idx}`;
+                questIndexMap.set(questId, idx + 1); // store as 1-based to match prompt expectations
+            }
+
+            currentQuestPromptList = player.currentQuests
+                .map(quest => {
+                    const questId = quest?.id || null;
+                    const questIndex = questId ? questIndexMap.get(questId) : null;
+                    return {
+                        ...quest,
+                        index: Number.isFinite(questIndex) ? questIndex : null
+                    };
+                })
+                .sort((a, b) => {
+                    const aIndex = Number.isFinite(a.index) ? a.index : Number.MAX_SAFE_INTEGER;
+                    const bIndex = Number.isFinite(b.index) ? b.index : Number.MAX_SAFE_INTEGER;
+                    return aIndex - bIndex;
+                });
+
+            const unresolved = currentQuestPromptList.filter(entry => !Number.isFinite(entry.index));
+            if (unresolved.length) {
+                const labels = unresolved.map(entry => entry.name || entry.id || 'Unknown quest').join(', ');
+                throw new Error(`Failed to resolve prompt indices for quests: ${labels}`);
+            }
+        }
+
         const renderedQuestCheck = promptEnv.render('base-context.xml.njk', {
             ...baseContext,
+            suppressQuestList: true,
             promptType: 'quest-check',
+            currentQuestPromptList
         });
 
         const parsedQuestTemplate = parseXMLTemplate(renderedQuestCheck);
@@ -786,6 +833,12 @@ class Events {
     }
 
     static async runEventChecks({ textToCheck, stream = null, allowEnvironmentalEffects = true, isNpcTurn = false, _depth = 0, followupQueue = null } = {}) {
+        const config = this.config || Globals.config || {};
+        if (config?.event_checks?.enabled === false) {
+            console.info('Event checks skipped: event_checks.enabled is false.');
+            return null;
+        }
+
         const startOfText = typeof textToCheck === 'string' ? textToCheck.slice(0, 20) : '';
         console.log(`✅ Starting event checks for text: ${startOfText}...`);
         if (isBlank(textToCheck)) {
@@ -820,7 +873,6 @@ class Events {
             throw new Error('prepareBasePromptContext dependency is not configured.');
         }
 
-        const config = this.config || {};
         const aiConfig = config?.ai;
 
         if (!aiConfig) {
@@ -1271,22 +1323,24 @@ class Events {
         let rewardPromptContext = context._questRewardPromptContext || null;
 
         for (const entry of entries) {
-            const questName = typeof entry?.quest === 'string' ? entry.quest.trim() : '';
+            const questIndexValue = Number(entry?.questIndex) - 1;
             const objectiveIndexValue = Number(entry?.objectiveIndex) - 1;
-            if (!questName || !Number.isFinite(objectiveIndexValue)) {
+            if (!Number.isFinite(questIndexValue) || !Number.isFinite(objectiveIndexValue)) {
                 console.warn('completed_quest_objective handler called with invalid entry:', entry);
                 continue;
             }
 
-            const quest = player.getQuestByName(questName);
+            const quest = typeof player.getQuestByIndex === 'function'
+                ? player.getQuestByIndex(Math.max(0, Math.round(questIndexValue)))
+                : null;
             if (!quest) {
-                console.warn(`completed_quest_objective: Quest "${questName}" not found on player.`);
+                console.warn(`completed_quest_objective: Quest index ${questIndexValue + 1} not found on player.`);
                 continue;
             }
 
             const zeroBasedIndex = Math.max(0, Math.round(objectiveIndexValue));
             if (!Array.isArray(quest.objectives) || !quest.objectives[zeroBasedIndex]) {
-                console.warn(`completed_quest_objective: Quest "${questName}" objective index ${objectiveIndexValue} is invalid.`);
+                console.warn(`completed_quest_objective: Quest "${quest.name}" objective index ${objectiveIndexValue} is invalid.`);
                 continue;
             }
 
@@ -1303,6 +1357,7 @@ class Events {
             context.completedQuestObjectives.push({
                 questId: quest.id,
                 questName: quest.name,
+                questIndex: Math.max(0, Math.round(questIndexValue)),
                 objectiveIndex: zeroBasedIndex,
                 objectiveNumber: zeroBasedIndex + 1,
                 objectiveDescription: objective.description || null,
@@ -1916,30 +1971,18 @@ class Events {
                 };
             }).filter(Boolean),
             npc_arrival_departure: raw => splitPipeList(raw).map(entry => {
-                const rawParts = entry
+                const parts = entry
                     .split('->')
                     .map(part => part.trim())
                     .filter(Boolean);
 
-                if (!rawParts.length) {
+                if (parts.length < 2) {
                     return null;
                 }
 
-                let primary = rawParts.shift();
-                const match = primary.match(/^(.*)\s+(arrived|left)$/i);
-
-                let name = null;
-                let action = null;
-
-                if (match) {
-                    name = match[1].trim();
-                    action = match[2].trim().toLowerCase();
-                } else {
-                    name = primary.trim();
-                    if (rawParts.length) {
-                        action = rawParts.shift().trim().toLowerCase();
-                    }
-                }
+                const name = parts[0];
+                const action = parts[1]?.toLowerCase();
+                const remaining = parts.slice(2);
 
                 if (!name || !action) {
                     return null;
@@ -1948,11 +1991,11 @@ class Events {
                 let destinationRegion = null;
                 let destinationLocation = null;
 
-                if (rawParts.length === 1) {
-                    destinationLocation = rawParts[0].trim();
-                } else if (rawParts.length >= 2) {
-                    destinationRegion = rawParts[0].trim() || null;
-                    destinationLocation = rawParts[1].trim() || null;
+                if (remaining.length === 1) {
+                    destinationLocation = remaining[0];
+                } else if (remaining.length >= 2) {
+                    destinationRegion = remaining[0] || null;
+                    destinationLocation = remaining[1] || null;
                 }
 
                 const destination = destinationLocation || destinationRegion || null;
@@ -1966,8 +2009,12 @@ class Events {
                 };
             }).filter(Boolean),
             npc_first_appearance: raw => splitPipeList(raw)
-                .map(stripAfterFirstArrow)
-                .map(entry => entry.trim())
+                .map(entry => {
+                    if (typeof entry !== 'string') return '';
+                    const arrowIndex = entry.indexOf('->');
+                    const sliced = arrowIndex >= 0 ? entry.slice(0, arrowIndex) : entry;
+                    return sliced.trim();
+                })
                 .filter(Boolean),
             party_change: raw => splitPipeList(raw).map(entry => {
                 const [name, action] = splitArrowParts(entry, 2);
@@ -2022,14 +2069,15 @@ class Events {
             }).filter(Boolean),
             needbar_change: raw => splitPipeList(raw).map(entry => {
                 const [name, bar, direction, magnitude, reason] = splitArrowParts(entry, 5);
-                if (!name || !bar || !direction || magnitude.toLowerCase() === 'none') {
+                const magnitudeText = typeof magnitude === 'string' ? magnitude.trim() : '';
+                if (!name || !bar || !direction || (!magnitudeText) || magnitudeText.toLowerCase() === 'none') {
                     return null;
                 }
                 return {
                     character: name.trim(),
                     bar: bar.trim(),
                     direction: direction.trim().toLowerCase(),
-                    magnitude: (magnitude || 'small').trim().toLowerCase(),
+                    magnitude: magnitudeText.toLowerCase(),
                     reason: reason ? reason.trim() : null
                 };
             }).filter(Boolean),
@@ -2125,17 +2173,18 @@ class Events {
                     if (typeof entry !== 'string') {
                         return null;
                     }
-                    const [questName, objectiveIndexRaw] = splitArrowParts(entry, 2);
-                    if (!questName || !objectiveIndexRaw) {
+                    const [questIndexRaw, objectiveIndexRaw] = splitArrowParts(entry, 2);
+                    if (!questIndexRaw || !objectiveIndexRaw) {
                         return null;
                     }
-                    const indexValue = extractInteger(objectiveIndexRaw);
-                    if (!Number.isFinite(indexValue)) {
+                    const questIndexValue = extractInteger(questIndexRaw);
+                    const objectiveIndexValue = extractInteger(objectiveIndexRaw);
+                    if (!Number.isFinite(questIndexValue) || !Number.isFinite(objectiveIndexValue)) {
                         return null;
                     }
                     return {
-                        quest: questName.trim(),
-                        objectiveIndex: indexValue
+                        questIndex: questIndexValue,
+                        objectiveIndex: objectiveIndexValue
                     };
                 }).filter(Boolean);
             }
@@ -4903,6 +4952,22 @@ class Events {
             return [];
         }
 
+        const player = this.currentPlayer || Globals.currentPlayer || null;
+        const truthyCompleted = new Set(['true', 'yes', 'y', '1', 'completed']);
+
+        const resolveQuestMeta = (questIndexValue, providedName = '') => {
+            const meta = { questName: providedName || null, questId: null };
+            if (!Number.isFinite(questIndexValue) || !player || typeof player.getQuestByIndex !== 'function') {
+                return meta;
+            }
+            const quest = player.getQuestByIndex(Math.max(0, Math.round(questIndexValue - 1)));
+            if (quest) {
+                meta.questName = meta.questName || quest.name || null;
+                meta.questId = quest.id || null;
+            }
+            return meta;
+        };
+
         try {
             const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
             if (!doc) {
@@ -4917,10 +4982,12 @@ class Events {
             const entries = [];
 
             for (const questNode of questNodes) {
-                const questName = questNode.getElementsByTagName('name')[0]?.textContent?.trim();
-                if (!questName) {
-                    continue;
-                }
+                const questName = questNode.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+                const questIndexText = questNode.getElementsByTagName('index')[0]?.textContent?.trim()
+                    || questNode.getAttribute?.('index')
+                    || '';
+                const questIndexValue = Number.parseInt(questIndexText, 10);
+                const questMeta = resolveQuestMeta(questIndexValue, questName);
 
                 const objectiveNodes = Array.from(questNode.getElementsByTagName('objective'));
                 for (const objectiveNode of objectiveNodes) {
@@ -4930,16 +4997,19 @@ class Events {
                     const completedText = objectiveNode.getElementsByTagName('completed')[0]?.textContent?.trim().toLowerCase()
                         || objectiveNode.getAttribute?.('completed')?.trim().toLowerCase()
                         || '';
-                    const isCompleted = ['true', 'yes', 'y', '1', 'completed'].includes(completedText);
+                    const hasCompletedFlag = Boolean(completedText);
+                    const isCompleted = hasCompletedFlag && truthyCompleted.has(completedText);
                     if (!isCompleted) {
                         continue;
                     }
                     const indexValue = Number.parseInt(indexText, 10);
-                    if (!Number.isFinite(indexValue)) {
+                    if (!Number.isFinite(indexValue) || !Number.isFinite(questIndexValue)) {
                         continue;
                     }
                     entries.push({
-                        quest: questName,
+                        quest: questMeta.questName,
+                        questId: questMeta.questId,
+                        questIndex: questIndexValue,
                         objectiveIndex: indexValue
                     });
                 }

@@ -1,3 +1,9 @@
+Characters at location: 
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}Characters in party:
+{% for member in party %}- {{ member.name }}
+{% endfor %}
+
 <task>You are an AI Game Master in control of potentially multiple NPCs in a scene. Your task is to determine which NPCs take action next.</task>
 
 <currentTurn>{{ currentTurnLog }}</currentTurn>
