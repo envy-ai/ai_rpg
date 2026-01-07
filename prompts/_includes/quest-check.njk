@@ -1,8 +1,20 @@
-<task>Carefully check the gameHistory and determine whether each objective in each of the following quests is complete.</task>
+<task>Carefully check the gameHistory and determine whether each objective in each of the following quests is complete. 
 
+Instructions for Assessment:
+
+Action-Based Completion: An objective is considered complete if the describes the successful execution of the required action, even if the text does not explicitly state the objective is "done" or "finished." Look instead for descriptions of the result.
+
+Contextual Matching: Compare the specific requirements of the objective (e.g., "install skylight," "plant seeds," "defeat a monster", "deliver an item," and so on) against the narrative descriptions in the history. If the narrative describes that event occurring successfully, mark it complete.
+
+Based on these rules, determine whether each objective in the following quests is complete.
+
+</task>
+
+{% set quests = currentQuestPromptList or currentPlayer.currentQuests or [] %}
+{% set sortedQuests = quests | sort(attribute='index') %}
 <quests>
-  {% for quest in currentPlayer.currentQuests %}
-  <quest>
+  {% for quest in sortedQuests %}
+  <quest index="{{ quest.index }}">
     <name>{{ quest.name }}</name>
     <description>{{ quest.description }}</description>
     {% if quest.secretNotes %}<secretNotes>{{ quest.secretNotes }}</secretNotes>{% endif -%}
@@ -16,18 +28,26 @@
   {% endfor %}
 </quests>
 
+Note that characters planning to complete an objective, even in the immediate future, does not constitute completing it.
+
 Respond in the following format:
 
 <quests>
   <quest>
-    <name><!-- Exact name of the quest --></name>
+    <name><!-- Name of the quest --></name>
+    <index><!-- Index of the quest --></index>
+    <shortDescription><!-- Summary of the quest in as close to 5 words as possible --></shortDescription>
     <objectives>
       <objective>
         <index><!-- Index of the objective --></index>
-        <completed><!-- True or false --></completed>
+        <shortDescription><!-- Summary of the objective in as few words as possible --></shortDescription>
+        <statusReason><!-- Brief explanation of why the objective is or isn't complete, 10 words or less --></statusReason>
+        <completed><!-- true if the objective is complete, false otherwise --></completed>
       </objective>
       <!-- Repeat for each objective in the quest -->
     </objectives>
   </quest>
   <!-- Repeat for each quest -->
 </quests>
+
+Do not include names or descriptions in your response. Omit any quests with no completed objectives.

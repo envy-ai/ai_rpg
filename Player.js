@@ -1775,9 +1775,17 @@ class Player {
         return true;
     }
 
-    getQuestByName(questName) {
-        return this.#quests.find(q => q.name === questName) || null;
+  getQuestByName(questName) {
+    return this.#quests.find(q => q.name === questName) || null;
+  }
+
+  getQuestByIndex(index) {
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= this.#quests.length) {
+      return null;
     }
+    return this.#quests[idx] || null;
+  }
 
     getQuestById(questId) {
         return this.#quests.find(q => q.id === questId) || null;
@@ -2230,19 +2238,27 @@ class Player {
                     member.markPartyMembershipChangedThisTurn();
                 }
 
-                const existingLocation = member.currentLocationObject || null;
+                let existingLocation = null;
+                try {
+                    existingLocation = member.currentLocationObject || null;
+                } catch (_) {
+                    existingLocation = null;
+                }
+
+                const existingLocationId = member.currentLocation || null;
+
                 if (existingLocation) {
                     if (typeof existingLocation.removeNpcId === 'function') {
                         existingLocation.removeNpcId(member.id);
                     } else {
                         throw new Error(`Unable to unregister '${member.name || member.id}' from location '${existingLocation.name || existingLocation.id}': removeNpcId is not available.`);
                     }
+                }
 
-                    if (typeof member.setLocation === 'function') {
-                        member.setLocation(null);
-                    } else {
-                        throw new Error(`Unable to clear location for '${member.name || member.id}': setLocation is not available.`);
-                    }
+                if (typeof member.setLocation === 'function') {
+                    member.setLocation(null);
+                } else if (existingLocationId) {
+                    throw new Error(`Unable to clear location for '${member.name || member.id}': setLocation is not available.`);
                 }
             }
             this.#lastUpdated = new Date().toISOString();
