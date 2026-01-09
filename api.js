@@ -12261,7 +12261,8 @@ module.exports = function registerApiRoutes(scope) {
                         expandStub: false,
                         targetRegionId,
                         vehicleType: normalizedVehicleType,
-                        isVehicle: isVehicleExit
+                        isVehicle: isVehicleExit,
+                        relativeLevel
                     });
 
                     if (!locationStub) {

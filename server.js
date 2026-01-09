@@ -4273,7 +4273,7 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -4282,6 +4282,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
     const resolvedVehicleType = normalizedVehicleType ? normalizedVehicleType : null;
     const resolvedIsVehicle = isVehicle === true || Boolean(resolvedVehicleType);
+    const normalizedRelativeLevel = Number.isFinite(relativeLevel)
+        ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
+        : null;
 
     const originRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
     const targetRegion = targetRegionId ? regions.get(targetRegionId) || null : null;
@@ -4304,6 +4307,13 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
     let existing = findLocationByNameLoose(trimmedName);
     if (existing) {
+        if (normalizedRelativeLevel !== null && existing.isStub) {
+            const metadata = existing.stubMetadata || {};
+            if (metadata.relativeLevel !== normalizedRelativeLevel) {
+                metadata.relativeLevel = normalizedRelativeLevel;
+                existing.stubMetadata = metadata;
+            }
+        }
         if (originLocation && directionHint) {
             ensureExitConnection(originLocation, existing, {
                 description: descriptionHint || `${existing.name || trimmedName}`,
@@ -4335,6 +4345,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             regionId: effectiveRegionId,
             regionName: effectiveRegionName,
             allowRename: false,
+            relativeLevel: normalizedRelativeLevel,
             vehicleType: resolvedVehicleType,
             isVehicle: resolvedIsVehicle
         },
@@ -6826,6 +6837,13 @@ function renderLocationNpcPrompt(location, options = {}) {
             : {};
 
         const normalizeCount = (value, fallback) => {
+            if (value === null || value === undefined || value === '') {
+                const fallbackNumeric = Number(fallback);
+                if (Number.isFinite(fallbackNumeric) && fallbackNumeric >= 0) {
+                    return Math.max(0, Math.round(fallbackNumeric));
+                }
+                return 0;
+            }
             const numeric = Number(value);
             if (Number.isFinite(numeric) && numeric >= 0) {
                 return Math.max(0, Math.round(numeric));
@@ -11965,6 +11983,13 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         const generationHints = location?.generationHints || {};
         const resolveCount = (value, fallback) => {
+            if (value === null || value === undefined || value === '') {
+                const fallbackNumeric = Number(fallback);
+                if (Number.isFinite(fallbackNumeric) && fallbackNumeric >= 0) {
+                    return Math.max(0, Math.round(fallbackNumeric));
+                }
+                return 0;
+            }
             const numeric = Number(value);
             if (Number.isFinite(numeric) && numeric >= 0) {
                 return Math.max(0, Math.round(numeric));
@@ -14769,7 +14794,12 @@ function parseRegionStubLocations(xmlSnippet) {
     }
 
     const getTagValue = (node, tag) => {
-        const element = node.getElementsByTagName(tag)?.[0];
+        const tagLower = typeof tag === 'string' ? tag.toLowerCase() : '';
+        if (!tagLower) {
+            return null;
+        }
+        const element = Array.from(node.childNodes)
+            .find(child => child.nodeType === 1 && typeof child.tagName === 'string' && child.tagName.toLowerCase() === tagLower);
         if (!element || typeof element.textContent !== 'string') {
             return null;
         }

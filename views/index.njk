@@ -14143,7 +14143,7 @@
                 regionEditAverageLevelInput?.focus();
                 return;
             }
-            const normalizedAverageLevel = Math.max(1, Math.min(20, Math.round(averageLevelValue)));
+            const normalizedAverageLevel = Math.max(1, Math.round(averageLevelValue));
             if (regionEditAverageLevelInput) {
                 regionEditAverageLevelInput.value = normalizedAverageLevel;
             }

@@ -221,7 +221,7 @@ class Location {
         }
       }
 
-      parsedBaseLevel = Math.max(1, Math.min(20, Math.round(parsedBaseLevel || 1)));
+      parsedBaseLevel = Math.max(1, Math.round(parsedBaseLevel || 1));
 
       if (!parsedBaseLevel) {
         throw new Error('Stub expansion missing valid base level in AI response');
@@ -302,7 +302,7 @@ class Location {
       }
     }
 
-    baseLevel = Math.max(1, Math.min(20, Math.round(baseLevel)));
+    baseLevel = Math.max(1, Math.round(baseLevel));
 
     return new Location({
       description: locationData.description,

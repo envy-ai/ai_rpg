@@ -5211,12 +5211,12 @@ class Events {
         if (!Number.isFinite(value)) {
             return null;
         }
-        return Math.max(1, Math.min(20, Math.round(value)));
+        return Math.max(1, Math.round(value));
     }
 
     static _clampLevel(value, fallback = 1) {
         const base = Number.isFinite(value) ? value : (Number.isFinite(fallback) ? fallback : 1);
-        return Math.max(1, Math.min(20, Math.round(base)));
+        return Math.max(1, Math.round(base));
     }
 
     static _clearLocationImage(location, generatedImages) {

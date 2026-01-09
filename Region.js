@@ -67,7 +67,7 @@ class Region {
       ? randomEvents.filter(event => typeof event === 'string' && event.trim()).map(event => event.trim())
       : [];
     this.#averageLevel = Number.isFinite(averageLevel)
-      ? Math.max(1, Math.min(20, Math.round(averageLevel)))
+      ? Math.max(1, Math.round(averageLevel))
       : null;
     this.#relativeLevel = null; // to be set externally if needed
     this.#numImportantNPCs = Region.#normalizeImportantNpcCount(numImportantNPCs);
@@ -253,7 +253,7 @@ class Region {
       } else if (!regionLevel && tag === 'relativelevel') {
         const parsedLevel = Number(child.textContent.trim());
         if (Number.isFinite(parsedLevel)) {
-          regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
+          regionLevel = Math.max(1, Math.round(parsedLevel));
         }
       } else if (tag === 'numimportantnpcs') {
         numImportantNPCs = Region.#normalizeImportantNpcCount(child.textContent.trim());
@@ -734,7 +734,7 @@ class Region {
       throw new Error('Average level must be a finite number');
     }
 
-    const normalized = Math.max(1, Math.min(20, Math.round(numericLevel)));
+    const normalized = Math.max(1, Math.round(numericLevel));
     if (normalized !== this.#averageLevel) {
       this.#averageLevel = normalized;
       this.#lastUpdated = new Date().toISOString();

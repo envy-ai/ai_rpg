@@ -578,7 +578,7 @@ class Thing {
     this.#attributeBonuses = [];
     this.#causeStatusEffect = [];
     this.#enableStatusEffectEnrichment = enrichStatusEffects !== false;
-    this.#level = Number.isFinite(level) ? Math.max(1, Math.min(20, Math.round(level))) : null;
+    this.#level = Number.isFinite(level) ? Math.max(1, Math.round(level)) : null;
     this.#relativeLevel = Number.isFinite(relativeLevel) ? Math.max(-20, Math.min(20, Math.round(relativeLevel))) : null;
     this.#flags = flags instanceof SanitizedStringSet ? flags : new SanitizedStringSet(flags);
     this.isVehicle = isVehicle;
@@ -882,7 +882,7 @@ class Thing {
 
   set level(value) {
     if (Number.isFinite(value)) {
-      const clamped = Math.max(1, Math.min(20, Math.round(value)));
+      const clamped = Math.max(1, Math.round(value));
       if (clamped !== this.#level) {
         this.#level = clamped;
         this.#syncFieldsToMetadata();
@@ -1577,7 +1577,7 @@ class Thing {
     }
 
     if (Number.isFinite(meta.level)) {
-      this.#level = Math.max(1, Math.min(20, Math.round(meta.level)));
+      this.#level = Math.max(1, Math.round(meta.level));
     } else if (this.#level === undefined) {
       this.#level = null;
     }

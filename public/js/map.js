@@ -602,13 +602,21 @@ function renderMap(region) {
     return null;
   };
 
-  const createStubExit = async ({ sourceId, position, name, description, type }) => {
+  const createStubExit = async ({ sourceId, position, name, description, type, vehicleType, relativeLevel }) => {
     const payload = {
       type,
       name,
       description: description || '',
       clientId: window.AIRPG_CLIENT_ID || null
     };
+
+    if (relativeLevel !== null && relativeLevel !== undefined) {
+      payload.relativeLevel = relativeLevel;
+    }
+
+    if (type === 'region' && vehicleType) {
+      payload.vehicleType = vehicleType;
+    }
 
     if (type === 'region') {
       payload.parentRegionId = activeRegionId || null;
@@ -729,6 +737,39 @@ function renderMap(region) {
     typeSelect.appendChild(optionRegion);
     typeLabel.appendChild(typeSelect);
 
+    const vehicleLabel = document.createElement('label');
+    vehicleLabel.textContent = 'Vehicle type (region exits only)';
+    vehicleLabel.style.fontSize = '13px';
+    vehicleLabel.style.fontWeight = '600';
+    const vehicleInput = document.createElement('input');
+    vehicleInput.type = 'text';
+    vehicleInput.style.width = '100%';
+    vehicleInput.style.padding = '8px';
+    vehicleInput.style.borderRadius = '8px';
+    vehicleInput.style.border = '1px solid rgba(255,255,255,0.15)';
+    vehicleInput.style.background = '#0b1220';
+    vehicleInput.style.color = '#e2e8f0';
+    vehicleLabel.appendChild(vehicleInput);
+
+    const relativeLabel = document.createElement('label');
+    relativeLabel.textContent = 'Relative level';
+    relativeLabel.style.fontSize = '13px';
+    relativeLabel.style.fontWeight = '600';
+    const relativeInput = document.createElement('input');
+    relativeInput.type = 'number';
+    relativeInput.step = '1';
+    relativeInput.min = '-10';
+    relativeInput.max = '10';
+    relativeInput.required = true;
+    relativeInput.value = '1';
+    relativeInput.style.width = '100%';
+    relativeInput.style.padding = '8px';
+    relativeInput.style.borderRadius = '8px';
+    relativeInput.style.border = '1px solid rgba(255,255,255,0.15)';
+    relativeInput.style.background = '#0b1220';
+    relativeInput.style.color = '#e2e8f0';
+    relativeLabel.appendChild(relativeInput);
+
     const actions = document.createElement('div');
     actions.style.display = 'flex';
     actions.style.justifyContent = 'flex-end';
@@ -760,6 +801,8 @@ function renderMap(region) {
     form.appendChild(nameLabel);
     form.appendChild(descLabel);
     form.appendChild(typeLabel);
+    form.appendChild(vehicleLabel);
+    form.appendChild(relativeLabel);
     form.appendChild(actions);
 
     dialog.appendChild(title);
@@ -786,6 +829,14 @@ function renderMap(region) {
       const name = nameInput.value.trim();
       const description = descInput.value.trim();
       const type = typeSelect.value === 'region' ? 'region' : 'location';
+      const relativeLevelValue = Number(relativeInput.value);
+      if (!Number.isFinite(relativeLevelValue)) {
+        window.alert('Relative level must be a number.');
+        relativeInput.focus();
+        return;
+      }
+      const relativeLevel = Math.max(-10, Math.min(10, Math.round(relativeLevelValue)));
+      const vehicleType = type === 'region' ? vehicleInput.value.trim() : '';
       if (!name) {
         nameInput.focus();
         return;
@@ -793,7 +844,7 @@ function renderMap(region) {
       submitBtn.disabled = true;
       cancelBtn.disabled = true;
       try {
-        await createStubExit({ sourceId, position, name, description, type });
+        await createStubExit({ sourceId, position, name, description, type, vehicleType, relativeLevel });
         close();
       } catch (error) {
         window.alert(error?.message || 'Failed to create stub');
@@ -801,6 +852,17 @@ function renderMap(region) {
         cancelBtn.disabled = false;
       }
     });
+
+    const updateVehicleVisibility = () => {
+      const isRegion = typeSelect.value === 'region';
+      vehicleLabel.style.display = isRegion ? 'block' : 'none';
+      if (!isRegion) {
+        vehicleInput.value = '';
+      }
+    };
+
+    typeSelect.addEventListener('change', updateVehicleVisibility);
+    updateVehicleVisibility();
 
     nameInput.focus();
   };
