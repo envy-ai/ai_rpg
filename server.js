@@ -8439,7 +8439,7 @@ function parseNpcAbilityAssignments(xmlContent) {
                     : 'Passive';
 
                 const parsedLevel = Number.parseInt(levelNode ? levelNode.textContent.trim() : '', 10);
-                const level = Number.isFinite(parsedLevel) ? Math.max(1, Math.min(20, parsedLevel)) : 1;
+                const level = Number.isFinite(parsedLevel) ? Math.max(1, parsedLevel) : 1;
 
                 abilities.push({
                     name: abilityName,

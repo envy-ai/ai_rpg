@@ -2881,7 +2881,7 @@ class Player {
             }
 
             const parsedLevel = Number.parseInt(abilityObj.level, 10);
-            const level = Number.isFinite(parsedLevel) ? Math.max(1, Math.min(20, parsedLevel)) : 1;
+            const level = Number.isFinite(parsedLevel) ? Math.max(1, parsedLevel) : 1;
 
             normalized.push({
                 name,

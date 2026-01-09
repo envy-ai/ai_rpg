@@ -121,7 +121,7 @@ class SettingInfo {
       : '';
 
     // Additional properties
-    this.#playerStartingLevel = Math.max(1, Math.min(20, options.playerStartingLevel || 1));
+    this.#playerStartingLevel = Math.max(1, options.playerStartingLevel || 1);
     const parsedDefaultCurrency = Number.parseInt(options.defaultStartingCurrency, 10);
     this.#defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency)
       ? Math.max(0, parsedDefaultCurrency)
@@ -291,7 +291,7 @@ class SettingInfo {
   }
 
   set playerStartingLevel(value) {
-    this.#playerStartingLevel = Math.max(1, Math.min(20, parseInt(value) || 1));
+    this.#playerStartingLevel = Math.max(1, parseInt(value) || 1);
     this.#updateTimestamp();
   }
 

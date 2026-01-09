@@ -11055,7 +11055,7 @@ module.exports = function registerApiRoutes(scope) {
                 const playerData = {
                     name: name.trim(),
                     description: description ? description.trim() : '',
-                    level: level && !isNaN(level) ? Math.max(1, Math.min(20, parseInt(level))) : 1,
+                    level: level && !isNaN(level) ? Math.max(1, parseInt(level)) : 1,
                     health: -1,
                     attributes: {}
                 };
