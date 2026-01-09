@@ -684,7 +684,11 @@ class AIRPGChat {
         }
 
         const messageDiv = document.createElement('div');
-        const role = entry.role === 'user' ? 'user-message' : 'ai-message';
+        const role = entry.role === 'user'
+            ? 'user-message'
+            : entry.type === 'npc-action'
+                ? 'npc-message'
+                : 'ai-message';
         messageDiv.className = `message ${role}`;
         messageDiv.dataset.timestamp = entry.timestamp || '';
 
@@ -694,6 +698,9 @@ class AIRPGChat {
         senderDiv.className = 'message-sender';
         if (entry.role === 'user') {
             senderDiv.textContent = '👤 You';
+        } else if (entry.isNpcTurn) {
+            const npcName = entry.actor || (entry.role !== 'assistant' ? entry.role : null) || 'NPC';
+            senderDiv.textContent = `🧑 ${npcName}`;
         } else if (entry.role === 'assistant') {
             senderDiv.textContent = '🤖 AI Game Master';
         } else {
@@ -1595,11 +1602,26 @@ class AIRPGChat {
         const table = document.createElement('table');
         table.className = 'prompt-progress-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th>Prompt</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        thead.innerHTML = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
         entries.forEach(entry => {
             const row = document.createElement('tr');
+            const cancelCell = document.createElement('td');
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.className = 'prompt-progress-cancel';
+            cancelButton.textContent = 'X';
+            cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
+            cancelButton.title = 'Cancel prompt';
+            if (!entry.id) {
+                cancelButton.disabled = true;
+            } else {
+                cancelButton.addEventListener('click', () => {
+                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', cancelButton, row);
+                });
+            }
+            cancelCell.appendChild(cancelButton);
             const labelCell = document.createElement('td');
             labelCell.textContent = entry.label || 'prompt';
             const bytesCell = document.createElement('td');
@@ -1614,6 +1636,7 @@ class AIRPGChat {
             avgCell.textContent = Number.isFinite(entry.avgBps) ? `${entry.avgBps}` : '-';
             const retryCell = document.createElement('td');
             retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
+            row.appendChild(cancelCell);
             row.appendChild(labelCell);
             row.appendChild(bytesCell);
             row.appendChild(secondsCell);
@@ -1661,6 +1684,37 @@ class AIRPGChat {
 
         if (isNearBottom) {
             this.scrollToBottom();
+        }
+    }
+
+    async cancelPromptProgress(promptId, label, button, row) {
+        const resolvedId = typeof promptId === 'string' ? promptId.trim() : '';
+        if (!resolvedId) {
+            return;
+        }
+        if (button) {
+            button.disabled = true;
+        }
+        if (row) {
+            row.classList.add('prompt-progress-canceling');
+        }
+        try {
+            const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.warn(`Failed to cancel prompt ${label || resolvedId}:`, error);
+            if (button) {
+                button.disabled = false;
+            }
+            if (row) {
+                row.classList.remove('prompt-progress-canceling');
+            }
         }
     }
 
@@ -1905,11 +1959,11 @@ class AIRPGChat {
         }
 
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message npc-message ai-message';
+        messageDiv.className = 'message ai-message';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
-        senderDiv.textContent = `🤖 NPC · ${npcName || 'Unknown NPC'}`;
+        senderDiv.textContent = `🧑 ${npcName || 'NPC'}`;
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';

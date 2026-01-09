@@ -60,6 +60,8 @@ class LLMClient {
         hadEntries: false
     };
     static #streamCounter = 0;
+    static #abortControllers = new Map();
+    static #canceledStreams = new Set();
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
@@ -182,11 +184,28 @@ class LLMClient {
     static #trackStreamEnd(id) {
         if (!id) return;
         LLMClient.#streamProgress.active.delete(id);
+        LLMClient.#abortControllers.delete(id);
+        LLMClient.#canceledStreams.delete(id);
         if (!LLMClient.#streamProgress.active.size) {
             LLMClient.#streamProgress.lastBroadcastHadEntries = false;
         }
         // Emit a final progress update so clients can clear any in-flight UI.
         LLMClient.#broadcastProgress(true);
+    }
+
+    static cancelPrompt(streamId, reason = 'Prompt canceled by user') {
+        const resolvedId = typeof streamId === 'string' ? streamId.trim() : '';
+        if (!resolvedId) {
+            throw new Error('Prompt id is required to cancel.');
+        }
+        const controller = LLMClient.#abortControllers.get(resolvedId);
+        if (!controller) {
+            throw new Error(`Prompt '${resolvedId}' is not active.`);
+        }
+        LLMClient.#abortControllers.delete(resolvedId);
+        LLMClient.#canceledStreams.add(resolvedId);
+        controller.abort(new Error(reason));
+        return true;
     }
 
     static #broadcastProgress(isFinal = false) {
@@ -195,13 +214,14 @@ class LLMClient {
             return;
         }
         const now = Date.now();
-        const entries = Array.from(LLMClient.#streamProgress.active.values()).map(entry => {
+        const entries = Array.from(LLMClient.#streamProgress.active.entries()).map(([id, entry]) => {
             const deadline = entry.continueDeadline || entry.startDeadline || null;
             const timeoutSeconds = deadline ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
             const latencyMs = entry.firstByteTs ? (entry.firstByteTs - entry.startTs) : null;
             const elapsedAfterFirst = entry.firstByteTs ? Math.max(1, (now - entry.firstByteTs) / 1000) : null;
             const avgBps = elapsedAfterFirst ? Math.round(entry.bytes / elapsedAfterFirst) : null;
             return {
+                id,
                 label: entry.label,
                 bytes: entry.bytes,
                 seconds: Math.round((now - entry.startTs) / 1000),
@@ -756,6 +776,9 @@ class LLMClient {
                             isBackground: Boolean(runInBackground)
                         })
                         : null;
+                    if (streamTrackerId) {
+                        LLMClient.#abortControllers.set(streamTrackerId, controller);
+                    }
                     if (payload.stream) {
                         startTimer = setTimeout(() => {
                             controller.abort(new Error('Stream start timeout'));
@@ -992,6 +1015,19 @@ class LLMClient {
                 } catch (error) {
                     if (!responseContent && typeof error?.partialResponse === 'string') {
                         responseContent = error.partialResponse;
+                    }
+                    const wasCanceled = streamTrackerId && LLMClient.#canceledStreams.has(streamTrackerId);
+                    if (wasCanceled) {
+                        LLMClient.#canceledStreams.delete(streamTrackerId);
+                        if (streamTrackerId) {
+                            LLMClient.#trackStreamEnd(streamTrackerId);
+                        }
+                        if (startTimer) {
+                            clearTimeout(startTimer);
+                            startTimer = null;
+                        }
+                        console.warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
+                        return '';
                     }
                     console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
                     //console.debug(error);

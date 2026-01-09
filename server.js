@@ -2480,8 +2480,12 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         description: locationDetails?.description || location?.description || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails),
         exits: exitSummaries,
-        items: location.items,
-        scenery: location.scenery
+        items: Array.isArray(location.items)
+            ? location.items.map(item => mapItemContext(item)).filter(Boolean)
+            : [],
+        scenery: Array.isArray(location.scenery)
+            ? location.scenery.map(item => mapItemContext(item)).filter(Boolean)
+            : []
     } : null;
 
     const regionStatus = region && typeof region.toJSON === 'function' ? region.toJSON() : null;
@@ -2639,7 +2643,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         connectedRegions
     };
 
-    const mapItemContext = (item, equippedSlot = null) => {
+    function mapItemContext(item, equippedSlot = null) {
         if (!item) {
             return null;
         }
@@ -2650,6 +2654,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         const equipped = equippedSlot || null;
         const metadataIsScenery = typeof item?.metadata?.isScenery === 'boolean'
             ? item.metadata.isScenery
+            : null;
+        const metadataIsVehicle = typeof item?.metadata?.isVehicle === 'boolean'
+            ? item.metadata.isVehicle
             : null;
 
         const resolveTypeValue = (value) => {
@@ -2680,12 +2687,24 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             isScenery = false;
         }
 
+        let isVehicle = null;
+        if (typeof item?.isVehicle === 'boolean') {
+            isVehicle = item.isVehicle;
+        } else if (metadataIsVehicle !== null) {
+            isVehicle = metadataIsVehicle;
+        }
+
+        if (isVehicle === null) {
+            isVehicle = false;
+        }
+
         return {
             name,
             description,
             statusEffects,
             equippedSlot: equipped,
             isScenery,
+            isVehicle,
             thingType: normalizedThingType || (isScenery ? 'scenery' : null),
             rarity: item.rarity || null,
             level: Number.isFinite(item.level) ? item.level
@@ -2697,7 +2716,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             weight: item.metadata.weight,
             properties: item.metadata.properties
         };
-    };
+    }
 
     const isInterestingSkill = (skillName, rank) => {
         if (!skillName) {
@@ -3010,13 +3029,6 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
             return '';
         }
 
-        const isPlayerAction = entry.type === 'player-action';
-        const isRandomAction = entry.type === 'random-event' || entry.randomEvent === true;
-        const isNpcAction = entry.isNpcTurn === true;
-        if (!isPlayerAction && !isRandomAction && !isNpcAction) {
-            return '';
-        }
-
         const rawLocationId = typeof entry.locationId === 'string' && entry.locationId.trim()
             ? entry.locationId.trim()
             : (typeof entry.metadata?.locationId === 'string' && entry.metadata.locationId.trim()
@@ -3063,7 +3075,28 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         ? limitedHistory.slice(0, -tailCount)
         : limitedHistory;
 
-    const summaryLines = [];
+    const combinedHistoryLines = [];
+    let lastLocationLine = null;
+    let lastSeenByLine = null;
+    const pushHistoryLine = (entry, line) => {
+        const locationLine = formatLocationSuffix(entry).trim();
+        const seenByLine = formatSeenBySuffix(entry).trim();
+
+        if (locationLine && locationLine !== lastLocationLine) {
+            combinedHistoryLines.push(locationLine);
+            lastLocationLine = locationLine;
+        }
+
+        if (seenByLine !== lastSeenByLine) {
+            if (seenByLine) {
+                combinedHistoryLines.push(seenByLine);
+            }
+            lastSeenByLine = seenByLine;
+        }
+
+        combinedHistoryLines.push(line);
+    };
+
     for (const entry of summaryCandidates) {
         if (!entry) {
             continue;
@@ -3072,12 +3105,9 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         if (!summaryText) {
             continue;
         }
-        const suffix = formatSeenBySuffix(entry);
-        const locationSuffix = formatLocationSuffix(entry);
-        summaryLines.push(`${summaryText}${locationSuffix}${suffix}`);
+        pushHistoryLine(entry, summaryText);
     }
 
-    const tailLines = [];
     for (const entry of tailEntries) {
         if (!entry) {
             continue;
@@ -3086,15 +3116,17 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         if (!contentText) {
             continue;
         }
-        const role = typeof entry.role === 'string' && entry.role.trim()
+        const roleRaw = typeof entry.role === 'string' && entry.role.trim()
             ? entry.role.trim()
             : 'system';
-        const suffix = formatSeenBySuffix(entry);
-        const locationSuffix = formatLocationSuffix(entry);
-        tailLines.push(`[${role}] ${contentText}${locationSuffix}${suffix}`);
+        const playerLabel = (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim())
+            ? currentPlayer.name.trim()
+            : 'Player';
+        const roleLabel = roleRaw.toLowerCase() === 'user'
+            ? playerLabel
+            : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw);
+        pushHistoryLine(entry, `[${roleLabel}] ${contentText}`);
     }
-
-    const combinedHistoryLines = summaryLines.concat(tailLines);
     const gameHistory = combinedHistoryLines.length
         ? combinedHistoryLines.join('\n')
         : 'No significant prior events.';
@@ -4365,13 +4397,16 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
     }
 
     const normalizedTargetName = trimmedName.toLowerCase();
+    const normalizedRelativeLevel = Number.isFinite(relativeLevel)
+        ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
+        : 0;
 
     const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
     const resolvedVehicleType = normalizedVehicleType ? normalizedVehicleType : null;
@@ -4557,7 +4592,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         targetRegionDescription: descriptionText,
         targetRegionParentId: parentRegionId || null,
         targetRegionRelationship: 'Adjacent',
-        targetRegionRelativeLevel: 0,
+        targetRegionRelativeLevel: normalizedRelativeLevel,
+        relativeLevel: normalizedRelativeLevel,
         settingDescription,
         vehicleType: resolvedVehicleType,
         isVehicle: resolvedIsVehicle
@@ -4620,7 +4656,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         originalName: trimmedName,
         description: regionEntryStub.stubMetadata?.targetRegionDescription || descriptionText,
         relationship: 'Adjacent',
-        relativeLevel: 0,
+        relativeLevel: normalizedRelativeLevel,
         parentRegionId: parentRegionId || null,
         sourceRegionId: currentRegion?.id || null,
         exitLocationId: originLocation.id,
@@ -4780,6 +4816,28 @@ function extractRegionCharacterConcepts(stubResponse) {
     }
 
     return concepts;
+}
+
+function extractRegionImportantNpcCount(stubResponse) {
+    if (!stubResponse || typeof stubResponse !== 'string') {
+        return null;
+    }
+
+    try {
+        const xmlDoc = Utils.parseXmlDocument(stubResponse, 'text/xml');
+        const countNode = xmlDoc.getElementsByTagName('numImportantNPCs')?.[0] || null;
+        if (!countNode || typeof countNode.textContent !== 'string') {
+            return null;
+        }
+        const parsed = Number(countNode.textContent.trim());
+        if (!Number.isFinite(parsed)) {
+            return null;
+        }
+        return Math.max(0, Math.min(20, Math.round(parsed)));
+    } catch (error) {
+        console.warn('Failed to parse numImportantNPCs from region response:', error.message);
+        return null;
+    }
 }
 
 function extractRegionSecrets(stubResponse) {
@@ -4996,6 +5054,7 @@ async function expandRegionEntryStub(stubLocation) {
             const locationDefinitions = parseRegionStubLocations(stubResponse);
             const exitDefinitions = parseRegionExitsResponse(stubResponse);
             const characterConcepts = extractRegionCharacterConcepts(stubResponse);
+            const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
             const secrets = extractRegionSecrets(stubResponse);
 
             console.log("Character concepts extracted for region NPC generation:", characterConcepts);
@@ -5030,13 +5089,16 @@ async function expandRegionEntryStub(stubLocation) {
                     name: def.name,
                     description: def.description,
                     exits: def.exits,
-                    relativeLevel: def.relativeLevel
+                    relativeLevel: def.relativeLevel,
+                    numNpcs: def.numNpcs,
+                    numHostiles: def.numHostiles
                 })),
                 locationIds: [],
                 entranceLocationId: null,
                 parentRegionId: parentRegionId,
                 averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null,
-                secrets
+                secrets,
+                numImportantNPCs
             });
 
             regions.set(region.id, region);
@@ -6847,6 +6909,10 @@ function renderRegionNpcPrompt(region, options = {}) {
             console.warn('[Lorebook] Failed to get entries for region NPC generation:', err.message);
         }
 
+        const numImportantNPCs = Number.isFinite(Number(region?.numImportantNPCs))
+            ? Math.max(0, Math.min(20, Math.round(Number(region.numImportantNPCs))))
+            : null;
+
         return promptEnv.render(templateName, {
             region: region,
             allLocationsInRegion: options.allLocationsInRegion || [],
@@ -6855,7 +6921,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             bannedWords: options.bannedWords || getBannedNpcWords(),
             characterConcepts: options.characterConcepts || [],
             config: Globals.config || {},
-            lorebookEntries
+            lorebookEntries,
+            numImportantNPCs
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -12221,6 +12288,14 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
     }
 
     try {
+        const requestedNpcCount = Number.isFinite(Number(region?.numImportantNPCs))
+            ? Math.max(0, Math.min(20, Math.round(Number(region.numImportantNPCs))))
+            : null;
+        if (requestedNpcCount === 0) {
+            console.log(`Skipping important NPC generation for region ${region.name || region.id}: numImportantNPCs is 0.`);
+            return [];
+        }
+
         const regionLocationIds = Array.isArray(region.locationIds) ? [...region.locationIds] : [];
         const regionLocations = regionLocationIds
             .map(id => gameLocations.get(id))
@@ -14706,6 +14781,8 @@ function parseRegionStubLocations(xmlSnippet) {
         const name = getTagValue(node, 'name');
         const description = getTagValue(node, 'description') || '';
         const relativeLevelRaw = getTagValue(node, 'relativeLevel');
+        const numNpcsRaw = getTagValue(node, 'numNpcs');
+        const numHostilesRaw = getTagValue(node, 'numHostiles');
         const exitsParent = node.getElementsByTagName('exits')?.[0];
         const exits = exitsParent
             ? Array.from(exitsParent.getElementsByTagName('exit'))
@@ -14714,12 +14791,16 @@ function parseRegionStubLocations(xmlSnippet) {
             : [];
 
         const relativeLevel = Number.parseInt(relativeLevelRaw, 10);
+        const numNpcs = Number.parseInt(numNpcsRaw, 10);
+        const numHostiles = Number.parseInt(numHostilesRaw, 10);
 
         return {
             name: name || 'Unnamed Location',
             description,
             exits,
-            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0
+            relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
+            numNpcs: Number.isFinite(numNpcs) ? Math.max(0, Math.min(20, numNpcs)) : null,
+            numHostiles: Number.isFinite(numHostiles) ? Math.max(0, Math.min(20, numHostiles)) : null
         };
     }).filter(Boolean);
 }
@@ -15099,6 +15180,12 @@ async function instantiateRegionLocations({
         const computedBaseLevel = Number.isFinite(regionAverageLevel)
             ? clampLevel(regionAverageLevel + relativeLevel, regionAverageLevel)
             : null;
+        const numNpcs = Number.isFinite(Number(blueprint.numNpcs))
+            ? Math.max(0, Math.min(20, Math.round(Number(blueprint.numNpcs))))
+            : null;
+        const numHostiles = Number.isFinite(Number(blueprint.numHostiles))
+            ? Math.max(0, Math.min(20, Math.round(Number(blueprint.numHostiles))))
+            : null;
 
         const stub = new Location({
             name: blueprint.name,
@@ -15107,6 +15194,10 @@ async function instantiateRegionLocations({
             isStub: true,
             regionId: region.id,
             checkRegionId: false,
+            generationHints: {
+                numNpcs,
+                numHostiles
+            },
             stubMetadata: {
                 regionId: region.id,
                 regionName: region.name,
@@ -15129,7 +15220,9 @@ async function instantiateRegionLocations({
                 allowRename: false,
                 relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
                 regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
-                computedBaseLevel
+                computedBaseLevel,
+                numNpcs,
+                numHostiles
             }
         });
 

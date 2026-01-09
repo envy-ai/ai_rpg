@@ -4381,6 +4381,59 @@ module.exports = function registerApiRoutes(scope) {
                 });
             };
 
+            const pruneNpcNamesToDispositionLimits = (names, { friendlyLimit, hostileLimit } = {}) => {
+                if (!Array.isArray(names) || !names.length) {
+                    return [];
+                }
+
+                const resolvedFriendlyLimit = Number.isFinite(Number(friendlyLimit))
+                    ? Math.max(0, Number(friendlyLimit))
+                    : null;
+                const resolvedHostileLimit = Number.isFinite(Number(hostileLimit))
+                    ? Math.max(0, Number(hostileLimit))
+                    : null;
+
+                if (resolvedFriendlyLimit === null && resolvedHostileLimit === null) {
+                    console.warn('pruneNpcNamesToDispositionLimits: missing friendly/hostile limits; returning unmodified list.');
+                    return names.slice();
+                }
+
+                let friendlyCount = 0;
+                let hostileCount = 0;
+                const pruned = [];
+
+                for (const name of names) {
+                    if (!name || typeof name !== 'string') {
+                        continue;
+                    }
+
+                    const npc = typeof findActorByName === 'function' ? findActorByName(name) : null;
+                    if (!npc || !npc.isNPC) {
+                        console.warn(`pruneNpcNamesToDispositionLimits: unable to classify NPC '${name}'.`);
+                        continue;
+                    }
+
+                    if (npc.isHostile) {
+                        if (resolvedHostileLimit === null || hostileCount < resolvedHostileLimit) {
+                            pruned.push(name);
+                            hostileCount += 1;
+                        }
+                        continue;
+                    }
+
+                    if (resolvedFriendlyLimit === null || friendlyCount < resolvedFriendlyLimit) {
+                        pruned.push(name);
+                        friendlyCount += 1;
+                    }
+                }
+
+                if (pruned.length < names.length) {
+                    console.log(`Pruned NPC turn list from ${names.length} to ${pruned.length} based on friendly/hostile limits.`);
+                }
+
+                return pruned;
+            };
+
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
@@ -4412,6 +4465,10 @@ module.exports = function registerApiRoutes(scope) {
                 const raw = await LLMClient.chatCompletion(requestOptions);
                 const names = parseNpcQueueResponse(raw);
                 const filteredNames = filterNpcNamesToContext(names, locationOverride);
+                const limitedNames = pruneNpcNamesToDispositionLimits(filteredNames, {
+                    friendlyLimit: maxFriendlyNpcsToAct,
+                    hostileLimit: maxHostileNpcsToAct
+                });
 
                 logNextNpcListPrompt({
                     systemPrompt: parsedTemplate.systemPrompt,
@@ -4419,7 +4476,7 @@ module.exports = function registerApiRoutes(scope) {
                     responseText: raw
                 });
 
-                return { raw, names: filteredNames };
+                return { raw, names: limitedNames };
             } catch (error) {
                 console.warn('Failed to run next NPC list prompt:', error.message);
                 return { raw: '', names: [] };
@@ -5979,6 +6036,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const actionText = plan.description;
+
+                    const npcActionLocationId = requireLocationId(npcLocation?.id, 'npc action entry');
+                    pushChatEntry({
+                        role: npc.name || npcName,
+                        content: actionText,
+                        type: 'npc-action',
+                        isNpcTurn: true,
+                        locationId: npcActionLocationId
+                    }, entryCollector, npcActionLocationId);
 
                     if (stream && stream.isEnabled) {
                         stream.status('npc_turn:attack_check', {
@@ -9420,6 +9486,17 @@ module.exports = function registerApiRoutes(scope) {
                     exit.destinationIsStub = destinationIsStub;
                     exit.destinationIsRegionEntryStub = destinationIsRegionEntryStub;
 
+                    const pendingStub = destinationRegionId ? pendingRegionStubs.get(destinationRegionId) : null;
+                    const stubMetadata = destinationLocation?.stubMetadata || null;
+                    const relativeLevelValue = Number.isFinite(pendingStub?.relativeLevel)
+                        ? pendingStub.relativeLevel
+                        : (Number.isFinite(stubMetadata?.targetRegionRelativeLevel)
+                            ? stubMetadata.targetRegionRelativeLevel
+                            : (Number.isFinite(stubMetadata?.relativeLevel) ? stubMetadata.relativeLevel : null));
+                    if (Number.isFinite(relativeLevelValue)) {
+                        exit.relativeLevel = relativeLevelValue;
+                    }
+
                     if (!exit.destinationName) {
                         exit.destinationName = exit.name
                             || exit.relativeName
@@ -11778,7 +11855,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function syncStubPresentationWithExit(stubLocation, { name: rawName, description: rawDescription } = {}) {
+        function syncStubPresentationWithExit(stubLocation, { name: rawName, description: rawDescription, relativeLevel } = {}) {
             if (!stubLocation || !stubLocation.isStub) {
                 return;
             }
@@ -11786,6 +11863,9 @@ module.exports = function registerApiRoutes(scope) {
             const normalizedName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
             const normalizedDescription = typeof rawDescription === 'string' && rawDescription.trim()
                 ? rawDescription.trim()
+                : null;
+            const normalizedRelativeLevel = Number.isFinite(relativeLevel)
+                ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
                 : null;
 
             if (normalizedName && stubLocation.name !== normalizedName) {
@@ -11818,6 +11898,14 @@ module.exports = function registerApiRoutes(scope) {
                     metadata.targetRegionDescription = normalizedDescription;
                     metadataChanged = true;
                 }
+                if (normalizedRelativeLevel !== null && metadata.targetRegionRelativeLevel !== normalizedRelativeLevel) {
+                    metadata.targetRegionRelativeLevel = normalizedRelativeLevel;
+                    metadataChanged = true;
+                }
+                if (normalizedRelativeLevel !== null && metadata.relativeLevel !== normalizedRelativeLevel) {
+                    metadata.relativeLevel = normalizedRelativeLevel;
+                    metadataChanged = true;
+                }
 
                 const targetRegionId = metadata.targetRegionId || metadata.regionId || null;
                 if (targetRegionId && pendingRegionStubs.has(targetRegionId)) {
@@ -11831,6 +11919,10 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     if (normalizedDescription && updated.description !== normalizedDescription) {
                         updated.description = normalizedDescription;
+                        pendingChanged = true;
+                    }
+                    if (normalizedRelativeLevel !== null && updated.relativeLevel !== normalizedRelativeLevel) {
+                        updated.relativeLevel = normalizedRelativeLevel;
                         pendingChanged = true;
                     }
 
@@ -11990,6 +12082,7 @@ module.exports = function registerApiRoutes(scope) {
                     locationId: targetLocationIdRaw,
                     parentRegionId: parentRegionIdRaw,
                     vehicleType: vehicleTypeRaw,
+                    relativeLevel: relativeLevelRaw,
                     clientId: initiatorClientIdRaw
                 } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
@@ -12010,6 +12103,17 @@ module.exports = function registerApiRoutes(scope) {
                 const requestedParentRegionId = typeof parentRegionIdRaw === 'string' && parentRegionIdRaw.trim()
                     ? parentRegionIdRaw.trim()
                     : null;
+                let relativeLevel = null;
+                if (relativeLevelRaw !== undefined && relativeLevelRaw !== null && relativeLevelRaw !== '') {
+                    const parsedRelativeLevel = Number(relativeLevelRaw);
+                    if (!Number.isFinite(parsedRelativeLevel)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Relative level must be a number.'
+                        });
+                    }
+                    relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelativeLevel)));
+                }
 
                 const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
 
@@ -12045,7 +12149,8 @@ module.exports = function registerApiRoutes(scope) {
                         originLocation,
                         parentRegionId,
                         vehicleType: normalizedVehicleType,
-                        isVehicle: isVehicleExit
+                        isVehicle: isVehicleExit,
+                        relativeLevel
                     });
 
                     if (!regionStub) {
@@ -12065,7 +12170,8 @@ module.exports = function registerApiRoutes(scope) {
 
                     syncStubPresentationWithExit(regionStub, {
                         name: regionStubName,
-                        description: regionStubDescription
+                        description: regionStubDescription,
+                        relativeLevel
                     });
 
                     createdInfo = {
@@ -12126,7 +12232,8 @@ module.exports = function registerApiRoutes(scope) {
 
                     syncStubPresentationWithExit(destinationLocation, {
                         name: exitName,
-                        description: exitDescription
+                        description: exitDescription,
+                        relativeLevel
                     });
 
                     createdInfo = {
@@ -17783,6 +17890,33 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             res.json(response);
+        });
+
+        app.post('/api/prompts/:promptId/cancel', (req, res) => {
+            try {
+                const promptIdRaw = req.params.promptId;
+                const promptId = typeof promptIdRaw === 'string' ? promptIdRaw.trim() : '';
+                if (!promptId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Prompt id is required.'
+                    });
+                }
+
+                LLMClient.cancelPrompt(promptId);
+
+                return res.json({
+                    success: true,
+                    message: 'Prompt cancelled.'
+                });
+            } catch (error) {
+                const message = error?.message || 'Failed to cancel prompt.';
+                const status = message.includes('not active') ? 404 : 400;
+                return res.status(status).json({
+                    success: false,
+                    error: message
+                });
+            }
         });
 
         // API endpoint to cancel a job

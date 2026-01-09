@@ -227,14 +227,29 @@ class Location {
         throw new Error('Stub expansion missing valid base level in AI response');
       }
 
+      const existingHints = existingLocation?.generationHints || {};
+      const stubHints = existingLocation?.stubMetadata || {};
+      const resolveHint = (...values) => {
+        for (const value of values) {
+          if (value === null || value === undefined || value === '') {
+            continue;
+          }
+          const numeric = Number(value);
+          if (Number.isFinite(numeric)) {
+            return numeric;
+          }
+        }
+        return null;
+      };
+
       const promotionData = {
         description: locationData.description,
         baseLevel: parsedBaseLevel,
         generationHints: {
-          numItems: locationData.numItems,
-          numScenery: locationData.numScenery,
-          numNpcs: locationData.numNpcs,
-          numHostiles: locationData.numHostiles
+          numItems: resolveHint(locationData.numItems, existingHints.numItems, stubHints.numItems),
+          numScenery: resolveHint(locationData.numScenery, existingHints.numScenery, stubHints.numScenery),
+          numNpcs: resolveHint(locationData.numNpcs, existingHints.numNpcs, stubHints.numNpcs),
+          numHostiles: resolveHint(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles)
         },
         randomEvents: randomEventsProvided ? randomEvents : undefined,
         npcIds: existingLocation.npcIds,

@@ -928,6 +928,10 @@
                     <label for="newExitVehicle">Vehicle</label>
                     <input type="text" id="newExitVehicle" name="vehicle" placeholder="Optional: e.g. shuttle, portal, elevator">
                 </div>
+                <div class="new-exit-field" id="newExitRelativeLevelGroup" hidden>
+                    <label for="newExitRelativeLevel">Relative Level</label>
+                    <input type="number" id="newExitRelativeLevel" name="relativeLevel" min="-10" max="10" step="1" placeholder="0">
+                </div>
                 <div class="new-exit-field new-exit-field--checkbox" id="newExitChildRegionGroup" hidden>
                     <label class="modal-checkbox" for="newExitChildRegion">
                         <input type="checkbox" id="newExitChildRegion" name="childRegion">
@@ -4693,6 +4697,8 @@
         const newExitDescriptionInput = document.getElementById('newExitDescription');
         const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
         const newExitVehicleInput = document.getElementById('newExitVehicle');
+        const newExitRelativeLevelGroup = document.getElementById('newExitRelativeLevelGroup');
+        const newExitRelativeLevelInput = document.getElementById('newExitRelativeLevel');
         const newExitStatus = document.getElementById('newExitStatus');
         const newExitCancelBtn = document.getElementById('newExitCancelBtn');
         const newExitSaveBtn = document.getElementById('newExitSaveBtn');
@@ -8541,6 +8547,19 @@
             return !selectedLocationId;
         }
 
+        function shouldShowExitRelativeLevelField() {
+            const selectedRegionId = newExitRegionSelect?.value?.trim() || '';
+            const creatingNewRegion = !selectedRegionId;
+            if (!editingExitContext) {
+                return creatingNewRegion;
+            }
+            const exit = editingExitContext?.exit || null;
+            const regionOption = selectedRegionId ? getNewExitRegionOption(selectedRegionId) : null;
+            const regionIsStub = Boolean(regionOption?.isStub);
+            const exitIsStub = Boolean(exit?.destinationIsRegionEntryStub || (exit?.destinationRegion && !exit?.destinationRegionExpanded));
+            return creatingNewRegion || regionIsStub || exitIsStub;
+        }
+
         function syncNewExitFieldVisibility() {
             const selectedRegionId = newExitRegionSelect?.value?.trim() || '';
             const selectedLocationId = newExitLocationSelect?.value?.trim() || '';
@@ -8568,6 +8587,16 @@
                     newExitVehicleGroup.setAttribute('hidden', '');
                     if (newExitVehicleInput) {
                         newExitVehicleInput.value = '';
+                    }
+                }
+            }
+            if (newExitRelativeLevelGroup) {
+                if (shouldShowExitRelativeLevelField()) {
+                    newExitRelativeLevelGroup.removeAttribute('hidden');
+                } else {
+                    newExitRelativeLevelGroup.setAttribute('hidden', '');
+                    if (newExitRelativeLevelInput) {
+                        newExitRelativeLevelInput.value = '';
                     }
                 }
             }
@@ -8649,6 +8678,12 @@
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
             }
+            if (newExitRelativeLevelGroup) {
+                newExitRelativeLevelGroup.setAttribute('hidden', '');
+            }
+            if (newExitRelativeLevelInput) {
+                newExitRelativeLevelInput.value = '';
+            }
             if (newExitChildRegionGroup) {
                 newExitChildRegionGroup.setAttribute('hidden', '');
             }
@@ -8725,6 +8760,12 @@
                     if (newExitVehicleInput) {
                         newExitVehicleInput.value = exit.vehicleType || '';
                     }
+                    if (newExitRelativeLevelInput) {
+                        const relativeLevelValue = Number(exit.relativeLevel);
+                        newExitRelativeLevelInput.value = Number.isFinite(relativeLevelValue)
+                            ? Math.round(relativeLevelValue)
+                            : '';
+                    }
                 } else {
                     handleNewExitRegionChange();
                 }
@@ -8778,6 +8819,21 @@
             const name = newExitNameInput?.value?.trim() || '';
             const description = newExitDescriptionInput?.value?.trim() || '';
             const vehicleTypeInput = newExitVehicleInput?.value?.trim() || '';
+            const relativeLevelRaw = newExitRelativeLevelInput?.value;
+            let relativeLevelValue = null;
+
+            if (newExitRelativeLevelGroup && !newExitRelativeLevelGroup.hasAttribute('hidden')) {
+                const trimmedRelativeLevel = typeof relativeLevelRaw === 'string' ? relativeLevelRaw.trim() : '';
+                if (trimmedRelativeLevel) {
+                    const parsedRelativeLevel = Number(trimmedRelativeLevel);
+                    if (!Number.isFinite(parsedRelativeLevel)) {
+                        setNewExitStatus('Relative level must be a number.', 'error');
+                        newExitRelativeLevelInput?.focus();
+                        return;
+                    }
+                    relativeLevelValue = parsedRelativeLevel;
+                }
+            }
 
             if (nameFieldsVisible && !name) {
                 setNewExitStatus('Please provide a name for the exit.', 'error');
@@ -8858,6 +8914,9 @@
             }
             if (vehicleTypeInput) {
                 payload.vehicleType = vehicleTypeInput;
+            }
+            if (relativeLevelValue !== null) {
+                payload.relativeLevel = relativeLevelValue;
             }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
@@ -9033,6 +9092,12 @@
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
+            }
+            if (newExitRelativeLevelGroup) {
+                newExitRelativeLevelGroup.setAttribute('hidden', '');
+            }
+            if (newExitRelativeLevelInput) {
+                newExitRelativeLevelInput.value = '';
             }
             if (newExitChildRegionGroup) {
                 newExitChildRegionGroup.setAttribute('hidden', '');

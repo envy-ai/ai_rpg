@@ -2913,6 +2913,11 @@ body.dark .thing-toggle-hint {
   margin-left: auto;
   text-align: right;
 }
+.message.npc-message {
+  background: rgba(120, 220, 140, 0.35);
+  margin-left: auto;
+  text-align: right;
+}
 .message.ai-message {
   background: rgba(255, 255, 255, 0.2);
   -webkit-backdrop-filter: blur(10px);
@@ -3404,6 +3409,32 @@ body.dark .thing-toggle-hint {
 }
 .prompt-progress-table tbody tr:hover {
   background: rgba(59, 130, 246, 0.08);
+}
+.prompt-progress-table tbody tr.prompt-progress-canceling {
+  opacity: 0.6;
+}
+.prompt-progress-table .prompt-progress-cancel-header {
+  width: 28px;
+}
+.prompt-progress-table .prompt-progress-cancel {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  background: transparent;
+  color: #f87171;
+  font-weight: bold;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.3s ease;
+}
+.prompt-progress-table .prompt-progress-cancel:hover {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
+}
+.prompt-progress-table .prompt-progress-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .form-actions {

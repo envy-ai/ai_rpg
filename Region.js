@@ -22,6 +22,7 @@ class Region {
   #statusEffects;
   #averageLevel;
   #relativeLevel;
+  #numImportantNPCs;
   #lastVisitedTime = null;  // Decimal hours since last visit by player.
   #randomEvents = [];
   #characterConcepts = [];
@@ -36,7 +37,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [] } = {}) {
+  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -69,6 +70,7 @@ class Region {
       ? Math.max(1, Math.min(20, Math.round(averageLevel)))
       : null;
     this.#relativeLevel = null; // to be set externally if needed
+    this.#numImportantNPCs = Region.#normalizeImportantNpcCount(numImportantNPCs);
     this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
     this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
     this.#secrets = Array.isArray(secrets) ? [...secrets] : [];
@@ -119,13 +121,40 @@ class Region {
       }
     }
 
+    const normalizeCount = (value) => {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return null;
+      }
+      return Math.max(0, Math.min(20, Math.round(numeric)));
+    };
+
+    const numNpcs = normalizeCount(blueprint.numNpcs);
+    const numHostiles = normalizeCount(blueprint.numHostiles);
+
     return {
       name,
       description,
       exits,
       aliases,
-      relativeLevel
+      relativeLevel,
+      numNpcs,
+      numHostiles
     };
+  }
+
+  static #normalizeImportantNpcCount(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, Math.min(20, Math.round(numeric)));
   }
 
   static get(id) {
@@ -180,6 +209,7 @@ class Region {
       characterConcepts: Array.isArray(data.characterConcepts) ? data.characterConcepts : [],
       enemyConcepts: Array.isArray(data.enemyConcepts) ? data.enemyConcepts : [],
       secrets: Array.isArray(data.secrets) ? data.secrets : [],
+      numImportantNPCs: data.numImportantNPCs ?? null,
     });
   }
 
@@ -206,6 +236,7 @@ class Region {
     let regionName = null;
     let regionDescription = null;
     let regionLevel = null;
+    let numImportantNPCs = null;
     const characterConcepts = [];
     const enemyConcepts = [];
     const secrets = [];
@@ -224,6 +255,8 @@ class Region {
         if (Number.isFinite(parsedLevel)) {
           regionLevel = Math.max(1, Math.min(20, Math.round(parsedLevel)));
         }
+      } else if (tag === 'numimportantnpcs') {
+        numImportantNPCs = Region.#normalizeImportantNpcCount(child.textContent.trim());
       } else if (tag === 'characterconcept' || tag === 'characterconcepts') {
         if (tag === 'characterconcepts') {
           const conceptNodes = Array.from(child.getElementsByTagName('concept'));
@@ -300,8 +333,12 @@ class Region {
       const locNameNode = findDirectChild('name');
       const locDescriptionNode = findDirectChild('description');
       const relativeLevelNode = findDirectChild('relativelevel');
+      const numNpcsNode = findDirectChild('numnpcs');
+      const numHostilesNode = findDirectChild('numhostiles');
       const exitsNode = findDirectChild('exits');
       let relativeLevel = null;
+      let numNpcs = null;
+      let numHostiles = null;
 
       let locName = locNameNode ? locNameNode.textContent.trim() : null;
       if (!locName && attrName) {
@@ -317,6 +354,20 @@ class Region {
         const parsedRelative = Number(relativeLevelNode.textContent.trim());
         if (Number.isFinite(parsedRelative)) {
           relativeLevel = Math.max(-10, Math.min(10, Math.round(parsedRelative)));
+        }
+      }
+
+      if (numNpcsNode) {
+        const parsedNumNpcs = Number(numNpcsNode.textContent.trim());
+        if (Number.isFinite(parsedNumNpcs)) {
+          numNpcs = Math.max(0, Math.min(20, Math.round(parsedNumNpcs)));
+        }
+      }
+
+      if (numHostilesNode) {
+        const parsedNumHostiles = Number(numHostilesNode.textContent.trim());
+        if (Number.isFinite(parsedNumHostiles)) {
+          numHostiles = Math.max(0, Math.min(20, Math.round(parsedNumHostiles)));
         }
       }
 
@@ -340,7 +391,9 @@ class Region {
         description: locDescription,
         exits: exitEntries,
         aliases,
-        relativeLevel
+        relativeLevel,
+        numNpcs,
+        numHostiles
       });
     });
 
@@ -359,7 +412,8 @@ class Region {
       randomEvents,
       characterConcepts,
       enemyConcepts,
-      secrets
+      secrets,
+      numImportantNPCs
     });
   }
 
@@ -518,6 +572,15 @@ class Region {
     return [...this.#locationIds];
   }
 
+  get numImportantNPCs() {
+    return this.#numImportantNPCs;
+  }
+
+  set numImportantNPCs(value) {
+    this.#numImportantNPCs = Region.#normalizeImportantNpcCount(value);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   get relativeLevel() {
     return this.#relativeLevel;
   }
@@ -641,6 +704,7 @@ class Region {
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),
       averageLevel: this.#averageLevel,
+      numImportantNPCs: this.#numImportantNPCs,
       randomEvents: [...this.#randomEvents],
       characterConcepts: [...this.#characterConcepts],
       enemyConcepts: [...this.#enemyConcepts],
