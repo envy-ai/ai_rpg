@@ -241,6 +241,13 @@ class Location {
         }
         return null;
       };
+      const resolveHintPreserveExisting = (parsedValue, existingValue, stubValue) => {
+        const preserved = resolveHint(existingValue, stubValue);
+        if (preserved !== null) {
+          return preserved;
+        }
+        return resolveHint(parsedValue);
+      };
 
       const promotionData = {
         description: locationData.description,
@@ -248,8 +255,8 @@ class Location {
         generationHints: {
           numItems: resolveHint(locationData.numItems, existingHints.numItems, stubHints.numItems),
           numScenery: resolveHint(locationData.numScenery, existingHints.numScenery, stubHints.numScenery),
-          numNpcs: resolveHint(locationData.numNpcs, existingHints.numNpcs, stubHints.numNpcs),
-          numHostiles: resolveHint(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles)
+          numNpcs: resolveHintPreserveExisting(locationData.numNpcs, existingHints.numNpcs, stubHints.numNpcs),
+          numHostiles: resolveHintPreserveExisting(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles)
         },
         randomEvents: randomEventsProvided ? randomEvents : undefined,
         npcIds: existingLocation.npcIds,

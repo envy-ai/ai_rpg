@@ -13085,6 +13085,8 @@ async function renderLocationGeneratorPrompt(options = {}) {
             locationPurpose: options.locationPurpose ?? null,
             relativeLevel: options.relativeLevel ?? null,
             regionAverageLevel: options.regionAverageLevel ?? null,
+            stubNumNpcs: options.stubNumNpcs ?? null,
+            stubNumHostiles: options.stubNumHostiles ?? null,
             entryProse,
             originLocationName: isStubExpansion ? (options.originLocationName || null) : null,
             originDescription: isStubExpansion ? (options.originDescription || null) : null,
@@ -14026,6 +14028,9 @@ async function generateLocationFromPrompt(options = {}) {
         const templateOverrides = { ...promptOverrides };
 
         if (isStubExpansion) {
+            const stubNumNpcs = stubLocation?.generationHints?.numNpcs ?? stubMetadata.numNpcs ?? null;
+            const stubNumHostiles = stubLocation?.generationHints?.numHostiles ?? stubMetadata.numHostiles ?? null;
+
             if (!templateOverrides.shortDescription && stubMetadata.shortDescription) {
                 templateOverrides.shortDescription = stubMetadata.shortDescription;
             }
@@ -14047,6 +14052,12 @@ async function generateLocationFromPrompt(options = {}) {
             }
             if (stubMetadata.regionAverageLevel !== undefined && templateOverrides.regionAverageLevel === undefined) {
                 templateOverrides.regionAverageLevel = stubMetadata.regionAverageLevel;
+            }
+            if (templateOverrides.stubNumNpcs === undefined) {
+                templateOverrides.stubNumNpcs = stubNumNpcs;
+            }
+            if (templateOverrides.stubNumHostiles === undefined) {
+                templateOverrides.stubNumHostiles = stubNumHostiles;
             }
         } else if (!templateOverrides.playerLevel && currentPlayer?.level) {
             templateOverrides.playerLevel = currentPlayer.level;

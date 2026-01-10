@@ -749,6 +749,10 @@ class Events {
             console.info('Quest checks skipped: event_checks.enabled is false.');
             return null;
         }
+        if (config?.quest_checks?.enabled !== true) {
+            console.info('Quest checks skipped: quest_checks.enabled is not true.');
+            return null;
+        }
 
         const promptEnv = this._deps.promptEnv;
         const parseXMLTemplate = this._deps.parseXMLTemplate;

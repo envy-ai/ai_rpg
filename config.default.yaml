@@ -179,6 +179,8 @@ npc_turns:
   npcTurnFrequency: 0.3
 quests:
   enabled: true
+quest_checks:
+  enabled: true
 combat_npc_turns:
   enabled: true
   maxNpcsToAct: 2

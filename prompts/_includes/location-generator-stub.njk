@@ -24,10 +24,7 @@ GUIDELINES:
 - Reference sensory details and story hooks that bridge to and from the origin location.
 - Mention at least one notable feature that hints at additional unexplored directions.
 - Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.
-- For the number of npcs, items, scenery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. 0 to 3 is usually normal (except for hostiles, which are often 0 in safe territory).
-- For certain locations (rooms in safe but abandoned or vacant structures), it may make sense for them to be empty of NPCs. Just set numNpcs to 0 in that case.
-- In more dangerous or hostile locations, it may make sense to have more hostiles. Adjust numHostiles accordingly. This is particularly true for places that are traditionally unsafe in RPGs (dungeons, monster lairs, bandit hideouts, ruins, and so on). These types of locations will often have 2 or more hostiles. 
-- Wild areas will often have a sparse mix of hostiles and friendly NPCs, so consider balancing numNpcs and numHostiles appropriately.
+- The number of NPCs and hostiles should reflect the type of location as well as the current region. For instance, an upscale tavern might have 3-4 NPCs and 0 hostiles, while a seedy tavern may have 2 NPCs and 2 hostiles, and so on. A a deserted cave might have 0 NPCs and 1-3 hostiles. The player's residence should typically have 0 NPCs and 0 hostiles. An abandoned structure region might have 1 or 2 NPCs distributed among all locations, so consider the region when choosing these numbers. Conversly, a bustling city region might have many NPCs distributed among its locations, with crowded places having 4.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 
 {% if config.character_gen_instructions %}
@@ -44,10 +41,10 @@ Return ONLY the following fields, in this format:
   <name><!-- A short name or title for the location --></name>
   <description><!-- 1-2 paragraphs of description --></description>
   <relativeLevel><!-- integer from -3 to 3, indicating the difficulty compared to the rest of the region --></relativeLevel>
-  {#<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>#}
+  {% if stubNumNpcs is none %}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
+  {% if stubNumHostiles is none %}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
   <numItems><!-- Integer from 0 to 4, indicating how many items typically can be found in this location --></numItems>
   <numScenery><!-- Integer from 2 to 4, indicating how many notable scenery features typically can be found in this location --></numScenery>
-  {#<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>#}
   <randomStoryEvents>
     <!-- Briefly describe 5 random story events that are specifically relevant to this location. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral. -->
     <event><!-- 1-2 sentence description of an event --></event>
@@ -64,4 +61,3 @@ Return ONLY the following fields, in this format:
     - <!-- 1-2 sentence description of an enemy concept -->
   </enemyConcepts>
 </location>
-

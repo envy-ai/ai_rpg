@@ -30,7 +30,7 @@ Based on these rules, determine whether each objective in the following quests i
 
 Note that characters planning to complete an objective, even in the immediate future, does not constitute completing it.
 
-Respond in the following format:
+Respond in the following format, considering ONLY the last 3 entries in the game history for determining whether each objective is complete:
 
 <quests>
   <quest>
@@ -42,7 +42,7 @@ Respond in the following format:
         <index><!-- Index of the objective --></index>
         <shortDescription><!-- Summary of the objective in as few words as possible --></shortDescription>
         <statusReason><!-- Brief explanation of why the objective is or isn't complete, 10 words or less --></statusReason>
-        <completed><!-- true if the objective is complete, false otherwise --></completed>
+        <completed><!-- true if the objective is complete, false otherwise. Only enter true here if you have a high degree of confidence that the objective is complete. --></completed>
       </objective>
       <!-- Repeat for each objective in the quest -->
     </objectives>

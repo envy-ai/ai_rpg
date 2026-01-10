@@ -17470,6 +17470,8 @@ module.exports = function registerApiRoutes(scope) {
                 const replies = [];
                 const interaction = {
                     user: { id: typeof userId === 'string' ? userId : null },
+                    chatHistory,
+                    performGameSave,
                     reply(payload) {
                         replies.push(payload);
                         return Promise.resolve();
