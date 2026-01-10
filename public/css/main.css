@@ -1995,6 +1995,11 @@ p:not(:last-child) {
   opacity: 0.5;
 }
 
+.location-entity-card.is-npc.is-dragging {
+  opacity: 0.7;
+  cursor: grabbing;
+}
+
 .location-entity-icon,
 .inventory-icon {
   width: 94px;
@@ -2397,6 +2402,11 @@ body.dark .thing-toggle-hint {
           backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.party-card.is-dragging {
+  opacity: 0.7;
+  cursor: grabbing;
 }
 
 .party-portrait {
@@ -5614,6 +5624,17 @@ body.modal-open {
   outline: 2px dashed rgba(56, 189, 248, 0.7);
   outline-offset: 2px;
   background: rgba(56, 189, 248, 0.08);
+}
+
+.party-drop-target {
+  position: relative;
+  transition: outline-color 120ms ease, background-color 120ms ease;
+}
+
+.party-drop-target.is-drop-hover {
+  outline: 2px dashed rgba(34, 197, 94, 0.7);
+  outline-offset: 2px;
+  background: rgba(34, 197, 94, 0.08);
 }
 
 .npc-view-empty {

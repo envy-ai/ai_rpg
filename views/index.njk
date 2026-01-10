@@ -2453,6 +2453,11 @@
                 return;
             }
 
+            registerPartyDropTarget(container, 'recruit');
+            if (emptyState) {
+                registerPartyDropTarget(emptyState, 'recruit');
+            }
+
             const safeMembers = Array.isArray(members)
                 ? members.filter(member => member && typeof member === 'object')
                 : [];
@@ -2534,6 +2539,8 @@
                 nameEl.textContent = member.name || 'Unknown';
                 card.appendChild(portrait);
                 card.appendChild(nameEl);
+
+                registerNpcPartyDragSource(card, member, 'party');
 
                 const rawDescription = member?.description || member?.shortDescription || '';
                 const normalizedDescription = rawDescription
@@ -7787,6 +7794,181 @@
             }
         }
 
+        let draggedPartyNpc = null;
+
+        function resetPartyDragState() {
+            draggedPartyNpc = null;
+            document.querySelectorAll('.party-drop-target.is-drop-hover').forEach(el => {
+                el.classList.remove('is-drop-hover');
+            });
+        }
+
+        function isNpcInParty(npcId) {
+            if (!npcId) {
+                return false;
+            }
+            const memberList = Array.isArray(window.currentPlayerData?.partyMembers)
+                ? window.currentPlayerData.partyMembers
+                : [];
+            const targetId = String(npcId);
+            return memberList.some(member => {
+                if (!member) {
+                    return false;
+                }
+                if (typeof member === 'string' || typeof member === 'number') {
+                    return String(member) === targetId;
+                }
+                if (typeof member === 'object' && member.id) {
+                    return String(member.id) === targetId;
+                }
+                return false;
+            });
+        }
+
+        function resolveDraggedNpcRecord(dragState) {
+            if (!dragState) {
+                throw new Error('No character is being dragged.');
+            }
+            const rawId = dragState.npcId || dragState.npc?.id;
+            if (!rawId) {
+                throw new Error('Unable to resolve dragged character ID.');
+            }
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            const stringId = String(rawId);
+            const cached = npcDataCache
+                ? (npcDataCache.get(rawId) || npcDataCache.get(stringId))
+                : null;
+            const record = cached || dragState.npc || null;
+            if (!record) {
+                throw new Error(`Unable to resolve character data for ${stringId}.`);
+            }
+            return { record, npcId: stringId };
+        }
+
+        function registerNpcPartyDragSource(card, npc, source) {
+            if (!card || !npc || !npc.id) {
+                return;
+            }
+
+            if (!npc.isNPC) {
+                card.removeAttribute('draggable');
+                return;
+            }
+
+            if (card.dataset.partyDragAttached === 'true') {
+                return;
+            }
+
+            const npcId = String(npc.id);
+            card.dataset.partyDragAttached = 'true';
+            card.dataset.partyDragNpcId = npcId;
+            card.dataset.partyDragSource = source || 'party';
+            card.draggable = true;
+
+            card.addEventListener('dragstart', (event) => {
+                draggedPartyNpc = {
+                    npcId,
+                    source: source || 'party',
+                    npc,
+                    element: card
+                };
+                if (event.dataTransfer) {
+                    event.dataTransfer.setData('text/plain', npcId);
+                    event.dataTransfer.effectAllowed = 'move';
+                }
+                card.classList.add('is-dragging');
+            });
+
+            card.addEventListener('dragend', () => {
+                card.classList.remove('is-dragging');
+                resetPartyDragState();
+            });
+        }
+
+        function registerPartyDropTarget(element, mode) {
+            if (!element) {
+                return;
+            }
+            const normalizedMode = mode === 'dismiss' ? 'dismiss' : 'recruit';
+            if (element.dataset.partyDropTarget) {
+                if (element.dataset.partyDropTarget !== normalizedMode) {
+                    console.warn('Party drop target already registered with a different mode.');
+                }
+                return;
+            }
+
+            element.dataset.partyDropTarget = normalizedMode;
+            element.classList.add('party-drop-target');
+
+            const shouldHandleDrag = () => {
+                if (!draggedPartyNpc) {
+                    return false;
+                }
+                if (normalizedMode === 'recruit') {
+                    return draggedPartyNpc.source === 'location';
+                }
+                if (normalizedMode === 'dismiss') {
+                    return draggedPartyNpc.source === 'party';
+                }
+                return false;
+            };
+
+            element.addEventListener('dragover', (event) => {
+                if (!shouldHandleDrag()) {
+                    return;
+                }
+                event.preventDefault();
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragenter', (event) => {
+                if (!shouldHandleDrag()) {
+                    return;
+                }
+                event.preventDefault();
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragleave', () => {
+                element.classList.remove('is-drop-hover');
+            });
+
+            element.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                element.classList.remove('is-drop-hover');
+
+                if (!shouldHandleDrag()) {
+                    resetPartyDragState();
+                    return;
+                }
+
+                try {
+                    const { record, npcId } = resolveDraggedNpcRecord(draggedPartyNpc);
+                    if (normalizedMode === 'recruit') {
+                        if (isNpcInParty(npcId)) {
+                            window.alert('That character is already in the party.');
+                            return;
+                        }
+                        await recruitNpcToParty(record, { card: draggedPartyNpc.element || null });
+                    } else if (normalizedMode === 'dismiss') {
+                        if (!isNpcInParty(npcId)) {
+                            window.alert('That character is not in the party.');
+                            return;
+                        }
+                        await dismissNpcFromParty(record, { card: draggedPartyNpc.element || null });
+                    }
+                } catch (error) {
+                    console.warn('Party drag/drop failed:', error);
+                    window.alert(error?.message || 'Unable to update party membership.');
+                } finally {
+                    resetPartyDragState();
+                }
+            });
+        }
+
         async function recruitNpcToParty(npc, { card = null } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
@@ -12672,6 +12854,10 @@
             window.currentNpcData = npcDataCache;
             const npcMenuState = { openMenu: null, trigger: null, card: null };
 
+            if (locationNPCs) {
+                registerPartyDropTarget(locationNPCs, 'dismiss');
+            }
+
             function closeNpcContextMenu() {
                 if (npcMenuState.openMenu) {
                     npcMenuState.openMenu.classList.remove('is-open');
@@ -14954,6 +15140,8 @@
                                     });
                                 }
 
+                                registerNpcPartyDragSource(card, npc, 'location');
+
                                 locationNPCs.appendChild(card);
 
                                 if (npc && npc.id) {
@@ -16083,6 +16271,13 @@
                 ? window.currentNpcData
                 : (window.currentNpcData = new Map());
 
+            if (partyGrid) {
+                registerPartyDropTarget(partyGrid, 'recruit');
+            }
+            if (emptyState) {
+                registerPartyDropTarget(emptyState, 'recruit');
+            }
+
             function renderParty(members = []) {
                 if (!partyGrid || !emptyState || !countLabel) {
                     return;
@@ -16219,6 +16414,8 @@
                     card.appendChild(role);
                     card.appendChild(meta);
                     card.appendChild(stats);
+
+                    registerNpcPartyDragSource(card, member, 'party');
 
                     if (typeof window.registerInventoryDropTarget === 'function') {
                         window.registerInventoryDropTarget(card, { ownerId: member.id, ownerType: 'npc' });
