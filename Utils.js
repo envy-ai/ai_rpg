@@ -31,6 +31,44 @@ class Utils {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
   }
 
+  static getMinimumUnmitigatedWeaponDamage(rarity, level) {
+    const normalizedRarity = typeof rarity === 'string' ? rarity.trim() : '';
+    if (!normalizedRarity) {
+      throw new TypeError('Utils.getMinimumUnmitigatedWeaponDamage requires a weapon rarity key.');
+    }
+
+    const normalizedLevel = Number(level);
+    if (!Number.isFinite(normalizedLevel)) {
+      throw new TypeError('Utils.getMinimumUnmitigatedWeaponDamage requires a numeric weapon level.');
+    }
+    if (normalizedLevel < 1) {
+      throw new RangeError('Utils.getMinimumUnmitigatedWeaponDamage requires a level of at least 1.');
+    }
+
+    const Thing = this.#getThingModule();
+    const rarityDefinition = Thing.getRarityDefinition(normalizedRarity, { fallbackToDefault: false });
+    if (!rarityDefinition) {
+      throw new Error(`Unknown weapon rarity "${normalizedRarity}".`);
+    }
+
+    const damageMultiplier = rarityDefinition.damageMultiplier;
+    if (!Number.isFinite(damageMultiplier)) {
+      throw new Error(`Weapon rarity "${normalizedRarity}" is missing a damage multiplier.`);
+    }
+
+    const baseWeaponDamage = Number(Globals.config.baseWeaponDamage);
+    if (!Number.isFinite(baseWeaponDamage)) {
+      throw new Error('Globals.config.baseWeaponDamage must be a finite number.');
+    }
+
+    const baseDamage = baseWeaponDamage + normalizedLevel * damageMultiplier;
+    const hitDegreeMultiplier = 0.75;
+    const preRoundedDamage = baseDamage * hitDegreeMultiplier;
+    const roundedDamageComponent = Math.round(preRoundedDamage);
+    const constantBonus = 1;
+    return constantBonus + roundedDamageComponent;
+  }
+
   static longestCommonSubstringLength(a, b) {
     if (typeof a !== 'string' || typeof b !== 'string') {
       throw new TypeError('Utils.longestCommonSubstringLength requires two string arguments.');

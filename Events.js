@@ -765,6 +765,7 @@ class Events {
         let currentQuestPromptList = [];
         const player = this.currentPlayer;
         if (player && Array.isArray(player.currentQuests) && typeof player.getQuestByIndex === 'function') {
+            const activeQuests = Quest.filterActiveQuests(player.currentQuests, { includePaused: false });
             const questIndexMap = new Map();
             for (let idx = 0; ; idx += 1) {
                 const quest = player.getQuestByIndex(idx);
@@ -775,7 +776,7 @@ class Events {
                 questIndexMap.set(questId, idx + 1); // store as 1-based to match prompt expectations
             }
 
-            currentQuestPromptList = player.currentQuests
+            currentQuestPromptList = activeQuests
                 .map(quest => {
                     const questId = quest?.id || null;
                     const questIndex = questId ? questIndexMap.get(questId) : null;

@@ -407,6 +407,17 @@ p:not(:last-child) {
   font-weight: 500;
 }
 
+.quest-paused-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.16);
+  color: rgba(94, 234, 212, 0.95);
+  font-weight: 600;
+}
+
 .quest-toggle-icon {
   color: rgba(255, 255, 255, 0.6);
   transition: transform 0.2s ease;
@@ -549,6 +560,26 @@ p:not(:last-child) {
     cursor: progress;
     transform: none;
     box-shadow: none;
+  }
+}
+
+.quest-pause-button {
+  background: linear-gradient(
+    135deg,
+    rgba(14, 116, 144, 0.24),
+    rgba(59, 130, 246, 0.24)
+  );
+  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.2);
+
+  &:hover,
+  &:focus {
+    background: linear-gradient(
+      135deg,
+      rgba(14, 116, 144, 0.42),
+      rgba(59, 130, 246, 0.42)
+    );
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 14px 32px rgba(14, 116, 144, 0.3);
   }
 }
 
@@ -1790,6 +1821,11 @@ p:not(:last-child) {
   color: rgba(148, 163, 184, 0.95);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.tooltip-thing-stat {
+  font-size: 0.72rem;
+  color: rgba(226, 232, 240, 0.9);
 }
 
 .tooltip-thing-description {

@@ -1409,6 +1409,10 @@
         window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
         window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
         window.needBarDefinitions = {{ (needBarDefinitions or []) | dump | safe }};
+        if (!window.AIRPG_CONFIG || typeof window.AIRPG_CONFIG !== 'object') {
+            window.AIRPG_CONFIG = {};
+        }
+        window.AIRPG_CONFIG.baseWeaponDamage = {{ (baseWeaponDamage if baseWeaponDamage is defined else null) | dump | safe }};
         const __knownSkillNameSet = new Set(
             (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
                 .map(skill => {
@@ -2720,6 +2724,7 @@
 
         const rarityDefinitions = Array.isArray(window.rarityDefinitions) ? window.rarityDefinitions : [];
         const rarityInfoByKey = new Map();
+        const rarityDefinitionByKey = new Map();
         const rarityClassLookup = [];
 
         const normalizeRarityKey = (value) => {
@@ -2751,6 +2756,7 @@
 
             rarityInfoByKey.set(normalizedKey, info);
             rarityClassLookup.push(info);
+            rarityDefinitionByKey.set(normalizedKey, definition);
 
             if (color) {
                 rarityStyleRules.push(`.${className} { color: ${color}; }`);
@@ -2789,6 +2795,92 @@
                 return info.label;
             }
             return titleCase(normalized);
+        };
+
+        const getRarityDamageMultiplier = (rarityKey) => {
+            const normalized = normalizeRarityKey(rarityKey);
+            if (!normalized) {
+                throw new Error('Weapon rarity is required to calculate base damage.');
+            }
+            const definition = rarityDefinitionByKey.get(normalized);
+            if (!definition) {
+                throw new Error(`Unknown weapon rarity "${rarityKey}".`);
+            }
+            const multiplier = Number(definition.damageMultiplier);
+            if (!Number.isFinite(multiplier)) {
+                throw new Error(`Weapon rarity "${rarityKey}" is missing a damage multiplier.`);
+            }
+            return multiplier;
+        };
+
+        const getBaseWeaponDamageValue = () => {
+            const baseDamage = Number(runtimeConfig?.baseWeaponDamage);
+            if (!Number.isFinite(baseDamage)) {
+                throw new Error('runtimeConfig.baseWeaponDamage must be a finite number.');
+            }
+            return baseDamage;
+        };
+
+        const getMinimumUnmitigatedWeaponDamage = ({ rarity, level }) => {
+            const normalizedLevel = Number(level);
+            if (!Number.isFinite(normalizedLevel)) {
+                throw new Error('Weapon level must be a finite number.');
+            }
+            if (normalizedLevel < 1) {
+                throw new Error('Weapon level must be at least 1.');
+            }
+            const damageMultiplier = getRarityDamageMultiplier(rarity);
+            const baseDamage = getBaseWeaponDamageValue() + normalizedLevel * damageMultiplier;
+            const hitDegreeMultiplier = 0.75;
+            const preRoundedDamage = baseDamage * hitDegreeMultiplier;
+            const roundedDamageComponent = Math.round(preRoundedDamage);
+            const constantBonus = 1;
+            return constantBonus + roundedDamageComponent;
+        };
+
+        const isEquippableThing = (thing = {}) => {
+            const slotValue = typeof thing.slot === 'string'
+                ? thing.slot
+                : (typeof thing.metadata?.slot === 'string' ? thing.metadata.slot : '');
+            const normalizedSlot = normalizeSlotType(slotValue);
+            if (!normalizedSlot) {
+                return false;
+            }
+            return normalizedSlot !== 'n/a' && normalizedSlot !== 'none';
+        };
+
+        const isWeaponThing = (thing = {}) => {
+            const typeCandidates = [
+                thing.type,
+                thing.itemTypeDetail,
+                thing.category,
+                thing.metadata?.type,
+                thing.metadata?.itemTypeDetail,
+                thing.metadata?.category
+            ];
+            const slotCandidates = [
+                thing.slot,
+                thing.metadata?.slot
+            ];
+            const hasWeaponType = [...typeCandidates, ...slotCandidates].some(value => {
+                if (typeof value !== 'string') {
+                    return false;
+                }
+                return tokenizeForMatch(value).includes(' weapon ');
+            });
+            if (hasWeaponType) {
+                return true;
+            }
+            const hasToolType = typeCandidates.some(value => {
+                if (typeof value !== 'string') {
+                    return false;
+                }
+                return tokenizeForMatch(value).includes(' tool ');
+            });
+            if (!hasToolType) {
+                return false;
+            }
+            return isEquippableThing(thing);
         };
 
         const normalizeSlotType = (value) => {
@@ -4526,6 +4618,19 @@
             const metaHtml = metaParts.length
                 ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
                 : '';
+            const baseDamageHtml = (() => {
+                if (!isWeaponThing(thing)) {
+                    return '';
+                }
+                if (!Number.isFinite(resolvedLevel)) {
+                    throw new Error('Weapon level is required to calculate base damage.');
+                }
+                const rarityKey = typeof thing.rarity === 'string'
+                    ? thing.rarity
+                    : (typeof thing.metadata?.rarity === 'string' ? thing.metadata.rarity : '');
+                const baseDamage = getMinimumUnmitigatedWeaponDamage({ rarity: rarityKey, level: resolvedLevel });
+                return `<div class="tooltip-thing-stat">Base Damage: ${escapeHtml(String(baseDamage))}</div>`;
+            })();
             const descriptionHtml = `<div class="tooltip-thing-description">${escapeHtml(thing.description || 'No description provided.').replace(/\n/g, '<br>')}</div>`;
 
             const formatModifiersList = (attributes = [], skills = []) => {
@@ -4641,6 +4746,7 @@
                     ${nameHtml}
                     ${levelHtml}
                     ${metaHtml}
+                    ${baseDamageHtml}
                     ${descriptionHtml}
                     ${statusEffectsHtml ? '<hr>' + statusEffectsHtml : ''}
                     ${bonusesHtml}
@@ -15752,6 +15858,46 @@
                 }
             }
 
+            async function handleToggleQuestPause(quest, trigger) {
+                if (!quest || !quest.id) {
+                    return;
+                }
+
+                const isPaused = Boolean(quest.paused);
+                const nextPaused = !isPaused;
+                const button = trigger instanceof HTMLButtonElement ? trigger : null;
+                const originalLabel = button ? button.textContent : null;
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = nextPaused ? 'Pausing...' : 'Resuming...';
+                }
+
+                try {
+                    const response = await fetch('/api/quest/edit', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            questId: quest.id,
+                            paused: nextPaused
+                        })
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok || !result?.success) {
+                        throw new Error(result?.error || 'Failed to update quest.');
+                    }
+                    await refreshQuestPanel();
+                } catch (error) {
+                    console.error('Failed to toggle quest pause:', error);
+                    window.alert(`Failed to update quest: ${error.message || error}`);
+                    if (button) {
+                        button.disabled = false;
+                        button.textContent = originalLabel || (isPaused ? 'Resume' : 'Pause');
+                    }
+                }
+            }
+
             const closeQuestEditModal = () => {
                 questBeingEdited = null;
                 if (questEditForm) {
@@ -15856,6 +16002,10 @@
                 if (defaultOpen) {
                     details.open = true;
                 }
+                const isPaused = Boolean(quest?.paused);
+                if (isPaused) {
+                    details.classList.add('quest-card--paused');
+                }
 
                 const summary = document.createElement('summary');
 
@@ -15896,6 +16046,13 @@
                     rewardChip.className = 'quest-reward-chip';
                     rewardChip.textContent = rewardParts.join(' • ');
                     meta.appendChild(rewardChip);
+                }
+
+                if (isPaused) {
+                    const pausedChip = document.createElement('span');
+                    pausedChip.className = 'quest-paused-chip';
+                    pausedChip.textContent = 'Paused';
+                    meta.appendChild(pausedChip);
                 }
 
                 if (meta.childElementCount) {
@@ -16009,7 +16166,18 @@
                         openQuestEditModal(quest);
                     });
 
+                    const pauseButton = document.createElement('button');
+                    pauseButton.type = 'button';
+                    pauseButton.className = 'quest-abandon-button quest-pause-button';
+                    pauseButton.textContent = isPaused ? 'Resume' : 'Pause';
+                    pauseButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleToggleQuestPause(quest, event.currentTarget);
+                    });
+
                     actions.appendChild(editButton);
+                    actions.appendChild(pauseButton);
                     actions.appendChild(abandonButton);
                     content.appendChild(actions);
                 }

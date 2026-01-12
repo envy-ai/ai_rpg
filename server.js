@@ -15642,7 +15642,8 @@ app.get('/', (req, res) => {
         currentSetting: activeSetting,
         rarityDefinitions,
         needBarDefinitions: Player.getNeedBarDefinitionsForContext(),
-        checkMovePlausibility: config.check_move_plausibility || 'never',
+        checkMovePlausibility: Globals.config.check_move_plausibility || 'never',
+        baseWeaponDamage: Globals.config.baseWeaponDamage,
         modScripts: modScripts,
         modStyles: modStyles
     });

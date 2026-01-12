@@ -19,6 +19,9 @@ class AIRPGChat {
         this.systemMessage = this.chatHistory[0];
         this.serverHistory = [];
         this.messageRegistry = new Map();
+        this.inputHistory = [];
+        this.inputHistoryIndex = null;
+        this.inputHistoryDraft = '';
 
         this.clientId = this.loadClientId();
         this.pendingRequests = new Map();
@@ -1877,6 +1880,92 @@ class AIRPGChat {
         this.messageInput.focus();
     }
 
+    setMessageInputValue(value) {
+        if (!this.messageInput) {
+            return;
+        }
+        this.messageInput.value = value;
+        this.messageInput.style.height = 'auto';
+        this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
+        if (typeof this.messageInput.setSelectionRange === 'function') {
+            const length = this.messageInput.value.length;
+            this.messageInput.setSelectionRange(length, length);
+        }
+    }
+
+    recordInputHistoryEntry(value) {
+        const content = typeof value === 'string' ? value : '';
+        if (!content.trim()) {
+            return;
+        }
+        this.inputHistory.push(content);
+        this.inputHistoryIndex = null;
+        this.inputHistoryDraft = '';
+    }
+
+    handleInputHistoryNavigation(event) {
+        if (!event || !this.messageInput) {
+            return false;
+        }
+        if (event.ctrlKey || event.metaKey || event.altKey) {
+            return false;
+        }
+
+        const key = event.key;
+        if (key !== 'ArrowUp' && key !== 'ArrowDown') {
+            return false;
+        }
+
+        if (!this.inputHistory.length) {
+            return false;
+        }
+
+        const currentValue = this.messageInput.value || '';
+        const selectionStart = this.messageInput.selectionStart ?? 0;
+        const selectionEnd = this.messageInput.selectionEnd ?? 0;
+        const selectionCollapsed = selectionStart === selectionEnd;
+        const isSingleLine = !currentValue.includes('\n');
+        const atStart = selectionStart === 0 && selectionEnd === 0;
+        const atEnd = selectionStart === currentValue.length && selectionEnd === currentValue.length;
+
+        if (key === 'ArrowUp') {
+            if (!(atStart || (isSingleLine && selectionCollapsed))) {
+                return false;
+            }
+            event.preventDefault();
+            if (this.inputHistoryIndex === null) {
+                this.inputHistoryDraft = currentValue;
+                this.inputHistoryIndex = this.inputHistory.length - 1;
+            } else if (this.inputHistoryIndex > 0) {
+                this.inputHistoryIndex -= 1;
+            }
+            const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
+            this.setMessageInputValue(nextValue);
+            return true;
+        }
+
+        if (key === 'ArrowDown') {
+            if (!(atEnd || (isSingleLine && selectionCollapsed))) {
+                return false;
+            }
+            if (this.inputHistoryIndex === null) {
+                return false;
+            }
+            event.preventDefault();
+            if (this.inputHistoryIndex < this.inputHistory.length - 1) {
+                this.inputHistoryIndex += 1;
+                const nextValue = this.inputHistory[this.inputHistoryIndex] ?? '';
+                this.setMessageInputValue(nextValue);
+            } else {
+                this.inputHistoryIndex = null;
+                this.setMessageInputValue(this.inputHistoryDraft || '');
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
 
@@ -1887,10 +1976,17 @@ class AIRPGChat {
             }
         });
 
+        this.messageInput.addEventListener('keydown', (event) => {
+            this.handleInputHistoryNavigation(event);
+        });
+
         // Auto-resize textarea
         this.messageInput.addEventListener('input', () => {
             this.messageInput.style.height = 'auto';
             this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
+            if (this.inputHistoryIndex === null) {
+                this.inputHistoryDraft = this.messageInput.value;
+            }
         });
 
         document.addEventListener('keydown', (event) => {
@@ -4411,6 +4507,7 @@ class AIRPGChat {
             return;
         }
 
+        this.recordInputHistoryEntry(rawInput);
         this.messageInput.value = '';
         const trimmed = rawInput.trim();
         if (trimmed.startsWith('/')) {

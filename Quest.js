@@ -58,6 +58,7 @@ class Quest {
   giverId = null;
   giverName = '';
   secretNotes = '';
+  paused = false;
 
   static #indexByName = new SanitizedStringMap();
   static #indexById = new Map();
@@ -114,6 +115,7 @@ class Quest {
     this.rewardXp = Number.isFinite(xpValue) ? Math.max(0, Math.floor(xpValue)) : 0;
 
     this.rewardClaimed = Boolean(options.rewardClaimed);
+    this.paused = Boolean(options.paused);
 
     this.giverName = typeof options.giverName === 'string' ? options.giverName.trim() : '';
 
@@ -200,6 +202,7 @@ class Quest {
       rewardXp: this.rewardXp,
       secretNotes: this.secretNotes || null,
       rewardClaimed: Boolean(this.rewardClaimed),
+      paused: Boolean(this.paused),
       giverId: this.giverId || null,
       giverName: this.giverName || null,
       giver: this.giverName || null,
@@ -241,6 +244,7 @@ class Quest {
       giverId,
       giverName,
       rewardClaimed: Boolean(data.rewardClaimed),
+      paused: Boolean(data.paused),
       objectives: [],
       secretNotes: data.secretNotes || null
     });
@@ -257,6 +261,26 @@ class Quest {
       });
     }
     return quest;
+  }
+
+  static filterActiveQuests(quests = [], { includePaused = false } = {}) {
+    if (!Array.isArray(quests)) {
+      throw new TypeError('Quest.filterActiveQuests requires an array of quests.');
+    }
+    return quests.filter(quest => {
+      if (!quest) {
+        return false;
+      }
+      const isCompleted = Boolean(quest.completed);
+      const isPaused = Boolean(quest.paused);
+      if (isCompleted) {
+        return false;
+      }
+      if (!includePaused && isPaused) {
+        return false;
+      }
+      return true;
+    });
   }
 
 }

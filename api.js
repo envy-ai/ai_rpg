@@ -8821,6 +8821,14 @@ module.exports = function registerApiRoutes(scope) {
                     return Array.isArray(quest.rewardItems) ? quest.rewardItems.slice() : [];
                 })();
 
+                let updatedPaused = quest.paused;
+                if (Object.prototype.hasOwnProperty.call(payload, 'paused')) {
+                    if (typeof payload.paused !== 'boolean') {
+                        throw new Error('paused must be a boolean.');
+                    }
+                    updatedPaused = payload.paused;
+                }
+
                 const objectiveEntries = Array.isArray(payload.objectives) ? payload.objectives : null;
                 let updatedObjectives = null;
                 if (objectiveEntries) {
@@ -8854,6 +8862,7 @@ module.exports = function registerApiRoutes(scope) {
                     quest.objectives = updatedObjectives;
                 }
                 quest.rewardClaimed = Boolean(payload.rewardClaimed ?? quest.rewardClaimed);
+                quest.paused = Boolean(updatedPaused);
                 quest.giverName = typeof payload.giverName === 'string' ? payload.giverName.trim() : quest.giverName;
 
                 res.json({
