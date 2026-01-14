@@ -3556,6 +3556,18 @@ body.dark .thing-toggle-hint {
   color: $white;
 }
 
+.config-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+
+  .config-section {
+    flex: 1 1 500px;
+    min-width: 500px;
+    margin-bottom: 0;
+  }
+}
+
 .config-section {
   margin-bottom: 30px;
   @include glass-effect($glass-bg-light);

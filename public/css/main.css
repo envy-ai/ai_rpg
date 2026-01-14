@@ -369,6 +369,17 @@ p:not(:last-child) {
   font-weight: 500;
 }
 
+.quest-paused-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.16);
+  color: rgba(94, 234, 212, 0.95);
+  font-weight: 600;
+}
+
 .quest-toggle-icon {
   color: rgba(255, 255, 255, 0.6);
   transition: transform 0.2s ease;
@@ -494,6 +505,16 @@ p:not(:last-child) {
   cursor: progress;
   transform: none;
   box-shadow: none;
+}
+
+.quest-pause-button {
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.24), rgba(59, 130, 246, 0.24));
+  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.2);
+}
+.quest-pause-button:hover, .quest-pause-button:focus {
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.42), rgba(59, 130, 246, 0.42));
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 14px 32px rgba(14, 116, 144, 0.3);
 }
 
 .quest-empty {
@@ -3291,6 +3312,17 @@ body.dark .thing-toggle-hint {
   padding: 20px;
   overflow-y: auto;
   color: #ffffff;
+}
+
+.config-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.config-sections .config-section {
+  flex: 1 1 500px;
+  min-width: 500px;
+  margin-bottom: 0;
 }
 
 .config-section {

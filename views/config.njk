@@ -16,19 +16,20 @@
         
         <div class="config-content">
             <form id="configForm" method="POST">
+                <div class="config-sections">
                 <!-- Server Configuration -->
                 <div class="config-section">
                     <h2>🖥️ Server Configuration</h2>
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="server-host">Host:</label>
-                            <input type="text" id="server-host" name="server.host" value="{{ config.server.host }}" required>
+                            <input type="text" id="server-host" name="server.host::string" value="{{ config.server.host }}" required>
                             <span class="help-text">Use 'localhost' for local only, '0.0.0.0' for external access</span>
                         </div>
                         
                         <div class="form-group">
                             <label for="server-port">Port:</label>
-                            <input type="number" id="server-port" name="server.port" value="{{ config.server.port }}" min="1" max="65535" required>
+                            <input type="number" id="server-port" name="server.port::int" value="{{ config.server.port }}" min="1" max="65535" required>
                             <span class="help-text">Port number (1-65535)</span>
                         </div>
                     </div>
@@ -40,24 +41,20 @@
                     <div class="form-grid">
                         <div class="form-group full-width">
                             <label for="ai-endpoint">API Endpoint:</label>
-                            <input type="url" id="ai-endpoint" name="ai.endpoint" value="{{ config.ai.endpoint }}" required>
+                            <input type="url" id="ai-endpoint" name="ai.endpoint::string" value="{{ config.ai.endpoint }}" required>
                             <span class="help-text">OpenAI-compatible API endpoint URL</span>
                         </div>
                         
                         <div class="form-group full-width">
                             <label for="ai-apiKey">API Key:</label>
-                            <input type="password" id="ai-apiKey" name="ai.apiKey" value="{{ config.ai.apiKey }}" required>
+                            <input type="password" id="ai-apiKey" name="ai.apiKey::string" value="{{ config.ai.apiKey }}" required>
                             <span class="help-text">Your API key (keep this secure!)</span>
                             <button type="button" class="toggle-password" onclick="togglePassword('ai-apiKey')">👁️</button>
                         </div>
                         
-                        {% set modelOptions = config.model_swap_options or [] %}
-                        {% if config.ai.model and (config.ai.model not in modelOptions) %}
-                            {% set modelOptions = modelOptions + [config.ai.model] %}
-                        {% endif %}
-                        <div class="form-group">
+                        <div class="form-group full-width">
                             <label for="ai-model">Model:</label>
-                            <select id="ai-model" name="ai.model" required>
+                            <select id="ai-model" name="ai.model::string" required>
                                 {% for option in modelOptions %}
                                     <option value="{{ option }}" {% if option == config.ai.model %}selected{% endif %}>{{ option }}</option>
                                 {% endfor %}
@@ -65,18 +62,640 @@
                             </select>
                             <span class="help-text">Select the AI model to use</span>
                         </div>
-                        <input type="hidden" id="model-options" name="model_swap_options" value='{{ modelOptions | dump }}'>
-                        
-                        <div class="form-group">
-                            <label for="ai-maxTokens">Max Tokens:</label>
-                            <input type="number" id="ai-maxTokens" name="ai.maxTokens" value="{{ config.ai.maxTokens }}" min="1">
-                            <span class="help-text">Maximum response length</span>
+                        <div class="form-group full-width">
+                            <label for="model-options">Model Swap Options (JSON Array):</label>
+                            <textarea id="model-options" name="model_swap_options::string-array" rows="4">{{ modelOptions | dump }}</textarea>
+                            <span class="help-text">Edit as JSON array of model names, e.g. ["model-a","model-b"]</span>
                         </div>
                         
                         <div class="form-group">
+                            <label for="ai-maxTokens">Max Tokens:</label>
+                            <input type="number" id="ai-maxTokens" name="ai.maxTokens::int" value="{{ config.ai.maxTokens }}" min="1">
+                            <span class="help-text">Maximum response length</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-lowTemperature">Low Temperature:</label>
+                            <input type="number" id="ai-lowTemperature" name="ai.lowTemperature::number" value="{{ config.ai.lowTemperature }}" min="0" max="2" step="0.1">
+                            <span class="help-text">Optional lower bound for temperature adjustments</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="ai-temperature">Temperature:</label>
-                            <input type="number" id="ai-temperature" name="ai.temperature" value="{{ config.ai.temperature }}" min="0" max="2" step="0.1">
+                            <input type="number" id="ai-temperature" name="ai.temperature::number" value="{{ config.ai.temperature }}" min="0" max="2" step="0.1">
                             <span class="help-text">Creativity level (0.0 - 2.0)</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-highTemperature">High Temperature:</label>
+                            <input type="number" id="ai-highTemperature" name="ai.highTemperature::number" value="{{ config.ai.highTemperature }}" min="0" max="2" step="0.1">
+                            <span class="help-text">Optional upper bound for temperature adjustments</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-baseTimeoutSeconds">Base Timeout (seconds):</label>
+                            <input type="number" id="ai-baseTimeoutSeconds" name="ai.baseTimeoutSeconds::int" value="{{ config.ai.baseTimeoutSeconds }}" min="1" step="1">
+                            <span class="help-text">Base timeout for AI requests</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-retryAttempts">Retry Attempts:</label>
+                            <input type="number" id="ai-retryAttempts" name="ai.retryAttempts::int" value="{{ config.ai.retryAttempts }}" min="0" step="1">
+                            <span class="help-text">Number of retries before failing a request</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-maxConcurrentRequests">Max Concurrent Requests:</label>
+                            <input type="number" id="ai-maxConcurrentRequests" name="ai.max_concurrent_requests::int" value="{{ config.ai.max_concurrent_requests }}" min="1" step="1">
+                            <span class="help-text">Concurrent AI request limit</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-stream">Streaming:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="ai.stream::boolean" value="false">
+                                <input type="checkbox" id="ai-stream" name="ai.stream::boolean" value="true" {% if config.ai.stream %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable streaming if the API supports it</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-streamStartTimeout">Stream Start Timeout (seconds):</label>
+                            <input type="number" id="ai-streamStartTimeout" name="ai.stream_start_timeout::int" value="{{ config.ai.stream_start_timeout }}" min="1" step="1">
+                            <span class="help-text">Time to wait for stream to begin</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-streamContinueTimeout">Stream Continue Timeout (seconds):</label>
+                            <input type="number" id="ai-streamContinueTimeout" name="ai.stream_continue_timeout::int" value="{{ config.ai.stream_continue_timeout }}" min="1" step="1">
+                            <span class="help-text">Time to wait before a started stream is considered stalled</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-incrementStartTimeout">Increment Start Timeout (seconds):</label>
+                            <input type="number" id="ai-incrementStartTimeout" name="ai.increment_start_timeout::int" value="{{ config.ai.increment_start_timeout }}" min="0" step="1">
+                            <span class="help-text">Start timeout increase per retry</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-incrementContinueTimeout">Increment Continue Timeout (seconds):</label>
+                            <input type="number" id="ai-incrementContinueTimeout" name="ai.increment_continue_timeout::int" value="{{ config.ai.increment_continue_timeout }}" min="0" step="1">
+                            <span class="help-text">Continue timeout increase per retry</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-supressSeed">Suppress Seed:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="ai.supress_seed::boolean" value="false">
+                                <input type="checkbox" id="ai-supressSeed" name="ai.supress_seed::boolean" value="true" {% if config.ai.supress_seed %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Disable seed argument for compatible APIs</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-debug">Debug:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="ai.debug::boolean" value="false">
+                                <input type="checkbox" id="ai-debug" name="ai.debug::boolean" value="true" {% if config.ai.debug %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable AI request logging</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="ai-reasoning">Reasoning:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="ai.reasoning::boolean" value="false">
+                                <input type="checkbox" id="ai-reasoning" name="ai.reasoning::boolean" value="true" {% if config.ai.reasoning %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Request reasoning data when supported</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory & Autosaves -->
+                <div class="config-section">
+                    <h2>🧠 Memory &amp; Autosaves</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="max-memories-to-recall">Max Memories to Recall:</label>
+                            <input type="number" id="max-memories-to-recall" name="max_memories_to_recall::int" value="{{ config.max_memories_to_recall }}" min="0" step="1">
+                            <span class="help-text">Number of memories pulled into context</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="party-generate-memory-interval">Party Memory Interval:</label>
+                            <input type="number" id="party-generate-memory-interval" name="party_generate_memory_interval::int" value="{{ config.party_generate_memory_interval }}" min="1" step="1">
+                            <span class="help-text">Turns between party memory generation</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="autosaves-to-retain">Autosaves to Retain:</label>
+                            <input type="number" id="autosaves-to-retain" name="autosaves_to_retain::int" value="{{ config.autosaves_to_retain }}" min="0" step="1">
+                            <span class="help-text">Set to 0 to disable autosaves</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summaries -->
+                <div class="config-section">
+                    <h2>🗂️ Summaries</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="summaries-enabled">Enable Summaries:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="summaries.enabled::boolean" value="false">
+                                <input type="checkbox" id="summaries-enabled" name="summaries.enabled::boolean" value="true" {% if config.summaries.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable automatic summarization</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="summaries-on-load">Summarize on Load:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="summaries.summarize_on_load::boolean" value="false">
+                                <input type="checkbox" id="summaries-on-load" name="summaries.summarize_on_load::boolean" value="true" {% if config.summaries.summarize_on_load %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Summarize logs on load</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="summaries-batch-size">Batch Size:</label>
+                            <input type="number" id="summaries-batch-size" name="summaries.batch_size::int" value="{{ config.summaries.batch_size }}" min="1" step="1">
+                            <span class="help-text">Entries per summary batch</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="summaries-word-length">Summary Word Length:</label>
+                            <input type="number" id="summaries-word-length" name="summaries.summary_word_length::int" value="{{ config.summaries.summary_word_length }}" min="1" step="1">
+                            <span class="help-text">Target word length per summary line</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="summaries-max-unsummarized">Max Unsummarized Entries:</label>
+                            <input type="number" id="summaries-max-unsummarized" name="summaries.max_unsummarized_log_entries::int" value="{{ config.summaries.max_unsummarized_log_entries }}" min="0" step="1">
+                            <span class="help-text">Unsummarized log cap</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="summaries-max-summarized">Max Summarized Entries:</label>
+                            <input type="number" id="summaries-max-summarized" name="summaries.max_summarized_log_entries::int" value="{{ config.summaries.max_summarized_log_entries }}" min="0" step="1">
+                            <span class="help-text">Summarized log cap</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Image Generation -->
+                <div class="config-section">
+                    <h2>🎨 Image Generation</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="imagegen-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="imagegen.enabled::boolean" value="false">
+                                <input type="checkbox" id="imagegen-enabled" name="imagegen.enabled::boolean" value="true" {% if config.imagegen.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Toggle image generation</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-engine">Engine:</label>
+                            <select id="imagegen-engine" name="imagegen.engine::string">
+                                {% set imagegenEngine = config.imagegen.engine or 'comfyui' %}
+                                <option value="comfyui" {% if imagegenEngine == 'comfyui' %}selected{% endif %}>comfyui</option>
+                                <option value="nanogpt" {% if imagegenEngine == 'nanogpt' %}selected{% endif %}>nanogpt</option>
+                                <option value="openai" {% if imagegenEngine == 'openai' %}selected{% endif %}>openai</option>
+                            </select>
+                            <span class="help-text">Image generation engine</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-api-template">API Template:</label>
+                            <input type="text" id="imagegen-api-template" name="imagegen.api_template::string" value="{{ config.imagegen.api_template }}">
+                            <span class="help-text">Template file used to build image requests</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-api-key">API Key:</label>
+                            <input type="password" id="imagegen-api-key" name="imagegen.apiKey::string" value="{{ config.imagegen.apiKey }}">
+                            <span class="help-text">Image generation API key</span>
+                            <button type="button" class="toggle-password" onclick="togglePassword('imagegen-api-key')">👁️</button>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-endpoint">Endpoint:</label>
+                            <input type="url" id="imagegen-endpoint" name="imagegen.endpoint::string" value="{{ config.imagegen.endpoint }}">
+                            <span class="help-text">Custom image generation endpoint URL</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-model">Model:</label>
+                            <input type="text" id="imagegen-model" name="imagegen.model::string" value="{{ config.imagegen.model }}">
+                            <span class="help-text">Model name for the image engine</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-max-concurrent-jobs">Max Concurrent Jobs:</label>
+                            <input type="number" id="imagegen-max-concurrent-jobs" name="imagegen.maxConcurrentJobs::int" value="{{ config.imagegen.maxConcurrentJobs }}" min="1" step="1">
+                            <span class="help-text">Parallel image jobs</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-default-negative-prompt">Default Negative Prompt:</label>
+                            <textarea id="imagegen-default-negative-prompt" name="imagegen.default_negative_prompt::string" rows="3">{{ config.imagegen.default_negative_prompt }}</textarea>
+                            <span class="help-text">Negative prompt appended to image requests</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-megapixels">Megapixels:</label>
+                            <input type="number" id="imagegen-megapixels" name="imagegen.megapixels::number" value="{{ config.imagegen.megapixels }}" min="0" step="0.1">
+                            <span class="help-text">Scale used by templates that reference megapixels</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-server-host">ComfyUI Host:</label>
+                            <input type="text" id="imagegen-server-host" name="imagegen.server.host::string" value="{{ config.imagegen.server.host }}">
+                            <span class="help-text">ComfyUI server host</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-server-port">ComfyUI Port:</label>
+                            <input type="number" id="imagegen-server-port" name="imagegen.server.port::int" value="{{ config.imagegen.server.port }}" min="1" max="65535" step="1">
+                            <span class="help-text">ComfyUI server port</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-default-width">Default Width:</label>
+                            <input type="number" id="imagegen-default-width" name="imagegen.default_settings.image.width::int" value="{{ config.imagegen.default_settings.image.width }}" min="1" step="1">
+                            <span class="help-text">Default image width</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-default-height">Default Height:</label>
+                            <input type="number" id="imagegen-default-height" name="imagegen.default_settings.image.height::int" value="{{ config.imagegen.default_settings.image.height }}" min="1" step="1">
+                            <span class="help-text">Default image height</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-default-seed">Default Seed:</label>
+                            <input type="number" id="imagegen-default-seed" name="imagegen.default_settings.image.seed::int" value="{{ config.imagegen.default_settings.image.seed }}" min="0" step="1">
+                            <span class="help-text">Seed for deterministic image generation</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-default-steps">Default Steps:</label>
+                            <input type="number" id="imagegen-default-steps" name="imagegen.default_settings.sampling.steps::int" value="{{ config.imagegen.default_settings.sampling.steps }}" min="1" step="1">
+                            <span class="help-text">Sampling steps for default images</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-location-width">Location Width:</label>
+                            <input type="number" id="imagegen-location-width" name="imagegen.location_settings.image.width::int" value="{{ config.imagegen.location_settings.image.width }}" min="1" step="1">
+                            <span class="help-text">Location image width</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-location-height">Location Height:</label>
+                            <input type="number" id="imagegen-location-height" name="imagegen.location_settings.image.height::int" value="{{ config.imagegen.location_settings.image.height }}" min="1" step="1">
+                            <span class="help-text">Location image height</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-template-character">Character Prompt Template:</label>
+                            <input type="text" id="imagegen-template-character" name="imagegen.prompt_generator_templates.character::string" value="{{ config.imagegen.prompt_generator_templates.character }}">
+                            <span class="help-text">Template for character images</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-template-item">Item Prompt Template:</label>
+                            <input type="text" id="imagegen-template-item" name="imagegen.prompt_generator_templates.item::string" value="{{ config.imagegen.prompt_generator_templates.item }}">
+                            <span class="help-text">Template for item images</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-template-location">Location Prompt Template:</label>
+                            <input type="text" id="imagegen-template-location" name="imagegen.prompt_generator_templates.location::string" value="{{ config.imagegen.prompt_generator_templates.location }}">
+                            <span class="help-text">Template for location images</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-template-scenery">Scenery Prompt Template:</label>
+                            <input type="text" id="imagegen-template-scenery" name="imagegen.prompt_generator_templates.scenery::string" value="{{ config.imagegen.prompt_generator_templates.scenery }}">
+                            <span class="help-text">Template for scenery images</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-instructions-character">Character Prompt Instructions:</label>
+                            <textarea id="imagegen-instructions-character" name="imagegen.image_prompt_instructions.character::string" rows="3">{{ config.imagegen.image_prompt_instructions.character }}</textarea>
+                            <span class="help-text">Additional character image prompt instructions</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-instructions-item">Item Prompt Instructions:</label>
+                            <textarea id="imagegen-instructions-item" name="imagegen.image_prompt_instructions.item::string" rows="3">{{ config.imagegen.image_prompt_instructions.item }}</textarea>
+                            <span class="help-text">Additional item image prompt instructions</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-instructions-location">Location Prompt Instructions:</label>
+                            <textarea id="imagegen-instructions-location" name="imagegen.image_prompt_instructions.location::string" rows="3">{{ config.imagegen.image_prompt_instructions.location }}</textarea>
+                            <span class="help-text">Additional location image prompt instructions</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="imagegen-instructions-scenery">Scenery Prompt Instructions:</label>
+                            <textarea id="imagegen-instructions-scenery" name="imagegen.image_prompt_instructions.scenery::string" rows="3">{{ config.imagegen.image_prompt_instructions.scenery }}</textarea>
+                            <span class="help-text">Additional scenery image prompt instructions</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Random Events -->
+                <div class="config-section">
+                    <h2>🎲 Random Events</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="random-events-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="random_event_frequency.enabled::boolean" value="false">
+                                <input type="checkbox" id="random-events-enabled" name="random_event_frequency.enabled::boolean" value="true" {% if config.random_event_frequency.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable random event rolls</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="random-events-common">Common Frequency:</label>
+                            <input type="number" id="random-events-common" name="random_event_frequency.common::number" value="{{ config.random_event_frequency.common }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn for common events</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="random-events-rare">Rare Frequency:</label>
+                            <input type="number" id="random-events-rare" name="random_event_frequency.rare::number" value="{{ config.random_event_frequency.rare }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn for rare events</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="random-events-region">Region-Specific Frequency:</label>
+                            <input type="number" id="random-events-region" name="random_event_frequency.regionSpecific::number" value="{{ config.random_event_frequency.regionSpecific }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn for region events</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="random-events-location">Location-Specific Frequency:</label>
+                            <input type="number" id="random-events-location" name="random_event_frequency.locationSpecific::number" value="{{ config.random_event_frequency.locationSpecific }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn for location events</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event Checks & Plausibility -->
+                <div class="config-section">
+                    <h2>🧪 Event Checks &amp; Plausibility</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="event-checks-enabled">Event Checks:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="event_checks.enabled::boolean" value="false">
+                                <input type="checkbox" id="event-checks-enabled" name="event_checks.enabled::boolean" value="true" {% if config.event_checks.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable event checks for story effects</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="plausibility-checks-enabled">Plausibility Checks:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="plausibility_checks.enabled::boolean" value="false">
+                                <input type="checkbox" id="plausibility-checks-enabled" name="plausibility_checks.enabled::boolean" value="true" {% if config.plausibility_checks.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable plausibility and combat checks</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="quest-completion-prose-enabled">Quest Completion Prose:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="quest_completion_prose.enabled::boolean" value="false">
+                                <input type="checkbox" id="quest-completion-prose-enabled" name="quest_completion_prose.enabled::boolean" value="true" {% if config.quest_completion_prose.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Generate quest completion prose</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- World Generation -->
+                <div class="config-section">
+                    <h2>🗺️ World Generation</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="regions-min-locations">Min Locations per Region:</label>
+                            <input type="number" id="regions-min-locations" name="regions.minLocations::int" value="{{ config.regions.minLocations }}" min="1" step="1">
+                            <span class="help-text">Minimum locations created per region</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="regions-max-locations">Max Locations per Region:</label>
+                            <input type="number" id="regions-max-locations" name="regions.maxLocations::int" value="{{ config.regions.maxLocations }}" min="1" step="1">
+                            <span class="help-text">Maximum locations created per region</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="locations-max-npcs">Max NPCs per Location:</label>
+                            <input type="number" id="locations-max-npcs" name="locations.maxNpcs::int" value="{{ config.locations.maxNpcs }}" min="0" step="1">
+                            <span class="help-text">Maximum NPCs created per location</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="locations-max-hostiles">Max Hostiles per Location:</label>
+                            <input type="number" id="locations-max-hostiles" name="locations.maxHostiles::int" value="{{ config.locations.maxHostiles }}" min="0" step="1">
+                            <span class="help-text">Maximum hostile NPCs per location</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="locations-max-items">Max Items per Location:</label>
+                            <input type="number" id="locations-max-items" name="locations.maxItems::int" value="{{ config.locations.maxItems }}" min="0" step="1">
+                            <span class="help-text">Maximum items per location</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="locations-max-scenery">Max Scenery per Location:</label>
+                            <input type="number" id="locations-max-scenery" name="locations.maxScenery::int" value="{{ config.locations.maxScenery }}" min="0" step="1">
+                            <span class="help-text">Maximum scenery per location</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="locations-level-variation">Location Level Variation:</label>
+                            <input type="number" id="locations-level-variation" name="locations.levelVariation::int" value="{{ config.locations.levelVariation }}" min="0" step="1">
+                            <span class="help-text">Level variance for locations</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NPC Turns -->
+                <div class="config-section">
+                    <h2>🧍 NPC Turns</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="npc-turns-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="npc_turns.enabled::boolean" value="false">
+                                <input type="checkbox" id="npc-turns-enabled" name="npc_turns.enabled::boolean" value="true" {% if config.npc_turns.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable NPC turns outside combat</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="npc-turns-max">Max NPCs to Act:</label>
+                            <input type="number" id="npc-turns-max" name="npc_turns.maxNpcsToAct::int" value="{{ config.npc_turns.maxNpcsToAct }}" min="0" step="1">
+                            <span class="help-text">Maximum NPCs that can act per turn</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="npc-turns-frequency">NPC Turn Frequency:</label>
+                            <input type="number" id="npc-turns-frequency" name="npc_turns.npcTurnFrequency::number" value="{{ config.npc_turns.npcTurnFrequency }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn to run NPC turns</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Combat NPC Turns -->
+                <div class="config-section">
+                    <h2>⚔️ Combat NPC Turns</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="combat-npc-turns-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="combat_npc_turns.enabled::boolean" value="false">
+                                <input type="checkbox" id="combat-npc-turns-enabled" name="combat_npc_turns.enabled::boolean" value="true" {% if config.combat_npc_turns.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable NPC turns in combat</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="combat-npc-turns-max">Max NPCs to Act:</label>
+                            <input type="number" id="combat-npc-turns-max" name="combat_npc_turns.maxNpcsToAct::int" value="{{ config.combat_npc_turns.maxNpcsToAct }}" min="0" step="1">
+                            <span class="help-text">Maximum NPCs that can act in combat</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="combat-npc-turns-frequency">NPC Turn Frequency:</label>
+                            <input type="number" id="combat-npc-turns-frequency" name="combat_npc_turns.npcTurnFrequency::number" value="{{ config.combat_npc_turns.npcTurnFrequency }}" min="0" max="1" step="0.01">
+                            <span class="help-text">Chance per turn to run combat NPC turns</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quests -->
+                <div class="config-section">
+                    <h2>📜 Quests</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="quests-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="quests.enabled::boolean" value="false">
+                                <input type="checkbox" id="quests-enabled" name="quests.enabled::boolean" value="true" {% if config.quests.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable quest generation</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="quest-checks-enabled">Quest Checks:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="quest_checks.enabled::boolean" value="false">
+                                <input type="checkbox" id="quest-checks-enabled" name="quest_checks.enabled::boolean" value="true" {% if config.quest_checks.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable quest completion checks</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gameplay Tuning -->
+                <div class="config-section">
+                    <h2>⚙️ Gameplay Tuning</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="base-weapon-damage">Base Weapon Damage:</label>
+                            <input type="number" id="base-weapon-damage" name="baseWeaponDamage::int" value="{{ config.baseWeaponDamage }}" min="0" step="1">
+                            <span class="help-text">Base weapon damage used in combat scaling</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="base-health-per-level">Base Health per Level:</label>
+                            <input type="number" id="base-health-per-level" name="baseHealthPerLevel::int" value="{{ config.baseHealthPerLevel }}" min="0" step="1">
+                            <span class="help-text">Health per level used for player scaling</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="repetition-buster">Repetition Buster:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="repetition_buster::boolean" value="false">
+                                <input type="checkbox" id="repetition-buster" name="repetition_buster::boolean" value="true" {% if config.repetition_buster %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enable repetition buster logic</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="prose-length">Prose Length:</label>
+                            <input type="text" id="prose-length" name="prose_length::string" value="{{ config.prose_length }}">
+                            <span class="help-text">Sentence guidance for responses</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="events-to-check">Events to Check Concurrently:</label>
+                            <input type="number" id="events-to-check" name="events_to_check_concurrently::int" value="{{ config.events_to_check_concurrently }}" min="0" step="1">
+                            <span class="help-text">Leave blank to check all events</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="check-move-plausibility">Check Move Plausibility:</label>
+                            <select id="check-move-plausibility" name="check_move_plausibility::string">
+                                {% set plausibilityOption = config.check_move_plausibility or 'never' %}
+                                <option value="never" {% if plausibilityOption == 'never' %}selected{% endif %}>never</option>
+                                <option value="unexplored_regions" {% if plausibilityOption == 'unexplored_regions' %}selected{% endif %}>unexplored_regions</option>
+                                <option value="unexplored_locations" {% if plausibilityOption == 'unexplored_locations' %}selected{% endif %}>unexplored_locations</option>
+                                <option value="always" {% if plausibilityOption == 'always' %}selected{% endif %}>always</option>
+                            </select>
+                            <span class="help-text">When to run movement plausibility checks</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generation Flags -->
+                <div class="config-section">
+                    <h2>🧰 Generation Flags</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="omit-npc-generation">Omit NPC Generation:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="omit_npc_generation::boolean" value="false">
+                                <input type="checkbox" id="omit-npc-generation" name="omit_npc_generation::boolean" value="true" {% if config.omit_npc_generation %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Skip NPC generation for faster testing</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="omit-item-generation">Omit Item Generation:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="omit_item_generation::boolean" value="false">
+                                <input type="checkbox" id="omit-item-generation" name="omit_item_generation::boolean" value="true" {% if config.omit_item_generation %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Skip item generation for faster testing</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="deduplicate-item-names">Deduplicate Item Names:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="deduplicate_item_names::boolean" value="false">
+                                <input type="checkbox" id="deduplicate-item-names" name="deduplicate_item_names::boolean" value="true" {% if config.deduplicate_item_names %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Prevent duplicate item names</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="strict-xml-parsing">Strict XML Parsing:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="strictXMLParsing::boolean" value="false">
+                                <input type="checkbox" id="strict-xml-parsing" name="strictXMLParsing::boolean" value="true" {% if config.strictXMLParsing %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Enforce strict XML parsing on prompts</span>
                         </div>
                     </div>
                 </div>
@@ -87,17 +706,23 @@
                     <h2>🧩 {{ mod.displayName }}</h2>
                     <div class="form-grid">
                         {% for key, schema in mod.schema %}
+                        {% set fieldType = 'string' %}
+                        {% if schema.type == 'number' %}
+                            {% set fieldType = 'number' %}
+                        {% elif schema.type == 'checkbox' %}
+                            {% set fieldType = 'boolean' %}
+                        {% endif %}
                         <div class="form-group {% if schema.fullWidth %}full-width{% endif %}">
                             <label for="mod-{{ mod.name }}-{{ key }}">{{ schema.label }}</label>
                             
                             {% if schema.type == 'select' %}
-                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}">
+                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}">
                                     {% for option in schema.options %}
                                         <option value="{{ option }}" {% if option == mod.config[key] %}selected{% endif %}>{{ option }}</option>
                                     {% endfor %}
                                 </select>
                             {% elif schema.type == 'modelSelect' %}
-                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}">
+                                <select id="mod-{{ mod.name }}-{{ key }}" name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}">
                                     <option value="" {% if not mod.config[key] %}selected{% endif %}>Values Default ({{ config.ai.model }})</option>
                                     {% for option in modelOptions %}
                                         <option value="{{ option }}" {% if option == mod.config[key] %}selected{% endif %}>{{ option }}</option>
@@ -106,23 +731,24 @@
                             {% elif schema.type == 'number' %}
                                 <input type="number" 
                                        id="mod-{{ mod.name }}-{{ key }}" 
-                                       name="mods.{{ mod.name }}.{{ key }}" 
+                                       name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}" 
                                        value="{{ mod.config[key] }}"
                                        {% if schema.min is defined %}min="{{ schema.min }}"{% endif %}
                                        {% if schema.max is defined %}max="{{ schema.max }}"{% endif %}
                                        {% if schema.step is defined %}step="{{ schema.step }}"{% endif %}>
                             {% elif schema.type == 'checkbox' %}
                                 <div class="checkbox-wrapper">
+                                    <input type="hidden" name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}" value="false">
                                     <input type="checkbox" 
                                            id="mod-{{ mod.name }}-{{ key }}" 
-                                           name="mods.{{ mod.name }}.{{ key }}" 
+                                           name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}" 
                                            value="true"
                                            {% if mod.config[key] %}checked{% endif %}>
                                 </div>
                             {% else %}
                                 <input type="text" 
                                        id="mod-{{ mod.name }}-{{ key }}" 
-                                       name="mods.{{ mod.name }}.{{ key }}" 
+                                       name="mods.{{ mod.name }}.{{ key }}::{{ fieldType }}" 
                                        value="{{ mod.config[key] }}">
                             {% endif %}
                             
@@ -134,7 +760,8 @@
                     </div>
                 </div>
                 {% endfor %}
-                
+                </div>
+
                 <!-- Action Buttons -->
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">💾 Save Configuration</button>

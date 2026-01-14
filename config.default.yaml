@@ -53,6 +53,11 @@ ai:
   debug: false
   reasoning: false
 
+# Multimodal model configuration (overrides above)
+ai_multimodal:
+  enabled: true
+  model: "qwen3-vl-235b-a22b-instruct-original"
+
 # overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
 # prompt_ai_overrides:
 #   player_action:
@@ -160,10 +165,7 @@ plausibility_checks:
 # Set this to false to disable quest completion prose generation (this is separate from quest generation and checking, so you will still receive quests and rewards, just not prose descriptions of their completion)
 quest_completion_prose:
   enabled: true
-# Game Master configuration
-gamemaster:
-  # Fallback system prompt
-  promptTemplate: "gamemaster.njk"
+
 regions:
   minLocations: 2
   maxLocations: 3

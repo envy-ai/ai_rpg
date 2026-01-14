@@ -17477,9 +17477,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const replies = [];
+                const getChatHistory = () => chatHistory;
                 const interaction = {
                     user: { id: typeof userId === 'string' ? userId : null },
                     chatHistory,
+                    getChatHistory,
                     performGameSave,
                     reply(payload) {
                         replies.push(payload);

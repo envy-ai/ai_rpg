@@ -24,7 +24,7 @@ class ConfigManager {
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
 
         // Real-time validation
-        const inputs = this.form.querySelectorAll('input:not([type="hidden"]), select');
+        const inputs = this.form.querySelectorAll('input:not([type="hidden"]), select, textarea');
         inputs.forEach(input => {
             const validate = () => this.validateForm();
             input.addEventListener('input', validate);
@@ -34,55 +34,13 @@ class ConfigManager {
     }
     
     validateField(input) {
-        const value = input.value.trim();
-        let isValid = true;
-        let message = '';
-        
-        switch (input.name) {
-            case 'server.host':
-                isValid = value.length > 0;
-                message = isValid ? '' : 'Host is required';
-                break;
-                
-            case 'server.port':
-                const port = parseInt(value);
-                isValid = port >= 1 && port <= 65535;
-                message = isValid ? '' : 'Port must be between 1 and 65535';
-                break;
-                
-            case 'ai.endpoint':
-                try {
-                    new URL(value);
-                    isValid = true;
-                } catch {
-                    isValid = false;
-                    message = 'Invalid URL format';
-                }
-                break;
-                
-            case 'ai.apiKey':
-                isValid = value.length > 0;
-                message = isValid ? '' : 'API Key is required';
-                break;
-                
-            case 'ai.model':
-                isValid = value.length > 0;
-                message = isValid ? '' : 'Model is required';
-                break;
-                
-            case 'ai.maxTokens':
-                const maxTokens = parseInt(value);
-                isValid = maxTokens >= 1 && maxTokens <= 4000;
-                message = isValid ? '' : 'Max tokens must be between 1 and 4000';
-                break;
-                
-            case 'ai.temperature':
-                const temp = parseFloat(value);
-                isValid = temp >= 0 && temp <= 2;
-                message = isValid ? '' : 'Temperature must be between 0.0 and 2.0';
-                break;
+        if (!input || typeof input.checkValidity !== 'function') {
+            return true;
         }
-        
+
+        const isValid = input.checkValidity();
+        const message = isValid ? '' : (input.validationMessage || 'Invalid value.');
+
         this.setFieldValidation(input, isValid, message);
         return isValid;
     }
@@ -112,7 +70,7 @@ class ConfigManager {
     }
     
     validateForm() {
-        const inputs = this.form.querySelectorAll('input[required]:not([type="hidden"]), select[required]');
+        const inputs = this.form.querySelectorAll('input[required]:not([type="hidden"]), select[required], textarea[required]');
         let allValid = true;
 
         inputs.forEach(input => {
@@ -183,7 +141,6 @@ class ConfigManager {
             }, 5000);
         }
     }
-}
 
     initializeModelSelector() {
         this.modelSelect = document.getElementById('ai-model');

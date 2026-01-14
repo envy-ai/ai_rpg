@@ -556,6 +556,24 @@ class Events {
         return this.newItems.has(trimmed) || this.obtainedItems.has(trimmed);
     }
 
+    static _buildSceneItemNameSet(location, eventLabel = 'item_appear') {
+        const resolvedLocation = this.resolveLocationCandidate(location);
+        if (!resolvedLocation) {
+            throw new Error(`[${eventLabel}] Cannot compare new items against scene contents without a valid location.`);
+        }
+        const sceneThings = resolvedLocation.things;
+        if (!Array.isArray(sceneThings)) {
+            throw new Error(`[${eventLabel}] Location things are unavailable for duplicate checks.`);
+        }
+        const sceneItemNames = new SanitizedStringSet();
+        for (const thing of sceneThings) {
+            if (thing && typeof thing.name === 'string') {
+                sceneItemNames.add(thing.name);
+            }
+        }
+        return sceneItemNames;
+    }
+
     static _enqueueFollowupEventCheck(text, followupQueue = null) {
         const startOftext = typeof text === 'string' ? text.slice(0, 20) : '';
         console.log(`Enqueuing follow-up event check for: ${startOftext}...`);
@@ -3519,9 +3537,10 @@ class Events {
                     // If we just processed a move, skip generating new items, as the location generator handles this
                     return;
                 }
+                const sceneItemNames = this._buildSceneItemNameSet(context.location, 'item_appear');
                 const filteredItems = items
                     .map(item => (typeof item === 'string' ? item.trim() : ''))
-                    .filter(name => !!name && !this._isItemAlreadyTracked(name));
+                    .filter(name => !!name && !this._isItemAlreadyTracked(name) && !sceneItemNames.has(name));
 
                 if (!filteredItems.length) {
                     return;
@@ -3544,9 +3563,10 @@ class Events {
                 }
 
                 // Filter out all items that are in newItems
+                const sceneItemNames = this._buildSceneItemNameSet(context.location, 'scenery_appear');
                 const filteredItems = items
                     .map(item => (typeof item === 'string' ? item.trim() : ''))
-                    .filter(item => !!item && !this.alteredItems.has(item) && !this._isItemAlreadyTracked(item));
+                    .filter(item => !!item && !this.alteredItems.has(item) && !this._isItemAlreadyTracked(item) && !sceneItemNames.has(item));
 
                 try {
                     await this._generateItemsIntoWorld(filteredItems, context.location, { treatAsScenery: true });
@@ -3563,9 +3583,10 @@ class Events {
                     return;
                 }
 
+                const sceneItemNames = this._buildSceneItemNameSet(context.location, 'harvestable_resource_appear');
                 const filteredItems = items
                     .map(item => (typeof item === 'string' ? item.trim() : ''))
-                    .filter(item => !!item && !this._isItemAlreadyTracked(item));
+                    .filter(item => !!item && !this._isItemAlreadyTracked(item) && !sceneItemNames.has(item));
 
                 if (!filteredItems.length) {
                     return;

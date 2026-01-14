@@ -45,6 +45,13 @@ Provide a response in prose, strictly adhering to the outcome of the attack. Use
 {{ success_or_failure }}
 </actionStatus> 
 
+These characters are present and aware of the action:
+- {{ characterName }}
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}{% for member in party %}- {{ member.name }}
+{% endfor %}
+Note that the above list is provided to help you prevent taking actions on behalf of existing characters who aren't present (it's okay to mention new ones if it makes sense). It is not a list of characters who must act or speak in response to the player's action. Adhere to the response length guidelines rather than having all characters act. Instead choose the ones who make the most sense within the response length constraints. As a general rule, you should just pick a single one, or at most two characters to have act or speak, unless ABSOLUTELY necessary to have more. Check the last few messages -- if more than one NPC have acted in a single turn recently, dial it back for a while.
+
 {{ config.prose_instructions }}
 {% if config.repetition_buster %}{#
 Respond in a numbered list of four steps:

@@ -15670,11 +15670,25 @@ app.get('/config', (req, res) => {
     const errorMessage = typeof req.query.error === 'string' && req.query.error.trim()
         ? req.query.error.trim()
         : null;
+    const rawModelOptions = config?.model_swap_options;
+
+    if (rawModelOptions !== undefined && !Array.isArray(rawModelOptions)) {
+        throw new Error('Configuration error: model_swap_options must be an array.');
+    }
+
+    const modelOptions = Array.isArray(rawModelOptions)
+        ? rawModelOptions.filter(option => typeof option === 'string' && option.trim())
+        : [];
+
+    if (config?.ai?.model && !modelOptions.includes(config.ai.model)) {
+        modelOptions.push(config.ai.model);
+    }
 
     res.render('config.njk', {
         title: 'AI RPG Configuration',
         config: config,
         modConfigs: modLoader.getModConfigs(),
+        modelOptions,
         currentPage: 'config',
         savedMessage,
         errorMessage
@@ -15683,12 +15697,179 @@ app.get('/config', (req, res) => {
 
 app.post('/config', (req, res) => {
     try {
+        const TYPE_HINT_SEPARATOR = '::';
+
+        const parseKeyWithType = (rawKey) => {
+            const separatorIndex = rawKey.lastIndexOf(TYPE_HINT_SEPARATOR);
+            if (separatorIndex === -1) {
+                return { path: rawKey, typeHint: null };
+            }
+            const path = rawKey.slice(0, separatorIndex);
+            const typeHint = rawKey.slice(separatorIndex + TYPE_HINT_SEPARATOR.length).trim();
+            return {
+                path,
+                typeHint: typeHint ? typeHint.toLowerCase() : null
+            };
+        };
+
+        const getValueAtPath = (source, keys) => {
+            if (!source || typeof source !== 'object') {
+                return undefined;
+            }
+            let current = source;
+            for (const key of keys) {
+                if (!current || typeof current !== 'object' || !(key in current)) {
+                    return undefined;
+                }
+                current = current[key];
+            }
+            return current;
+        };
+
+        const coerceBoolean = (rawValue, pathLabel) => {
+            if (typeof rawValue === 'boolean') {
+                return rawValue;
+            }
+            if (rawValue === null || rawValue === undefined) {
+                throw new Error(`Missing boolean value for "${pathLabel}".`);
+            }
+            const normalized = String(rawValue).trim().toLowerCase();
+            if (['true', '1', 'yes', 'on'].includes(normalized)) {
+                return true;
+            }
+            if (['false', '0', 'no', 'off'].includes(normalized)) {
+                return false;
+            }
+            throw new Error(`Invalid boolean value "${rawValue}" for "${pathLabel}".`);
+        };
+
+        const coerceNumber = (rawValue, pathLabel, expectInteger) => {
+            if (typeof rawValue === 'number') {
+                if (expectInteger && !Number.isInteger(rawValue)) {
+                    throw new Error(`Expected integer for "${pathLabel}", got ${rawValue}.`);
+                }
+                if (!Number.isFinite(rawValue)) {
+                    throw new Error(`Invalid numeric value for "${pathLabel}".`);
+                }
+                return rawValue;
+            }
+            if (rawValue === null || rawValue === undefined) {
+                throw new Error(`Missing numeric value for "${pathLabel}".`);
+            }
+            const normalized = String(rawValue).trim();
+            if (!normalized) {
+                return null;
+            }
+            const parsed = Number(normalized);
+            if (!Number.isFinite(parsed)) {
+                throw new Error(`Invalid numeric value "${rawValue}" for "${pathLabel}".`);
+            }
+            if (expectInteger && !Number.isInteger(parsed)) {
+                throw new Error(`Expected integer for "${pathLabel}", got ${rawValue}.`);
+            }
+            return parsed;
+        };
+
+        const coerceJson = (rawValue, pathLabel) => {
+            if (rawValue === null || rawValue === undefined || rawValue === '') {
+                return null;
+            }
+            if (typeof rawValue === 'object') {
+                return rawValue;
+            }
+            if (typeof rawValue !== 'string') {
+                throw new Error(`Expected JSON string for "${pathLabel}".`);
+            }
+            try {
+                return JSON.parse(rawValue);
+            } catch (error) {
+                throw new Error(`Invalid JSON value for "${pathLabel}": ${error.message}`);
+            }
+        };
+
+        const inferTypeHint = (existingValue) => {
+            if (existingValue === null || existingValue === undefined) {
+                return null;
+            }
+            if (Array.isArray(existingValue)) {
+                return 'array';
+            }
+            if (typeof existingValue === 'number') {
+                return Number.isInteger(existingValue) ? 'int' : 'number';
+            }
+            if (typeof existingValue === 'boolean') {
+                return 'boolean';
+            }
+            if (typeof existingValue === 'string') {
+                return 'string';
+            }
+            if (typeof existingValue === 'object') {
+                return 'json';
+            }
+            return null;
+        };
+
+        const coerceValue = ({ rawValue, existingValue, typeHint, pathLabel }) => {
+            const resolvedHint = typeHint || inferTypeHint(existingValue);
+            if (!resolvedHint) {
+                throw new Error(`Unable to infer type for "${pathLabel}". Add a type hint using "::type".`);
+            }
+
+            switch (resolvedHint) {
+                case 'string':
+                    if (rawValue === null || rawValue === undefined) {
+                        return '';
+                    }
+                    if (typeof rawValue !== 'string') {
+                        throw new Error(`Expected string value for "${pathLabel}".`);
+                    }
+                    return rawValue;
+                case 'int':
+                case 'integer':
+                    return coerceNumber(rawValue, pathLabel, true);
+                case 'number':
+                case 'float':
+                    return coerceNumber(rawValue, pathLabel, false);
+                case 'boolean':
+                case 'bool':
+                    return coerceBoolean(rawValue, pathLabel);
+                case 'json':
+                    return coerceJson(rawValue, pathLabel);
+                case 'array': {
+                    const parsed = coerceJson(rawValue, pathLabel);
+                    if (parsed === null) {
+                        return [];
+                    }
+                    if (!Array.isArray(parsed)) {
+                        throw new Error(`Expected JSON array for "${pathLabel}".`);
+                    }
+                    return parsed;
+                }
+                case 'string-array': {
+                    const parsed = coerceJson(rawValue, pathLabel);
+                    if (parsed === null) {
+                        return [];
+                    }
+                    if (!Array.isArray(parsed)) {
+                        throw new Error(`Expected JSON array for "${pathLabel}".`);
+                    }
+                    const sanitized = parsed.map(entry => String(entry).trim()).filter(Boolean);
+                    return Array.from(new Set(sanitized));
+                }
+                default:
+                    throw new Error(`Unsupported type hint "${resolvedHint}" for "${pathLabel}".`);
+            }
+        };
+
         // Update configuration with form data
         const updatedConfig = { ...config };
         const modConfigsToSave = [];
+        const modConfigCache = new Map();
 
         // Parse nested form data (e.g., "server.host" -> config.server.host)
-        for (const [key, value] of Object.entries(req.body)) {
+        for (const [rawKey, value] of Object.entries(req.body)) {
+            const { path: key, typeHint } = parseKeyWithType(rawKey);
+
             // Handle mod configurations separately
             if (key.startsWith('mods.')) {
                 const parts = key.split('.');
@@ -15703,12 +15884,19 @@ app.post('/config', (req, res) => {
                         modConfigsToSave.push(modConfigEntry);
                     }
 
-                    // Handle numeric values if they look like numbers
-                    // Ideally we'd use the schema to know type, but for now simple heuristic
-                    // or let the mod loader validate/cast if we implemented that.
-                    // For now, simple string/trim.
-                    // NOTE: This could be improved by looking up schema in modLoader
-                    modConfigEntry.config[configKey] = value;
+                    let currentModConfig = modConfigCache.get(modName);
+                    if (!currentModConfig) {
+                        currentModConfig = modLoader.getModConfig(modName);
+                        modConfigCache.set(modName, currentModConfig);
+                    }
+
+                    const existingValue = currentModConfig ? currentModConfig[configKey] : undefined;
+                    modConfigEntry.config[configKey] = coerceValue({
+                        rawValue: value,
+                        existingValue,
+                        typeHint,
+                        pathLabel: key
+                    });
                 }
                 continue;
             }
@@ -15719,19 +15907,21 @@ app.post('/config', (req, res) => {
             for (let i = 0; i < keys.length - 1; i++) {
                 if (!current[keys[i]]) {
                     current[keys[i]] = {};
+                } else if (typeof current[keys[i]] !== 'object' || Array.isArray(current[keys[i]])) {
+                    throw new Error(`Cannot set "${key}" because "${keys.slice(0, i + 1).join('.')}" is not an object.`);
                 }
                 current = current[keys[i]];
             }
 
             // Convert numeric values
             const finalKey = keys[keys.length - 1];
-            if (finalKey === 'port' || finalKey === 'maxTokens') {
-                current[finalKey] = parseInt(value);
-            } else if (finalKey === 'temperature') {
-                current[finalKey] = parseFloat(value);
-            } else {
-                current[finalKey] = value;
-            }
+            const existingValue = getValueAtPath(config, keys);
+            current[finalKey] = coerceValue({
+                rawValue: value,
+                existingValue,
+                typeHint,
+                pathLabel: key
+            });
         }
 
         // Save mod configurations
@@ -15749,30 +15939,6 @@ app.post('/config', (req, res) => {
                 console.error(`Failed to save config for mod ${modConf.name}:`, err.message);
             }
         }
-
-        if (typeof updatedConfig.model_swap_options === 'string') {
-            try {
-                const parsedOptions = JSON.parse(updatedConfig.model_swap_options);
-                updatedConfig.model_swap_options = Array.isArray(parsedOptions)
-                    ? parsedOptions.filter(option => typeof option === 'string' && option.trim()).map(option => option.trim())
-                    : [];
-            } catch (_) {
-                if (updatedConfig.model_swap_options) {
-                    updatedConfig.model_swap_options = String(updatedConfig.model_swap_options)
-                        .split(/[\n,]+/)
-                        .map(entry => entry.trim())
-                        .filter(Boolean);
-                } else {
-                    updatedConfig.model_swap_options = [];
-                }
-            }
-        }
-        if (!Array.isArray(updatedConfig.model_swap_options)) {
-            updatedConfig.model_swap_options = [];
-        }
-        updatedConfig.model_swap_options = Array.from(new Set(
-            updatedConfig.model_swap_options.map(option => option.trim()).filter(Boolean)
-        ));
 
         // Save to config.yaml file
         const yamlString = yaml.dump(updatedConfig, {

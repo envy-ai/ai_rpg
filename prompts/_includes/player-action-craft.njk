@@ -51,6 +51,11 @@ Additionally, the following effect occurred: {{ otherEffect }}
 Describe this effect in 1 additional paragraph of prose.
 {% endif %}
 
+These characters are present and aware of the action:
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}{% for member in party %}- {{ member.name }}
+{% endfor %}
+
 Respond in this format:
 
 <result>
