@@ -9,22 +9,22 @@
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.8",
-    "axios": "^1.5.0",
-    "body-parser": "^1.20.2",
+    "axios": "^1.13.2",
+    "body-parser": "^2.2.2",
     "cheerio": "^1.1.2",
     "cytoscape": "^3.33.1",
     "cytoscape-euler": "^1.2.3",
     "cytoscape-fcose": "^2.2.0",
-    "express": "^4.18.2",
-    "js-yaml": "^4.1.0",
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.1",
     "markdown-it": "^14.1.0",
     "nunjucks": "^3.2.4",
-    "ws": "^8.18.0"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
-    "esbuild": "^0.25.9",
-    "nodemon": "^3.0.1",
-    "vite": "^6.3.6"
+    "esbuild": "^0.27.2",
+    "nodemon": "^3.1.11",
+    "vite": "^7.3.1"
   },
   "keywords": [
     "nodejs",
