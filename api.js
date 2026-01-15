@@ -6446,6 +6446,110 @@ module.exports = function registerApiRoutes(scope) {
             const recentProseContents = recentProseEntries
                 .map(entry => (typeof entry.content === 'string' ? entry.content.trim() : ''))
                 .filter(Boolean);
+            const getSlopHistorySegments = () => {
+                if (!Array.isArray(chatHistory)) {
+                    throw new Error('Chat history is unavailable for slopword analysis.');
+                }
+                const segments = [];
+                for (const entry of chatHistory) {
+                    if (!entry || typeof entry !== 'object') {
+                        continue;
+                    }
+                    const entryType = typeof entry.type === 'string' ? entry.type : null;
+                    if (entryType !== 'player-action'
+                        && entryType !== 'npc-action'
+                        && entryType !== 'quest-reward'
+                        && entryType !== 'random-event') {
+                        continue;
+                    }
+                    const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                    if (content) {
+                        segments.push(content);
+                    }
+                }
+                return segments;
+            };
+            const getFilteredSlopWords = async (prose) => {
+                if (typeof prose !== 'string' || !prose.trim()) {
+                    throw new Error('Slopword analysis requires non-empty prose.');
+                }
+                const analyzer = Globals.analyzeSlopwordsForText;
+                if (typeof analyzer !== 'function') {
+                    throw new Error('Slopword analysis is unavailable on this server.');
+                }
+                const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
+                const flagged = await analyzer(combinedText);
+                if (!Array.isArray(flagged)) {
+                    throw new Error('Slopword analysis returned an invalid result.');
+                }
+                if (!flagged.length) {
+                    return [];
+                }
+                const tokens = prose.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
+                if (!tokens.length) {
+                    return [];
+                }
+                const tokenSet = new Set(tokens);
+                return flagged.filter(word => tokenSet.has(word));
+            };
+            const applySlopRemoval = async (prose) => {
+                let currentProse = typeof prose === 'string' ? prose.trim() : '';
+                if (!currentProse) {
+                    throw new Error('Slop remover requires non-empty prose.');
+                }
+
+                const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
+                if (!slopWordSet.size) {
+                    return currentProse;
+                }
+
+                const slopContext = recentProseContents.slice(-8).join('\n\n');
+
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    const slopWords = Array.from(slopWordSet);
+                    const rendered = promptEnv.render('slop-remover.xml.njk', {
+                        storyText: slopContext,
+                        textToEdit: currentProse,
+                        slopWords,
+                        slopTrigrams: []
+                    });
+                    const promptData = parseXMLTemplate(rendered);
+                    if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                        throw new Error('Slop remover template did not produce prompts.');
+                    }
+
+                    const messages = [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ];
+
+                    const slopResponse = await LLMClient.chatCompletion({
+                        messages,
+                        metadataLabel: 'slop_remover',
+                        validateXML: false
+                    });
+
+                    const match = typeof slopResponse === 'string'
+                        ? slopResponse.match(/<editedText>([\s\S]*?)<\/editedText>/i)
+                        : null;
+                    if (!match || !match[1]) {
+                        throw new Error('Slop remover response missing <editedText>.');
+                    }
+
+                    currentProse = match[1].trim();
+                    if (!currentProse) {
+                        throw new Error('Slop remover returned empty text.');
+                    }
+
+                    const remaining = await getFilteredSlopWords(currentProse);
+                    if (!remaining.length) {
+                        break;
+                    }
+                    remaining.forEach(word => slopWordSet.add(word));
+                }
+
+                return currentProse;
+            };
 
             res.on('finish', () => {
                 if (corpseProcessingRan) {
@@ -7615,6 +7719,8 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Repetition mitigation failed:', repetitionError?.message || repetitionError);
                         }
                     }
+
+                    aiResponse = await applySlopRemoval(aiResponse);
 
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
 
@@ -15942,6 +16048,15 @@ module.exports = function registerApiRoutes(scope) {
                 const additionalInstructions = typeof req.body?.instructions === 'string'
                     ? req.body.instructions.trim()
                     : '';
+                const imageDataUrl = typeof req.body?.imageDataUrl === 'string'
+                    ? req.body.imageDataUrl.trim()
+                    : '';
+                if (imageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrl)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Autofill image must be a base64-encoded data URL.'
+                    });
+                }
 
                 const normalizedSetting = normalizeSettingPayload(incomingSetting);
 
@@ -15952,7 +16067,8 @@ module.exports = function registerApiRoutes(scope) {
                         availableClasses: normalizedSetting.availableClasses,
                         availableRaces: normalizedSetting.availableRaces
                     },
-                    additionalInstructions
+                    additionalInstructions,
+                    hasImage: Boolean(imageDataUrl)
                 });
 
                 const promptData = parseXMLTemplate(renderedTemplate);
@@ -15970,7 +16086,13 @@ module.exports = function registerApiRoutes(scope) {
                 if (systemPrompt) {
                     messages.push({ role: 'system', content: systemPrompt });
                 }
-                messages.push({ role: 'user', content: generationPrompt });
+                const userContent = imageDataUrl
+                    ? [
+                        { type: 'text', text: `${generationPrompt}\n\nUse the attached image as additional visual context when filling in missing fields.` },
+                        { type: 'image_url', image_url: { url: imageDataUrl } }
+                    ]
+                    : generationPrompt;
+                messages.push({ role: 'user', content: userContent });
 
                 if (!config?.ai) {
                     return res.status(500).json({
@@ -15981,7 +16103,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 const requestOptions = {
                     messages,
-                    metadataLabel: 'setting_autofill'
+                    metadataLabel: 'setting_autofill',
+                    multimodal: Boolean(imageDataUrl)
                 };
 
                 if (typeof promptData.temperature === 'number') {

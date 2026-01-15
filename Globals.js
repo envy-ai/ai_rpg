@@ -8,6 +8,8 @@ class Globals {
   static #currentPlayerOverride = null;
   static realtimeHub = null;
   static travelHistory = [];
+  static slopWords = [];
+  static slopTrigrams = [];
 
   static getBasePromptContext = function () {
     throw new Error('Globals.getBasePromptContext called before being set.');

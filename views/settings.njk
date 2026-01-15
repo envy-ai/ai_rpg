@@ -47,7 +47,7 @@
 
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <textarea id="description" name="description" placeholder="Describe this setting and what makes it unique..."></textarea>
+                        <textarea id="description" name="description" rows="20" placeholder="Describe this setting and what makes it unique..."></textarea>
                     </div>
 
                     <div class="form-group">
@@ -231,6 +231,11 @@
             <div class="modal__body">
                 <p class="help-text" style="margin-bottom: 0.75rem;">Optional notes for the AI when generating missing setting details. Leave blank to continue without extra guidance.</p>
                 <textarea id="autofillInstructionsInput" rows="5" placeholder="E.g., focus on coastal cities and political intrigue..."></textarea>
+                <div class="autofill-image-field">
+                    <label for="autofillImageInput">Reference Image (optional)</label>
+                    <input type="file" id="autofillImageInput" accept="image/*">
+                    <div class="help-text">Attach an image to guide the AI when filling missing fields.</div>
+                </div>
             </div>
             <footer class="modal__footer">
                 <div class="button-group">
@@ -248,6 +253,7 @@
         let appliedSetting = null;
         const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
         const autofillInstructionsInput = document.getElementById('autofillInstructionsInput');
+        const autofillImageInput = document.getElementById('autofillImageInput');
         const autofillInstructionsCancelBtn = document.getElementById('autofillInstructionsCancelBtn');
         const autofillInstructionsCloseBtn = document.getElementById('autofillInstructionsCloseBtn');
         const autofillInstructionsConfirmBtn = document.getElementById('autofillInstructionsConfirmBtn');
@@ -255,12 +261,15 @@
 
         function openAutofillInstructionsModal(triggerButton) {
             if (!autofillInstructionsModal) {
-                handleGenerateFill(triggerButton, '');
+                handleGenerateFill(triggerButton, '', null);
                 return;
             }
             pendingAutofillButton = triggerButton || null;
             if (autofillInstructionsInput) {
                 autofillInstructionsInput.value = '';
+            }
+            if (autofillImageInput) {
+                autofillImageInput.value = '';
             }
             if (autofillInstructionsConfirmBtn) {
                 autofillInstructionsConfirmBtn.disabled = false;
@@ -813,12 +822,17 @@
                 autofillInstructionsCloseBtn.addEventListener('click', () => closeAutofillInstructionsModal());
             }
             if (autofillInstructionsConfirmBtn) {
-                autofillInstructionsConfirmBtn.addEventListener('click', () => {
+                autofillInstructionsConfirmBtn.addEventListener('click', async () => {
                     const instructions = autofillInstructionsInput?.value?.trim() || '';
+                    const imageFile = autofillImageInput?.files?.[0] || null;
+                    if (imageFile && !imageFile.type.startsWith('image/')) {
+                        showMessage('Autofill image must be an image file.', 'error');
+                        return;
+                    }
                     const targetButton = pendingAutofillButton || generateBtn;
                     closeAutofillInstructionsModal();
                     if (targetButton) {
-                        handleGenerateFill(targetButton, instructions);
+                        handleGenerateFill(targetButton, instructions, imageFile);
                     }
                 });
             }
@@ -826,7 +840,74 @@
             // Save/Load buttons removed; auto behaviors implemented
         }
 
-        async function handleGenerateFill(buttonEl, instructions = '') {
+        async function downscaleImageDataUrl(dataUrl, outputType) {
+            const maxPixels = 2000000;
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => {
+                    const width = image.naturalWidth || image.width;
+                    const height = image.naturalHeight || image.height;
+                    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+                        reject(new Error('Autofill image dimensions are invalid.'));
+                        return;
+                    }
+
+                    const pixelCount = width * height;
+                    if (pixelCount <= maxPixels) {
+                        resolve(dataUrl);
+                        return;
+                    }
+
+                    const scale = Math.sqrt(maxPixels / pixelCount);
+                    const targetWidth = Math.max(1, Math.round(width * scale));
+                    const targetHeight = Math.max(1, Math.round(height * scale));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Autofill image resizing failed to initialize.'));
+                        return;
+                    }
+                    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+                    const normalizedType = outputType && outputType.startsWith('image/')
+                        ? outputType
+                        : 'image/jpeg';
+                    const supportsQuality = normalizedType === 'image/jpeg' || normalizedType === 'image/webp';
+                    const resizedDataUrl = supportsQuality
+                        ? canvas.toDataURL(normalizedType, 0.9)
+                        : canvas.toDataURL(normalizedType);
+                    resolve(resizedDataUrl);
+                };
+                image.onerror = () => reject(new Error('Autofill image could not be loaded.'));
+                image.src = dataUrl;
+            });
+        }
+
+        async function readAutofillImageData(file) {
+            if (!file) {
+                return '';
+            }
+            if (!file.type || !file.type.startsWith('image/')) {
+                throw new Error('Autofill image must be an image file.');
+            }
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (typeof reader.result === 'string') {
+                        resolve(reader.result);
+                        return;
+                    }
+                    reject(new Error('Autofill image could not be read.'));
+                };
+                reader.onerror = () => reject(new Error('Autofill image could not be read.'));
+                reader.readAsDataURL(file);
+            });
+            return downscaleImageDataUrl(dataUrl, file.type);
+        }
+
+        async function handleGenerateFill(buttonEl, instructions = '', imageFile = null) {
             if (!buttonEl || buttonEl.disabled) {
                 return;
             }
@@ -837,6 +918,7 @@
 
             try {
                 const instructionsText = typeof instructions === 'string' ? instructions.trim() : '';
+                const imageDataUrl = await readAutofillImageData(imageFile);
                 const form = document.getElementById('settingForm');
                 const formData = new FormData(form);
                 const settingPayload = Object.fromEntries(formData.entries());
@@ -853,10 +935,18 @@
                     ? Math.max(0, parsedDefaultCurrency)
                     : '';
 
+                const requestBody = {
+                    setting: settingPayload,
+                    instructions: instructionsText
+                };
+                if (imageDataUrl) {
+                    requestBody.imageDataUrl = imageDataUrl;
+                }
+
                 const response = await fetch('/api/settings/fill-missing', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ setting: settingPayload, instructions: instructionsText })
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await response.json();

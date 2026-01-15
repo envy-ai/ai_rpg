@@ -199,6 +199,34 @@
   margin-top: 0.25rem;
 }
 
+.settings-autofill-modal {
+  .autofill-image-field {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    label {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    input[type="file"] {
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      border-radius: 6px;
+      padding: 0.6rem;
+      background: rgba(0, 0, 0, 0.25);
+      color: #fff;
+
+      &:focus {
+        outline: none;
+        border-color: rgba(74, 144, 226, 0.8);
+        background: rgba(0, 0, 0, 0.4);
+      }
+    }
+  }
+}
+
 .button-group {
   display: flex;
   gap: 1rem;

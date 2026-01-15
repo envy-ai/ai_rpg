@@ -1,0 +1,1206 @@
+# The default allowable ppm for the words/trigrams listed below (trigrams are per million words, not per million trigrams)
+default: 800
+trigram_default: 5
+
+# A list of slop words (trigrams are listed below as well) and their allowable parts per million before being flagged as repetitive
+slopwords:
+  absently: default
+  abuzz: default
+  ached: default
+  acrid: default
+  adira: default
+  aedan: default
+  aelara: 0
+  aeldrin: default
+  aeliana: default
+  aelion: default
+  aelius: default
+  aella: default
+  aeloria: default
+  aelric: default
+  aelwyn: default
+  aerion: default
+  aeternum: default
+  aeternus: default
+  aethel: default
+  aethelburg: default
+  aethelgard: default
+  aethelred: default
+  aethera: default
+  aethereia: default
+  aetheria: default
+  aetherians: default
+  aetherium: default
+  aetherius: default
+  aethers: default
+  aethon: default
+  agonizing: default
+  agonizingly: default
+  akinator: default
+  alara: default
+  alaric: default
+  alayna: default
+  aldric: default
+  aldwyn: default
+  aleron: default
+  alleyway: default
+  allfather: default
+  amara: default
+  amelia: default
+  animatedly: default
+  anya: default
+  arcane: default
+  arcanus: default
+  arced: default
+  archdemon: default
+  archmage: default
+  arcturian: default
+  aric: default
+  arin: default
+  aris: default
+  armrest: default
+  armrests: default
+  ashen: default
+  ashwood: default
+  asmodeus: default
+  astrobiologist: default
+  atheria: default
+  audible: default
+  aurors: default
+  azathoth: default
+  azazel: default
+  azrael: default
+  barked: default
+  baruk: default
+  bated: default
+  beckoned: default
+  beeped: default
+  belied: default
+  bellowed: default
+  bellweather: default
+  bewildered: default
+  bewilderment: default
+  billowed: default
+  billowing: default
+  bioluminescent: default
+  blackwood: default
+  blackwoods: default
+  blankly: default
+  blared: default
+  bleez: default
+  blinding: default
+  blinked: default
+  bloomed: default
+  blurring: default
+  blurted: default
+  boomed: default
+  borin: default
+  brindlemark: default
+  brow: default
+  brushstroke: default
+  bustled: default
+  bustling: default
+  buzzed: default
+  cackled: default
+  cacophony: default
+  caelan: default
+  caelum: default
+  calloused: default
+  calvinball: default
+  cartographer: default
+  cascaded: default
+  cautiously: default
+  cavernous: default
+  cawed: default
+  cerebus: default
+  chattered: default
+  chestplate: default
+  chillingly: default
+  chimed: default
+  chirped: default
+  chitinous: default
+  choz: default
+  chronal: default
+  chronarium: default
+  chronos: default
+  chuckled: default
+  cityscape: default
+  clacked: default
+  clang: default
+  clanged: default
+  clasped: default
+  clatter: default
+  clattered: default
+  clattering: default
+  clawed: default
+  clawing: default
+  clenched: default
+  clich: default
+  clinked: default
+  clinking: default
+  cloaked: default
+  clockmaker: default
+  cloying: default
+  clung: default
+  clutched: default
+  clutching: default
+  cluttered: default
+  coalesced: default
+  coalescing: default
+  cobblestone: default
+  cobblestones: default
+  coiling: default
+  commlink: default
+  conspiratorial: default
+  conspiratorially: default
+  contorted: default
+  contorting: default
+  coursed: default
+  coursing: default
+  crackle: default
+  crackled: default
+  crackling: default
+  cradled: default
+  cradling: default
+  creak: default
+  creaked: default
+  creaking: default
+  crept: default
+  crescendoed: default
+  crimson: default
+  crinkled: default
+  crinkling: default
+  croaked: default
+  crookedly: default
+  crouched: default
+  crucio: default
+  crumbling: default
+  crumpled: default
+  crumpling: default
+  cultists: default
+  daedra: default
+  daedric: default
+  dampeners: default
+  dampness: default
+  dappling: default
+  darkwood: default
+  darted: default
+  darting: default
+  datapad: default
+  deafening: default
+  defied: default
+  delved: default
+  desolate: default
+  destructo: default
+  devourer: default
+  dimly: default
+  dimmed: default
+  dimness: default
+  disbelief: default
+  disconcertingly: default
+  discordant: default
+  disheveled: default
+  dismissively: default
+  disorientation: default
+  disoriented: default
+  disorienting: default
+  dizzying: default
+  doomguy: default
+  doorframe: default
+  doppelg: default
+  dovahkiin: default
+  dragonborn: default
+  drakon: default
+  drawled: default
+  dread: default
+  droned: default
+  drumbeat: default
+  dursleys: default
+  eadric: default
+  eamon: default
+  echoed: default
+  echoes: default
+  echoing: default
+  eerie: default
+  eerily: default
+  einherjar: default
+  eira: default
+  elara: 0
+  eldarion: default
+  elderglen: default
+  eldergrove: default
+  eldermere: default
+  elderton: default
+  eldoria: default
+  eldrath: default
+  eldric: default
+  eldrid: default
+  eldrin: default
+  eldrion: default
+  eldritch: default
+  eldrith: default
+  elian: default
+  eliana: default
+  elias: default
+  elion: default
+  eliora: default
+  elira: default
+  ellaria: default
+  elliana: default
+  elmsworth: default
+  elongating: default
+  elowen: default
+  elros: default
+  elyas: default
+  elyndor: default
+  elyndra: default
+  elyon: default
+  elyra: default
+  elys: default
+  elysia: default
+  elysion: default
+  elysium: default
+  emanate: default
+  emanated: default
+  enchantments: default
+  encroaching: default
+  enigmatic: default
+  enslavers: default
+  enveloped: default
+  eolan: default
+  eolande: default
+  eons: default
+  eremon: default
+  eridan: default
+  eridani: default
+  erupted: default
+  eryndor: default
+  etched: default
+  ethan: default
+  ethereal: default
+  evelyn: default
+  exclaimed: default
+  exhilaration: default
+  expanse: default
+  facepalmed: default
+  faded: default
+  faint: default
+  faintly: default
+  faltered: default
+  festered: default
+  fianc: default
+  fidgeted: default
+  finnian: default
+  finnigan: default
+  firelight: default
+  fishtailed: default
+  fleeting: default
+  flicker: default
+  flickered: default
+  flickering: default
+  flinched: default
+  flitted: default
+  floorboards: default
+  fluffernutter: default
+  fluttered: default
+  frantic: default
+  frayed: default
+  fraying: default
+  frizzle: default
+  frowned: default
+  froze: default
+  furrowed: default
+  furrowing: default
+  gaped: default
+  gaslights: default
+  gasped: default
+  gauntleted: default
+  gaze: default
+  gazed: default
+  gazes: default
+  geralt: default
+  gerta: default
+  gestured: default
+  gesturing: default
+  glanced: default
+  glances: default
+  glancing: default
+  glar: default
+  glared: default
+  gleamed: default
+  gleaming: default
+  gleep: default
+  glided: default
+  glimmer: default
+  glimmered: default
+  glimmering: default
+  glint: default
+  glinted: default
+  glinting: default
+  glistened: default
+  glistening: default
+  gloved: default
+  glow: default
+  glowed: default
+  glyphs: default
+  gnarled: default
+  gnawed: default
+  gnawing: default
+  godric: default
+  gorok: default
+  gorthok: default
+  grath: default
+  gravelly: default
+  greatsword: default
+  gregnok: default
+  grimbold: default
+  grimgold: default
+  grimly: default
+  grimoire: default
+  grimoires: default
+  grimstone: default
+  grinned: default
+  gripped: default
+  grizzled: default
+  groaned: default
+  grogg: default
+  groggily: default
+  grognak: default
+  grok: default
+  grolak: default
+  growl: default
+  growled: default
+  gruff: default
+  grumbled: default
+  grunted: default
+  gruuz: default
+  guildmaster: default
+  guildmates: default
+  gurgled: default
+  guttered: default
+  guttural: default
+  hargrove: default
+  havenwood: default
+  heartstone: default
+  hefted: default
+  hefting: default
+  hesitantly: default
+  hesitated: default
+  hilt: default
+  hissed: default
+  hitched: default
+  hivemind: default
+  hoarse: default
+  hollowly: default
+  holographic: default
+  holstered: default
+  homelander: default
+  hovered: default
+  howled: default
+  huddled: default
+  hues: default
+  huginn: default
+  hulking: default
+  hummed: default
+  humming: default
+  humorless: default
+  hunched: default
+  hurried: default
+  hurtled: default
+  hushed: default
+  ichor: default
+  ignarion: default
+  ignis: default
+  igniting: default
+  impassive: default
+  imperceptible: default
+  impossibly: default
+  incantation: default
+  incantations: default
+  indefinably: default
+  inky: default
+  innocuously: default
+  insectoid: default
+  insistent: default
+  instinctively: default
+  intently: default
+  interdimensional: default
+  interjected: default
+  intoned: default
+  intricate: default
+  intricately: default
+  iridescent: default
+  ironforge: default
+  isher: default
+  isolde: default
+  itched: default
+  jagged: default
+  jarek: default
+  jaxon: default
+  jingled: default
+  jolt: default
+  jolted: default
+  joren: default
+  k'tharr: default
+  kael: default
+  kaela: default
+  kaelan: default
+  kaelen: default
+  kaelin: default
+  kaelor: default
+  kaelthar: default
+  kaida: default
+  kaito: default
+  kal'ren: default
+  kaleidoscope: default
+  kalel: default
+  kessari: default
+  keth: default
+  kethra: default
+  keycard: default
+  knelt: default
+  krael: default
+  kraelion: default
+  kragoth: default
+  krel: default
+  krixon: default
+  kryll: default
+  labyrinthine: default
+  laced: default
+  lamplight: default
+  lanced: default
+  leaned: default
+  lila: default
+  lingered: default
+  liora: default
+  lira: default
+  lirael: default
+  liran: default
+  lirien: default
+  lirin: default
+  locket: default
+  lockpick: default
+  lockpicking: default
+  lockpicks: default
+  loomed: default
+  lorian: default
+  lumin: default
+  lumina: default
+  luminara: default
+  luminari: default
+  luminescence: default
+  luminescent: default
+  lunged: default
+  lurched: default
+  lurked: default
+  lyra: default
+  lyrien: default
+  lysander: default
+  lysandra: default
+  lysara: default
+  mages: default
+  malachai: default
+  malachar: default
+  malachor: default
+  malakai: default
+  malakar: default
+  malakor: default
+  malazar: default
+  malevolence: default
+  malevolent: default
+  malkor: default
+  malphas: default
+  malric: default
+  malus: default
+  mandibles: default
+  marveled: default
+  marveling: default
+  materialized: default
+  materializing: default
+  meadowgrove: default
+  medbay: default
+  megacorps: default
+  meowed: default
+  merfolk: default
+  meticulously: default
+  meticulousness: default
+  miggins: default
+  mingling: default
+  mirroring: default
+  mirthless: default
+  missingno: default
+  moros: default
+  morwen: default
+  motes: default
+  mournful: default
+  mttr: default
+  muffled: default
+  muggle: default
+  mumbled: default
+  murmur: default
+  murmured: default
+  murmurs: default
+  mused: default
+  mutely: default
+  muttered: default
+  narrowed: default
+  narrowing: default
+  navigated: default
+  necromancer: default
+  necromantic: default
+  nestled: default
+  newfound: default
+  nightshade: default
+  nocked: default
+  nodded: default
+  numbah: default
+  numbly: default
+  nuzzled: default
+  oakhaven: default
+  oblivious: default
+  obsidian: default
+  oelia: default
+  ominously: default
+  omnicorp: default
+  orcish: default
+  otherworldly: default
+  outmaneuver: default
+  outmatched: default
+  outthink: default
+  paled: default
+  palpable: default
+  pang: default
+  panted: default
+  pattered: default
+  paused: default
+  peephole: default
+  peered: default
+  penhaligon: default
+  perked: default
+  perpetually: default
+  petrova: default
+  pinpricks: default
+  pipkin: default
+  piqued: default
+  pixelated: default
+  placating: default
+  planchette: default
+  plasteel: default
+  pored: default
+  poring: default
+  pounding: default
+  precariously: default
+  precipice: default
+  prickle: default
+  prickled: default
+  prickling: default
+  protectiveness: default
+  pulsated: default
+  pulsating: default
+  pulsed: default
+  pulsing: default
+  punctuated: default
+  purred: default
+  pyrokinetic: default
+  quaked: default
+  quickened: default
+  quickening: default
+  quicksave: default
+  quietude: default
+  quirked: default
+  quivered: default
+  raced: default
+  radiating: default
+  raged: default
+  railguns: default
+  rasp: default
+  rasped: default
+  rasping: default
+  raspy: default
+  recoiled: default
+  recoiling: default
+  reeked: default
+  reeled: default
+  reeling: default
+  relentless: default
+  renn: default
+  resonant: 0
+  resonated: default
+  resonating: 0
+  reticuli: default
+  reveled: default
+  reverberate: default
+  reverberated: default
+  reverberating: default
+  reverie: default
+  rhythmic: default
+  rippled: default
+  rippling: default
+  rivia: default
+  rngus: default
+  roared: default
+  roomba: default
+  rostova: default
+  rumbled: default
+  rumbling: default
+  rummaged: default
+  runes: default
+  rusted: default
+  rustle: default
+  rustled: default
+  rustling: default
+  ryker: default
+  ryla: default
+  sadim: default
+  savoring: default
+  scavenged: default
+  scent: default
+  schr: default
+  scoffed: default
+  scowled: default
+  scrawled: default
+  screeched: default
+  scribbled: default
+  scrolled: default
+  scurried: default
+  searing: default
+  seep: default
+  seeped: default
+  seeping: default
+  sellsword: default
+  seraphiel: default
+  seraphina: 0
+  seraphine: 0
+  shadowblade: default
+  shadows: default
+  shambled: default
+  shambling: default
+  shimmer: default
+  shimmered: default
+  shimmering: default
+  shiver: default
+  shivered: default
+  shivers: default
+  shockwaves: default
+  shrieked: default
+  shrouded: default
+  shuddered: default
+  sickly: default
+  sidestepped: default
+  sighed: default
+  sigil: default
+  sigils: default
+  silas: default
+  silhouetted: default
+  silverwood: default
+  sipped: default
+  skeptically: default
+  skittered: default
+  skittering: default
+  sleek: default
+  slicked: default
+  slicking: default
+  slithered: default
+  slitted: default
+  slood: default
+  slumbered: default
+  slumped: default
+  smirked: default
+  smoldered: default
+  snaked: default
+  snarled: default
+  sneered: default
+  snorted: default
+  softened: default
+  softening: default
+  solara: default
+  soundlessly: default
+  sparkled: default
+  spasmed: default
+  speedrunner: default
+  speedrunners: default
+  spellbook: default
+  spellbooks: default
+  spellcasting: default
+  spiderwebbed: default
+  spiraled: default
+  spires: default
+  sprawled: default
+  sprawling: default
+  sprinted: default
+  sputtered: default
+  squinted: default
+  squinting: default
+  stammered: default
+  starborn: default
+  stared: default
+  starlit: default
+  staticky: default
+  steadier: default
+  steadying: default
+  steeled: default
+  steeling: default
+  steepled: default
+  steepling: default
+  stilled: default
+  stillness: default
+  streaked: default
+  streetlamp: default
+  streetlamps: default
+  streetlights: default
+  strode: default
+  stumbled: default
+  suffocating: default
+  sulfurous: default
+  supervillain: default
+  surged: default
+  swirled: default
+  swirling: default
+  swiveled: default
+  sylas: default
+  sylvani: default
+  sylvans: default
+  taehal: default
+  tankards: default
+  tapestry: default
+  taren: default
+  tattered: default
+  teemed: default
+  teetered: default
+  tendril: default
+  tendrils: default
+  tenebrous: default
+  terrans: default
+  terrifyingly: default
+  thalassa: default
+  thalen: default
+  thalion: default
+  thalor: default
+  thalos: default
+  tharivol: default
+  tharos: default
+  tharros: default
+  theron: default
+  thog: default
+  thoran: default
+  thoren: default
+  thorgar: default
+  thorgrim: default
+  thorne: default
+  thorned: default
+  thrain: default
+  thrax: default
+  threadbare: default
+  throbbed: default
+  throk: default
+  throngs: default
+  thrum: default
+  thrummed: default
+  thrumming: default
+  thud: default
+  thudded: default
+  thudding: default
+  thunderous: default
+  ticked: default
+  tightened: default
+  tilted: default
+  tinged: default
+  tingled: default
+  tomes: default
+  torchlight: default
+  torvin: default
+  tousled: default
+  tousling: default
+  towering: default
+  townsfolk: default
+  transcended: default
+  transfixed: default
+  treant: default
+  trembled: default
+  trembling: default
+  tremor: default
+  trepidation: default
+  trifled: default
+  trudged: default
+  truffula: default
+  tugged: default
+  twinge: default
+  twinkled: default
+  twinkling: default
+  twitched: default
+  unassuming: default
+  unbidden: default
+  unblinking: default
+  unburdened: default
+  unclenching: default
+  uncurled: default
+  underbrush: default
+  undercity: default
+  undercurrent: default
+  understandingly: default
+  unease: default
+  unfazed: default
+  unfurling: default
+  unmarred: default
+  unmoving: default
+  unnerving: default
+  unnervingly: default
+  unravel: default
+  unraveling: default
+  unreadable: default
+  unremarkable: default
+  unseeing: default
+  unsettling: default
+  unsettlingly: default
+  unshaken: default
+  unshed: default
+  unspoken: default
+  unspooled: default
+  unwavering: default
+  unyielding: default
+  uthgar: default
+  uuwu: default
+  vael: default
+  valerius: default
+  valoria: default
+  valtor: default
+  varek: default
+  varen: default
+  varyn: default
+  vastness: default
+  venon: default
+  verdant: default
+  veridia: default
+  veridian: default
+  veridium: default
+  verran: default
+  vespera: default
+  vexar: default
+  veyl: default
+  veyn: default
+  veyne: default
+  veyra: default
+  veyth: default
+  vial: default
+  vibrant: default
+  vibrated: default
+  viewport: default
+  viewscreen: default
+  volkov: default
+  vorath: default
+  vorlag: default
+  vorn: default
+  vorne: default
+  voryn: default
+  voss: default
+  vrook: default
+  vrykali: default
+  vrynn: default
+  wafted: default
+  wailed: default
+  warily: default
+  wariness: default
+  warred: default
+  wavered: default
+  wavering: default
+  weariness: default
+  weathered: default
+  welled: default
+  wheezed: default
+  whimpered: default
+  whir: default
+  whirled: default
+  whirred: default
+  whirring: default
+  whirs: default
+  whisper: default
+  whispered: default
+  whispering: default
+  whispers: default
+  whisperwind: default
+  whisperwood: default
+  whiterun: default
+  widened: default
+  winced: default
+  wincing: default
+  windowpane: default
+  windowpanes: default
+  wizened: default
+  wojek: default
+  woodsmoke: default
+  writhe: default
+  writhed: default
+  writingprompts: default
+  xandros: default
+  xanthean: default
+  xantheans: default
+  xaphan: default
+  xaren: default
+  xarpti: default
+  xavius: default
+  xendari: default
+  xenobiologist: default
+  xenobiology: default
+  xenolinguist: default
+  xenos: default
+  xeridian: default
+  xeridians: default
+  xhk'kht: default
+  xyla: default
+  xylar: default
+  xylara: default
+  xylia: default
+  xylo: default
+  xylons: default
+  xylophia: default
+  xylos: default
+  xylosian: default
+  xylosians: default
+  xylossian: default
+  xylossians: default
+  xyloth: default
+  xylothian: default
+  xylothians: default
+  xylox: default
+  xyra: default
+  y'lgoth: default
+  yawned: default
+  yearned: default
+  yellowed: default
+  yelped: default
+  yowled: default
+  zafir: default
+  zalrex: default
+  zarek: default
+  zarthus: default
+  zephyr: default
+  zephyra: default
+  zephyria: default
+  zephyrian: default
+  zephyrians: default
+  zephyrion: default
+  zephyros: default
+  zephyrus: default
+  zetans: default
+  zha'thik: default
+  zhra'gha: default
+  zorath: default
+  zorax: default
+  zoraxians: default
+  zorgon: default
+  zorp: default
+  zorvath: default
+  zorvathian: default
+  zorvathians: default
+  zydonian: default
+  zydonians: default
+  zyla: default
+  zylar: default
+  zylara: default
+  zyloth: default
+  zylth: default
+  zyn: default
+  zyn'thari: default
+  zyn'thra: default
+  zyra: default
+  zz'glorg: default
+trigrams:
+  "voice barely whisper": default
+  "took deep breath": default
+  "could help feel": default
+  "heart pounding chest": default
+  "said voice barely": default
+  "help feel sense": default
+  "said voice low": default
+  "voice barely audible": default
+  "asked voice barely": default
+  "could shake feeling": default
+  "casting long shadows": default
+  "could help wonder": default
+  "said voice steady": default
+  "air thick scent": default
+  "long shadows across": default
+  "sun dipped horizon": default
+  "smile playing lips": default
+  "days turned weeks": default
+  "chill run spine": default
+  "felt chill run": default
+  "whispered voice barely": default
+  "felt like eternity": default
+  "shiver run spine": default
+  "said voice filled": default
+  "spreading across face": default
+  "leaned back chair": default
+  "voice steady despite": default
+  "unlike anything ever": default
+  "felt shiver run": default
+  "taking deep breath": default
+  "breath caught throat": default
+  "ready face whatever": default
+  "heart pounded chest": default
+  "room fell silent": default
+  "trying make sense": default
+  "dipped horizon casting": default
+  "said voice trembling": default
+  "something else something": default
+  "deep breath trying": default
+  "asked voice trembling": default
+  "could feel weight": default
+  "said voice firm": default
+  "felt strange sense": default
+  "words hung air": default
+  "brow furrowed concentration": default
+  "challenges lay ahead": default
+  "something else entirely": default
+  "voice low rumble": default
+  "sun began set": default
+  "sent shiver spine": default
+  "end end end": default
+  "voice trembling slightly": default
+  "eyes never leaving": default
+  "growing sense unease": default
+  "door creaked open": default
+  "shake feeling something": default
+  "air hung thick": default
+  "heart skipped beat": default
+  "made way back": default
+  "took step back": default
+  "rain continued fall": default
+  "sun hung low": default
+  "said voice dripping": default
+  "said voice soft": default
+  "casting warm glow": default
+  "took step forward": default
+  "eyes wide fear": default
+  "renewed sense purpose": default
+  "would find way": default
+  "trying keep voice": default
+  "hung low sky": default
+  "horizon casting long": default
+  "smile spreading across": default
+  "leaned forward eyes": default
+  "anything ever seen": default
+  "one thing certain": default
+  "mind racing possibilities": default
+  "low sky casting": default
+  "said voice laced": default
+  "heart hammered ribs": default
+  "hung heavy air": default
+  "looked eyes filled": default
+  "face whatever challenges": default
+  "took step closer": default
+  "eyes filled mixture": default
+  "road ahead would": default
+  "spread like wildfire": default
+  "whispered voice trembling": default
+  "felt sense peace": default
+  "hung air heavy": default
+  "air thick tension": default
+  "newfound sense purpose": default
+  "flicker something akin": default
+  "grin spreading across": default
+  "deep breath stepped": default
+  "door swung open": default
+  "knew would never": default
+  "eyes locked onto": default
+  "tried make sense": default
+  "dust motes danced": default
+  "dimly lit room": default
+  "small intricately carved": default
+  "brow furrowed confusion": default
+  "deep breath steeling": default
+  "could help notice": default
+  "one last time": default
+  "eyes darting around": default
+  "sent shivers spine": default
+  "keep voice steady": default
+  "young woman named": default
+  "said voice tinged": default
+  "painting sky hues": default
+  "eyes wide wonder": default
+  "nodded mind racing": default
+  "fingers flying across": default
+  "whatever challenges lay": default
+  "figure emerged shadows": default
+  "mind raced trying": default
+  "knew road ahead": default
+  "raised hand silencing": default
+  "piercing blue eyes": default
+  "felt strange sensation": default
+  "turned walked away": default
+  "said voice calm": default
+  "small smile playing": default
+  "felt cold dread": default
+  "mind racing questions": default
+  "could find way": default
+  "spread across face": default
+  "first time long": default
+  "ground beneath feet": default
+  "hung thick scent": default
+  "sky casting long": default
+  "mind racing implications": default
+  "weeks weeks months": default
+  "asked voice low": default
+  "chill ran spine": default
+  "said trying sound": default
+  "would never forget": default
+  "gaze sweeping across": default
+  "asked voice laced": default
+  "shiver ran spine": default
+  "turned weeks weeks": default
+  "spent countless hours": default
+  "brow furrowed concern": default
+  "eyes wide mixture": default
+  "resonated deep within": default
+  "eyes widened surprise": default
+  "air thick anticipation": default
+  "breath catching throat": default
+  "mind racing tried": default
+  "deep breath feeling": default
+  "looked around room": default
+  "shook head trying": default
+  "whatever lay ahead": default
+  "said voice like": default
+  "replied voice steady": default
+  "eyes scanning room": default
+  "felt growing sense": default
+  "stepped forward voice": default
+  "never seen anything": default
+  "stammered voice barely": default
+  "help feel twinge": default
+  "knew one thing": default
+  "stepped forward eyes": default
+  "smile spread across": default
+  "maybe maybe could": default
+  "feel sense unease": default
+  "seen anything like": default
+  "knew chilling certainty": default
+  "growing sense dread": default
+  "intricately carved wooden": default
+  "heart heavy weight": default
+  "words echoed mind": default
+  "sighed running hand": default
+  "scent damp earth": default
+  "air thick smell": default
+  "said voice smooth": default
+  "began set casting": default
+  "blood ran cold": default
+  "said voice echoing": default
+  "hand instinctively reaching": default
+  "sense peace wash": default
+  "elara said voice": default
+  "smile tugging corners": default
+  "said voice tight": default
+  "could feel power": default
+  "eyes wide terror": default
+  "mind already racing": default
+  "knuckles turning white": default
+  "felt glimmer hope": default
+  "made decision would": default
+  "faint almost imperceptible": default
+  "eyes widened shock": default
+  "feel sense pride": default
+  "tears streaming face": default
+  "horizon painting sky": default
+  "casting eerie glow": default
+  "long could remember": default

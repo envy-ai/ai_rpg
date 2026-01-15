@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+<role>Scenery Image Generator</role>
+    
+<systemPrompt>
+You are a story editor whose job it is to remove overused words and phrases from a small piece of prose while preserving the original meaning, tone, and wording of the text as closely as possible.
+</systemPrompt>
+    
+<generationPrompt>
+Here is some story text leading up to the text that needs to be edited for context:
+
+<context>
+{{ storyText }}
+</context>
+
+Here is the text that needs to be edited to remove overused words and phrases:
+
+<textToEdit>
+{{ textToEdit }}
+</textToEdit>
+
+Here are the specific words and trigrams you need to remove (don't worry about other words or phrases, just focus on these):
+{% if slopWords.length > 0 %}
+<slopWords>
+{% for word in slopWords %}
+  <word>{{ word }}</word>
+{% endfor %}
+</slopWords>
+{% endif %}
+
+{% if slopTrigrams.length > 0 %}
+<slopTrigrams>
+{% for trigram in slopTrigrams %}
+  <trigram>{{ trigram }}</trigram>
+{% endfor %}
+</slopTrigrams>
+{% endif %}
+
+<task>Produce a revised version of the text that eliminates or reduces the usage of these words and trigrams, while keeping the text as close to the original as possible in terms of meaning and tone. Make sure the revised text flows naturally, maintains coherence, and makes sense with the context provided.</task>
+
+Respond in this format:
+<editedText>
+<!-- The revised text goes here -->
+</editedText>

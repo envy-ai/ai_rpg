@@ -55,6 +55,7 @@ attachAxiosMetricsLogger(axios);
 
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
+const SLOPWORDS_PATH = path.join(__dirname, 'defs', 'slopwords.yaml');
 let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
@@ -1655,6 +1656,134 @@ function pushChatEntry(entry, collector = null, locationId = null) {
     }
     return normalized;
 }
+
+async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
+    let rawSlopwords;
+    try {
+        rawSlopwords = await fs.promises.readFile(SLOPWORDS_PATH, 'utf8');
+    } catch (error) {
+        throw new Error(`Failed to read slopwords definitions: ${error.message}`);
+    }
+
+    let slopConfig;
+    try {
+        slopConfig = yaml.load(rawSlopwords) || {};
+    } catch (error) {
+        throw new Error(`Failed to parse slopwords YAML: ${error.message}`);
+    }
+
+    const overrideProvided = defaultPpmOverride !== null && defaultPpmOverride !== undefined;
+    const resolvedOverride = overrideProvided ? Number(defaultPpmOverride) : null;
+    if (overrideProvided && (!Number.isFinite(resolvedOverride) || resolvedOverride < 0)) {
+        throw new Error('Slopwords default override ppm is invalid.');
+    }
+
+    const defaultPpm = overrideProvided ? resolvedOverride : Number(slopConfig.default);
+    if (!Number.isFinite(defaultPpm) || defaultPpm < 0) {
+        throw new Error('Slopwords default ppm is missing or invalid.');
+    }
+
+    const slopwords = slopConfig.slopwords;
+    if (!slopwords || typeof slopwords !== 'object') {
+        throw new Error('Slopwords list is missing or invalid.');
+    }
+
+    return { defaultPpm, slopwords };
+}
+
+function tokenizeSlopText(text) {
+    if (typeof text !== 'string') {
+        return [];
+    }
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return [];
+    }
+    return trimmed.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
+}
+
+function getSlopwordThreshold(rawLimit, defaultPpm, wordLabel) {
+    if (rawLimit === undefined || rawLimit === null) {
+        return defaultPpm;
+    }
+    if (typeof rawLimit === 'string' && rawLimit.trim().toLowerCase() === 'default') {
+        return defaultPpm;
+    }
+    const numericLimit = Number(rawLimit);
+    if (!Number.isFinite(numericLimit) || numericLimit < 0) {
+        throw new Error(`Invalid ppm limit for slopword "${wordLabel}".`);
+    }
+    return numericLimit;
+}
+
+async function analyzeSlopwordsForText(text, { defaultPpmOverride = null } = {}) {
+    const tokens = tokenizeSlopText(text);
+    if (!tokens.length) {
+        throw new Error('Slopword analysis requires a non-empty string.');
+    }
+
+    const { defaultPpm, slopwords } = await loadSlopwordConfig({ defaultPpmOverride });
+    const wordCounts = new Map();
+    for (const token of tokens) {
+        wordCounts.set(token, (wordCounts.get(token) || 0) + 1);
+    }
+
+    const totalWords = tokens.length;
+    const flagged = [];
+    for (const [rawWord, rawLimit] of Object.entries(slopwords)) {
+        if (typeof rawWord !== 'string' || !rawWord.trim()) {
+            throw new Error('Slopwords list contains an invalid word entry.');
+        }
+        const word = rawWord.trim().toLowerCase();
+        const allowed = getSlopwordThreshold(rawLimit, defaultPpm, rawWord);
+        const count = wordCounts.get(word) || 0;
+        const ppm = (count / totalWords) * 1000000;
+        if (ppm > allowed) {
+            flagged.push(word);
+        }
+    }
+    return flagged;
+}
+
+async function analyzeChatSlopwords({ defaultPpmOverride = null } = {}) {
+    if (!Array.isArray(chatHistory)) {
+        throw new Error('Chat history is unavailable for slopword analysis.');
+    }
+    if (chatHistory.length === 0) {
+        throw new Error('Chat history is empty; slopword analysis requires entries.');
+    }
+
+    const shouldIncludeEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        if (entry.type === 'npc-action') {
+            return true;
+        }
+        return entry.type == null && entry.role === 'assistant';
+    };
+
+    const textSegments = [];
+    for (const entry of chatHistory) {
+        if (!shouldIncludeEntry(entry)) {
+            continue;
+        }
+        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+        if (content) {
+            textSegments.push(content);
+        }
+    }
+
+    if (!textSegments.length) {
+        throw new Error('No eligible chat history text found for slopword analysis.');
+    }
+
+    const combinedText = textSegments.join('\n');
+    return analyzeSlopwordsForText(combinedText, { defaultPpmOverride });
+}
+
+Globals.analyzeChatSlopwords = analyzeChatSlopwords;
+Globals.analyzeSlopwordsForText = analyzeSlopwordsForText;
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {

@@ -590,6 +590,7 @@ class LLMClient {
         captureResponsePayload = null,
         runInBackground = false,
         maxConcurrent = null,
+        multimodal = false,
     } = {}) {
         if (debug) {
             console.log('LLMClient.chatCompletion called with parameters:');
@@ -612,12 +613,28 @@ class LLMClient {
                 waitAfterError,
                 dumpReasoningToConsole,
                 seed,
+                multimodal,
             });
         }
         const aiConfig = LLMClient.#cloneAiConfig();
         let currentTime = Date.now();
         let semaphore = null;
         try {
+            if (multimodal) {
+                const multimodalConfig = Globals?.config?.ai_multimodal;
+                if (!multimodalConfig || typeof multimodalConfig !== 'object') {
+                    throw new Error('AI multimodal configuration is not set.');
+                }
+                if (multimodalConfig.enabled !== true) {
+                    throw new Error('AI multimodal configuration is disabled.');
+                }
+                for (const [key, value] of Object.entries(multimodalConfig)) {
+                    if (key === 'enabled' || value === undefined) {
+                        continue;
+                    }
+                    aiConfig[key] = value;
+                }
+            }
 
             //check if Globals.config.prompt_ai_overrides[metadataLabel] exists, and if so, iterate through the keys and set the corresponding variables
             //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
