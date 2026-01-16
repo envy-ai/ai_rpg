@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+<role>Item Name Regenerator</role>
+
+<systemPrompt>
+You are a specialized prompt generator for creating RPG item names.
+</systemPrompt>
+
+<generationPrompt>
+
+<context>
+  {#
+<worldOutline>
+{% for regionName, locations in worldOutline.regions %}
+  <region name="{{ regionName | escape }}">
+    {% for loc in locations %}<location>{{ loc }}</location>
+    {% endfor %}
+  </region>
+{% endfor %}
+</worldOutline>
+
+{% if location is defined and location %}
+Location Information:
+<location>
+  <name>{{ location.name }}</name>
+  <description>{{ location.description }}</description>
+  <region>{{ location.region }}</region>
+  <baseLevel>{{ location.baseLevel }}</baseLevel>
+</location>
+{% endif %}
+
+{% if region is defined and region %}
+Region Information:
+<region>
+  <name>{{ region.name }}</name>
+  <description>{{ region.description }}</description>
+</region>
+{% endif %}
+#}
+Here is a list of items that have duplicate names:
+<itemsToRegenerateName>
+{% for item in itemsToRegenerateName %}
+<item>
+  <id>{{ item.id }}</id>
+  <oldName>{{ item.name }}</oldName>
+  <description>{{ item.description }}</description>
+</item>
+{% endfor %}
+</itemsToRegenerateName>
+
+{% if bannedWords %}
+Banned words:
+{% for word in bannedWords %}{{ word }}
+{% endfor %}
+{% endif %}
+</context>
+
+Based on the provided context, give each item in the itemsToRegenerateName list a different name that fits the setting and culture{% if bannedWords %}, and does not use any of the banned words{% endif %}. Replace the old name in the description with the placeholder %NAME% to indicate where the new name will go.
+
+Return them in this format:
+
+<items>
+  <item>
+    <id>original item id</id>
+    <oldName>original item name</oldName>
+    <name>new item name</name>
+    <name>...</name>
+    <!-- a total of 10 proposed names for the item -->
+    <description>updated description</description>
+  </item>
+  <item>
+    ... the rest of the items, if more than one ...
+  </item>
+</items>
+
+Only include XML described above—no commentary, bullet lists, or additional text.
+
+</generationPrompt>
+</template>

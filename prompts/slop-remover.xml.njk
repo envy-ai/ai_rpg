@@ -21,19 +21,15 @@ Here is the text that needs to be edited to remove overused words and phrases:
 
 Here are the specific words and trigrams you need to remove (don't worry about other words or phrases, just focus on these):
 {% if slopWords.length > 0 %}
-<slopWords>
-{% for word in slopWords %}
+<slopWords>{% for word in slopWords %}
   <word>{{ word }}</word>
-{% endfor %}
-</slopWords>
+{% endfor %}</slopWords>
 {% endif %}
 
 {% if slopTrigrams.length > 0 %}
-<slopTrigrams>
-{% for trigram in slopTrigrams %}
+<slopTrigrams>{% for trigram in slopTrigrams %}
   <trigram>{{ trigram }}</trigram>
-{% endfor %}
-</slopTrigrams>
+{% endfor %}</slopTrigrams>
 {% endif %}
 
 <task>Produce a revised version of the text that eliminates or reduces the usage of these words and trigrams, while keeping the text as close to the original as possible in terms of meaning and tone. Make sure the revised text flows naturally, maintains coherence, and makes sense with the context provided.</task>

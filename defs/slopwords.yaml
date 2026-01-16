@@ -1,9 +1,14 @@
 # The default allowable ppm for the words/trigrams listed below (trigrams are per million words, not per million trigrams)
-default: 800
+default: 200
 trigram_default: 5
 
 # A list of slop words (trigrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 slopwords:
+  # Custom ones first:
+  singing: default
+  resonance: default
+
+  # Alphabetical list:
   absently: default
   abuzz: default
   ached: default
@@ -370,6 +375,7 @@ slopwords:
   grolak: default
   growl: default
   growled: default
+  growls: default
   gruff: default
   grumbled: default
   grunted: default
@@ -389,6 +395,7 @@ slopwords:
   hilt: default
   hissed: default
   hitched: default
+  hitches: default
   hivemind: default
   hoarse: default
   hollowly: default
@@ -558,7 +565,7 @@ slopwords:
   nuzzled: default
   oakhaven: default
   oblivious: default
-  obsidian: default
+  obsidian: 500
   oelia: default
   ominously: default
   omnicorp: default

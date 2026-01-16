@@ -6492,20 +6492,64 @@ module.exports = function registerApiRoutes(scope) {
                 const tokenSet = new Set(tokens);
                 return flagged.filter(word => tokenSet.has(word));
             };
-            const applySlopRemoval = async (prose) => {
-                let currentProse = typeof prose === 'string' ? prose.trim() : '';
-                if (!currentProse) {
-                    throw new Error('Slop remover requires non-empty prose.');
-                }
+                const buildSlopContextText = () => {
+                    if (!Array.isArray(chatHistory)) {
+                        throw new Error('Chat history is unavailable for slopword context.');
+                    }
+                    const proseEntries = [];
+                    const playerEntries = [];
+                    for (let index = 0; index < chatHistory.length; index += 1) {
+                        const entry = chatHistory[index];
+                        if (!entry || typeof entry !== 'object') {
+                            continue;
+                        }
+                        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                        if (!content) {
+                            continue;
+                        }
+                        if (entry.role === 'user') {
+                            playerEntries.push({ index, content });
+                        }
+                        const entryType = typeof entry.type === 'string' ? entry.type : null;
+                        const isProseLike = entry.role === 'assistant'
+                            && (entryType === 'player-action'
+                                || entryType === 'npc-action'
+                                || entryType === 'quest-reward'
+                                || entryType === 'random-event'
+                                || entryType === null);
+                        if (isProseLike) {
+                            proseEntries.push({ index, content });
+                        }
+                    }
+                    const tailProse = proseEntries.slice(-5);
+                    const tailPlayers = playerEntries.slice(-5);
+                    const combined = [...tailProse, ...tailPlayers].sort((a, b) => a.index - b.index);
+                    const seen = new Set();
+                    const lines = [];
+                    for (const entry of combined) {
+                        if (seen.has(entry.index)) {
+                            continue;
+                        }
+                        seen.add(entry.index);
+                        lines.push(entry.content);
+                    }
+                    return lines.join('\n\n');
+                };
 
-                const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-                if (!slopWordSet.size) {
-                    return currentProse;
-                }
+                const applySlopRemoval = async (prose) => {
+                    let currentProse = typeof prose === 'string' ? prose.trim() : '';
+                    if (!currentProse) {
+                        throw new Error('Slop remover requires non-empty prose.');
+                    }
 
-                const slopContext = recentProseContents.slice(-8).join('\n\n');
+                    const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
+                    if (!slopWordSet.size) {
+                        return currentProse;
+                    }
 
-                for (let attempt = 0; attempt < 3; attempt += 1) {
+                    const slopContext = buildSlopContextText();
+
+                    for (let attempt = 0; attempt < 3; attempt += 1) {
                     const slopWords = Array.from(slopWordSet);
                     const rendered = promptEnv.render('slop-remover.xml.njk', {
                         storyText: slopContext,
@@ -6527,6 +6571,13 @@ module.exports = function registerApiRoutes(scope) {
                         messages,
                         metadataLabel: 'slop_remover',
                         validateXML: false
+                    });
+                    LLMClient.logPrompt({
+                        prefix: 'slop_remover',
+                        metadataLabel: 'slop_remover',
+                        systemPrompt: promptData.systemPrompt,
+                        generationPrompt: promptData.generationPrompt,
+                        response: slopResponse
                     });
 
                     const match = typeof slopResponse === 'string'
@@ -7720,7 +7771,9 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    aiResponse = await applySlopRemoval(aiResponse);
+                    if (Globals.config?.slop_buster === true) {
+                        aiResponse = await applySlopRemoval(aiResponse);
+                    }
 
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
 

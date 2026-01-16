@@ -60,6 +60,8 @@ let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
+let cachedSlopWordList = null;
+let cachedNpcNameBlockedWords = null;
 
 const mergeDeep = (target, source) => {
     if (!source || typeof source !== 'object') {
@@ -136,6 +138,8 @@ function reloadConfigAndDefs() {
     cachedBannedNpcRegexes = null;
     cachedBannedLocationNames = null;
     cachedExperiencePointValues = null;
+    cachedSlopWordList = null;
+    cachedNpcNameBlockedWords = null;
 
     const invalidateCache = (env) => {
         if (env && typeof env.invalidateCache === 'function') {
@@ -7021,7 +7025,7 @@ function renderLocationNpcPrompt(location, options = {}) {
             existingNpcsInOtherLocations: options.existingNpcsInOtherLocations || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
-            bannedWords: options.bannedWords || getBannedNpcWords(),
+            bannedWords: options.bannedWords || getNpcPromptBannedWords(),
             lorebookEntries
         });
     } catch (error) {
@@ -7065,7 +7069,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             allLocationsInRegion: options.allLocationsInRegion || [],
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
-            bannedWords: options.bannedWords || getBannedNpcWords(),
+            bannedWords: options.bannedWords || getNpcPromptBannedWords(),
             characterConcepts: options.characterConcepts || [],
             config: Globals.config || {},
             lorebookEntries,
@@ -9095,6 +9099,46 @@ function getBannedNpcWords() {
     return cachedBannedNpcWords;
 }
 
+function getNpcPromptBannedWords() {
+    return getBannedNpcWords();
+}
+
+function getSlopWordList() {
+    if (Array.isArray(cachedSlopWordList)) {
+        return cachedSlopWordList;
+    }
+
+    try {
+        const raw = fs.readFileSync(SLOPWORDS_PATH, 'utf8');
+        const parsed = yaml.load(raw) || {};
+        const slopwords = parsed.slopwords;
+        if (!slopwords || typeof slopwords !== 'object') {
+            throw new Error('Slopwords list is missing or invalid.');
+        }
+        cachedSlopWordList = Object.keys(slopwords)
+            .map(word => (typeof word === 'string' ? word.trim().toLowerCase() : ''))
+            .filter(Boolean);
+    } catch (error) {
+        console.warn('Failed to load slopwords list:', error.message);
+        cachedSlopWordList = [];
+    }
+
+    return cachedSlopWordList;
+}
+
+function getNpcNameBlockedWords() {
+    if (Array.isArray(cachedNpcNameBlockedWords)) {
+        return cachedNpcNameBlockedWords;
+    }
+    const bannedWords = getBannedNpcWords();
+    const slopWords = getSlopWordList();
+    const combined = new Set();
+    bannedWords.forEach(word => combined.add(word));
+    slopWords.forEach(word => combined.add(word));
+    cachedNpcNameBlockedWords = Array.from(combined);
+    return cachedNpcNameBlockedWords;
+}
+
 function getBannedNpcRegexes() {
     if (Array.isArray(cachedBannedNpcRegexes)) {
         return cachedBannedNpcRegexes;
@@ -9164,7 +9208,7 @@ function getBannedLocationNameSet() {
 
 function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet()) {
     if (!name || typeof name !== 'string' || !(bannedSet instanceof Set) || bannedSet.size === 0) {
-        return false;
+        return Boolean(locationNameContainsSlopWord(name));
     }
 
     const normalizedName = name.trim().toLowerCase();
@@ -9181,6 +9225,34 @@ function isLocationNameBanned(name, bannedSet = getBannedLocationNameSet()) {
         }
     }
 
+    if (locationNameContainsSlopWord(normalizedName)) {
+        return true;
+    }
+
+    return false;
+}
+
+function locationNameContainsSlopWord(name, slopWords = getSlopWordList()) {
+    if (!name || typeof name !== 'string' || !slopWords.length) {
+        return false;
+    }
+
+    const tokens = name
+        .toLowerCase()
+        .split(/[^a-z0-9']+/)
+        .filter(Boolean);
+
+    if (!tokens.length) {
+        return false;
+    }
+
+    const tokenSet = new Set(tokens);
+    for (const word of slopWords) {
+        if (tokenSet.has(word)) {
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -9190,8 +9262,8 @@ async function ensureLocationNameAllowed(location, { maxAttempts = 3 } = {}) {
     }
 
     const bannedSet = getBannedLocationNameSet();
-    if (!(bannedSet instanceof Set) || bannedSet.size === 0) {
-        return;
+    if (!(bannedSet instanceof Set)) {
+        throw new Error('Banned location name list is unavailable.');
     }
 
     const originalName = typeof location.name === 'string' ? location.name : '';
@@ -9224,8 +9296,8 @@ async function ensureRegionNameAllowed(region, { maxAttempts = 3 } = {}) {
     }
 
     const bannedSet = getBannedLocationNameSet();
-    if (!(bannedSet instanceof Set) || bannedSet.size === 0) {
-        return;
+    if (!(bannedSet instanceof Set)) {
+        throw new Error('Banned location name list is unavailable.');
     }
 
     let attempts = 0;
@@ -9251,7 +9323,7 @@ async function ensureRegionNameAllowed(region, { maxAttempts = 3 } = {}) {
     }
 }
 
-function npcNameContainsBannedWord(name, bannedWords = getBannedNpcWords()) {
+function npcNameContainsBannedWord(name, bannedWords = getNpcNameBlockedWords()) {
     if (!name || typeof name !== 'string' || !bannedWords.length) {
         return false;
     }
@@ -9283,7 +9355,7 @@ function normalizeNameForComparison(name) {
     return normalized ? normalized.toLowerCase() : '';
 }
 
-function isNpcNameAllowed(name, { bannedWords = getBannedNpcWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
+function isNpcNameAllowed(name, { bannedWords = getNpcNameBlockedWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
     const normalized = normalizeNpcName(name);
     if (!normalized) {
         return false;
@@ -9346,7 +9418,7 @@ function pullRegeneratedNpcEntry(mapping, name) {
     return entry;
 }
 
-function selectFirstAllowedNpcName(candidates, { bannedWords = getBannedNpcWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
+function selectFirstAllowedNpcName(candidates, { bannedWords = getNpcNameBlockedWords(), bannedRegexes = getBannedNpcRegexes(), forbiddenNames = null } = {}) {
     if (!Array.isArray(candidates) || !candidates.length) {
         return null;
     }
@@ -9563,7 +9635,7 @@ function renderNpcNameRegenPrompt({ existingNpcSummaries = [], regenerationCandi
         const rendered = promptEnv.render('npc-name-regen.xml.njk', {
             existingNpcs: existingNpcSummaries,
             npcsToRegenerateName: regenerationCandidates,
-            bannedWords: getBannedNpcWords()
+            bannedWords: getNpcPromptBannedWords()
         });
 
         const parsed = parseXMLTemplate(rendered);
@@ -9587,7 +9659,7 @@ async function enforceBannedNpcNames({
 
     console.log("NPC Data List for Name Enforcement:", npcDataList);
 
-    const bannedWords = getBannedNpcWords();
+    const bannedWords = getNpcNameBlockedWords();
     const bannedRegexes = getBannedNpcRegexes();
 
     if (!bannedWords.length && !bannedRegexes.length) {
@@ -10109,7 +10181,7 @@ async function enforceBannedNpcNameForPlayer({
         return npc;
     }
 
-    const bannedWords = getBannedNpcWords();
+    const bannedWords = getNpcNameBlockedWords();
     if (!bannedWords.length) {
         return npc;
     }
@@ -10206,7 +10278,7 @@ async function ensureUniqueNpcNames({
     const workingList = npcDataList.map(npc => ({ ...npc }));
 
     const baseMessages = Array.isArray(conversationMessages) ? [...conversationMessages] : [];
-    const bannedWords = getBannedNpcWords();
+    const bannedWords = getNpcNameBlockedWords();
 
     const rebuildNameSet = () => {
         const nameSet = new Map();
@@ -11456,7 +11528,8 @@ async function regenerateLocationName(location) {
 
     let renderedTemplate;
     try {
-        renderedTemplate = promptEnv.render('location_name_regen.xml.njk', {
+        renderedTemplate = promptEnv.render('location_region_name_regen.xml.njk', {
+            mode: 'location',
             worldOutline,
             location: locationContext
         });
@@ -11762,72 +11835,72 @@ async function regenerateRegionNames(regions) {
         };
     });
 
-    let renderedTemplate;
-    try {
-        renderedTemplate = promptEnv.render('region_name_regen.xml.njk', {
-            worldOutline,
-            regions: regionEntries.map(entry => ({
-                id: entry.contextId,
-                name: entry.contextName,
-                description: entry.description
-            }))
-        });
-    } catch (error) {
-        throw new Error(`Failed to render region name regeneration template: ${error.message}`);
-    }
-
-    let parsedTemplate;
-    try {
-        parsedTemplate = parseXMLTemplate(renderedTemplate);
-    } catch (error) {
-        throw new Error(`Failed to parse region name regeneration template: ${error.message}`);
-    }
-
-    const systemPrompt = parsedTemplate?.systemPrompt;
-    const generationPrompt = parsedTemplate?.generationPrompt;
-    if (!systemPrompt || !generationPrompt) {
-        throw new Error('Region name regeneration template missing prompts.');
-    }
-
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: generationPrompt }
-    ];
-
-    let responseText = '';
-    let durationSeconds = null;
-    try {
-        const requestStarted = Date.now();
-        responseText = await LLMClient.chatCompletion({
-            messages,
-            temperature: parsedTemplate.temperature,
-            metadataLabel: 'region_name_regen'
-        });
-        durationSeconds = (Date.now() - requestStarted) / 1000;
-    } catch (error) {
-        throw new Error(`Region name regeneration request failed: ${error.message}`);
-    }
-
-    if (!responseText.trim()) {
-        throw new Error('Region name regeneration returned an empty response.');
-    }
-
-    logRegionNameRegeneration({
-        prompt: generationPrompt,
-        responseText,
-        durationSeconds
-    });
-
-    const groups = parseRegionNameRegenResponse(responseText);
-    if (!groups.length) {
-        throw new Error('Region name regeneration did not produce any candidates.');
-    }
-
     const bannedSet = getBannedLocationNameSet();
     const usedNames = new Set();
     const results = [];
 
     for (const entry of regionEntries) {
+        let renderedTemplate;
+        try {
+            renderedTemplate = promptEnv.render('location_region_name_regen.xml.njk', {
+                mode: 'region',
+                worldOutline,
+                region: {
+                    name: entry.contextName,
+                    description: entry.description
+                }
+            });
+        } catch (error) {
+            throw new Error(`Failed to render region name regeneration template: ${error.message}`);
+        }
+
+        let parsedTemplate;
+        try {
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            throw new Error(`Failed to parse region name regeneration template: ${error.message}`);
+        }
+
+        const systemPrompt = parsedTemplate?.systemPrompt;
+        const generationPrompt = parsedTemplate?.generationPrompt;
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Region name regeneration template missing prompts.');
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        let responseText = '';
+        let durationSeconds = null;
+        try {
+            const requestStarted = Date.now();
+            responseText = await LLMClient.chatCompletion({
+                messages,
+                temperature: parsedTemplate.temperature,
+                metadataLabel: 'region_name_regen'
+            });
+            durationSeconds = (Date.now() - requestStarted) / 1000;
+        } catch (error) {
+            throw new Error(`Region name regeneration request failed: ${error.message}`);
+        }
+
+        if (!responseText.trim()) {
+            throw new Error('Region name regeneration returned an empty response.');
+        }
+
+        logRegionNameRegeneration({
+            prompt: generationPrompt,
+            responseText,
+            durationSeconds
+        });
+
+        const groups = parseRegionNameRegenResponse(responseText);
+        if (!groups.length) {
+            throw new Error(`Region name regeneration did not produce any candidates for "${entry.contextName}".`);
+        }
+
         const contextId = entry.contextId;
         const contextNameLower = entry.contextName.toLowerCase();
 

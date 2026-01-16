@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+{% set resolvedMode = mode | default('', true) %}
+{% set isLocation = resolvedMode == 'location' %}
+{% set isRegion = resolvedMode == 'region' %}
+<role>{% if isLocation %}Location Name Regenerator{% elif isRegion %}Region Name Regenerator{% else %}Invalid Name Regenerator Mode{% endif %}</role>
+
+<systemPrompt>
+{% if isLocation %}
+You are a specialized prompt generator for creating RPG location names.
+{% elif isRegion %}
+You are a specialized prompt generator for creating RPG region names.
+{% else %}
+Invalid regeneration mode "{{ mode }}". Expected "location" or "region".
+{% endif %}
+</systemPrompt>
+
+<generationPrompt>
+{% if isLocation or isRegion %}
+<context>
+<worldOutline>
+{% for regionName, locations in worldOutline.regions %}
+  <region name="{{ regionName | escape }}">
+    {% for loc in locations %}<location>{{ loc }}</location>
+    {% endfor %}
+  </region>
+{% endfor %}
+</worldOutline>
+
+{% if isLocation %}
+Location Information:
+<location>
+  <name>{{ location.name }}</name>
+  <description>{{ location.description }}</description>
+  <region>{{ location.region }}</region>
+  <baseLevel>{{ location.baseLevel }}</baseLevel>
+</location>
+{% else %}
+Region Information:
+<region>
+  <name>{{ region.name }}</name>
+  <description>{{ region.description }}</description>
+</region>
+{% endif %}
+</context>
+
+{% if isLocation %}
+Based on the provided context, generate a list of 10 potential names for the location description. Consider the setting, region, and any relevant details to create fitting names. Vary the length and feel of the names for each location to provide diverse options.
+
+Provide the names in this format:
+
+<locationNames>
+  <originalName>{{ location.name }}</originalName>
+  <name>...</name>
+  <name>...</name>
+  [ ... 10 names total ... ]
+</locationNames>
+{% else %}
+Based on the provided context, generate a list of 10 potential names for the region description. Consider the setting and any relevant details to create fitting names. Vary the length and feel of the names for each region to provide diverse options.
+
+Provide the names in this format:
+
+<regionNames>
+  <originalName>{{ region.name }}</originalName>
+  <name>...</name>
+  <name>...</name>
+  [ ... 10 names total ... ]
+</regionNames>
+{% endif %}
+{% else %}
+<error>Invalid regeneration mode "{{ mode }}". Expected "location" or "region".</error>
+{% endif %}
+</generationPrompt>
+</template>
