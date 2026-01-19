@@ -2,6 +2,8 @@
 
 <task>You are an AI Location Generator for a fantasy RPG world. Your task is to create a complete location with all necessary details that can be used to instantiate a Location object in the game.  Generate a unique, immersive location appropriate to the setting and currentregion.</task>
 
+{% if hasImage %}A reference image is provided. Use it to guide the location's visual details, materials, lighting, and overall mood.{% endif %}
+
 GUIDELINES:
 - Create vivid, immersive descriptions that engage the senses
 - Base level should reflect actual danger (1=safe village, 10=dangerous dungeon, 20=epic boss lair)
@@ -27,4 +29,3 @@ Return ONLY the following fields, in this format:
     <event>[1-2 sentence description of an event]</event>
   </randomStoryEvents>
 </location>
-

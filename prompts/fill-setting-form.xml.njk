@@ -22,6 +22,8 @@ Here is the XML structure representing the game setting:
   <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
   <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
   <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <baseContextPreamble>{{ setting.baseContextPreamble }}</baseContextPreamble>
+  <characterGenInstructions>{{ setting.characterGenInstructions }}</characterGenInstructions>
   <playerStartingLevel>{{ setting.playerStartingLevel }}</playerStartingLevel>
   <defaultPlayerName>{{ setting.defaultPlayerName }}</defaultPlayerName>
   <defaultPlayerDescription>{{ setting.defaultPlayerDescription }}</defaultPlayerDescription>
@@ -50,7 +52,7 @@ Here is the XML structure representing the game setting:
 
 Fill in any empty fields with appropriate values that fit the context of the filled fields. Ensure that the completed XML is well-formed and adheres to the structure provided. Do not alter any fields that are already filled in.
 {% if hasImage %}Use the uploaded image as the primary reference and fill in the missing fields to generate the setting depicted in the image, aligning details like tone, technology, and atmosphere with what you see.{% endif %}
-Return only the completed XML structure without any additional commentary or explanation. The available setting fields are: name, description, theme, genre, startingLocationType, magicLevel, techLevel, tone, difficulty, currencyName, currencyNamePlural, currencyValueNotes, writingStyleNotes, playerStartingLevel, defaultPlayerName, defaultPlayerDescription, defaultStartingLocation, defaultStartingCurrency, defaultNumSkills, defaultExistingSkills, availableClasses, and availableRaces.
+Return only the completed XML structure without any additional commentary or explanation. The available setting fields are: name, description, theme, genre, startingLocationType, magicLevel, techLevel, tone, difficulty, currencyName, currencyNamePlural, currencyValueNotes, writingStyleNotes, baseContextPreamble, characterGenInstructions, playerStartingLevel, defaultPlayerName, defaultPlayerDescription, defaultStartingLocation, defaultStartingCurrency, defaultNumSkills, defaultExistingSkills, availableClasses, and availableRaces.
 
 When populating currencyValueNotes, describe the relative value of the currency in terms of common goods and services in the setting, using 5 or 6 entries ordered from cheapest to most expensive with the format:
 

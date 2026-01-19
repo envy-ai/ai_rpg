@@ -6549,57 +6549,97 @@ module.exports = function registerApiRoutes(scope) {
 
                     const slopContext = buildSlopContextText();
 
-                    for (let attempt = 0; attempt < 3; attempt += 1) {
-                    const slopWords = Array.from(slopWordSet);
-                    const rendered = promptEnv.render('slop-remover.xml.njk', {
-                        storyText: slopContext,
-                        textToEdit: currentProse,
-                        slopWords,
-                        slopTrigrams: []
-                    });
-                    const promptData = parseXMLTemplate(rendered);
-                    if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
-                        throw new Error('Slop remover template did not produce prompts.');
+                    const originalProse = currentProse;
+                    let maxAttempts = 3;
+                    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                        const slopWords = Array.from(slopWordSet);
+                        let promptData = null;
+                        let slopResponse = '';
+                        let parseFailure = null;
+
+                        try {
+                            const rendered = promptEnv.render('slop-remover.xml.njk', {
+                                storyText: slopContext,
+                                textToEdit: currentProse,
+                                slopWords,
+                                slopTrigrams: []
+                            });
+                            promptData = parseXMLTemplate(rendered);
+                            if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                                throw new Error('Slop remover template did not produce prompts.');
+                            }
+
+                            const messages = [
+                                { role: 'system', content: promptData.systemPrompt },
+                                { role: 'user', content: promptData.generationPrompt }
+                            ];
+
+                            slopResponse = await LLMClient.chatCompletion({
+                                messages,
+                                metadataLabel: 'slop_remover',
+                                validateXML: false
+                            });
+
+                            if (typeof slopResponse !== 'string') {
+                                parseFailure = 'non-text response';
+                            } else if (/<\/?[a-z][^>]*>/i.test(slopResponse)) {
+                                parseFailure = 'XML detected in response';
+                            } else if (!slopResponse.trim()) {
+                                parseFailure = 'empty response';
+                            }
+                        } catch (error) {
+                            parseFailure = error?.message || 'unknown error';
+                        }
+
+                        const logSections = [
+                            {
+                                title: 'Attempt',
+                                content: `${attempt + 1}/${maxAttempts}`
+                            }
+                        ];
+                        if (parseFailure) {
+                            logSections.push({
+                                title: 'Parse Status',
+                                content: `failed: ${parseFailure}`
+                            });
+                        }
+
+                        LLMClient.logPrompt({
+                            prefix: 'slop_remover',
+                            metadataLabel: 'slop_remover',
+                            systemPrompt: promptData?.systemPrompt || '',
+                            generationPrompt: promptData?.generationPrompt || '',
+                            response: slopResponse,
+                            sections: logSections
+                        });
+
+                        if (parseFailure) {
+                            console.warn(`Slop remover response invalid (attempt ${attempt + 1}/${maxAttempts}): ${parseFailure}`);
+                            if (maxAttempts < 5) {
+                                maxAttempts += 1;
+                            }
+                            continue;
+                        }
+
+                        const candidateProse = slopResponse.trim();
+                        currentProse = candidateProse;
+
+                        const remaining = await getFilteredSlopWords(currentProse);
+                        if (!remaining.length) {
+                            break;
+                        }
+                        if (attempt === maxAttempts - 1) {
+                            console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remaining.join(', ')}`);
+                            break;
+                        }
+                        remaining.forEach(word => slopWordSet.add(word));
                     }
 
-                    const messages = [
-                        { role: 'system', content: promptData.systemPrompt },
-                        { role: 'user', content: promptData.generationPrompt }
-                    ];
-
-                    const slopResponse = await LLMClient.chatCompletion({
-                        messages,
-                        metadataLabel: 'slop_remover',
-                        validateXML: false
-                    });
-                    LLMClient.logPrompt({
-                        prefix: 'slop_remover',
-                        metadataLabel: 'slop_remover',
-                        systemPrompt: promptData.systemPrompt,
-                        generationPrompt: promptData.generationPrompt,
-                        response: slopResponse
-                    });
-
-                    const match = typeof slopResponse === 'string'
-                        ? slopResponse.match(/<editedText>([\s\S]*?)<\/editedText>/i)
-                        : null;
-                    if (!match || !match[1]) {
-                        throw new Error('Slop remover response missing <editedText>.');
+                    if (!currentProse.trim()) {
+                        return originalProse;
                     }
 
-                    currentProse = match[1].trim();
-                    if (!currentProse) {
-                        throw new Error('Slop remover returned empty text.');
-                    }
-
-                    const remaining = await getFilteredSlopWords(currentProse);
-                    if (!remaining.length) {
-                        break;
-                    }
-                    remaining.forEach(word => slopWordSet.add(word));
-                }
-
-                return currentProse;
+                    return currentProse;
             };
 
             res.on('finish', () => {
@@ -12251,7 +12291,9 @@ module.exports = function registerApiRoutes(scope) {
                     parentRegionId: parentRegionIdRaw,
                     vehicleType: vehicleTypeRaw,
                     relativeLevel: relativeLevelRaw,
-                    clientId: initiatorClientIdRaw
+                    clientId: initiatorClientIdRaw,
+                    imageDataUrl: imageDataUrlRaw,
+                    imageDataUrlOriginal: imageDataUrlOriginalRaw
                 } = req.body || {};
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
                 const resolvedDescription = typeof description === 'string' ? description.trim() : '';
@@ -12284,6 +12326,47 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const normalizedType = targetRegionId && resolvedType === 'region' ? 'location' : resolvedType;
+                const imageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
+                const imageDataUrlOriginal = typeof imageDataUrlOriginalRaw === 'string'
+                    ? imageDataUrlOriginalRaw.trim()
+                    : '';
+                const hasDownscaledImage = Boolean(imageDataUrl);
+                const hasOriginalImage = Boolean(imageDataUrlOriginal);
+                if (hasDownscaledImage !== hasOriginalImage) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Reference image uploads must include both downscaled and original image data URLs.'
+                    });
+                }
+                if (imageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrl)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Reference image must be a base64-encoded data URL.'
+                    });
+                }
+                if (imageDataUrlOriginal && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrlOriginal)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Reference original image must be a base64-encoded data URL.'
+                    });
+                }
+                if (imageDataUrlOriginal) {
+                    const originalMatch = imageDataUrlOriginal.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+                    if (!originalMatch || originalMatch[1].toLowerCase() !== 'image/png') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Reference image must be a PNG data URL.'
+                        });
+                    }
+                }
+                const creatingNewRegion = normalizedType === 'region';
+                const creatingNewLocation = normalizedType === 'location' && !targetLocationId;
+                if (imageDataUrl && !(creatingNewRegion || creatingNewLocation)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Reference images are only supported when creating a new location or region.'
+                    });
+                }
 
                 if (targetRegionId && !regions.has(targetRegionId) && !pendingRegionStubs.has(targetRegionId)) {
                     return res.status(400).json({
@@ -12318,7 +12401,9 @@ module.exports = function registerApiRoutes(scope) {
                         parentRegionId,
                         vehicleType: normalizedVehicleType,
                         isVehicle: isVehicleExit,
-                        relativeLevel
+                        relativeLevel,
+                        imageDataUrl,
+                        imageDataUrlOriginal
                     });
 
                     if (!regionStub) {
@@ -12430,7 +12515,9 @@ module.exports = function registerApiRoutes(scope) {
                         targetRegionId,
                         vehicleType: normalizedVehicleType,
                         isVehicle: isVehicleExit,
-                        relativeLevel
+                        relativeLevel,
+                        imageDataUrl,
+                        imageDataUrlOriginal
                     });
 
                     if (!locationStub) {
@@ -12864,6 +12951,41 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const payload = req.body || {};
+                const imageDataUrl = typeof payload.imageDataUrl === 'string'
+                    ? payload.imageDataUrl.trim()
+                    : '';
+                const imageDataUrlOriginal = typeof payload.imageDataUrlOriginal === 'string'
+                    ? payload.imageDataUrlOriginal.trim()
+                    : '';
+                const hasDownscaledImage = Boolean(imageDataUrl);
+                const hasOriginalImage = Boolean(imageDataUrlOriginal);
+                if (hasDownscaledImage !== hasOriginalImage) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC image uploads must include both downscaled and original image data URLs.'
+                    });
+                }
+                if (imageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrl)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC image must be a base64-encoded data URL.'
+                    });
+                }
+                if (imageDataUrlOriginal && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrlOriginal)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'NPC original image must be a base64-encoded data URL.'
+                    });
+                }
+                if (imageDataUrlOriginal) {
+                    const originalMatch = imageDataUrlOriginal.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+                    if (!originalMatch || originalMatch[1].toLowerCase() !== 'image/png') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'NPC portrait image must be a PNG data URL.'
+                        });
+                    }
+                }
                 const nameValue = typeof payload.name === 'string' ? payload.name.trim() : '';
                 const region = findRegionByLocationId(location.id) || null;
                 const trimText = (value) => {
@@ -12926,7 +13048,9 @@ module.exports = function registerApiRoutes(scope) {
                     name: nameValue,
                     npc: npcSeed,
                     location,
-                    region
+                    region,
+                    imageDataUrl,
+                    portraitImageDataUrl: imageDataUrlOriginal
                 });
 
                 if (!generatedNpc) {
@@ -13627,6 +13751,9 @@ module.exports = function registerApiRoutes(scope) {
                     ? (gameLocations.get(locationId) || (typeof Location.get === 'function' ? Location.get(locationId) : null))
                     : null;
                 const resolvedLocationId = requireLocationId(locationRecord?.id || locationId, 'crafting action');
+                const resolvedRegion = locationRecord?.regionId && regions instanceof Map
+                    ? regions.get(locationRecord.regionId) || null
+                    : (Globals.region || null);
 
                 const intendedItemName = typeof payload.intendedItemName === 'string'
                     ? payload.intendedItemName.trim()
@@ -14165,6 +14292,18 @@ module.exports = function registerApiRoutes(scope) {
                     });
 
                     craftedThing = craftedThingInstances[0] || null;
+                }
+
+                const createdThings = [...recoveredThingInstances, ...craftedThingInstances].filter(Boolean);
+                if (createdThings.length) {
+                    if (typeof Globals.ensureThingNamesAllowed !== 'function') {
+                        throw new Error('Globals.ensureThingNamesAllowed is unavailable for item name validation.');
+                    }
+                    await Globals.ensureThingNamesAllowed({
+                        things: createdThings,
+                        location: locationRecord || null,
+                        region: resolvedRegion
+                    });
                 }
 
                 const consumedNamesForPrompt = consumedThingNames.length
@@ -14809,6 +14948,15 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 things.set(thing.id, thing);
+
+                if (typeof Globals.ensureThingNamesAllowed !== 'function') {
+                    throw new Error('Globals.ensureThingNamesAllowed is unavailable for item name validation.');
+                }
+                await Globals.ensureThingNamesAllowed({
+                    things: [thing],
+                    location: Globals.location || null,
+                    region: Globals.region || null
+                });
 
                 const imageEligible = shouldGenerateThingImage(thing);
                 if (!imageEligible) {
@@ -15885,6 +16033,8 @@ module.exports = function registerApiRoutes(scope) {
                 currencyNamePlural: toStringValue(raw.currencyNamePlural),
                 currencyValueNotes: toStringValue(raw.currencyValueNotes),
                 writingStyleNotes: toStringValue(raw.writingStyleNotes ?? raw.styleNotes),
+                baseContextPreamble: toStringValue(raw.baseContextPreamble),
+                characterGenInstructions: toStringValue(raw.characterGenInstructions),
                 imagePromptPrefixCharacter: toStringValue(raw.imagePromptPrefixCharacter),
                 imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
                 imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
@@ -15967,6 +16117,8 @@ module.exports = function registerApiRoutes(scope) {
                 currencyNamePlural: getText('currencyNamePlural'),
                 currencyValueNotes: getText('currencyValueNotes'),
                 writingStyleNotes: getText('writingStyleNotes') || getText('styleNotes'),
+                baseContextPreamble: getText('baseContextPreamble'),
+                characterGenInstructions: getText('characterGenInstructions'),
                 imagePromptPrefixCharacter: getText('imagePromptPrefixCharacter'),
                 imagePromptPrefixLocation: getText('imagePromptPrefixLocation'),
                 imagePromptPrefixItem: getText('imagePromptPrefixItem'),

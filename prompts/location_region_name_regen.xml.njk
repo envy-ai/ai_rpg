@@ -18,6 +18,7 @@ Invalid regeneration mode "{{ mode }}". Expected "location" or "region".
 <generationPrompt>
 {% if isLocation or isRegion %}
 <context>
+{% include "_includes/setting-info.njk" %}
 <worldOutline>
 {% for regionName, locations in worldOutline.regions %}
   <region name="{{ regionName | escape }}">

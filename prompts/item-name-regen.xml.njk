@@ -9,6 +9,7 @@ You are a specialized prompt generator for creating RPG item names.
 <generationPrompt>
 
 <context>
+{% include "_includes/setting-info.njk" %}
   {#
 <worldOutline>
 {% for regionName, locations in worldOutline.regions %}
@@ -37,7 +38,7 @@ Region Information:
 </region>
 {% endif %}
 #}
-Here is a list of items that have duplicate names:
+Here is a list of items to rename:
 <itemsToRegenerateName>
 {% for item in itemsToRegenerateName %}
 <item>
@@ -55,7 +56,7 @@ Banned words:
 {% endif %}
 </context>
 
-Based on the provided context, give each item in the itemsToRegenerateName list a different name that fits the setting and culture{% if bannedWords %}, and does not use any of the banned words{% endif %}. Replace the old name in the description with the placeholder %NAME% to indicate where the new name will go.
+Based on the provided context, give each item in the itemsToRegenerateName list a different name that fits the setting and culture{% if bannedWords %}, and does not use any of the banned words{% endif %}. Provide 10 candidate names per item. Replace the old name in the description with the placeholder %NAME% to indicate where the new name will go.
 
 Return them in this format:
 

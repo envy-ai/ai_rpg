@@ -7,7 +7,7 @@ You are able to write both explicit and non-explicit content, depending on the n
 {{ config.extra_system_instructions | default('') }}
     </systemPrompt>
 <generationPrompt>
-{{ config.base_context_preamble }}
+{{ setting.baseContextPreamble }}
 
 The below context is an account of the current game state, including the setting, world outline, current region and location, characters present, and items in the scene:
 <gameState>

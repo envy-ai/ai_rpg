@@ -40,6 +40,7 @@ banned_npc_names:
   - "734"
   - "808"
   - Greta
+  - Elowen
 banned_npc_name_regexes:
   - "/Kael/"
   - "/Fael/"

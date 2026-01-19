@@ -532,14 +532,14 @@ function renderMap(region) {
     };
   };
 
-  const addStubNodeAndEdge = ({ sourceId, created, position }) => {
+  const addStubNodeAndEdge = ({ sourceId, created, position, exitId = null, preservePosition = false }) => {
     if (!cyInstance || !sourceId || !created) {
-      return;
+      return false;
     }
 
     const nodeId = created.destinationId || created.stubId || null;
     if (!nodeId) {
-      return;
+      return false;
     }
     const label = created.name || 'New Stub';
     const isRegionStub = created.type === 'region';
@@ -580,8 +580,19 @@ function renderMap(region) {
       edge.data('bidirectional', true);
     }
 
-    runLayout();
+    if (exitId && edge) {
+      edge.data('forwardExitId', exitId);
+    }
+
+    if (!preservePosition) {
+      runLayout();
+    }
+    return true;
   };
+
+  window.addMapStubNodeAndEdge = ({ sourceId, created, position, exitId = null, preservePosition = false } = {}) => (
+    addStubNodeAndEdge({ sourceId, created, position, exitId, preservePosition })
+  );
 
   const findExitIdForDestination = (locationData, destinationId) => {
     if (!locationData || !destinationId) {
@@ -602,7 +613,7 @@ function renderMap(region) {
     return null;
   };
 
-  const createStubExit = async ({ sourceId, position, name, description, type, vehicleType, relativeLevel }) => {
+  const createStubExit = async ({ sourceId, position, name, description, type, vehicleType, relativeLevel, imageDataUrl }) => {
     const payload = {
       type,
       name,
@@ -616,6 +627,13 @@ function renderMap(region) {
 
     if (type === 'region' && vehicleType) {
       payload.vehicleType = vehicleType;
+    }
+
+    if (imageDataUrl) {
+      if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageDataUrl)) {
+        throw new Error('Reference image must be a base64-encoded data URL.');
+      }
+      payload.imageDataUrl = imageDataUrl;
     }
 
     if (type === 'region') {
@@ -646,225 +664,100 @@ function renderMap(region) {
     }
   };
 
+  const downscaleImageDataUrl = (dataUrl, outputType, label = 'Image') => {
+    const maxPixels = 2000000;
+    const labelText = label || 'Image';
+    return new Promise((resolve, reject) => {
+      if (!dataUrl) {
+        reject(new Error(`${labelText} data is missing.`));
+        return;
+      }
+      const image = new Image();
+      image.onload = () => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+          reject(new Error(`${labelText} dimensions are invalid.`));
+          return;
+        }
+
+        const pixelCount = width * height;
+        if (pixelCount <= maxPixels) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const scale = Math.sqrt(maxPixels / pixelCount);
+        const targetWidth = Math.max(1, Math.round(width * scale));
+        const targetHeight = Math.max(1, Math.round(height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error(`${labelText} resizing failed to initialize.`));
+          return;
+        }
+        ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+        const normalizedType = outputType && outputType.startsWith('image/')
+          ? outputType
+          : 'image/jpeg';
+        const supportsQuality = normalizedType === 'image/jpeg' || normalizedType === 'image/webp';
+        const resizedDataUrl = supportsQuality
+          ? canvas.toDataURL(normalizedType, 0.9)
+          : canvas.toDataURL(normalizedType);
+        resolve(resizedDataUrl);
+      };
+      image.onerror = () => reject(new Error(`${labelText} could not be loaded.`));
+      image.src = dataUrl;
+    });
+  };
+
+  const readStubImageData = async (file) => {
+    if (!file) {
+      return '';
+    }
+    if (!file.type || !file.type.startsWith('image/')) {
+      throw new Error('Reference image must be an image file.');
+    }
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error('Reference image could not be read.'));
+      };
+      reader.onerror = () => reject(new Error('Reference image could not be read.'));
+      reader.readAsDataURL(file);
+    });
+    return downscaleImageDataUrl(dataUrl, file.type, 'Reference image');
+  };
+
   const openCreateStubModal = ({ sourceId, position }) => {
-    if (!sourceId || !position) {
+    if (!sourceId) {
+      window.alert('No source location provided for creating a new exit.');
       return;
     }
-
-    const overlay = document.createElement('div');
-    overlay.className = 'map-stub-modal__overlay';
-    overlay.setAttribute('role', 'presentation');
-    overlay.style.position = 'fixed';
-    overlay.style.inset = '0';
-    overlay.style.background = 'rgba(0, 0, 0, 0.45)';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.zIndex = '2000';
-
-    const dialog = document.createElement('div');
-    dialog.className = 'map-stub-modal__dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.style.background = '#0f172a';
-    dialog.style.color = '#e2e8f0';
-    dialog.style.borderRadius = '12px';
-    dialog.style.boxShadow = '0 18px 55px rgba(0,0,0,0.35)';
-    dialog.style.padding = '18px';
-    dialog.style.width = '360px';
-    dialog.style.maxWidth = '90vw';
-    dialog.style.border = '1px solid rgba(255,255,255,0.08)';
-
-    const title = document.createElement('h3');
-    title.textContent = 'Create stub';
-    title.style.margin = '0 0 12px';
-    title.style.fontSize = '18px';
-    title.style.fontWeight = '600';
-
-    const form = document.createElement('form');
-    form.className = 'map-stub-modal__form';
-    form.style.display = 'flex';
-    form.style.flexDirection = 'column';
-    form.style.gap = '10px';
-
-    const nameLabel = document.createElement('label');
-    nameLabel.textContent = 'Name';
-    nameLabel.style.fontSize = '13px';
-    nameLabel.style.fontWeight = '600';
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.required = true;
-    nameInput.style.width = '100%';
-    nameInput.style.padding = '8px';
-    nameInput.style.borderRadius = '8px';
-    nameInput.style.border = '1px solid rgba(255,255,255,0.15)';
-    nameInput.style.background = '#0b1220';
-    nameInput.style.color = '#e2e8f0';
-    nameLabel.appendChild(nameInput);
-
-    const descLabel = document.createElement('label');
-    descLabel.textContent = 'Description (optional)';
-    descLabel.style.fontSize = '13px';
-    descLabel.style.fontWeight = '600';
-    const descInput = document.createElement('textarea');
-    descInput.rows = 3;
-    descInput.style.width = '100%';
-    descInput.style.padding = '8px';
-    descInput.style.borderRadius = '8px';
-    descInput.style.border = '1px solid rgba(255,255,255,0.15)';
-    descInput.style.background = '#0b1220';
-    descInput.style.color = '#e2e8f0';
-    descLabel.appendChild(descInput);
-
-    const typeLabel = document.createElement('label');
-    typeLabel.textContent = 'Type';
-    typeLabel.style.fontSize = '13px';
-    typeLabel.style.fontWeight = '600';
-    const typeSelect = document.createElement('select');
-    typeSelect.style.width = '100%';
-    typeSelect.style.padding = '8px';
-    typeSelect.style.borderRadius = '8px';
-    typeSelect.style.border = '1px solid rgba(255,255,255,0.15)';
-    typeSelect.style.background = '#0b1220';
-    typeSelect.style.color = '#e2e8f0';
-    const optionLocation = document.createElement('option');
-    optionLocation.value = 'location';
-    optionLocation.textContent = 'Location';
-    const optionRegion = document.createElement('option');
-    optionRegion.value = 'region';
-    optionRegion.textContent = 'Region';
-    typeSelect.appendChild(optionLocation);
-    typeSelect.appendChild(optionRegion);
-    typeLabel.appendChild(typeSelect);
-
-    const vehicleLabel = document.createElement('label');
-    vehicleLabel.textContent = 'Vehicle type (region exits only)';
-    vehicleLabel.style.fontSize = '13px';
-    vehicleLabel.style.fontWeight = '600';
-    const vehicleInput = document.createElement('input');
-    vehicleInput.type = 'text';
-    vehicleInput.style.width = '100%';
-    vehicleInput.style.padding = '8px';
-    vehicleInput.style.borderRadius = '8px';
-    vehicleInput.style.border = '1px solid rgba(255,255,255,0.15)';
-    vehicleInput.style.background = '#0b1220';
-    vehicleInput.style.color = '#e2e8f0';
-    vehicleLabel.appendChild(vehicleInput);
-
-    const relativeLabel = document.createElement('label');
-    relativeLabel.textContent = 'Relative level';
-    relativeLabel.style.fontSize = '13px';
-    relativeLabel.style.fontWeight = '600';
-    const relativeInput = document.createElement('input');
-    relativeInput.type = 'number';
-    relativeInput.step = '1';
-    relativeInput.min = '-10';
-    relativeInput.max = '10';
-    relativeInput.required = true;
-    relativeInput.value = '1';
-    relativeInput.style.width = '100%';
-    relativeInput.style.padding = '8px';
-    relativeInput.style.borderRadius = '8px';
-    relativeInput.style.border = '1px solid rgba(255,255,255,0.15)';
-    relativeInput.style.background = '#0b1220';
-    relativeInput.style.color = '#e2e8f0';
-    relativeLabel.appendChild(relativeInput);
-
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.justifyContent = 'flex-end';
-    actions.style.gap = '8px';
-    actions.style.marginTop = '4px';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.padding = '8px 12px';
-    cancelBtn.style.borderRadius = '8px';
-    cancelBtn.style.border = '1px solid rgba(255,255,255,0.2)';
-    cancelBtn.style.background = 'transparent';
-    cancelBtn.style.color = '#e2e8f0';
-
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
-    submitBtn.textContent = 'Create';
-    submitBtn.style.padding = '8px 12px';
-    submitBtn.style.borderRadius = '8px';
-    submitBtn.style.border = 'none';
-    submitBtn.style.background = '#38bdf8';
-    submitBtn.style.color = '#0b1220';
-    submitBtn.style.fontWeight = '700';
-
-    actions.appendChild(cancelBtn);
-    actions.appendChild(submitBtn);
-
-    form.appendChild(nameLabel);
-    form.appendChild(descLabel);
-    form.appendChild(typeLabel);
-    form.appendChild(vehicleLabel);
-    form.appendChild(relativeLabel);
-    form.appendChild(actions);
-
-    dialog.appendChild(title);
-    dialog.appendChild(form);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    const close = () => {
-      overlay.remove();
-    };
-
-    overlay.addEventListener('click', (evt) => {
-      if (evt.target === overlay) {
-        close();
-      }
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      close();
-    });
-
-    form.addEventListener('submit', async (evt) => {
-      evt.preventDefault();
-      const name = nameInput.value.trim();
-      const description = descInput.value.trim();
-      const type = typeSelect.value === 'region' ? 'region' : 'location';
-      const relativeLevelValue = Number(relativeInput.value);
-      if (!Number.isFinite(relativeLevelValue)) {
-        window.alert('Relative level must be a number.');
-        relativeInput.focus();
-        return;
-      }
-      const relativeLevel = Math.max(-10, Math.min(10, Math.round(relativeLevelValue)));
-      const vehicleType = type === 'region' ? vehicleInput.value.trim() : '';
-      if (!name) {
-        nameInput.focus();
-        return;
-      }
-      submitBtn.disabled = true;
-      cancelBtn.disabled = true;
-      try {
-        await createStubExit({ sourceId, position, name, description, type, vehicleType, relativeLevel });
-        close();
-      } catch (error) {
-        window.alert(error?.message || 'Failed to create stub');
-        submitBtn.disabled = false;
-        cancelBtn.disabled = false;
-      }
-    });
-
-    const updateVehicleVisibility = () => {
-      const isRegion = typeSelect.value === 'region';
-      vehicleLabel.style.display = isRegion ? 'block' : 'none';
-      if (!isRegion) {
-        vehicleInput.value = '';
-      }
-    };
-
-    typeSelect.addEventListener('change', updateVehicleVisibility);
-    updateVehicleVisibility();
-
-    nameInput.focus();
+    if (typeof window.openNewExitModalFromMap !== 'function') {
+      window.alert('New exit form is unavailable.');
+      return;
+    }
+    try {
+      const mapPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
+        ? { x: position.x, y: position.y }
+        : null;
+      window.openNewExitModalFromMap({
+        originLocationId: sourceId,
+        originRegionId: activeRegionId,
+        preferredRegionId: activeRegionId,
+        mapPosition
+      });
+    } catch (error) {
+      window.alert(error?.message || 'Failed to open the new exit form.');
+    }
   };
 
   const enterLinkMode = (sourceId, position) => {

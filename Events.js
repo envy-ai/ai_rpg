@@ -3224,7 +3224,7 @@ class Events {
                     }
 
                     if (!thing) {
-                        thing = this._createPlaceholderThingForAlter(entry, context);
+                        thing = await this._createPlaceholderThingForAlter(entry, context);
                     }
 
                     if (!thing) {
@@ -5515,7 +5515,7 @@ class Events {
         return this._deps.things;
     }
 
-    static _createPlaceholderThingForAlter(entry = {}, context = {}) {
+    static async _createPlaceholderThingForAlter(entry = {}, context = {}) {
         const { things } = this._deps;
 
         const candidateName = (typeof entry.newName === 'string' && entry.newName.trim())
@@ -5571,6 +5571,25 @@ class Events {
         } else if (metadata.locationId) {
             this.addThingToLocation(thing, metadata.locationId);
         }
+
+        const resolvedLocation = this.resolveLocationCandidate(locationCandidate)
+            || this.resolveLocationCandidate(this.currentPlayer?.currentLocation);
+        let resolvedRegion = null;
+        if (resolvedLocation && typeof this._deps.findRegionByLocationId === 'function') {
+            try {
+                resolvedRegion = this._deps.findRegionByLocationId(resolvedLocation.id) || null;
+            } catch (_) {
+                resolvedRegion = null;
+            }
+        }
+        if (typeof Globals.ensureThingNamesAllowed !== 'function') {
+            throw new Error('Globals.ensureThingNamesAllowed is unavailable for item name validation.');
+        }
+        await Globals.ensureThingNamesAllowed({
+            things: [thing],
+            location: resolvedLocation,
+            region: resolvedRegion
+        });
 
         return thing;
     }

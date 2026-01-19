@@ -176,6 +176,20 @@
                         <div class="help-text">Additional guidance for narrative voice, aesthetic, or flavor details.</div>
                     </div>
 
+                    <div class="form-divider">Prompt Guidance</div>
+
+                    <div class="form-group full-width">
+                        <label for="baseContextPreamble">Base Context Preamble</label>
+                        <textarea id="baseContextPreamble" name="baseContextPreamble" rows="4" placeholder="Optional preamble for base-context prompts (title, tags, framing notes, etc)..."></textarea>
+                        <div class="help-text">Prepended to base-context prompts so the Game Master keeps the core framing in mind.</div>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="characterGenInstructions">Character Generation Instructions</label>
+                        <textarea id="characterGenInstructions" name="characterGenInstructions" rows="4" placeholder="Optional extra guidance for NPC and character concept generation..."></textarea>
+                        <div class="help-text">Applied when generating NPCs and character concepts for this setting.</div>
+                    </div>
+
                     <div class="form-divider">Image Prompt Prefixes</div>
 
                     <div class="form-group full-width">
@@ -465,6 +479,8 @@
             assignValue('availableRaces', joinLines(setting.availableRaces));
             assignValue('currencyValueNotes', setting.currencyValueNotes || '');
             assignValue('writingStyleNotes', setting.writingStyleNotes || '');
+            assignValue('baseContextPreamble', setting.baseContextPreamble || '');
+            assignValue('characterGenInstructions', setting.characterGenInstructions || '');
             assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
@@ -993,6 +1009,8 @@
                     availableRaces: filled.availableRaces,
                     currencyValueNotes: filled.currencyValueNotes,
                     writingStyleNotes: filled.writingStyleNotes,
+                    baseContextPreamble: filled.baseContextPreamble,
+                    characterGenInstructions: filled.characterGenInstructions,
                     imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,

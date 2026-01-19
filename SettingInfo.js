@@ -24,6 +24,8 @@ class SettingInfo {
   #currencyNamePlural;
   #currencyValueNotes;
   #writingStyleNotes;
+  #baseContextPreamble;
+  #characterGenInstructions;
   #imagePromptPrefixCharacter;
   #imagePromptPrefixLocation;
   #imagePromptPrefixItem;
@@ -107,6 +109,12 @@ class SettingInfo {
     this.#writingStyleNotes = typeof writingStyleSource === 'string'
       ? writingStyleSource.replace(/\r\n/g, '\n')
       : '';
+    this.#baseContextPreamble = typeof options.baseContextPreamble === 'string'
+      ? options.baseContextPreamble.replace(/\r\n/g, '\n')
+      : '';
+    this.#characterGenInstructions = typeof options.characterGenInstructions === 'string'
+      ? options.characterGenInstructions.replace(/\r\n/g, '\n')
+      : '';
     this.#imagePromptPrefixCharacter = typeof options.imagePromptPrefixCharacter === 'string'
       ? options.imagePromptPrefixCharacter.replace(/\r\n/g, '\n')
       : '';
@@ -166,6 +174,8 @@ class SettingInfo {
   get currencyNamePlural() { return this.#currencyNamePlural; }
   get currencyValueNotes() { return this.#currencyValueNotes; }
   get writingStyleNotes() { return this.#writingStyleNotes; }
+  get baseContextPreamble() { return this.#baseContextPreamble; }
+  get characterGenInstructions() { return this.#characterGenInstructions; }
   get imagePromptPrefixCharacter() { return this.#imagePromptPrefixCharacter; }
   get imagePromptPrefixLocation() { return this.#imagePromptPrefixLocation; }
   get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
@@ -257,6 +267,20 @@ class SettingInfo {
 
   set writingStyleNotes(value) {
     this.#writingStyleNotes = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set baseContextPreamble(value) {
+    this.#baseContextPreamble = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set characterGenInstructions(value) {
+    this.#characterGenInstructions = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
       : '';
     this.#updateTimestamp();
@@ -423,6 +447,8 @@ class SettingInfo {
       currencyNamePlural: this.#currencyNamePlural,
       currencyValueNotes: this.#currencyValueNotes,
       writingStyleNotes: this.#writingStyleNotes,
+      baseContextPreamble: this.#baseContextPreamble,
+      characterGenInstructions: this.#characterGenInstructions,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
@@ -481,6 +507,8 @@ class SettingInfo {
       currencyNamePlural: this.#currencyNamePlural,
       currencyValueNotes: this.#currencyValueNotes,
       writingStyleNotes: this.#writingStyleNotes,
+      baseContextPreamble: this.#baseContextPreamble,
+      characterGenInstructions: this.#characterGenInstructions,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,

@@ -4603,6 +4603,14 @@ body.modal-open {
   transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
+.npc-edit-field input[type="file"] {
+  padding: 8px 10px;
+}
+
+.new-exit-field input[type="file"] {
+  padding: 8px 10px;
+}
+
 .npc-edit-field input:focus,
 .npc-edit-section textarea:focus,
 .location-edit-field input:focus,
@@ -4632,6 +4640,11 @@ body.modal-open {
 }
 
 .npc-edit-help-text {
+  font-size: 0.75rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.new-exit-help-text {
   font-size: 0.75rem;
   color: rgba(226, 232, 240, 0.75);
 }

@@ -849,6 +849,11 @@
                         </label>
                         <span class="npc-edit-help-text">Hostile NPCs will treat players as enemies.</span>
                     </div>
+                    <div class="npc-edit-field npc-edit-field--wide">
+                        <label for="addNpcImage">Reference Image (optional)</label>
+                        <input type="file" id="addNpcImage" name="image" accept="image/*">
+                        <span class="npc-edit-help-text">Use an image to guide the NPC's appearance and vibe.</span>
+                    </div>
                 </div>
                 <div class="npc-edit-section">
                     <label for="addNpcDescription">Description</label>
@@ -923,6 +928,11 @@
                 <div class="new-exit-field" id="newExitDescriptionGroup">
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
+                </div>
+                <div class="new-exit-field" id="newExitImageGroup">
+                    <label for="newExitImage">Reference Image (optional)</label>
+                    <input type="file" id="newExitImage" name="image" accept="image/*">
+                    <span class="new-exit-help-text">Use an image to guide the new location or region.</span>
                 </div>
                 <div class="new-exit-field" id="newExitVehicleGroup">
                     <label for="newExitVehicle">Vehicle</label>
@@ -4806,8 +4816,10 @@
         const newExitLocationGroup = document.getElementById('newExitLocationGroup');
         const newExitNameGroup = document.getElementById('newExitNameGroup');
         const newExitDescriptionGroup = document.getElementById('newExitDescriptionGroup');
+        const newExitImageGroup = document.getElementById('newExitImageGroup');
         const newExitNameInput = document.getElementById('newExitName');
         const newExitDescriptionInput = document.getElementById('newExitDescription');
+        const newExitImageInput = document.getElementById('newExitImage');
         const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
         const newExitVehicleInput = document.getElementById('newExitVehicle');
         const newExitRelativeLevelGroup = document.getElementById('newExitRelativeLevelGroup');
@@ -4821,6 +4833,11 @@
         const newExitButton = document.getElementById('newExitButton');
         let newExitOptionsCache = null;
         let newExitRegionsById = new Map();
+        let newExitOriginLocationId = null;
+        let newExitOriginRegionId = null;
+        let newExitPreferredRegionId = null;
+        let newExitMapPosition = null;
+        let newExitMapMode = false;
         let editingRegionId = null;
         let editingExitContext = null;
         const addNpcModal = document.getElementById('addNpcModal');
@@ -4834,6 +4851,7 @@
         const addNpcLevelInput = document.getElementById('addNpcLevel');
         const addNpcCurrencyInput = document.getElementById('addNpcCurrency');
         const addNpcIsHostileInput = document.getElementById('addNpcIsHostile');
+        const addNpcImageInput = document.getElementById('addNpcImage');
         const addNpcStatus = document.getElementById('addNpcStatus');
         const addNpcCancelBtn = document.getElementById('addNpcCancelBtn');
         const addNpcSaveBtn = document.getElementById('addNpcSaveBtn');
@@ -8497,6 +8515,9 @@
             if (addNpcIsHostileInput) {
                 addNpcIsHostileInput.checked = false;
             }
+            if (addNpcImageInput) {
+                addNpcImageInput.value = '';
+            }
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
             }
@@ -8521,6 +8542,146 @@
             if (focusTrigger && addNpcButton) {
                 addNpcButton.focus();
             }
+        }
+
+        async function readAddNpcImageData(file) {
+            if (!file) {
+                return null;
+            }
+            if (!file.type || !file.type.startsWith('image/')) {
+                throw new Error('NPC image must be an image file.');
+            }
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (typeof reader.result === 'string') {
+                        resolve(reader.result);
+                        return;
+                    }
+                    reject(new Error('NPC image could not be read.'));
+                };
+                reader.onerror = () => reject(new Error('NPC image could not be read.'));
+                reader.readAsDataURL(file);
+            });
+            const downscaledDataUrl = await downscaleImageDataUrl(dataUrl, file.type, 'NPC image');
+            const portraitDataUrl = file.type === 'image/png'
+                ? dataUrl
+                : await normalizeImageDataUrlToPng(dataUrl, 'NPC portrait');
+            return {
+                downscaledDataUrl,
+                portraitDataUrl
+            };
+        }
+
+        async function readNewExitImageData(file) {
+            if (!file) {
+                return null;
+            }
+            if (!file.type || !file.type.startsWith('image/')) {
+                throw new Error('Reference image must be an image file.');
+            }
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (typeof reader.result === 'string') {
+                        resolve(reader.result);
+                        return;
+                    }
+                    reject(new Error('Reference image could not be read.'));
+                };
+                reader.onerror = () => reject(new Error('Reference image could not be read.'));
+                reader.readAsDataURL(file);
+            });
+            const downscaledDataUrl = await downscaleImageDataUrl(dataUrl, file.type, 'Reference image');
+            const originalDataUrl = file.type === 'image/png'
+                ? dataUrl
+                : await normalizeImageDataUrlToPng(dataUrl, 'Reference image');
+            return {
+                downscaledDataUrl,
+                originalDataUrl
+            };
+        }
+
+        async function downscaleImageDataUrl(dataUrl, outputType, label = 'Image') {
+            const maxPixels = 2000000;
+            const labelText = label || 'Image';
+            return new Promise((resolve, reject) => {
+                if (!dataUrl) {
+                    reject(new Error(`${labelText} data is missing.`));
+                    return;
+                }
+                const image = new Image();
+                image.onload = () => {
+                    const width = image.naturalWidth || image.width;
+                    const height = image.naturalHeight || image.height;
+                    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+                        reject(new Error(`${labelText} dimensions are invalid.`));
+                        return;
+                    }
+
+                    const pixelCount = width * height;
+                    if (pixelCount <= maxPixels) {
+                        resolve(dataUrl);
+                        return;
+                    }
+
+                    const scale = Math.sqrt(maxPixels / pixelCount);
+                    const targetWidth = Math.max(1, Math.round(width * scale));
+                    const targetHeight = Math.max(1, Math.round(height * scale));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error(`${labelText} resizing failed to initialize.`));
+                        return;
+                    }
+                    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+                    const normalizedType = outputType && outputType.startsWith('image/')
+                        ? outputType
+                        : 'image/jpeg';
+                    const supportsQuality = normalizedType === 'image/jpeg' || normalizedType === 'image/webp';
+                    const resizedDataUrl = supportsQuality
+                        ? canvas.toDataURL(normalizedType, 0.9)
+                        : canvas.toDataURL(normalizedType);
+                    resolve(resizedDataUrl);
+                };
+                image.onerror = () => reject(new Error(`${labelText} could not be loaded.`));
+                image.src = dataUrl;
+            });
+        }
+
+        async function normalizeImageDataUrlToPng(dataUrl, label = 'Image') {
+            return new Promise((resolve, reject) => {
+                if (!dataUrl) {
+                    const labelText = label || 'Image';
+                    reject(new Error(`${labelText} data is missing.`));
+                    return;
+                }
+                const labelText = label || 'Image';
+                const image = new Image();
+                image.onload = () => {
+                    const width = image.naturalWidth || image.width;
+                    const height = image.naturalHeight || image.height;
+                    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+                        reject(new Error(`${labelText} dimensions are invalid.`));
+                        return;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error(`${labelText} conversion failed to initialize.`));
+                        return;
+                    }
+                    ctx.drawImage(image, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                image.onerror = () => reject(new Error(`${labelText} image could not be loaded.`));
+                image.src = dataUrl;
+            });
         }
 
         async function submitAddNpc(event) {
@@ -8582,6 +8743,27 @@
 
             if (addNpcIsHostileInput) {
                 payload.isHostile = Boolean(addNpcIsHostileInput.checked);
+            }
+
+            const imageFile = addNpcImageInput?.files?.[0] || null;
+            let imageDataUrl = '';
+            let imageDataUrlOriginal = '';
+            if (imageFile) {
+                setAddNpcStatus('Preparing NPC image...', null);
+                try {
+                    const imagePayload = await readAddNpcImageData(imageFile);
+                    if (!imagePayload?.downscaledDataUrl || !imagePayload?.portraitDataUrl) {
+                        throw new Error('NPC image processing failed.');
+                    }
+                    imageDataUrl = imagePayload.downscaledDataUrl;
+                    imageDataUrlOriginal = imagePayload.portraitDataUrl;
+                } catch (error) {
+                    setAddNpcStatus(error?.message || 'Failed to read NPC image.', 'error');
+                    addNpcSaveBtn.disabled = false;
+                    return;
+                }
+                payload.imageDataUrl = imageDataUrl;
+                payload.imageDataUrlOriginal = imageDataUrlOriginal;
             }
 
             setAddNpcStatus('Creating NPC…', null);
@@ -8700,7 +8882,10 @@
                 return newExitOptionsCache;
             }
 
-            const originLocationId = lastRenderedLocation?.id;
+            const originLocationId = newExitOriginLocationId
+                || editingExitContext?.locationId
+                || lastRenderedLocation?.id
+                || null;
             const query = originLocationId ? `?originLocationId=${encodeURIComponent(originLocationId)}` : '';
             const response = await fetch(`/api/exits/options${query}`);
             if (!response.ok) {
@@ -8853,7 +9038,10 @@
             const selectedLocationId = newExitLocationSelect?.value?.trim() || '';
             const showFields = !selectedLocationId;
             const creatingNewRegion = !selectedRegionId;
-            const currentRegionId = lastRenderedLocation?.regionId || lastRenderedLocation?.stubMetadata?.regionId || null;
+            const currentRegionId = newExitOriginRegionId
+                || lastRenderedLocation?.regionId
+                || lastRenderedLocation?.stubMetadata?.regionId
+                || null;
             if (newExitNameGroup) {
                 if (showFields) {
                     newExitNameGroup.removeAttribute('hidden');
@@ -8866,6 +9054,16 @@
                     newExitDescriptionGroup.removeAttribute('hidden');
                 } else {
                     newExitDescriptionGroup.setAttribute('hidden', '');
+                }
+            }
+            if (newExitImageGroup) {
+                if (showFields) {
+                    newExitImageGroup.removeAttribute('hidden');
+                } else {
+                    newExitImageGroup.setAttribute('hidden', '');
+                    if (newExitImageInput) {
+                        newExitImageInput.value = '';
+                    }
                 }
             }
             if (newExitVehicleGroup) {
@@ -8919,6 +9117,9 @@
                 if (newExitVehicleInput) {
                     newExitVehicleInput.value = '';
                 }
+                if (newExitImageInput) {
+                    newExitImageInput.value = '';
+                }
             }
         }
 
@@ -8927,9 +9128,32 @@
             if (!newExitModal || !npcModalBackdrop) {
                 return;
             }
+            const isMapMode = Boolean(context && context.mode === 'map');
+            newExitMapMode = isMapMode;
+            newExitOriginLocationId = null;
+            newExitOriginRegionId = null;
+            newExitPreferredRegionId = null;
+            if (isMapMode) {
+                const originId = typeof context?.originLocationId === 'string' ? context.originLocationId.trim() : '';
+                const originRegionId = typeof context?.originRegionId === 'string' ? context.originRegionId.trim() : '';
+                if (originId) {
+                    newExitOriginLocationId = originId;
+                }
+                if (originRegionId) {
+                    newExitOriginRegionId = originRegionId;
+                }
+                const preferredRegionId = typeof context?.preferredRegionId === 'string' ? context.preferredRegionId.trim() : '';
+                newExitPreferredRegionId = preferredRegionId || newExitOriginRegionId || null;
+                const mapPosition = context?.mapPosition;
+                if (mapPosition && Number.isFinite(mapPosition.x) && Number.isFinite(mapPosition.y)) {
+                    newExitMapPosition = { x: mapPosition.x, y: mapPosition.y };
+                }
+            }
             if (!lastRenderedLocation || !lastRenderedLocation.id) {
-                alert('No active location available to add an exit.');
-                return;
+                if (!newExitOriginLocationId) {
+                    alert('No active location available to add an exit.');
+                    return;
+                }
             }
 
             const isEditing = Boolean(context && context.mode === 'edit' && context.exit && context.exitId);
@@ -8962,6 +9186,9 @@
             }
             if (newExitVehicleGroup) {
                 newExitVehicleGroup.removeAttribute('hidden');
+            }
+            if (newExitImageInput) {
+                newExitImageInput.value = '';
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
@@ -9054,6 +9281,11 @@
                             ? Math.round(relativeLevelValue)
                             : '';
                     }
+                } else if (newExitPreferredRegionId && newExitRegionSelect) {
+                    if (Array.from(newExitRegionSelect.options).some(opt => opt.value === newExitPreferredRegionId)) {
+                        newExitRegionSelect.value = newExitPreferredRegionId;
+                    }
+                    handleNewExitRegionChange();
                 } else {
                     handleNewExitRegionChange();
                 }
@@ -9082,6 +9314,23 @@
             }, 50);
         }
 
+        window.openNewExitModalFromMap = (context = {}) => {
+            const originLocationId = typeof context?.originLocationId === 'string' ? context.originLocationId.trim() : '';
+            if (!originLocationId) {
+                throw new Error('Map exit creation requires an origin location id.');
+            }
+            const originRegionId = typeof context?.originRegionId === 'string' ? context.originRegionId.trim() : '';
+            const preferredRegionId = typeof context?.preferredRegionId === 'string' ? context.preferredRegionId.trim() : '';
+            const mapPosition = context?.mapPosition;
+            openNewExitModal({
+                mode: 'map',
+                originLocationId,
+                originRegionId,
+                preferredRegionId: preferredRegionId || originRegionId || null,
+                mapPosition
+            });
+        };
+
         async function submitNewExit(event) {
             if (event) {
                 event.preventDefault();
@@ -9093,8 +9342,8 @@
 
             const isEditing = Boolean(editingExitContext);
             const activeLocationId = isEditing
-                ? (editingExitContext?.locationId || lastRenderedLocation?.id || null)
-                : (lastRenderedLocation?.id || null);
+                ? (editingExitContext?.locationId || newExitOriginLocationId || lastRenderedLocation?.id || null)
+                : (newExitOriginLocationId || lastRenderedLocation?.id || null);
 
             if (!activeLocationId) {
                 setNewExitStatus('No active location is available for managing exits.', 'error');
@@ -9151,8 +9400,12 @@
                     ? name || 'New location'
                     : '';
 
+            const shouldShowPlaceholder = !isEditing
+                && locationExitsList
+                && (!newExitMapMode
+                    || (lastRenderedLocation?.id && activeLocationId === lastRenderedLocation.id));
             let placeholderButton = null;
-            if (!isEditing && locationExitsList) {
+            if (shouldShowPlaceholder) {
                 const emptyState = locationExitsList.querySelector('.no-exits');
                 if (emptyState) {
                     emptyState.remove();
@@ -9180,9 +9433,17 @@
                 placeholderButton.classList.add('exit-button--unexplored');
                 locationExitsList.appendChild(placeholderButton);
             }
-
-            setNewExitStatus(isEditing ? 'Updating exit…' : 'Creating exit…', null);
-            newExitSaveBtn.disabled = true;
+            const removePlaceholder = () => {
+                if (!isEditing && placeholderButton && placeholderButton.isConnected) {
+                    placeholderButton.remove();
+                    if (locationExitsList && !locationExitsList.querySelector('.exit-button')) {
+                        const emptyState = document.createElement('div');
+                        emptyState.className = 'no-exits';
+                        emptyState.textContent = 'No exits discovered yet.';
+                        locationExitsList.appendChild(emptyState);
+                    }
+                }
+            };
 
             const payload = { type };
             if (!usingExistingLocation || name) {
@@ -9207,6 +9468,37 @@
                 payload.relativeLevel = relativeLevelValue;
             }
 
+            const imageFile = newExitImageInput?.files?.[0] || null;
+            let imageDataUrl = '';
+            let imageDataUrlOriginal = '';
+            if (imageFile) {
+                if (!creatingNewRegion && !creatingNewLocation) {
+                    setNewExitStatus('Reference images are only supported when creating a new location or region.', 'error');
+                    removePlaceholder();
+                    return;
+                }
+                setNewExitStatus('Preparing reference image...', null);
+                newExitSaveBtn.disabled = true;
+                try {
+                    const imagePayload = await readNewExitImageData(imageFile);
+                    if (!imagePayload?.downscaledDataUrl || !imagePayload?.originalDataUrl) {
+                        throw new Error('Reference image processing failed.');
+                    }
+                    imageDataUrl = imagePayload.downscaledDataUrl;
+                    imageDataUrlOriginal = imagePayload.originalDataUrl;
+                    payload.imageDataUrl = imageDataUrl;
+                    payload.imageDataUrlOriginal = imageDataUrlOriginal;
+                } catch (error) {
+                    setNewExitStatus(error?.message || 'Failed to read reference image.', 'error');
+                    removePlaceholder();
+                    newExitSaveBtn.disabled = false;
+                    return;
+                }
+            }
+
+            setNewExitStatus(isEditing ? 'Updating exit…' : 'Creating exit…', null);
+            newExitSaveBtn.disabled = true;
+
             const clientId = window.AIRPG_CLIENT_ID || null;
             if (clientId) {
                 payload.clientId = clientId;
@@ -9230,11 +9522,34 @@
                 newExitRegionsById = new Map();
 
                 if (!isEditing) {
+                    const mapMode = newExitMapMode;
+                    const mapPosition = newExitMapPosition;
+                    const shouldUpdateAdventure = !mapMode
+                        || (lastRenderedLocation?.id && activeLocationId === lastRenderedLocation.id);
+                    let mapUpdated = false;
+                    if (mapMode && data?.created && typeof window.addMapStubNodeAndEdge === 'function') {
+                        try {
+                            const matchedExit = data.location
+                                ? findExitMatchForPayload(data.location, payload, data.created)
+                                : null;
+                            mapUpdated = window.addMapStubNodeAndEdge({
+                                sourceId: activeLocationId,
+                                created: data.created,
+                                position: mapPosition,
+                                exitId: matchedExit?.id || null,
+                                preservePosition: true
+                            }) === true;
+                        } catch (mapError) {
+                            console.warn('Failed to update map after exit creation:', mapError);
+                            mapUpdated = false;
+                        }
+                    }
+
                     closeNewExitModal();
                     showLocationOverlay('Updating exits...');
                     overlayShown = true;
 
-                    if (data.location) {
+                    if (shouldUpdateAdventure && data.location) {
                         lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
                         const exits = Array.isArray(data.location.exits)
                             ? data.location.exits
@@ -9248,7 +9563,7 @@
                     }
 
                     const mapTab = document.querySelector('[data-tab="map"]');
-                    if (mapTab && mapTab.classList.contains('active')) {
+                    if (!mapUpdated && mapTab && mapTab.classList.contains('active')) {
                         window.loadRegionMap?.();
                     }
                 } else {
@@ -9333,15 +9648,7 @@
             } catch (error) {
                 console.warn('Failed to create exit:', error);
                 setNewExitStatus(`${isEditing ? 'Failed to update exit' : 'Failed to create exit'}: ${error?.message || 'Unknown error'}`, 'error');
-                if (!isEditing && placeholderButton && placeholderButton.isConnected) {
-                    placeholderButton.remove();
-                    if (locationExitsList && !locationExitsList.querySelector('.exit-button')) {
-                        const emptyState = document.createElement('div');
-                        emptyState.className = 'no-exits';
-                        emptyState.textContent = 'No exits discovered yet.';
-                        locationExitsList.appendChild(emptyState);
-                    }
-                }
+                removePlaceholder();
             } finally {
                 if (overlayShown) {
                     hideLocationOverlay();
@@ -9357,6 +9664,11 @@
             newExitModal.setAttribute('aria-hidden', 'true');
             newExitModal.setAttribute('hidden', '');
             editingExitContext = null;
+            newExitMapMode = false;
+            newExitOriginLocationId = null;
+            newExitOriginRegionId = null;
+            newExitPreferredRegionId = null;
+            newExitMapPosition = null;
             if (newExitForm) {
                 newExitForm.reset();
             }
@@ -9377,6 +9689,9 @@
             }
             if (newExitVehicleGroup) {
                 newExitVehicleGroup.removeAttribute('hidden');
+            }
+            if (newExitImageInput) {
+                newExitImageInput.value = '';
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+<role>Region Name Regenerator</role>
+
+<systemPrompt>
+You are a specialized prompt generator for creating immersive RPG region names that avoid banned or sensitive terms.
+</systemPrompt>
+
+<generationPrompt>
+
+<context>
+<worldOutline>
+{% for regionName, locations in worldOutline.regions %}
+  <region name="{{ regionName | escape }}">
+    {% for loc in locations %}<location>{{ loc }}</location>{% endfor %}
+  </region>
+{% endfor %}
+</worldOutline>
+
+{% set iterableRegions = regions | default([], true) %}
+{% if (iterableRegions | length) == 0 and region is defined and region %}
+  {% set iterableRegions = [region] %}
+{% endif %}
+
+<regions>
+{% for regionData in iterableRegions %}
+  <region>
+    <regionIndex>{{ loop.index0 }}</regionIndex>
+    {% if regionData.id %}<regionId>{{ regionData.id }}</regionId>{% endif %}
+    <originalName>{{ regionData.name }}</originalName>
+    <description>{{ regionData.description }}</description>
+  </region>
+{% endfor %}
+</regions>
+</context>
+
+For each region listed above, generate exactly 10 replacement names that fit the setting, respect the provided descriptions, and strictly avoid terms that could appear on a banned list. Vary the length and feel of the names for each region to provide diverse options.
+
+Respond with one regionNames block per region, keeping the blocks in the same order they were provided, following this format:
+
+<response>
+  <regionNames>
+    <regionIndex>0</regionIndex>
+    <regionId>...</regionId> <!-- repeat the incoming regionId if provided; otherwise omit the tag -->
+    <originalName>...</originalName>
+    <name index="1">...</name>
+    <name index="2">...</name>
+    <name index="3">...</name>
+    <name index="4">...</name>
+    <name index="5">...</name>
+    <name index="6">...</name>
+    <name index="7">...</name>
+    <name index="8">...</name>
+    <name index="9">...</name>
+    <name index="10">...</name>
+  </regionNames>
+  ... repeat for each region ...
+</response>
+
+Only include XML described above—no commentary, bullet lists, or additional text.
+
+</generationPrompt>
+</template>

@@ -1,13 +1,17 @@
 <task>You will be provided with an XML structure representing a an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
 
+If the <name> field is already filled in, repeat it exactly and do not change it. Do not add titles, epithets, or descriptors to a prefilled name.
+
+{% if hasImage %}A reference image is provided. Use it to guide the NPC's appearance, attire, vibe, standout details, and anything else not specified, keeping other fields consistent with what you see.{% endif %}
+
 Note that an NPC is defined loosely here, and may be a creature, monster, or any other entity that functions as a non-player character in a text-based RPG setting.
 
 {% if oldItem %}Note that this NPC was created from the following item or scenery: "{{ oldItem.name }}", described as "{{ oldItem.description }}". The transformation is described as "{{ oldItem.transformationDescription }}". Use this as inspiration for the NPC's appearance, personality, and role.{% endif %}
 
-{% if config.character_gen_instructions %}
+{% if setting.characterGenInstructions %}
 These user notes are important for generating the NPCs:
 <userNotes>
-{{ config.character_gen_instructions }}
+{{ setting.characterGenInstructions }}
 </userNotes>
 {% endif %}
 
@@ -19,7 +23,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
 <npcInfo>
     <npcs>
         <npc>
-            <name>{% if npc.name %}{{ npc.name }}{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
+            <name>{% if npc.name %}{{ npc.name }}<!--Name is fixed; do not change it.-->{% else %}<!--An appropriate name for this NPC. Do not use the name of an existing or deceased NPC.-->{% endif %}</name>
             <description>{% if npc.description %}{{ npc.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing appearance, personality, current goals, and how they relate to the location. Replace their name with %NAME%.--> {% endif %}</description>
             <shortDescription>{% if npc.shortDescription %}{{ npc.shortDescription }}{% else %}<!--Ten words or fewer summarizing the NPC. Replace their name with %NAME%.--> {% endif %}</shortDescription>
             <role>{% if npc.role %}{{ npc.role  }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>

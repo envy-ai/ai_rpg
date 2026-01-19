@@ -56,7 +56,7 @@ ai:
 # Multimodal model configuration (overrides above)
 ai_multimodal:
   enabled: true
-  model: "qwen3-vl-235b-a22b-instruct-original"
+  model: "zai-org/glm-4.6v"
 
 # overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
 # prompt_ai_overrides:

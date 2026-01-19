@@ -14,6 +14,8 @@ Design a brand new region for the setting above. Propose between 1 and {{ maxLoc
 {% endif %}
 </task>
 
+{% if hasImage %}A reference image is provided. Use it to guide the region's visual identity, landscapes, architecture, and atmosphere.{% endif %}
+
 {% if currentPlayer.previousLocation %}
 For context, this region is being entered from {{ currentPlayer.previousLocation.name }} in {{ currentPlayer.previousLocation.region.name }}.
 {% endif %}

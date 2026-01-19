@@ -1,11 +1,19 @@
 Information about the setting of the game:
-<settingInfo>
+<setting>
   <name>{{ setting.name }}</name>
   <description>{{ setting.description }}</description>
   <theme>{{ setting.theme }}</theme>
   <genre>{{ setting.genre }}</genre>
+  <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
   <magicLevel>{{ setting.magicLevel }}</magicLevel>
   <techLevel>{{ setting.techLevel }}</techLevel>
   <tone>{{ setting.tone }}</tone>
   <difficulty>{{ setting.difficulty }}</difficulty>
-</settingInfo>
+  <currencyName>{{ setting.currencyName }}</currencyName>
+  <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+  <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+  <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <races>{{ (setting.races or []) | join(', ') }}</races>
+  <attributes>{{ setting.attributes | join(', ') }}</attributes>
+  <skills>{{ setting.skills | join(', ') }}</skills>
+</setting>

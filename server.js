@@ -544,6 +544,112 @@ function hasExistingImage(imageId) {
     return false;
 }
 
+function parseImageDataUrl(dataUrl) {
+    if (typeof dataUrl !== 'string' || !dataUrl.trim()) {
+        throw new Error('Image data URL is required.');
+    }
+
+    const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+    if (!match) {
+        throw new Error('Image data URL is invalid.');
+    }
+
+    const mimeType = match[1].toLowerCase();
+    const base64Payload = match[2];
+    if (!base64Payload) {
+        throw new Error('Image data URL payload is missing.');
+    }
+
+    const buffer = Buffer.from(base64Payload, 'base64');
+    if (!buffer.length) {
+        throw new Error('Image data URL payload is empty.');
+    }
+
+    return { mimeType, buffer };
+}
+
+function saveUploadedPortraitImage(dataUrl) {
+    const { mimeType, buffer } = parseImageDataUrl(dataUrl);
+    if (mimeType !== 'image/png') {
+        throw new Error('NPC portrait image must be a PNG data URL.');
+    }
+
+    const imageId = generateImageId();
+    const saveDirectory = path.join(__dirname, 'public', 'generated-images');
+    if (!fs.existsSync(saveDirectory)) {
+        fs.mkdirSync(saveDirectory, { recursive: true });
+    }
+
+    const filename = `${imageId}.png`;
+    const filepath = path.join(saveDirectory, filename);
+    fs.writeFileSync(filepath, buffer);
+
+    const imageEntry = {
+        imageId,
+        filename,
+        url: `/generated-images/${filename}`,
+        size: buffer.length
+    };
+    const imageMetadata = {
+        id: imageId,
+        prompt: 'npc_upload',
+        negative_prompt: '',
+        width: null,
+        height: null,
+        seed: null,
+        createdAt: new Date().toISOString(),
+        images: [imageEntry],
+        source: 'upload'
+    };
+    generatedImages.set(imageId, imageMetadata);
+
+    return {
+        imageId,
+        metadata: imageMetadata
+    };
+}
+
+function saveUploadedLocationImage(dataUrl) {
+    const { mimeType, buffer } = parseImageDataUrl(dataUrl);
+    if (mimeType !== 'image/png') {
+        throw new Error('Location image must be a PNG data URL.');
+    }
+
+    const imageId = generateImageId();
+    const saveDirectory = path.join(__dirname, 'public', 'generated-images');
+    if (!fs.existsSync(saveDirectory)) {
+        fs.mkdirSync(saveDirectory, { recursive: true });
+    }
+
+    const filename = `${imageId}.png`;
+    const filepath = path.join(saveDirectory, filename);
+    fs.writeFileSync(filepath, buffer);
+
+    const imageEntry = {
+        imageId,
+        filename,
+        url: `/generated-images/${filename}`,
+        size: buffer.length
+    };
+    const imageMetadata = {
+        id: imageId,
+        prompt: 'location_upload',
+        negative_prompt: '',
+        width: null,
+        height: null,
+        seed: null,
+        createdAt: new Date().toISOString(),
+        images: [imageEntry],
+        source: 'upload'
+    };
+    generatedImages.set(imageId, imageMetadata);
+
+    return {
+        imageId,
+        metadata: imageMetadata
+    };
+}
+
 // Create a new image generation job
 function createImageJob(jobId, payload = {}) {
     const job = {
@@ -1424,7 +1530,9 @@ function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback
         currencyName: normalizeSettingValue(settingSnapshot?.currencyName, ''),
         currencyNamePlural: normalizeSettingValue(settingSnapshot?.currencyNamePlural, ''),
         currencyValueNotes: normalizeSettingValue(settingSnapshot?.currencyValueNotes, ''),
-        writingStyleNotes: normalizeSettingValue(settingSnapshot?.writingStyleNotes, '')
+        writingStyleNotes: normalizeSettingValue(settingSnapshot?.writingStyleNotes, ''),
+        baseContextPreamble: normalizeSettingValue(settingSnapshot?.baseContextPreamble, ''),
+        characterGenInstructions: normalizeSettingValue(settingSnapshot?.characterGenInstructions, '')
     };
 
     if (!context.description && fallbackDescription) {
@@ -1434,6 +1542,28 @@ function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback
     context.races = normalizeSettingList(settingSnapshot?.availableRaces);
 
     return context;
+}
+
+function buildSettingContextForNamePrompt() {
+    const activeSetting = getActiveSettingSnapshot();
+    const settingDescription = describeSettingForPrompt(activeSetting);
+    const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+
+    if (settingContext && typeof settingContext === 'object') {
+        const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
+            .filter(name => typeof name === 'string' && name.trim())
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        const availableSkillsMap = typeof Player.getAvailableSkills === 'function' ? Player.getAvailableSkills() : null;
+        const skillNamesForPrompt = availableSkillsMap instanceof Map
+            ? Array.from(availableSkillsMap.keys())
+                .filter(name => typeof name === 'string' && name.trim())
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+            : [];
+        settingContext.attributes = attributeEntriesForPrompt;
+        settingContext.skills = skillNamesForPrompt;
+    }
+
+    return settingContext;
 }
 
 function resolveLocationStyle(requestedStyle, settingSnapshot = null) {
@@ -4406,10 +4536,32 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
     return exit;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '' } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
+    }
+
+    const normalizedImageDataUrl = typeof imageDataUrl === 'string' ? imageDataUrl.trim() : '';
+    const normalizedImageDataUrlOriginal = typeof imageDataUrlOriginal === 'string'
+        ? imageDataUrlOriginal.trim()
+        : '';
+    if (normalizedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrl)) {
+        throw new Error('Location image must be a base64-encoded data URL.');
+    }
+    if (normalizedImageDataUrlOriginal && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrlOriginal)) {
+        throw new Error('Location original image must be a base64-encoded data URL.');
+    }
+    const hasDownscaledImage = Boolean(normalizedImageDataUrl);
+    const hasOriginalImage = Boolean(normalizedImageDataUrlOriginal);
+    if (hasDownscaledImage !== hasOriginalImage) {
+        throw new Error('Location image uploads must include both downscaled and original image data URLs.');
+    }
+    if (normalizedImageDataUrlOriginal) {
+        const originalMatch = normalizedImageDataUrlOriginal.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+        if (!originalMatch || originalMatch[1].toLowerCase() !== 'image/png') {
+            throw new Error('Location image must be a PNG data URL.');
+        }
     }
 
     const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
@@ -4460,6 +4612,12 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         return existing;
     }
 
+    let locationImageId = null;
+    if (normalizedImageDataUrlOriginal) {
+        const imageSave = saveUploadedLocationImage(normalizedImageDataUrlOriginal);
+        locationImageId = imageSave.imageId;
+    }
+
     const settingSnapshot = getActiveSettingSnapshot();
     const normalizedDirectionHint = normalizeDirection(directionHint);
     const resolvedDirection = normalizedDirectionHint || directionKeyFromName(trimmedName);
@@ -4467,6 +4625,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const stub = new Location({
         name: trimmedName,
         description: null,
+        imageId: locationImageId,
         regionId: effectiveRegionId,
         isStub: true,
         stubMetadata: {
@@ -4480,7 +4639,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             allowRename: false,
             relativeLevel: normalizedRelativeLevel,
             vehicleType: resolvedVehicleType,
-            isVehicle: resolvedIsVehicle
+            isVehicle: resolvedIsVehicle,
+            imageDataUrl: normalizedImageDataUrl || null
         },
         checkRegionId: !pendingTargetRegion
     });
@@ -4541,10 +4701,32 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '' } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
+    }
+
+    const normalizedImageDataUrl = typeof imageDataUrl === 'string' ? imageDataUrl.trim() : '';
+    const normalizedImageDataUrlOriginal = typeof imageDataUrlOriginal === 'string'
+        ? imageDataUrlOriginal.trim()
+        : '';
+    if (normalizedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrl)) {
+        throw new Error('Region image must be a base64-encoded data URL.');
+    }
+    if (normalizedImageDataUrlOriginal && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrlOriginal)) {
+        throw new Error('Region original image must be a base64-encoded data URL.');
+    }
+    const hasDownscaledImage = Boolean(normalizedImageDataUrl);
+    const hasOriginalImage = Boolean(normalizedImageDataUrlOriginal);
+    if (hasDownscaledImage !== hasOriginalImage) {
+        throw new Error('Region image uploads must include both downscaled and original image data URLs.');
+    }
+    if (normalizedImageDataUrlOriginal) {
+        const originalMatch = normalizedImageDataUrlOriginal.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+        if (!originalMatch || originalMatch[1].toLowerCase() !== 'image/png') {
+            throw new Error('Region image must be a PNG data URL.');
+        }
     }
 
     const normalizedTargetName = trimmedName.toLowerCase();
@@ -4701,6 +4883,12 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         return null;
     }
 
+    let entryImageId = null;
+    if (normalizedImageDataUrlOriginal) {
+        const imageSave = saveUploadedLocationImage(normalizedImageDataUrlOriginal);
+        entryImageId = imageSave.imageId;
+    }
+
     const newRegionId = generateRegionStubId();
     const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
     const currentRegion = findRegionByLocationId(originLocation.id) || null;
@@ -4740,7 +4928,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         relativeLevel: normalizedRelativeLevel,
         settingDescription,
         vehicleType: resolvedVehicleType,
-        isVehicle: resolvedIsVehicle
+        isVehicle: resolvedIsVehicle,
+        imageDataUrl: normalizedImageDataUrl || null
     };
 
     if (currentRegion && Number.isFinite(currentRegion.averageLevel)) {
@@ -4750,6 +4939,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     const regionEntryStub = new Location({
         name: stubName,
         description: null,
+        imageId: entryImageId,
         regionId: newRegionId,
         checkRegionId: false,
         isStub: true,
@@ -4806,7 +4996,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         exitLocationId: originLocation.id,
         entranceStubId: regionEntryStub.id,
         originDirection: stubMetadata.originDirection,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        imageDataUrl: normalizedImageDataUrl || null
     });
 
     console.log(`🌐 Created region stub "${regionEntryStub.name}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
@@ -4921,13 +5112,15 @@ function scheduleStubExpansion(location) {
 
     const metadata = location.stubMetadata || {};
     const originLocation = metadata.originLocationId ? Location.get(metadata.originLocationId) : null;
+    const imageDataUrl = typeof metadata.imageDataUrl === 'string' ? metadata.imageDataUrl.trim() : '';
     const expansionPromise = generateLocationFromPrompt({
         stubLocation: location,
         originLocation,
         locationTheme: metadata.themeHint || null,
         shortDescription: metadata.shortDescription || null,
         locationPurpose: metadata.locationPurpose || null,
-        setting: metadata.settingDescription || null
+        setting: metadata.settingDescription || null,
+        imageDataUrl
     }).catch(error => {
         console.error(`Failed to expand stub location ${location.id}:`, error.message);
         throw error;
@@ -5025,6 +5218,12 @@ async function expandRegionEntryStub(stubLocation) {
 
         let region = regions.get(targetRegionId) || null;
         const pendingInfo = pendingRegionStubs.get(targetRegionId) || null;
+        const metadataImageDataUrl = typeof metadata.imageDataUrl === 'string' ? metadata.imageDataUrl.trim() : '';
+        const pendingImageDataUrl = typeof pendingInfo?.imageDataUrl === 'string' ? pendingInfo.imageDataUrl.trim() : '';
+        const resolvedImageDataUrl = metadataImageDataUrl || pendingImageDataUrl;
+        if (resolvedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(resolvedImageDataUrl)) {
+            throw new Error('Region image must be a base64-encoded data URL.');
+        }
         //console.log("Pending region info for expansion:", pendingInfo);
         const pendingRelativeLevel = Number.isFinite(pendingInfo?.relativeLevel)
             ? pendingInfo.relativeLevel
@@ -5149,16 +5348,26 @@ async function expandRegionEntryStub(stubLocation) {
                     name: regionName,
                     regionNotes: regionDescription
                 },
-                previousRegion: currentPlayer.currentLocation.region
+                previousRegion: currentPlayer.currentLocation.region,
+                hasImage: Boolean(resolvedImageDataUrl)
             });
 
             if (!stubPrompt) {
                 return null;
             }
 
+            const userContent = resolvedImageDataUrl
+                ? [
+                    {
+                        type: 'text',
+                        text: `${stubPrompt.generationPrompt}\n\nUse the attached image as visual reference for this region.`
+                    },
+                    { type: 'image_url', image_url: { url: resolvedImageDataUrl } }
+                ]
+                : stubPrompt.generationPrompt;
             const messages = [
                 { role: 'system', content: stubPrompt.systemPrompt },
-                { role: 'user', content: stubPrompt.generationPrompt }
+                { role: 'user', content: userContent }
             ];
 
             try {
@@ -5166,7 +5375,8 @@ async function expandRegionEntryStub(stubLocation) {
                 const requestStart = Date.now();
                 stubResponse = await LLMClient.chatCompletion({
                     messages,
-                    metadataLabel: 'region_stub_locations'
+                    metadataLabel: 'region_stub_locations',
+                    multimodal: Boolean(resolvedImageDataUrl)
                 });
 
                 const durationSeconds = (Date.now() - requestStart) / 1000;
@@ -6036,6 +6246,10 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             }
         }
 
+        if (createdThings.length) {
+            await ensureThingNamesAllowed({ things: createdThings, location, region });
+        }
+
         try {
             const logDir = path.join(__dirname, 'logs');
             if (!fs.existsSync(logDir)) {
@@ -6502,6 +6716,10 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 console.warn('Failed to enforce unique thing names for generated items:', error.message);
                 console.warn(error);
             }
+        }
+
+        if (created.length) {
+            await ensureThingNamesAllowed({ things: created, location: resolvedLocation, region: resolvedRegion });
         }
 
         return created;
@@ -7013,6 +7231,8 @@ function renderLocationNpcPrompt(location, options = {}) {
             console.warn('[Lorebook] Failed to get entries for location NPC generation:', err.message);
         }
 
+        const settingContext = buildSettingPromptContext(getActiveSettingSnapshot());
+
         return promptEnv.render(templateName, {
             locationName: location.name || 'Unknown Location',
             locationDescription: location.description || 'No description provided.',
@@ -7026,7 +7246,8 @@ function renderLocationNpcPrompt(location, options = {}) {
             existingNpcsInOtherRegions: options.existingNpcsInOtherRegions || [],
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
             bannedWords: options.bannedWords || getNpcPromptBannedWords(),
-            lorebookEntries
+            lorebookEntries,
+            setting: settingContext
         });
     } catch (error) {
         console.error('Error rendering location NPC template:', error);
@@ -7064,6 +7285,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             ? Math.max(0, Math.min(20, Math.round(Number(region.numImportantNPCs))))
             : null;
 
+        const settingContext = buildSettingPromptContext(getActiveSettingSnapshot());
+
         return promptEnv.render(templateName, {
             region: region,
             allLocationsInRegion: options.allLocationsInRegion || [],
@@ -7073,7 +7296,8 @@ function renderRegionNpcPrompt(region, options = {}) {
             characterConcepts: options.characterConcepts || [],
             config: Globals.config || {},
             lorebookEntries,
-            numImportantNPCs
+            numImportantNPCs,
+            setting: settingContext
         });
     } catch (error) {
         console.error('Error rendering region NPC template:', error);
@@ -7171,7 +7395,15 @@ function normalizeNpcPromptSeed(seed = {}) {
     return normalized;
 }
 
-async function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = null, region = null, existingNpcSummaries = [], oldItem = null } = {}) {
+async function renderSingleNpcPrompt({
+    npc,
+    settingSnapshot = null,
+    location = null,
+    region = null,
+    existingNpcSummaries = [],
+    oldItem = null,
+    hasImage = false
+} = {}) {
     try {
         const baseContext = await prepareBasePromptContext({ locationOverride: location || null });
 
@@ -7244,7 +7476,8 @@ async function renderSingleNpcPrompt({ npc, settingSnapshot = null, location = n
             attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
             oldItem: oldItemContext,
             setting: baseContext.setting,
-            additionalLore: additionalLore
+            additionalLore: additionalLore,
+            hasImage: Boolean(hasImage)
         });
     } catch (error) {
         console.error('Error rendering single NPC template:', error);
@@ -7265,11 +7498,34 @@ function summarizeNpcForPrompt(npc) {
     };
 }
 
-async function generateNpcFromEvent({ name, npc = null, location = null, region = null, oldItem = null } = {}) {
+async function generateNpcFromEvent({
+    name,
+    npc = null,
+    location = null,
+    region = null,
+    oldItem = null,
+    imageDataUrl = '',
+    portraitImageDataUrl = ''
+} = {}) {
     const seedSource = (npc && typeof npc === 'object') ? { ...npc } : {};
     let trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName && typeof seedSource.name === 'string') {
         trimmedName = seedSource.name.trim();
+    }
+
+    const normalizedImageDataUrl = typeof imageDataUrl === 'string' ? imageDataUrl.trim() : '';
+    if (normalizedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrl)) {
+        throw new Error('NPC image must be a base64-encoded data URL.');
+    }
+    const normalizedPortraitImageDataUrl = typeof portraitImageDataUrl === 'string'
+        ? portraitImageDataUrl.trim()
+        : '';
+    if (normalizedPortraitImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedPortraitImageDataUrl)) {
+        throw new Error('NPC portrait image must be a base64-encoded data URL.');
+    }
+    if ((normalizedPortraitImageDataUrl && !normalizedImageDataUrl)
+        || (!normalizedPortraitImageDataUrl && normalizedImageDataUrl)) {
+        throw new Error('NPC image uploads must include both downscaled and original image data URLs.');
     }
 
     const normalizedKey = trimmedName.toLowerCase();
@@ -7333,7 +7589,8 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             location: resolvedLocation,
             region: resolvedRegion,
             existingNpcSummaries: existingNpcSummaries.slice(0, 25),
-            oldItem
+            oldItem,
+            hasImage: Boolean(normalizedImageDataUrl)
         });
 
         if (!renderedTemplate) {
@@ -7348,15 +7605,25 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             throw new Error('Single NPC template missing prompts');
         }
 
+        const userContent = normalizedImageDataUrl
+            ? [
+                {
+                    type: 'text',
+                    text: `${generationPrompt}\n\nUse the attached image as visual reference for this NPC.`
+                },
+                { type: 'image_url', image_url: { url: normalizedImageDataUrl } }
+            ]
+            : generationPrompt;
         const messages = [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
+            { role: 'user', content: userContent }
         ];
 
         const requestStart = Date.now();
         const npcResponse = await LLMClient.chatCompletion({
             messages,
-            metadataLabel: 'npc_generation_single'
+            metadataLabel: 'npc_generation_single',
+            multimodal: Boolean(normalizedImageDataUrl)
         });
 
         if (!npcResponse || !npcResponse.trim()) {
@@ -7451,6 +7718,12 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
         npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
         npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
 
+        let portraitImageId = null;
+        if (normalizedPortraitImageDataUrl) {
+            const portraitSave = saveUploadedPortraitImage(normalizedPortraitImageDataUrl);
+            portraitImageId = portraitSave.imageId;
+        }
+
         const attributes = {};
         const attrSource = npcData?.attributes || {};
         for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
@@ -7467,6 +7740,7 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
             race: npcData?.race || 'human',
             level: 1,
             location: resolvedLocation?.id || null,
+            imageId: portraitImageId,
             attributes,
             isNPC: true,
             isHostile: Boolean(npcData?.isHostile),
@@ -7550,6 +7824,10 @@ async function generateNpcFromEvent({ name, npc = null, location = null, region 
         return npc;
     })().catch(error => {
         console.warn(`NPC generation failed for ${name}:`, error.message);
+
+        if (normalizedPortraitImageDataUrl) {
+            throw error;
+        }
 
         const fallbackExisting = findActorByName(name);
         if (fallbackExisting) {
@@ -9254,6 +9532,30 @@ function locationNameContainsSlopWord(name, slopWords = getSlopWordList()) {
     }
 
     return false;
+}
+
+function getSlopWordsFromName(name, slopWordSet) {
+    if (!name || typeof name !== 'string' || !(slopWordSet instanceof Set) || slopWordSet.size === 0) {
+        return [];
+    }
+
+    const tokens = name
+        .toLowerCase()
+        .split(/[^a-z0-9']+/)
+        .filter(Boolean);
+
+    if (!tokens.length) {
+        return [];
+    }
+
+    const matches = new Set();
+    for (const token of tokens) {
+        if (slopWordSet.has(token)) {
+            matches.add(token);
+        }
+    }
+
+    return Array.from(matches);
 }
 
 async function ensureLocationNameAllowed(location, { maxAttempts = 3 } = {}) {
@@ -11029,6 +11331,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         } catch (error) {
             console.warn('Failed to enforce unique thing names for location generation:', error.message);
         }
+        await ensureThingNamesAllowed({ things: createdThings, location, region });
     }
 
     return createdThings;
@@ -11267,16 +11570,19 @@ function parseThingNameRegenResponse(xmlContent) {
         for (const node of itemNodes) {
             const id = node.getElementsByTagName('id')[0]?.textContent?.trim() || null;
             const oldName = node.getElementsByTagName('oldName')[0]?.textContent?.trim() || null;
-            const newName = node.getElementsByTagName('name')[0]?.textContent?.trim() || null;
+            const nameNodes = Array.from(node.getElementsByTagName('name'));
+            const names = nameNodes
+                .map(nameNode => (nameNode?.textContent || '').trim())
+                .filter(Boolean);
             const description = node.getElementsByTagName('description')[0]?.textContent?.trim() || '';
-            if (!newName) {
+            if (!names.length) {
                 continue;
             }
             const key = id || oldName;
             if (!key) {
                 continue;
             }
-            mapping.set(key, { id, oldName, newName, description });
+            mapping.set(key, { id, oldName, newName: names[0], names, description });
         }
     } catch (error) {
         console.warn('Failed to parse thing name regeneration response:', error.message);
@@ -11314,6 +11620,247 @@ function parseLocationNameRegenResponse(xmlContent) {
 
     return rotateNameCandidates(names);
 }
+
+async function ensureThingNamesAllowed({
+    things = [],
+    location = null,
+    region = null,
+    maxAttempts = 3
+} = {}) {
+    if (!Array.isArray(things)) {
+        throw new Error('ensureThingNamesAllowed requires an array of Thing instances.');
+    }
+    if (!things.length) {
+        return;
+    }
+
+    const resolvedAttempts = Number.isFinite(maxAttempts) ? Math.max(1, Math.round(maxAttempts)) : null;
+    if (!resolvedAttempts) {
+        throw new Error('ensureThingNamesAllowed requires a valid maxAttempts value.');
+    }
+
+    const slopWords = getSlopWordList();
+    if (!Array.isArray(slopWords) || slopWords.length === 0) {
+        throw new Error('Slopword list is unavailable for item name validation.');
+    }
+    const slopWordSet = new Set(slopWords);
+
+    const trackedThings = new Map();
+    for (const thing of things) {
+        if (!thing || typeof thing !== 'object') {
+            throw new Error('ensureThingNamesAllowed requires Thing instances.');
+        }
+        const name = typeof thing.name === 'string' ? thing.name.trim() : '';
+        if (!name) {
+            throw new Error('ensureThingNamesAllowed encountered a Thing without a valid name.');
+        }
+        if (!thing.id || typeof thing.id !== 'string') {
+            throw new Error(`ensureThingNamesAllowed encountered a Thing without a valid id for "${name}".`);
+        }
+        trackedThings.set(thing.id, thing);
+    }
+
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+        throw new Error('AI configuration missing for item name regeneration.');
+    }
+
+    const allThingEntries = typeof Thing.getAll === 'function' ? Thing.getAll() : null;
+    if (!Array.isArray(allThingEntries)) {
+        throw new Error('Thing.getAll did not return an array while preparing item name regeneration context.');
+    }
+
+    const allThingNames = Array.from(new Set(
+        allThingEntries
+            .map(entry => (typeof entry?.name === 'string' ? entry.name.trim() : ''))
+            .filter(Boolean)
+    ));
+
+    const worldOutline = getWorldOutline();
+    const settingContext = buildSettingContextForNamePrompt();
+
+    const resolvedLocation = location || Globals.location || null;
+    const resolvedRegion = region
+        || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : Globals.region)
+        || null;
+
+    const locationContext = resolvedLocation ? {
+        name: resolvedLocation.name || 'Unknown Location',
+        description: resolvedLocation.description
+            || resolvedLocation.stubMetadata?.shortDescription
+            || resolvedLocation.stubMetadata?.blueprintDescription
+            || 'No description provided.',
+        region: resolvedRegion?.name
+            || resolvedLocation.region
+            || resolvedLocation.stubMetadata?.regionName
+            || 'Unknown Region',
+        baseLevel: Number.isFinite(resolvedLocation.baseLevel)
+            ? resolvedLocation.baseLevel
+            : (Number.isFinite(resolvedLocation.stubMetadata?.computedBaseLevel)
+                ? resolvedLocation.stubMetadata.computedBaseLevel
+                : 1)
+    } : null;
+
+    const regionContext = resolvedRegion ? {
+        name: resolvedRegion.name || 'Unknown Region',
+        description: resolvedRegion.description || 'No description provided.'
+    } : null;
+
+    const bannedWords = new Set();
+
+    const collectTargets = () => {
+        const targets = [];
+        for (const thing of trackedThings.values()) {
+            const name = typeof thing.name === 'string' ? thing.name.trim() : '';
+            if (!name) {
+                throw new Error('ensureThingNamesAllowed encountered a Thing without a valid name.');
+            }
+            const matches = getSlopWordsFromName(name, slopWordSet);
+            if (matches.length) {
+                targets.push(thing);
+                matches.forEach(word => bannedWords.add(word));
+            }
+        }
+        return targets;
+    };
+
+    let targets = collectTargets();
+    if (!targets.length) {
+        return;
+    }
+
+    for (let attempt = 1; attempt <= resolvedAttempts; attempt += 1) {
+        const itemsToRegenerateName = targets.map(thing => ({
+            id: thing.id,
+            name: thing.name,
+            description: thing.description || ''
+        }));
+
+        let renderedTemplate;
+        try {
+            renderedTemplate = promptEnv.render('item-name-regen.xml.njk', {
+                worldOutline,
+                location: locationContext,
+                region: regionContext,
+                setting: settingContext,
+                itemsToRegenerateName,
+                allThingNames,
+                bannedWords: Array.from(bannedWords)
+            });
+        } catch (error) {
+            throw new Error(`Failed to render item name regeneration template: ${error.message}`);
+        }
+
+        let parsedTemplate;
+        try {
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            throw new Error(`Failed to parse item name regeneration template: ${error.message}`);
+        }
+
+        const systemPrompt = parsedTemplate?.systemPrompt;
+        const generationPrompt = parsedTemplate?.generationPrompt;
+        if (!systemPrompt || !generationPrompt) {
+            throw new Error('Item name regeneration template missing prompts.');
+        }
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: generationPrompt }
+        ];
+
+        let responseText = '';
+        let durationSeconds = null;
+        try {
+            const requestStart = Date.now();
+            responseText = await LLMClient.chatCompletion({
+                messages,
+                temperature: parsedTemplate.temperature,
+                metadataLabel: 'thing_name_regen'
+            });
+            durationSeconds = (Date.now() - requestStart) / 1000;
+        } catch (error) {
+            throw new Error(`Item name regeneration request failed: ${error.message}`);
+        }
+
+        if (!responseText.trim()) {
+            throw new Error('Item name regeneration returned an empty response.');
+        }
+
+        try {
+            logThingNameRegeneration({
+                prompt: generationPrompt,
+                responseText,
+                durationSeconds
+            });
+        } catch (error) {
+            console.warn('Failed to log item name regeneration:', error.message);
+        }
+
+        const mapping = parseThingNameRegenResponse(responseText);
+        if (!mapping.size) {
+            throw new Error('Item name regeneration did not produce any candidates.');
+        }
+
+        for (const thing of targets) {
+            const nameLookup = typeof thing.name === 'string' ? thing.name.trim() : '';
+            const replacement = mapping.get(thing.id)
+                || (nameLookup ? mapping.get(nameLookup) : null);
+            if (!replacement) {
+                throw new Error(`Item name regeneration response missing entry for "${nameLookup || thing.id}".`);
+            }
+
+            const candidateNames = Array.isArray(replacement.names) && replacement.names.length
+                ? replacement.names
+                : (replacement.newName ? [replacement.newName] : []);
+            if (!candidateNames.length) {
+                throw new Error(`Item name regeneration response missing candidate names for "${nameLookup || thing.id}".`);
+            }
+
+            let selectedName = null;
+            const rejectedSlopWords = new Set();
+            for (const candidate of candidateNames) {
+                if (typeof candidate !== 'string') {
+                    continue;
+                }
+                const trimmed = candidate.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                const matches = getSlopWordsFromName(trimmed, slopWordSet);
+                if (!matches.length) {
+                    selectedName = trimmed;
+                    break;
+                }
+                matches.forEach(word => rejectedSlopWords.add(word));
+            }
+
+            if (!selectedName) {
+                rejectedSlopWords.forEach(word => bannedWords.add(word));
+                continue;
+            }
+
+            thing.name = selectedName;
+            if (replacement.description) {
+                const updatedDescription = replacement.description.includes('%NAME%')
+                    ? replacement.description.replace(/%NAME%/g, selectedName)
+                    : replacement.description;
+                thing.description = updatedDescription;
+            }
+        }
+
+        targets = collectTargets();
+        if (!targets.length) {
+            return;
+        }
+    }
+
+    const remaining = targets
+        .map(thing => (typeof thing.name === 'string' ? thing.name.trim() : thing.id))
+        .filter(Boolean);
+    throw new Error(`Item name regeneration did not remove slop words for: ${remaining.join(', ') || 'unknown items'}.`);
+}
+
+Globals.ensureThingNamesAllowed = ensureThingNamesAllowed;
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
     if (!Array.isArray(candidateThings) || !candidateThings.length) {
@@ -11526,12 +12073,15 @@ async function regenerateLocationName(location) {
         baseLevel
     };
 
+    const settingContext = buildSettingContextForNamePrompt();
+
     let renderedTemplate;
     try {
         renderedTemplate = promptEnv.render('location_region_name_regen.xml.njk', {
             mode: 'location',
             worldOutline,
-            location: locationContext
+            location: locationContext,
+            setting: settingContext
         });
     } catch (error) {
         throw new Error(`Failed to render location name regeneration template: ${error.message}`);
@@ -11845,6 +12395,7 @@ async function regenerateRegionNames(regions) {
             renderedTemplate = promptEnv.render('location_region_name_regen.xml.njk', {
                 mode: 'region',
                 worldOutline,
+                setting: settingContext,
                 region: {
                     name: entry.contextName,
                     description: entry.description
@@ -13297,7 +13848,8 @@ async function renderLocationGeneratorPrompt(options = {}) {
             stubId: isStubExpansion ? (options.stubId || null) : null,
             isStubExpansion,
             lorebookEntries,
-            additionalLore: additionalLore
+            additionalLore: additionalLore,
+            hasImage: Boolean(options.hasImage)
         };
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
@@ -13522,7 +14074,8 @@ async function renderRegionGeneratorPrompt(options = {}) {
             minNewRegionExits,
             entryProse: options.entryProse || null,
             existingLocations: existingLocationNames,
-            additionalLore: additionalLore
+            additionalLore: additionalLore,
+            hasImage: Boolean(options.hasImage)
         };
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
@@ -14211,12 +14764,20 @@ async function generateLocationFromPrompt(options = {}) {
             stubLocation = null,
             originLocation = null,
             createStubs = false,
+            imageDataUrl: imageDataUrlRaw,
             ...promptOverrides
         } = options;
 
         const isStubExpansion = Boolean(stubLocation);
         const stubMetadata = stubLocation ? stubLocation.stubMetadata || {} : {};
         const resolvedOriginLocation = originLocation || (stubMetadata.originLocationId ? Location.get(stubMetadata.originLocationId) : null);
+        const imageDataUrlProvided = Object.prototype.hasOwnProperty.call(options, 'imageDataUrl');
+        const normalizedImageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
+        const stubImageDataUrl = typeof stubMetadata.imageDataUrl === 'string' ? stubMetadata.imageDataUrl.trim() : '';
+        const resolvedImageDataUrl = imageDataUrlProvided ? normalizedImageDataUrl : stubImageDataUrl;
+        if (resolvedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(resolvedImageDataUrl)) {
+            throw new Error('Location image must be a base64-encoded data URL.');
+        }
 
         if (isStubExpansion && (!stubLocation || !stubLocation.id)) {
             throw new Error('Stub expansion requested without a valid stub location');
@@ -14431,7 +14992,8 @@ async function generateLocationFromPrompt(options = {}) {
             stubName: stubTemplateData?.stubName || null,
             originLocationName: stubTemplateData?.originLocationName || null,
             originDescription: stubTemplateData?.originDescription || null,
-            originDirection: stubTemplateData?.originDirection || null
+            originDirection: stubTemplateData?.originDirection || null,
+            hasImage: Boolean(resolvedImageDataUrl)
         };
 
         // Generate the system prompt using the template
@@ -14443,6 +15005,15 @@ async function generateLocationFromPrompt(options = {}) {
         const { systemPrompt, generationPrompt } = promptConfig;
 
         // Prepare the messages for the AI API
+        const userContent = resolvedImageDataUrl
+            ? [
+                {
+                    type: 'text',
+                    text: `${generationPrompt}\n\nUse the attached image as visual reference for this location.`
+                },
+                { type: 'image_url', image_url: { url: resolvedImageDataUrl } }
+            ]
+            : generationPrompt;
         const messages = [
             {
                 role: 'system',
@@ -14450,7 +15021,7 @@ async function generateLocationFromPrompt(options = {}) {
             },
             {
                 role: 'user',
-                content: generationPrompt
+                content: userContent
             }
         ];
 
@@ -14461,7 +15032,8 @@ async function generateLocationFromPrompt(options = {}) {
         const requestStart = Date.now();
         const aiResponse = await LLMClient.chatCompletion({
             messages,
-            metadataLabel: 'location_generation'
+            metadataLabel: 'location_generation',
+            multimodal: Boolean(resolvedImageDataUrl)
         });
 
         if (!aiResponse || !aiResponse.trim()) {
@@ -14930,7 +15502,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     return results;
 }
 
-async function renderRegionStubPrompt({ settingDescription, region, previousRegion, regionNotes }) {
+async function renderRegionStubPrompt({ settingDescription, region, previousRegion, regionNotes, hasImage = false }) {
     try {
         const minRegionExitOverride = Region.stubRegionCount <= 2 ? 1 : null;
         const promptConfig = await renderRegionGeneratorPrompt({
@@ -14940,7 +15512,8 @@ async function renderRegionStubPrompt({ settingDescription, region, previousRegi
             regionDescription: region?.description || null,
             regionNotes: regionNotes || region?.regionNotes || null,
             setting: settingDescription || null,
-            minRegionExits: minRegionExitOverride
+            minRegionExits: minRegionExitOverride,
+            hasImage: Boolean(hasImage)
         });
 
         if (!promptConfig) {
@@ -15682,7 +16255,7 @@ async function chooseRegionEntrance({
 
 async function generateRegionFromPrompt(options = {}) {
     try {
-        const { report: progressReporter, ...rawOptions } = options || {};
+        const { report: progressReporter, imageDataUrl: imageDataUrlRaw, ...rawOptions } = options || {};
         const report = typeof progressReporter === 'function'
             ? (stage, payload = {}) => {
                 try {
@@ -15695,8 +16268,16 @@ async function generateRegionFromPrompt(options = {}) {
 
         report('region:prepare', { message: 'Preparing region prompt...' });
 
+        const normalizedImageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
+        if (normalizedImageDataUrl && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(normalizedImageDataUrl)) {
+            throw new Error('Region image must be a base64-encoded data URL.');
+        }
         const settingDescription = rawOptions.setting || describeSettingForPrompt(getActiveSettingSnapshot());
-        const generationOptions = { ...rawOptions, setting: settingDescription };
+        const generationOptions = {
+            ...rawOptions,
+            setting: settingDescription,
+            hasImage: Boolean(normalizedImageDataUrl)
+        };
         const promptConfig = await renderRegionGeneratorPrompt(generationOptions);
         if (!promptConfig?.systemPrompt || !promptConfig?.generationPrompt) {
             throw new Error('Failed to render region generation prompt.');
@@ -15704,9 +16285,18 @@ async function generateRegionFromPrompt(options = {}) {
 
         const { systemPrompt, generationPrompt } = promptConfig;
 
+        const userContent = normalizedImageDataUrl
+            ? [
+                {
+                    type: 'text',
+                    text: `${generationPrompt}\n\nUse the attached image as visual reference for this region.`
+                },
+                { type: 'image_url', image_url: { url: normalizedImageDataUrl } }
+            ]
+            : generationPrompt;
         const messages = [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
+            { role: 'user', content: userContent }
         ];
 
         report('region:request', { message: 'Requesting region layout from AI...' });
@@ -15716,7 +16306,8 @@ async function generateRegionFromPrompt(options = {}) {
         const aiResponse = await LLMClient.chatCompletion({
             messages,
             //temperature: parsedTemplate.temperature,
-            metadataLabel: 'region_generation'
+            metadataLabel: 'region_generation',
+            multimodal: Boolean(normalizedImageDataUrl)
         });
 
         if (!aiResponse || !aiResponse.trim()) {
