@@ -986,11 +986,14 @@ class Events {
         this._handlers = this._buildHandlers();
     }
 
-    static async runQuestChecks() {
+    static async runQuestChecks({ allowWithoutEventChecks = false } = {}) {
         const config = this.config || Globals.config || {};
-        if (config?.event_checks?.enabled === false) {
+        if (config?.event_checks?.enabled === false && !allowWithoutEventChecks) {
             console.info("Quest checks skipped: event_checks.enabled is false.");
             return null;
+        }
+        if (config?.event_checks?.enabled === false && allowWithoutEventChecks) {
+            console.info("Quest checks running without event checks.");
         }
         if (config?.quest_checks?.enabled !== true) {
             console.info("Quest checks skipped: quest_checks.enabled is not true.");
@@ -1061,6 +1064,7 @@ class Events {
             ...baseContext,
             suppressQuestList: true,
             promptType: "quest-check",
+            omitGameHistory: true,
             currentQuestPromptList,
         });
 
@@ -1894,6 +1898,14 @@ class Events {
 
             if (!rewardProse) {
                 rewardProse = fallbackList;
+            }
+
+            if (Globals.config?.slop_buster === true) {
+                const slopRemover = Globals.applySlopRemoval;
+                if (typeof slopRemover !== "function") {
+                    throw new Error("Slop remover is unavailable for quest reward prose.");
+                }
+                rewardProse = await slopRemover(rewardProse);
             }
 
             if (context._originatedFromEventChecks) {

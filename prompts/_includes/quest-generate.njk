@@ -10,7 +10,25 @@ Here is some information about the quest:
   <secretNotes><!-- Internal notes about the quest that are not revealed to the player. If this is a simple quest, it's okay to leave these blank. --></secretNotes>
   <objectives>
     <objective>
-      <description><!--Description of the objective. If modifying a quest, skip any objectives that are already completed. Keep or add objectives as needed.--></description>
+      <description><!--Description of the objective. If modifying a quest, skip any objectives that are already completed. Keep or add objectives as needed. If it is necessary to be present at a location or region to complete this objective, add the tag [location: {full location name}] or [region: {full region name}] to the end of the objective. If a person must be present (such as someone to report or speak to), add the tag [person: {full person name}] to the end of the objective. If a specific item is required to complete the objective, add the tag [item: {full item name}] to the end of the objective.
+
+      For example: 
+      
+      * Investigate the Ancient Ruins for signs of magical activity [region: Ancient Ruins]
+      * Retrieve the Lost Amulet from the Temple of Talos in the Ancient Ruins [location: Temple of Talos] [item: Lost Amulet] [region: Ancient Ruins]
+      * Report your findings in the Ancient Ruins to Elder Thalos [person: Elder Thalos] 
+        (note that the Ancient Ruins is not tagged in this objective because it is not necessary to be present there to complete it).
+
+      Objectives should have one task apiece. If multiple tasks are needed, create separate objectives for each task.--
+
+      For example:
+      FAIL: 
+      * Craft a Magic Dampening Rune and apply it to the entrace of the Guild Hall. [item: Magic Dampening Rune] [location: Guild Hall Exterior]
+
+      PASS:
+      * Craft a Magic Dampening Rune. [item: Magic Dampening Rune]
+      * Apply the Magic Dampening Rune to the entrance of the Guild Hall. [item: Magic Dampening Rune] [location: Guild Hall Exterior]
+      --></description>
     </objective>
     ... more objectives as needed ...
   </objectives>

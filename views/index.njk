@@ -5169,8 +5169,6 @@
         let craftingSlotAssignments = new Map();
         let craftingInventoryLookup = new Map();
         let craftingInventoryCardRefs = new Map();
-        let craftingIsSubmitting = false;
-        let salvageIsSubmitting = false;
         let craftingInventoryAllItems = [];
         let craftingSourceThing = null;
         let craftingIsOpen = false;
@@ -8077,7 +8075,7 @@
                             window.alert('That character is already in the party.');
                             return;
                         }
-                        await recruitNpcToParty(record, { card: draggedPartyNpc.element || null });
+                        await forceRecruitNpc(record, { card: draggedPartyNpc.element || null });
                     } else if (normalizedMode === 'dismiss') {
                         if (!isNpcInParty(npcId)) {
                             window.alert('That character is not in the party.');
@@ -8092,6 +8090,12 @@
                     resetPartyDragState();
                 }
             });
+        }
+
+        async function forceRecruitNpc(npc, { card = null } = {}) {
+            const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+            const latestNpc = npcDataCache?.get(npc?.id) || npc;
+            return recruitNpcToParty(latestNpc, { card });
         }
 
         async function recruitNpcToParty(npc, { card = null } = {}) {
@@ -9963,9 +9967,6 @@
 
         if (craftingActionButton) {
             craftingActionButton.addEventListener('click', async () => {
-                if (craftingIsSubmitting) {
-                    return;
-                }
                 await submitCraftingRequest();
             });
         }
@@ -11926,7 +11927,6 @@
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
             }
-            craftingIsSubmitting = false;
             craftingIsOpen = false;
             document.body.classList.remove('modal-open');
             updateCraftingActionState();
@@ -12217,7 +12217,7 @@
                 return;
             }
             const filledSlots = Array.from(craftingSlotAssignments.values()).filter(Boolean).length;
-            craftingActionButton.disabled = filledSlots === 0 || craftingIsSubmitting;
+            craftingActionButton.disabled = filledSlots === 0;
         }
 
         function handleCraftingInventoryDragStart(event) {
@@ -12332,17 +12332,12 @@
                 return;
             }
 
-                craftingIsSubmitting = true;
-                updateCraftingActionState();
-                const originalText = craftingActionButton?.innerHTML;
-                if (craftingCancelButton) {
-                    craftingCancelButton.disabled = true;
-                }
-                if (craftingActionButton) {
-                    craftingActionButton.innerHTML = '<span class="button-spinner"></span> Processing...';
-                }
+            const originalText = craftingActionButton?.innerHTML;
+            if (craftingActionButton) {
+                craftingActionButton.innerHTML = '<span class="button-spinner"></span> Processing...';
+            }
 
-                try {
+            try {
                 const response = await fetch('/api/craft', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -12360,10 +12355,6 @@
                 console.warn('Crafting request failed:', error);
                 alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                craftingIsSubmitting = false;
-                if (craftingCancelButton) {
-                    craftingCancelButton.disabled = false;
-                }
                 if (craftingActionButton) {
                     craftingActionButton.innerHTML = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
                 }
@@ -12378,10 +12369,6 @@
                 alert(`Unable to ${isHarvestMode ? 'harvest' : 'salvage'} without a valid item.`);
                 return;
             }
-            if (salvageIsSubmitting) {
-                return;
-            }
-            salvageIsSubmitting = true;
             toggleChatSendSpinner(true);
             try {
                 const actionLabel = isHarvestMode ? 'Harvest' : 'Salvage';
@@ -12428,7 +12415,6 @@
                 console.warn('Salvage request failed:', error);
                 alert(`${mode === 'harvest' ? 'Harvest' : 'Salvage'} failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                salvageIsSubmitting = false;
                 toggleChatSendSpinner(false);
             }
         }
@@ -13612,10 +13598,8 @@
                     recruitButton.addEventListener('click', async (event) => {
                         event.stopPropagation();
                         closeNpcContextMenu();
-                        const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
-                        const latestNpc = npcDataCache?.get(npc.id) || npc;
                         try {
-                            await recruitNpcToParty(latestNpc, { card });
+                            await forceRecruitNpc(npc, { card });
                         } catch (error) {
                             console.warn('Failed to recruit NPC:', error);
                             alert(`Failed to recruit NPC: ${error?.message || 'Unknown error'}`);

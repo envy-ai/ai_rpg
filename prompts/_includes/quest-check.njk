@@ -42,7 +42,15 @@ Respond in the following format, considering ONLY the last 3 entries in the game
         <index><!-- Index of the objective --></index>
         <shortDescription><!-- Summary of the objective in as few words as possible --></shortDescription>
         <statusReason><!-- Brief explanation of why the objective is or isn't complete, 10 words or less --></statusReason>
-        <completed><!-- true if the objective is complete, false otherwise. Only enter true here if you have a high degree of confidence that the objective is complete. --></completed>
+        <completed><!-- true if the objective is complete, false otherwise. Only enter true here if you have a high degree of confidence that the objective is complete. If a person, item, or location is tagged in the objective in [square brackets], ensure that the person or item is present, and that the objective was completed at the specified location. Item names may differ from the bracketed name, but the item must clearly be the same object or be a suitable substitute.
+          
+        Note that merely MENTIONING an objective does not complete it.
+        
+        Assume false if:
+          * You are not confident that the objective is complete
+          * The MOST RECENT piece of dialogue suggests that the objective is incomplete
+          * The objective requires an item, person, or location that is not confirmed to be present during completion.
+        --></completed>
       </objective>
       <!-- Repeat for each objective in the quest -->
     </objectives>

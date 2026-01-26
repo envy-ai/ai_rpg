@@ -211,6 +211,212 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        const getSlopHistorySegments = () => {
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for slopword analysis.');
+            }
+            const segments = [];
+            for (const entry of chatHistory) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const entryType = typeof entry.type === 'string' ? entry.type : null;
+                if (entryType !== 'player-action'
+                    && entryType !== 'npc-action'
+                    && entryType !== 'quest-reward'
+                    && entryType !== 'random-event') {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                if (content) {
+                    segments.push(content);
+                }
+            }
+            return segments;
+        };
+
+        const getFilteredSlopWords = async (prose) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                throw new Error('Slopword analysis requires non-empty prose.');
+            }
+            const analyzer = Globals.analyzeSlopwordsForText;
+            if (typeof analyzer !== 'function') {
+                throw new Error('Slopword analysis is unavailable on this server.');
+            }
+            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
+            const flagged = await analyzer(combinedText);
+            if (!Array.isArray(flagged)) {
+                throw new Error('Slopword analysis returned an invalid result.');
+            }
+            if (!flagged.length) {
+                return [];
+            }
+            const tokens = prose.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
+            if (!tokens.length) {
+                return [];
+            }
+            const tokenSet = new Set(tokens);
+            return flagged.filter(word => tokenSet.has(word));
+        };
+
+        const buildSlopContextText = () => {
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for slopword context.');
+            }
+            const proseEntries = [];
+            const playerEntries = [];
+            for (let index = 0; index < chatHistory.length; index += 1) {
+                const entry = chatHistory[index];
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                if (!content) {
+                    continue;
+                }
+                if (entry.role === 'user') {
+                    playerEntries.push({ index, content });
+                }
+                const entryType = typeof entry.type === 'string' ? entry.type : null;
+                const isProseLike = entry.role === 'assistant'
+                    && (entryType === 'player-action'
+                        || entryType === 'npc-action'
+                        || entryType === 'quest-reward'
+                        || entryType === 'random-event'
+                        || entryType === null);
+                if (isProseLike) {
+                    proseEntries.push({ index, content });
+                }
+            }
+            const tailProse = proseEntries.slice(-5);
+            const tailPlayers = playerEntries.slice(-5);
+            const combined = [...tailProse, ...tailPlayers].sort((a, b) => a.index - b.index);
+            const seen = new Set();
+            const lines = [];
+            for (const entry of combined) {
+                if (seen.has(entry.index)) {
+                    continue;
+                }
+                seen.add(entry.index);
+                lines.push(entry.content);
+            }
+            return lines.join('\n\n');
+        };
+
+        const applySlopRemoval = async (prose) => {
+            const scrubber = Globals.scrubGeneratedBrackets;
+            if (typeof scrubber !== 'function') {
+                throw new Error('Slop remover requires scrubGeneratedBrackets helper.');
+            }
+
+            let currentProse = typeof prose === 'string' ? prose : '';
+            currentProse = scrubber(currentProse);
+            if (!currentProse.trim()) {
+                throw new Error('Slop remover requires non-empty prose.');
+            }
+
+            const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
+            if (!slopWordSet.size) {
+                return currentProse;
+            }
+
+            const slopContext = buildSlopContextText();
+
+            const originalProse = currentProse;
+            let maxAttempts = 3;
+            for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                const slopWords = Array.from(slopWordSet);
+                let promptData = null;
+                let slopResponse = '';
+                let parseFailure = null;
+
+                try {
+                    const rendered = promptEnv.render('slop-remover.xml.njk', {
+                        storyText: slopContext,
+                        textToEdit: currentProse,
+                        slopWords,
+                        slopTrigrams: []
+                    });
+                    promptData = parseXMLTemplate(rendered);
+                    if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                        throw new Error('Slop remover template did not produce prompts.');
+                    }
+
+                    const messages = [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ];
+
+                    slopResponse = await LLMClient.chatCompletion({
+                        messages,
+                        metadataLabel: 'slop_remover',
+                        validateXML: false
+                    });
+
+                    if (typeof slopResponse !== 'string') {
+                        parseFailure = 'non-text response';
+                    } else if (/<\/?[a-z][^>]*>/i.test(slopResponse)) {
+                        parseFailure = 'XML detected in response';
+                    } else if (!slopResponse.trim()) {
+                        parseFailure = 'empty response';
+                    }
+                } catch (error) {
+                    parseFailure = error?.message || 'unknown error';
+                }
+
+                const logSections = [
+                    {
+                        title: 'Attempt',
+                        content: `${attempt + 1}/${maxAttempts}`
+                    }
+                ];
+                if (parseFailure) {
+                    logSections.push({
+                        title: 'Parse Status',
+                        content: `failed: ${parseFailure}`
+                    });
+                }
+
+                LLMClient.logPrompt({
+                    prefix: 'slop_remover',
+                    metadataLabel: 'slop_remover',
+                    systemPrompt: promptData?.systemPrompt || '',
+                    generationPrompt: promptData?.generationPrompt || '',
+                    response: slopResponse,
+                    sections: logSections
+                });
+
+                if (parseFailure) {
+                    console.warn(`Slop remover response invalid (attempt ${attempt + 1}/${maxAttempts}): ${parseFailure}`);
+                    if (maxAttempts < 5) {
+                        maxAttempts += 1;
+                    }
+                    continue;
+                }
+
+                const candidateProse = scrubber(slopResponse.trim());
+                currentProse = candidateProse;
+
+                const remaining = await getFilteredSlopWords(currentProse);
+                if (!remaining.length) {
+                    break;
+                }
+                if (attempt === maxAttempts - 1) {
+                    console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remaining.join(', ')}`);
+                    break;
+                }
+                remaining.forEach(word => slopWordSet.add(word));
+            }
+
+            if (!currentProse.trim()) {
+                return originalProse;
+            }
+
+            return currentProse;
+        };
+
+        Globals.applySlopRemoval = applySlopRemoval;
+
         async function runAutosaveIfEnabled() {
             const config = Globals?.config || {};
             let retention = config?.autosaves_to_retain;
@@ -2580,6 +2786,11 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
+                let cleanedNarrative = narrativeText;
+                if (Globals.config?.slop_buster === true) {
+                    cleanedNarrative = await applySlopRemoval(cleanedNarrative);
+                }
+
                 const randomEventLocationId = requireLocationId(location?.id, 'random event entry');
                 if (!Array.isArray(entryCollector)) {
                     throw new Error('generateRandomEventNarrative requires an entryCollector array.');
@@ -2587,7 +2798,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const randomEventEntry = pushChatEntry({
                     role: 'assistant',
-                    content: narrativeText,
+                    content: cleanedNarrative,
                     actor: 'Random Event',
                     randomEvent: true,
                     rarity: rarity || 'common',
@@ -2598,7 +2809,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let eventChecks = null;
                 try {
-                    eventChecks = await Events.runEventChecks({ textToCheck: narrativeText, stream });
+                    eventChecks = await Events.runEventChecks({ textToCheck: cleanedNarrative, stream });
                 } catch (eventCheckError) {
                     console.warn('Failed to apply random event checks:', eventCheckError.message);
                     console.debug(eventCheckError);
@@ -2609,7 +2820,7 @@ module.exports = function registerApiRoutes(scope) {
                     randomEvent: true,
                     rarity: rarity || 'common',
                     seedText: trimmedEventText,
-                    response: narrativeText,
+                    response: cleanedNarrative,
                     rawResponse,
                     isAttack,
                     timestamp: randomEventTimestamp,
@@ -6046,11 +6257,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const actionText = plan.description;
+                    let actionTextForChat = actionText;
+                    if (Globals.config?.slop_buster === true) {
+                        actionTextForChat = await applySlopRemoval(actionTextForChat);
+                    }
 
                     const npcActionLocationId = requireLocationId(npcLocation?.id, 'npc action entry');
                     pushChatEntry({
                         role: npc.name || npcName,
-                        content: actionText,
+                        content: actionTextForChat,
                         type: 'npc-action',
                         isNpcTurn: true,
                         locationId: npcActionLocationId
@@ -6137,9 +6352,12 @@ module.exports = function registerApiRoutes(scope) {
                         locationOverride: npcLocation
                     });
 
-                    const npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
+                    let npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
                         ? narrativeResult.raw.trim()
                         : `${npc.name} considers their options but ultimately does nothing noteworthy.`;
+                    if (Globals.config?.slop_buster === true) {
+                        npcResponse = await applySlopRemoval(npcResponse);
+                    }
 
                     let npcEventResult = null;
                     try {
@@ -6456,201 +6674,6 @@ module.exports = function registerApiRoutes(scope) {
             const recentProseContents = recentProseEntries
                 .map(entry => (typeof entry.content === 'string' ? entry.content.trim() : ''))
                 .filter(Boolean);
-            const getSlopHistorySegments = () => {
-                if (!Array.isArray(chatHistory)) {
-                    throw new Error('Chat history is unavailable for slopword analysis.');
-                }
-                const segments = [];
-                for (const entry of chatHistory) {
-                    if (!entry || typeof entry !== 'object') {
-                        continue;
-                    }
-                    const entryType = typeof entry.type === 'string' ? entry.type : null;
-                    if (entryType !== 'player-action'
-                        && entryType !== 'npc-action'
-                        && entryType !== 'quest-reward'
-                        && entryType !== 'random-event') {
-                        continue;
-                    }
-                    const content = typeof entry.content === 'string' ? entry.content.trim() : '';
-                    if (content) {
-                        segments.push(content);
-                    }
-                }
-                return segments;
-            };
-            const getFilteredSlopWords = async (prose) => {
-                if (typeof prose !== 'string' || !prose.trim()) {
-                    throw new Error('Slopword analysis requires non-empty prose.');
-                }
-                const analyzer = Globals.analyzeSlopwordsForText;
-                if (typeof analyzer !== 'function') {
-                    throw new Error('Slopword analysis is unavailable on this server.');
-                }
-                const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
-                const flagged = await analyzer(combinedText);
-                if (!Array.isArray(flagged)) {
-                    throw new Error('Slopword analysis returned an invalid result.');
-                }
-                if (!flagged.length) {
-                    return [];
-                }
-                const tokens = prose.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
-                if (!tokens.length) {
-                    return [];
-                }
-                const tokenSet = new Set(tokens);
-                return flagged.filter(word => tokenSet.has(word));
-            };
-                const buildSlopContextText = () => {
-                    if (!Array.isArray(chatHistory)) {
-                        throw new Error('Chat history is unavailable for slopword context.');
-                    }
-                    const proseEntries = [];
-                    const playerEntries = [];
-                    for (let index = 0; index < chatHistory.length; index += 1) {
-                        const entry = chatHistory[index];
-                        if (!entry || typeof entry !== 'object') {
-                            continue;
-                        }
-                        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
-                        if (!content) {
-                            continue;
-                        }
-                        if (entry.role === 'user') {
-                            playerEntries.push({ index, content });
-                        }
-                        const entryType = typeof entry.type === 'string' ? entry.type : null;
-                        const isProseLike = entry.role === 'assistant'
-                            && (entryType === 'player-action'
-                                || entryType === 'npc-action'
-                                || entryType === 'quest-reward'
-                                || entryType === 'random-event'
-                                || entryType === null);
-                        if (isProseLike) {
-                            proseEntries.push({ index, content });
-                        }
-                    }
-                    const tailProse = proseEntries.slice(-5);
-                    const tailPlayers = playerEntries.slice(-5);
-                    const combined = [...tailProse, ...tailPlayers].sort((a, b) => a.index - b.index);
-                    const seen = new Set();
-                    const lines = [];
-                    for (const entry of combined) {
-                        if (seen.has(entry.index)) {
-                            continue;
-                        }
-                        seen.add(entry.index);
-                        lines.push(entry.content);
-                    }
-                    return lines.join('\n\n');
-                };
-
-                const applySlopRemoval = async (prose) => {
-                    let currentProse = typeof prose === 'string' ? prose.trim() : '';
-                    if (!currentProse) {
-                        throw new Error('Slop remover requires non-empty prose.');
-                    }
-
-                    const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-                    if (!slopWordSet.size) {
-                        return currentProse;
-                    }
-
-                    const slopContext = buildSlopContextText();
-
-                    const originalProse = currentProse;
-                    let maxAttempts = 3;
-                    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-                        const slopWords = Array.from(slopWordSet);
-                        let promptData = null;
-                        let slopResponse = '';
-                        let parseFailure = null;
-
-                        try {
-                            const rendered = promptEnv.render('slop-remover.xml.njk', {
-                                storyText: slopContext,
-                                textToEdit: currentProse,
-                                slopWords,
-                                slopTrigrams: []
-                            });
-                            promptData = parseXMLTemplate(rendered);
-                            if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
-                                throw new Error('Slop remover template did not produce prompts.');
-                            }
-
-                            const messages = [
-                                { role: 'system', content: promptData.systemPrompt },
-                                { role: 'user', content: promptData.generationPrompt }
-                            ];
-
-                            slopResponse = await LLMClient.chatCompletion({
-                                messages,
-                                metadataLabel: 'slop_remover',
-                                validateXML: false
-                            });
-
-                            if (typeof slopResponse !== 'string') {
-                                parseFailure = 'non-text response';
-                            } else if (/<\/?[a-z][^>]*>/i.test(slopResponse)) {
-                                parseFailure = 'XML detected in response';
-                            } else if (!slopResponse.trim()) {
-                                parseFailure = 'empty response';
-                            }
-                        } catch (error) {
-                            parseFailure = error?.message || 'unknown error';
-                        }
-
-                        const logSections = [
-                            {
-                                title: 'Attempt',
-                                content: `${attempt + 1}/${maxAttempts}`
-                            }
-                        ];
-                        if (parseFailure) {
-                            logSections.push({
-                                title: 'Parse Status',
-                                content: `failed: ${parseFailure}`
-                            });
-                        }
-
-                        LLMClient.logPrompt({
-                            prefix: 'slop_remover',
-                            metadataLabel: 'slop_remover',
-                            systemPrompt: promptData?.systemPrompt || '',
-                            generationPrompt: promptData?.generationPrompt || '',
-                            response: slopResponse,
-                            sections: logSections
-                        });
-
-                        if (parseFailure) {
-                            console.warn(`Slop remover response invalid (attempt ${attempt + 1}/${maxAttempts}): ${parseFailure}`);
-                            if (maxAttempts < 5) {
-                                maxAttempts += 1;
-                            }
-                            continue;
-                        }
-
-                        const candidateProse = slopResponse.trim();
-                        currentProse = candidateProse;
-
-                        const remaining = await getFilteredSlopWords(currentProse);
-                        if (!remaining.length) {
-                            break;
-                        }
-                        if (attempt === maxAttempts - 1) {
-                            console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remaining.join(', ')}`);
-                            break;
-                        }
-                        remaining.forEach(word => slopWordSet.add(word));
-                    }
-
-                    if (!currentProse.trim()) {
-                        return originalProse;
-                    }
-
-                    return currentProse;
-            };
 
             res.on('finish', () => {
                 if (corpseProcessingRan) {
@@ -14438,7 +14461,10 @@ module.exports = function registerApiRoutes(scope) {
                     playerOtherEffect = selectedResult.other;
                 }
 
-                const narrativeContent = playerActionDescription || '';
+                let narrativeContent = playerActionDescription || '';
+                if (Globals.config?.slop_buster === true && narrativeContent.trim()) {
+                    narrativeContent = await applySlopRemoval(narrativeContent);
+                }
 
                 const chatEntry = pushChatEntry({
                     role: 'assistant',
@@ -14612,6 +14638,120 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (extraEventError) {
                         console.warn('Failed to process additional crafting effects:', extraEventError?.message || extraEventError);
+                    }
+                }
+
+                let questResult = null;
+                try {
+                    questResult = await Events.runQuestChecks({ allowWithoutEventChecks: true });
+                } catch (questError) {
+                    console.warn('Failed to run quest checks after crafting:', questError?.message || questError);
+                }
+
+                if (questResult) {
+                    try {
+                        const questCompletionEntries = Events.parseQuestObjectiveStatusXml(questResult);
+                        if (Array.isArray(questCompletionEntries) && questCompletionEntries.length) {
+                            const questProcessingContext = {
+                                player: currentPlayer,
+                                location: locationRecord || null,
+                                region: resolvedRegion || null,
+                                stream: null,
+                                experienceAwards: [],
+                                currencyChanges: [],
+                                environmentalDamageEvents: [],
+                                needBarChanges: [],
+                                questCompletionRewards: [],
+                                completedQuestObjectives: [],
+                                followupResults: [],
+                                allowEnvironmentalEffects: false,
+                                isNpcTurn: false
+                            };
+
+                            await Events.processQuestObjectiveCompletionEntries(
+                                questCompletionEntries,
+                                questProcessingContext
+                            );
+
+                            if (Array.isArray(questProcessingContext.questCompletionRewards)
+                                && questProcessingContext.questCompletionRewards.length) {
+                                for (const rewardEntry of questProcessingContext.questCompletionRewards) {
+                                    if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                        continue;
+                                    }
+
+                                    const parsedReward = parseQuestRewardMessage(rewardEntry.message);
+                                    if (parsedReward?.rewards?.length) {
+                                        const summaryLabel = rewardEntry.questName
+                                            ? `🏆 Quest Completed – ${rewardEntry.questName}`
+                                            : '🏆 Quest Completed';
+                                        const summaryItems = parsedReward.rewards.map(line => ({
+                                            description: line,
+                                            icon: '🎁'
+                                        }));
+                                        recordEventSummaryEntry({
+                                            label: summaryLabel,
+                                            events: summaryItems,
+                                            timestamp: chatEntry?.timestamp || new Date().toISOString(),
+                                            parentId: chatEntry?.id || null,
+                                            locationId: resolvedLocationId
+                                        });
+                                    }
+
+                                    pushChatEntry({
+                                        role: 'assistant',
+                                        content: rewardEntry.message,
+                                        type: 'quest-reward',
+                                        locationId: resolvedLocationId,
+                                        metadata: {
+                                            questId: rewardEntry.questId || null,
+                                            questName: rewardEntry.questName || null
+                                        }
+                                    }, null, resolvedLocationId);
+                                }
+                            }
+
+                            if (Array.isArray(questProcessingContext.completedQuestObjectives)
+                                && questProcessingContext.completedQuestObjectives.length) {
+                                const groupedObjectives = new Map();
+                                for (const objective of questProcessingContext.completedQuestObjectives) {
+                                    if (!objective) {
+                                        continue;
+                                    }
+                                    const questLabel = objective.questName || objective.questId || 'Quest';
+                                    if (!groupedObjectives.has(questLabel)) {
+                                        groupedObjectives.set(questLabel, []);
+                                    }
+                                    groupedObjectives.get(questLabel).push(objective);
+                                }
+
+                                for (const [questLabel, objectives] of groupedObjectives.entries()) {
+                                    const summaryItems = objectives.map(item => {
+                                        const hasIndex = Number.isFinite(item.objectiveIndex);
+                                        const displayNumber = hasIndex ? item.objectiveIndex + 1 : null;
+                                        const description = item.objectiveDescription || (displayNumber !== null ? `Objective ${displayNumber}` : 'Objective completed');
+                                        let label = displayNumber !== null ? `Objective ${displayNumber}: ${description}` : description;
+                                        if (item.questJustCompleted || (!item.questJustCompleted && item.questCompleted)) {
+                                            label = `${label} (Quest complete!)`;
+                                        }
+                                        return {
+                                            description: label,
+                                            icon: '✅'
+                                        };
+                                    });
+
+                                    recordEventSummaryEntry({
+                                        label: `✅ Quest Update – ${questLabel}`,
+                                        events: summaryItems,
+                                        timestamp: chatEntry?.timestamp || new Date().toISOString(),
+                                        parentId: chatEntry?.id || null,
+                                        locationId: resolvedLocationId
+                                    });
+                                }
+                            }
+                        }
+                    } catch (questProcessingError) {
+                        console.warn('Failed to process quest checks after crafting:', questProcessingError?.message || questProcessingError);
                     }
                 }
 

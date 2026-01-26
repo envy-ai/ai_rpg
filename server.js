@@ -1760,6 +1760,22 @@ function normalizeChatEntry(entry) {
     return entry;
 }
 
+function scrubGeneratedBrackets(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
+    // Remove leftover bracketed metadata and any trailing "Events" summaries or leading think blocks
+    return text
+        .replace(/^\s*(?:\[[^\]]*]\s*)+/g, '')
+        .replace(/\s*\[location:[^\]]*]/gi, '')
+        .replace(/\s*\[seen by[^\]]*]/gi, '')
+        .replace(/^[\s\S]*?<\/think>\s*/i, '')
+        .replace(/\s*📋\s*Events[\s\S]*$/i, '')
+        .trim();
+}
+
+Globals.scrubGeneratedBrackets = scrubGeneratedBrackets;
+
 function collectNpcNamesForContext(entry = null) {
     const names = new Set();
 
@@ -1816,20 +1832,6 @@ function collectNpcNamesForContext(entry = null) {
 }
 
 function pushChatEntry(entry, collector = null, locationId = null) {
-    const scrubGeneratedBrackets = (text) => {
-        if (typeof text !== 'string') {
-            return text;
-        }
-        // Remove leftover bracketed metadata and any trailing "Events" summaries or leading think blocks
-        return text
-            .replace(/^\s*(?:\[[^\]]*]\s*)+/g, '')
-            .replace(/\s*\[location:[^\]]*]/gi, '')
-            .replace(/\s*\[seen by[^\]]*]/gi, '')
-            .replace(/^[\s\S]*?<\/think>\s*/i, '')
-            .replace(/\s*📋\s*Events[\s\S]*$/i, '')
-            .trim();
-    };
-
     if (entry && typeof entry === 'object') {
         if (typeof entry.content === 'string') {
             entry.content = scrubGeneratedBrackets(entry.content);
