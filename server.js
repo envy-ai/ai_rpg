@@ -90,6 +90,100 @@ function loadMergedConfig() {
     return mergeDeep(defaultConfig, overrideConfig);
 }
 
+function resolveClientMessageHistoryConfig(sourceConfig) {
+    if (!sourceConfig || typeof sourceConfig !== 'object') {
+        throw new Error('Configuration error: client_message_history requires a config object.');
+    }
+
+    const rawConfig = sourceConfig.client_message_history;
+    if (!rawConfig || typeof rawConfig !== 'object') {
+        throw new Error('Configuration error: client_message_history must be an object.');
+    }
+
+    const maxMessages = Number(rawConfig.max_messages);
+    if (!Number.isInteger(maxMessages) || maxMessages <= 0) {
+        throw new Error('Configuration error: client_message_history.max_messages must be a positive integer.');
+    }
+
+    const pruneTo = Number(rawConfig.prune_to);
+    if (!Number.isInteger(pruneTo) || pruneTo <= 0) {
+        throw new Error('Configuration error: client_message_history.prune_to must be a positive integer.');
+    }
+
+    if (pruneTo > maxMessages) {
+        throw new Error('Configuration error: client_message_history.prune_to must be <= max_messages.');
+    }
+
+    return { maxMessages, pruneTo };
+}
+
+function pruneClientMessageHistory(history, pruneTo) {
+    if (!Array.isArray(history)) {
+        throw new Error('Chat history must be an array before pruning.');
+    }
+    const normalizedPruneTo = Number(pruneTo);
+    if (!Number.isInteger(normalizedPruneTo) || normalizedPruneTo <= 0) {
+        throw new Error('Prune size must be a positive integer.');
+    }
+    const startIndex = Math.max(0, history.length - normalizedPruneTo);
+    return history.slice(startIndex);
+}
+
+function filterOrphanedChatEntries(entries) {
+    if (!Array.isArray(entries)) {
+        throw new Error('Chat history must be an array before filtering.');
+    }
+
+    const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility']);
+    const implicitParentById = new Map();
+    const entryById = new Map();
+    let lastNonAttachmentId = null;
+
+    entries.forEach(entry => {
+        if (!entry || typeof entry !== 'object') {
+            lastNonAttachmentId = null;
+            return;
+        }
+        if (entry.id) {
+            entryById.set(entry.id, entry);
+        }
+
+        const entryType = entry.type || null;
+        const isAttachment = attachmentTypes.has(entryType);
+        if (!isAttachment) {
+            lastNonAttachmentId = entry.id || null;
+            return;
+        }
+
+        if (!entry.parentId && entry.id && lastNonAttachmentId) {
+            implicitParentById.set(entry.id, lastNonAttachmentId);
+        }
+    });
+
+    return entries.filter(entry => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        const entryType = entry.type || null;
+        if (!attachmentTypes.has(entryType)) {
+            return true;
+        }
+        const parentId = entry.parentId || (entry.id ? implicitParentById.get(entry.id) : null);
+        if (!parentId) {
+            return false;
+        }
+        const parentEntry = entryById.get(parentId);
+        if (!parentEntry) {
+            return false;
+        }
+        const parentType = parentEntry.type || null;
+        if (attachmentTypes.has(parentType)) {
+            return false;
+        }
+        return true;
+    });
+}
+
 // On run, remove ./logs_prev/*.log and move ./logs/*.log to ./logs_prev
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
@@ -1728,6 +1822,7 @@ function pushChatEntry(entry, collector = null, locationId = null) {
         }
         // Remove leftover bracketed metadata and any trailing "Events" summaries or leading think blocks
         return text
+            .replace(/^\s*(?:\[[^\]]*]\s*)+/g, '')
             .replace(/\s*\[location:[^\]]*]/gi, '')
             .replace(/\s*\[seen by[^\]]*]/gi, '')
             .replace(/^[\s\S]*?<\/think>\s*/i, '')
@@ -3338,27 +3433,24 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         ? limitedHistory.slice(0, -tailCount)
         : limitedHistory;
 
-    const combinedHistoryLines = [];
-    let lastLocationLine = null;
-    let lastSeenByLine = null;
-    const pushHistoryLine = (entry, line) => {
-        const locationLine = formatLocationSuffix(entry).trim();
-        const seenByLine = formatSeenBySuffix(entry).trim();
-
-        if (locationLine && locationLine !== lastLocationLine) {
-            combinedHistoryLines.push(locationLine);
-            lastLocationLine = locationLine;
+    const isProseTurnEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
         }
-
-        if (seenByLine !== lastSeenByLine) {
-            if (seenByLine) {
-                combinedHistoryLines.push(seenByLine);
-            }
-            lastSeenByLine = seenByLine;
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'player-action'
+            || entryType === 'npc-action'
+            || entryType === 'quest-reward'
+            || entryType === 'random-event') {
+            return true;
         }
-
-        combinedHistoryLines.push(line);
+        if (!entryType && entry.role === 'assistant') {
+            return true;
+        }
+        return false;
     };
+
+    const historySegments = [];
 
     for (const entry of summaryCandidates) {
         if (!entry) {
@@ -3368,7 +3460,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         if (!summaryText) {
             continue;
         }
-        pushHistoryLine(entry, summaryText);
+        historySegments.push({ entry, line: summaryText });
     }
 
     for (const entry of tailEntries) {
@@ -3388,11 +3480,88 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         const roleLabel = roleRaw.toLowerCase() === 'user'
             ? playerLabel
             : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw);
-        pushHistoryLine(entry, `[${roleLabel}] ${contentText}`);
+        historySegments.push({ entry, line: `[${roleLabel}] ${contentText}` });
     }
-    const gameHistory = combinedHistoryLines.length
-        ? combinedHistoryLines.join('\n')
+
+    const buildHistoryLines = (segments) => {
+        const lines = [];
+        let lastLocationLine = null;
+        let lastSeenByLine = null;
+        const pushHistoryLine = (entry, line) => {
+            const locationLine = formatLocationSuffix(entry).trim();
+            const seenByLine = formatSeenBySuffix(entry).trim();
+
+            if (locationLine && locationLine !== lastLocationLine) {
+                lines.push(locationLine);
+                lastLocationLine = locationLine;
+            }
+
+            if (seenByLine !== lastSeenByLine) {
+                if (seenByLine) {
+                    lines.push(seenByLine);
+                }
+                lastSeenByLine = seenByLine;
+            }
+
+            lines.push(line);
+        };
+
+        for (const segment of segments) {
+            if (!segment || typeof segment.line !== 'string' || !segment.line.trim()) {
+                continue;
+            }
+            pushHistoryLine(segment.entry, segment.line);
+        }
+
+        return lines;
+    };
+
+    const fullHistoryLines = buildHistoryLines(historySegments);
+    const hasHistorySegments = historySegments.length > 0;
+    const fullGameHistory = fullHistoryLines.length
+        ? fullHistoryLines.join('\n')
         : 'No significant prior events.';
+
+    const rawRecentTurns = Number(config?.recent_history_turns);
+    const recentHistoryTurns = Number.isInteger(rawRecentTurns) && rawRecentTurns >= 0
+        ? rawRecentTurns
+        : 10;
+
+    let gameHistory = '';
+    let recentGameHistory = '';
+
+    if (!hasHistorySegments) {
+        gameHistory = fullGameHistory;
+    } else if (recentHistoryTurns <= 0) {
+        gameHistory = fullGameHistory;
+    } else {
+        let turnCount = 0;
+        let startIndex = historySegments.length;
+        for (let idx = historySegments.length - 1; idx >= 0; idx -= 1) {
+            const entry = historySegments[idx]?.entry;
+            if (isProseTurnEntry(entry)) {
+                turnCount += 1;
+            }
+            if (turnCount >= recentHistoryTurns) {
+                startIndex = idx;
+                break;
+            }
+        }
+
+        if (turnCount === 0) {
+            gameHistory = fullGameHistory;
+        } else {
+            if (turnCount < recentHistoryTurns) {
+                startIndex = 0;
+            }
+            const recentSegments = historySegments.slice(startIndex);
+            const olderSegments = historySegments.slice(0, startIndex);
+            const recentLines = buildHistoryLines(recentSegments);
+            const olderLines = buildHistoryLines(olderSegments);
+            recentGameHistory = recentLines.join('\n');
+            gameHistory = olderLines.join('\n');
+        }
+    }
 
     const experiencePointValues = getExperiencePointValues();
 
@@ -3405,6 +3574,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         setting: settingContext,
         config: config,
         gameHistory,
+        recentGameHistory,
+        fullGameHistory,
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
@@ -3637,16 +3808,23 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
         return;
     }
 
-    const payload = {
-        npcs: needsSelection.map(({ actor, important }) => ({
-            name: actor.name || actor.id || 'Unknown NPC',
-            memories: important
-        })),
-        textToCheck: baseContext.gameHistory || '',
-        max_memories_to_recall: maxMemories
-    };
-
     const maybeStartJob = async () => {
+        const historyText = typeof baseContext?.fullGameHistory === 'string'
+            ? baseContext.fullGameHistory
+            : null;
+        if (!historyText) {
+            throw new Error('Base context is missing fullGameHistory.');
+        }
+
+        const payload = {
+            npcs: needsSelection.map(({ actor, important }) => ({
+                name: actor.name || actor.id || 'Unknown NPC',
+                memories: important
+            })),
+            textToCheck: historyText,
+            max_memories_to_recall: maxMemories
+        };
+
         let parsedTemplate = null;
         try {
             const renderedTemplate = promptEnv.render('choose_important_memories.njk', payload);
@@ -4215,7 +4393,8 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
             actionText,
             isAttack,
             attacker: attackerTemplate,
-            target: targetTemplate
+            target: targetTemplate,
+            omitGameHistory: true
         });
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -9142,7 +9321,12 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
         const baseContext = await prepareBasePromptContext({ locationOverride: locationObj || null });
 
         const levelUpLine = `[system] ${trimmedName} advanced ${Number.isFinite(priorLevel) ? `from level ${priorLevel} ` : ''}to level ${Number.isFinite(currentLevel) ? currentLevel : 'unknown'}.`;
-        const baseHistoryText = typeof baseContext?.gameHistory === 'string' ? baseContext.gameHistory.trim() : '';
+        const baseHistoryText = typeof baseContext?.fullGameHistory === 'string'
+            ? baseContext.fullGameHistory.trim()
+            : null;
+        if (baseHistoryText === null) {
+            throw new Error('Base context is missing fullGameHistory.');
+        }
         const gameHistory = baseHistoryText ? `${baseHistoryText}\n${levelUpLine}` : levelUpLine;
 
         const existingNpcSummaries = collectNpcSummariesForLevelUp({
@@ -16416,6 +16600,9 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
     //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
+    const clientMessageHistory = resolveClientMessageHistoryConfig(config);
+    const prunedChatHistory = pruneClientMessageHistory(chatHistory, clientMessageHistory.pruneTo);
+    const filteredChatHistory = filterOrphanedChatEntries(prunedChatHistory);
 
     // Get mod scripts and styles if modLoader is available
     const modScripts = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientScripts === 'function')
@@ -16428,7 +16615,7 @@ app.get('/', (req, res) => {
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
         //systemPrompt: systemPrompt,
-        chatHistory: chatHistory,
+        chatHistory: filteredChatHistory,
         currentPage: 'chat',
         player: currentPlayer ? currentPlayer.getStatus() : null,
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
@@ -16437,6 +16624,7 @@ app.get('/', (req, res) => {
         needBarDefinitions: Player.getNeedBarDefinitionsForContext(),
         checkMovePlausibility: Globals.config.check_move_plausibility || 'never',
         baseWeaponDamage: Globals.config.baseWeaponDamage,
+        clientMessageHistory,
         modScripts: modScripts,
         modStyles: modStyles
     });
@@ -16851,6 +17039,9 @@ const apiScope = {
     fs,
     path,
     Utils,
+    resolveClientMessageHistoryConfig,
+    pruneClientMessageHistory,
+    filterOrphanedChatEntries,
     nunjucks,
     JOB_STATUS,
     PORT,

@@ -105,6 +105,15 @@ module.exports = function registerApiRoutes(scope) {
     if (typeof normalizeChatEntry !== 'function') {
         throw new Error('registerApiRoutes requires normalizeChatEntry helper.');
     }
+    if (typeof scope.resolveClientMessageHistoryConfig !== 'function') {
+        throw new Error('registerApiRoutes requires resolveClientMessageHistoryConfig helper.');
+    }
+    if (typeof scope.pruneClientMessageHistory !== 'function') {
+        throw new Error('registerApiRoutes requires pruneClientMessageHistory helper.');
+    }
+    if (typeof scope.filterOrphanedChatEntries !== 'function') {
+        throw new Error('registerApiRoutes requires filterOrphanedChatEntries helper.');
+    }
 
     if (!scope[Symbol.unscopables]) {
         Object.defineProperty(scope, Symbol.unscopables, {
@@ -4988,7 +4997,8 @@ module.exports = function registerApiRoutes(scope) {
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'npc-plausibility-check',
-                    characterName: npc.name || 'Unknown NPC'
+                    characterName: npc.name || 'Unknown NPC',
+                    omitGameHistory: true
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -8737,8 +8747,11 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         app.get('/api/chat/history', (req, res) => {
+            const clientMessageHistory = resolveClientMessageHistoryConfig(config);
+            const prunedHistory = pruneClientMessageHistory(chatHistory, clientMessageHistory.pruneTo);
+            const filteredHistory = filterOrphanedChatEntries(prunedHistory);
             res.json({
-                history: chatHistory,
+                history: filteredHistory,
                 count: chatHistory.length
             });
         });
@@ -13833,7 +13846,8 @@ module.exports = function registerApiRoutes(scope) {
                         : intendedItemName,
                     stationName,
                     craftingItems: craftingItemsForPrompt,
-                    craftingNotes
+                    craftingNotes,
+                    omitGameHistory: true
                 };
 
                 if (isSalvageAction) {

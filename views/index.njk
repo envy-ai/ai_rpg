@@ -1423,6 +1423,7 @@
             window.AIRPG_CONFIG = {};
         }
         window.AIRPG_CONFIG.baseWeaponDamage = {{ (baseWeaponDamage if baseWeaponDamage is defined else null) | dump | safe }};
+        window.AIRPG_CONFIG.clientMessageHistory = {{ clientMessageHistory | dump | safe }};
         const __knownSkillNameSet = new Set(
             (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
                 .map(skill => {

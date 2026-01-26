@@ -4,6 +4,7 @@ const { response } = require('express');
 const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
+let sharpModule = null;
 
 class Semaphore {
     constructor(maxConcurrent = 1) {
@@ -562,6 +563,112 @@ class LLMClient {
         return Math.floor(Math.random() * 1e12) + 1;
     }
 
+    static #getSharp() {
+        if (sharpModule) {
+            return sharpModule;
+        }
+        try {
+            // Lazy-load so non-image calls do not require sharp.
+            sharpModule = require('sharp');
+            return sharpModule;
+        } catch (error) {
+            throw new Error('sharp is required to convert image data URLs to WebP.');
+        }
+    }
+
+    static #parseImageDataUrl(dataUrl) {
+        if (typeof dataUrl !== 'string' || !dataUrl.trim()) {
+            throw new Error('Image data URL is required.');
+        }
+        const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+        if (!match) {
+            throw new Error('Image data URL is invalid.');
+        }
+        const mimeType = match[1].toLowerCase();
+        const base64Payload = match[2];
+        if (!base64Payload) {
+            throw new Error('Image data URL payload is missing.');
+        }
+        const buffer = Buffer.from(base64Payload, 'base64');
+        if (!buffer.length) {
+            throw new Error('Image data URL payload is empty.');
+        }
+        return { mimeType, buffer };
+    }
+
+    static async #convertImageDataUrlToWebp(dataUrl) {
+        if (/^data:image\/webp;base64,/i.test(dataUrl)) {
+            return dataUrl;
+        }
+        const { buffer } = LLMClient.#parseImageDataUrl(dataUrl);
+        const sharp = LLMClient.#getSharp();
+        const converted = await sharp(buffer).webp({ quality: 90 }).toBuffer();
+        if (!converted || !converted.length) {
+            throw new Error('WebP conversion produced empty output.');
+        }
+        const base64 = converted.toString('base64');
+        return `data:image/webp;base64,${base64}`;
+    }
+
+    static async #convertMessagesToWebp(messages) {
+        if (!Array.isArray(messages)) {
+            return messages;
+        }
+        let hasImages = false;
+        for (const message of messages) {
+            if (!message || !Array.isArray(message.content)) {
+                continue;
+            }
+            for (const part of message.content) {
+                if (part?.type === 'image_url') {
+                    hasImages = true;
+                    break;
+                }
+            }
+            if (hasImages) {
+                break;
+            }
+        }
+        if (!hasImages) {
+            return messages;
+        }
+
+        const convertedMessages = [];
+        for (const message of messages) {
+            if (!message || !Array.isArray(message.content)) {
+                convertedMessages.push(message);
+                continue;
+            }
+            const convertedContent = [];
+            for (const part of message.content) {
+                if (!part || part.type !== 'image_url') {
+                    convertedContent.push(part);
+                    continue;
+                }
+                const imageUrl = typeof part?.image_url?.url === 'string' ? part.image_url.url.trim() : '';
+                if (!imageUrl) {
+                    throw new Error('Image URL content is missing.');
+                }
+                if (!imageUrl.startsWith('data:image/')) {
+                    throw new Error('Image URLs must be data URLs to convert to WebP.');
+                }
+                const webpUrl = await LLMClient.#convertImageDataUrlToWebp(imageUrl);
+                convertedContent.push({
+                    ...part,
+                    image_url: {
+                        ...part.image_url,
+                        url: webpUrl
+                    }
+                });
+            }
+            convertedMessages.push({
+                ...message,
+                content: convertedContent
+            });
+        }
+        return convertedMessages;
+    }
+
     static async chatCompletion({
         messages,
         maxTokens,
@@ -678,6 +785,9 @@ class LLMClient {
             if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
             }
+
+            payload.messages = await LLMClient.#convertMessagesToWebp(payload.messages);
+            messages = payload.messages;
 
             const resolvedModel = model || payload.model || aiConfig.model;
             if (!resolvedModel) {

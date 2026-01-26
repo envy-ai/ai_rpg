@@ -56,7 +56,7 @@ ai:
 # Multimodal model configuration (overrides above)
 ai_multimodal:
   enabled: true
-  model: "zai-org/glm-4.6v"
+  model: "qwen3-vl-235b-a22b-instruct-original"
 
 # overrides for specific prompt types. You can override any AI setting, including the model and endpoint.
 # prompt_ai_overrides:
@@ -220,6 +220,13 @@ party_generate_memory_interval: 12
 
 # Set to 0 to disable autosaves (not recommended). Default is 20 if omitted.
 autosaves_to_retain: 20
+
+# Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
+recent_history_turns: 10
+
+client_message_history:
+  max_messages: 50
+  prune_to: 40
 
 # Mostly to speed up testing and development - prevent certain types of generation
 omit_npc_generation: false

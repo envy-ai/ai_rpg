@@ -536,10 +536,92 @@ class AIRPGChat {
         target.textContent = raw;
     }
 
+    getAttachmentTypes() {
+        return new Set(['skill-check', 'attack-check', 'plausibility']);
+    }
+
+    getClientMessageHistoryConfig() {
+        const config = window.AIRPG_CONFIG?.clientMessageHistory;
+        if (!config || typeof config !== 'object') {
+            throw new Error('AIRPG_CONFIG.clientMessageHistory is required for client pruning.');
+        }
+
+        const maxMessages = Number(config.maxMessages);
+        if (!Number.isInteger(maxMessages) || maxMessages <= 0) {
+            throw new Error('AIRPG_CONFIG.clientMessageHistory.maxMessages must be a positive integer.');
+        }
+
+        const pruneTo = Number(config.pruneTo);
+        if (!Number.isInteger(pruneTo) || pruneTo <= 0) {
+            throw new Error('AIRPG_CONFIG.clientMessageHistory.pruneTo must be a positive integer.');
+        }
+
+        if (pruneTo > maxMessages) {
+            throw new Error('AIRPG_CONFIG.clientMessageHistory.pruneTo must be <= maxMessages.');
+        }
+
+        return { maxMessages, pruneTo };
+    }
+
+    pruneServerHistoryIfNeeded() {
+        const { maxMessages, pruneTo } = this.getClientMessageHistoryConfig();
+        if (!Array.isArray(this.serverHistory)) {
+            throw new Error('Server history must be an array before pruning.');
+        }
+        if (this.serverHistory.length <= maxMessages) {
+            return false;
+        }
+
+        const attachmentTypes = this.getAttachmentTypes();
+        const resolvedParentById = new Map();
+        let lastNonAttachmentId = null;
+
+        this.serverHistory.forEach(entry => {
+            if (!entry) {
+                lastNonAttachmentId = null;
+                return;
+            }
+            const entryType = entry.type || null;
+            const isAttachment = attachmentTypes.has(entryType);
+            if (!isAttachment) {
+                lastNonAttachmentId = entry.id || null;
+                return;
+            }
+            if (!entry.parentId && entry.id && lastNonAttachmentId) {
+                resolvedParentById.set(entry.id, lastNonAttachmentId);
+            }
+        });
+
+        const prunedHistory = this.serverHistory.slice(-pruneTo);
+        const keptIds = new Set(
+            prunedHistory
+                .map(entry => entry && entry.id)
+                .filter(Boolean)
+        );
+
+        this.serverHistory = prunedHistory.filter(entry => {
+            if (!entry) {
+                return false;
+            }
+            const entryType = entry.type || null;
+            if (!attachmentTypes.has(entryType)) {
+                return true;
+            }
+            const parentId = entry.parentId || (entry.id ? resolvedParentById.get(entry.id) : null);
+            if (!parentId) {
+                return false;
+            }
+            return keptIds.has(parentId);
+        });
+
+        return true;
+    }
+
     updateServerHistory(history) {
         this.serverHistory = Array.isArray(history)
             ? history.map(entry => this.normalizeLocalEntry(entry))
             : [];
+        this.pruneServerHistoryIfNeeded();
         this.chatHistory = [this.systemMessage, ...this.serverHistory];
         this.renderChatHistory();
     }
@@ -558,7 +640,7 @@ class AIRPGChat {
         const recordsById = new Map();
         const pendingAttachments = new Map();
         let lastAttachable = null;
-        const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility']);
+        const attachmentTypes = this.getAttachmentTypes();
 
         const attachToRecord = (record, attachment) => {
             if (record && attachment) {
@@ -4431,6 +4513,7 @@ class AIRPGChat {
 
         const userEntry = this.normalizeLocalEntry({ role: 'user', content });
         this.serverHistory.push(userEntry);
+        this.pruneServerHistoryIfNeeded();
         this.chatHistory = [this.systemMessage, ...this.serverHistory];
         this.renderChatHistory();
 

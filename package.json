@@ -19,6 +19,7 @@
     "js-yaml": "^4.1.0",
     "markdown-it": "^14.1.0",
     "nunjucks": "^3.2.4",
+    "sharp": "^0.34.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {
