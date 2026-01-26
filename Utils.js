@@ -295,7 +295,8 @@ class Utils {
       things = new Map(),
       players = new Map(),
       skills = new Map(),
-      currentSetting = null
+      currentSetting = null,
+      pendingRegionStubs = null
     } = context;
 
     const serialized = {};
@@ -333,6 +334,11 @@ class Utils {
 
     serialized.chatHistory = Array.isArray(chatHistory) ? [...chatHistory] : [];
     serialized.generatedImages = Object.fromEntries(generatedImages);
+    if (pendingRegionStubs instanceof Map) {
+      serialized.pendingRegionStubs = Object.fromEntries(pendingRegionStubs);
+    } else {
+      serialized.pendingRegionStubs = {};
+    }
 
     serialized.things = Object.fromEntries(
       Array.from(things.entries()).map(([id, thing]) => {
@@ -422,6 +428,7 @@ class Utils {
     ensureFile('allPlayers.json', serialized.players || {});
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
+    ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
 
     if (serialized.setting) {
       ensureFile('setting.json', serialized.setting);
@@ -458,7 +465,8 @@ class Utils {
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
-      chatSummaries: readJson('chatSummaries.json', {})
+      chatSummaries: readJson('chatSummaries.json', {}),
+      pendingRegionStubs: readJson('pendingRegionStubs.json', {})
     };
 
     return serialized;
@@ -481,7 +489,8 @@ class Utils {
       jobQueue,
       imageJobs,
       pendingLocationImages,
-      npcGenerationPromises
+      npcGenerationPromises,
+      pendingRegionStubs
     } = context;
 
     const Location = this.#getLocationModule();
@@ -581,6 +590,9 @@ class Utils {
     }
     if (Region?.clear) {
       Region.clear();
+    }
+    if (pendingRegionStubs?.clear) {
+      pendingRegionStubs.clear();
     }
 
     const worldData = serialized.gameWorld || {};
@@ -706,10 +718,434 @@ class Utils {
       }
     }
 
+    if (pendingRegionStubs instanceof Map) {
+      const pendingEntries = serialized.pendingRegionStubs || {};
+      for (const [id, pendingData] of Object.entries(pendingEntries)) {
+        if (!id) {
+          continue;
+        }
+        if (pendingData && typeof pendingData === 'object') {
+          pendingRegionStubs.set(id, { id, ...pendingData });
+        } else {
+          pendingRegionStubs.set(id, { id });
+        }
+      }
+    }
+
+    this.rebuildPendingRegionStubs({
+      pendingRegionStubs,
+      regions,
+      gameLocations,
+      gameLocationExits
+    });
+
+    this.mergeDuplicatePendingRegionStubs({
+      pendingRegionStubs,
+      regions,
+      gameLocations,
+      gameLocationExits
+    });
+
     return {
       metadata: serialized.metadata || {},
       setting: serialized.setting || null
     };
+  }
+
+  static rebuildPendingRegionStubs({
+    pendingRegionStubs,
+    regions,
+    gameLocations,
+    gameLocationExits
+  } = {}) {
+    if (!(pendingRegionStubs instanceof Map)) {
+      throw new Error('pendingRegionStubs must be provided as a Map.');
+    }
+
+    const normalize = (value) => (typeof value === 'string' ? value.trim() : '');
+    const normalizeOptional = (value) => {
+      const normalized = normalize(value);
+      return normalized || null;
+    };
+
+    const safeNumber = (value) => (Number.isFinite(value) ? value : null);
+
+    const prefer = (primary, fallback) => {
+      if (primary === null || primary === undefined) {
+        return fallback;
+      }
+      if (typeof primary === 'string') {
+        return primary.trim() ? primary : fallback;
+      }
+      return primary;
+    };
+
+    const ensurePendingEntry = (regionId, draft = {}) => {
+      const normalizedRegionId = normalize(regionId);
+      if (!normalizedRegionId) {
+        throw new Error('Cannot rebuild pending region stub without a region id.');
+      }
+      if (regions instanceof Map && regions.has(normalizedRegionId)) {
+        pendingRegionStubs.delete(normalizedRegionId);
+        return;
+      }
+
+      const existing = pendingRegionStubs.get(normalizedRegionId) || { id: normalizedRegionId };
+      const merged = { ...existing };
+
+      const nameCandidate = prefer(existing.name, draft.name);
+      merged.name = normalize(nameCandidate) || normalizedRegionId;
+      merged.originalName = prefer(existing.originalName, draft.originalName) || merged.name;
+      merged.description = prefer(existing.description, draft.description) || '';
+      merged.relationship = prefer(existing.relationship, draft.relationship) || 'Adjacent';
+      merged.relativeLevel = safeNumber(prefer(existing.relativeLevel, draft.relativeLevel));
+      merged.parentRegionId = normalizeOptional(prefer(existing.parentRegionId, draft.parentRegionId));
+      merged.sourceRegionId = normalizeOptional(prefer(existing.sourceRegionId, draft.sourceRegionId));
+      merged.exitLocationId = normalizeOptional(prefer(existing.exitLocationId, draft.exitLocationId));
+      merged.entranceStubId = normalizeOptional(prefer(existing.entranceStubId, draft.entranceStubId));
+      merged.originDirection = normalizeOptional(prefer(existing.originDirection, draft.originDirection));
+      merged.imageDataUrl = normalizeOptional(prefer(existing.imageDataUrl, draft.imageDataUrl));
+      merged.createdAt = prefer(existing.createdAt, draft.createdAt) || new Date().toISOString();
+      merged.id = normalizedRegionId;
+
+      pendingRegionStubs.set(normalizedRegionId, merged);
+    };
+
+    if (regions instanceof Map) {
+      for (const regionId of pendingRegionStubs.keys()) {
+        if (regions.has(regionId)) {
+          pendingRegionStubs.delete(regionId);
+        }
+      }
+    }
+
+    if (gameLocations instanceof Map) {
+      for (const location of gameLocations.values()) {
+        if (!location || !location.isStub) {
+          continue;
+        }
+        const metadata = location.stubMetadata || {};
+        if (!metadata.isRegionEntryStub) {
+          continue;
+        }
+        const regionId = normalizeOptional(metadata.targetRegionId)
+          || normalizeOptional(metadata.regionId)
+          || normalizeOptional(location.regionId);
+        if (!regionId) {
+          throw new Error(`Region entry stub ${location.id || '<unknown>'} is missing a target region id.`);
+        }
+
+        const name = normalize(metadata.targetRegionName)
+          || normalize(location.name)
+          || normalize(metadata.originalName)
+          || regionId;
+
+        ensurePendingEntry(regionId, {
+          id: regionId,
+          name,
+          originalName: normalize(metadata.originalName) || name,
+          description: normalize(metadata.targetRegionDescription)
+            || normalize(metadata.shortDescription)
+            || normalize(location.description),
+          relativeLevel: safeNumber(metadata.targetRegionRelativeLevel)
+            ?? safeNumber(metadata.relativeLevel),
+          parentRegionId: normalizeOptional(metadata.targetRegionParentId)
+            || normalizeOptional(metadata.parentRegionId),
+          sourceRegionId: normalizeOptional(metadata.originRegionId),
+          exitLocationId: normalizeOptional(metadata.originLocationId),
+          entranceStubId: normalizeOptional(location.id),
+          originDirection: normalizeOptional(metadata.originDirection),
+          imageDataUrl: normalizeOptional(metadata.imageDataUrl)
+        });
+      }
+    }
+
+    if (gameLocationExits instanceof Map) {
+      for (const exit of gameLocationExits.values()) {
+        if (!exit) {
+          continue;
+        }
+        const regionId = normalizeOptional(exit.destinationRegion);
+        if (!regionId) {
+          continue;
+        }
+        if (regions instanceof Map && regions.has(regionId)) {
+          pendingRegionStubs.delete(regionId);
+          continue;
+        }
+
+        let destinationLocation = null;
+        if (gameLocations instanceof Map) {
+          destinationLocation = gameLocations.get(exit.destination);
+        }
+
+        const metadata = destinationLocation?.stubMetadata || {};
+        const name = normalize(metadata.targetRegionName)
+          || normalize(destinationLocation?.name)
+          || regionId;
+
+        ensurePendingEntry(regionId, {
+          id: regionId,
+          name,
+          originalName: normalize(metadata.originalName) || name,
+          description: normalize(metadata.targetRegionDescription)
+            || normalize(metadata.shortDescription)
+            || normalize(destinationLocation?.description),
+          relativeLevel: safeNumber(metadata.targetRegionRelativeLevel)
+            ?? safeNumber(metadata.relativeLevel),
+          parentRegionId: normalizeOptional(metadata.targetRegionParentId)
+            || normalizeOptional(metadata.parentRegionId),
+          sourceRegionId: normalizeOptional(metadata.originRegionId),
+          exitLocationId: normalizeOptional(metadata.originLocationId),
+          entranceStubId: normalizeOptional(destinationLocation?.id),
+          originDirection: normalizeOptional(metadata.originDirection),
+          imageDataUrl: normalizeOptional(metadata.imageDataUrl)
+        });
+      }
+    }
+  }
+
+  static mergeDuplicatePendingRegionStubs({
+    pendingRegionStubs,
+    regions,
+    gameLocations,
+    gameLocationExits
+  } = {}) {
+    if (!(pendingRegionStubs instanceof Map)) {
+      throw new Error('mergeDuplicatePendingRegionStubs requires pendingRegionStubs as a Map.');
+    }
+    if (pendingRegionStubs.size === 0) {
+      return;
+    }
+    if (!(gameLocations instanceof Map)) {
+      throw new Error('mergeDuplicatePendingRegionStubs requires gameLocations as a Map.');
+    }
+    if (!(gameLocationExits instanceof Map)) {
+      throw new Error('mergeDuplicatePendingRegionStubs requires gameLocationExits as a Map.');
+    }
+
+    const normalize = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+    const normalizeOptional = (value) => {
+      const normalized = typeof value === 'string' ? value.trim() : '';
+      return normalized || null;
+    };
+    const safeNumber = (value) => (Number.isFinite(value) ? value : null);
+
+    const resolveStubNameKey = (entry) => {
+      const raw = entry?.name || entry?.originalName || entry?.targetRegionName || entry?.id || '';
+      const normalized = normalize(raw);
+      if (!normalized) {
+        throw new Error('Pending region stub is missing a usable name for deduplication.');
+      }
+      return normalized;
+    };
+
+    const entranceRefCounts = new Map();
+    for (const location of gameLocations.values()) {
+      if (!location || typeof location.getAvailableDirections !== 'function') {
+        continue;
+      }
+      for (const direction of location.getAvailableDirections()) {
+        const exit = location.getExit(direction);
+        const destinationId = exit?.destination;
+        if (!destinationId) {
+          continue;
+        }
+        entranceRefCounts.set(destinationId, (entranceRefCounts.get(destinationId) || 0) + 1);
+      }
+    }
+
+    const groups = new Map();
+    for (const entry of pendingRegionStubs.values()) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+      const key = resolveStubNameKey(entry);
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(entry);
+    }
+
+    const parseTimestamp = (value) => {
+      const parsed = Date.parse(value || '');
+      return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+    };
+
+    const mergeInto = (base, incoming) => {
+      const merged = { ...base };
+      const pickString = (primary, fallback) => {
+        const primaryTrimmed = typeof primary === 'string' ? primary.trim() : '';
+        if (primaryTrimmed) {
+          return primaryTrimmed;
+        }
+        const fallbackTrimmed = typeof fallback === 'string' ? fallback.trim() : '';
+        return fallbackTrimmed || primaryTrimmed;
+      };
+
+      merged.name = pickString(merged.name, incoming.name);
+      merged.originalName = pickString(merged.originalName, incoming.originalName) || merged.name;
+      merged.description = pickString(merged.description, incoming.description);
+      merged.relationship = pickString(merged.relationship, incoming.relationship) || 'Adjacent';
+      merged.parentRegionId = normalizeOptional(merged.parentRegionId || incoming.parentRegionId);
+      merged.sourceRegionId = normalizeOptional(merged.sourceRegionId || incoming.sourceRegionId);
+      merged.exitLocationId = normalizeOptional(merged.exitLocationId || incoming.exitLocationId);
+      merged.entranceStubId = normalizeOptional(merged.entranceStubId || incoming.entranceStubId);
+      merged.originDirection = normalizeOptional(merged.originDirection || incoming.originDirection);
+      merged.imageDataUrl = normalizeOptional(merged.imageDataUrl || incoming.imageDataUrl);
+
+      if (!Number.isFinite(merged.relativeLevel)) {
+        merged.relativeLevel = safeNumber(incoming.relativeLevel);
+      }
+
+      const baseCreated = parseTimestamp(merged.createdAt);
+      const incomingCreated = parseTimestamp(incoming.createdAt);
+      merged.createdAt = baseCreated <= incomingCreated
+        ? (merged.createdAt || incoming.createdAt || new Date().toISOString())
+        : (incoming.createdAt || merged.createdAt || new Date().toISOString());
+
+      merged.id = merged.id || incoming.id;
+      return merged;
+    };
+
+    const updateStubMetadata = (location, canonicalId, canonicalName, canonicalDescription, canonicalRelativeLevel) => {
+      if (!location || !location.isStub) {
+        return;
+      }
+      const metadata = location.stubMetadata || {};
+      if (!metadata.isRegionEntryStub) {
+        return;
+      }
+
+      metadata.targetRegionId = canonicalId;
+      metadata.regionId = canonicalId;
+      if (canonicalName) {
+        metadata.targetRegionName = canonicalName;
+      }
+      if (canonicalDescription) {
+        metadata.targetRegionDescription = canonicalDescription;
+      }
+      if (canonicalRelativeLevel !== null) {
+        metadata.targetRegionRelativeLevel = canonicalRelativeLevel;
+        metadata.relativeLevel = canonicalRelativeLevel;
+      }
+      location.stubMetadata = metadata;
+    };
+
+    const rewireExitsToEntrance = (fromEntranceId, toEntranceId) => {
+      if (!fromEntranceId || !toEntranceId || fromEntranceId === toEntranceId) {
+        return;
+      }
+      for (const exit of gameLocationExits.values()) {
+        if (exit?.destination === fromEntranceId) {
+          exit.destination = toEntranceId;
+        }
+      }
+    };
+
+    const updateExitNamesForEntrance = (entranceId, name) => {
+      if (!entranceId || !name) {
+        return;
+      }
+      for (const exit of gameLocationExits.values()) {
+        if (exit?.destination === entranceId) {
+          exit.description = name;
+        }
+      }
+    };
+
+    for (const entries of groups.values()) {
+      if (entries.length < 2) {
+        continue;
+      }
+
+      entries.sort((a, b) => {
+        const aEntranceId = normalizeOptional(a.entranceStubId);
+        const bEntranceId = normalizeOptional(b.entranceStubId);
+        const aEntranceCount = aEntranceId ? (entranceRefCounts.get(aEntranceId) || 0) : -1;
+        const bEntranceCount = bEntranceId ? (entranceRefCounts.get(bEntranceId) || 0) : -1;
+        if (aEntranceCount !== bEntranceCount) {
+          return bEntranceCount - aEntranceCount;
+        }
+        const aHasEntrance = aEntranceId && gameLocations.has(aEntranceId);
+        const bHasEntrance = bEntranceId && gameLocations.has(bEntranceId);
+        if (aHasEntrance !== bHasEntrance) {
+          return aHasEntrance ? -1 : 1;
+        }
+        const aCreated = parseTimestamp(a.createdAt);
+        const bCreated = parseTimestamp(b.createdAt);
+        if (aCreated !== bCreated) {
+          return aCreated - bCreated;
+        }
+        return String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' });
+      });
+
+      const canonical = entries[0];
+      if (!canonical?.id) {
+        throw new Error('Cannot merge pending region stubs: canonical entry is missing id.');
+      }
+
+      const canonicalEntranceId = normalizeOptional(canonical.entranceStubId)
+        || entries.map(entry => normalizeOptional(entry.entranceStubId)).find(id => id && gameLocations.has(id));
+
+      if (!canonicalEntranceId) {
+        throw new Error(`Cannot merge pending region stubs for "${canonical.name || canonical.id}": missing entrance stub id.`);
+      }
+
+      let mergedCanonical = { ...canonical };
+
+      for (const entry of entries) {
+        if (!entry || entry.id === canonical.id) {
+          continue;
+        }
+
+        mergedCanonical = mergeInto(mergedCanonical, entry);
+
+        const entryEntranceId = normalizeOptional(entry.entranceStubId);
+        if (entryEntranceId) {
+          rewireExitsToEntrance(entryEntranceId, canonicalEntranceId);
+          const entryLocation = gameLocations.get(entryEntranceId);
+          if (entryLocation) {
+            updateStubMetadata(
+              entryLocation,
+              canonical.id,
+              mergedCanonical.name,
+              mergedCanonical.description,
+              safeNumber(mergedCanonical.relativeLevel)
+            );
+          }
+        }
+
+        pendingRegionStubs.delete(entry.id);
+      }
+
+      mergedCanonical.entranceStubId = canonicalEntranceId;
+      pendingRegionStubs.set(canonical.id, mergedCanonical);
+
+      const canonicalLocation = gameLocations.get(canonicalEntranceId);
+      if (canonicalLocation) {
+        updateStubMetadata(
+          canonicalLocation,
+          canonical.id,
+          mergedCanonical.name,
+          mergedCanonical.description,
+          safeNumber(mergedCanonical.relativeLevel)
+        );
+      }
+
+      const canonicalName = normalizeOptional(mergedCanonical.name)
+        || normalizeOptional(mergedCanonical.originalName)
+        || normalizeOptional(mergedCanonical.targetRegionName)
+        || normalizeOptional(mergedCanonical.id);
+      if (!canonicalName) {
+        throw new Error('Merged region stub is missing a name to apply to exits.');
+      }
+      updateExitNamesForEntrance(canonicalEntranceId, canonicalName);
+
+      if (regions instanceof Map && regions.has(canonical.id)) {
+        pendingRegionStubs.delete(canonical.id);
+      }
+    }
   }
 
   static setChatSummary(messageId, summaryPayload = {}) {

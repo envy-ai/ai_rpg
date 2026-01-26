@@ -17471,7 +17471,8 @@ module.exports = function registerApiRoutes(scope) {
                 things,
                 players,
                 skills,
-                currentSetting
+                currentSetting,
+                pendingRegionStubs
             });
 
             const metadata = serialized.metadata || {};
@@ -17544,7 +17545,8 @@ module.exports = function registerApiRoutes(scope) {
                 jobQueue,
                 imageJobs,
                 pendingLocationImages,
-                npcGenerationPromises
+                npcGenerationPromises,
+                pendingRegionStubs
             });
 
             let metadata = hydrationResult.metadata || {};

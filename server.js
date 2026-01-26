@@ -17162,6 +17162,7 @@ if (modLoadResults.failed.length > 0) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
     module.exports.performGameLoad = (...args) => apiScope.performGameLoad(...args);
+    module.exports.pendingRegionStubs = pendingRegionStubs;
 }
 
 function generateImageId() {
