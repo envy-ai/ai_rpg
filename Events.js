@@ -2,6 +2,7 @@ const SanitizedStringSet = require("./SanitizedStringSet.js");
 const Utils = require("./Utils.js");
 const Thing = require("./Thing.js");
 const Globals = require("./Globals.js");
+const Player = require("./Player.js");
 const Quest = require("./Quest.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
@@ -158,6 +159,10 @@ const EVENT_PROMPT_ORDER = [
             key: "needbar_change",
             prompt: `Does anything that happened in this turn affect any need bars for any characters (NPCs or player)? If so, for each character rested or acted in any way, answer with the following four arguments: "[exact name of character] -> [exact name of need bar] -> [increase or decrease] -> [none|small|medium|large|all] | ..." for each of their need bars (including unchanged ones), separating multiple adjustments with vertical bars (multiple characters may have multiple need bar changes). Pay attention to the need bar descriptions to see how much they should change based on the situation. Also consider the descriptions of items involved, which may override those. Need bars are affected fully even if the character takes the same action multiple times in a row or continues the same action over multiple turns. Err on the side of being generous with need bar increases. If no changes to need bars, answer N/A.`,
         },
+        {
+            key: "hostile_to_friendly",
+            prompt: `Did any NPCs or entities that were previously hostile or unfriendly to the player become neutral, friendly, or allied? If so, respond with "[exact name of NPC/entity] -> [previous disposition] -> [new disposition] -> [reason in one sentence]". If multiple, separate with vertical bars. Otherwise, respond N/A.`,
+        }
     ],
     // Misc stuff
     [
@@ -2657,6 +2662,24 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            hostile_to_friendly: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [name, previousDisposition, newDisposition, reason] =
+                            splitArrowParts(entry, 4);
+                        if (!name) {
+                            return null;
+                        }
+                        return {
+                            name: name.trim(),
+                            previousDisposition: previousDisposition
+                                ? previousDisposition.trim()
+                                : null,
+                            newDisposition: newDisposition ? newDisposition.trim() : null,
+                            reason: reason ? reason.trim() : null,
+                        };
+                    })
+                    .filter(Boolean),
             attack_damage: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -4996,6 +5019,69 @@ class Events {
                     } else if (entry.action === "left") {
                         player.removePartyMember(npc.id);
                     }
+                }
+            },
+            hostile_to_friendly: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { findActorByName } = this._deps;
+                if (typeof findActorByName !== "function") {
+                    throw new Error(
+                        "hostile_to_friendly handler requires findActorByName dependency.",
+                    );
+                }
+
+                const dispositionDefinitions = Player.getDispositionDefinitions?.();
+                const dispositionTypes = Object.values(
+                    dispositionDefinitions?.types || {},
+                ).filter(Boolean);
+
+                if (!dispositionTypes.length) {
+                    throw new Error(
+                        "hostile_to_friendly handler requires disposition definitions.",
+                    );
+                }
+
+                const filteredEntries = [];
+
+                for (const entry of entries) {
+                    if (!entry?.name) {
+                        continue;
+                    }
+
+                    const npc = findActorByName(entry.name);
+                    if (!npc || npc.isHostile !== true) {
+                        continue;
+                    }
+
+                    if (
+                        typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
+                        typeof npc.setDispositionTowardsCurrentPlayer !== "function"
+                    ) {
+                        throw new Error(
+                            `hostile_to_friendly handler requires disposition methods for ${npc.name || entry.name}.`,
+                        );
+                    }
+
+                    for (const typeDef of dispositionTypes) {
+                        const key = typeDef.key || typeDef.label;
+                        if (!key) {
+                            continue;
+                        }
+                        const currentValue =
+                            npc.getDispositionTowardsCurrentPlayer(key) ?? 0;
+                        const nextValue = Math.max(0, Number(currentValue) || 0);
+                        npc.setDispositionTowardsCurrentPlayer(key, nextValue);
+                    }
+
+                    filteredEntries.push(entry);
+                }
+
+                entries.length = 0;
+                if (filteredEntries.length) {
+                    entries.push(...filteredEntries);
                 }
             },
             status_effect_change: async function (entries = [], context = {}) {

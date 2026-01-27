@@ -5736,6 +5736,12 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
 
     const metadata = stubLocation.stubMetadata || {};
     const originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
+    const originRegionId = originLocation
+        ? (findRegionByLocationId(originLocation.id)?.id
+            || originLocation.regionId
+            || originLocation.stubMetadata?.regionId
+            || null)
+        : null;
     let originDirection = metadata.originDirection || null;
 
     if (originLocation) {
@@ -5820,6 +5826,15 @@ async function finalizeRegionEntry({ stubLocation, entranceLocation, region, ori
 
         const targetLocation = gameLocations.get(exit.destination);
         if (!targetLocation) {
+            continue;
+        }
+
+        const targetRegionId = targetLocation.regionId
+            || targetLocation.stubMetadata?.regionId
+            || targetLocation.stubMetadata?.targetRegionId
+            || exit.destinationRegion
+            || null;
+        if (originRegionId && targetRegionId === originRegionId) {
             continue;
         }
 

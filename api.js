@@ -2045,6 +2045,27 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                             });
                             break;
+                        case 'hostile_to_friendly':
+                            entries.forEach(entry => {
+                                const name = safeSummaryName(entry?.name || entry);
+                                const newDisposition = entry?.newDisposition
+                                    ? safeSummaryItem(entry.newDisposition, '')
+                                    : '';
+                                const reason = entry?.reason
+                                    ? safeSummaryItem(entry.reason, '')
+                                    : '';
+                                let text = newDisposition
+                                    ? `${name} is now ${newDisposition} toward you`
+                                    : `${name} is no longer hostile toward you`;
+                                if (reason) {
+                                    text += ` (${reason})`;
+                                }
+                                if (!text.endsWith('.')) {
+                                    text += '.';
+                                }
+                                add('🕊️', text);
+                            });
+                            break;
                         case 'quest_received':
                             entries.forEach(entry => {
                                 if (!entry) {
