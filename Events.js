@@ -5014,21 +5014,56 @@ class Events {
                     (entry) => entry?.action === "gained" && entry.detail,
                 );
                 let generatedEffects = null;
+                let generatedEffectsByKey = null;
                 if (gainEntries.length) {
                     try {
                         const fallbackLevel = Number.isFinite(Globals.location?.baseLevel)
                             ? Globals.location.baseLevel
                             : null;
-                        generatedEffects = StatusEffect.generateFromDescriptions(
-                            gainEntries.map((entry) => ({
+                        const groupedEffects = new Map();
+                        for (const entry of gainEntries) {
+                            const detail =
+                                typeof entry.detail === "string"
+                                    ? entry.detail.trim()
+                                    : "";
+                            if (!detail) {
+                                continue;
+                            }
+                            const key = detail.toLowerCase();
+                            const level = Number.isFinite(entry.level)
+                                ? entry.level
+                                : fallbackLevel;
+                            if (!groupedEffects.has(key)) {
+                                groupedEffects.set(key, { detail, level });
+                                continue;
+                            }
+                            const existing = groupedEffects.get(key);
+                            if (!Number.isFinite(existing.level) && Number.isFinite(level)) {
+                                existing.level = level;
+                            } else if (
+                                Number.isFinite(existing.level) &&
+                                Number.isFinite(level)
+                            ) {
+                                existing.level = Math.max(existing.level, level);
+                            }
+                        }
+
+                        const seeds = Array.from(groupedEffects.values()).map(
+                            (entry) => ({
                                 name: entry.detail,
                                 description: entry.detail,
                                 level: Number.isFinite(entry.level)
                                     ? entry.level
                                     : fallbackLevel,
-                            })),
-                            { promptEnv, parseXMLTemplate, prepareBasePromptContext },
+                            }),
                         );
+
+                        if (seeds.length) {
+                            generatedEffects = StatusEffect.generateFromDescriptions(
+                                seeds,
+                                { promptEnv, parseXMLTemplate, prepareBasePromptContext },
+                            );
+                        }
                     } catch (error) {
                         console.warn(
                             "Failed to generate status effects via LLM:",
@@ -5068,17 +5103,36 @@ class Events {
                             // eslint-disable-next-line no-await-in-loop
                             generatedEffects = await generatedEffects;
                         }
-                        if (
-                            generatedEffects instanceof Map &&
-                            generatedEffects.has(entry.detail)
-                        ) {
-                            effectToApply = generatedEffects.get(entry.detail);
+                        if (generatedEffects instanceof Map) {
+                            if (!generatedEffectsByKey) {
+                                generatedEffectsByKey = new Map();
+                                for (const [sourceDescription, effect] of generatedEffects.entries()) {
+                                    if (
+                                        typeof sourceDescription === "string" &&
+                                        sourceDescription.trim()
+                                    ) {
+                                        generatedEffectsByKey.set(
+                                            sourceDescription.trim().toLowerCase(),
+                                            effect,
+                                        );
+                                    }
+                                }
+                            }
+                            const detailKey =
+                                typeof entry.detail === "string"
+                                    ? entry.detail.trim().toLowerCase()
+                                    : "";
+                            if (detailKey && generatedEffectsByKey.has(detailKey)) {
+                                effectToApply = generatedEffectsByKey.get(detailKey);
+                            }
                         }
                         if (!effectToApply) {
                             effectToApply = makeStatusEffect(
                                 entry.detail,
                                 this.DEFAULT_STATUS_DURATION,
                             );
+                        } else if (effectToApply instanceof StatusEffect) {
+                            effectToApply = effectToApply.toJSON();
                         }
                         entity.addStatusEffect(effectToApply);
                     } else if (

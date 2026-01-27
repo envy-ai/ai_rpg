@@ -4953,6 +4953,18 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         return entranceLocation;
     }
 
+    if (typeof Location.findByName === 'function') {
+        const existingLocation = Location.findByName(trimmedName);
+        if (existingLocation && existingLocation.id && existingLocation.id !== originLocation.id) {
+            const destinationRegionId = existingLocation.regionId
+                || existingLocation.stubMetadata?.regionId
+                || existingLocation.stubMetadata?.targetRegionId
+                || null;
+            ensureExistingConnection(existingLocation, destinationRegionId);
+            return existingLocation;
+        }
+    }
+
     for (const pending of pendingRegionStubs.values()) {
         const pendingNameSource = pending ? (pending.originalName || pending.name) : null;
         if (!pendingNameSource) {
@@ -12545,6 +12557,7 @@ async function regenerateRegionNames(regions) {
     }
 
     const worldOutline = getWorldOutline();
+    const settingContext = buildSettingContextForNamePrompt();
 
     const regionEntries = regions.map((region, index) => {
         if (!region || typeof region !== 'object') {
@@ -15884,6 +15897,8 @@ async function generateRegionExitStubs({
             sourceLocation = fallbackLocation;
         }
 
+        const vehicleLabel = definition.exitVehicle || null;
+
         const existingRegion = Region.getByName(definition.name);
         if (existingRegion) {
             await connectExistingRegion({
@@ -15921,8 +15936,25 @@ async function generateRegionExitStubs({
             continue;
         }
 
+        if (typeof Location.findByName === 'function') {
+            const existingLocation = Location.findByName(definition.name);
+            if (existingLocation && existingLocation.id && existingLocation.id !== sourceLocation.id) {
+                const destinationRegionId = existingLocation.regionId
+                    || existingLocation.stubMetadata?.regionId
+                    || existingLocation.stubMetadata?.targetRegionId
+                    || null;
+                ensureExitConnection(sourceLocation, existingLocation, {
+                    description: existingLocation.name || definition.name,
+                    bidirectional: true,
+                    destinationRegion: destinationRegionId,
+                    isVehicle: Boolean(vehicleLabel),
+                    vehicleType: vehicleLabel
+                });
+                continue;
+            }
+        }
+
         const newRegionId = generateRegionStubId();
-        const vehicleLabel = definition.exitVehicle || null;
         const relationshipNormalized = (definition.relationship || 'Adjacent').trim().toLowerCase();
         const existingParent = region.parentRegionId || null;
         let newRegionParentId = null;
