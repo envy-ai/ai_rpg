@@ -50,6 +50,10 @@ class AIRPGChat {
         this.questConfirmationDeclineButton = null;
         this.questConfirmationSubmitting = false;
 
+        this.latestPlayerActionEntryKey = null;
+        this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
+        this.pendingRedoInProgress = false;
+
         this.ensureTemplateEnvironment();
         this.init();
         this.initSkillIncreaseControls();
@@ -463,8 +467,10 @@ class AIRPGChat {
             const data = await response.json();
 
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+            await this.tryRunPendingRedo();
         } catch (error) {
             console.log('No existing history to load:', error.message);
+            this.reportPendingRedoError(`Redo pending but chat history failed to load: ${error.message || error}`);
         }
     }
 
@@ -630,6 +636,9 @@ class AIRPGChat {
         if (!this.chatLog) {
             return;
         }
+
+        const latestPlayerAction = this.getLatestPlayerActionEntry();
+        this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
 
         const existingPromptProgress = this.promptProgressMessage;
 
@@ -1222,6 +1231,28 @@ class AIRPGChat {
         const wrapper = document.createElement('div');
         wrapper.className = 'message-actions';
 
+        if (this.shouldShowRedoAction(entry)) {
+            const redoButton = document.createElement('button');
+            redoButton.type = 'button';
+            redoButton.className = 'message-action message-action--redo';
+            redoButton.title = 'Redo last player action';
+            redoButton.setAttribute('aria-label', 'Redo last player action');
+            redoButton.textContent = '🔁';
+            redoButton.addEventListener('click', async () => {
+                if (redoButton.disabled) {
+                    return;
+                }
+                redoButton.disabled = true;
+                try {
+                    await this.handleRedoPlayerAction(entry);
+                } catch (error) {
+                    this.addMessage('system', `Redo failed: ${error.message || error}`, true);
+                    redoButton.disabled = false;
+                }
+            });
+            wrapper.appendChild(redoButton);
+        }
+
         const editButton = document.createElement('button');
         editButton.type = 'button';
         editButton.className = 'message-action message-action--edit';
@@ -1245,6 +1276,247 @@ class AIRPGChat {
         wrapper.appendChild(editButton);
         wrapper.appendChild(deleteButton);
         return wrapper;
+    }
+
+    getEntryKey(entry) {
+        if (!entry || typeof entry !== 'object') {
+            return null;
+        }
+        return entry.id || entry.timestamp || null;
+    }
+
+    getLatestPlayerActionEntry() {
+        if (!Array.isArray(this.serverHistory) || !this.serverHistory.length) {
+            return null;
+        }
+        for (let index = this.serverHistory.length - 1; index >= 0; index -= 1) {
+            const entry = this.serverHistory[index];
+            if (!entry) {
+                continue;
+            }
+            if (entry.role !== 'assistant') {
+                continue;
+            }
+            if (entry.type !== 'player-action') {
+                continue;
+            }
+            if (typeof entry.content !== 'string' || !entry.content.trim()) {
+                continue;
+            }
+            return entry;
+        }
+        return null;
+    }
+
+    shouldShowRedoAction(entry) {
+        if (!entry || entry.role !== 'assistant' || entry.type !== 'player-action') {
+            return false;
+        }
+        const entryKey = this.getEntryKey(entry);
+        if (!entryKey || !this.latestPlayerActionEntryKey) {
+            return false;
+        }
+        return entryKey === this.latestPlayerActionEntryKey;
+    }
+
+    findUserEntryForAction(actionEntry) {
+        if (!actionEntry || !Array.isArray(this.serverHistory)) {
+            return null;
+        }
+        const actionKey = this.getEntryKey(actionEntry);
+        if (!actionKey) {
+            return null;
+        }
+        const actionIndex = this.serverHistory.findIndex(entry => this.getEntryKey(entry) === actionKey);
+        if (actionIndex <= 0) {
+            return null;
+        }
+        for (let idx = actionIndex - 1; idx >= 0; idx -= 1) {
+            const candidate = this.serverHistory[idx];
+            if (!candidate || candidate.role !== 'user') {
+                continue;
+            }
+            if (typeof candidate.content !== 'string' || !candidate.content.trim()) {
+                continue;
+            }
+            return candidate;
+        }
+        return null;
+    }
+
+    storePendingRedoAction(payload) {
+        if (!payload || typeof payload.content !== 'string' || !payload.content.trim()) {
+            throw new Error('Missing player input for redo.');
+        }
+        try {
+            window.localStorage.setItem(this.pendingRedoStorageKey, JSON.stringify(payload));
+        } catch (error) {
+            throw new Error('Failed to store redo payload in local storage.');
+        }
+    }
+
+    peekPendingRedoAction() {
+        try {
+            const raw = window.localStorage.getItem(this.pendingRedoStorageKey);
+            if (!raw) {
+                return null;
+            }
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') {
+                throw new Error('Invalid redo payload.');
+            }
+            return parsed;
+        } catch (error) {
+            throw new Error(error.message || 'Failed to read redo payload.');
+        }
+    }
+
+    consumePendingRedoAction() {
+        const pending = this.peekPendingRedoAction();
+        if (pending) {
+            this.clearPendingRedoAction();
+        }
+        return pending;
+    }
+
+    clearPendingRedoAction() {
+        try {
+            window.localStorage.removeItem(this.pendingRedoStorageKey);
+        } catch (error) {
+            throw new Error('Failed to clear redo payload from local storage.');
+        }
+    }
+
+    reportPendingRedoError(message) {
+        try {
+            const pending = this.peekPendingRedoAction();
+            if (!pending) {
+                return;
+            }
+            this.addMessage('system', message, true);
+        } catch (error) {
+            console.warn('Failed to report pending redo error:', error);
+        }
+    }
+
+    async fetchLatestAutosaveName() {
+        const response = await fetch('/api/saves?type=autosaves', { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+            const errorMessage = data?.error || `HTTP ${response.status}`;
+            throw new Error(`Failed to load autosaves: ${errorMessage}`);
+        }
+        const saves = Array.isArray(data.saves) ? data.saves : [];
+        if (!saves.length) {
+            throw new Error('No autosaves available to load.');
+        }
+        const latest = saves[0];
+        if (!latest?.saveName) {
+            throw new Error('Latest autosave is missing a save name.');
+        }
+        return latest.saveName;
+    }
+
+    async loadAutosave(saveName) {
+        if (!saveName) {
+            throw new Error('Autosave name is required.');
+        }
+        const response = await fetch('/api/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ saveName, saveType: 'autosaves' })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+            const errorMessage = data?.error || `HTTP ${response.status}`;
+            throw new Error(`Failed to load autosave: ${errorMessage}`);
+        }
+        window.location.reload();
+    }
+
+    async handleRedoPlayerAction(entry) {
+        if (this.pendingRedoInProgress) {
+            throw new Error('Redo already in progress.');
+        }
+        if (this.pendingRequests && this.pendingRequests.size > 0) {
+            throw new Error('Wait for the current action to finish before redoing.');
+        }
+        if (!this.shouldShowRedoAction(entry)) {
+            throw new Error('Only the most recent player action can be redone.');
+        }
+        const userEntry = this.findUserEntryForAction(entry);
+        if (!userEntry) {
+            throw new Error('Unable to locate the player input for this action.');
+        }
+        const content = typeof userEntry.content === 'string' ? userEntry.content : '';
+        const travel = Boolean(userEntry.travel);
+        const travelMetadata = userEntry.travelMetadata || userEntry?.metadata?.travelMetadata || null;
+
+        this.pendingRedoInProgress = true;
+        try {
+            this.storePendingRedoAction({
+                content,
+                travel,
+                travelMetadata,
+                sourceActionId: entry.id || null,
+                sourceTimestamp: entry.timestamp || null
+            });
+
+            const autosaveName = await this.fetchLatestAutosaveName();
+            await this.loadAutosave(autosaveName);
+        } catch (error) {
+            this.pendingRedoInProgress = false;
+            try {
+                this.clearPendingRedoAction();
+            } catch (clearError) {
+                console.warn('Failed to clear pending redo payload:', clearError);
+            }
+            throw error;
+        }
+    }
+
+    async tryRunPendingRedo() {
+        let pending = null;
+        try {
+            pending = this.peekPendingRedoAction();
+        } catch (error) {
+            this.addMessage('system', error.message || 'Failed to read pending redo payload.', true);
+            return;
+        }
+        if (!pending) {
+            return;
+        }
+        if (!Array.isArray(this.serverHistory) || !this.serverHistory.length) {
+            this.addMessage('system', 'Redo pending but chat history is unavailable.', true);
+            return;
+        }
+
+        let consumed = null;
+        try {
+            consumed = this.consumePendingRedoAction();
+        } catch (error) {
+            this.addMessage('system', error.message || 'Failed to clear pending redo payload.', true);
+            return;
+        }
+
+        if (!consumed || typeof consumed.content !== 'string' || !consumed.content.trim()) {
+            this.addMessage('system', 'Redo payload missing player input.', true);
+            return;
+        }
+
+        this.pendingRedoInProgress = true;
+        try {
+            this.recordInputHistoryEntry(consumed.content);
+            await this.submitChatMessage(consumed.content, {
+                setButtonLoading: true,
+                travel: Boolean(consumed.travel),
+                travelMetadata: consumed.travelMetadata || null
+            });
+        } catch (error) {
+            this.addMessage('system', `Redo failed to submit: ${error.message || error}`, true);
+        } finally {
+            this.pendingRedoInProgress = false;
+        }
     }
 
     formatTimestamp(timestamp) {

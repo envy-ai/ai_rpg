@@ -5076,6 +5076,8 @@ class Events {
                         npc.setDispositionTowardsCurrentPlayer(key, nextValue);
                     }
 
+                    npc.isHostile = false;
+
                     filteredEntries.push(entry);
                 }
 
