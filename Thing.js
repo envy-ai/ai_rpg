@@ -1853,7 +1853,7 @@ class Thing {
   }
 
   // Remove from all inventories and place in the current location
-  drop() {
+  drop(locationIdOverride = null) {
     console.log(`Dropping thing ${this.#name} (${this.#id}) from world`);
     // set locationId to the current location
     const equippedPlayer = this.equippedBy;
@@ -1868,25 +1868,29 @@ class Thing {
     }
 
     if (count(owners) === 0) {
-      console.warn(`Thing ${this.#name} (${this.#id}) is not in any inventory. Cannot determine location to drop into.`);
-      console.trace();
-      return;
+      if (!locationIdOverride) {
+        console.warn(`Thing ${this.#name} (${this.#id}) is not in any inventory. Cannot determine location to drop into.`);
+        console.trace();
+        return;
+      }
     } else {
       for (const player of owners) {
         player.removeInventoryItem(this.#id);
       }
     }
 
-    let locationId;
-    try {
-      locationId = owners[0].location.id;
-    } catch (error) {
-      console.error(`Failed to get location ID for player ${owners[0].name} (${owners[0].id}): ${error.message}`);
-      console.trace();
-    }
-    console.log("Current Location", owners[0].location);
+    let locationId = locationIdOverride;
     if (!locationId) {
-      throw new Error(`Player ${owners[0].name} (${owners[0].id}) does not have a valid locationId`);
+      try {
+        locationId = owners[0].location.id;
+      } catch (error) {
+        console.error(`Failed to get location ID for player ${owners[0].name} (${owners[0].id}): ${error.message}`);
+        console.trace();
+      }
+      console.log("Current Location", owners[0].location);
+    }
+    if (!locationId) {
+      throw new Error(`Unable to resolve location to drop ${this.#name} (${this.#id})`);
     }
 
     const Location = require('./Location.js');

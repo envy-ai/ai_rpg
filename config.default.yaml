@@ -27,6 +27,8 @@ ai:
   lowTemperature: 0.0
   temperature: 0.6
   highTemperature: 1.0
+  # Optional: nucleus sampling parameter (0-1)
+  top_p: 1.0
   baseTimeoutSeconds: 300
   retryAttempts: 3
   max_concurrent_requests: 6
@@ -219,14 +221,14 @@ summaries:
 party_generate_memory_interval: 12
 
 # Set to 0 to disable autosaves (not recommended). Default is 20 if omitted.
-autosaves_to_retain: 20
+autosaves_to_retain: 50
 
 # Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
-recent_history_turns: 10
+recent_history_turns: 25
 
 client_message_history:
-  max_messages: 50
-  prune_to: 40
+  max_messages: 100
+  prune_to: 80
 
 # Mostly to speed up testing and development - prevent certain types of generation
 omit_npc_generation: false

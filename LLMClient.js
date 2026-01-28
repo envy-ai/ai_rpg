@@ -691,6 +691,7 @@ class LLMClient {
         debug = false,
         frequencyPenalty = null,
         presencePenalty = null,
+        topP = null,
         seed = LLMClient.#generateSeed(),
         stream = undefined,
         captureRequestPayload = null,
@@ -720,6 +721,7 @@ class LLMClient {
                 waitAfterError,
                 dumpReasoningToConsole,
                 seed,
+                topP,
                 multimodal,
             });
         }
@@ -776,6 +778,26 @@ class LLMClient {
 
             if (aiConfig.presence_penalty !== undefined && presencePenalty === null) {
                 payload.presence_penalty = presencePenalty !== null ? presencePenalty : aiConfig.presence_penalty;
+            }
+
+            const resolvedTopP = (() => {
+                if (topP !== null && topP !== undefined) {
+                    return topP;
+                }
+                if (payload.top_p !== undefined) {
+                    return payload.top_p;
+                }
+                if (aiConfig.top_p !== undefined) {
+                    return aiConfig.top_p;
+                }
+                return null;
+            })();
+
+            if (resolvedTopP !== null && resolvedTopP !== undefined) {
+                if (!Number.isFinite(resolvedTopP) || resolvedTopP < 0 || resolvedTopP > 1) {
+                    throw new Error('top_p must be a number between 0 and 1.');
+                }
+                payload.top_p = resolvedTopP;
             }
 
             if (Array.isArray(messages)) {

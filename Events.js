@@ -4427,8 +4427,10 @@ class Events {
                     }
 
                     const holders = thing.whoseInventory();
-                    thing.drop();
-                    entry.character = holders[0].name;
+                    thing.drop(location.id);
+                    if (holders.length) {
+                        entry.character = holders[0].name;
+                    }
                     this.droppedItems.add(entry.item);
                 }
             },

@@ -87,6 +87,12 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="ai-topP">Top P (Nucleus Sampling):</label>
+                            <input type="number" id="ai-topP" name="ai.top_p::number" value="{{ config.ai.top_p }}" min="0" max="1" step="0.05">
+                            <span class="help-text">Token selection diversity (0.0 - 1.0)</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="ai-highTemperature">High Temperature:</label>
                             <input type="number" id="ai-highTemperature" name="ai.highTemperature::number" value="{{ config.ai.highTemperature }}" min="0" max="2" step="0.1">
                             <span class="help-text">Optional upper bound for temperature adjustments</span>
