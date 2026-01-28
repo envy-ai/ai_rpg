@@ -2703,7 +2703,41 @@ function getEventPromptTemplates() {
     }
 }
 
-function buildBasePromptContext({ locationOverride = null } = {}) {
+function buildBasePromptContext({
+    locationOverride = null,
+    omitInventoryItems = null,
+    omitAbilities = null
+} = {}) {
+    const baseContextConfig = config?.base_context ?? null;
+    if (baseContextConfig !== null && baseContextConfig !== undefined && typeof baseContextConfig !== 'object') {
+        throw new Error('base_context config must be an object.');
+    }
+    const resolveBooleanOption = (overrideValue, configValue, key) => {
+        if (overrideValue !== null && overrideValue !== undefined) {
+            if (typeof overrideValue !== 'boolean') {
+                throw new Error(`${key} override must be a boolean.`);
+            }
+            return overrideValue;
+        }
+        if (configValue !== null && configValue !== undefined) {
+            if (typeof configValue !== 'boolean') {
+                throw new Error(`${key} must be a boolean.`);
+            }
+            return configValue;
+        }
+        return false;
+    };
+
+    const shouldOmitInventoryItems = resolveBooleanOption(
+        omitInventoryItems,
+        baseContextConfig?.omit_inventory_items,
+        'base_context.omit_inventory_items'
+    );
+    const shouldOmitAbilities = resolveBooleanOption(
+        omitAbilities,
+        baseContextConfig?.omit_abilities,
+        'base_context.omit_abilities'
+    );
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
     const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
@@ -3162,7 +3196,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         return [];
     };
 
-    const currentPlayerInventory = Array.isArray(playerStatus?.inventory)
+    const currentPlayerInventory = !shouldOmitInventoryItems && Array.isArray(playerStatus?.inventory)
         ? playerStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
         : [];
 
@@ -3191,7 +3225,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         }))
         : [];
 
-    const abilities = currentPlayer.getAbilities() || [];
+    const abilities = shouldOmitAbilities ? [] : (currentPlayer.getAbilities() || []);
 
     const currentPlayerContext = {
         name: playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer',
@@ -3261,7 +3295,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
             const npcStatus = typeof npc.getStatus === 'function' ? npc.getStatus() : null;
-            const npcInventory = Array.isArray(npcStatus?.inventory)
+            const npcInventory = !shouldOmitInventoryItems && Array.isArray(npcStatus?.inventory)
                 ? npcStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
 
@@ -3286,7 +3320,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 maxHealth: npcStatus?.maxHealth ?? npc.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(npc || npcStatus),
                 inventory: npcInventory,
-                abilities: npc.getAbilities(),
+                abilities: shouldOmitAbilities ? [] : npc.getAbilities(),
                 dispositionsTowardsPlayer,
                 skills,
                 personality,
@@ -3306,7 +3340,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 continue;
             }
             const memberStatus = typeof member.getStatus === 'function' ? member.getStatus() : null;
-            const memberInventory = Array.isArray(memberStatus?.inventory)
+            const memberInventory = !shouldOmitInventoryItems && Array.isArray(memberStatus?.inventory)
                 ? memberStatus.inventory.map(item => mapItemContext(item, item?.equippedSlot || null)).filter(Boolean)
                 : [];
             const personality = extractPersonality(memberStatus, member);
@@ -3330,7 +3364,7 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
                 maxHealth: memberStatus?.maxHealth ?? member.maxHealth ?? null,
                 statusEffects: normalizeStatusEffects(member || memberStatus),
                 inventory: memberInventory,
-                abilities: member.getAbilities(),
+                abilities: shouldOmitAbilities ? [] : member.getAbilities(),
                 personality,
                 skills,
                 dispositionsTowardsPlayer,
@@ -3581,6 +3615,8 @@ function buildBasePromptContext({ locationOverride = null } = {}) {
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
+        omitInventoryItems: shouldOmitInventoryItems,
+        omitAbilities: shouldOmitAbilities,
         npcs,
         party,
         itemsInScene,
@@ -6561,6 +6597,13 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
             }
         }
 
+        if (typeof seed.notes === 'string') {
+            const trimmedNotes = seed.notes.trim();
+            if (trimmedNotes) {
+                normalizedSeed.notes = trimmedNotes;
+            }
+        }
+
         if (typeof seed.type === 'string') {
             const trimmedType = seed.type.trim();
             if (trimmedType) {
@@ -7610,10 +7653,15 @@ async function renderSingleNpcPrompt({
     region = null,
     existingNpcSummaries = [],
     oldItem = null,
-    hasImage = false
+    hasImage = false,
+    additionalInstructions = ''
 } = {}) {
     try {
-        const baseContext = await prepareBasePromptContext({ locationOverride: location || null });
+        const baseContext = await prepareBasePromptContext({
+            locationOverride: location || null,
+            omitInventoryItems: true,
+            omitAbilities: true
+        });
 
         const safeRegion = region ? {
             name: region.name || 'Unknown Region',
@@ -7685,7 +7733,8 @@ async function renderSingleNpcPrompt({
             oldItem: oldItemContext,
             setting: baseContext.setting,
             additionalLore: additionalLore,
-            hasImage: Boolean(hasImage)
+            hasImage: Boolean(hasImage),
+            additionalInstructions: typeof additionalInstructions === 'string' ? additionalInstructions.trim() : ''
         });
     } catch (error) {
         console.error('Error rendering single NPC template:', error);
@@ -7713,7 +7762,8 @@ async function generateNpcFromEvent({
     region = null,
     oldItem = null,
     imageDataUrl = '',
-    portraitImageDataUrl = ''
+    portraitImageDataUrl = '',
+    additionalInstructions = ''
 } = {}) {
     const seedSource = (npc && typeof npc === 'object') ? { ...npc } : {};
     let trimmedName = typeof name === 'string' ? name.trim() : '';
@@ -7798,7 +7848,8 @@ async function generateNpcFromEvent({
             region: resolvedRegion,
             existingNpcSummaries: existingNpcSummaries.slice(0, 25),
             oldItem,
-            hasImage: Boolean(normalizedImageDataUrl)
+            hasImage: Boolean(normalizedImageDataUrl),
+            additionalInstructions
         });
 
         if (!renderedTemplate) {

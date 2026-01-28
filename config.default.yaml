@@ -226,6 +226,12 @@ autosaves_to_retain: 50
 # Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
 recent_history_turns: 25
 
+base_context:
+  # When true, omit inventory items from the base-context prompt.
+  omit_inventory_items: false
+  # When true, omit ability listings from the base-context prompt.
+  omit_abilities: false
+
 client_message_history:
   max_messages: 100
   prune_to: 80

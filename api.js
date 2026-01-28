@@ -13172,6 +13172,8 @@ module.exports = function registerApiRoutes(scope) {
                     npcSeed.description = description;
                 }
 
+                const notes = trimText(payload.notes);
+
                 const shortDescription = trimText(payload.shortDescription);
                 if (shortDescription) {
                     npcSeed.shortDescription = shortDescription;
@@ -13219,7 +13221,8 @@ module.exports = function registerApiRoutes(scope) {
                     location,
                     region,
                     imageDataUrl,
-                    portraitImageDataUrl: imageDataUrlOriginal
+                    portraitImageDataUrl: imageDataUrlOriginal,
+                    additionalInstructions: notes
                 });
 
                 if (!generatedNpc) {
@@ -13302,6 +13305,11 @@ module.exports = function registerApiRoutes(scope) {
                     isProcessingStation: Boolean(rawSeed.isProcessingStation),
                     isSalvageable: Boolean(rawSeed.isSalvageable)
                 };
+
+                const notes = normalizeSeedString(rawSeed.notes || payload.notes);
+                if (notes) {
+                    seed.notes = notes;
+                }
 
                 const rawItemOrScenery = normalizeSeedString(rawSeed.itemOrScenery);
                 seed.itemOrScenery = rawItemOrScenery && rawItemOrScenery.toLowerCase() === 'scenery'

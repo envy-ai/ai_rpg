@@ -184,15 +184,18 @@ The below context is an account of the current game state, including the setting
           <memory>{{ entry.memory }}</memory>
           {% endfor %}
         </importantMemories>
+        {% if not omitInventoryItems %}
         <inventory>
           {% for item in npc.inventory %}<item>
             <name>{{ item.name }}</name>
             <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
           </item>
         {% endfor %}</inventory>
+        {% endif %}
         <skills>
           {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
         </skills>
+        {% if not omitAbilities %}
         <abilities>
           {% for ability in npc.abilities %}
           <ability>
@@ -203,6 +206,7 @@ The below context is an account of the current game state, including the setting
           </ability>
           {% endfor %}
         </abilities>
+        {% endif %}
         <statusEffects>
           {% for effect in npc.statusEffects %}
           <effect>
@@ -290,6 +294,7 @@ The below context is an account of the current game state, including the setting
       <skills>
         {% for skill in currentPlayer.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
+    {% if not omitAbilities %}
     <abilities>
       {% for ability in currentPlayer.abilities %}
       <ability>
@@ -300,6 +305,8 @@ The below context is an account of the current game state, including the setting
       </ability>
       {% endfor %}
     </abilities>
+    {% endif %}
+    {% if not omitInventoryItems %}
     <inventory>
       {% for item in currentPlayer.inventory %}
       <item>
@@ -320,6 +327,7 @@ The below context is an account of the current game state, including the setting
       </item>
       {% endfor %}
     </inventory>
+    {% endif %}
     <needBars>
       {% for bar in currentPlayer.needBars %}
       <needBar>
@@ -382,15 +390,18 @@ The below context is an account of the current game state, including the setting
         <memory>{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
+      {% if not omitInventoryItems %}
       <inventory>
         {% for item in member.inventory %}<item>
           <name>{{ item.name }}</name>
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
       {% endfor %}</inventory>
+      {% endif %}
       <skills>
         {% for skill in member.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
+      {% if not omitAbilities %}
       <abilities>
         {% for ability in member.abilities %}
         <ability>
@@ -401,6 +412,7 @@ The below context is an account of the current game state, including the setting
         </ability>
         {% endfor %}
       </abilities>
+      {% endif %}
       <statusEffects>
         {% for effect in member.statusEffects %}
         <effect>

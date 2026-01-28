@@ -311,6 +311,7 @@ class LLMClient {
         serializeJson = false,
         onFailureMessage = 'Failed to write log file',
         error = '',
+        append = '',
     } = {}) {
         try {
             const fs = require('fs');
@@ -337,12 +338,119 @@ class LLMClient {
                 dataToWrite = `Error Details:\n${error}\n\nPayload:\n${dataToWrite}`;
             }
 
+            const appendText = typeof append === 'string' ? append.trim() : '';
+            if (appendText) {
+                dataToWrite = `${dataToWrite}\n\n${appendText}`;
+            }
+
             fs.writeFileSync(filePath, dataToWrite || '', 'utf8');
             return filePath;
         } catch (error) {
             console.warn(`${onFailureMessage}: ${error.message}`);
             return null;
         }
+    }
+
+    static #formatMessageContent(content) {
+        if (content === null || content === undefined) {
+            return '';
+        }
+        if (typeof content === 'string') {
+            return content;
+        }
+        if (Array.isArray(content)) {
+            const parts = [];
+            content.forEach(part => {
+                if (part === null || part === undefined) {
+                    return;
+                }
+                if (typeof part === 'string') {
+                    if (part.trim()) {
+                        parts.push(part);
+                    }
+                    return;
+                }
+                if (typeof part === 'object') {
+                    const type = part.type || '';
+                    if (type === 'text' && typeof part.text === 'string') {
+                        if (part.text.trim()) {
+                            parts.push(part.text);
+                        }
+                        return;
+                    }
+                    if (type === 'image_url') {
+                        const url = part.image_url?.url || '';
+                        if (url) {
+                            if (url.startsWith('data:')) {
+                                parts.push('[image_url: data url omitted]');
+                            } else {
+                                parts.push(`[image_url: ${url}]`);
+                            }
+                        } else {
+                            parts.push('[image_url]');
+                        }
+                        return;
+                    }
+                    if (typeof part.text === 'string' && part.text.trim()) {
+                        parts.push(part.text);
+                        return;
+                    }
+                }
+                const fallback = String(part);
+                if (fallback && fallback !== '[object Object]') {
+                    parts.push(fallback);
+                }
+            });
+            return parts.join('\n').trim();
+        }
+        if (typeof content === 'object') {
+            if (typeof content.text === 'string') {
+                return content.text;
+            }
+            const fallback = JSON.stringify(content, null, 2);
+            return typeof fallback === 'string' ? fallback : String(content);
+        }
+        return String(content);
+    }
+
+    static formatMessagesForErrorLog(messages = []) {
+        const systemParts = [];
+        const userParts = [];
+        const otherParts = [];
+        if (Array.isArray(messages)) {
+            messages.forEach(message => {
+                if (!message || typeof message !== 'object') {
+                    return;
+                }
+                const role = typeof message.role === 'string' ? message.role.trim().toLowerCase() : 'unknown';
+                const content = LLMClient.#formatMessageContent(message.content).trim();
+                if (!content) {
+                    return;
+                }
+                if (role === 'system') {
+                    systemParts.push(content);
+                } else if (role === 'user') {
+                    userParts.push(content);
+                } else {
+                    otherParts.push(`[${role || 'unknown'}]\n${content}`);
+                }
+            });
+        }
+
+        const lines = [];
+        lines.push('=== SYSTEM PROMPT ===');
+        lines.push(systemParts.length ? systemParts.join('\n\n') : '(none)');
+        lines.push('');
+        lines.push('=== PROMPT ===');
+        lines.push(userParts.length ? userParts.join('\n\n') : '(none)');
+
+        if (otherParts.length) {
+            lines.push('');
+            lines.push('=== OTHER MESSAGES ===');
+            lines.push(otherParts.join('\n\n'));
+        }
+
+        return lines.join('\n');
     }
 
     static logPrompt({
@@ -1197,11 +1305,13 @@ class LLMClient {
                         }
                     }
 
+                    const promptAppend = LLMClient.formatMessagesForErrorLog(messages);
                     const filePath = LLMClient.writeLogFile({
                         prefix: 'chatCompletionError',
                         metadataLabel,
                         error: error,
                         payload: responseContent || '',
+                        append: promptAppend,
                         onFailureMessage: 'Failed to write chat completion error log file'
                     });
                     if (filePath) {

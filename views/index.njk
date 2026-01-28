@@ -859,6 +859,10 @@
                     <label for="addNpcDescription">Description</label>
                     <textarea id="addNpcDescription" name="description" rows="4" placeholder="Optional: Describe appearance, personality, goals..."></textarea>
                 </div>
+                <div class="npc-edit-section">
+                    <label for="addNpcNotes">Notes for generation</label>
+                    <textarea id="addNpcNotes" name="notes" rows="3" placeholder="Optional: Extra instructions for the NPC generator"></textarea>
+                </div>
                 <footer class="npc-edit-footer">
                     <div class="npc-edit-status" id="addNpcStatus" role="status" aria-live="polite"></div>
                     <div class="npc-edit-actions">
@@ -1133,6 +1137,10 @@
                 <div class="npc-edit-section">
                     <label for="thingEditDescription">Description</label>
                     <textarea id="thingEditDescription" rows="4"></textarea>
+                </div>
+                <div class="npc-edit-section" id="thingEditNotesGroup" hidden>
+                    <label for="thingEditNotes">Notes for generation</label>
+                    <textarea id="thingEditNotes" rows="3" placeholder="Optional: Extra instructions for the item/scenery generator"></textarea>
                 </div>
 
                 <div class="npc-edit-section thing-edit-flags">
@@ -4852,6 +4860,7 @@
         const addNpcNameInput = document.getElementById('addNpcName');
         const addNpcShortDescriptionInput = document.getElementById('addNpcShortDescription');
         const addNpcDescriptionInput = document.getElementById('addNpcDescription');
+        const addNpcNotesInput = document.getElementById('addNpcNotes');
         const addNpcRoleInput = document.getElementById('addNpcRole');
         const addNpcClassInput = document.getElementById('addNpcClass');
         const addNpcRaceInput = document.getElementById('addNpcRace');
@@ -5004,6 +5013,8 @@
         const thingEditLevelInput = document.getElementById('thingEditLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingEditNotesGroup = document.getElementById('thingEditNotesGroup');
+        const thingEditNotesInput = document.getElementById('thingEditNotes');
         const thingOnHitSection = document.getElementById('thingOnHitSection');
         const thingOnHitTitle = document.getElementById('thingOnHitTitle');
         const thingEquipSection = document.getElementById('thingEquipSection');
@@ -5892,6 +5903,16 @@
             thingEditForm.reset();
 
             const mode = options.mode === 'create' ? 'create' : 'edit';
+            if (thingEditNotesGroup) {
+                if (mode === 'create') {
+                    thingEditNotesGroup.removeAttribute('hidden');
+                } else {
+                    thingEditNotesGroup.setAttribute('hidden', '');
+                }
+            }
+            if (thingEditNotesInput) {
+                thingEditNotesInput.value = '';
+            }
 
             if (thingEditModalTitle) {
                 if (mode === 'create') {
@@ -8460,6 +8481,9 @@
             if (addNpcIsHostileInput) {
                 addNpcIsHostileInput.checked = false;
             }
+            if (addNpcNotesInput) {
+                addNpcNotesInput.value = '';
+            }
             setAddNpcStatus('', null);
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -8531,6 +8555,9 @@
             }
             if (addNpcImageInput) {
                 addNpcImageInput.value = '';
+            }
+            if (addNpcNotesInput) {
+                addNpcNotesInput.value = '';
             }
             if (addNpcSaveBtn) {
                 addNpcSaveBtn.disabled = false;
@@ -8725,6 +8752,10 @@
             const description = addNpcDescriptionInput?.value?.trim();
             if (description) {
                 payload.description = description;
+            }
+            const notes = addNpcNotesInput?.value?.trim();
+            if (notes) {
+                payload.notes = notes;
             }
             const role = addNpcRoleInput?.value?.trim();
             if (role) {
@@ -9802,6 +9833,12 @@
             if (thingEditSlotSelect) {
                 thingEditSlotSelect.innerHTML = '';
             }
+            if (thingEditNotesInput) {
+                thingEditNotesInput.value = '';
+            }
+            if (thingEditNotesGroup) {
+                thingEditNotesGroup.setAttribute('hidden', '');
+            }
             currentThingLockedMetadata = {};
             const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
@@ -10702,6 +10739,10 @@
                     const descriptionValue = thingEditDescriptionInput?.value?.trim();
                     if (descriptionValue) {
                         seed.description = descriptionValue;
+                    }
+                    const notesValue = thingEditNotesInput?.value?.trim();
+                    if (notesValue) {
+                        seed.notes = notesValue;
                     }
 
                     const detailValue = thingEditItemDetailInput?.value?.trim();
