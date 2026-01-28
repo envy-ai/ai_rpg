@@ -1105,6 +1105,35 @@ function renderMap(region) {
     menu.style.zIndex = '2100';
     menu.style.minWidth = '180px';
 
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = 'Edit stub';
+    editBtn.style.width = '100%';
+    editBtn.style.padding = '8px 10px';
+    editBtn.style.border = 'none';
+    editBtn.style.background = 'transparent';
+    editBtn.style.color = '#e2e8f0';
+    editBtn.style.textAlign = 'left';
+    editBtn.style.cursor = 'pointer';
+    editBtn.addEventListener('mouseover', () => {
+      editBtn.style.background = 'rgba(148,163,184,0.15)';
+    });
+    editBtn.addEventListener('mouseout', () => {
+      editBtn.style.background = 'transparent';
+    });
+    editBtn.addEventListener('click', async () => {
+      try {
+        if (typeof window.openStubEditModal !== 'function') {
+          throw new Error('Stub editor is unavailable.');
+        }
+        await window.openStubEditModal(stubId);
+      } catch (error) {
+        window.alert(error?.message || 'Failed to open stub editor');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.textContent = 'Delete stub';
@@ -1153,6 +1182,7 @@ function renderMap(region) {
       }
     });
 
+    menu.appendChild(editBtn);
     menu.appendChild(deleteBtn);
     document.body.appendChild(menu);
     edgeContextMenu = menu;

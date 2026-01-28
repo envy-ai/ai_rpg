@@ -12898,6 +12898,118 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.put('/api/stubs/:id', (req, res) => {
+            try {
+                const stubIdRaw = req.params.id;
+                const stubId = typeof stubIdRaw === 'string' ? stubIdRaw.trim() : '';
+                if (!stubId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub ID is required'
+                    });
+                }
+
+                const stubLocation = getStubLocationById(stubId);
+                if (!stubLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Stub '${stubId}' not found`
+                    });
+                }
+
+                const body = req.body || {};
+                const hasOwn = Object.prototype.hasOwnProperty;
+                const hasName = hasOwn.call(body, 'name');
+                const hasDescription = hasOwn.call(body, 'description');
+
+                if (!hasName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub name is required'
+                    });
+                }
+                if (!hasDescription) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub description is required'
+                    });
+                }
+
+                const nameValue = typeof body.name === 'string' ? body.name.trim() : '';
+                if (!nameValue) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub name cannot be empty'
+                    });
+                }
+
+                const descriptionValue = typeof body.description === 'string' ? body.description.trim() : '';
+                if (!descriptionValue) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub description cannot be empty'
+                    });
+                }
+
+                let relativeLevel = null;
+                if (hasOwn.call(body, 'relativeLevel')) {
+                    const rawRelative = body.relativeLevel;
+                    const trimmedRelative = typeof rawRelative === 'string' ? rawRelative.trim() : rawRelative;
+                    if (trimmedRelative !== '' && trimmedRelative !== null && trimmedRelative !== undefined) {
+                        const parsed = Number(trimmedRelative);
+                        if (!Number.isFinite(parsed)) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'Relative level must be a number'
+                            });
+                        }
+                        relativeLevel = parsed;
+                    }
+                }
+
+                syncStubPresentationWithExit(stubLocation, {
+                    name: nameValue,
+                    description: descriptionValue,
+                    relativeLevel
+                });
+
+                const stubMetadata = stubLocation.stubMetadata || {};
+                const targetRegionId = stubMetadata.targetRegionId || stubMetadata.regionId || null;
+                const targetRegionName = targetRegionId
+                    ? (pendingRegionStubs.get(targetRegionId)?.name
+                        || regions.get(targetRegionId)?.name
+                        || stubMetadata.targetRegionName
+                        || null)
+                    : null;
+                const resolvedDescription = stubMetadata.targetRegionDescription
+                    || stubMetadata.shortDescription
+                    || stubMetadata.blueprintDescription
+                    || descriptionValue;
+                const resolvedRelativeLevel = Number.isFinite(stubMetadata.targetRegionRelativeLevel)
+                    ? Number(stubMetadata.targetRegionRelativeLevel)
+                    : (Number.isFinite(stubMetadata.relativeLevel) ? Number(stubMetadata.relativeLevel) : null);
+
+                return res.json({
+                    success: true,
+                    stub: {
+                        id: stubId,
+                        name: stubLocation.name || nameValue,
+                        description: resolvedDescription,
+                        relativeLevel: resolvedRelativeLevel,
+                        isRegionEntryStub: Boolean(stubMetadata.isRegionEntryStub),
+                        targetRegionId: targetRegionId || null,
+                        targetRegionName
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to update stub:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to update stub'
+                });
+            }
+        });
+
         app.delete('/api/stubs/:id', (req, res) => {
             try {
                 const stubIdRaw = req.params.id;

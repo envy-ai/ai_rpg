@@ -1270,6 +1270,10 @@
                     <label for="locationEditDescription">Description</label>
                     <textarea id="locationEditDescription" name="description" rows="6" required></textarea>
                 </div>
+                <div class="location-edit-field" id="locationEditRelativeLevelGroup" hidden>
+                    <label for="locationEditRelativeLevel">Relative Level</label>
+                    <input type="number" id="locationEditRelativeLevel" name="relativeLevel" min="-10" max="10" step="1" placeholder="0">
+                </div>
                 <div class="location-edit-field">
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
@@ -4841,6 +4845,8 @@
         let newExitMapMode = false;
         let editingRegionId = null;
         let editingExitContext = null;
+        let locationEditMode = 'location';
+        let stubEditContext = null;
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
         const addNpcNameInput = document.getElementById('addNpcName');
@@ -4928,9 +4934,12 @@
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const locationEditModal = document.getElementById('locationEditModal');
+        const locationEditModalTitle = document.getElementById('locationEditModalTitle');
         const locationEditForm = document.getElementById('locationEditForm');
         const locationEditNameInput = document.getElementById('locationEditName');
         const locationEditDescriptionInput = document.getElementById('locationEditDescription');
+        const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
+        const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
         const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
         const locationEditStatus = document.getElementById('locationEditStatus');
@@ -13912,15 +13921,119 @@
             return effects;
         }
 
-        function openLocationEditModal() {
-            const targetLocation = getLocationMenuContext();
+        const locationEditNameLabel = locationEditNameInput?.closest('.location-edit-field')?.querySelector('label') || null;
+        const locationEditDescriptionLabel = locationEditDescriptionInput?.closest('.location-edit-field')?.querySelector('label') || null;
+        const locationEditDefaultTitle = locationEditModalTitle?.textContent || 'Edit Location';
+        const locationEditDefaultNameLabel = locationEditNameLabel?.textContent || 'Location Name';
+        const locationEditDefaultDescriptionLabel = locationEditDescriptionLabel?.textContent || 'Description';
+        const locationEditLevelField = locationEditLevelInput?.closest('.location-edit-field') || null;
+        const locationEditAbsoluteLevelField = locationEditAbsoluteLevel?.closest('.location-edit-field') || null;
+        const locationEditStatusSection = locationStatusEffectsList?.closest('.location-edit-section') || null;
+
+        function resolveStubDescription(location) {
+            if (!location) {
+                return '';
+            }
+            const stubMetadata = location.stubMetadata || {};
+            return location.description
+                || stubMetadata.shortDescription
+                || stubMetadata.targetRegionDescription
+                || stubMetadata.blueprintDescription
+                || '';
+        }
+
+        function resolveStubRelativeLevel(location) {
+            if (!location) {
+                return null;
+            }
+            const stubMetadata = location.stubMetadata || {};
+            if (Number.isFinite(stubMetadata.targetRegionRelativeLevel)) {
+                return Number(stubMetadata.targetRegionRelativeLevel);
+            }
+            if (Number.isFinite(stubMetadata.relativeLevel)) {
+                return Number(stubMetadata.relativeLevel);
+            }
+            return null;
+        }
+
+        function getStubEditContext(location) {
+            if (!location || !location.isStub || !location.id) {
+                return null;
+            }
+            const stubMetadata = location.stubMetadata || {};
+            return {
+                id: location.id,
+                isRegionEntryStub: Boolean(stubMetadata.isRegionEntryStub),
+                targetRegionId: stubMetadata.targetRegionId || stubMetadata.regionId || null
+            };
+        }
+
+        function toggleLocationEditSection(element, show) {
+            if (!element) {
+                return;
+            }
+            if (show) {
+                element.removeAttribute('hidden');
+            } else {
+                element.setAttribute('hidden', '');
+            }
+        }
+
+        function setLocationEditMode(mode = 'location', context = null) {
+            const normalizedMode = mode === 'stub' ? 'stub' : 'location';
+            locationEditMode = normalizedMode;
+            stubEditContext = normalizedMode === 'stub' ? (context || null) : null;
+            const isStubMode = normalizedMode === 'stub';
+            const isRegionStub = Boolean(stubEditContext?.isRegionEntryStub);
+
+            if (locationEditModalTitle) {
+                locationEditModalTitle.textContent = isStubMode
+                    ? (isRegionStub ? 'Edit Region Stub' : 'Edit Location Stub')
+                    : locationEditDefaultTitle;
+            }
+            if (locationEditNameLabel) {
+                locationEditNameLabel.textContent = isStubMode && isRegionStub
+                    ? 'Region Name'
+                    : locationEditDefaultNameLabel;
+            }
+            if (locationEditDescriptionLabel) {
+                locationEditDescriptionLabel.textContent = isStubMode && isRegionStub
+                    ? 'Region Description'
+                    : locationEditDefaultDescriptionLabel;
+            }
+
+            toggleLocationEditSection(locationEditLevelField, !isStubMode);
+            toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
+            toggleLocationEditSection(locationEditStatusSection, !isStubMode);
+            toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
+
+            if (locationEditLevelInput) {
+                locationEditLevelInput.disabled = isStubMode;
+                locationEditLevelInput.required = !isStubMode;
+                if (isStubMode) {
+                    locationEditLevelInput.value = '';
+                }
+            }
+            if (locationEditRelativeLevelInput) {
+                locationEditRelativeLevelInput.disabled = !isStubMode;
+                if (!isStubMode) {
+                    locationEditRelativeLevelInput.value = '';
+                }
+            }
+        }
+
+        function openLocationEditModalForTarget(targetLocation) {
             if (!locationEditModal || !targetLocation) {
                 alert('No location is currently available to edit.');
                 clearLocationMenuContext();
                 return;
             }
+
+            const stubContext = getStubEditContext(targetLocation);
+            setLocationEditMode(stubContext ? 'stub' : 'location', stubContext);
+
             const name = targetLocation.name || '';
-            const description = targetLocation.description || '';
+            const description = stubContext ? resolveStubDescription(targetLocation) : (targetLocation.description || '');
             const numericLevel = Number.isFinite(targetLocation.baseLevel)
                 ? targetLocation.baseLevel
                 : null;
@@ -13932,11 +14045,22 @@
             if (locationEditDescriptionInput) {
                 locationEditDescriptionInput.value = description;
             }
-            if (locationEditLevelInput) {
+            if (stubContext && locationEditRelativeLevelInput) {
+                const relativeLevelValue = resolveStubRelativeLevel(targetLocation);
+                locationEditRelativeLevelInput.value = Number.isFinite(relativeLevelValue)
+                    ? Math.round(relativeLevelValue)
+                    : '';
+            }
+            if (!stubContext && locationEditLevelInput) {
                 locationEditLevelInput.value = numericLevel ?? '';
             }
-            renderLocationStatusEffects(statusEffects);
-            updateLocationAbsoluteLevelDisplay(numericLevel);
+            if (stubContext) {
+                renderLocationStatusEffects([]);
+                updateLocationAbsoluteLevelDisplay(null);
+            } else {
+                renderLocationStatusEffects(statusEffects);
+                updateLocationAbsoluteLevelDisplay(numericLevel);
+            }
 
             setLocationEditStatus('', null);
             locationEditModal.removeAttribute('hidden');
@@ -13947,6 +14071,45 @@
             }, 50);
         }
 
+        function openLocationEditModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation) {
+                alert('No location is currently available to edit.');
+                clearLocationMenuContext();
+                return;
+            }
+            openLocationEditModalForTarget(targetLocation);
+        }
+
+        async function openStubEditModal(stubId) {
+            const stubIdValue = typeof stubId === 'string' ? stubId.trim() : '';
+            if (!stubIdValue) {
+                alert('No stub is currently available to edit.');
+                return;
+            }
+            if (!locationEditModal) {
+                alert('Location editor is unavailable.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/locations/${encodeURIComponent(stubIdValue)}?expandStubs=false&_=${Date.now()}`, { cache: 'no-store' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.location) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                if (!data.location.isStub) {
+                    throw new Error('Selected location is not a stub.');
+                }
+                openLocationEditModalForTarget(data.location);
+            } catch (error) {
+                console.warn('Failed to load stub for editing:', error);
+                alert(`Failed to load stub: ${error?.message || 'Unknown error'}`);
+            }
+        }
+
+        window.openStubEditModal = openStubEditModal;
+
         function closeLocationEditModal() {
             if (!locationEditModal) {
                 return;
@@ -13956,6 +14119,7 @@
             locationEditModal.classList.remove('is-open');
             setLocationEditStatus('', null);
             updateLocationAbsoluteLevelDisplay(null);
+            setLocationEditMode('location', null);
             clearLocationMenuContext();
         }
 
@@ -13964,6 +14128,104 @@
                 event.preventDefault();
             }
             if (!locationEditForm) {
+                return;
+            }
+            if (locationEditMode === 'stub') {
+                const stubId = stubEditContext?.id || getLocationMenuContext()?.id || null;
+                if (!stubId) {
+                    setLocationEditStatus('No stub is currently available to edit.', 'error');
+                    return;
+                }
+
+                const nameValue = locationEditNameInput?.value ?? '';
+                if (!nameValue.trim()) {
+                    setLocationEditStatus('Stub name cannot be empty.', 'error');
+                    locationEditNameInput?.focus();
+                    return;
+                }
+
+                const descriptionValue = locationEditDescriptionInput?.value ?? '';
+                if (!descriptionValue.trim()) {
+                    setLocationEditStatus('Stub description cannot be empty.', 'error');
+                    locationEditDescriptionInput?.focus();
+                    return;
+                }
+
+                let relativeLevelValue = null;
+                if (locationEditRelativeLevelInput) {
+                    const rawRelativeLevel = locationEditRelativeLevelInput.value;
+                    const trimmedRelativeLevel = typeof rawRelativeLevel === 'string' ? rawRelativeLevel.trim() : '';
+                    if (trimmedRelativeLevel) {
+                        const parsed = Number(trimmedRelativeLevel);
+                        if (!Number.isFinite(parsed)) {
+                            setLocationEditStatus('Relative level must be a number.', 'error');
+                            locationEditRelativeLevelInput.focus();
+                            return;
+                        }
+                        relativeLevelValue = parsed;
+                    }
+                }
+
+                const payload = {
+                    name: nameValue.trim(),
+                    description: descriptionValue.trim()
+                };
+                if (relativeLevelValue !== null) {
+                    payload.relativeLevel = relativeLevelValue;
+                }
+
+                setLocationEditStatus('Saving stub...', null);
+                if (locationEditSaveBtn) {
+                    locationEditSaveBtn.disabled = true;
+                }
+
+                let overlayShown = false;
+                try {
+                    showLocationOverlay('Updating stub...');
+                    overlayShown = true;
+                } catch (_) {
+                    // Ignore overlay errors
+                }
+
+                try {
+                    const response = await fetch(`/api/stubs/${encodeURIComponent(stubId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    const updatedName = typeof data?.stub?.name === 'string' ? data.stub.name.trim() : '';
+                    if (updatedName && typeof locationCache === 'object') {
+                        locationCache[stubId] = updatedName;
+                    }
+
+                    const mapTab = document.querySelector('[data-tab="map"]');
+                    if (mapTab?.classList.contains('active')) {
+                        const mapContainer = document.getElementById('mapContainer');
+                        const activeRegionId = mapContainer?.dataset?.regionId || null;
+                        try {
+                            await window.loadRegionMap?.(activeRegionId || null);
+                        } catch (mapError) {
+                            console.warn('Failed to refresh map after stub update:', mapError);
+                        }
+                    }
+
+                    closeLocationEditModal();
+                } catch (error) {
+                    console.warn('Failed to update stub:', error);
+                    setLocationEditStatus(`Failed to update stub: ${error?.message || 'Unknown error'}`, 'error');
+                } finally {
+                    if (locationEditSaveBtn) {
+                        locationEditSaveBtn.disabled = false;
+                    }
+                    if (overlayShown) {
+                        hideLocationOverlay();
+                    }
+                }
                 return;
             }
             const targetLocation = getLocationMenuContext();
