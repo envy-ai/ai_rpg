@@ -6,6 +6,7 @@ saves/*
 public/generated-images/*
 logs/*
 logs_prev/*
+exports/*
 prompt_overrides/*
 autosaves/*
 temp/*

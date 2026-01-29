@@ -82,26 +82,131 @@ function resolvePlayerName() {
   return trimmed || null;
 }
 
-function formatTextHistory(entries, playerName) {
+function resolveEntryRecordId(entry) {
+  if (!entry || typeof entry !== 'object') {
+    throw new Error('Chat history entry is invalid.');
+  }
+  const rawId = entry.id;
+  if (typeof rawId !== 'string') {
+    throw new Error('Chat history entry is missing a record ID.');
+  }
+  const trimmed = rawId.trim();
+  if (!trimmed) {
+    throw new Error('Chat history entry has an empty record ID.');
+  }
+  return trimmed;
+}
+
+const OMIT_ENTRY_MARKERS = [
+  '🛠️ Crafting Results',
+  '📋 Events',
+  '🗒️ Quest',
+  '✅ Quest',
+  '✨ Additional',
+  '♻️ Salvage'
+];
+
+function containsOmittedMarker(text) {
+  if (typeof text !== 'string') {
+    return false;
+  }
+  return OMIT_ENTRY_MARKERS.some(marker => text.includes(marker));
+}
+
+function resolveSummaryHeader(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const rawTitle = typeof entry.summaryTitle === 'string' ? entry.summaryTitle.trim() : '';
+  if (rawTitle) {
+    return rawTitle;
+  }
+  const rawContent = typeof entry.content === 'string' ? entry.content.trim() : '';
+  if (!rawContent) {
+    return null;
+  }
+  const firstLine = rawContent.split('\n')[0]?.trim();
+  return firstLine || null;
+}
+
+function shouldExcludeSummaryEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+  const rawType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+  if (rawType === 'status-summary') {
+    return true;
+  }
+  if (rawType !== 'event-summary') {
+    return false;
+  }
+  const header = resolveSummaryHeader(entry);
+  if (!header) {
+    return false;
+  }
+  const normalizedHeader = header.toLowerCase();
+  return normalizedHeader.startsWith('📋 events')
+    || normalizedHeader.startsWith('🌾 harvest results');
+}
+
+function isSystemEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+  const rawRole = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+  return rawRole === 'system';
+}
+
+function stripLineMarker(line) {
+  if (typeof line !== 'string') {
+    return '';
+  }
+  return line.replace(/^(!{1,2}|#)\s*/, '');
+}
+
+function isSceneIllustrationLine(line) {
+  if (typeof line !== 'string') {
+    return false;
+  }
+  return /^\s*!\[Scene Illustration\]\([^)]*\)\s*$/.test(line);
+}
+
+function normalizeEntryText(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+  const lines = text.split('\n');
+  const cleanedLines = [];
+  for (const line of lines) {
+    if (isSceneIllustrationLine(line)) {
+      continue;
+    }
+    cleanedLines.push(stripLineMarker(line));
+  }
+  const joined = cleanedLines.join('\n');
+  return joined.replace(/\n+/g, '\n\n').trim();
+}
+
+function formatTextHistory(entries, playerName, options = {}) {
   const lines = [];
+  let outputIndex = 0;
+  const useIndex = options.useIndex === true;
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object') {
       continue;
     }
     const content = typeof entry.content === 'string' ? entry.content.trim() : '';
     const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-    const text = content || summary;
+    const rawText = content || summary;
+    const text = normalizeEntryText(rawText);
     if (!text) {
       continue;
     }
-    const timestamp = typeof entry.timestamp === 'string' && entry.timestamp.trim()
-      ? entry.timestamp.trim()
-      : '';
+    outputIndex += 1;
+    const recordLabel = useIndex ? String(outputIndex) : resolveEntryRecordId(entry);
     const role = resolveRoleLabel(entry.role, playerName);
     const headerParts = [];
-    if (timestamp) {
-      headerParts.push(`[${timestamp}]`);
-    }
+    headerParts.push(`[${recordLabel}]`);
     if (role) {
       headerParts.push(`[${role}]`);
     }
@@ -115,26 +220,26 @@ function formatTextHistory(entries, playerName) {
   return lines.join('\n').trimEnd() + '\n';
 }
 
-function formatHtmlHistory(entries, playerName) {
+function formatHtmlHistory(entries, playerName, options = {}) {
   const blocks = [];
+  let outputIndex = 0;
+  const useIndex = options.useIndex === true;
   for (const entry of entries) {
     if (!entry || typeof entry !== 'object') {
       continue;
     }
     const content = typeof entry.content === 'string' ? entry.content.trim() : '';
     const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-    const text = content || summary;
+    const rawText = content || summary;
+    const text = normalizeEntryText(rawText);
     if (!text) {
       continue;
     }
-    const timestamp = typeof entry.timestamp === 'string' && entry.timestamp.trim()
-      ? entry.timestamp.trim()
-      : '';
+    outputIndex += 1;
+    const recordLabel = useIndex ? String(outputIndex) : resolveEntryRecordId(entry);
     const role = resolveRoleLabel(entry.role, playerName);
     const metaParts = [];
-    if (timestamp) {
-      metaParts.push(`<span class="timestamp">${escapeHtml(timestamp)}</span>`);
-    }
+    metaParts.push(`<span class="record-id">${escapeHtml(recordLabel)}</span>`);
     if (role) {
       metaParts.push(`<span class="role">${escapeHtml(role)}</span>`);
     }
@@ -182,7 +287,9 @@ class ExportHistoryCommand extends SlashCommandBase {
   static get args() {
     return [
       { name: 'format', type: 'string', required: false, default: 'text' },
-      { name: 'filename', type: 'string', required: false }
+      { name: 'filename', type: 'string', required: false },
+      { name: 'excludeSummaries', type: 'boolean', required: false, default: true },
+      { name: 'useIndex', type: 'boolean', required: false, default: true }
     ];
   }
 
@@ -216,7 +323,31 @@ class ExportHistoryCommand extends SlashCommandBase {
       return;
     }
 
-    const requiresPlayerName = chatHistory.some(entry => {
+    const excludeSummaries = typeof args.excludeSummaries === 'boolean' ? args.excludeSummaries : true;
+    const exportEntries = chatHistory.filter(entry => {
+      if (isSystemEntry(entry)) {
+        return false;
+      }
+      const content = typeof entry?.content === 'string' ? entry.content : '';
+      const summary = typeof entry?.summary === 'string' ? entry.summary : '';
+      if (containsOmittedMarker(content) || containsOmittedMarker(summary)) {
+        return false;
+      }
+      if (excludeSummaries && shouldExcludeSummaryEntry(entry)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (exportEntries.length === 0) {
+      await interaction.reply({
+        content: 'No chat history entries available to export after filtering.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    const requiresPlayerName = exportEntries.some(entry => {
       if (!entry || typeof entry.role !== 'string') {
         return false;
       }
@@ -258,11 +389,12 @@ class ExportHistoryCommand extends SlashCommandBase {
     }
 
     const outputPath = path.join(exportDir, filename);
+    const useIndex = typeof args.useIndex === 'boolean' ? args.useIndex : true;
     let payload;
     try {
       payload = format === 'html'
-        ? formatHtmlHistory(chatHistory, playerName)
-        : formatTextHistory(chatHistory, playerName);
+        ? formatHtmlHistory(exportEntries, playerName, { useIndex })
+        : formatTextHistory(exportEntries, playerName, { useIndex });
     } catch (error) {
       await interaction.reply({
         content: `Failed to format chat history: ${error.message}`,
