@@ -17878,23 +17878,100 @@ module.exports = function registerApiRoutes(scope) {
                     pendingRegions: regionsToCheck.filter(region => isMissingShortDescription(region?.shortDescription)).length,
                     pendingAbilities: abilitiesToCheck.filter(ability => isMissingShortDescription(ability?.shortDescription)).length
                 });
-                const emitShortDescriptionStatus = (stage, message = null) => {
-                    if (!realtimeHub || typeof realtimeHub.emit !== 'function') {
-                        console.warn('RealtimeHub unavailable; short description status not sent.');
-                        return false;
+                const resolveShortDescriptionBatchSize = () => {
+                    const configured = Number(Globals?.config?.short_description?.max_items_per_prompt);
+                    if (Number.isFinite(configured) && configured > 0) {
+                        return Math.floor(configured);
                     }
-                    const resolvedClientId = typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null;
-                    if (!resolvedClientId) {
-                        console.warn('Client ID missing for short description status; status not sent.');
-                        return false;
+                    return 100;
+                };
+                const resolveRegionForLocationEstimate = (location) => {
+                    if (!location || typeof location !== 'object') {
+                        return null;
                     }
-                    const payload = {
-                        stage,
-                        message,
-                        serverTime: new Date().toISOString(),
-                        scope: 'short_description'
-                    };
-                    return Boolean(realtimeHub.emit(resolvedClientId, 'chat_status', payload));
+                    if (typeof location.region === 'object' && location.region) {
+                        return location.region;
+                    }
+                    const regionId = typeof location.regionId === 'string' ? location.regionId.trim() : '';
+                    if (regionId && regions.has(regionId)) {
+                        return regions.get(regionId);
+                    }
+                    const regionKey = typeof location.region === 'string' ? location.region.trim() : '';
+                    if (regionKey && regions.has(regionKey)) {
+                        return regions.get(regionKey);
+                    }
+                    return null;
+                };
+                const estimateLocationPromptCount = (locations, maxBatchSize) => {
+                    if (!Array.isArray(locations) || locations.length === 0) {
+                        return 0;
+                    }
+                    const regionCounts = new Map();
+                    for (const location of locations) {
+                        if (!isMissingShortDescription(location?.shortDescription)) {
+                            continue;
+                        }
+                        const region = resolveRegionForLocationEstimate(location);
+                        const regionName = (region?.name && String(region.name).trim())
+                            ? String(region.name).trim()
+                            : 'Unknown Region';
+                        const regionKey = regionName.toLowerCase();
+                        regionCounts.set(regionKey, (regionCounts.get(regionKey) || 0) + 1);
+                    }
+                    let promptCount = 0;
+                    let current = 0;
+                    for (const count of regionCounts.values()) {
+                        if (count <= 0) {
+                            continue;
+                        }
+                        if (count > maxBatchSize) {
+                            if (current > 0) {
+                                promptCount += 1;
+                                current = 0;
+                            }
+                            promptCount += Math.ceil(count / maxBatchSize);
+                            continue;
+                        }
+                        if (current + count > maxBatchSize && current > 0) {
+                            promptCount += 1;
+                            current = 0;
+                        }
+                        current += count;
+                    }
+                    if (current > 0) {
+                        promptCount += 1;
+                    }
+                    return promptCount;
+                };
+                const emitShortDescriptionChatMessage = ({
+                    pendingThings,
+                    pendingLocations,
+                    pendingRegions,
+                    pendingAbilities,
+                    promptsForThings,
+                    promptsForLocations,
+                    promptsForRegions,
+                    promptsForAbilities
+                }) => {
+                    const locationId = currentPlayer?.currentLocation
+                        || scope.currentLocation?.id
+                        || currentPlayer?.location?.id
+                        || null;
+                    if (!locationId) {
+                        throw new Error('Short description status requires a current location.');
+                    }
+                    const lines = [
+                        'Short description backfill queued:',
+                        `Items: ${pendingThings} (${promptsForThings} prompts)`,
+                        `Regions: ${pendingRegions} (${promptsForRegions} prompts)`,
+                        `Locations: ${pendingLocations} (${promptsForLocations} prompts)`,
+                        `Abilities: ${pendingAbilities} (${promptsForAbilities} prompts)`
+                    ];
+                    pushChatEntry({
+                        role: 'system',
+                        type: 'system',
+                        content: lines.join('\n')
+                    }, null, locationId);
                 };
 
                 if (typeof Globals.ensureThingShortDescriptions !== 'function') {
@@ -17934,12 +18011,29 @@ module.exports = function registerApiRoutes(scope) {
                     abilitiesToCheck
                 });
                 const totalPending = counts.pendingThings + counts.pendingLocations + counts.pendingRegions + counts.pendingAbilities;
-                const didEmitStatus = totalPending > 0
-                    ? emitShortDescriptionStatus(
-                        'spinner:start',
-                        `Updating short descriptions (${counts.pendingThings} items, ${counts.pendingLocations} locations, ${counts.pendingRegions} regions, ${counts.pendingAbilities} abilities).`
-                    )
-                    : false;
+                if (totalPending > 0) {
+                    const maxBatchSize = resolveShortDescriptionBatchSize();
+                    const promptsForThings = counts.pendingThings > 0
+                        ? Math.ceil(counts.pendingThings / maxBatchSize)
+                        : 0;
+                    const promptsForRegions = counts.pendingRegions > 0
+                        ? Math.ceil(counts.pendingRegions / maxBatchSize)
+                        : 0;
+                    const promptsForAbilities = counts.pendingAbilities > 0
+                        ? Math.ceil(counts.pendingAbilities / maxBatchSize)
+                        : 0;
+                    const promptsForLocations = estimateLocationPromptCount(locationsToCheck, maxBatchSize);
+                    emitShortDescriptionChatMessage({
+                        pendingThings: counts.pendingThings,
+                        pendingLocations: counts.pendingLocations,
+                        pendingRegions: counts.pendingRegions,
+                        pendingAbilities: counts.pendingAbilities,
+                        promptsForThings,
+                        promptsForLocations,
+                        promptsForRegions,
+                        promptsForAbilities
+                    });
+                }
 
                 if (thingsToCheck.length) {
                     await Globals.ensureThingShortDescriptions(thingsToCheck);
@@ -17961,9 +18055,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (didEmitStatus) {
-                    emitShortDescriptionStatus('spinner:stop');
-                }
             };
 
             await ensureShortDescriptionsOnLoad();
