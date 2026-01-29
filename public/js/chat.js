@@ -506,7 +506,7 @@ class AIRPGChat {
         const counts = data.plan.counts || {};
         const prompts = data.plan.prompts || {};
         const messageLines = [
-            'There are items, locations, regions, and abilities in your save file that don\'t have short descriptions. This is probably due to your save being from an older version of AI RPG. It\'s not necessary to update them, but for long-standing saves, it could drastically shorten your base context, speeding up the game and improving coherence.',
+            'There are items, locations, regions, and abilities in your save file that don\'t have short descriptions. This is probably due to your save being from an older version of AI RPG. It\'s not necessary to update them, but for long-standing saves, it could drastically shorten your base context, speeding up the game and improving coherence. If you are using an API plan that charges per token, be aware that this may incur additional costs. Note that in new saves, short descriptions are generated alongside the full data, so this is only needed for older saves, and only once. Be sure to save when it\'s done!',
             '',
             'Here are the number of each item to be processed, along with the number of prompts required (potentially more if there are errors):',
             '',

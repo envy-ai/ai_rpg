@@ -213,6 +213,20 @@ module.exports = function registerApiRoutes(scope) {
 
         const shortDescriptionBackfillByClient = new Map();
         let shortDescriptionBackfillInProgress = false;
+        const normalizeSaveFileVersion = (value, fallback = 0) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : fallback;
+        };
+        const updateSaveFileVersionAtLeast = (minimumVersion) => {
+            const min = normalizeSaveFileVersion(minimumVersion, 0);
+            const current = normalizeSaveFileVersion(Globals.saveFileSaveVersion, 0);
+            const next = Math.max(current, min);
+            Globals.saveFileSaveVersion = next;
+            if (next !== current) {
+                console.log(`💾 Save file version updated: ${current} -> ${next}`);
+            }
+            return next;
+        };
 
         const getSlopHistorySegments = () => {
             if (!Array.isArray(chatHistory)) {
@@ -3399,7 +3413,8 @@ module.exports = function registerApiRoutes(scope) {
                     ...baseContext,
                     promptType: 'attack-check',
                     actionText,
-                    characterName
+                    characterName,
+                    omitGameHistory: true
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -8965,7 +8980,6 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location
                     });
-                    restoreCharacterHealthToMaximum(player);
                 } catch (inventoryError) {
                     console.warn('Failed to generate player inventory:', inventoryError);
                 }
@@ -11328,7 +11342,6 @@ module.exports = function registerApiRoutes(scope) {
                     name: name.trim(),
                     description: description ? description.trim() : '',
                     level: level && !isNaN(level) ? Math.max(1, parseInt(level)) : 1,
-                    health: -1,
                     attributes: {}
                 };
 
@@ -11378,7 +11391,6 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location
                     });
-                    restoreCharacterHealthToMaximum(player);
                 } catch (inventoryError) {
                     console.warn('Failed to generate player inventory (stats):', inventoryError);
                 }
@@ -17238,6 +17250,7 @@ module.exports = function registerApiRoutes(scope) {
                 chatHistory.length = 0;
                 skills.clear();
                 Player.setAvailableSkills(new Map());
+                Globals.saveFileSaveVersion = normalizeSaveFileVersion(Globals.currentSaveVersion, 0);
 
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
@@ -17344,7 +17357,6 @@ module.exports = function registerApiRoutes(scope) {
                     class: resolvedPlayerClass,
                     race: resolvedPlayerRace,
                     level: startingPlayerLevel,
-                    health: -1,
                     currency: resolvedStartingCurrency,
                     attributes: {
                         strength: 10,
@@ -17454,7 +17466,6 @@ module.exports = function registerApiRoutes(scope) {
                         region,
                         location: entranceLocation
                     });
-                    restoreCharacterHealthToMaximum(newPlayer);
                 } catch (inventoryError) {
                     console.warn('Failed to generate inventory for new-game player:', inventoryError);
                 }
@@ -17643,6 +17654,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalSkills = skills.size;
             metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
             metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
+            metadata.saveFileSaveVersion = normalizeSaveFileVersion(Globals.saveFileSaveVersion, 0);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
                 ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
@@ -17707,6 +17719,8 @@ module.exports = function registerApiRoutes(scope) {
             }
             metadata.saveName = metadata.saveName || normalizedName;
             metadata.source = metadata.source || (path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves');
+            Globals.saveFileSaveVersion = normalizeSaveFileVersion(metadata.saveFileSaveVersion, 0);
+            console.log(`💾 Loaded save file version: ${Globals.saveFileSaveVersion} (metadata: ${metadata.saveFileSaveVersion ?? 'missing'})`);
 
             const loadedSetting = hydrationResult.setting || null;
             if (loadedSetting) {
@@ -18019,6 +18033,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 } else {
                     shortDescriptionBackfillByClient.delete(resolvedClientId);
+                    updateSaveFileVersionAtLeast(1);
                 }
 
             };
@@ -18108,6 +18123,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
                 }
+                updateSaveFileVersionAtLeast(1);
             } finally {
                 shortDescriptionBackfillInProgress = false;
             }

@@ -10,6 +10,8 @@ class Globals {
   static travelHistory = [];
   static slopWords = [];
   static slopTrigrams = [];
+  static currentSaveVersion = '1';
+  static saveFileSaveVersion = '0';
 
   static getBasePromptContext = function () {
     throw new Error('Globals.getBasePromptContext called before being set.');

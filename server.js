@@ -3095,6 +3095,7 @@ function buildBasePromptContext({
         return {
             name,
             description,
+            shortDescription: item.shortDescription || item.metadata?.shortDescription || '',
             statusEffects,
             equippedSlot: equipped,
             isScenery,
@@ -3615,6 +3616,8 @@ function buildBasePromptContext({
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
+        Globals,
+        saveFileSaveVersion: Number(Globals?.saveFileSaveVersion) || 0,
         omitInventoryItems: shouldOmitInventoryItems,
         omitAbilities: shouldOmitAbilities,
         npcs,
@@ -8900,8 +8903,6 @@ async function generateNpcFromEvent({
             console.warn('Failed to generate inventory for new NPC:', inventoryError.message);
         }
 
-        restoreCharacterHealthToMaximum(npc);
-
         if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
             npc.imageId = null;
         }
@@ -14122,8 +14123,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 });
             } catch (inventoryError) {
                 console.warn(`Failed to generate inventory for location NPC ${name}:`, inventoryError.message);
-            } finally {
-                restoreCharacterHealthToMaximum(npc);
             }
         })());
 
@@ -14148,7 +14147,6 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         await Promise.all(equipTasks);
 
         for (const { npc } of npcContexts) {
-            restoreCharacterHealthToMaximum(npc);
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             }
@@ -14491,8 +14489,6 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 });
             } catch (inventoryError) {
                 console.warn(`Failed to generate inventory for region NPC ${name}:`, inventoryError.message);
-            } finally {
-                restoreCharacterHealthToMaximum(npc);
             }
         })());
 
@@ -14517,7 +14513,6 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         await Promise.all(equipTasks);
 
         for (const { npc, name } of npcContexts) {
-            restoreCharacterHealthToMaximum(npc);
             if (shouldGenerateNpcImage(npc) && (!npc.imageId || !hasExistingImage(npc.imageId))) {
                 npc.imageId = null;
             } else {
@@ -18118,7 +18113,6 @@ function createDefaultPlayer() {
             name: 'Adventurer',
             description: 'A mysterious adventurer.',
             level: 1,
-            health: -1,
             attributes: {
                 strength: 10,
                 dexterity: 10,
@@ -18138,9 +18132,6 @@ function createDefaultPlayer() {
         })
             .catch(error => {
                 console.warn('Failed to generate default player inventory:', error.message);
-            })
-            .finally(() => {
-                restoreCharacterHealthToMaximum(defaultPlayer);
             });
 
         console.log('🎲 Created default player "Adventurer" with default stats');

@@ -12,6 +12,14 @@ You are able to write both explicit and non-explicit content, depending on the n
 The below context is an account of the current game state, including the setting, world outline, current region and location, characters present, and items in the scene:
 <gameState>
   {% set regionContext = (contextRegion or currentRegion) or {'name': '', 'description': '', 'locations': []} %}
+  {% set saveFileVersion = saveFileSaveVersion | default(0, true) %}
+  {% if Globals is defined and Globals.saveFileSaveVersion is defined %}
+  {% set saveFileVersion = Globals.saveFileSaveVersion %}
+  {% endif %}
+  {% if Globals is defined and Globals.saveGameSaveVersion is defined %}
+  {% set saveFileVersion = Globals.saveGameSaveVersion %}
+  {% endif %}
+  {% set useShortDescriptions = saveFileVersion >= 1 %}
   <setting>
     <name>{{ setting.name }}</name>
     <description>{{ setting.description }}</description>
@@ -135,7 +143,11 @@ The below context is an account of the current game state, including the setting
       </exit>
       {% endfor %}
     </exits>
-    <items>
+    <items>{% if useShortDescriptions -%}
+{%- for item in currentLocation.items -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
       {% for item in currentLocation.items %}
       <item>
         <name>{{ item.name }}</name>
@@ -156,7 +168,7 @@ The below context is an account of the current game state, including the setting
         <properties>{{ item.properties | default('', true) }}</properties>
       </item>
       {% endfor %}
-    </items>
+    {% endif %}</items>
     <npcs>
       {% for npc in npcs %}
       <npc>
@@ -191,18 +203,26 @@ The below context is an account of the current game state, including the setting
           {% endfor %}
         </importantMemories>
         {% if not omitInventoryItems %}
-        <inventory>
+        <inventory>{% if useShortDescriptions -%}
+{%- for item in npc.inventory -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
           {% for item in npc.inventory %}<item>
             <name>{{ item.name }}</name>
             <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
           </item>
-        {% endfor %}</inventory>
+        {% endfor %}{% endif %}</inventory>
         {% endif %}
         <skills>
           {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
         </skills>
         {% if not omitAbilities %}
-        <abilities>
+        <abilities>{% if useShortDescriptions -%}
+{%- for ability in npc.abilities -%}
+{{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
           {% for ability in npc.abilities %}
           <ability>
             <name>{{ ability.name }}</name>
@@ -211,7 +231,7 @@ The below context is an account of the current game state, including the setting
             <level>{{ ability.level }}</level>
           </ability>
           {% endfor %}
-        </abilities>
+        {% endif %}</abilities>
         {% endif %}
         <statusEffects>
           {% for effect in npc.statusEffects %}
@@ -236,7 +256,11 @@ The below context is an account of the current game state, including the setting
       </npc>
       {% endfor %}
     </npcs>
-    <itemsInScene>
+    <itemsInScene>{% if useShortDescriptions -%}
+{%- for item in itemsInScene %}{% if not item.isScenery -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endif %}{%- endfor -%}
+{%- else %}
       {% for item in itemsInScene %}{% if not item.isScenery %}
       <item>
         <name>{{ item.name }}</name>
@@ -257,8 +281,12 @@ The below context is an account of the current game state, including the setting
         <properties>{{ item.properties | default('', true) }}</properties>
       </item>
       {% endif %}{% endfor %}
-    </itemsInScene>
-    <sceneryList>
+    {% endif %}</itemsInScene>
+    <sceneryList>{% if useShortDescriptions -%}
+{%- for item in itemsInScene %}{% if item.isScenery -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endif %}{%- endfor -%}
+{%- else %}
       {% for item in itemsInScene %}{% if item.isScenery %}
       <sceneryItem>
         <name>{{ item.name }}</name>
@@ -279,7 +307,7 @@ The below context is an account of the current game state, including the setting
         <properties>{{ item.properties | default('', true) }}</properties>
       </sceneryItem>
       {% endif %}{% endfor %}
-    </sceneryList>  
+    {% endif %}</sceneryList>  
   </currentLocation>
   <player>
     <name>{{ currentPlayer.name }}</name>
@@ -301,7 +329,11 @@ The below context is an account of the current game state, including the setting
         {% for skill in currentPlayer.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
     {% if not omitAbilities %}
-    <abilities>
+    <abilities>{% if useShortDescriptions -%}
+{%- for ability in currentPlayer.abilities -%}
+{{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
       {% for ability in currentPlayer.abilities %}
       <ability>
         <name>{{ ability.name }}</name>
@@ -310,10 +342,14 @@ The below context is an account of the current game state, including the setting
         <level>{{ ability.level }}</level>
       </ability>
       {% endfor %}
-    </abilities>
+    {% endif %}</abilities>
     {% endif %}
     {% if not omitInventoryItems %}
-    <inventory>
+    <inventory>{% if useShortDescriptions -%}
+{%- for item in currentPlayer.inventory -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
       {% for item in currentPlayer.inventory %}
       <item>
         <name>{{ item.name }}</name>
@@ -332,7 +368,7 @@ The below context is an account of the current game state, including the setting
         <properties>{{ item.properties | default('', true) }}</properties>
       </item>
       {% endfor %}
-    </inventory>
+    {% endif %}</inventory>
     {% endif %}
     <needBars>
       {% for bar in currentPlayer.needBars %}
@@ -397,18 +433,26 @@ The below context is an account of the current game state, including the setting
         {% endfor %}
       </importantMemories>
       {% if not omitInventoryItems %}
-      <inventory>
+      <inventory>{% if useShortDescriptions -%}
+{%- for item in member.inventory -%}
+{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
         {% for item in member.inventory %}<item>
           <name>{{ item.name }}</name>
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
-      {% endfor %}</inventory>
+      {% endfor %}{% endif %}</inventory>
       {% endif %}
       <skills>
         {% for skill in member.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
       {% if not omitAbilities %}
-      <abilities>
+      <abilities>{% if useShortDescriptions -%}
+{%- for ability in member.abilities -%}
+{{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
+{%- endfor -%}
+{%- else %}
         {% for ability in member.abilities %}
         <ability>
           <name>{{ ability.name }}</name>
@@ -417,7 +461,7 @@ The below context is an account of the current game state, including the setting
           <level>{{ ability.level }}</level>
         </ability>
         {% endfor %}
-      </abilities>
+      {% endif %}</abilities>
       {% endif %}
       <statusEffects>
         {% for effect in member.statusEffects %}

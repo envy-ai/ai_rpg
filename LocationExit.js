@@ -98,7 +98,38 @@ class LocationExit {
     if (this.#destinationRegion) {
       return this.#destinationRegion;
     }
-    console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination}`);
+    const destinationName = location?.name || 'unknown';
+    let originName = 'unknown';
+    let originId = null;
+    try {
+      const locations = typeof Location.getAll === 'function'
+        ? Location.getAll()
+        : Array.from(Location.indexById.values());
+      for (const loc of locations) {
+        if (!loc || typeof loc.getAvailableDirections !== 'function' || typeof loc.getExit !== 'function') {
+          continue;
+        }
+        const directions = loc.getAvailableDirections();
+        for (const dir of directions) {
+          const exit = loc.getExit(dir);
+          if (!exit) {
+            continue;
+          }
+          if (exit === this || exit.destination === this.#destination) {
+            originName = loc.name || 'unknown';
+            originId = loc.id || null;
+            break;
+          }
+        }
+        if (originId) {
+          break;
+        }
+      }
+    } catch (error) {
+      console.warn(`Warning: Failed to resolve origin location for exit ${this.#id}: ${error.message}`);
+    }
+    const originLabel = originId ? `${originName} (${originId})` : originName;
+    console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination} (${destinationName}); origin: ${originLabel}`);
     console.trace();
     return null;
   }

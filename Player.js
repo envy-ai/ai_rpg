@@ -4147,6 +4147,33 @@ class Player {
         return null;
     }
 
+    #preserveHealthRatioAfterGearChange({ previousHealth, previousMaxHealth, suppressTimestamp = false } = {}) {
+        if (!Number.isFinite(previousHealth) || previousHealth < 0) {
+            throw new Error('Cannot preserve health ratio: current health is invalid.');
+        }
+        if (!Number.isFinite(previousMaxHealth) || previousMaxHealth <= 0) {
+            throw new Error('Cannot preserve health ratio: current max health is invalid.');
+        }
+        const nextMaxHealth = Number(this.maxHealth);
+        if (!Number.isFinite(nextMaxHealth) || nextMaxHealth <= 0) {
+            throw new Error('Cannot preserve health ratio: new max health is invalid.');
+        }
+
+        const ratio = previousHealth / previousMaxHealth;
+        const nextHealthRaw = Math.floor(ratio * nextMaxHealth);
+        const nextHealth = Math.max(1, Math.min(nextMaxHealth, nextHealthRaw));
+
+        if (!Number.isFinite(nextHealth)) {
+            throw new Error('Cannot preserve health ratio: computed health is invalid.');
+        }
+
+        if (suppressTimestamp) {
+            this.#health = nextHealth;
+            return;
+        }
+        this.setHealth(nextHealth);
+    }
+
     equipItem(thingLike, { suppressTimestamp = false } = {}) {
         const item = this.#resolveThing(thingLike);
         if (!item) {
@@ -4208,12 +4235,21 @@ class Player {
             return `Invalid slot name: ${slotName} (resolved to '${resolvedSlotName}')`;
         }
 
+        const previousHealth = this.#health;
+        const previousMaxHealth = this.maxHealth;
+
         slotData.itemId = item.id;
         this.#gearSlots.set(resolvedSlotName, slotData);
 
         //console.log(`Equipping item ${item.id} in slot ${resolvedSlotName}`);
 
         //console.log(this.#gearSlots)
+
+        this.#preserveHealthRatioAfterGearChange({
+            previousHealth,
+            previousMaxHealth,
+            suppressTimestamp
+        });
 
         if (!suppressTimestamp) {
             this.#lastUpdated = new Date().toISOString();
@@ -4231,12 +4267,23 @@ class Player {
             return false;
         }
 
+        const previousHealth = this.#health;
+        const previousMaxHealth = this.maxHealth;
+
         let changed = false;
         for (const slotData of this.#gearSlots.values()) {
             if (slotData?.itemId === trimmed) {
                 slotData.itemId = null;
                 changed = true;
             }
+        }
+
+        if (changed) {
+            this.#preserveHealthRatioAfterGearChange({
+                previousHealth,
+                previousMaxHealth,
+                suppressTimestamp
+            });
         }
 
         if (changed && !suppressTimestamp) {
@@ -4256,8 +4303,17 @@ class Player {
             return false;
         }
 
+        const previousHealth = this.#health;
+        const previousMaxHealth = this.maxHealth;
+
         slotData.itemId = null;
         this.#gearSlots.set(resolvedSlotName, slotData);
+
+        this.#preserveHealthRatioAfterGearChange({
+            previousHealth,
+            previousMaxHealth,
+            suppressTimestamp
+        });
 
         if (!suppressTimestamp) {
             this.#lastUpdated = new Date().toISOString();
