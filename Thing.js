@@ -35,6 +35,7 @@ class Thing {
   #relativeLevel;
   #flags = new SanitizedStringSet();
   #isEnrichingStatusEffects = false;
+  #shortDescription;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -525,6 +526,7 @@ class Thing {
   constructor({
     name,
     description,
+    shortDescription = null,
     thingType,
     id = null,
     imageId = null,
@@ -562,6 +564,10 @@ class Thing {
       throw new Error(`Thing type must be one of: ${Thing.#validTypes.join(', ')}`);
     }
 
+    if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
+      throw new Error('Thing shortDescription must be a string or null');
+    }
+
     // Initialize private fields
     this.#id = id || Thing.#generateId();
     this.#name = Utils.capitalizeProperNoun(name.trim());
@@ -571,6 +577,11 @@ class Thing {
     this.#rarity = typeof rarity === 'string' ? rarity.trim() : null;
     this.#itemTypeDetail = typeof itemTypeDetail === 'string' ? itemTypeDetail.trim() : null;
     this.#metadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+    const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
+    const metadataShortDescription = normalizedShortDescription === null && typeof this.#metadata.shortDescription === 'string'
+      ? this.#metadata.shortDescription.trim()
+      : null;
+    this.#shortDescription = normalizedShortDescription ?? metadataShortDescription ?? '';
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
@@ -623,6 +634,10 @@ class Thing {
 
   get description() {
     return this.#description;
+  }
+
+  get shortDescription() {
+    return this.#shortDescription;
   }
 
   get thingType() {
@@ -1084,6 +1099,19 @@ class Thing {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  set shortDescription(newShortDescription) {
+    if (newShortDescription === null || newShortDescription === undefined) {
+      this.#shortDescription = '';
+      this.#lastUpdated = new Date().toISOString();
+      return;
+    }
+    if (typeof newShortDescription !== 'string') {
+      throw new Error('Thing shortDescription must be a string or null');
+    }
+    this.#shortDescription = newShortDescription.trim();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   set thingType(newThingType) {
     if (!newThingType || typeof newThingType !== 'string') {
       throw new Error('Thing type must be a non-empty string');
@@ -1308,6 +1336,7 @@ class Thing {
       id: this.#id,
       name: this.#name,
       description: this.#description,
+      shortDescription: this.#shortDescription || undefined,
       thingType: this.#thingType,
       imageId: this.#imageId,
       createdAt: this.#createdAt,
@@ -1357,6 +1386,7 @@ class Thing {
       id: data.id,
       name: data.name,
       description: data.description,
+      shortDescription: data.shortDescription ?? data.metadata?.shortDescription ?? null,
       thingType: data.thingType,
       imageId: data.imageId,
       rarity: data.rarity,
@@ -1549,6 +1579,9 @@ class Thing {
     const meta = this.#metadata;
 
     this.#slot = this.#sanitizeSlot(meta.slot);
+    if (typeof meta.shortDescription === 'string') {
+      this.#shortDescription = meta.shortDescription.trim();
+    }
 
     const bonuses = this.#normalizeAttributeBonuses(meta.attributeBonuses);
     this.#attributeBonuses = bonuses;

@@ -6445,6 +6445,7 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
                 const thing = new Thing({
                     name: item.name,
                     description: extendedDescription || item.description || 'Inventory item',
+                    shortDescription: item.shortDescription ?? null,
                     thingType: 'item',
                     rarity: item.rarity || null,
                     itemTypeDetail: item.type || null,
@@ -6872,6 +6873,7 @@ async function generateItemsByNames({ itemNames = [], location = null, owner = n
                 const thing = new Thing({
                     name,
                     description: composedDescription,
+                    shortDescription: itemData?.shortDescription ?? null,
                     thingType: itemData?.thingType,
                     rarity: itemData?.rarity,
                     type: itemData?.type,
@@ -7554,6 +7556,834 @@ function renderRegionNpcPrompt(region, options = {}) {
         console.error('Error rendering region NPC template:', error);
         return null;
     }
+}
+
+const SHORT_DESCRIPTION_MAX_ATTEMPTS = 3;
+const DEFAULT_SHORT_DESCRIPTION_BATCH_SIZE = 100;
+
+function resolveShortDescriptionBatchSize() {
+    const configured = Number(config?.short_description?.max_items_per_prompt);
+    if (Number.isFinite(configured) && configured > 0) {
+        return Math.floor(configured);
+    }
+    return DEFAULT_SHORT_DESCRIPTION_BATCH_SIZE;
+}
+
+function splitEvenlyIntoChunks(list, maxSize) {
+    if (!Array.isArray(list) || !list.length) {
+        return [];
+    }
+    const safeMax = Math.max(1, Math.floor(maxSize));
+    if (list.length <= safeMax) {
+        return [list];
+    }
+    const chunkCount = Math.ceil(list.length / safeMax);
+    const chunkSize = Math.ceil(list.length / chunkCount);
+    const chunks = [];
+    for (let i = 0; i < list.length; i += chunkSize) {
+        chunks.push(list.slice(i, i + chunkSize));
+    }
+    return chunks;
+}
+
+function computeConnectedRegionsForRegion(region) {
+    if (!region || typeof region !== 'object') {
+        return [];
+    }
+
+    const regionData = typeof region.toJSON === 'function' ? region.toJSON() : region;
+    const connectedNames = new Set();
+    const collectRegionName = (value) => {
+        if (!value) return;
+        const name = typeof value === 'string'
+            ? value.trim()
+            : (typeof value.name === 'string' ? value.name.trim() : '');
+        if (name) {
+            connectedNames.add(name);
+        }
+    };
+
+    if (Array.isArray(regionData?.connectedRegions)) {
+        for (const entry of regionData.connectedRegions) {
+            collectRegionName(entry);
+        }
+    }
+
+    if (Array.isArray(regionData?.locationIds)) {
+        const Location = require('./Location.js');
+        for (const id of regionData.locationIds) {
+            if (!id) continue;
+            const loc = gameLocations.get(id) || Location.get(id);
+            if (!loc || typeof loc.getAvailableDirections !== 'function' || typeof loc.getExit !== 'function') {
+                continue;
+            }
+            const directions = loc.getAvailableDirections();
+            for (const dir of directions) {
+                const exit = loc.getExit(dir);
+                if (!exit) continue;
+                try {
+                    const destinationRegionId = typeof exit.destinationRegion === 'string'
+                        ? exit.destinationRegion.trim()
+                        : null;
+                    if (destinationRegionId) {
+                        const targetRegion = regions.get(destinationRegionId) || null;
+                        if (targetRegion?.name) {
+                            collectRegionName(targetRegion.name);
+                            continue;
+                        }
+                        const pending = pendingRegionStubs.get(destinationRegionId) || null;
+                        if (pending?.name) {
+                            collectRegionName(pending.name);
+                            continue;
+                        }
+                    }
+                    const exitRegion = exit.region || exit.associatedRegionStub || null;
+                    if (exitRegion && typeof exitRegion.name === 'string' && exitRegion.name.trim()) {
+                        collectRegionName(exitRegion.name);
+                        continue;
+                    }
+                    const destLoc = exit.location;
+                    if (destLoc && typeof destLoc.region === 'object' && destLoc.region?.name) {
+                        collectRegionName(destLoc.region.name);
+                        continue;
+                    }
+                    if (destLoc?.stubMetadata) {
+                        const stubTargetName = destLoc.stubMetadata.targetRegionName
+                            || destLoc.stubMetadata.regionName
+                            || destLoc.stubMetadata.name;
+                        if (stubTargetName) {
+                            collectRegionName(stubTargetName);
+                            continue;
+                        }
+                    }
+                    if (destLoc && typeof destLoc.name === 'string') {
+                        const destRegion = typeof destLoc.region === 'object' ? destLoc.region : null;
+                        if (destRegion && destRegion.name) {
+                            collectRegionName(destRegion.name);
+                        }
+                    }
+                } catch (_) {
+                    // ignore failures to resolve exit/region
+                }
+            }
+        }
+    }
+
+    const currentRegionId = region?.id || regionData?.id || null;
+    if (currentRegionId) {
+        for (const pending of pendingRegionStubs.values()) {
+            if (!pending) continue;
+            const sourceMatches = pending.sourceRegionId === currentRegionId
+                || pending.originRegionId === currentRegionId
+                || pending.parentRegionId === currentRegionId;
+            if (!sourceMatches) {
+                continue;
+            }
+            const pendingName = pending.name
+                || pending.targetRegionName
+                || pending.originalName
+                || pending.description;
+            if (pendingName) {
+                collectRegionName(pendingName);
+            }
+        }
+    }
+
+    return Array.from(connectedNames).map(name => ({ name }));
+}
+
+function sanitizeShortDescriptionXml(xmlContent) {
+    return `<root>${xmlContent}</root>`
+        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+        .replace(/<\s*br\s*>/gi, '<br/>')
+        .replace(/<\s*hr\s*>/gi, '<hr/>');
+}
+
+function parseShortDescriptionResponse({ responseText, itemType, itemTypePlural }) {
+    if (!responseText || typeof responseText !== 'string') {
+        throw new Error('Short description response must be a non-empty string.');
+    }
+
+    const doc = Utils.parseXmlDocument(sanitizeShortDescriptionXml(responseText.trim()), 'text/xml');
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(parserError.textContent || 'Short description XML parsing failed.');
+    }
+
+    if (itemType === 'location') {
+        return parseLocationShortDescriptionResponse(doc);
+    }
+
+    const container = itemTypePlural
+        ? doc.getElementsByTagName(itemTypePlural)[0]
+        : null;
+    const nodes = container
+        ? Array.from(container.getElementsByTagName(itemType))
+        : Array.from(doc.getElementsByTagName(itemType));
+
+    const results = new Map();
+    for (const node of nodes) {
+        if (!node) {
+            continue;
+        }
+        const nameNode = node.getElementsByTagName('name')[0];
+        const shortNode = node.getElementsByTagName('shortDescription')[0];
+        const name = nameNode?.textContent?.trim() || '';
+        const shortDescription = shortNode?.textContent?.trim() || '';
+        if (!name || !shortDescription) {
+            continue;
+        }
+        results.set(name.toLowerCase(), shortDescription);
+    }
+
+    return results;
+}
+
+function parseLocationShortDescriptionResponse(doc) {
+    const results = new Map();
+    if (!doc) {
+        return results;
+    }
+
+    const getDirectChildText = (node, tagName) => {
+        if (!node || !tagName) {
+            return '';
+        }
+        const children = Array.from(node.childNodes || []);
+        for (const child of children) {
+            if (child.nodeType === 1 && child.tagName === tagName) {
+                return child.textContent?.trim() || '';
+            }
+        }
+        return '';
+    };
+
+    const container = doc.getElementsByTagName('regions')[0] || null;
+    const regionNodes = container
+        ? Array.from(container.getElementsByTagName('region'))
+        : Array.from(doc.getElementsByTagName('region'));
+
+    for (const regionNode of regionNodes) {
+        if (!regionNode) {
+            continue;
+        }
+        const regionName = getDirectChildText(regionNode, 'name');
+        if (!regionName) {
+            continue;
+        }
+        const locationsContainer = regionNode.getElementsByTagName('locations')[0] || null;
+        const locationNodes = locationsContainer
+            ? Array.from(locationsContainer.getElementsByTagName('location'))
+            : Array.from(regionNode.getElementsByTagName('location'));
+        for (const locationNode of locationNodes) {
+            if (!locationNode) {
+                continue;
+            }
+            const shortNode = locationNode.getElementsByTagName('shortDescription')[0];
+            if (!shortNode) {
+                continue;
+            }
+            const locationName = getDirectChildText(locationNode, 'name');
+            const shortDescription = shortNode?.textContent?.trim() || '';
+            if (!locationName || !shortDescription) {
+                continue;
+            }
+            const key = `${regionName.toLowerCase()}::${locationName.toLowerCase()}`;
+            results.set(key, shortDescription);
+        }
+    }
+
+    return results;
+}
+
+function resolveShortDescriptionTypeConfig(itemType) {
+    const normalized = typeof itemType === 'string' ? itemType.trim().toLowerCase() : '';
+    if (!normalized) {
+        throw new Error('short description itemType must be provided.');
+    }
+
+    if (normalized === 'ability') {
+        return {
+            itemType: 'ability',
+            itemTypeLabel: 'ability',
+            itemTypePlural: 'abilities',
+            itemTypePluralLabel: 'abilities'
+        };
+    }
+
+    if (normalized === 'location') {
+        return {
+            itemType: 'location',
+            itemTypeLabel: 'location',
+            itemTypePlural: 'locations',
+            itemTypePluralLabel: 'locations'
+        };
+    }
+
+    if (normalized === 'region') {
+        return {
+            itemType: 'region',
+            itemTypeLabel: 'region',
+            itemTypePlural: 'regions',
+            itemTypePluralLabel: 'regions'
+        };
+    }
+
+    if (normalized === 'item' || normalized === 'thing') {
+        return {
+            itemType: 'item',
+            itemTypeLabel: 'item',
+            itemTypePlural: 'items',
+            itemTypePluralLabel: 'items'
+        };
+    }
+
+    throw new Error(`Unsupported short description itemType "${itemType}".`);
+}
+
+async function runShortDescriptionPrompt({
+    itemType,
+    itemTypeLabel,
+    itemTypePlural,
+    itemTypePluralLabel,
+    setting,
+    items,
+    regionContext = null,
+    locationGroups = null
+}) {
+    const hasItems = Array.isArray(items) && items.length > 0;
+    const hasLocationGroups = itemType === 'location'
+        && Array.isArray(locationGroups)
+        && locationGroups.some(group => Array.isArray(group?.locations) && group.locations.length > 0);
+    if (!hasItems && !hasLocationGroups) {
+        return new Map();
+    }
+
+    const templatePayload = {
+        itemType,
+        itemTypeLabel,
+        itemTypePlural,
+        itemTypePluralLabel,
+        setting,
+        regionContext,
+        locationGroups: itemType === 'location' ? (locationGroups || []) : [],
+        items: itemType === 'item' ? items : [],
+        locations: itemType === 'location' ? (items || []) : [],
+        regions: itemType === 'region' ? items : [],
+        abilities: itemType === 'ability' ? items : []
+    };
+
+    const renderedTemplate = promptEnv.render('short-description.xml.njk', templatePayload);
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Short description template missing prompts.');
+    }
+
+    const messages = [
+        { role: 'system', content: parsedTemplate.systemPrompt },
+        { role: 'user', content: parsedTemplate.generationPrompt }
+    ];
+
+    const response = await LLMClient.chatCompletion({
+        messages,
+        metadataLabel: `short_description_${itemType}`
+    });
+
+    if (!response || !response.trim()) {
+        throw new Error('Short description prompt returned an empty response.');
+    }
+
+    LLMClient.logPrompt({
+        prefix: 'short_description',
+        metadataLabel: `short_description_${itemType}`,
+        systemPrompt: parsedTemplate.systemPrompt,
+        generationPrompt: parsedTemplate.generationPrompt,
+        response
+    });
+
+    return parseShortDescriptionResponse({
+        responseText: response,
+        itemType,
+        itemTypePlural
+    });
+}
+
+async function populateShortDescriptions({
+    itemType,
+    items,
+    buildPromptItem,
+    getName,
+    getShortDescription,
+    setShortDescription,
+    setting = null,
+    regionContext = null
+} = {}) {
+    if (!Array.isArray(items)) {
+        throw new Error('Short description helper requires an array of items.');
+    }
+
+    const {
+        itemType: normalizedType,
+        itemTypeLabel,
+        itemTypePlural,
+        itemTypePluralLabel
+    } = resolveShortDescriptionTypeConfig(itemType);
+
+    const resolveName = (item) => {
+        const raw = getName(item);
+        const name = typeof raw === 'string' ? raw.trim() : '';
+        if (!name) {
+            throw new Error(`Short description ${normalizedType} is missing a name.`);
+        }
+        return name;
+    };
+
+    const hasShortDescription = (item) => {
+        const raw = getShortDescription(item);
+        return typeof raw === 'string' && raw.trim().length > 0;
+    };
+
+    const maxBatchSize = resolveShortDescriptionBatchSize();
+    let pending = items.filter(item => !hasShortDescription(item));
+    if (!pending.length) {
+        return { updated: 0, remaining: 0, attempts: 0 };
+    }
+
+    const settingContext = setting || buildSettingContextForNamePrompt();
+
+    let attempts = 0;
+    let updatedCount = 0;
+    for (let attempt = 0; attempt < SHORT_DESCRIPTION_MAX_ATTEMPTS && pending.length; attempt += 1) {
+        attempts += 1;
+        const pendingEntries = pending.map(item => ({
+            item,
+            name: resolveName(item),
+            promptItem: buildPromptItem(item)
+        }));
+
+        const nameBuckets = new Map();
+        pendingEntries.forEach(entry => {
+            const key = entry.name.toLowerCase();
+            if (!nameBuckets.has(key)) {
+                nameBuckets.set(key, []);
+            }
+            nameBuckets.get(key).push(entry.item);
+        });
+
+        const chunks = splitEvenlyIntoChunks(pendingEntries, maxBatchSize);
+        const responses = await Promise.all(chunks.map(chunk => runShortDescriptionPrompt({
+            itemType: normalizedType,
+            itemTypeLabel,
+            itemTypePlural,
+            itemTypePluralLabel,
+            setting: settingContext,
+            items: chunk.map(entry => entry.promptItem),
+            regionContext
+        })));
+
+        let progress = false;
+        for (const responseMap of responses) {
+            for (const [nameKey, shortDescription] of responseMap.entries()) {
+                const bucket = nameBuckets.get(nameKey);
+                if (!bucket || !shortDescription) {
+                    continue;
+                }
+                for (const item of bucket) {
+                    if (hasShortDescription(item)) {
+                        continue;
+                    }
+                    setShortDescription(item, shortDescription);
+                    updatedCount += 1;
+                    progress = true;
+                }
+            }
+        }
+
+        pending = items.filter(item => !hasShortDescription(item));
+        if (!pending.length) {
+            break;
+        }
+        if (!progress) {
+            console.warn(`Short description pass ${attempts} for ${normalizedType}s made no progress.`);
+        }
+    }
+
+    if (pending.length) {
+        const missingNames = pending.map(item => getName(item)).filter(Boolean);
+        console.warn(`Short description generation finished with missing ${normalizedType}s: ${missingNames.join(', ') || 'unknown'}`);
+    }
+
+    return { updated: updatedCount, remaining: pending.length, attempts };
+}
+
+function buildThingShortDescriptionItem(thing) {
+    if (!thing || typeof thing !== 'object') {
+        throw new Error('Thing short description requires a valid thing object.');
+    }
+    const name = typeof thing.name === 'string' ? thing.name.trim() : '';
+    if (!name) {
+        throw new Error('Thing short description requires a name.');
+    }
+    const metadata = typeof thing.metadata === 'object' && thing.metadata ? thing.metadata : {};
+    const statusEffects = typeof thing.getStatusEffects === 'function'
+        ? thing.getStatusEffects()
+        : (Array.isArray(thing.statusEffects) ? thing.statusEffects : []);
+    return {
+        name,
+        description: typeof thing.description === 'string' ? thing.description.trim() : '',
+        isScenery: Boolean(thing.isScenery || (thing.thingType === 'scenery')),
+        isVehicle: Boolean(thing.isVehicle),
+        rarity: typeof thing.rarity === 'string' && thing.rarity.trim() ? thing.rarity.trim() : (metadata.rarity || 'common'),
+        value: metadata.value ?? 0,
+        statusEffects: Array.isArray(statusEffects) ? statusEffects : [],
+        weight: metadata.weight ?? 0,
+        properties: metadata.properties ?? '',
+        shortDescription: typeof thing.shortDescription === 'string' ? thing.shortDescription : ''
+    };
+}
+
+function buildLocationShortDescriptionItem(location) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('Location short description requires a valid location object.');
+    }
+    const name = typeof location.name === 'string' ? location.name.trim() : '';
+    if (!name) {
+        throw new Error('Location short description requires a name.');
+    }
+    const statusEffects = typeof location.getStatusEffects === 'function'
+        ? location.getStatusEffects()
+        : (Array.isArray(location.statusEffects) ? location.statusEffects : []);
+    const exits = [];
+    if (location.exits instanceof Map) {
+        for (const entry of location.exits.values()) {
+            if (!entry) continue;
+            exits.push({
+                name: entry.name || entry.destination || entry.description || '',
+                isVehicle: Boolean(entry.isVehicle),
+                vehicleType: entry.vehicleType || ''
+            });
+        }
+    } else if (Array.isArray(location.exits)) {
+        location.exits.forEach(exit => {
+            if (!exit) return;
+            exits.push({
+                name: exit.name || exit.destination || exit.description || '',
+                isVehicle: Boolean(exit.isVehicle),
+                vehicleType: exit.vehicleType || ''
+            });
+        });
+    }
+
+    return {
+        name,
+        description: typeof location.description === 'string' ? location.description.trim() : '',
+        statusEffects: Array.isArray(statusEffects) ? statusEffects : [],
+        exits,
+        shortDescription: typeof location.shortDescription === 'string' ? location.shortDescription : ''
+    };
+}
+
+function resolveRegionForLocationShortDescription(location) {
+    if (!location || typeof location !== 'object') {
+        return null;
+    }
+
+    if (typeof location.region === 'object' && location.region) {
+        return location.region;
+    }
+
+    const regionId = typeof location.regionId === 'string' ? location.regionId.trim() : '';
+    if (regionId && regions.has(regionId)) {
+        return regions.get(regionId);
+    }
+
+    const regionKey = typeof location.region === 'string' ? location.region.trim() : '';
+    if (regionKey && regions.has(regionKey)) {
+        return regions.get(regionKey);
+    }
+
+    return null;
+}
+
+function buildRegionShortDescriptionItem(region) {
+    if (!region || typeof region !== 'object') {
+        throw new Error('Region short description requires a valid region object.');
+    }
+    const name = typeof region.name === 'string' ? region.name.trim() : '';
+    if (!name) {
+        throw new Error('Region short description requires a name.');
+    }
+
+    const secrets = Array.isArray(region.secrets) ? region.secrets : [];
+    const locations = [];
+    if (Array.isArray(region.locations)) {
+        region.locations.forEach(loc => {
+            const locName = typeof loc === 'string' ? loc.trim() : (typeof loc?.name === 'string' ? loc.name.trim() : '');
+            if (locName) {
+                locations.push({ name: locName });
+            }
+        });
+    } else if (Array.isArray(region.locationBlueprints)) {
+        region.locationBlueprints.forEach(loc => {
+            const locName = typeof loc?.name === 'string' ? loc.name.trim() : '';
+            if (locName) {
+                locations.push({ name: locName });
+            }
+        });
+    } else if (Array.isArray(region.locationIds)) {
+        region.locationIds.forEach(id => {
+            const locationObj = gameLocations.get(id) || null;
+            const locName = locationObj?.name || id;
+            if (locName) {
+                locations.push({ name: locName });
+            }
+        });
+    }
+
+    const connectedRegions = computeConnectedRegionsForRegion(region);
+
+    return {
+        name,
+        description: typeof region.description === 'string' ? region.description.trim() : '',
+        secrets,
+        locations,
+        connectedRegions,
+        shortDescription: typeof region.shortDescription === 'string' ? region.shortDescription : ''
+    };
+}
+
+function buildAbilityShortDescriptionItem(ability) {
+    if (!ability || typeof ability !== 'object') {
+        throw new Error('Ability short description requires a valid ability object.');
+    }
+    const name = typeof ability.name === 'string' ? ability.name.trim() : '';
+    if (!name) {
+        throw new Error('Ability short description requires a name.');
+    }
+    return {
+        name,
+        description: typeof ability.description === 'string' ? ability.description.trim() : '',
+        type: typeof ability.type === 'string' ? ability.type.trim() : '',
+        level: Number.isFinite(Number(ability.level)) ? Math.max(1, Math.round(Number(ability.level))) : 1,
+        shortDescription: typeof ability.shortDescription === 'string' ? ability.shortDescription : ''
+    };
+}
+
+async function ensureThingShortDescriptions(things, options = {}) {
+    return populateShortDescriptions({
+        itemType: 'item',
+        items: things,
+        setting: options.setting,
+        buildPromptItem: buildThingShortDescriptionItem,
+        getName: thing => thing?.name,
+        getShortDescription: thing => thing?.shortDescription,
+        setShortDescription: (thing, shortDescription) => {
+            thing.shortDescription = shortDescription;
+        }
+    });
+}
+
+async function ensureLocationShortDescriptions(locations, options = {}) {
+    if (!Array.isArray(locations)) {
+        throw new Error('Location short description helper requires an array of locations.');
+    }
+
+    const {
+        itemType: normalizedType,
+        itemTypeLabel,
+        itemTypePlural,
+        itemTypePluralLabel
+    } = resolveShortDescriptionTypeConfig('location');
+
+    const resolveName = (location) => {
+        const raw = location?.name;
+        const name = typeof raw === 'string' ? raw.trim() : '';
+        if (!name) {
+            throw new Error('Location short description requires a name.');
+        }
+        return name;
+    };
+
+    const isMissingShortDescription = (location) => {
+        const raw = location?.shortDescription;
+        return !raw || !String(raw).trim();
+    };
+
+    const maxBatchSize = resolveShortDescriptionBatchSize();
+    const settingContext = options.setting || buildSettingContextForNamePrompt();
+    const regionContextCache = new Map();
+
+    let pending = locations.filter(isMissingShortDescription);
+    if (!pending.length) {
+        return { updated: 0, remaining: 0, attempts: 0 };
+    }
+
+    let attempts = 0;
+    let updatedCount = 0;
+
+    const buildLocationBundles = (entries) => {
+        const regionGroups = new Map();
+        for (const entry of entries) {
+            const key = entry.regionKey;
+            if (!regionGroups.has(key)) {
+                regionGroups.set(key, {
+                    regionName: entry.regionName,
+                    regionContext: entry.regionContext,
+                    entries: []
+                });
+            }
+            regionGroups.get(key).entries.push(entry);
+        }
+
+        const groups = Array.from(regionGroups.values());
+        const bundles = [];
+        let current = { groups: [], totalLocations: 0 };
+
+        for (const group of groups) {
+            const count = group.entries.length;
+            if (!count) {
+                continue;
+            }
+            if (count > maxBatchSize) {
+                if (current.groups.length) {
+                    bundles.push(current);
+                    current = { groups: [], totalLocations: 0 };
+                }
+                const chunks = splitEvenlyIntoChunks(group.entries, maxBatchSize);
+                for (const chunk of chunks) {
+                    bundles.push({
+                        groups: [{
+                            regionName: group.regionName,
+                            regionContext: group.regionContext,
+                            entries: chunk
+                        }],
+                        totalLocations: chunk.length
+                    });
+                }
+                continue;
+            }
+            if (current.totalLocations + count > maxBatchSize && current.groups.length) {
+                bundles.push(current);
+                current = { groups: [], totalLocations: 0 };
+            }
+            current.groups.push(group);
+            current.totalLocations += count;
+        }
+
+        if (current.groups.length) {
+            bundles.push(current);
+        }
+        return bundles;
+    };
+
+    for (let attempt = 0; attempt < SHORT_DESCRIPTION_MAX_ATTEMPTS && pending.length; attempt += 1) {
+        attempts += 1;
+        const entries = pending.map(location => {
+            const name = resolveName(location);
+            const region = resolveRegionForLocationShortDescription(location);
+            const regionName = (region?.name && String(region.name).trim()) ? String(region.name).trim() : 'Unknown Region';
+            const regionKey = regionName.toLowerCase();
+            let regionContext = null;
+            if (region) {
+                if (!regionContextCache.has(regionKey)) {
+                    regionContextCache.set(regionKey, buildRegionShortDescriptionItem(region));
+                }
+                regionContext = regionContextCache.get(regionKey);
+            }
+            return {
+                item: location,
+                name,
+                regionName,
+                regionKey,
+                regionContext,
+                key: `${regionKey}::${name.toLowerCase()}`,
+                promptItem: buildLocationShortDescriptionItem(location)
+            };
+        });
+
+        const keyBuckets = new Map();
+        for (const entry of entries) {
+            if (!keyBuckets.has(entry.key)) {
+                keyBuckets.set(entry.key, []);
+            }
+            keyBuckets.get(entry.key).push(entry.item);
+        }
+
+        const bundles = buildLocationBundles(entries);
+        const responses = await Promise.all(bundles.map(bundle => runShortDescriptionPrompt({
+            itemType: normalizedType,
+            itemTypeLabel,
+            itemTypePlural,
+            itemTypePluralLabel,
+            setting: settingContext,
+            locationGroups: bundle.groups.map(group => ({
+                regionName: group.regionName,
+                regionContext: group.regionContext,
+                locations: group.entries.map(entry => entry.promptItem)
+            }))
+        })));
+
+        let progress = false;
+        for (const responseMap of responses) {
+            for (const [key, shortDescription] of responseMap.entries()) {
+                const bucket = keyBuckets.get(key);
+                if (!bucket || !shortDescription) {
+                    continue;
+                }
+                for (const location of bucket) {
+                    if (!isMissingShortDescription(location)) {
+                        continue;
+                    }
+                    location.shortDescription = shortDescription;
+                    updatedCount += 1;
+                    progress = true;
+                }
+            }
+        }
+
+        pending = locations.filter(isMissingShortDescription);
+        if (!pending.length) {
+            break;
+        }
+        if (!progress) {
+            console.warn(`Short description pass ${attempts} for locations made no progress.`);
+        }
+    }
+
+    if (pending.length) {
+        const missingNames = pending.map(location => location?.name).filter(Boolean);
+        console.warn(`Short description generation finished with missing locations: ${missingNames.join(', ') || 'unknown'}`);
+    }
+
+    return { updated: updatedCount, remaining: pending.length, attempts };
+}
+
+async function ensureRegionShortDescriptions(regionsToProcess, options = {}) {
+    return populateShortDescriptions({
+        itemType: 'region',
+        items: regionsToProcess,
+        setting: options.setting,
+        buildPromptItem: buildRegionShortDescriptionItem,
+        getName: region => region?.name,
+        getShortDescription: region => region?.shortDescription,
+        setShortDescription: (region, shortDescription) => {
+            region.shortDescription = shortDescription;
+        }
+    });
+}
+
+async function ensureAbilityShortDescriptions(abilities, options = {}) {
+    return populateShortDescriptions({
+        itemType: 'ability',
+        items: abilities,
+        setting: options.setting,
+        buildPromptItem: buildAbilityShortDescriptionItem,
+        getName: ability => ability?.name,
+        getShortDescription: ability => ability?.shortDescription,
+        setShortDescription: (ability, shortDescription) => {
+            ability.shortDescription = shortDescription;
+        }
+    });
 }
 
 function normalizeNpcPromptSeed(seed = {}) {
@@ -9093,6 +9923,7 @@ function parseNpcAbilityAssignments(xmlContent) {
             for (const abilityNode of abilityNodes) {
                 const abilityNameNode = abilityNode.getElementsByTagName('name')[0];
                 const descriptionNode = abilityNode.getElementsByTagName('description')[0];
+                const shortDescriptionNode = abilityNode.getElementsByTagName('shortDescription')[0];
                 const typeNode = abilityNode.getElementsByTagName('type')[0];
                 const levelNode = abilityNode.getElementsByTagName('level')[0];
 
@@ -9102,6 +9933,7 @@ function parseNpcAbilityAssignments(xmlContent) {
                 }
 
                 const description = descriptionNode ? descriptionNode.textContent.trim() : '';
+                const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
                 const rawType = typeNode ? typeNode.textContent.trim() : '';
                 const loweredType = rawType.toLowerCase();
                 const normalizedType = loweredType === 'active' || loweredType === 'passive' || loweredType === 'triggered'
@@ -9114,6 +9946,7 @@ function parseNpcAbilityAssignments(xmlContent) {
                 abilities.push({
                     name: abilityName,
                     description,
+                    shortDescription,
                     type: normalizedType,
                     level
                 });
@@ -11315,9 +12148,12 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                 return text === 'true';
             };
             //console.log('Creating entry for item:', nameNode.textContent.trim());
+            const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+
             const entry = {
                 name: nameNode.textContent.trim(),
                 description: node.getElementsByTagName('description')[0]?.textContent?.trim() || '',
+                shortDescription,
                 itemOrScenery: resolvedKind,
                 thingType: resolvedKind,
                 type: node.getElementsByTagName('type')[0]?.textContent?.trim()
@@ -11567,6 +12403,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         const thing = new Thing({
             name: itemData.name,
             description: itemData.description || 'An unspecified object.',
+            shortDescription: itemData.shortDescription ?? null,
             thingType,
             rarity: itemData.rarity || null,
             itemTypeDetail: itemData.type || null,
@@ -12125,6 +12962,10 @@ async function ensureThingNamesAllowed({
 }
 
 Globals.ensureThingNamesAllowed = ensureThingNamesAllowed;
+Globals.ensureThingShortDescriptions = ensureThingShortDescriptions;
+Globals.ensureLocationShortDescriptions = ensureLocationShortDescriptions;
+Globals.ensureRegionShortDescriptions = ensureRegionShortDescriptions;
+Globals.ensureAbilityShortDescriptions = ensureAbilityShortDescriptions;
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
     if (!Array.isArray(candidateThings) || !candidateThings.length) {

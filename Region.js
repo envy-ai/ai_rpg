@@ -13,6 +13,7 @@ class Region {
   #id;
   #name;
   #description;
+  #shortDescription;
   #locationBlueprints;
   #locationIds;
   #entranceLocationId;
@@ -37,7 +38,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null } = {}) {
+  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -46,9 +47,15 @@ class Region {
       throw new Error('Region description is required and must be a string');
     }
 
+    if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
+      throw new Error('Region shortDescription must be a string or null');
+    }
+
     this.#id = id || Region.#generateId();
     this.#name = name.trim();
     this.#description = description.trim();
+    const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
+    this.#shortDescription = normalizedShortDescription || null;
     this.#locationBlueprints = Array.isArray(locations)
       ? locations.map(bp => Region.#normalizeBlueprint(bp))
       : [];
@@ -198,6 +205,7 @@ class Region {
       id: data.id,
       name: data.name,
       description: data.description,
+      shortDescription: data.shortDescription ?? null,
       locations: data.locationBlueprints || [],
       locationIds: data.locationIds || [],
       entranceLocationId: data.entranceLocationId || null,
@@ -235,6 +243,7 @@ class Region {
 
     let regionName = null;
     let regionDescription = null;
+    let regionShortDescription = null;
     let regionLevel = null;
     let numImportantNPCs = null;
     const characterConcepts = [];
@@ -250,6 +259,11 @@ class Region {
         regionName = child.textContent.trim();
       } else if (!regionDescription && (tag === 'regiondescription' || tag === 'description')) {
         regionDescription = child.textContent.trim();
+      } else if (!regionShortDescription && tag === 'shortdescription') {
+        const value = child.textContent?.trim();
+        if (value) {
+          regionShortDescription = value;
+        }
       } else if (!regionLevel && tag === 'relativelevel') {
         const parsedLevel = Number(child.textContent.trim());
         if (Number.isFinite(parsedLevel)) {
@@ -407,6 +421,7 @@ class Region {
     return new Region({
       name: regionName,
       description: regionDescription,
+      shortDescription: regionShortDescription,
       locations: locationBlueprints,
       averageLevel: regionLevel,
       randomEvents,
@@ -552,6 +567,10 @@ class Region {
     return this.#description;
   }
 
+  get shortDescription() {
+    return this.#shortDescription;
+  }
+
   set description(value) {
     if (value === undefined || value === null) {
       throw new Error('Region description must be provided');
@@ -561,6 +580,20 @@ class Region {
     }
     const trimmed = value.trim();
     this.#description = trimmed;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set shortDescription(value) {
+    if (value === null || value === undefined) {
+      this.#shortDescription = null;
+      this.#lastUpdated = new Date().toISOString();
+      return;
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Region shortDescription must be a string or null');
+    }
+    const trimmed = value.trim();
+    this.#shortDescription = trimmed || null;
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -696,6 +729,7 @@ class Region {
       id: this.#id,
       name: this.#name,
       description: this.#description,
+      shortDescription: this.#shortDescription,
       locationBlueprints: this.locationBlueprints,
       locationIds: this.locationIds,
       entranceLocationId: this.#entranceLocationId,

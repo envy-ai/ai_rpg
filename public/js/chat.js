@@ -1421,10 +1421,11 @@ class AIRPGChat {
         if (!saveName) {
             throw new Error('Autosave name is required.');
         }
+        const clientId = this.clientId || window.AIRPG_CLIENT_ID || null;
         const response = await fetch('/api/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ saveName, saveType: 'autosaves' })
+            body: JSON.stringify({ saveName, saveType: 'autosaves', clientId })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data?.success) {

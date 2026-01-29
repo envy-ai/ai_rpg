@@ -7,6 +7,7 @@
   <numItems>{{ alteredLocation.numItems | default('unknown') }}</numItems>
   <numScenery>{{ alteredLocation.numScenery | default('unknown') }}</numScenery>
   <numHostiles>{{ alteredLocation.numHostiles | default('unknown') }}</numHostiles>
+  <shortDescription>{{ alteredLocation.shortDescription | default('unknown') }}</shortDescription>
   <statusEffects>
   {% if alteredLocation.statusEffects %}
     {% for effect in alteredLocation.statusEffects %}
@@ -16,7 +17,7 @@
     </effect>
     {% endfor %}
   {% endif %}
-  </statusEffects>
+  </statusEffects>    
 </existingLocation>
 
 A location (see existingLocation above) was permanently altered in the following way(s):
@@ -36,4 +37,5 @@ Return the location in the following format:
   <name>{% if locationSeed.name %}{{ locationSeed.name }}{% else %}[Location Name]{% endif %}</name>
   <description>{% if locationSeed.description %}{{ locationSeed.description }}{% else %}[1-2 paragraph description capturing the new state]{% endif %}</description>
   <baseLevel>{% if locationSeed.baseLevel is defined %}{{ locationSeed.baseLevel }}{% else %}[Integer 1-20 reflecting absolute difficulty]{% endif %}</baseLevel>
+  <shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the location across clearly and concisely. Alter it from the original if necessary. Don't mention the location by name.--></shortDescription>
 </location>

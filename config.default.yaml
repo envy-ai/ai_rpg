@@ -8,6 +8,11 @@ server:
 
 max_memories_to_recall: 10
 
+# Short description generation
+short_description:
+  # Max items to include per short-description prompt
+  max_items_per_prompt: 80
+
 # OpenAI-compatible API configuration
 ai:
   # API endpoint URL (examples):

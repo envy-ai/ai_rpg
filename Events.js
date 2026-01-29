@@ -6052,11 +6052,13 @@ class Events {
             const name = getText("name");
             const description = getText("description");
             const baseLevelRaw = getText("baseLevel");
+            const shortDescription = getText("shortDescription");
             const baseLevel = Number(baseLevelRaw);
 
             return {
                 name: name || null,
                 description: description || "",
+                shortDescription: shortDescription || "",
                 baseLevel: Number.isFinite(baseLevel) ? baseLevel : null,
             };
         } catch (error) {
@@ -6077,6 +6079,7 @@ class Events {
 
         const originalName = location.name || location.id;
         const originalDescription = location.description || "";
+        const originalShortDescription = location.shortDescription || "";
         const originalBaseLevel = Number.isFinite(location.baseLevel)
             ? location.baseLevel
             : null;
@@ -6107,6 +6110,13 @@ class Events {
             }
         }
 
+        const trimmedShortDescription =
+            parsedLocation.shortDescription && parsedLocation.shortDescription.trim();
+        if (trimmedShortDescription && trimmedShortDescription !== location.shortDescription) {
+            location.shortDescription = trimmedShortDescription;
+            changed = true;
+        }
+
         if (typeof location.addStatusEffect === "function" && changeDescription) {
             location.addStatusEffect(makeStatusEffect(changeDescription, null));
         }
@@ -6124,6 +6134,8 @@ class Events {
             changeDescription: changeDescription || "",
             descriptionBefore: originalDescription,
             descriptionAfter: location.description,
+            shortDescriptionBefore: originalShortDescription,
+            shortDescriptionAfter: location.shortDescription,
             changed,
         };
     }

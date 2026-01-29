@@ -2871,6 +2871,7 @@ class Player {
             }
 
             const description = typeof abilityObj.description === 'string' ? abilityObj.description.trim() : '';
+            const shortDescription = typeof abilityObj.shortDescription === 'string' ? abilityObj.shortDescription.trim() : '';
 
             let type = typeof abilityObj.type === 'string' ? abilityObj.type.trim() : '';
             const lowered = type.toLowerCase();
@@ -2886,6 +2887,7 @@ class Player {
             normalized.push({
                 name,
                 description,
+                shortDescription,
                 type,
                 level
             });

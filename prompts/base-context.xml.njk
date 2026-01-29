@@ -26,9 +26,15 @@ The below context is an account of the current game state, including the setting
     <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
     <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
     <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
-    <races>{{ (setting.races or []) | join(', ') }}</races>
-    <attributes>{{ setting.attributes | join(', ') }}</attributes>
-    <skills>{{ setting.skills | join(', ') }}</skills>
+    <races>
+{{ (setting.races or []) | join("\n") }}
+</races>
+    <attributes>
+{{ setting.attributes | join("\n") }}
+</attributes>
+    <skills>
+{{ setting.skills | join("\n") }}
+</skills>
   </setting>
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}

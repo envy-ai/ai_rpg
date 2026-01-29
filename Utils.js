@@ -606,6 +606,7 @@ class Utils {
       }
       const location = new Location({
         description: locationData.description ?? null,
+        shortDescription: locationData.shortDescription ?? null,
         baseLevel: locationData.baseLevel ?? null,
         id: locationData.id,
         regionId: locationData.regionId ?? null,

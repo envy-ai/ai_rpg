@@ -905,13 +905,15 @@ GET  /player-stats           - Player stats configuration page</pre>
             window.loadSave = async function(saveName) {
                 try {
                     showStatus(`Loading save: ${saveName}...`, 'info');
+                    const clientId = window.AIRPG_CLIENT_ID
+                        || (window.localStorage ? window.localStorage.getItem('airpg:clientId') : null);
                     
                     const response = await fetch('/api/load', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ saveName: saveName })
+                        body: JSON.stringify({ saveName: saveName, clientId })
                     });
                     
                     const result = await response.json();

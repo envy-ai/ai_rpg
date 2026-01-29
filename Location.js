@@ -16,6 +16,7 @@ class Location {
   #id;
   #name;
   #description;
+  #shortDescription;
   #baseLevel;
   #exits;
   #visited;
@@ -53,7 +54,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -70,6 +71,10 @@ class Location {
       throw new Error('Location initialized without regionId');
     }
 
+    if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
+      throw new Error('Location shortDescription must be a string or null');
+    }
+
     // Verify region exists
     if (checkRegionId) {
       const region = Region.get(regionId);
@@ -82,6 +87,8 @@ class Location {
     // Initialize private fields
     this.#id = id || Location.#generateId();
     this.#description = description && typeof description === 'string' ? description.trim() : null;
+    const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
+    this.#shortDescription = normalizedShortDescription || null;
     this.#name = name && typeof name === 'string' ? name.trim() : null;
     this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
@@ -188,6 +195,11 @@ class Location {
     const randomEvents = Location.#normalizeRandomEvents(extractedRandomEvents);
     const randomEventsProvided = Boolean(randomEventsNode);
 
+    const parsedShortDescription = typeof locationData.shortDescription === 'string'
+      ? locationData.shortDescription.trim()
+      : '';
+    const hasShortDescription = Boolean(parsedShortDescription);
+
     if (existingLocation) {
       if (!locationData.description || typeof locationData.description !== 'string') {
         console.log('Stub expansion missing description in AI response');
@@ -251,6 +263,7 @@ class Location {
 
       const promotionData = {
         description: locationData.description,
+        shortDescription: hasShortDescription ? parsedShortDescription : undefined,
         baseLevel: parsedBaseLevel,
         generationHints: {
           numItems: resolveHint(locationData.numItems, existingHints.numItems, stubHints.numItems),
@@ -274,6 +287,9 @@ class Location {
           existingLocation.name = promotionData.name;
         }
         existingLocation.description = promotionData.description;
+        if (hasShortDescription) {
+          existingLocation.shortDescription = parsedShortDescription;
+        }
         existingLocation.baseLevel = promotionData.baseLevel;
       }
 
@@ -313,6 +329,7 @@ class Location {
 
     return new Location({
       description: locationData.description,
+      shortDescription: hasShortDescription ? parsedShortDescription : null,
       baseLevel,
       name: locationData.name,
       regionId: regionId,
@@ -440,6 +457,10 @@ class Location {
     return this.#description;
   }
 
+  get shortDescription() {
+    return this.#shortDescription;
+  }
+
   get baseLevel() {
     return this.#baseLevel;
   }
@@ -490,6 +511,20 @@ class Location {
     this.#lastUpdated = new Date();
   }
 
+  set shortDescription(newShortDescription) {
+    if (newShortDescription === null || newShortDescription === undefined) {
+      this.#shortDescription = null;
+      this.#lastUpdated = new Date();
+      return;
+    }
+    if (typeof newShortDescription !== 'string') {
+      throw new Error('Location shortDescription must be a string or null');
+    }
+    const trimmed = newShortDescription.trim();
+    this.#shortDescription = trimmed || null;
+    this.#lastUpdated = new Date();
+  }
+
   set imageId(newImageId) {
     if (newImageId !== null && typeof newImageId !== 'string') {
       throw new Error('Image ID must be a string or null');
@@ -532,7 +567,7 @@ class Location {
     this.#hasGeneratedStubs = Boolean(value);
   }
 
-  promoteFromStub({ name, description, baseLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
+  promoteFromStub({ name, description, shortDescription, baseLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
     if (!description || typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
@@ -546,6 +581,9 @@ class Location {
     }
 
     this.description = description;
+    if (typeof shortDescription === 'string' && shortDescription.trim()) {
+      this.shortDescription = shortDescription.trim();
+    }
     this.baseLevel = baseLevel;
     if (imageId !== undefined) {
       this.imageId = imageId;
@@ -670,6 +708,7 @@ class Location {
       id: this.#id,
       name: this.#name,
       description: this.#description,
+      shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       visited: this.#visited,
       imageId: this.#imageId,
@@ -715,6 +754,7 @@ class Location {
       id: this.#id,
       name: this.#name,
       description: this.#description,
+      shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
       visited: this.#visited,

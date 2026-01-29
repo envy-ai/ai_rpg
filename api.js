@@ -539,9 +539,13 @@ module.exports = function registerApiRoutes(scope) {
                 return nodes.map(node => {
                     const name = node.getAttribute('name') || node.getElementsByTagName('name')[0]?.textContent || null;
                     const effect = node.getAttribute('effect') || node.getElementsByTagName('effect')[0]?.textContent || null;
+                    const shortDescription = node.getAttribute('shortDescription')
+                        || node.getElementsByTagName('shortDescription')[0]?.textContent
+                        || null;
                     return {
                         name: name ? name.trim() : null,
-                        effect: effect ? effect.trim() : ''
+                        effect: effect ? effect.trim() : '',
+                        shortDescription: shortDescription ? shortDescription.trim() : ''
                     };
                 }).filter(entry => entry.name);
             } catch (error) {
@@ -14326,6 +14330,7 @@ module.exports = function registerApiRoutes(scope) {
                     return new Thing({
                         name: itemBlueprint.name || defaultName,
                         description: itemBlueprint.description || defaultDescription || `An item crafted at ${stationName}.`,
+                        shortDescription: itemBlueprint.shortDescription ?? null,
                         thingType,
                         rarity: itemBlueprint.rarity || null,
                         itemTypeDetail: itemBlueprint.type || null,
@@ -15199,6 +15204,7 @@ module.exports = function registerApiRoutes(scope) {
                 const {
                     name,
                     description,
+                    shortDescription,
                     thingType,
                     imageId,
                     rarity,
@@ -15213,11 +15219,13 @@ module.exports = function registerApiRoutes(scope) {
                     relativeLevel,
                     statusEffects
                 } = req.body || {};
+                const normalizedShortDescription = shortDescription ?? null;
                 const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
 
                 const thing = new Thing({
                     name,
                     description,
+                    shortDescription: normalizedShortDescription,
                     thingType,
                     imageId,
                     rarity,
@@ -17645,7 +17653,7 @@ module.exports = function registerApiRoutes(scope) {
             return { saveName, saveDir, metadata };
         }
 
-        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null } = {}) {
+        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null } = {}) {
             const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
             if (!normalizedName) {
                 const error = new Error('Save name is required');
@@ -17857,6 +17865,109 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            const ensureShortDescriptionsOnLoad = async () => {
+                const isMissingShortDescription = (value) => !value || !String(value).trim();
+                const resolveShortDescriptionCounts = ({
+                    thingsToCheck,
+                    locationsToCheck,
+                    regionsToCheck,
+                    abilitiesToCheck
+                }) => ({
+                    pendingThings: thingsToCheck.filter(item => isMissingShortDescription(item?.shortDescription)).length,
+                    pendingLocations: locationsToCheck.filter(loc => isMissingShortDescription(loc?.shortDescription)).length,
+                    pendingRegions: regionsToCheck.filter(region => isMissingShortDescription(region?.shortDescription)).length,
+                    pendingAbilities: abilitiesToCheck.filter(ability => isMissingShortDescription(ability?.shortDescription)).length
+                });
+                const emitShortDescriptionStatus = (stage, message = null) => {
+                    if (!realtimeHub || typeof realtimeHub.emit !== 'function') {
+                        console.warn('RealtimeHub unavailable; short description status not sent.');
+                        return false;
+                    }
+                    const resolvedClientId = typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null;
+                    if (!resolvedClientId) {
+                        console.warn('Client ID missing for short description status; status not sent.');
+                        return false;
+                    }
+                    const payload = {
+                        stage,
+                        message,
+                        serverTime: new Date().toISOString(),
+                        scope: 'short_description'
+                    };
+                    return Boolean(realtimeHub.emit(resolvedClientId, 'chat_status', payload));
+                };
+
+                if (typeof Globals.ensureThingShortDescriptions !== 'function') {
+                    throw new Error('Short description helpers are unavailable (ensureThingShortDescriptions).');
+                }
+                if (typeof Globals.ensureLocationShortDescriptions !== 'function') {
+                    throw new Error('Short description helpers are unavailable (ensureLocationShortDescriptions).');
+                }
+                if (typeof Globals.ensureRegionShortDescriptions !== 'function') {
+                    throw new Error('Short description helpers are unavailable (ensureRegionShortDescriptions).');
+                }
+                if (typeof Globals.ensureAbilityShortDescriptions !== 'function') {
+                    throw new Error('Short description helpers are unavailable (ensureAbilityShortDescriptions).');
+                }
+
+                const thingsToCheck = Array.from(things.values());
+                const locationsToCheck = Array.from(gameLocations.values());
+                const regionsToCheck = Array.from(regions.values());
+                const abilityBundles = [];
+                const abilitiesToCheck = [];
+                for (const player of players.values()) {
+                    if (!player || typeof player.getAbilities !== 'function' || typeof player.setAbilities !== 'function') {
+                        continue;
+                    }
+                    const abilities = player.getAbilities();
+                    if (!Array.isArray(abilities) || abilities.length === 0) {
+                        continue;
+                    }
+                    abilityBundles.push({ player, abilities });
+                    abilitiesToCheck.push(...abilities);
+                }
+
+                const counts = resolveShortDescriptionCounts({
+                    thingsToCheck,
+                    locationsToCheck,
+                    regionsToCheck,
+                    abilitiesToCheck
+                });
+                const totalPending = counts.pendingThings + counts.pendingLocations + counts.pendingRegions + counts.pendingAbilities;
+                const didEmitStatus = totalPending > 0
+                    ? emitShortDescriptionStatus(
+                        'spinner:start',
+                        `Updating short descriptions (${counts.pendingThings} items, ${counts.pendingLocations} locations, ${counts.pendingRegions} regions, ${counts.pendingAbilities} abilities).`
+                    )
+                    : false;
+
+                if (thingsToCheck.length) {
+                    await Globals.ensureThingShortDescriptions(thingsToCheck);
+                }
+                if (locationsToCheck.length) {
+                    await Globals.ensureLocationShortDescriptions(locationsToCheck);
+                }
+                if (regionsToCheck.length) {
+                    await Globals.ensureRegionShortDescriptions(regionsToCheck);
+                }
+
+                if (abilitiesToCheck.length) {
+                    const missingAbilities = abilitiesToCheck.some(ability => isMissingShortDescription(ability?.shortDescription));
+                    if (missingAbilities) {
+                        await Globals.ensureAbilityShortDescriptions(abilitiesToCheck);
+                        for (const bundle of abilityBundles) {
+                            bundle.player.setAbilities(bundle.abilities);
+                        }
+                    }
+                }
+
+                if (didEmitStatus) {
+                    emitShortDescriptionStatus('spinner:stop');
+                }
+            };
+
+            await ensureShortDescriptionsOnLoad();
+
             Globals.gameLoaded = true;
 
             const loadedData = {
@@ -17906,11 +18017,11 @@ module.exports = function registerApiRoutes(scope) {
         // Load game state from a save
         app.post('/api/load', async (req, res) => {
             try {
-                const { saveName, saveType } = req.body || {};
+                const { saveName, saveType, clientId } = req.body || {};
                 const normalizedType = typeof saveType === 'string' && saveType.toLowerCase() === 'autosaves'
                     ? 'autosaves'
                     : 'saves';
-                const result = await performGameLoad(saveName, { saveRoot: normalizedType });
+                const result = await performGameLoad(saveName, { saveRoot: normalizedType, clientId });
                 res.json({
                     success: true,
                     saveName: result.saveName,

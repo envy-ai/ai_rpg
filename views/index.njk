@@ -9930,11 +9930,13 @@
                         loadGameCancelBtn.disabled = true;
                     }
                     setLoadGameStatus(`Loading ${singularLabel}…`, 'info');
+                    const clientId = window.AIRPG_CLIENT_ID
+                        || (window.localStorage ? window.localStorage.getItem('airpg:clientId') : null);
 
                     const loadResponse = await fetch('/api/load', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ saveName, saveType: saveSource })
+                        body: JSON.stringify({ saveName, saveType: saveSource, clientId })
                     });
 
                     const loadResult = await loadResponse.json().catch(() => ({}));

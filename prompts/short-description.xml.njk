@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+<systemPrompt>
+You are a meticulous AI assistant whose job is to create concise short descriptions for RPG items, locations, and regions. These descriptions should capture the essence of the subject in 5-10 words, providing a clear and engaging summary that highlights its most distinctive features.
+</systemPrompt>
+
+<generationPrompt>
+Setting Overview:
+{% if setting %}
+<setting>
+  <name>{{ setting.name }}</name>
+  <description>{{ setting.description }}</description>
+  <theme>{{ setting.theme }}</theme>
+  <genre>{{ setting.genre }}</genre>
+  <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
+  <magicLevel>{{ setting.magicLevel }}</magicLevel>
+  <techLevel>{{ setting.techLevel }}</techLevel>
+  <tone>{{ setting.tone }}</tone>
+  <difficulty>{{ setting.difficulty }}</difficulty>
+  <currencyName>{{ setting.currencyName }}</currencyName>
+  <currencyNamePlural>{{ setting.currencyNamePlural }}</currencyNamePlural>
+  <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
+  <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
+  <races>{{ (setting.races or []) | join(', ') }}</races>
+  <attributes>{{ (setting.attributes or []) | join(', ') }}</attributes>
+  <skills>{{ (setting.skills or []) | join(', ') }}</skills>
+</setting>
+{% endif %}
+
+{% if itemType == 'region' %}
+Region Information:
+<regions>
+  {% for regionContext in regions %}
+  <region> 
+    <name>{{ regionContext.name }}</name>
+    <description>{{ regionContext.description }}</description>
+    <secrets>
+      {% for secret in regionContext.secrets %}<secret>{{ secret }}</secret>
+      {% endfor %} 
+    </secrets>
+    <locations>
+      {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
+      {% endfor %}</locations>
+    <connectedRegions>
+      {% for reg in regionContext.connectedRegions %}<regionName>{{ reg.name }}</regionName>
+      {% endfor %}
+    </connectedRegions>
+  </region>
+  {% endfor %}
+</regions>
+{% endif %}
+
+{% if itemType == 'location' %}
+Location Information:
+<regions>
+  {% for group in locationGroups %}
+  <region>
+    <name>{{ group.regionName }}</name>
+    {% if group.regionContext %}
+    <description>{{ group.regionContext.description }}</description>
+    <secrets>
+      {% for secret in group.regionContext.secrets %}<secret>{{ secret }}</secret>
+      {% endfor %} 
+    </secrets>
+    <locations>
+      {% for loc in group.regionContext.locations %}<locationName>{{ loc.name }}</locationName>
+      {% endfor %}</locations>
+    <connectedRegions>
+      {% for reg in group.regionContext.connectedRegions %}<regionName>{{ reg.name }}</regionName>
+      {% endfor %}
+    </connectedRegions>
+    {% endif %}
+    <locations>
+      {% for currentLocation in group.locations %}
+      <location> 
+        <name>{{ currentLocation.name }}</name>
+        <description>{{ currentLocation.description }}</description>
+        <statusEffects>
+          {% for effect in currentLocation.statusEffects %}
+          <effect>
+            <description>{{ effect.description }}</description>
+            <duration>{{ effect.duration | default('unknown') }}</duration>
+          </effect>
+          {% endfor %}
+        </statusEffects>
+        <exits>
+          {% for exit in currentLocation.exits %}
+          <exit>
+            <name>{{ exit.name }}</name>
+            <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
+            {% if exit.isVehicle %}<vehicleType>{{ exit.vehicleType | default('', true) }}</vehicleType>{% endif %}
+          </exit>
+          {% endfor %}
+        </exits>
+      </location>
+      {% endfor %}
+    </locations>
+  </region>
+  {% endfor %}
+</regions>
+{% endif %} 
+
+{% if itemType == 'item' %}
+Item Information:
+<items>
+  {% for item in items %}
+  <item>
+    <name>{{ item.name }}</name>
+    <description>{{ item.description }}</description>
+    <isScenery>{{ item.isScenery | default(false) }}</isScenery>
+    <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
+    <rarity>{{ item.rarity | default('common') }}</rarity>
+    <value>{{ item.value | default(0) }}</value>
+    <statusEffects>
+      {% for effect in item.statusEffects %}
+      <effect>
+        <description>{{ effect.description }}</description>
+        <duration>{{ effect.duration | default('unknown') }}</duration>
+      </effect>
+      {% endfor %}
+    </statusEffects>
+    <weight>{{ item.weight | default(0) }}</weight>
+    <properties>{{ item.properties | default('', true) }}</properties>
+  </item>
+  {% endfor %}
+</items>
+{% endif %}
+
+{% if itemType == 'ability' %}
+Ability Information:
+<abilities>
+  {% for ability in abilities %}
+  <ability>
+    <name>{{ ability.name }}</name>
+    <description>{{ ability.description }}</description>
+    <type>{{ ability.type }}</type>
+    <level>{{ ability.level }}</level>
+  </ability>
+  {% endfor %}
+</abilities>
+{% endif %}
+
+<task>Above is a list of RPG {{ itemTypePluralLabel }} along with relevant context about the setting, region, and location they belong to. For each {{ itemTypeLabel }}, generate a concise short description consisting of 5-10 words that effectively captures its essence. Focus on highlighting the most distinctive features or characteristics that would make the most important essence of the {{ itemTypeLabel }} clear and understandable for an LLM.</task>
+
+{% if itemType == 'location' %}
+Respond in XML format as follows:
+<regions>
+  <region>
+    <name><!-- Region name --></name>
+    <locations>
+      <location>
+        <name><!-- Name of the location --></name>
+        <shortDescription><!-- 5-10 word summary capturing the essence of the location. Don't mention it by name. Don't include any levels, stats, numbers, rarities, or specific values. --></shortDescription>
+      </location>
+      ...
+    </locations>
+  </region>
+  ...
+</regions>
+{% else %}
+Respond in XML format as follows:
+<{{ itemTypePlural }}>
+  <{{ itemType }}>
+    <name><!-- Name of the item --></name>
+    <shortDescription><!-- 5-10 word summary capturing the essence of the {{ itemType }}. Don't mention it by name. Don't include any levels, stats, numbers, rarities, or specific values. --></shortDescription>
+  </{{ itemType }}>
+  ...
+</{{ itemTypePlural }}>
+{% endif %}
+</generationPrompt>
+</template>
