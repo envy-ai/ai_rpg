@@ -53,6 +53,7 @@ class AIRPGChat {
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
+        this.shortDescriptionPrompted = false;
 
         this.ensureTemplateEnvironment();
         this.init();
@@ -467,10 +468,81 @@ class AIRPGChat {
             const data = await response.json();
 
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+            await this.checkShortDescriptionBackfill();
             await this.tryRunPendingRedo();
         } catch (error) {
             console.log('No existing history to load:', error.message);
             this.reportPendingRedoError(`Redo pending but chat history failed to load: ${error.message || error}`);
+        }
+    }
+
+    async checkShortDescriptionBackfill() {
+        if (this.shortDescriptionPrompted) {
+            return;
+        }
+        this.shortDescriptionPrompted = true;
+
+        const clientId = this.clientId || window.AIRPG_CLIENT_ID;
+        if (!clientId) {
+            console.warn('Short description backfill check skipped: missing client ID.');
+            return;
+        }
+
+        let response = null;
+        try {
+            response = await fetch(`/api/short-descriptions/pending?clientId=${encodeURIComponent(clientId)}`, {
+                cache: 'no-store'
+            });
+        } catch (error) {
+            console.warn('Failed to check short description backfill status:', error);
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success || !data?.pending || !data?.plan) {
+            return;
+        }
+
+        const counts = data.plan.counts || {};
+        const prompts = data.plan.prompts || {};
+        const messageLines = [
+            'There are items, locations, regions, and abilities in your save file that don\'t have short descriptions. This is probably due to your save being from an older version of AI RPG. It\'s not necessary to update them, but for long-standing saves, it could drastically shorten your base context, speeding up the game and improving coherence.',
+            '',
+            'Here are the number of each item to be processed, along with the number of prompts required (potentially more if there are errors):',
+            '',
+            `Items: ${counts.items || 0} (${prompts.items || 0} prompts)`,
+            `Regions: ${counts.regions || 0} (${prompts.regions || 0} prompts)`,
+            `Locations: ${counts.locations || 0} (${prompts.locations || 0} prompts)`,
+            `Abilities: ${counts.abilities || 0} (${prompts.abilities || 0} prompts)`,
+            '',
+            'Do you wish to process these now? Cancel if you would prefer not to. You can still play your game as normal.'
+        ];
+        const shouldProcess = window.confirm(messageLines.join('\n'));
+
+        try {
+            const processResponse = await fetch('/api/short-descriptions/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientId,
+                    action: shouldProcess ? 'run' : 'skip'
+                })
+            });
+            if (!processResponse.ok) {
+                const errorData = await processResponse.json().catch(() => ({}));
+                const errorMessage = errorData?.error || `HTTP ${processResponse.status}`;
+                if (shouldProcess) {
+                    this.addMessage('system', `Short description update failed: ${errorMessage}`, true);
+                } else {
+                    console.warn('Failed to dismiss short description backfill:', errorMessage);
+                }
+            }
+        } catch (error) {
+            if (shouldProcess) {
+                this.addMessage('system', `Short description update failed: ${error.message || error}`, true);
+            } else {
+                console.warn('Failed to dismiss short description backfill:', error);
+            }
         }
     }
 

@@ -211,6 +211,9 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        const shortDescriptionBackfillByClient = new Map();
+        let shortDescriptionBackfillInProgress = false;
+
         const getSlopHistorySegments = () => {
             if (!Array.isArray(chatHistory)) {
                 throw new Error('Chat history is unavailable for slopword analysis.');
@@ -17943,37 +17946,6 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     return promptCount;
                 };
-                const emitShortDescriptionChatMessage = ({
-                    pendingThings,
-                    pendingLocations,
-                    pendingRegions,
-                    pendingAbilities,
-                    promptsForThings,
-                    promptsForLocations,
-                    promptsForRegions,
-                    promptsForAbilities
-                }) => {
-                    const locationId = currentPlayer?.currentLocation
-                        || scope.currentLocation?.id
-                        || currentPlayer?.location?.id
-                        || null;
-                    if (!locationId) {
-                        throw new Error('Short description status requires a current location.');
-                    }
-                    const lines = [
-                        'Short description backfill queued:',
-                        `Items: ${pendingThings} (${promptsForThings} prompts)`,
-                        `Regions: ${pendingRegions} (${promptsForRegions} prompts)`,
-                        `Locations: ${pendingLocations} (${promptsForLocations} prompts)`,
-                        `Abilities: ${pendingAbilities} (${promptsForAbilities} prompts)`
-                    ];
-                    pushChatEntry({
-                        role: 'system',
-                        type: 'system',
-                        content: lines.join('\n')
-                    }, null, locationId);
-                };
-
                 if (typeof Globals.ensureThingShortDescriptions !== 'function') {
                     throw new Error('Short description helpers are unavailable (ensureThingShortDescriptions).');
                 }
@@ -17990,7 +17962,6 @@ module.exports = function registerApiRoutes(scope) {
                 const thingsToCheck = Array.from(things.values());
                 const locationsToCheck = Array.from(gameLocations.values());
                 const regionsToCheck = Array.from(regions.values());
-                const abilityBundles = [];
                 const abilitiesToCheck = [];
                 for (const player of players.values()) {
                     if (!player || typeof player.getAbilities !== 'function' || typeof player.setAbilities !== 'function') {
@@ -18000,7 +17971,6 @@ module.exports = function registerApiRoutes(scope) {
                     if (!Array.isArray(abilities) || abilities.length === 0) {
                         continue;
                     }
-                    abilityBundles.push({ player, abilities });
                     abilitiesToCheck.push(...abilities);
                 }
 
@@ -18011,6 +17981,13 @@ module.exports = function registerApiRoutes(scope) {
                     abilitiesToCheck
                 });
                 const totalPending = counts.pendingThings + counts.pendingLocations + counts.pendingRegions + counts.pendingAbilities;
+
+                const resolvedClientId = typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null;
+                if (!resolvedClientId) {
+                    console.warn('Client ID missing; short description backfill prompt will not be shown.');
+                    return;
+                }
+
                 if (totalPending > 0) {
                     const maxBatchSize = resolveShortDescriptionBatchSize();
                     const promptsForThings = counts.pendingThings > 0
@@ -18023,36 +18000,25 @@ module.exports = function registerApiRoutes(scope) {
                         ? Math.ceil(counts.pendingAbilities / maxBatchSize)
                         : 0;
                     const promptsForLocations = estimateLocationPromptCount(locationsToCheck, maxBatchSize);
-                    emitShortDescriptionChatMessage({
-                        pendingThings: counts.pendingThings,
-                        pendingLocations: counts.pendingLocations,
-                        pendingRegions: counts.pendingRegions,
-                        pendingAbilities: counts.pendingAbilities,
-                        promptsForThings,
-                        promptsForLocations,
-                        promptsForRegions,
-                        promptsForAbilities
+                    shortDescriptionBackfillByClient.set(resolvedClientId, {
+                        counts: {
+                            items: counts.pendingThings,
+                            locations: counts.pendingLocations,
+                            regions: counts.pendingRegions,
+                            abilities: counts.pendingAbilities
+                        },
+                        prompts: {
+                            items: promptsForThings,
+                            locations: promptsForLocations,
+                            regions: promptsForRegions,
+                            abilities: promptsForAbilities
+                        },
+                        totalPending,
+                        batchSize: maxBatchSize,
+                        createdAt: new Date().toISOString()
                     });
-                }
-
-                if (thingsToCheck.length) {
-                    await Globals.ensureThingShortDescriptions(thingsToCheck);
-                }
-                if (locationsToCheck.length) {
-                    await Globals.ensureLocationShortDescriptions(locationsToCheck);
-                }
-                if (regionsToCheck.length) {
-                    await Globals.ensureRegionShortDescriptions(regionsToCheck);
-                }
-
-                if (abilitiesToCheck.length) {
-                    const missingAbilities = abilitiesToCheck.some(ability => isMissingShortDescription(ability?.shortDescription));
-                    if (missingAbilities) {
-                        await Globals.ensureAbilityShortDescriptions(abilitiesToCheck);
-                        for (const bundle of abilityBundles) {
-                            bundle.player.setAbilities(bundle.abilities);
-                        }
-                    }
+                } else {
+                    shortDescriptionBackfillByClient.delete(resolvedClientId);
                 }
 
             };
@@ -18083,6 +18049,69 @@ module.exports = function registerApiRoutes(scope) {
 
         scope.performGameSave = performGameSave;
         scope.performGameLoad = performGameLoad;
+
+        async function processShortDescriptionBackfill() {
+            if (shortDescriptionBackfillInProgress) {
+                throw new Error('Short description backfill is already in progress.');
+            }
+            if (!Globals.gameLoaded) {
+                throw new Error('Game must be loaded before processing short descriptions.');
+            }
+            if (typeof Globals.ensureThingShortDescriptions !== 'function') {
+                throw new Error('Short description helpers are unavailable (ensureThingShortDescriptions).');
+            }
+            if (typeof Globals.ensureLocationShortDescriptions !== 'function') {
+                throw new Error('Short description helpers are unavailable (ensureLocationShortDescriptions).');
+            }
+            if (typeof Globals.ensureRegionShortDescriptions !== 'function') {
+                throw new Error('Short description helpers are unavailable (ensureRegionShortDescriptions).');
+            }
+            if (typeof Globals.ensureAbilityShortDescriptions !== 'function') {
+                throw new Error('Short description helpers are unavailable (ensureAbilityShortDescriptions).');
+            }
+
+            shortDescriptionBackfillInProgress = true;
+            try {
+                const thingsToCheck = Array.from(things.values());
+                const locationsToCheck = Array.from(gameLocations.values());
+                const regionsToCheck = Array.from(regions.values());
+                const abilityBundles = [];
+                const abilitiesToCheck = [];
+                for (const player of players.values()) {
+                    if (!player || typeof player.getAbilities !== 'function' || typeof player.setAbilities !== 'function') {
+                        continue;
+                    }
+                    const abilities = player.getAbilities();
+                    if (!Array.isArray(abilities) || abilities.length === 0) {
+                        continue;
+                    }
+                    abilityBundles.push({ player, abilities });
+                    abilitiesToCheck.push(...abilities);
+                }
+
+                if (thingsToCheck.length) {
+                    await Globals.ensureThingShortDescriptions(thingsToCheck);
+                }
+                if (locationsToCheck.length) {
+                    await Globals.ensureLocationShortDescriptions(locationsToCheck);
+                }
+                if (regionsToCheck.length) {
+                    await Globals.ensureRegionShortDescriptions(regionsToCheck);
+                }
+
+                if (abilitiesToCheck.length) {
+                    const missingAbilities = abilitiesToCheck.some(ability => !ability?.shortDescription || !String(ability.shortDescription).trim());
+                    if (missingAbilities) {
+                        await Globals.ensureAbilityShortDescriptions(abilitiesToCheck);
+                        for (const bundle of abilityBundles) {
+                            bundle.player.setAbilities(bundle.abilities);
+                        }
+                    }
+                }
+            } finally {
+                shortDescriptionBackfillInProgress = false;
+            }
+        }
 
         // Save current game state
         app.post('/api/save', (req, res) => {
@@ -18132,6 +18161,91 @@ module.exports = function registerApiRoutes(scope) {
                     statusCode = 404;
                 }
                 res.status(statusCode).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.get('/api/short-descriptions/pending', (req, res) => {
+            try {
+                const clientId = typeof req.query?.clientId === 'string' ? req.query.clientId.trim() : '';
+                if (!clientId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'clientId is required.'
+                    });
+                }
+                const plan = shortDescriptionBackfillByClient.get(clientId) || null;
+                return res.json({
+                    success: true,
+                    pending: Boolean(plan),
+                    plan
+                });
+            } catch (error) {
+                console.error('Error checking short description backfill:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.post('/api/short-descriptions/process', async (req, res) => {
+            try {
+                const { clientId, action } = req.body || {};
+                const normalizedClientId = typeof clientId === 'string' ? clientId.trim() : '';
+                if (!normalizedClientId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'clientId is required.'
+                    });
+                }
+                const normalizedAction = typeof action === 'string' ? action.trim().toLowerCase() : '';
+                if (!normalizedAction) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'action is required.'
+                    });
+                }
+
+                if (normalizedAction === 'skip' || normalizedAction === 'dismiss') {
+                    shortDescriptionBackfillByClient.delete(normalizedClientId);
+                    return res.json({
+                        success: true,
+                        skipped: true
+                    });
+                }
+
+                if (normalizedAction !== 'run' && normalizedAction !== 'process') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'action must be run or skip.'
+                    });
+                }
+
+                if (!shortDescriptionBackfillByClient.has(normalizedClientId)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No pending short description backfill for this client.'
+                    });
+                }
+                if (shortDescriptionBackfillInProgress) {
+                    return res.status(409).json({
+                        success: false,
+                        error: 'Short description backfill is already running.'
+                    });
+                }
+
+                await processShortDescriptionBackfill();
+                shortDescriptionBackfillByClient.clear();
+                return res.json({
+                    success: true,
+                    processed: true
+                });
+            } catch (error) {
+                console.error('Error processing short description backfill:', error);
+                return res.status(500).json({
                     success: false,
                     error: error.message
                 });
