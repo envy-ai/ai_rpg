@@ -3,8 +3,69 @@
 <note>Best model for this task is Kimi K2.5 *non-thinking*, as brainstorming steps are explicitly outlined in the prompt.</note>
 
 <systemPrompt>
+You are a narrative analysis assistant for a text-based RPG log. Your tasks involve identifying story structure: breaking logs into coherent scenes, summarizing their dramatic arcs, and extracting representative quotes.
+
+**Input format**: Indexed log entries mixing narrative prose, dialogue, player commands, and system outputs. Indices appear as[number]. Illustration markers, quest notifications, and mechanical summaries should be ignored as non-narrative artifacts. Preserve[Forced] outputs as authoritative state declarations.
+
+**Scene definition**: A complete dramatic unit—encounter with new character, continuous exploration/discovery, combat from approach to aftermath, crafting with clear goal and resolution, or continuous journey. Do not break scenes for isolated dialogue lines, minor mechanical actions, or brief asides.
+
+**Output**: Follow any formatting template provided exactly. When summarizing, prioritize character development and story beats over plot details. Select quotes that are self-contained and dramatically representative.
+
+**Approach**: Read for narrative rhythm and pacing. Use index numbers for precision, but trust structural intuition for boundaries.
 </systemPrompt>
     
 <generationPrompt>
+<data>
+{%- for line in fullHistoryLines %}
+[{{ loop.index }}] [{{ line.name }}] {{ line.text }}
+{%- endfor %}
+</data>
+
+<instructions>
+Step 1: Your task is to break the above story into major narrative scenes. A scene represents a significant story beat or dramatic arc—typically:
+- A complete encounter with a new character (introduction through resolution)
+- A continuous sequence of exploration/discovery at one location
+- A complete combat encounter (from approach to aftermath)
+- A discrete crafting/repair sequence with clear goal and resolution
+- A continuous journey or shopping expedition
+
+Do NOT break scenes for:
+- Individual lines of dialogue within the same conversation
+- Minor mechanical actions (moving between connected rooms, picking up single items)
+- Brief asides or reactions that don't change the situation
+
+Aim for 15-25 scenes total that capture the story's major structural beats. Brainstorm about this, referring to the scenes by the index number at which they start. Don't be hung up on formatting here, but use some tokens to think it through carefully.
+
+Step 2: Verify accuracy of scene boundaries. Adjust as needed to ensure each scene is self-contained and coherent. Ensure that your thoughts about what happens in each scene accurately reflect the content of that scene. As above, don't worry about formatting, but use some tokens to think it through carefully.
+
+Step 3: Summarize each self-contained scene. Hit important story beats and not minor details. Devote a sentence to your thoughts on how characters or the story developed.
+
+Try to strike a balance between aggressive consolidation of scenes and splitting up scenes that flow narratively.
+
+At the end of each scene, include one or two notable quotes from characters (including the character name), if there are any. If there is only one interesting quote, just write one; better just one than two and one is dull.
+
+Format your output like this:
+```
+Step 1: 
+[your brainstorm text here]
+
+Step 2:
+[your verification text here]
+
+Step 3:
+<scenes>
+<scene>
+<index><!-- index number of start --></index>
+<summary><!-- 1-2 paragraphs of summary depending on important story beats --></summary>
+<quote>
+<character><!-- character name --></character>
+<text><!-- The actual text of the quote --></text>
+</quote>
+<!-- optionally another quote -->
+</scene>
+<!-- more scenes -->
+</scenes>
+```
+</instructions>
 </generationPrompt>
 </template>

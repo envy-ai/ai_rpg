@@ -400,6 +400,12 @@ class Utils {
 
     serialized.chatSummaries = this.serializeChatSummaries();
 
+    const sceneSummaries = Globals.getSceneSummaries();
+    if (!sceneSummaries || typeof sceneSummaries.serialize !== 'function') {
+      throw new Error('Scene summaries are unavailable for serialization.');
+    }
+    serialized.sceneSummaries = sceneSummaries.serialize();
+
 
     return serialized;
   }
@@ -435,6 +441,7 @@ class Utils {
     }
 
     ensureFile('chatSummaries.json', serialized.chatSummaries || {});
+    ensureFile('sceneSummaries.json', serialized.sceneSummaries || {});
   }
 
   static loadSerializedGameState(saveDir) {
@@ -466,6 +473,7 @@ class Utils {
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
       chatSummaries: readJson('chatSummaries.json', {}),
+      sceneSummaries: readJson('sceneSummaries.json', {}),
       pendingRegionStubs: readJson('pendingRegionStubs.json', {})
     };
 
@@ -501,6 +509,11 @@ class Utils {
     const Skill = this.#getSkillModule();
 
     this.loadChatSummaries(serialized.chatSummaries || {});
+    const sceneSummaries = Globals.getSceneSummaries();
+    if (!sceneSummaries || typeof sceneSummaries.load !== 'function') {
+      throw new Error('Scene summaries are unavailable during hydration.');
+    }
+    sceneSummaries.load(serialized.sceneSummaries || {});
 
     if (Array.isArray(jobQueue)) {
       jobQueue.length = 0;

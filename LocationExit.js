@@ -131,6 +131,36 @@ class LocationExit {
     const originLabel = originId ? `${originName} (${originId})` : originName;
     console.warn(`Warning: Unable to determine region for destination location ID ${this.#destination} (${destinationName}); origin: ${originLabel}`);
     console.trace();
+    try {
+      const locations = typeof Location.getAll === 'function'
+        ? Location.getAll()
+        : Array.from(Location.indexById.values());
+      const removed = [];
+      for (const loc of locations) {
+        if (!loc || typeof loc.getAvailableDirections !== 'function' || typeof loc.getExit !== 'function' || typeof loc.removeExit !== 'function') {
+          continue;
+        }
+        const directions = loc.getAvailableDirections();
+        for (const direction of directions) {
+          const exit = loc.getExit(direction);
+          if (!exit || exit.destination !== this.#destination) {
+            continue;
+          }
+          loc.removeExit(direction);
+          removed.push({
+            locationId: loc.id || null,
+            locationName: loc.name || 'unknown',
+            direction,
+            exitId: exit.id || null
+          });
+        }
+      }
+      if (removed.length) {
+        console.warn(`Removed ${removed.length} exit(s) pointing to missing destination ${this.#destination}.`, removed);
+      }
+    } catch (error) {
+      console.warn(`Warning: Failed to remove invalid exits for destination ${this.#destination}: ${error.message}`);
+    }
     return null;
   }
 

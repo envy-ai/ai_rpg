@@ -11,6 +11,13 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
+const SceneSummaries = require('./SceneSummaies.js');
+const {
+    filterChatHistoryEntries,
+    normalizeEntryText,
+    resolveRoleLabel,
+    resolveEntryRecordId
+} = require('./chat_history_utils.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -50,6 +57,7 @@ const ModLoader = require('./ModLoader.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 
 Globals.baseDir = __dirname;
+Globals.sceneSummaries = new SceneSummaries();
 
 attachAxiosMetricsLogger(axios);
 
@@ -3960,6 +3968,440 @@ async function prepareBasePromptContext(options = {}) {
     return baseContext;
 }
 Globals.getBasePromptContext = prepareBasePromptContext;
+
+function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
+    if (!Array.isArray(chatHistory)) {
+        throw new Error('Chat history is unavailable for scene summaries.');
+    }
+
+    const filteredEntries = filterChatHistoryEntries(chatHistory, { excludeSummaries });
+    if (!filteredEntries.length) {
+        throw new Error('No chat history entries available after filtering.');
+    }
+
+    const requiresPlayerName = filteredEntries.some(entry => {
+        if (!entry || typeof entry.role !== 'string') {
+            return false;
+        }
+        return entry.role.trim().toLowerCase() === 'user';
+    });
+
+    const playerName = typeof currentPlayer?.name === 'string' ? currentPlayer.name.trim() : null;
+    if (requiresPlayerName && !playerName) {
+        throw new Error('Unable to resolve the current player name for user entries. Load a game or set a player before summarizing.');
+    }
+
+    const indexedEntries = [];
+    let outputIndex = 0;
+
+    for (const entry of filteredEntries) {
+        if (!entry || typeof entry !== 'object') {
+            continue;
+        }
+        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+        const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+        const rawText = content || summary;
+        const text = normalizeEntryText(rawText);
+        if (!text) {
+            continue;
+        }
+        outputIndex += 1;
+        const entryId = resolveEntryRecordId(entry);
+        const name = resolveRoleLabel(entry.role, playerName);
+        indexedEntries.push({
+            index: outputIndex,
+            entryId,
+            name,
+            text,
+            entry
+        });
+    }
+
+    if (!indexedEntries.length) {
+        throw new Error('No chat history entries available after normalizing text.');
+    }
+
+    return indexedEntries;
+}
+
+function resolveSceneSummaryMaxEntries() {
+    const rawMax = config?.summaries?.scene_summary_max_entries_per_prompt;
+    if (rawMax === undefined || rawMax === null || rawMax === '') {
+        return 500;
+    }
+    const parsed = Number(rawMax);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error('summaries.scene_summary_max_entries_per_prompt must be a positive integer.');
+    }
+    return parsed;
+}
+
+function parseSceneSummaryResponse(responseText, indexMap) {
+    if (!responseText || typeof responseText !== 'string') {
+        throw new Error('Scene summary response is empty.');
+    }
+    if (!Array.isArray(indexMap) || indexMap.length === 0) {
+        throw new Error('Scene summary index map is missing.');
+    }
+
+    let doc;
+    try {
+        doc = Utils.parseXmlDocument(`<root>${responseText}</root>`, 'text/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) {
+            throw new Error(parserError.textContent || 'Scene summary response contained parser errors.');
+        }
+    } catch (error) {
+        throw new Error(`Failed to parse scene summary response as XML: ${error.message}`);
+    }
+
+    const sceneNodes = Array.from(doc.getElementsByTagName('scene'));
+    if (!sceneNodes.length) {
+        throw new Error('Scene summary response contained no <scene> entries.');
+    }
+
+    const scenes = [];
+    for (const sceneNode of sceneNodes) {
+        const indexNode = sceneNode.getElementsByTagName('index')[0];
+        const summaryNode = sceneNode.getElementsByTagName('summary')[0];
+        const rawIndex = indexNode?.textContent?.trim();
+        const rawSummary = summaryNode?.textContent?.trim();
+
+        if (!rawIndex) {
+            throw new Error('Scene summary scene is missing a start index.');
+        }
+        const localIndex = parseInt(rawIndex, 10);
+        if (!Number.isFinite(localIndex) || localIndex <= 0) {
+            throw new Error(`Scene summary scene has invalid start index "${rawIndex}".`);
+        }
+        if (localIndex > indexMap.length) {
+            throw new Error(`Scene summary scene start index ${localIndex} exceeds the prompt range.`);
+        }
+        if (!rawSummary) {
+            throw new Error(`Scene summary scene at index ${localIndex} is missing a summary.`);
+        }
+
+        const mapping = indexMap[localIndex - 1];
+        if (!mapping) {
+            throw new Error(`Scene summary index map missing entry for ${localIndex}.`);
+        }
+
+        const quotes = [];
+        const quoteNodes = Array.from(sceneNode.getElementsByTagName('quote'));
+        for (const quoteNode of quoteNodes) {
+            const characterNode = quoteNode.getElementsByTagName('character')[0];
+            const textNode = quoteNode.getElementsByTagName('text')[0];
+            const character = characterNode?.textContent?.trim() || '';
+            const text = textNode?.textContent?.trim() || '';
+            if (!character && !text) {
+                continue;
+            }
+            if (!character || !text) {
+                throw new Error(`Scene summary quote for scene ${localIndex} is missing character or text.`);
+            }
+            quotes.push({ character, text });
+        }
+
+        scenes.push({
+            localStartIndex: localIndex,
+            startIndex: mapping.globalIndex,
+            startEntryId: mapping.entryId,
+            summary: rawSummary,
+            quotes
+        });
+    }
+
+    scenes.sort((a, b) => a.localStartIndex - b.localStartIndex);
+    for (let i = 1; i < scenes.length; i += 1) {
+        if (scenes[i].localStartIndex <= scenes[i - 1].localStartIndex) {
+            throw new Error('Scene summary scenes are not in ascending order.');
+        }
+    }
+
+    return scenes;
+}
+
+async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo = false } = {}) {
+    const canCallAi = Boolean(config?.ai?.endpoint && config.ai.apiKey && config.ai.model);
+    if (!canCallAi) {
+        throw new Error('Scene summarization requires a configured AI endpoint, apiKey, and model.');
+    }
+
+    const indexedEntries = buildSceneSummaryIndex(chatHistory, { excludeSummaries: true });
+    const totalEntries = indexedEntries.length;
+
+    const normalizeToken = (value) => {
+        if (typeof value === 'string' && value.trim().toLowerCase() === 'all') {
+            return 'all';
+        }
+        return value;
+    };
+    const startToken = normalizeToken(startIndex);
+    const endToken = normalizeToken(endIndex);
+
+    let parsedStart = null;
+    let parsedEnd = null;
+    if (startToken === 'all' || endToken === 'all') {
+        const sceneSummaries = Globals.getSceneSummaries();
+        const firstUnsummarized = sceneSummaries.getFirstUnsummarizedIndex(totalEntries);
+        if (!firstUnsummarized) {
+            throw new Error('All entries are already summarized.');
+        }
+        parsedStart = firstUnsummarized;
+        parsedEnd = totalEntries;
+    } else {
+        parsedStart = Number(startToken);
+        parsedEnd = Number(endToken);
+    }
+
+    if (!Number.isInteger(parsedStart) || parsedStart <= 0) {
+        throw new Error('Scene summary start index must be a positive integer.');
+    }
+    if (!Number.isInteger(parsedEnd) || parsedEnd <= 0) {
+        throw new Error('Scene summary end index must be a positive integer.');
+    }
+    if (parsedEnd < parsedStart) {
+        throw new Error('Scene summary end index must be greater than or equal to the start index.');
+    }
+    if (parsedStart > totalEntries || parsedEnd > totalEntries) {
+        throw new Error(`Scene summary range must be within 1-${totalEntries}.`);
+    }
+
+    if (redo) {
+        const sceneSummaries = Globals.getSceneSummaries();
+        const removedRange = sceneSummaries.deleteSummariesOverlappingRange(parsedStart, parsedEnd);
+        const maxEntriesPerPrompt = resolveSceneSummaryMaxEntries();
+        const extraSpan = Math.max(1, Math.floor(maxEntriesPerPrompt / 4));
+        const redoStart = removedRange.start;
+        const redoEnd = Math.min(removedRange.end, parsedEnd + extraSpan);
+        parsedStart = redoStart;
+        parsedEnd = redoEnd;
+    }
+
+    if (parsedStart > totalEntries || parsedEnd > totalEntries) {
+        throw new Error(`Scene summary range must be within 1-${totalEntries}.`);
+    }
+    if (parsedEnd < parsedStart) {
+        throw new Error('Scene summary end index must be greater than or equal to the start index.');
+    }
+
+    const rangeEntries = indexedEntries.slice(parsedStart - 1, parsedEnd);
+    if (!rangeEntries.length) {
+        throw new Error('Scene summary range produced no entries.');
+    }
+
+    const maxEntriesPerPrompt = resolveSceneSummaryMaxEntries();
+    const promptCount = rangeEntries.length > maxEntriesPerPrompt
+        ? Math.ceil(rangeEntries.length / maxEntriesPerPrompt)
+        : 1;
+    const baseChunkSize = Math.ceil(rangeEntries.length / promptCount);
+
+    const aggregatedScenes = [];
+    let cursor = 0;
+    let safetyCounter = 0;
+
+    while (cursor < rangeEntries.length) {
+        safetyCounter += 1;
+        if (safetyCounter > rangeEntries.length + 5) {
+            throw new Error('Scene summary chunking failed to advance.');
+        }
+
+        const chunkEntries = rangeEntries.slice(cursor, Math.min(rangeEntries.length, cursor + baseChunkSize));
+        const fullHistoryLines = chunkEntries.map(entry => ({
+            name: entry.name,
+            text: entry.text
+        }));
+
+        let parsedTemplate;
+        try {
+            const renderedTemplate = promptEnv.render('scene-summarize.xml.njk', { fullHistoryLines });
+            parsedTemplate = parseXMLTemplate(renderedTemplate);
+        } catch (error) {
+            throw new Error(`Failed to render scene summary prompt: ${error.message}`);
+        }
+
+        if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+            throw new Error('Scene summary prompt missing system or generation content.');
+        }
+
+        const messages = [
+            { role: 'system', content: parsedTemplate.systemPrompt },
+            { role: 'user', content: parsedTemplate.generationPrompt }
+        ];
+
+        const chunkStart = chunkEntries[0]?.index ?? null;
+        const chunkEnd = chunkEntries[chunkEntries.length - 1]?.index ?? null;
+        console.log(`Scene summary prompt: range ${parsedStart}-${parsedEnd}, chunk ${chunkStart}-${chunkEnd}.`);
+
+        const requestOptions = {
+            messages,
+            metadataLabel: 'scene_summarize',
+            runInBackground: true,
+            maxTokens: 20000
+        };
+
+        let responseText = null;
+        try {
+            responseText = await LLMClient.chatCompletion(requestOptions);
+        } catch (error) {
+            const chunkStart = chunkEntries[0]?.index ?? null;
+            const chunkEnd = chunkEntries[chunkEntries.length - 1]?.index ?? null;
+            console.warn('Scene summary request failed:', error?.message || error, {
+                rangeStart: parsedStart,
+                rangeEnd: parsedEnd,
+                chunkStart,
+                chunkEnd
+            });
+            throw new Error(`Scene summary request failed: ${error?.message || error}`);
+        }
+        if (!responseText || typeof responseText !== 'string') {
+            throw new Error('Scene summary response was empty.');
+        }
+
+        LLMClient.logPrompt({
+            prefix: 'scene_summarize',
+            metadataLabel: 'scene_summarize',
+            systemPrompt: parsedTemplate.systemPrompt || '',
+            generationPrompt: parsedTemplate.generationPrompt || '',
+            response: responseText || '',
+            model: undefined,
+            endpoint: undefined
+        });
+
+        const indexMap = chunkEntries.map((entry, idx) => ({
+            localIndex: idx + 1,
+            globalIndex: entry.index,
+            entryId: entry.entryId
+        }));
+
+        let parsedScenes = null;
+        try {
+            parsedScenes = parseSceneSummaryResponse(responseText, indexMap);
+        } catch (error) {
+            const chunkStart = chunkEntries[0]?.index ?? null;
+            const chunkEnd = chunkEntries[chunkEntries.length - 1]?.index ?? null;
+            console.warn('Scene summary parse failed:', error?.message || error, {
+                rangeStart: parsedStart,
+                rangeEnd: parsedEnd,
+                chunkStart,
+                chunkEnd
+            });
+            throw error;
+        }
+        if (!parsedScenes.length) {
+            throw new Error('Scene summary response contained no scenes.');
+        }
+
+
+        const isLastChunk = cursor + baseChunkSize >= rangeEntries.length;
+        if (!isLastChunk) {
+            if (parsedScenes.length < 2) {
+                throw new Error('Scene summary response did not include enough scenes to overlap chunks.');
+            }
+            const lastScene = parsedScenes[parsedScenes.length - 1];
+            const nextCursor = lastScene.startIndex - parsedStart;
+            if (!Number.isInteger(nextCursor) || nextCursor <= cursor) {
+                throw new Error('Scene summary overlap did not advance to a new entry.');
+            }
+            const scenesToAdd = parsedScenes.slice(0, -1).map(scene => ({
+                startIndex: scene.startIndex,
+                startEntryId: scene.startEntryId,
+                summary: scene.summary,
+                quotes: scene.quotes
+            }));
+            aggregatedScenes.push(...scenesToAdd);
+            cursor = nextCursor;
+            continue;
+        }
+
+        const finalScenes = parsedScenes.map(scene => ({
+            startIndex: scene.startIndex,
+            startEntryId: scene.startEntryId,
+            summary: scene.summary,
+            quotes: scene.quotes
+        }));
+        aggregatedScenes.push(...finalScenes);
+        break;
+    }
+
+    if (aggregatedScenes.length < 2) {
+        throw new Error('Scene summary response did not include enough scenes to drop the final scene.');
+    }
+
+    const removedScene = aggregatedScenes.pop();
+    if (!removedScene || !Number.isInteger(removedScene.startIndex)) {
+        throw new Error('Scene summary final scene is missing a valid start index.');
+    }
+
+    if (aggregatedScenes.length === 0) {
+        throw new Error('Scene summary response produced no scenes after removing the final scene.');
+    }
+
+    const orderedScenes = aggregatedScenes.slice().sort((a, b) => a.startIndex - b.startIndex);
+    const summarizedStartIndex = orderedScenes[0].startIndex;
+    const summarizedEndIndex = removedScene.startIndex - 1;
+    if (!Number.isInteger(summarizedStartIndex) || summarizedStartIndex <= 0) {
+        throw new Error('Scene summary start index is invalid after removing the final scene.');
+    }
+    if (!Number.isInteger(summarizedEndIndex) || summarizedEndIndex < summarizedStartIndex) {
+        throw new Error('Scene summary end index is invalid after removing the final scene.');
+    }
+
+    const entryIndexMap = rangeEntries.map(entry => ({
+        index: entry.index,
+        entryId: entry.entryId
+    }));
+    const entryIdByIndex = new Map(entryIndexMap.map(entry => [entry.index, entry.entryId]));
+
+    const scenesWithBounds = [];
+    for (let i = 0; i < orderedScenes.length; i += 1) {
+        const scene = orderedScenes[i];
+        const nextStartIndex = i + 1 < orderedScenes.length
+            ? orderedScenes[i + 1].startIndex
+            : removedScene.startIndex;
+        if (!Number.isInteger(nextStartIndex) || nextStartIndex <= scene.startIndex) {
+            throw new Error('Scene summary end index could not be resolved.');
+        }
+        const endIndex = nextStartIndex - 1;
+        const startEntryId = entryIdByIndex.get(scene.startIndex);
+        if (!startEntryId) {
+            throw new Error(`Scene summary is missing entry ID for start index ${scene.startIndex}.`);
+        }
+        const endEntryId = entryIdByIndex.get(endIndex);
+        if (!endEntryId) {
+            throw new Error(`Scene summary is missing entry ID for end index ${endIndex}.`);
+        }
+        scenesWithBounds.push({
+            startIndex: scene.startIndex,
+            endIndex,
+            startEntryId,
+            endEntryId,
+            summary: scene.summary,
+            quotes: scene.quotes
+        });
+    }
+
+    const sceneSummaries = Globals.getSceneSummaries();
+    if (!sceneSummaries || typeof sceneSummaries.addSummaryResult !== 'function') {
+        throw new Error('Scene summary store is unavailable.');
+    }
+    sceneSummaries.addSummaryResult({
+        range: { start: parsedStart, end: parsedEnd },
+        summarizedRange: { start: summarizedStartIndex, end: summarizedEndIndex },
+        entryIndexMap,
+        scenes: scenesWithBounds
+    });
+
+    return {
+        range: { start: parsedStart, end: parsedEnd },
+        summarizedRange: { start: summarizedStartIndex, end: summarizedEndIndex },
+        totalEntries,
+        entryIndexMap,
+        scenes: scenesWithBounds
+    };
+}
+
+Globals.summarizeScenesForHistoryRange = summarizeScenesForHistoryRange;
 
 function parsePlausibilityOutcome(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {

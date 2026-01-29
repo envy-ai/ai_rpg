@@ -220,6 +220,9 @@ summaries:
   max_unsummarized_log_entries: 200
   max_summarized_log_entries: 2000
 
+  # Maximum number of entries to summarize in a single scene summary prompt.
+  scene_summary_max_entries_per_prompt: 500
+
   # For 32k context, set unsummarized to 20 and summarized to 200
   #max_unsummarized_log_entries: 20
   #max_summarized_log_entries: 200

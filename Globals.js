@@ -12,6 +12,7 @@ class Globals {
   static slopTrigrams = [];
   static currentSaveVersion = '1';
   static saveFileSaveVersion = '0';
+  static sceneSummaries = null;
 
   static getBasePromptContext = function () {
     throw new Error('Globals.getBasePromptContext called before being set.');
@@ -23,6 +24,13 @@ class Globals {
 
   static parseXMLTemplate = function () {
     throw new Error('Globals.parseXMLTemplate called before being set.');
+  }
+
+  static getSceneSummaries() {
+    if (!Globals.sceneSummaries) {
+      throw new Error('Globals.sceneSummaries accessed before being initialized.');
+    }
+    return Globals.sceneSummaries;
   }
 
   static get currentPlayer() {
