@@ -3415,16 +3415,25 @@ function buildBasePromptContext({
         ? rawMaxSummarized
         : 0;
 
-    const formatSeenBySuffix = (entry) => {
+    const presentCharactersForHistory = collectNpcNamesForContext();
+
+    const formatAbsentCharactersSuffix = (entry) => {
         if (!entry || entry.travel) {
             return '';
         }
         const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
-        const seen = Array.isArray(metadata?.npcNames) ? metadata.npcNames : null;
-        if (!seen || !seen.length) {
+        const seen = Array.isArray(metadata?.npcNames) ? metadata.npcNames : [];
+        if (!presentCharactersForHistory.length) {
             return '';
         }
-        return ` [Seen by ONLY ${seen.join(', ')}]`;
+        const seenSet = new Set(
+            seen
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+        );
+        const absent = presentCharactersForHistory.filter(name => !seenSet.has(name));
+        const absentLabel = absent.length ? absent.join(', ') : 'none';
+        return ` [absent characters: ${absentLabel}]`;
     };
 
     const formatLocationSuffix = (entry) => {
@@ -3497,15 +3506,137 @@ function buildBasePromptContext({
 
     const historySegments = [];
 
-    for (const entry of summaryCandidates) {
-        if (!entry) {
-            continue;
+    const buildSceneSummarySegments = (entries) => {
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return null;
         }
-        const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-        if (!summaryText) {
-            continue;
+        let sceneSummaries;
+        try {
+            sceneSummaries = Globals.getSceneSummaries();
+        } catch (_) {
+            return null;
         }
-        historySegments.push({ entry, line: summaryText });
+        if (!sceneSummaries || typeof sceneSummaries.getScenesInOrder !== 'function') {
+            return null;
+        }
+        const scenes = sceneSummaries.getScenesInOrder();
+        if (!Array.isArray(scenes) || scenes.length === 0) {
+            return null;
+        }
+
+        let serialized;
+        try {
+            serialized = sceneSummaries.serialize();
+        } catch (_) {
+            return null;
+        }
+        const entryIndexMap = Array.isArray(serialized?.entryIndexMap) ? serialized.entryIndexMap : [];
+        if (!entryIndexMap.length) {
+            return null;
+        }
+        const entryIdToIndex = new Map(entryIndexMap.map(entry => [entry.entryId, entry.index]));
+
+        if (typeof sceneSummaries.ingestNpcNamesFromEntries === 'function') {
+            sceneSummaries.ingestNpcNamesFromEntries(entries);
+        } else {
+            throw new Error('Scene summary helper for NPC name ingestion is unavailable.');
+        }
+
+        if (typeof sceneSummaries.getAbsentCharactersByScene !== 'function') {
+            throw new Error('Scene summary helper for absent characters is unavailable.');
+        }
+        const presentCharacters = collectNpcNamesForContext();
+        const absentByScene = sceneSummaries.getAbsentCharactersByScene(presentCharacters);
+
+        const formatSceneBlock = (scene, sceneNumber) => {
+            const lines = [];
+            lines.push(`Scene ${sceneNumber}:`);
+            const absent = absentByScene.get(scene.startIndex) || [];
+            const absentLabel = absent.length ? absent.join(', ') : 'none';
+            lines.push(`[absent characters: ${absentLabel}]`);
+            lines.push(scene.summary);
+            if (Array.isArray(scene.quotes) && scene.quotes.length) {
+                lines.push(`Quotes for scene ${sceneNumber}:`);
+                for (const quote of scene.quotes) {
+                    const rawText = typeof quote.text === 'string' ? quote.text.trim() : '';
+                    const sanitizedText = rawText.replace(/^"+|"+$/g, '');
+                    lines.push(`"${sanitizedText}" - ${quote.character}`);
+                }
+            }
+            return `${lines.join('\n\n')}\n`;
+        };
+
+        const emitted = new Set();
+        const segments = [];
+        let sceneCursor = 0;
+        let sceneNumber = 0;
+        let idx = 0;
+
+        while (idx < entries.length) {
+            const entry = entries[idx];
+            if (!entry) {
+                idx += 1;
+                continue;
+            }
+            const entryId = typeof entry.id === 'string' ? entry.id.trim() : '';
+            const entryIndex = entryId ? entryIdToIndex.get(entryId) : null;
+            if (!entryIndex) {
+                const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+                if (summaryText) {
+                    segments.push({ entry, line: summaryText });
+                }
+                idx += 1;
+                continue;
+            }
+
+            while (sceneCursor < scenes.length && scenes[sceneCursor].endIndex < entryIndex) {
+                sceneCursor += 1;
+            }
+            const scene = scenes[sceneCursor];
+            if (!scene || entryIndex < scene.startIndex || entryIndex > scene.endIndex) {
+                const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+                if (summaryText) {
+                    segments.push({ entry, line: summaryText });
+                }
+                idx += 1;
+                continue;
+            }
+
+            if (!emitted.has(scene.startIndex)) {
+                sceneNumber += 1;
+                segments.push({ entry: null, line: formatSceneBlock(scene, sceneNumber) });
+                emitted.add(scene.startIndex);
+            }
+
+            idx += 1;
+            while (idx < entries.length) {
+                const nextEntry = entries[idx];
+                const nextEntryId = typeof nextEntry?.id === 'string' ? nextEntry.id.trim() : '';
+                const nextIndex = nextEntryId ? entryIdToIndex.get(nextEntryId) : null;
+                if (!nextIndex || nextIndex > scene.endIndex) {
+                    break;
+                }
+                idx += 1;
+            }
+        }
+
+        return segments;
+    };
+
+    const sceneSummarySegments = buildSceneSummarySegments(summaryCandidates);
+    if (sceneSummarySegments) {
+        historySegments.push(...sceneSummarySegments);
+    } else {
+        for (const entry of summaryCandidates) {
+            if (!entry) {
+                continue;
+            }
+            const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+            if (!summaryText) {
+                continue;
+            }
+            historySegments.push({ entry, line: summaryText });
+        }
     }
 
     for (const entry of tailEntries) {
@@ -3531,21 +3662,21 @@ function buildBasePromptContext({
     const buildHistoryLines = (segments) => {
         const lines = [];
         let lastLocationLine = null;
-        let lastSeenByLine = null;
+        let lastAbsentLine = null;
         const pushHistoryLine = (entry, line) => {
             const locationLine = formatLocationSuffix(entry).trim();
-            const seenByLine = formatSeenBySuffix(entry).trim();
+            const absentLine = formatAbsentCharactersSuffix(entry).trim();
 
             if (locationLine && locationLine !== lastLocationLine) {
                 lines.push(locationLine);
                 lastLocationLine = locationLine;
             }
 
-            if (seenByLine !== lastSeenByLine) {
-                if (seenByLine) {
-                    lines.push(seenByLine);
+            if (absentLine !== lastAbsentLine) {
+                if (absentLine) {
+                    lines.push(absentLine);
                 }
-                lastSeenByLine = seenByLine;
+                lastAbsentLine = absentLine;
             }
 
             lines.push(line);
@@ -3604,6 +3735,9 @@ function buildBasePromptContext({
             const recentLines = buildHistoryLines(recentSegments);
             const olderLines = buildHistoryLines(olderSegments);
             recentGameHistory = recentLines.join('\n');
+            if (olderLines.length && recentLines.length) {
+                olderLines.push('--- Recent story (verbatim, not summarized) ---');
+            }
             gameHistory = olderLines.join('\n');
         }
     }
@@ -4347,10 +4481,18 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         throw new Error('Scene summary end index is invalid after removing the final scene.');
     }
 
-    const entryIndexMap = rangeEntries.map(entry => ({
-        index: entry.index,
-        entryId: entry.entryId
-    }));
+    const entryIndexMap = rangeEntries.map(entry => {
+        const npcNames = Array.isArray(entry?.entry?.metadata?.npcNames)
+            ? entry.entry.metadata.npcNames
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+            : [];
+        return {
+            index: entry.index,
+            entryId: entry.entryId,
+            npcNames: npcNames.length ? npcNames : undefined
+        };
+    });
     const entryIdByIndex = new Map(entryIndexMap.map(entry => [entry.index, entry.entryId]));
 
     const scenesWithBounds = [];
@@ -18003,6 +18145,9 @@ app.get('/', (req, res) => {
         checkMovePlausibility: Globals.config.check_move_plausibility || 'never',
         baseWeaponDamage: Globals.config.baseWeaponDamage,
         clientMessageHistory,
+        saveMetadata: typeof Globals.getSaveMetadata === 'function'
+            ? Globals.getSaveMetadata()
+            : (Globals.saveMetadata || null),
         modScripts: modScripts,
         modStyles: modStyles
     });

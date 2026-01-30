@@ -12,6 +12,11 @@ const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
+const {
+    filterChatHistoryEntries,
+    normalizeEntryText,
+    resolveEntryRecordId
+} = require('./chat_history_utils.js');
 const e = require('express');
 const { getLorebookManager } = require('./lorebook.js');
 const console = require('console');
@@ -1357,6 +1362,34 @@ module.exports = function registerApiRoutes(scope) {
             return summaryConfig.enabled !== false;
         };
 
+        const normalizeSummaryStyle = (value) => {
+            const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            if (normalized === 'scene' || normalized === 'line') {
+                return normalized;
+            }
+            return null;
+        };
+
+        const getSummaryStyle = () => {
+            try {
+                const metadata = typeof Globals.getSaveMetadata === 'function'
+                    ? Globals.getSaveMetadata()
+                    : Globals.saveMetadata;
+                return normalizeSummaryStyle(metadata?.summaryStyle);
+            } catch (error) {
+                console.warn('Failed to resolve summary style from save metadata:', error.message);
+                return null;
+            }
+        };
+
+        const getMaxUnsummarizedEntries = () => {
+            const raw = Number(getSummaryConfig().max_unsummarized_log_entries);
+            if (Number.isInteger(raw) && raw > 0) {
+                return raw;
+            }
+            return 0;
+        };
+
         const getSummaryBatchSize = () => {
             const raw = Number(getSummaryConfig().batch_size);
             if (Number.isInteger(raw) && raw > 0) {
@@ -1387,6 +1420,41 @@ module.exports = function registerApiRoutes(scope) {
                 return true;
             }
             return false;
+        };
+
+        const countSceneSummaryEntries = (entries) => {
+            if (!Array.isArray(entries)) {
+                throw new Error('Chat history is unavailable for scene summary counting.');
+            }
+            const filteredEntries = filterChatHistoryEntries(entries, { excludeSummaries: true });
+            if (!filteredEntries.length) {
+                return 0;
+            }
+            const requiresPlayerName = filteredEntries.some(entry => {
+                const rawRole = typeof entry?.role === 'string' ? entry.role.trim().toLowerCase() : '';
+                return rawRole === 'user';
+            });
+            const playerName = typeof currentPlayer?.name === 'string' ? currentPlayer.name.trim() : '';
+            if (requiresPlayerName && !playerName) {
+                throw new Error('Unable to resolve the current player name for user entries.');
+            }
+
+            let count = 0;
+            for (const entry of filteredEntries) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+                const rawText = content || summary;
+                const text = normalizeEntryText(rawText);
+                if (!text) {
+                    continue;
+                }
+                resolveEntryRecordId(entry);
+                count += 1;
+            }
+            return count;
         };
 
         const parseBatchSummaryResponse = (xmlContent, expectedCount) => {
@@ -1713,8 +1781,42 @@ module.exports = function registerApiRoutes(scope) {
                 return;
             }
 
+            const maxUnsummarizedEntries = getMaxUnsummarizedEntries();
+            if (maxUnsummarizedEntries <= 0 || !Array.isArray(chatHistory)) {
+                return;
+            }
+
+            const summaryStyle = getSummaryStyle() || 'line';
+            if (summaryStyle === 'scene') {
+                const sceneSummaries = Globals.getSceneSummaries();
+                if (!sceneSummaries || typeof sceneSummaries.getFirstUnsummarizedIndex !== 'function') {
+                    throw new Error('Scene summary store is unavailable.');
+                }
+                const totalEntries = countSceneSummaryEntries(chatHistory);
+                if (!totalEntries) {
+                    return;
+                }
+                const firstUnsummarized = sceneSummaries.getFirstUnsummarizedIndex(totalEntries);
+                if (!firstUnsummarized) {
+                    return;
+                }
+                const unsummarizedCount = totalEntries - firstUnsummarized + 1;
+                if (unsummarizedCount < maxUnsummarizedEntries) {
+                    return;
+                }
+                if (typeof Globals.summarizeScenesForHistoryRange !== 'function') {
+                    throw new Error('Scene summarizer helper is unavailable.');
+                }
+                await Globals.summarizeScenesForHistoryRange({
+                    chatHistory,
+                    startIndex: firstUnsummarized,
+                    endIndex: totalEntries
+                });
+                return;
+            }
+
             const batchSize = getSummaryBatchSize();
-            if (batchSize <= 0 || !Array.isArray(chatHistory)) {
+            if (batchSize <= 0) {
                 return;
             }
 
@@ -1759,8 +1861,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            if (pendingEntries.length >= batchSize) {
-                await processSummaryQueue();
+            if (pendingEntries.length >= maxUnsummarizedEntries) {
+                await processSummaryQueue({ flushRemainder: true });
             }
         };
 
@@ -7864,8 +7966,13 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
                         try {
-                            const hitSimilarity = recentProseContents.some(prior => Utils.hasKgramOverlap(prior, aiResponse, { k: 10, minMatches: 1 }));
+                            let overlapMatch = null;
+                            const hitSimilarity = recentProseContents.some((prior) => {
+                                overlapMatch = Utils.findKgramOverlap(prior, aiResponse, { k: 6 });
+                                return Boolean(overlapMatch);
+                            });
                             if (hitSimilarity) {
+                                console.log(`Repetition detector fired (k=6): "${overlapMatch}"`);
                                 const rerendered = renderPlayerActionPrompt(true);
                                 if (rerendered && Array.isArray(rerendered.messages) && rerendered.messages.length) {
                                     const rerunOptions = { ...requestOptions, messages: rerendered.messages };
@@ -14697,43 +14804,43 @@ module.exports = function registerApiRoutes(scope) {
                     ? consumedThingNames
                     : consumedNameList;
                 if (consumedSummaryNames.length) {
-                consumedSummaryNames.forEach(name => {
-                    eventItems.push({
-                        icon: '♻️',
-                        description: `Consumed ${name}.`
+                    consumedSummaryNames.forEach(name => {
+                        eventItems.push({
+                            icon: '♻️',
+                            description: `Consumed ${name}.`
+                        });
                     });
-                });
 
-                const appliedConsumeEffects = [];
-                if (actionOutcome.success && Array.isArray(consumedThings)) {
-                    for (const thing of consumedThings) {
-                        const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
-                        if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
-                            try {
-                                const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
-                                if (applied) {
-                                    appliedConsumeEffects.push(applied);
+                    const appliedConsumeEffects = [];
+                    if (actionOutcome.success && Array.isArray(consumedThings)) {
+                        for (const thing of consumedThings) {
+                            const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
+                            if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
+                                try {
+                                    const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                    if (applied) {
+                                        appliedConsumeEffects.push(applied);
+                                    }
+                                } catch (error) {
+                                    console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
                                 }
-                            } catch (error) {
-                                console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
                             }
                         }
                     }
-                }
-                if (appliedConsumeEffects.length) {
-                    appliedConsumeEffects.forEach(effect => {
-                        eventItems.push({
-                            type: 'status_effect_change',
-                            icon: '✨',
-                            description: `Gained status effect: ${effect.name || effect.description || 'Unknown Effect'}`,
-                            effect: {
-                                name: effect.name || null,
-                                description: effect.description || '',
-                                duration: effect.duration ?? null
-                            }
+                    if (appliedConsumeEffects.length) {
+                        appliedConsumeEffects.forEach(effect => {
+                            eventItems.push({
+                                type: 'status_effect_change',
+                                icon: '✨',
+                                description: `Gained status effect: ${effect.name || effect.description || 'Unknown Effect'}`,
+                                effect: {
+                                    name: effect.name || null,
+                                    description: effect.description || '',
+                                    duration: effect.duration ?? null
+                                }
+                            });
                         });
-                    });
-                }
+                    }
                 }
                 const expectedConsumption = !isHarvestAction && slotItems.length > 0;
                 if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {
@@ -17251,6 +17358,8 @@ module.exports = function registerApiRoutes(scope) {
                 skills.clear();
                 Player.setAvailableSkills(new Map());
                 Globals.saveFileSaveVersion = normalizeSaveFileVersion(Globals.currentSaveVersion, 0);
+                Globals.setSaveMetadata({ summaryStyle: 'scene' });
+                Globals.setCurrentSaveInfo(null);
 
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
@@ -17655,6 +17764,14 @@ module.exports = function registerApiRoutes(scope) {
             metadata.currentSettingId = currentSetting?.id || metadata.currentSettingId || null;
             metadata.currentSettingName = currentSetting?.name || metadata.currentSettingName || null;
             metadata.saveFileSaveVersion = normalizeSaveFileVersion(Globals.saveFileSaveVersion, 0);
+            const summaryStyle = normalizeSummaryStyle(
+                (typeof Globals.getSaveMetadata === 'function' ? Globals.getSaveMetadata() : Globals.saveMetadata)?.summaryStyle
+            );
+            if (summaryStyle) {
+                metadata.summaryStyle = summaryStyle;
+            } else if (metadata.summaryStyle !== undefined) {
+                metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
+            }
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
                 ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
@@ -17721,6 +17838,13 @@ module.exports = function registerApiRoutes(scope) {
             metadata.source = metadata.source || (path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves');
             Globals.saveFileSaveVersion = normalizeSaveFileVersion(metadata.saveFileSaveVersion, 0);
             console.log(`💾 Loaded save file version: ${Globals.saveFileSaveVersion} (metadata: ${metadata.saveFileSaveVersion ?? 'missing'})`);
+            metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
+            Globals.setSaveMetadata(metadata);
+            Globals.setCurrentSaveInfo({
+                saveName: metadata.saveName || normalizedName,
+                saveDir,
+                source: metadata.source || null
+            });
 
             const loadedSetting = hydrationResult.setting || null;
             if (loadedSetting) {
@@ -18179,6 +18303,57 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(statusCode).json({
                     success: false,
                     error: error.message
+                });
+            }
+        });
+
+        app.post('/api/summaries/style', (req, res) => {
+            try {
+                const { style } = req.body || {};
+                const normalized = normalizeSummaryStyle(style);
+                if (!normalized) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'summary style must be "line" or "scene".'
+                    });
+                }
+
+                const metadata = typeof Globals.getSaveMetadata === 'function'
+                    ? Globals.getSaveMetadata()
+                    : Globals.saveMetadata;
+                if (!metadata || typeof metadata !== 'object') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'No save metadata available. Load or start a game first.'
+                    });
+                }
+
+                metadata.summaryStyle = normalized;
+                Globals.setSaveMetadata(metadata);
+
+                let persisted = false;
+                const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
+                    ? Globals.getCurrentSaveInfo()
+                    : Globals.currentSaveInfo;
+                if (saveInfo?.saveDir && typeof saveInfo.saveDir === 'string') {
+                    if (!fs.existsSync(saveInfo.saveDir)) {
+                        throw new Error('Save directory does not exist for metadata update.');
+                    }
+                    const metadataPath = path.join(saveInfo.saveDir, 'metadata.json');
+                    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+                    persisted = true;
+                }
+
+                return res.json({
+                    success: true,
+                    summaryStyle: normalized,
+                    persisted
+                });
+            } catch (error) {
+                console.error('Failed to update summary style:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to update summary style.'
                 });
             }
         });

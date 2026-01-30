@@ -13,6 +13,38 @@ class Globals {
   static currentSaveVersion = '1';
   static saveFileSaveVersion = '0';
   static sceneSummaries = null;
+  static saveMetadata = null;
+  static currentSaveInfo = null;
+
+  static setSaveMetadata(metadata) {
+    if (metadata === null || metadata === undefined) {
+      Globals.saveMetadata = null;
+      return;
+    }
+    if (typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new Error('Globals.setSaveMetadata requires a metadata object or null.');
+    }
+    Globals.saveMetadata = metadata;
+  }
+
+  static getSaveMetadata() {
+    return Globals.saveMetadata;
+  }
+
+  static setCurrentSaveInfo(info) {
+    if (info === null || info === undefined) {
+      Globals.currentSaveInfo = null;
+      return;
+    }
+    if (typeof info !== 'object' || Array.isArray(info)) {
+      throw new Error('Globals.setCurrentSaveInfo requires an info object or null.');
+    }
+    Globals.currentSaveInfo = info;
+  }
+
+  static getCurrentSaveInfo() {
+    return Globals.currentSaveInfo;
+  }
 
   static getBasePromptContext = function () {
     throw new Error('Globals.getBasePromptContext called before being set.');

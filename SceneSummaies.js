@@ -2,12 +2,14 @@ class SceneSummaries {
     constructor() {
         this._scenes = [];
         this._entryIdToIndex = new Map();
+        this._entryIdToNpcNames = new Map();
         this._metadata = { version: 1, updatedAt: null };
     }
 
     clear() {
         this._scenes = [];
         this._entryIdToIndex.clear();
+        this._entryIdToNpcNames.clear();
         this._metadata = { version: 1, updatedAt: null };
     }
 
@@ -170,15 +172,102 @@ class SceneSummaries {
         return this.getScenes().sort((a, b) => a.startIndex - b.startIndex);
     }
 
+    ingestNpcNamesFromEntries(entries = []) {
+        if (!Array.isArray(entries)) {
+            throw new Error('Entries list must be an array.');
+        }
+
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            const entryId = typeof entry.id === 'string' ? entry.id.trim() : '';
+            if (!entryId || !this._entryIdToIndex.has(entryId)) {
+                continue;
+            }
+            const npcNames = Array.isArray(entry?.metadata?.npcNames)
+                ? entry.metadata.npcNames
+                    .map(name => (typeof name === 'string' ? name.trim() : ''))
+                    .filter(Boolean)
+                : [];
+            if (!npcNames.length) {
+                continue;
+            }
+            this._entryIdToNpcNames.set(entryId, npcNames);
+        }
+    }
+
+    getAbsentCharactersByScene(characterNames = []) {
+        if (!Array.isArray(characterNames)) {
+            throw new Error('Character list must be an array of names.');
+        }
+        const normalizedNames = [];
+        const seenNames = new Set();
+        for (const name of characterNames) {
+            if (typeof name !== 'string') {
+                throw new Error('Character list must contain only string names.');
+            }
+            const trimmed = name.trim();
+            if (!trimmed || seenNames.has(trimmed)) {
+                continue;
+            }
+            normalizedNames.push(trimmed);
+            seenNames.add(trimmed);
+        }
+
+        const scenes = this.getScenesInOrder();
+        const absentByScene = new Map();
+        if (scenes.length === 0) {
+            return absentByScene;
+        }
+
+        const indexToNpcNames = new Map();
+        for (const [entryId, index] of this._entryIdToIndex.entries()) {
+            if (!Number.isInteger(index) || index <= 0) {
+                continue;
+            }
+            const npcNames = this._entryIdToNpcNames.get(entryId);
+            if (!Array.isArray(npcNames) || npcNames.length === 0) {
+                continue;
+            }
+            indexToNpcNames.set(index, npcNames);
+        }
+
+        for (const scene of scenes) {
+            const present = new Set();
+            for (let idx = scene.startIndex; idx <= scene.endIndex; idx += 1) {
+                const names = indexToNpcNames.get(idx);
+                if (!names) {
+                    continue;
+                }
+                for (const name of names) {
+                    if (typeof name === 'string' && name.trim()) {
+                        present.add(name.trim());
+                    }
+                }
+            }
+            const absent = normalizedNames.filter(name => !present.has(name));
+            absentByScene.set(scene.startIndex, absent);
+        }
+
+        return absentByScene;
+    }
+
     serialize() {
         return {
             version: 1,
             metadata: { ...this._metadata },
             scenes: this.getScenes(),
-            entryIndexMap: Array.from(this._entryIdToIndex.entries()).map(([entryId, index]) => ({
-                entryId,
-                index
-            }))
+            entryIndexMap: Array.from(this._entryIdToIndex.entries())
+                .map(([entryId, index]) => {
+                    const npcNames = this._entryIdToNpcNames.get(entryId);
+                    return {
+                        entryId,
+                        index,
+                        npcNames: Array.isArray(npcNames) ? npcNames.slice() : undefined
+                    };
+                })
+                .sort((a, b) => a.index - b.index)
         };
     }
 
@@ -221,11 +310,21 @@ class SceneSummaries {
             if (!Number.isInteger(index) || index <= 0) {
                 throw new Error(`Scene summary entryIndexMap entry has invalid index for ${entryId}.`);
             }
+            const npcNames = Array.isArray(entry?.npcNames)
+                ? entry.npcNames
+                    .map(name => (typeof name === 'string' ? name.trim() : ''))
+                    .filter(Boolean)
+                : [];
             const existing = this._entryIdToIndex.get(entryId);
             if (existing !== undefined && existing !== index) {
                 throw new Error(`Scene summary entryIndexMap index mismatch for ${entryId}.`);
             }
             this._entryIdToIndex.set(entryId, index);
+            if (npcNames.length) {
+                this._entryIdToNpcNames.set(entryId, npcNames);
+            } else {
+                this._entryIdToNpcNames.delete(entryId);
+            }
         }
     }
 

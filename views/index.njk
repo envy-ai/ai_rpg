@@ -1431,6 +1431,7 @@
         window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
         window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
         window.needBarDefinitions = {{ (needBarDefinitions or []) | dump | safe }};
+        window.__AIRPG_SAVE_METADATA__ = {{ (saveMetadata if saveMetadata is defined else null) | dump | safe }};
         if (!window.AIRPG_CONFIG || typeof window.AIRPG_CONFIG !== 'object') {
             window.AIRPG_CONFIG = {};
         }
@@ -1486,7 +1487,61 @@
             initQuestPanel();
             initPlayerOverviewSync();
             initPartyDisplay();
+            await maybePromptSummaryStyle();
         });
+
+        const normalizeSummaryStyle = (value) => {
+            const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+            if (normalized === 'scene' || normalized === 'line') {
+                return normalized;
+            }
+            return '';
+        };
+
+        const maybePromptSummaryStyle = async () => {
+            if (window.__AIRPG_SUMMARY_STYLE_PROMPTED__) {
+                return;
+            }
+            window.__AIRPG_SUMMARY_STYLE_PROMPTED__ = true;
+
+            const metadata = window.__AIRPG_SAVE_METADATA__;
+            if (!metadata || typeof metadata !== 'object') {
+                return;
+            }
+            const currentStyle = normalizeSummaryStyle(metadata.summaryStyle);
+            if (currentStyle) {
+                return;
+            }
+
+            const message = [
+                'This save is using the older line-by-line summaries.',
+                '',
+                'Switch to the new scene summaries? They are better and use fewer tokens,',
+                'but creating them will take several minutes and use some long prompts.'
+            ].join('\n');
+            const accepted = window.confirm(message);
+            const nextStyle = accepted ? 'scene' : 'line';
+
+            try {
+                const response = await fetch('/api/summaries/style', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ style: nextStyle })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    const errorMessage = data?.error || `HTTP ${response.status}`;
+                    console.warn('Failed to update summary style:', errorMessage);
+                    alert(`Failed to update summary style: ${errorMessage}`);
+                    return;
+                }
+                metadata.summaryStyle = nextStyle;
+                window.__AIRPG_SAVE_METADATA__ = metadata;
+            } catch (error) {
+                console.warn('Failed to update summary style:', error);
+                alert(`Failed to update summary style: ${error?.message || error}`);
+            }
+        };
 
         function bindLightboxElement(element, dataProvider) {
             if (!element || !window.lightboxController) {

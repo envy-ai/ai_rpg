@@ -95,10 +95,7 @@ The below context is an account of the current game state, including the setting
     {% endfor %}
   </needBarDefinitions>
   {% if gameHistory and gameHistory | trim and not omitGameHistory %}
-  <gameHistory>{{ gameHistory }}</gameHistory>
-  {% endif %}
-  {% if recentGameHistory and recentGameHistory | trim %}
-  <recentGameHistory>{{ recentGameHistory }}</recentGameHistory>
+  <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}
   <worldOutline>
     {% for regionName, locations in worldOutline.regions %}
@@ -489,7 +486,7 @@ The below context is an account of the current game state, including the setting
   <additionalLore>
     {{ additionalLore }}
   </additionalLore>
-  <gameHistory time='recent'>{{ recentGameHistory }}</gameHistory>
+  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 
 {% include "_includes/" + promptType + ".njk" %}
