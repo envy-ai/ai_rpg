@@ -6,15 +6,28 @@ Guidelines:
 - Do not consider whether an action is illegal, unethical, or immoral, only whether it is trivial, plausible, or implausible.
 - It's generally okay to assume that the tools necessary for using a crafting or processing station are present at the station, unless indicated otherwise. A carpentry workbench would have woodworking tools, a cooking station would have cooking utensils, etc.
 - Check the player's abilities and account for any that might change the outcome of the crafting attempt.
+{% if craftTargetType == 'scenery' %}
+- The player is explicitly crafting scenery (a non-portable fixture). Every crafted output must set <itemOrScenery>scenery</itemOrScenery>. It should not be equippable or consumable, should not grant attribute bonuses, and should not apply status effects. Slot should be N/A.
+{% elif craftTargetType == 'item' %}
+- The player is explicitly crafting a portable item. Every crafted output must set <itemOrScenery>item</itemOrScenery>.
+{% endif %}
 
 Current Situation:
 {% if intendedItemName %}
+{% if craftTargetType == 'scenery' %}
+The player is attempting to craft scenery called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %} out of the following items:
+{% else %}
 The player is attempting to craft an item called "{{ intendedItemName }}" {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %} out of the following items:
+{% endif %}
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}
 {% else %}
+{% if craftTargetType == 'scenery' %}
+The player is attempting to craft scenery {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %}  out of the following items:
+{% else %}
 The player is attempting to craft an item {% if stationName == 'no workstation' %}with the resources currently available to them {% else %}using the crafting/processing station "{{ stationName }}"{% endif %}  out of the following items:
+{% endif %}
 {%- for item in craftingItems %}
     - {{ item.name }}
 {% endfor %}

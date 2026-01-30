@@ -30,7 +30,13 @@ The player mentioned the following intent or approach before salvaging: "{{ salv
 
 They had this degree of success/failure: "{{ success_or_failure }}".
 
-Regardless of their success or failure, they produced {% if producedItem %}the following item: "{{ producedItem.name }}"{% else %}no item{% endif %} and consumed {% if consumedItems.length > 0 %}the following items in the process:{% else %}no items in the process.{% endif %}
+{% if craftTargetType == 'scenery' %}
+The intended output is scenery (not a portable item).
+{% elif craftTargetType == 'item' %}
+The intended output is a portable item.
+{% endif %}
+
+Regardless of their success or failure, they produced {% if producedItem %}the following {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}: "{{ producedItem.name }}"{% else %}no {% if craftTargetType == 'scenery' %}scenery{% else %}item{% endif %}{% endif %} and consumed {% if consumedItems.length > 0 %}the following items in the process:{% else %}no items in the process.{% endif %}
 {% for item in consumedItems %}- {{ item.name }}
 {% endfor %}
 

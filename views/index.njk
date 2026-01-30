@@ -5240,6 +5240,7 @@
         const salvageIntentCloseBtn = document.getElementById('salvageIntentCloseBtn');
 
         let currentCraftingMode = 'craft';
+        let currentCraftingTargetType = 'item';
         let currentCraftingSlotCount = 4;
         let craftingSlotAssignments = new Map();
         let craftingInventoryLookup = new Map();
@@ -10374,13 +10375,13 @@
 
         if (craftSceneryButton) {
             craftSceneryButton.addEventListener('click', () => {
-                openCraftingModal({ mode: 'craft', sourceThing: null });
+                openCraftingModal({ mode: 'craft', sourceThing: null, targetType: 'scenery' });
             });
         }
 
         if (craftItemButton) {
             craftItemButton.addEventListener('click', () => {
-                openCraftingModal({ mode: 'craft', sourceThing: null });
+                openCraftingModal({ mode: 'craft', sourceThing: null, targetType: 'item' });
             });
         }
 
@@ -11852,7 +11853,8 @@
             if (thingId && thingDataCache instanceof Map && thingDataCache.has(thingId)) {
                 sourceThing = thingDataCache.get(thingId);
             }
-            openCraftingModal({ mode, sourceThing });
+            const targetType = mode === 'craft' ? 'item' : null;
+            openCraftingModal({ mode, sourceThing, targetType });
         }
 
         function attemptSalvageFromBadge(hostElement) {
@@ -11950,7 +11952,7 @@
             await submitSalvageRequest({ thingId, thing, mode, notes });
         }
 
-        function openCraftingModal({ mode = 'craft', sourceThing = null } = {}) {
+        function openCraftingModal({ mode = 'craft', sourceThing = null, targetType = null } = {}) {
             if (!craftingModal || !craftingModalBackdrop) {
                 return;
             }
@@ -11967,6 +11969,10 @@
 
             currentCraftingMode = mode === 'process' ? 'process' : 'craft';
             currentCraftingSlotCount = currentCraftingMode === 'process' ? 1 : 4;
+            const normalizedTargetType = typeof targetType === 'string' ? targetType.trim().toLowerCase() : '';
+            currentCraftingTargetType = (currentCraftingMode === 'craft' && normalizedTargetType === 'scenery')
+                ? 'scenery'
+                : 'item';
             craftingSlotAssignments = new Map();
             craftingInventoryLookup = new Map();
             craftingSourceThing = sourceThing || null;
@@ -11982,6 +11988,8 @@
 
             const stationName = craftingSourceThing?.name
                 || (currentCraftingMode === 'process' ? 'Processing Station' : 'Crafting Station');
+            const craftTargetLabel = currentCraftingTargetType === 'scenery' ? 'scenery' : 'item';
+            const craftTargetLabelTitle = currentCraftingTargetType === 'scenery' ? 'Scenery' : 'Item';
             if (craftingModalTitle) {
                 craftingModalTitle.textContent = stationName;
             }
@@ -11993,18 +12001,18 @@
             if (craftingModalHint) {
                 craftingModalHint.textContent = currentCraftingMode === 'process'
                     ? 'Drag a single item into the slot to process it. Items remain in your inventory until you confirm.'
-                    : 'Drag up to four items into the slots to craft. Items remain in your inventory until you confirm.';
+                    : `Drag up to four items into the slots to craft ${craftTargetLabel}. Items remain in your inventory until you confirm.`;
             }
             if (craftingActionButton) {
                 craftingActionButton.textContent = currentCraftingMode === 'process'
                     ? 'Process Item'
-                    : 'Craft Items';
+                    : `Craft ${craftTargetLabelTitle}`;
             }
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
                 craftingNotesInput.placeholder = currentCraftingMode === 'process'
                     ? 'Optionally, describe what you are trying to create via processing.'
-                    : 'Optionally, describe what you are trying to craft.';
+                    : `Optionally, describe what you are trying to craft (${craftTargetLabel}).`;
             }
 
             craftingModal.removeAttribute('hidden');
@@ -12031,6 +12039,7 @@
             });
             craftingInventoryCardRefs = new Map();
             craftingSourceThing = null;
+            currentCraftingTargetType = 'item';
             if (craftingNotesInput) {
                 craftingNotesInput.value = '';
             }
@@ -12389,6 +12398,7 @@
             return {
                 mode: currentCraftingMode,
                 notes: craftingNotesInput?.value?.trim() || '',
+                craftTargetType: currentCraftingMode === 'craft' ? currentCraftingTargetType : null,
                 stationThingId: craftingSourceThing?.id || null,
                 stationName: craftingSourceThing ? craftingSourceThing.name : 'no workstation',
                 slotCount: currentCraftingSlotCount,
@@ -12463,7 +12473,10 @@
                 alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
             } finally {
                 if (craftingActionButton) {
-                    craftingActionButton.innerHTML = originalText || (currentCraftingMode === 'process' ? 'Process Item' : 'Craft Items');
+                    const fallbackLabel = currentCraftingMode === 'process'
+                        ? 'Process Item'
+                        : (currentCraftingTargetType === 'scenery' ? 'Craft Scenery' : 'Craft Item');
+                    craftingActionButton.innerHTML = originalText || fallbackLabel;
                 }
                 updateCraftingActionState();
             }

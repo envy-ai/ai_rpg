@@ -14,6 +14,24 @@ let cachedPlayerModule = null;
 let cachedSkillModule = null;
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
+const COMMON_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'being', 'but', 'by',
+  'can', 'could', 'did', 'do', 'does', 'doing', 'done', 'for', 'from', 'had',
+  'has', 'have', 'having', 'he', 'her', 'hers', 'him', 'his', 'i', 'if', 'in',
+  'into', 'is', 'it', 'its', 'me', 'my', 'mine', 'no', 'not',
+  'of', 'off', 'on', 'or', 'our', 'ours', 'out', 'she', 'should', 'so', 'than',
+  'that', 'the', 'their', 'theirs', 'them', 'then', 'these', 'they', 'this',
+  'those', 'to', 'too', 'under', 'up', 'us', 'very', 'was', 'we', 'were',
+  'what', 'when', 'where', 'which', 'while', 'who', 'whom', 'why', 'will',
+  'with', 'without', 'would', 'you', 'your', 'yours',
+  "aren't", "can't", "couldn't", "didn't", "doesn't", "don't", "hadn't",
+  "hasn't", "haven't", "he'd", "he'll", "he's", "i'd", "i'll", "i'm", "i've",
+  "isn't", "it'd", "it'll", "it's", "let's", "mustn't", "shan't", "she'd",
+  "she'll", "she's", "shouldn't", "that'd", "that'll", "that's", "there's",
+  "they'd", "they'll", "they're", "they've", "we'd", "we'll", "we're", "we've",
+  "weren't", "what's", "when's", "where's", "who's", "why's", "won't",
+  "wouldn't", "you'd", "you'll", "you're", "you've"
+]);
 
 class Utils {
   static intersection = (setA, setB) => new Set([...setA].filter(x => setB.has(x)));
@@ -111,33 +129,36 @@ class Utils {
     return longest;
   }
 
+  static #normalizeKgramTokens(text) {
+    return text
+      .split(/\s+/)
+      .map(t => t.trim().toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+      .filter(Boolean)
+      .filter(t => !COMMON_WORDS.has(t));
+  }
+
+  static #buildKgramSet(tokens, k) {
+    const kgrams = new Set();
+    for (let i = 0; i <= tokens.length - k; i += 1) {
+      kgrams.add(tokens.slice(i, i + k).join(' '));
+    }
+    return kgrams;
+  }
+
   static hasKgramOverlap(a, b, { k = 10, minMatches = 1 } = {}) {
     if (typeof a !== 'string' || typeof b !== 'string') {
       throw new TypeError('Utils.hasKgramOverlap requires two string arguments.');
     }
-    const normalizeTokens = (text) => text
-      .split(/\s+/)
-      .map(t => t.trim())
-      .filter(Boolean);
-
-    const tokensA = normalizeTokens(a);
-    const tokensB = normalizeTokens(b);
+    const tokensA = Utils.#normalizeKgramTokens(a);
+    const tokensB = Utils.#normalizeKgramTokens(b);
     if (tokensA.length < k || tokensB.length < k) {
       return false;
     }
 
-    const buildKgrams = (tokens) => {
-      const kgrams = new Set();
-      for (let i = 0; i <= tokens.length - k; i += 1) {
-        kgrams.add(tokens.slice(i, i + k).join(' '));
-      }
-      return kgrams;
-    };
-
     const small = tokensA.length <= tokensB.length ? tokensA : tokensB;
     const large = small === tokensA ? tokensB : tokensA;
 
-    const smallKgrams = buildKgrams(small);
+    const smallKgrams = Utils.#buildKgramSet(small, k);
     let matches = 0;
     for (let i = 0; i <= large.length - k; i += 1) {
       const gram = large.slice(i, i + k).join(' ');
@@ -151,33 +172,55 @@ class Utils {
     return false;
   }
 
+  static findKgramOverlaps(a, b, { minK = 4, maxK = null } = {}) {
+    if (typeof a !== 'string' || typeof b !== 'string') {
+      throw new TypeError('Utils.findKgramOverlaps requires two string arguments.');
+    }
+    const tokensA = Utils.#normalizeKgramTokens(a);
+    const tokensB = Utils.#normalizeKgramTokens(b);
+    if (!Number.isInteger(minK) || minK < 1) {
+      throw new RangeError('Utils.findKgramOverlaps requires minK to be a positive integer.');
+    }
+    if (tokensA.length < minK || tokensB.length < minK) {
+      return [];
+    }
+
+    let resolvedMaxK = maxK;
+    if (!Number.isInteger(resolvedMaxK) || resolvedMaxK < minK) {
+      resolvedMaxK = Math.min(tokensA.length, tokensB.length);
+    }
+
+    const overlaps = new Set();
+    const small = tokensA.length <= tokensB.length ? tokensA : tokensB;
+    const large = small === tokensA ? tokensB : tokensA;
+
+    for (let k = minK; k <= resolvedMaxK; k += 1) {
+      const smallKgrams = Utils.#buildKgramSet(small, k);
+      for (let i = 0; i <= large.length - k; i += 1) {
+        const gram = large.slice(i, i + k).join(' ');
+        if (smallKgrams.has(gram)) {
+          overlaps.add(gram);
+        }
+      }
+    }
+
+    return Array.from(overlaps);
+  }
+
   static findKgramOverlap(a, b, { k = 10 } = {}) {
     if (typeof a !== 'string' || typeof b !== 'string') {
       throw new TypeError('Utils.findKgramOverlap requires two string arguments.');
     }
-    const normalizeTokens = (text) => text
-      .split(/\s+/)
-      .map(t => t.trim())
-      .filter(Boolean);
-
-    const tokensA = normalizeTokens(a);
-    const tokensB = normalizeTokens(b);
+    const tokensA = Utils.#normalizeKgramTokens(a);
+    const tokensB = Utils.#normalizeKgramTokens(b);
     if (tokensA.length < k || tokensB.length < k) {
       return null;
     }
 
-    const buildKgrams = (tokens) => {
-      const kgrams = new Set();
-      for (let i = 0; i <= tokens.length - k; i += 1) {
-        kgrams.add(tokens.slice(i, i + k).join(' '));
-      }
-      return kgrams;
-    };
-
     const small = tokensA.length <= tokensB.length ? tokensA : tokensB;
     const large = small === tokensA ? tokensB : tokensA;
 
-    const smallKgrams = buildKgrams(small);
+    const smallKgrams = Utils.#buildKgramSet(small, k);
     for (let i = 0; i <= large.length - k; i += 1) {
       const gram = large.slice(i, i + k).join(' ');
       if (smallKgrams.has(gram)) {

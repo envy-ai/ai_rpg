@@ -22,6 +22,15 @@ You are a narrative analysis assistant for a text-based RPG log. Your tasks invo
 </data>
 
 <instructions>
+{%- set lineCount = fullHistoryLines | length -%}
+{%- set minScenes = 1 -%}
+{%- set maxScenes = 1 -%}
+{%- if lineCount > 0 -%}
+{%- set minScenes = (lineCount * 15 / 500) | round(0) -%}
+{%- set maxScenes = (lineCount * 25 / 500) | round(0) -%}
+{%- endif -%}
+{%- if minScenes < 1 -%}{%- set minScenes = 1 -%}{%- endif -%}
+{%- if maxScenes < 1 -%}{%- set maxScenes = 1 -%}{%- endif -%}
 Step 1: Your task is to break the above story into major narrative scenes. A scene represents a significant story beat or dramatic arc—typically:
 - A complete encounter with a new character (introduction through resolution)
 - A continuous sequence of exploration/discovery at one location
@@ -34,7 +43,7 @@ Do NOT break scenes for:
 - Minor mechanical actions (moving between connected rooms, picking up single items)
 - Brief asides or reactions that don't change the situation
 
-Aim for 15-25 scenes total that capture the story's major structural beats. Brainstorm about this, referring to the scenes by the index number at which they start. Don't be hung up on formatting here, but use some tokens to think it through carefully.
+Aim for {{ minScenes }}-{{ maxScenes }} scenes total (maintaining the 15-25 per 500 lines ratio) that capture the story's major structural beats. Use at least 1 scene if the computed range would be zero. Brainstorm about this, referring to the scenes by the index number at which they start. Don't be hung up on formatting here, but use some tokens to think it through carefully.
 
 Step 2: Verify accuracy of scene boundaries. Adjust as needed to ensure each scene is self-contained and coherent. Ensure that your thoughts about what happens in each scene accurately reflect the content of that scene. As above, don't worry about formatting, but use some tokens to think it through carefully.
 

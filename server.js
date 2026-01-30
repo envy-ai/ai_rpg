@@ -142,7 +142,7 @@ function filterOrphanedChatEntries(entries) {
         throw new Error('Chat history must be an array before filtering.');
     }
 
-    const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility']);
+    const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover']);
     const implicitParentById = new Map();
     const entryById = new Map();
     let lastNonAttachmentId = null;
@@ -3283,6 +3283,20 @@ function buildBasePromptContext({
         return dispositions;
     }
 
+    const rawPartyMemberIds = currentPlayer && typeof currentPlayer.getPartyMembers === 'function'
+        ? currentPlayer.getPartyMembers()
+        : [];
+    const partyMemberIds = Array.isArray(rawPartyMemberIds)
+        ? rawPartyMemberIds
+        : (rawPartyMemberIds && typeof rawPartyMemberIds.forEach === 'function'
+            ? Array.from(rawPartyMemberIds)
+            : []);
+    const partyMemberIdSet = new Set(
+        partyMemberIds
+            .map(id => (typeof id === 'string' ? id.trim() : ''))
+            .filter(Boolean)
+    );
+
     const npcs = [];
     const dispositionDefinitions = Player.getDispositionDefinitions();
     const dispositionTypes = Object.values(dispositionDefinitions?.types || {});
@@ -3299,6 +3313,9 @@ function buildBasePromptContext({
             ? location.npcIds
             : (Array.isArray(locationDetails?.npcIds) ? locationDetails.npcIds : []);
         for (const npcId of npcIds) {
+            if (partyMemberIdSet.has(npcId)) {
+                continue;
+            }
             const npc = players.get(npcId);
             if (!npc) {
                 continue;
@@ -3342,8 +3359,7 @@ function buildBasePromptContext({
 
     const party = [];
     if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
-        const memberIds = currentPlayer.getPartyMembers();
-        for (const memberId of memberIds) {
+        for (const memberId of partyMemberIds) {
             const member = players.get(memberId);
             if (!member) {
                 continue;
@@ -5404,10 +5420,14 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             }
         }
         if (originLocation && directionHint) {
-            ensureExitConnection(originLocation, existing, {
-                description: descriptionHint || `${existing.name || trimmedName}`,
-                bidirectional: false
-            });
+            if (existing.isStub) {
+                ensureExitConnection(originLocation, existing, {
+                    description: descriptionHint || `${existing.name || trimmedName}`,
+                    bidirectional: false
+                });
+            } else {
+                console.log(`🧭 Skipping exit creation to existing location ${existing.name || existing.id} (already unstubbed).`);
+            }
         }
 
         if (effectiveRegion && typeof effectiveRegion.addLocationId === 'function') {

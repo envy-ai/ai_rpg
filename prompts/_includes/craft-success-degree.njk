@@ -16,6 +16,12 @@ mode: {{ mode }}
 They had this degree of success/failure: "{{ success_or_failure }}".
 {% endif %}
 
+{% if craftTargetType == 'scenery' %}
+The crafted output is scenery (non-portable). Preserve <itemOrScenery>scenery</itemOrScenery>, keep slot as N/A, and do not add attribute bonuses or status effects.
+{% elif craftTargetType == 'item' %}
+The crafted output is a portable item. Preserve <itemOrScenery>item</itemOrScenery>.
+{% endif %}
+
 The following is an XML reppresentation of the crafting action's outcome if it were a standard success. Adjust the description and other fields to accurately reflect this level of success or failure: {{ success_or_failure }}.
 
 {{ crafting_outcome_xml }}

@@ -281,6 +281,42 @@ module.exports = function registerApiRoutes(scope) {
             return flagged.filter(word => tokenSet.has(word));
         };
 
+        const getRecentSlopHistorySegments = (limit = 20) => {
+            const segments = getSlopHistorySegments();
+            if (!segments.length) {
+                return [];
+            }
+            const numericLimit = Number(limit);
+            if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
+                return segments;
+            }
+            return segments.slice(-Math.round(numericLimit));
+        };
+
+        const collectRepeatedNgrams = (prose, { minK = 4, maxEntries = 20 } = {}) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                return [];
+            }
+            const segments = getRecentSlopHistorySegments(maxEntries);
+            if (!segments.length) {
+                return [];
+            }
+            const overlaps = new Set();
+            for (const segment of segments) {
+                if (typeof segment !== 'string' || !segment.trim()) {
+                    continue;
+                }
+                if (segment === prose) {
+                    continue;
+                }
+                const matches = Utils.findKgramOverlaps(segment, prose, { minK });
+                if (Array.isArray(matches)) {
+                    matches.forEach(match => overlaps.add(match));
+                }
+            }
+            return Array.from(overlaps);
+        };
+
         const buildSlopContextText = () => {
             if (!Array.isArray(chatHistory)) {
                 throw new Error('Chat history is unavailable for slopword context.');
@@ -325,7 +361,7 @@ module.exports = function registerApiRoutes(scope) {
             return lines.join('\n\n');
         };
 
-        const applySlopRemoval = async (prose) => {
+        const applySlopRemoval = async (prose, { returnDiagnostics = false } = {}) => {
             const scrubber = Globals.scrubGeneratedBrackets;
             if (typeof scrubber !== 'function') {
                 throw new Error('Slop remover requires scrubGeneratedBrackets helper.');
@@ -338,7 +374,21 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-            if (!slopWordSet.size) {
+            const slopNgramSet = new Set(collectRepeatedNgrams(currentProse, { minK: 4, maxEntries: 20 }));
+
+            const detectedSlopWords = Array.from(slopWordSet);
+            const detectedSlopNgrams = Array.from(slopNgramSet);
+            const shouldRun = slopWordSet.size > 0 || slopNgramSet.size > 0;
+
+            if (!shouldRun) {
+                if (returnDiagnostics) {
+                    return {
+                        text: currentProse,
+                        slopWords: [],
+                        slopNgrams: [],
+                        ran: false
+                    };
+                }
                 return currentProse;
             }
 
@@ -347,7 +397,15 @@ module.exports = function registerApiRoutes(scope) {
             const originalProse = currentProse;
             let maxAttempts = 3;
             for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-                const slopWords = Array.from(slopWordSet);
+                const slopWords = Array.from(slopWordSet).sort((a, b) => a.localeCompare(b));
+                const slopNgrams = Array.from(slopNgramSet)
+                    .sort((a, b) => {
+                        const lengthDiff = b.split(' ').length - a.split(' ').length;
+                        if (lengthDiff) {
+                            return lengthDiff;
+                        }
+                        return a.localeCompare(b);
+                    });
                 let promptData = null;
                 let slopResponse = '';
                 let parseFailure = null;
@@ -357,7 +415,7 @@ module.exports = function registerApiRoutes(scope) {
                         storyText: slopContext,
                         textToEdit: currentProse,
                         slopWords,
-                        slopTrigrams: []
+                        slopNgrams
                     });
                     promptData = parseXMLTemplate(rendered);
                     if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
@@ -419,19 +477,42 @@ module.exports = function registerApiRoutes(scope) {
                 const candidateProse = scrubber(slopResponse.trim());
                 currentProse = candidateProse;
 
-                const remaining = await getFilteredSlopWords(currentProse);
-                if (!remaining.length) {
+                const remainingWords = await getFilteredSlopWords(currentProse);
+                const remainingNgrams = collectRepeatedNgrams(currentProse, { minK: 4, maxEntries: 20 });
+                if (!remainingWords.length && !remainingNgrams.length) {
                     break;
                 }
                 if (attempt === maxAttempts - 1) {
-                    console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remaining.join(', ')}`);
+                    const remainingSummary = [
+                        remainingWords.length ? `words=${remainingWords.join(', ')}` : null,
+                        remainingNgrams.length ? `ngrams=${remainingNgrams.join(', ')}` : null
+                    ].filter(Boolean).join(' | ');
+                    console.warn(`Slop remover reached max attempts; allowing response with remaining slop: ${remainingSummary}`);
                     break;
                 }
-                remaining.forEach(word => slopWordSet.add(word));
+                remainingWords.forEach(word => slopWordSet.add(word));
+                remainingNgrams.forEach(ngram => slopNgramSet.add(ngram));
             }
 
             if (!currentProse.trim()) {
+                if (returnDiagnostics) {
+                    return {
+                        text: originalProse,
+                        slopWords: detectedSlopWords,
+                        slopNgrams: detectedSlopNgrams,
+                        ran: shouldRun
+                    };
+                }
                 return originalProse;
+            }
+
+            if (returnDiagnostics) {
+                return {
+                    text: currentProse,
+                    slopWords: detectedSlopWords,
+                    slopNgrams: detectedSlopNgrams,
+                    ran: shouldRun
+                };
             }
 
             return currentProse;
@@ -707,6 +788,7 @@ module.exports = function registerApiRoutes(scope) {
             mode = 'craft',
             stationName = null,
             intendedItemName = null,
+            craftTargetType = null,
             targetName = null,
             inputItems = []
         } = {}) {
@@ -722,6 +804,7 @@ module.exports = function registerApiRoutes(scope) {
                 mode,
                 stationName,
                 intendedItemName,
+                craftTargetType,
                 targetName,
                 inputItems
             });
@@ -2628,6 +2711,42 @@ module.exports = function registerApiRoutes(scope) {
             return pushChatEntry(entry, collector, resolvedLocationId);
         }
 
+        function recordSlopRemovalEntry({ data, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
+            if (!Array.isArray(chatHistory)) {
+                return null;
+            }
+            if (!data || typeof data !== 'object') {
+                return null;
+            }
+
+            const slopWords = Array.isArray(data.slopWords)
+                ? data.slopWords.map(word => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
+                : [];
+            const slopNgrams = Array.isArray(data.slopNgrams)
+                ? data.slopNgrams.map(ngram => (typeof ngram === 'string' ? ngram.trim() : '')).filter(Boolean)
+                : [];
+
+            if (!slopWords.length && !slopNgrams.length) {
+                return null;
+            }
+
+            const resolvedLocationId = requireLocationId(locationId, 'recordSlopRemovalEntry');
+
+            const entry = {
+                role: 'assistant',
+                type: 'slop-remover',
+                timestamp: timestamp || new Date().toISOString(),
+                parentId: parentId || null,
+                slopRemoval: {
+                    slopWords,
+                    slopNgrams
+                },
+                locationId: resolvedLocationId
+            };
+
+            return pushChatEntry(entry, collector, resolvedLocationId);
+        }
+
         function appendEventSummariesToChat({
             summaryLabel = '📋 Events – Player Turn',
             statusLabel = '🌀 Status Changes – Player Turn',
@@ -2931,8 +3050,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 let cleanedNarrative = narrativeText;
+                let slopRemovalInfo = null;
                 if (Globals.config?.slop_buster === true) {
-                    cleanedNarrative = await applySlopRemoval(cleanedNarrative);
+                    const slopResult = await applySlopRemoval(cleanedNarrative, { returnDiagnostics: true });
+                    cleanedNarrative = slopResult.text;
+                    if (slopResult.ran) {
+                        slopRemovalInfo = {
+                            slopWords: slopResult.slopWords || [],
+                            slopNgrams: slopResult.slopNgrams || []
+                        };
+                    }
                 }
 
                 const randomEventLocationId = requireLocationId(location?.id, 'random event entry');
@@ -2950,6 +3077,14 @@ module.exports = function registerApiRoutes(scope) {
                     locationId: randomEventLocationId
                 }, entryCollector, randomEventLocationId);
                 const randomEventTimestamp = randomEventEntry?.timestamp || new Date().toISOString();
+
+                if (slopRemovalInfo) {
+                    recordSlopRemovalEntry({
+                        data: slopRemovalInfo,
+                        parentId: randomEventEntry?.id || null,
+                        locationId: randomEventLocationId
+                    }, entryCollector);
+                }
 
                 let eventChecks = null;
                 try {
@@ -2971,6 +3106,9 @@ module.exports = function registerApiRoutes(scope) {
                     eventChecks: eventChecks?.html || null,
                     events: eventChecks?.structured || null
                 };
+                if (slopRemovalInfo) {
+                    summary.slopRemoval = slopRemovalInfo;
+                }
 
                 if (eventChecks?.npcUpdates) {
                     summary.npcUpdates = eventChecks.npcUpdates;
@@ -6500,8 +6638,16 @@ module.exports = function registerApiRoutes(scope) {
                     let npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
                         ? narrativeResult.raw.trim()
                         : `${npc.name} considers their options but ultimately does nothing noteworthy.`;
+                    let npcSlopRemovalInfo = null;
                     if (Globals.config?.slop_buster === true) {
-                        npcResponse = await applySlopRemoval(npcResponse);
+                        const slopResult = await applySlopRemoval(npcResponse, { returnDiagnostics: true });
+                        npcResponse = slopResult.text;
+                        if (slopResult.ran) {
+                            npcSlopRemovalInfo = {
+                                slopWords: slopResult.slopWords || [],
+                                slopNgrams: slopResult.slopNgrams || []
+                            };
+                        }
                     }
 
                     let npcEventResult = null;
@@ -6521,6 +6667,14 @@ module.exports = function registerApiRoutes(scope) {
                     }, entryCollector, npcTurnLocationId);
                     const npcTurnTimestamp = npcTurnEntry?.timestamp || new Date().toISOString();
 
+                    if (npcSlopRemovalInfo) {
+                        recordSlopRemovalEntry({
+                            data: npcSlopRemovalInfo,
+                            parentId: npcTurnEntry?.id || null,
+                            locationId: npcTurnLocationId
+                        }, entryCollector);
+                    }
+
                     const npcTurnResult = {
                         name: npc.name,
                         npcId: npc.id || null,
@@ -6532,6 +6686,10 @@ module.exports = function registerApiRoutes(scope) {
                         debug: narrativeResult.debug,
                         timestamp: npcTurnTimestamp
                     };
+
+                    if (npcSlopRemovalInfo) {
+                        npcTurnResult.slopRemoval = npcSlopRemovalInfo;
+                    }
 
                     if (Array.isArray(npcEventResult?.experienceAwards) && npcEventResult.experienceAwards.length) {
                         npcTurnResult.experienceAwards = npcEventResult.experienceAwards;
@@ -7994,8 +8152,16 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    let slopRemovalInfo = null;
                     if (Globals.config?.slop_buster === true) {
-                        aiResponse = await applySlopRemoval(aiResponse);
+                        const slopResult = await applySlopRemoval(aiResponse, { returnDiagnostics: true });
+                        aiResponse = slopResult.text;
+                        if (slopResult.ran) {
+                            slopRemovalInfo = {
+                                slopWords: slopResult.slopWords || [],
+                                slopNgrams: slopResult.slopNgrams || []
+                            };
+                        }
                     }
 
                     stream.status('player_action:llm_complete', 'Continuing with turn resolution.');
@@ -8009,6 +8175,14 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: aiResponseLocationId
                     }, newChatEntries, aiResponseLocationId);
                     currentTurnLog.push(aiResponse);
+
+                    if (slopRemovalInfo) {
+                        recordSlopRemovalEntry({
+                            data: slopRemovalInfo,
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
+                        }, newChatEntries);
+                    }
 
                     try {
                         await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
@@ -8034,6 +8208,10 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     // Add debug info if available
+                    if (slopRemovalInfo) {
+                        responseData.slopRemoval = slopRemovalInfo;
+                    }
+
                     if (debugInfo) {
                         debugInfo.actionResolution = actionResolution;
                         debugInfo.plausibilityStructured = plausibilityInfo?.structured || null;
@@ -14064,6 +14242,12 @@ module.exports = function registerApiRoutes(scope) {
                 const craftingNotes = typeof payload.notes === 'string'
                     ? payload.notes.trim()
                     : '';
+                const craftTargetTypeInput = typeof payload.craftTargetType === 'string'
+                    ? payload.craftTargetType.trim().toLowerCase()
+                    : '';
+                const craftTargetType = craftTargetTypeInput === 'scenery'
+                    ? 'scenery'
+                    : (craftTargetTypeInput === 'item' ? 'item' : null);
                 let craftingMode = 'craft';
                 if (payload.mode === 'process') {
                     craftingMode = 'process';
@@ -14089,6 +14273,9 @@ module.exports = function registerApiRoutes(scope) {
                 } else if (isHarvestAction) {
                     craftingMode = 'harvest';
                 }
+                const effectiveCraftTargetType = (!isSalvageAction && !isHarvestAction && craftingMode === 'craft')
+                    ? craftTargetType
+                    : null;
                 const stationThingId = typeof payload.stationThingId === 'string' ? payload.stationThingId.trim() : '';
                 const stationThing = stationThingId
                     ? (things.get(stationThingId) || (typeof Thing.getById === 'function' ? Thing.getById(stationThingId) : null))
@@ -14137,6 +14324,7 @@ module.exports = function registerApiRoutes(scope) {
                     stationName,
                     craftingItems: craftingItemsForPrompt,
                     craftingNotes,
+                    craftTargetType: effectiveCraftTargetType,
                     omitGameHistory: true
                 };
 
@@ -14264,6 +14452,7 @@ module.exports = function registerApiRoutes(scope) {
                         mode: degreeMode,
                         stationName,
                         intendedItemName: promptPayload.intendedItemName || intendedItemName,
+                        craftTargetType: effectiveCraftTargetType,
                         targetName: degreeTargetName,
                         inputItems: craftingItemsForPrompt
                     });
@@ -14559,6 +14748,17 @@ module.exports = function registerApiRoutes(scope) {
 
                     craftedBlueprints.forEach(blueprint => {
                         const craftedBlueprint = { ...blueprint };
+                        if (effectiveCraftTargetType) {
+                            craftedBlueprint.itemOrScenery = effectiveCraftTargetType;
+                            craftedBlueprint.thingType = effectiveCraftTargetType;
+                            if (effectiveCraftTargetType === 'scenery') {
+                                craftedBlueprint.type = 'scenery';
+                                craftedBlueprint.slot = null;
+                                craftedBlueprint.attributeBonuses = [];
+                                craftedBlueprint.causeStatusEffectOnTarget = null;
+                                craftedBlueprint.causeStatusEffectOnEquipper = null;
+                            }
+                        }
                         const resolvedCraftLevel = computeCraftedItemLevel(craftedBlueprint);
                         if (Number.isFinite(resolvedCraftLevel)) {
                             craftedBlueprint.level = resolvedCraftLevel;
@@ -14680,7 +14880,8 @@ module.exports = function registerApiRoutes(scope) {
                         recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
                         craftingNotes,
                         targetName: salvageTargetThing?.name,
-                        mode: craftingMode
+                        mode: craftingMode,
+                        craftTargetType: effectiveCraftTargetType
                     });
 
                     const playerActionTemplate = parseXMLTemplate(playerActionRendered);
@@ -14730,8 +14931,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 let narrativeContent = playerActionDescription || '';
+                let craftingSlopRemovalInfo = null;
                 if (Globals.config?.slop_buster === true && narrativeContent.trim()) {
-                    narrativeContent = await applySlopRemoval(narrativeContent);
+                    const slopResult = await applySlopRemoval(narrativeContent, { returnDiagnostics: true });
+                    narrativeContent = slopResult.text;
+                    if (slopResult.ran) {
+                        craftingSlopRemovalInfo = {
+                            slopWords: slopResult.slopWords || [],
+                            slopNgrams: slopResult.slopNgrams || []
+                        };
+                    }
                 }
 
                 const chatEntry = pushChatEntry({
@@ -14765,6 +14974,14 @@ module.exports = function registerApiRoutes(scope) {
                         parentId: chatEntry.id,
                         locationId: resolvedLocationId
                     });
+
+                    if (craftingSlopRemovalInfo) {
+                        recordSlopRemovalEntry({
+                            data: craftingSlopRemovalInfo,
+                            parentId: chatEntry.id,
+                            locationId: resolvedLocationId
+                        });
+                    }
                 }
 
                 const eventItems = [];

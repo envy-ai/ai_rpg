@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const SlashCommandBase = require('../SlashCommandBase.js');
 const Globals = require('../Globals.js');
+const {
+    filterChatHistoryEntries,
+    normalizeEntryText
+} = require('../chat_history_utils.js');
 
 function parseIndexRange(rawRange) {
     if (typeof rawRange !== 'string') {
@@ -64,13 +68,80 @@ function formatSceneSummaryText(summaryResult) {
     return lines.join('\n').trimEnd() + '\n';
 }
 
+function countUnsummarizedEntries(chatHistory) {
+    const filteredEntries = filterChatHistoryEntries(chatHistory, { excludeSummaries: true });
+    let totalEntries = 0;
+    for (const entry of filteredEntries) {
+        if (!entry || typeof entry !== 'object') {
+            continue;
+        }
+        const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+        const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+        const rawText = content || summary;
+        const text = normalizeEntryText(rawText);
+        if (!text) {
+            continue;
+        }
+        totalEntries += 1;
+    }
+
+    if (totalEntries === 0) {
+        return { total: 0, summarized: 0, unsummarized: 0 };
+    }
+
+    const sceneSummaries = Globals.getSceneSummaries();
+    const scenes = typeof sceneSummaries?.getScenesInOrder === 'function'
+        ? sceneSummaries.getScenesInOrder()
+        : [];
+    if (!Array.isArray(scenes) || scenes.length === 0) {
+        return { total: totalEntries, summarized: 0, unsummarized: totalEntries };
+    }
+
+    const intervals = scenes
+        .map(scene => ({
+            start: Number(scene?.startIndex),
+            end: Number(scene?.endIndex)
+        }))
+        .filter(interval => Number.isInteger(interval.start) && Number.isInteger(interval.end))
+        .map(interval => ({
+            start: Math.max(1, interval.start),
+            end: Math.min(totalEntries, interval.end)
+        }))
+        .filter(interval => interval.end >= interval.start)
+        .sort((a, b) => a.start - b.start);
+
+    let summarized = 0;
+    let cursor = 1;
+    for (const interval of intervals) {
+        if (interval.end < cursor) {
+            continue;
+        }
+        const start = Math.max(cursor, interval.start);
+        const end = Math.min(interval.end, totalEntries);
+        if (end >= start) {
+            summarized += end - start + 1;
+            cursor = end + 1;
+        }
+        if (cursor > totalEntries) {
+            break;
+        }
+    }
+
+    const unsummarized = Math.max(0, totalEntries - summarized);
+    return { total: totalEntries, summarized, unsummarized };
+}
+
 class SceneSummaryCommand extends SlashCommandBase {
     static get name() {
-        return 'scene_summary';
+        return 'summarize';
+    }
+
+    static get aliases() {
+        return ['scene_summary'];
     }
 
     static get description() {
-        return 'Summarize scenes in a range of log entries and export to a text file.';
+        return 'Summarize a range of log entries into scenes and export to a text file.';
     }
 
     static get args() {
@@ -80,17 +151,17 @@ class SceneSummaryCommand extends SlashCommandBase {
         ];
     }
 
+    static get usage() {
+        return [
+            '/summarize <range> [redo]',
+            'range: "check" (count unsummarized), "all", "N", or "N-M"',
+            'redo: true/false to re-summarize and extend the range slightly'
+        ].join('\n');
+    }
+
     static async execute(interaction, args = {}) {
-        let range;
-        try {
-            range = parseIndexRange(args.range);
-        } catch (error) {
-            await interaction.reply({
-                content: error.message,
-                ephemeral: true
-            });
-            return;
-        }
+        const rawRange = typeof args.range === 'string' ? args.range.trim() : '';
+        const normalizedRange = rawRange.toLowerCase();
 
         const chatHistory = typeof interaction?.getChatHistory === 'function'
             ? interaction.getChatHistory()
@@ -105,6 +176,28 @@ class SceneSummaryCommand extends SlashCommandBase {
         if (chatHistory.length === 0) {
             await interaction.reply({
                 content: 'No chat history available to summarize.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        if (normalizedRange === 'check') {
+            const counts = countUnsummarizedEntries(chatHistory);
+            await interaction.reply({
+                content: counts.total === 0
+                    ? 'No chat history entries are available for scene summaries.'
+                    : `Unsummarized entries: ${counts.unsummarized} of ${counts.total}.`,
+                ephemeral: false
+            });
+            return;
+        }
+
+        let range;
+        try {
+            range = parseIndexRange(rawRange);
+        } catch (error) {
+            await interaction.reply({
+                content: error.message,
                 ephemeral: true
             });
             return;

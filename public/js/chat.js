@@ -615,7 +615,7 @@ class AIRPGChat {
     }
 
     getAttachmentTypes() {
-        return new Set(['skill-check', 'attack-check', 'plausibility']);
+        return new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover']);
     }
 
     getClientMessageHistoryConfig() {
@@ -841,6 +841,10 @@ class AIRPGChat {
             return this.createPlausibilityEntryElement(entry);
         }
 
+        if (entry.type === 'slop-remover') {
+            return this.createSlopRemovalEntryElement(entry);
+        }
+
         if (entry.type === 'skill-check') {
             return this.createSkillCheckEntryElement(entry);
         }
@@ -947,6 +951,15 @@ class AIRPGChat {
                         html = `<div class="message-insight-tooltip plausibility-tooltip">${markup}</div>`;
                         icon = '🧭';
                         label = 'View plausibility analysis';
+                    }
+                    break;
+                }
+                case 'slop-remover': {
+                    const markup = this.renderSlopRemovalMarkup(attachment.slopRemoval || attachment);
+                    if (markup) {
+                        html = `<div class="message-insight-tooltip slop-remover-tooltip">${markup}</div>`;
+                        icon = '🧹';
+                        label = 'View slop remover details';
                     }
                     break;
                 }
@@ -1155,6 +1168,45 @@ class AIRPGChat {
         }
     }
 
+    normalizeSlopRemovalPayload(slopRemoval) {
+        if (!slopRemoval || typeof slopRemoval !== 'object') {
+            return { slopWords: [], slopNgrams: [] };
+        }
+        const source = slopRemoval.slopRemoval && typeof slopRemoval.slopRemoval === 'object'
+            ? slopRemoval.slopRemoval
+            : slopRemoval;
+        const slopWords = Array.isArray(source.slopWords)
+            ? source.slopWords.map(word => (typeof word === 'string' ? word.trim() : '')).filter(Boolean)
+            : [];
+        const slopNgrams = Array.isArray(source.slopNgrams)
+            ? source.slopNgrams.map(ngram => (typeof ngram === 'string' ? ngram.trim() : '')).filter(Boolean)
+            : [];
+        return { slopWords, slopNgrams };
+    }
+
+    renderSlopRemovalMarkup(slopRemoval) {
+        const normalized = this.normalizeSlopRemovalPayload(slopRemoval);
+        if (!normalized.slopWords.length && !normalized.slopNgrams.length) {
+            return '';
+        }
+
+        const sections = [];
+        if (normalized.slopWords.length) {
+            const words = normalized.slopWords
+                .map(word => `<li>${this.escapeHtml(word)}</li>`)
+                .join('');
+            sections.push(`<div class="slop-remover-section"><h4>Slop words</h4><ul>${words}</ul></div>`);
+        }
+        if (normalized.slopNgrams.length) {
+            const ngrams = normalized.slopNgrams
+                .map(ngram => `<li>${this.escapeHtml(ngram)}</li>`)
+                .join('');
+            sections.push(`<div class="slop-remover-section"><h4>Repeated n-grams</h4><ul>${ngrams}</ul></div>`);
+        }
+
+        return sections.join('');
+    }
+
     findLatestAttachableMessage() {
         if (!this.chatLog) {
             return null;
@@ -1164,7 +1216,8 @@ class AIRPGChat {
             .filter(node => !node.classList.contains('event-summary-batch')
                 && node.dataset.type !== 'skill-check'
                 && node.dataset.type !== 'attack-check'
-                && node.dataset.type !== 'plausibility');
+                && node.dataset.type !== 'plausibility'
+                && node.dataset.type !== 'slop-remover');
         return candidates.length ? candidates[0] : null;
     }
 
@@ -3518,6 +3571,28 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
+    addSlopRemovalMessage(slopRemoval) {
+        const normalized = this.normalizeSlopRemovalPayload(slopRemoval);
+        if (!normalized.slopWords.length && !normalized.slopNgrams.length) {
+            return;
+        }
+
+        const attached = this.attachInsightToLatestMessage('slop-remover', {
+            slopRemoval: normalized
+        });
+        if (attached) {
+            return;
+        }
+
+        const timestamp = new Date().toISOString();
+        const messageDiv = this.buildSlopRemovalMessageElement({ data: normalized, timestamp });
+        if (!messageDiv) {
+            return;
+        }
+        this.chatLog.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
     addSkillCheckMessage(resolution) {
         const attached = this.attachInsightToLatestMessage('skill-check', {
             skillCheck: resolution
@@ -3568,6 +3643,52 @@ class AIRPGChat {
         messageDiv.appendChild(timestampDiv);
 
         return messageDiv;
+    }
+
+    buildSlopRemovalMessageElement({ data, timestamp }) {
+        const markup = this.renderSlopRemovalMarkup(data);
+        if (!markup) {
+            return null;
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message slop-remover-message';
+        messageDiv.dataset.type = 'slop-remover';
+        messageDiv.dataset.timestamp = timestamp || '';
+
+        const senderDiv = document.createElement('div');
+        senderDiv.className = 'message-sender';
+        senderDiv.textContent = '🧹 Slop Remover';
+
+        const contentDiv = document.createElement('div');
+        const details = document.createElement('details');
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'Slop Remover';
+        details.appendChild(summaryEl);
+
+        const body = document.createElement('div');
+        body.innerHTML = markup;
+        details.appendChild(body);
+
+        contentDiv.appendChild(details);
+
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = this.formatTimestamp(timestamp);
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        return messageDiv;
+    }
+
+    createSlopRemovalEntryElement(entry) {
+        if (!entry || typeof entry.slopRemoval !== 'object') {
+            return null;
+        }
+        const normalized = this.normalizeSlopRemovalPayload(entry.slopRemoval);
+        return this.buildSlopRemovalMessageElement({ data: normalized, timestamp: entry.timestamp });
     }
 
     buildSkillCheckMessageElement({ resolution, timestamp }) {
@@ -4500,6 +4621,10 @@ class AIRPGChat {
             this.addPlausibilityMessage(payload.plausibility);
         }
 
+        if (payload.slopRemoval) {
+            this.addSlopRemovalMessage(payload.slopRemoval);
+        }
+
         if (Array.isArray(payload.npcTurns) && payload.npcTurns.length) {
             payload.npcTurns.forEach((turn, index) => {
                 this.renderNpcTurn(requestId, turn, index, fromStream);
@@ -4541,6 +4666,9 @@ class AIRPGChat {
         }
 
         this.addNpcMessage(turn.name || 'NPC', turn.response);
+        if (turn.slopRemoval) {
+            this.addSlopRemovalMessage(turn.slopRemoval);
+        }
 
         if (turn.events) {
             this.addEventSummaries(turn.events);

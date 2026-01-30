@@ -58,7 +58,7 @@ Step 2: If the action is plausible, make a list of any player abilities that are
   ... additional ability tags as needed ...
 </abilities>
 
-Step 3: If the action is plausible, determine the components/materials recovered for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately:
+Step 3: If the action is plausible, determine the components/materials recovered for a normal (non-critical) success. Use the following XML structure for each item, filling in all fields appropriately (including <shortDescription>):
 
 <salvageResults>
   <result>
@@ -66,7 +66,7 @@ Step 3: If the action is plausible, determine the components/materials recovered
     <itemsConsumed>...</itemsConsumed>
     <itemsRecovered>
       <!-- A success fully recovers sensible components/materials matching the source item's quality. -->
-      <item> ... item XML ... </item>
+      {% include "_includes/item.njk" %}
       ... more recovered items ...
     </itemsRecovered>
     <other><!-- Leave this empty except on critical_success or critical_failure. --></other>
