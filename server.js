@@ -13979,6 +13979,10 @@ async function regenerateLocationName(location) {
         throw new Error('Location name regeneration did not produce any candidates.');
     }
 
+    const bannedSet = getBannedLocationNameSet();
+    const originalName = typeof location.name === 'string' ? location.name.trim() : '';
+    const originalLower = originalName ? originalName.toLowerCase() : '';
+
     const usedNames = new Set();
     for (const locations of Object.values(worldOutline?.regions || {})) {
         if (!Array.isArray(locations)) {
@@ -13994,6 +13998,17 @@ async function regenerateLocationName(location) {
             }
         }
     }
+    if (typeof Location?.getAll === 'function') {
+        for (const entry of Location.getAll()) {
+            const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+            if (name) {
+                usedNames.add(name.toLowerCase());
+            }
+        }
+    }
+    if (originalLower) {
+        usedNames.add(originalLower);
+    }
 
     const selectUniqueName = () => {
         for (const candidate of candidateNames) {
@@ -14005,6 +14020,12 @@ async function regenerateLocationName(location) {
                 continue;
             }
             const normalized = trimmed.toLowerCase();
+            if (normalized === originalLower) {
+                continue;
+            }
+            if (isLocationNameBanned(trimmed, bannedSet)) {
+                continue;
+            }
             if (!usedNames.has(normalized)) {
                 return trimmed;
             }
@@ -14015,13 +14036,23 @@ async function regenerateLocationName(location) {
     let selectedName = selectUniqueName();
 
     if (!selectedName) {
-        const baseCandidate = candidateNames[0] && typeof candidateNames[0] === 'string'
-            ? candidateNames[0].trim()
-            : null;
+        const baseCandidate = candidateNames.find(candidate => {
+            if (!candidate || typeof candidate !== 'string') {
+                return false;
+            }
+            const trimmed = candidate.trim();
+            if (!trimmed) {
+                return false;
+            }
+            if (trimmed.toLowerCase() === originalLower) {
+                return false;
+            }
+            return !isLocationNameBanned(trimmed, bannedSet);
+        });
         if (baseCandidate) {
             for (let suffix = 2; suffix <= 100; suffix += 1) {
                 const attempt = `${baseCandidate} ${suffix}`;
-                if (!usedNames.has(attempt.toLowerCase())) {
+                if (!usedNames.has(attempt.toLowerCase()) && !isLocationNameBanned(attempt, bannedSet)) {
                     selectedName = attempt;
                     break;
                 }

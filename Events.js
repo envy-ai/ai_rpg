@@ -671,18 +671,6 @@ async function movePlayerToDestination(
     if (trackingName) {
         eventsInstance.movedLocations.add(trackingName);
     }
-    if (destinationName && destinationName !== trackingName) {
-        eventsInstance.movedLocations.add(destinationName);
-    }
-    const trimmedFallback =
-        typeof fallbackName === "string" ? fallbackName.trim() : "";
-    if (
-        trimmedFallback &&
-        trimmedFallback !== trackingName &&
-        trimmedFallback !== destinationName
-    ) {
-        eventsInstance.movedLocations.add(trimmedFallback);
-    }
 }
 
 function extractInteger(raw) {
@@ -1386,9 +1374,38 @@ class Events {
             questObjectivesCompleted,
         });
 
+        const findLocationByNameLoose = this._deps?.findLocationByNameLoose;
+        const resolveMovedLocationName = (name) => {
+            const trimmed = typeof name === "string" ? name.trim() : "";
+            if (!trimmed) {
+                return "";
+            }
+            let resolved = null;
+            if (Location && typeof Location.get === "function") {
+                try {
+                    resolved = Location.get(trimmed);
+                } catch (_) {
+                    resolved = null;
+                }
+            }
+            if (!resolved && Location && typeof Location.findByName === "function") {
+                try {
+                    resolved = Location.findByName(trimmed);
+                } catch (_) {
+                    resolved = null;
+                }
+            }
+            if (!resolved && typeof findLocationByNameLoose === "function") {
+                resolved = findLocationByNameLoose(trimmed) || null;
+            }
+            return resolved?.name || trimmed;
+        };
+
         const addedCharacters = Array.from(this.newCharacters);
         const departedCharacters = Array.from(this.departedCharacters);
-        const movedLocationNames = Array.from(this.movedLocations);
+        const movedLocationNames = Array.from(
+            new Set(Array.from(this.movedLocations).map(resolveMovedLocationName).filter(Boolean)),
+        );
         const addedSet = new Set(addedCharacters);
         const departedSet = new Set(departedCharacters);
         const movedSet = new Set(movedLocationNames);
