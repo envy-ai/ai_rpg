@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { Console } = require('console');
 const Globals = require('./Globals.js');
 const { response } = require('express');
 const Utils = require('./Utils.js');
@@ -284,22 +285,27 @@ class LLMClient {
         return 1;
     }
 
-    static #ensureSemaphore(key, maxConcurrent) {
+    static #ensureSemaphore(key, maxConcurrent, log = null) {
         const limit = Number.isInteger(maxConcurrent) && maxConcurrent > 0
             ? maxConcurrent
             : 1;
         const resolvedKey = key || 'default';
+        const logFn = typeof log === 'function' ? log : null;
         const existing = LLMClient.#semaphores.get(resolvedKey);
         if (!existing) {
             const sem = new Semaphore(limit);
             LLMClient.#semaphores.set(resolvedKey, sem);
-            console.log(`🔒 LLMClient semaphore initialized for ${resolvedKey} with maxConcurrent=${limit}`);
+            if (logFn) {
+                logFn(`🔒 LLMClient semaphore initialized for ${resolvedKey} with maxConcurrent=${limit}`);
+            }
             return sem;
         }
         if (LLMClient.#semaphoreLimit !== limit) {
             LLMClient.#semaphoreLimit = limit;
             existing.setLimit(limit);
-            console.log(`🔒 LLMClient semaphore limit updated for ${resolvedKey} to maxConcurrent=${limit}`);
+            if (logFn) {
+                logFn(`🔒 LLMClient semaphore limit updated for ${resolvedKey} to maxConcurrent=${limit}`);
+            }
         }
         return existing;
     }
@@ -465,8 +471,14 @@ class LLMClient {
         model = null,
         endpoint = null,
         requestPayload = null,
-        responsePayload = null
+        responsePayload = null,
+        output = 'stdout'
     } = {}) {
+        const resolvedOutput = LLMClient.resolveOutput(output);
+        const isSilent = resolvedOutput === 'silent';
+        const outputConsole = resolvedOutput === 'stderr'
+            ? new Console({ stdout: process.stderr, stderr: process.stderr })
+            : new Console({ stdout: process.stdout, stderr: process.stdout });
         try {
             const fs = require('fs');
             const path = require('path');
@@ -592,10 +604,13 @@ class LLMClient {
             }
 
             fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
-            console.log(`Prompt log written to ${filePath}`);
+            if (!isSilent) {
+                outputConsole.log(`Prompt log written to ${filePath}`);
+            }
             return filePath;
         } catch (error) {
-            console.warn(`Failed to write prompt log file: ${error.message}`);
+            const errorMessage = error?.message || String(error);
+            console.error(`Failed to write prompt log file: ${errorMessage}`);
             return null;
         }
     }
@@ -659,6 +674,21 @@ class LLMClient {
             return fallback;
         }
         return 0.7;
+    }
+
+    static resolveOutput(output, fallback = 'stdout') {
+        const resolvedFallback = fallback || 'stdout';
+        if (output === undefined || output === null || output === '') {
+            return resolvedFallback;
+        }
+        if (typeof output !== 'string') {
+            throw new Error('output must be "stdout", "stderr", or "silent".');
+        }
+        const normalized = output.trim().toLowerCase();
+        if (normalized === 'stdout' || normalized === 'stderr' || normalized === 'silent') {
+            return normalized;
+        }
+        throw new Error('output must be "stdout", "stderr", or "silent".');
     }
 
     static #resolveBoolean(value, fallback) {
@@ -797,6 +827,7 @@ class LLMClient {
         waitAfterError = 10,
         dumpReasoningToConsole = false,
         debug = false,
+        output = 'stdout',
         frequencyPenalty = null,
         presencePenalty = null,
         topP = null,
@@ -808,9 +839,38 @@ class LLMClient {
         maxConcurrent = null,
         multimodal = false,
     } = {}) {
-        if (debug) {
-            console.log('LLMClient.chatCompletion called with parameters:');
-            console.log({
+        const resolvedOutput = LLMClient.resolveOutput(output);
+        const isSilent = resolvedOutput === 'silent';
+        const outputConsole = resolvedOutput === 'stderr'
+            ? new Console({ stdout: process.stderr, stderr: process.stderr })
+            : new Console({ stdout: process.stdout, stderr: process.stdout });
+        const log = (...args) => {
+            if (!isSilent) {
+                outputConsole.log(...args);
+            }
+        };
+        const warn = (...args) => {
+            if (!isSilent) {
+                outputConsole.warn(...args);
+            }
+        };
+        const errorLog = (...args) => {
+            console.error(...args);
+        };
+        const debugLog = (...args) => {
+            if (!isSilent) {
+                outputConsole.debug(...args);
+            }
+        };
+        const traceLog = (...args) => {
+            if (!isSilent) {
+                outputConsole.trace(...args);
+            }
+        };
+
+        if (debug && !isSilent) {
+            log('LLMClient.chatCompletion called with parameters:');
+            log({
                 messages,
                 maxTokens,
                 temperature,
@@ -857,9 +917,9 @@ class LLMClient {
             //console.log(`Checking for AI config overrides for metadataLabel: ${metadataLabel}`);
             if (metadataLabel && Globals.config.prompt_ai_overrides && Globals.config.prompt_ai_overrides[metadataLabel]) {
                 const overrides = Globals.config.prompt_ai_overrides[metadataLabel];
-                console.log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
+                log(`Applying AI config overrides for ${metadataLabel}:`, overrides);
                 for (const [key, value] of Object.entries(overrides)) {
-                    console.log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
+                    log(`Applying AI config override for ${metadataLabel}: setting ${key} to ${value}`);
                     aiConfig[key] = value;
                 }
             }
@@ -867,10 +927,10 @@ class LLMClient {
             dumpReasoningToConsole = true;
 
             if (metadataLabel) {
-                console.log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
+                log(`🧠 LLMClient.chatCompletion called with metadataLabel: ${metadataLabel}`);
             } else {
-                console.log('🧠 LLMClient.chatCompletion called without metadataLabel.');
-                console.trace();
+                log('🧠 LLMClient.chatCompletion called without metadataLabel.');
+                traceLog();
             }
 
             const payload = additionalPayload && typeof additionalPayload === 'object'
@@ -939,7 +999,7 @@ class LLMClient {
             //     console.trace();
             // }
 
-            console.log(`Using model: ${payload.model}`);
+            log(`Using model: ${payload.model}`);
 
             if (maxTokens !== undefined) {
                 if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
@@ -977,7 +1037,7 @@ class LLMClient {
                 ? maxConcurrent
                 : configuredMaxConcurrent;
             const semaphoreKey = `${resolvedApiKey || 'no-key'}::${resolvedModel || 'no-model'}`;
-            semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent);
+            semaphore = LLMClient.#ensureSemaphore(semaphoreKey, effectiveMaxConcurrent, log);
             await semaphore.acquire();
 
             const resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
@@ -1026,7 +1086,7 @@ class LLMClient {
                 const controller = new AbortController();
                 const axiosOptions = { ...baseAxiosOptions, signal: controller.signal };
                 try {
-                    streamTrackerId = payload.stream
+                    streamTrackerId = payload.stream && !isSilent
                         ? LLMClient.#trackStreamStart(metadataLabel, {
                             startTimeoutMs: streamStartTimeoutMs,
                             continueTimeoutMs: streamContinueTimeoutMs,
@@ -1060,9 +1120,9 @@ class LLMClient {
 
                     // On any 5xx response, wait waitAfterError seconds and then retry
                     if (response.status == 429 || (response.status >= 500 && response.status < 600)) {
-                        console.error(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
+                        errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
                         if (waitAfterError > 0) {
-                            console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                            log(`Waiting ${waitAfterError} seconds before retrying...`);
                             await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
                         }
                         throw new Error(`Server error from LLM (status ${response.status}).`);
@@ -1129,7 +1189,7 @@ class LLMClient {
                                     }
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility
-                                    console.warn('Failed to parse stream chunk:', parseError?.message || parseError);
+                                    warn('Failed to parse stream chunk:', parseError?.message || parseError);
                                 }
                             }
                         });
@@ -1157,13 +1217,13 @@ class LLMClient {
                         onResponse(response);
                     }
                     if (debug) {
-                        console.log('Raw LLM response content:', responseContent);
+                        log('Raw LLM response content:', responseContent);
                     }
                     // Check for presence of <think></think> tags and log a warning to the console with the contents of the tags
                     let thinkTags = [];
                     if (/<think>[\s\S]*?<\/think>/i.test(responseContent)) {
                         thinkTags = responseContent.match(/<think>[\s\S]*?<\/think>/gi);
-                        console.warn('⚠️ Response content contains <think></think> tags');
+                        warn('⚠️ Response content contains <think></think> tags');
                     }
                     // Check if <think></think> tags are present and remove them and anything inside
                     const thinkTagPattern = /<think>[\s\S]*?<\/think>/gi;
@@ -1171,16 +1231,16 @@ class LLMClient {
 
 
                     if (responseContent.trim() === '') {
-                        console.error(`Empty response content received (attempt ${attempt + 1}).`);
+                        errorLog(`Empty response content received (attempt ${attempt + 1}).`);
                         if (thinkTags.length > 0) {
-                            console.warn('⚠️ Contents of <think></think> tags:', thinkTags);
+                            warn('⚠️ Contents of <think></think> tags:', thinkTags);
                         }
                         throw new Error('Received empty response content from LLM.');
                     }
 
-                    if (dumpReasoningToConsole && thinkTags.length > 0) {
-                        console.log('💡 Dumping reasoning from <think></think> tags to console:');
-                        thinkTags.forEach(tag => console.log(` - ${tag}`));
+                    if (!isSilent && dumpReasoningToConsole && thinkTags.length > 0) {
+                        log('💡 Dumping reasoning from <think></think> tags to console:');
+                        thinkTags.forEach(tag => log(` - ${tag}`));
                     }
 
                     if (debug) {
@@ -1223,9 +1283,9 @@ class LLMClient {
                             };
 
                             fs.writeFileSync(filePath, JSON.stringify(logPayload, null, 2), 'utf8');
-                            console.log(`Debug log written to ${filePath}`);
+                            log(`Debug log written to ${filePath}`);
                         } catch (debugError) {
-                            console.warn('Failed to write debug log file:', debugError.message);
+                            warn('Failed to write debug log file:', debugError.message);
                         }
                     }
 
@@ -1233,7 +1293,7 @@ class LLMClient {
                         try {
                             Utils.parseXmlDocument(responseContent);
                         } catch (xmlError) {
-                            console.error(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
+                            errorLog(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
                             const filePath = LLMClient.writeLogFile({
                                 prefix: 'invalidXML',
                                 metadataLabel,
@@ -1242,7 +1302,7 @@ class LLMClient {
                                 onFailureMessage: 'Failed to write invalid XML log file'
                             });
                             if (filePath) {
-                                console.warn(`Invalid XML response logged to ${filePath}`);
+                                warn(`Invalid XML response logged to ${filePath}`);
                             }
                             throw xmlError;
                         }
@@ -1260,9 +1320,9 @@ class LLMClient {
                                     onFailureMessage: 'Failed to write missing tag log file'
                                 });
                                 if (filePath) {
-                                    console.warn(`Invalid XML response logged to ${filePath}`);
+                                    warn(`Invalid XML response logged to ${filePath}`);
                                 }
-                                console.error(errorMsg);
+                                errorLog(errorMsg);
                                 throw new Error(errorMsg);
                             }
                         }
@@ -1283,10 +1343,10 @@ class LLMClient {
                             clearTimeout(startTimer);
                             startTimer = null;
                         }
-                        console.warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
+                        warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
                         return '';
                     }
-                    console.error(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
+                    errorLog(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
                     //console.debug(error);
 
                     if (streamTrackerId) {
@@ -1298,9 +1358,9 @@ class LLMClient {
                     }
 
                     if (error.status == 429) {
-                        console.log('Rate limit exceeded. Waiting before retrying...');
+                        log('Rate limit exceeded. Waiting before retrying...');
                         if (waitAfterError > 0) {
-                            console.log(`Waiting ${waitAfterError} seconds before retrying...`);
+                            log(`Waiting ${waitAfterError} seconds before retrying...`);
                             await new Promise(resolve => setTimeout(resolve, waitAfterError * 1000));
                         }
                     }
@@ -1315,17 +1375,17 @@ class LLMClient {
                         onFailureMessage: 'Failed to write chat completion error log file'
                     });
                     if (filePath) {
-                        console.warn(`Chat completion error response logged to ${filePath}`);
+                        warn(`Chat completion error response logged to ${filePath}`);
                     }
 
                     if (attempt === retryAttempts) {
-                        console.error('Max retry attempts reached. Failing the chat completion request.');
-                        console.debug(error);
+                        errorLog('Max retry attempts reached. Failing the chat completion request.');
+                        debugLog(error);
                         return '';
                     }
                 }
 
-                console.error(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
+                errorLog(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
                 attempt++;
                 if (payload.stream) {
                     streamStartTimeoutMs += incrementStartTimeoutMs;
@@ -1344,7 +1404,7 @@ class LLMClient {
             const bytesNote = Number.isFinite(finalBytes) ? ` | bytes=${finalBytes}` : '';
             const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
             const label = metadataLabel || 'unknown';
-            console.log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
+            log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${bytesNote}${tokensNote}`);
             return responseContent;
         } finally {
             if (semaphore) {

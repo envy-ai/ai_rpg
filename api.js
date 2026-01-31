@@ -216,6 +216,361 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        const normalizeMentionedNames = (names = []) => {
+            const list = Array.isArray(names) ? names : [];
+            const seen = new Set();
+            const normalized = [];
+            for (const entry of list) {
+                if (typeof entry !== 'string') {
+                    continue;
+                }
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                const lowered = trimmed.toLowerCase();
+                if (lowered === 'n/a' || lowered === 'none' || lowered === 'null') {
+                    continue;
+                }
+                if (seen.has(lowered)) {
+                    continue;
+                }
+                seen.add(lowered);
+                normalized.push(trimmed);
+            }
+            return normalized;
+        };
+
+        const serializeThingForPromptContext = (thing) => {
+            if (!thing || typeof thing !== 'object') {
+                return null;
+            }
+
+            const data = typeof thing.toJSON === 'function' ? thing.toJSON() : thing;
+            const metadata = data?.metadata && typeof data.metadata === 'object' ? data.metadata : {};
+
+            const rawThingType = typeof data?.itemOrScenery === 'string'
+                ? data.itemOrScenery
+                : (typeof data?.thingType === 'string' ? data.thingType : '');
+            const normalizedThingType = rawThingType && rawThingType.trim().toLowerCase() === 'scenery'
+                ? 'scenery'
+                : 'item';
+
+            const rawType = typeof data?.type === 'string'
+                ? data.type
+                : (typeof data?.itemTypeDetail === 'string'
+                    ? data.itemTypeDetail
+                    : (typeof metadata.itemTypeDetail === 'string'
+                        ? metadata.itemTypeDetail
+                        : (typeof metadata.itemType === 'string' ? metadata.itemType : '')));
+            const resolvedType = rawType && rawType.trim()
+                ? rawType.trim()
+                : (normalizedThingType === 'scenery' ? 'scenery' : 'item');
+
+            const slotValue = (() => {
+                const rawSlot = data?.slot ?? metadata.slot ?? null;
+                if (Array.isArray(rawSlot)) {
+                    const cleaned = rawSlot.map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean);
+                    return cleaned.length ? cleaned.join(', ') : 'N/A';
+                }
+                if (typeof rawSlot === 'string') {
+                    const trimmed = rawSlot.trim();
+                    return trimmed ? trimmed : 'N/A';
+                }
+                return 'N/A';
+            })();
+
+            const rarityValue = typeof data?.rarity === 'string' && data.rarity.trim()
+                ? data.rarity.trim()
+                : (typeof metadata.rarity === 'string' && metadata.rarity.trim() ? metadata.rarity.trim() : 'Common');
+
+            const relativeLevelValue = Number.isFinite(Number(metadata.relativeLevel))
+                ? Number(metadata.relativeLevel)
+                : (Number.isFinite(Number(data?.relativeLevel)) ? Number(data.relativeLevel) : 0);
+
+            const resolveBoolean = (value) => (value === null || value === undefined ? false : Boolean(value));
+
+            const bonusesSource = Array.isArray(data?.attributeBonuses)
+                ? data.attributeBonuses
+                : (Array.isArray(metadata.attributeBonuses) ? metadata.attributeBonuses : []);
+            const attributeBonuses = bonusesSource.map(entry => {
+                if (!entry) {
+                    return null;
+                }
+                if (typeof entry === 'string') {
+                    const trimmed = entry.trim();
+                    if (!trimmed) {
+                        return null;
+                    }
+                    return { attribute: trimmed, bonus: 0 };
+                }
+                if (typeof entry === 'object') {
+                    const attribute = typeof entry.attribute === 'string'
+                        ? entry.attribute.trim()
+                        : (typeof entry.name === 'string' ? entry.name.trim() : '');
+                    if (!attribute) {
+                        return null;
+                    }
+                    const bonusValue = Number(entry.bonus ?? entry.value);
+                    return { attribute, bonus: Number.isFinite(bonusValue) ? bonusValue : 0 };
+                }
+                return null;
+            }).filter(Boolean);
+
+            const causeStatusEffectOnTarget = data?.causeStatusEffectOnTarget ?? metadata.causeStatusEffectOnTarget ?? null;
+            const causeStatusEffectOnEquipper = data?.causeStatusEffectOnEquipper ?? metadata.causeStatusEffectOnEquipper ?? null;
+            const shortDescription = typeof data?.shortDescription === 'string'
+                ? data.shortDescription.trim()
+                : (typeof metadata.shortDescription === 'string' ? metadata.shortDescription.trim() : '');
+
+            const lines = [
+                '    <item>',
+                `      <name>${data?.name || 'Unknown Item'}</name>`,
+                `      <description>${data?.description || ''}</description>`,
+                `      <itemOrScenery>${normalizedThingType}</itemOrScenery>`,
+                `      <type>${resolvedType}</type>`,
+                `      <slot>${slotValue}</slot>`,
+                `      <rarity>${rarityValue}</rarity>`,
+                `      <value>${metadata.value ?? ''}</value>`,
+                `      <weight>${metadata.weight ?? ''}</weight>`,
+                `      <relativeLevel>${relativeLevelValue}</relativeLevel>`,
+                `      <isVehicle>${resolveBoolean(data?.isVehicle ?? metadata.isVehicle ?? thing.isVehicle)}</isVehicle>`,
+                `      <isCraftingStation>${resolveBoolean(data?.isCraftingStation ?? metadata.isCraftingStation ?? thing.isCraftingStation)}</isCraftingStation>`,
+                `      <isProcessingStation>${resolveBoolean(data?.isProcessingStation ?? metadata.isProcessingStation ?? thing.isProcessingStation)}</isProcessingStation>`,
+                `      <isHarvestable>${resolveBoolean(data?.isHarvestable ?? metadata.isHarvestable ?? thing.isHarvestable)}</isHarvestable>`,
+                `      <isSalvageable>${resolveBoolean(data?.isSalvageable ?? metadata.isSalvageable ?? thing.isSalvageable)}</isSalvageable>`,
+                '      <attributeBonuses>'
+            ];
+
+            if (attributeBonuses.length) {
+                for (const bonus of attributeBonuses) {
+                    lines.push('        <attributeBonus>');
+                    lines.push(`          <attribute>${bonus.attribute}</attribute>`);
+                    lines.push(`          <bonus>${bonus.bonus}</bonus>`);
+                    lines.push('        </attributeBonus>');
+                }
+            }
+            lines.push('      </attributeBonuses>');
+
+            if (causeStatusEffectOnTarget) {
+                lines.push('      <causeStatusEffectOnTarget>');
+                lines.push(`        <name>${causeStatusEffectOnTarget.name || ''}</name>`);
+                lines.push(`        <description>${causeStatusEffectOnTarget.description || ''}</description>`);
+                lines.push(`        <duration>${causeStatusEffectOnTarget.duration ?? ''}</duration>`);
+                lines.push('      </causeStatusEffectOnTarget>');
+            }
+
+            if (causeStatusEffectOnEquipper) {
+                lines.push('      <causeStatusEffectOnEquipper>');
+                lines.push(`        <name>${causeStatusEffectOnEquipper.name || ''}</name>`);
+                lines.push(`        <description>${causeStatusEffectOnEquipper.description || ''}</description>`);
+                lines.push(`        <duration>${causeStatusEffectOnEquipper.duration ?? ''}</duration>`);
+                lines.push('      </causeStatusEffectOnEquipper>');
+            }
+
+            lines.push(`      <properties>${metadata.properties ?? ''}</properties>`);
+            lines.push(`      <shortDescription>${shortDescription}</shortDescription>`);
+            lines.push('    </item>');
+
+            return lines.join('\n');
+        };
+
+        const buildItemContextXml = (itemNames = []) => {
+            const normalizedNames = normalizeMentionedNames(itemNames);
+            if (!normalizedNames.length) {
+                return '';
+            }
+            const entries = [];
+            for (const name of normalizedNames) {
+                const thing = findThingByName(name);
+                if (!thing) {
+                    continue;
+                }
+                const xml = serializeThingForPromptContext(thing);
+                if (xml) {
+                    entries.push(xml);
+                }
+            }
+            return entries.join('\n');
+        };
+
+        const buildAbilityIndex = ({ player, location, includeAllActors = false } = {}) => {
+            const lookup = new Map();
+            const addAbility = (ability) => {
+                if (!ability || typeof ability.name !== 'string') {
+                    return;
+                }
+                const trimmed = ability.name.trim();
+                if (!trimmed) {
+                    return;
+                }
+                const key = trimmed.toLowerCase();
+                if (!lookup.has(key)) {
+                    lookup.set(key, ability);
+                }
+            };
+            const addActorAbilities = (actor) => {
+                if (!actor) {
+                    return;
+                }
+                const abilities = typeof actor.getAbilities === 'function'
+                    ? actor.getAbilities()
+                    : (Array.isArray(actor.abilities) ? actor.abilities : []);
+                if (Array.isArray(abilities)) {
+                    abilities.forEach(addAbility);
+                }
+            };
+
+            addActorAbilities(player);
+
+            if (player && typeof player.getPartyMembers === 'function') {
+                const partyMembers = player.getPartyMembers();
+                if (Array.isArray(partyMembers)) {
+                    partyMembers.forEach(addActorAbilities);
+                }
+            }
+
+            if (location && typeof location.getNPCs === 'function') {
+                const npcs = location.getNPCs();
+                if (Array.isArray(npcs)) {
+                    npcs.forEach(addActorAbilities);
+                }
+            }
+
+            if (includeAllActors && typeof Player?.getAll === 'function') {
+                const actors = Player.getAll();
+                if (Array.isArray(actors)) {
+                    actors.forEach(addActorAbilities);
+                }
+            }
+
+            return lookup;
+        };
+
+        const serializeAbilityForPromptContext = (ability) => {
+            if (!ability || typeof ability !== 'object' || typeof ability.name !== 'string') {
+                return null;
+            }
+            const name = ability.name.trim();
+            if (!name) {
+                return null;
+            }
+            const description = typeof ability.description === 'string' ? ability.description.trim() : '';
+            const type = typeof ability.type === 'string' && ability.type.trim()
+                ? ability.type.trim()
+                : 'Passive';
+            const level = Number.isFinite(Number(ability.level)) ? Math.max(1, Math.round(Number(ability.level))) : 1;
+            const shortDescription = typeof ability.shortDescription === 'string' ? ability.shortDescription.trim() : '';
+            return [
+                '    <ability>',
+                `      <name>${name}</name>`,
+                `      <description>${description}</description>`,
+                `      <type>${type}</type>`,
+                `      <level>${level}</level>`,
+                `      <shortDescription>${shortDescription}</shortDescription>`,
+                '    </ability>'
+            ].join('\n');
+        };
+
+        const buildAbilityContextXml = (abilityNames = [], { player, location, includeAllActors = false } = {}) => {
+            const normalizedNames = normalizeMentionedNames(abilityNames);
+            if (!normalizedNames.length) {
+                return '';
+            }
+            const index = buildAbilityIndex({ player, location, includeAllActors });
+            if (!index.size) {
+                return '';
+            }
+            const entries = [];
+            for (const name of normalizedNames) {
+                const ability = index.get(name.toLowerCase());
+                if (!ability) {
+                    continue;
+                }
+                const xml = serializeAbilityForPromptContext(ability);
+                if (xml) {
+                    entries.push(xml);
+                }
+            }
+            return entries.join('\n');
+        };
+
+        const collectItemNamesForMatching = () => {
+            const allThings = typeof Thing?.getAllItems === 'function'
+                ? Thing.getAllItems()
+                : (typeof Thing?.getAll === 'function' ? Thing.getAll() : []);
+            if (!Array.isArray(allThings)) {
+                return [];
+            }
+            const names = [];
+            const seen = new Set();
+            for (const thing of allThings) {
+                const rawName = typeof thing?.name === 'string' ? thing.name.trim() : '';
+                if (!rawName) {
+                    continue;
+                }
+                const key = rawName.toLowerCase();
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                names.push(rawName);
+            }
+            return names;
+        };
+
+        const collectAbilityNamesForMatching = ({ player, location, includeAllActors = false } = {}) => {
+            const index = buildAbilityIndex({ player, location, includeAllActors });
+            if (!index.size) {
+                return [];
+            }
+            const names = [];
+            const seen = new Set();
+            for (const ability of index.values()) {
+                const rawName = typeof ability?.name === 'string' ? ability.name.trim() : '';
+                if (!rawName) {
+                    continue;
+                }
+                const key = rawName.toLowerCase();
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                names.push(rawName);
+            }
+            return names;
+        };
+
+        const findMentionedNamesInText = (text, names) => {
+            if (typeof text !== 'string') {
+                return [];
+            }
+            const haystack = text.trim().toLowerCase();
+            if (!haystack) {
+                return [];
+            }
+            const matches = [];
+            const seen = new Set();
+            for (const name of Array.isArray(names) ? names : []) {
+                if (typeof name !== 'string') {
+                    continue;
+                }
+                const trimmed = name.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                const lower = trimmed.toLowerCase();
+                if (!lower || seen.has(lower)) {
+                    continue;
+                }
+                if (haystack.includes(lower)) {
+                    seen.add(lower);
+                    matches.push(trimmed);
+                }
+            }
+            return matches;
+        };
+
         const shortDescriptionBackfillByClient = new Map();
         let shortDescriptionBackfillInProgress = false;
         const normalizeSaveFileVersion = (value, fallback = 0) => {
@@ -314,7 +669,7 @@ module.exports = function registerApiRoutes(scope) {
                     matches.forEach(match => overlaps.add(match));
                 }
             }
-            return Array.from(overlaps);
+            return Utils.pruneContainedKgrams(Array.from(overlaps));
         };
 
         const buildSlopContextText = () => {
@@ -3601,34 +3956,13 @@ module.exports = function registerApiRoutes(scope) {
             return result;
         }
 
-        function logNpcActionPrompt({ npcName, systemPrompt, generationPrompt }) {
-            try {
-                const logDir = path.join(__dirname, 'logs');
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-
-                const safeName = (npcName || 'unknown_npc').replace(/[^a-z0-9-_]+/gi, '_').slice(0, 64) || 'npc';
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const logPath = path.join(logDir, `npc_action_${safeName}_${timestamp}.log`);
-                const parts = [
-                    `NPC: ${npcName || 'Unknown NPC'}`,
-                    '',
-                    '=== NPC ACTION SYSTEM PROMPT ===',
-                    systemPrompt || '(none)',
-                    '',
-                    '=== NPC ACTION GENERATION PROMPT ===',
-                    generationPrompt || '(none)',
-                    ''
-                ];
-
-                fs.writeFileSync(logPath, parts.join('\n'), 'utf8');
-            } catch (error) {
-                console.warn('Failed to log NPC action prompt:', error.message);
-            }
-        }
-
-        async function runAttackCheckPrompt({ actionText, locationOverride, characterName = 'The player' }) {
+        async function runAttackCheckPrompt({
+            actionText,
+            locationOverride,
+            characterName = 'The player',
+            itemContext = '',
+            abilityContext = ''
+        }) {
             if (Globals.config?.plausibility_checks?.enabled === false) {
                 console.info('Attack check skipped: plausibility_checks.enabled is false.');
                 return null;
@@ -3654,7 +3988,9 @@ module.exports = function registerApiRoutes(scope) {
                     promptType: 'attack-check',
                     actionText,
                     characterName,
-                    omitGameHistory: true
+                    omitGameHistory: true,
+                    itemContext,
+                    abilityContext
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -5521,14 +5857,42 @@ module.exports = function registerApiRoutes(scope) {
                     response: raw
                 });
                 const actionPlan = parseNpcActionPlan(raw);
+                let itemContext = '';
+                let abilityContext = '';
+                let itemsMentioned = [];
+                let abilitiesMentioned = [];
+                if (actionPlan?.description) {
+                    const itemNames = collectItemNamesForMatching();
+                    const abilityNames = collectAbilityNamesForMatching({
+                        player: npc,
+                        location: locationOverride || null,
+                        includeAllActors: true
+                    });
+                    itemsMentioned = findMentionedNamesInText(actionPlan.description, itemNames);
+                    abilitiesMentioned = findMentionedNamesInText(actionPlan.description, abilityNames);
+                    itemContext = buildItemContextXml(itemsMentioned);
+                    abilityContext = buildAbilityContextXml(abilitiesMentioned, {
+                        player: npc,
+                        location: locationOverride || null,
+                        includeAllActors: true
+                    });
+                }
+
                 const structured = actionPlan
                     ? {
                         ...actionPlan,
-                        plausibility: mapNpcActionPlanToPlausibility(actionPlan)
+                        plausibility: mapNpcActionPlanToPlausibility(actionPlan),
+                        itemsMentioned,
+                        abilitiesMentioned
                     }
                     : null;
 
-                return { raw, structured };
+                return {
+                    raw,
+                    structured,
+                    itemContext,
+                    abilityContext
+                };
             } catch (error) {
                 console.warn(`Failed to run NPC plausibility prompt for ${npc.name}:`, error.message);
                 return { raw: '', structured: null };
@@ -6348,7 +6712,9 @@ module.exports = function registerApiRoutes(scope) {
             attackContext,
             attackDamageApplication = null,
             locationOverride = null,
-            isCreativeModeAction = false
+            isCreativeModeAction = false,
+            itemContext = '',
+            abilityContext = ''
         }) {
             console.log('Running action narrative for', actor ? actor.name : 'unknown actor');
             if (!actor) {
@@ -6364,6 +6730,8 @@ module.exports = function registerApiRoutes(scope) {
                     promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
                     actionText: actionText || '',
                     characterName: actor.isNPC ? (actor.name || 'Unknown NPC') : 'The player',
+                    itemContext,
+                    abilityContext
                 };
 
                 if (attackContext?.isAttack) {
@@ -6394,21 +6762,12 @@ module.exports = function registerApiRoutes(scope) {
                 const trimmedSystemPrompt = String(parsedTemplate.systemPrompt).trim();
                 const generationPrompt = parsedTemplate.generationPrompt || null;
 
-                let playerPromptLog = null;
-                if (actor.isNPC) {
-                    logNpcActionPrompt({
-                        npcName: actor.name || null,
-                        systemPrompt: trimmedSystemPrompt,
-                        generationPrompt
-                    });
-                } else {
-                    playerPromptLog = {
-                        systemPrompt: trimmedSystemPrompt,
-                        generationPrompt: generationPrompt && generationPrompt.trim()
-                            ? generationPrompt.trim()
-                            : null
-                    };
-                }
+                const promptLog = {
+                    systemPrompt: trimmedSystemPrompt,
+                    generationPrompt: generationPrompt && generationPrompt.trim()
+                        ? generationPrompt.trim()
+                        : null
+                };
 
                 const systemMessage = {
                     role: 'system',
@@ -6436,12 +6795,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 let raw = await LLMClient.chatCompletion(requestOptions);
-                if (!actor.isNPC && playerPromptLog) {
+                if (promptLog) {
                     LLMClient.logPrompt({
-                        prefix: 'player_action',
+                        prefix: actor.isNPC ? 'npc_action' : 'player_action',
                         metadataLabel: aiMetricsLabel,
-                        systemPrompt: playerPromptLog.systemPrompt || '',
-                        generationPrompt: playerPromptLog.generationPrompt || '',
+                        systemPrompt: promptLog.systemPrompt || '',
+                        generationPrompt: promptLog.generationPrompt || '',
                         response: raw,
                         model: requestOptions.model,
                         endpoint: requestOptions.endpoint
@@ -6449,15 +6808,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (Globals.config.repetition_buster) {
-                    // extract final prose from numbered list
-                    const finalProseMatch = raw.match(/<finalPro.e>([\s\S]*?)/i);
-
-                    // if finalProseMatch contains the closing tag, split it at the closing tag
-                    // and discard the closing tag and anything after it
+                    const finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
                     if (finalProseMatch && finalProseMatch[1]) {
-                        raw = finalProseMatch[1].split(/<\/finalPro.e>/i)[0].trim();
-                    } else if (finalProseMatch.length >= 2) {
-                        raw = finalProseMatch[1];
+                        raw = finalProseMatch[1].trim();
                     }
                 }
 
@@ -6539,6 +6892,9 @@ module.exports = function registerApiRoutes(scope) {
                         continue;
                     }
 
+                    const itemContext = plausibilityResult.itemContext || '';
+                    const abilityContext = plausibilityResult.abilityContext || '';
+
                     const actionText = plan.description;
                     let actionTextForChat = actionText;
                     if (Globals.config?.slop_buster === true) {
@@ -6564,7 +6920,9 @@ module.exports = function registerApiRoutes(scope) {
                     const attackCheck = await runAttackCheckPrompt({
                         actionText,
                         locationOverride: npcLocation,
-                        characterName: npc.name || 'Unknown NPC'
+                        characterName: npc.name || 'Unknown NPC',
+                        itemContext,
+                        abilityContext
                     });
 
                     let attackContext = buildAttackContextForActor({
@@ -6632,7 +6990,9 @@ module.exports = function registerApiRoutes(scope) {
                         actionResolution,
                         attackContext: attackContextForNarrative,
                         attackDamageApplication,
-                        locationOverride: npcLocation
+                        locationOverride: npcLocation,
+                        itemContext,
+                        abilityContext
                     });
 
                     let npcResponse = narrativeResult.raw && narrativeResult.raw.trim()
@@ -7778,12 +8138,22 @@ module.exports = function registerApiRoutes(scope) {
 
                         console.log("additionalLore:", additionalLore);
 
+                        const mentionedItems = plausibilityInfo?.structured?.itemsMentioned;
+                        const mentionedAbilities = plausibilityInfo?.structured?.abilitiesMentioned;
+                        const itemContextXml = buildItemContextXml(mentionedItems);
+                        const abilityContextXml = buildAbilityContextXml(mentionedAbilities, {
+                            player: currentPlayer,
+                            location
+                        });
+
                         const promptVariables = {
                             ...baseContext,
                             promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
                             actionText: actionText,
                             characterName: 'The player',
                             additionalLore: additionalLore.trim(),
+                            itemContext: itemContextXml,
+                            abilityContext: abilityContextXml
                         };
                         promptTemplateName = templateName;
                         promptVariablesSnapshot = promptVariables;

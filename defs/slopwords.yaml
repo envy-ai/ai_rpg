@@ -6,7 +6,9 @@ trigram_default: 5
 slopwords:
   # Custom ones first:
   singing: default
+  sings: default
   resonance: default
+  harmonic: default
 
   # Alphabetical list:
   absently: default

@@ -64,12 +64,14 @@ attachAxiosMetricsLogger(axios);
 const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yaml');
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 const SLOPWORDS_PATH = path.join(__dirname, 'defs', 'slopwords.yaml');
+const SYSTEM_PROMPT_PREFIX_BY_PROMPT_PATH = path.join(__dirname, 'defs', 'system_prompt_prefix_by_prompt.yaml');
 let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
 let cachedExperiencePointValues = null;
 let cachedSlopWordList = null;
 let cachedNpcNameBlockedWords = null;
+let cachedSystemPromptPrefixByPrompt = null;
 
 const mergeDeep = (target, source) => {
     if (!source || typeof source !== 'object') {
@@ -4590,6 +4592,74 @@ function parsePlausibilityOutcome(xmlSnippet) {
 
         const type = getText(root, 'type');
         const reason = getText(root, 'reason');
+        const normalizeMentionedName = (value) => {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmedValue = value.trim();
+            if (!trimmedValue) {
+                return null;
+            }
+            const lowered = trimmedValue.toLowerCase();
+            if (lowered === 'n/a' || lowered === 'none' || lowered === 'null') {
+                return null;
+            }
+            return trimmedValue;
+        };
+
+        const collectMentionedNames = (parentNode, containerTag, entryTag) => {
+            if (!parentNode || typeof parentNode.getElementsByTagName !== 'function') {
+                return [];
+            }
+
+            const containerNode = parentNode.getElementsByTagName(containerTag)?.[0] || null;
+            if (!containerNode || typeof containerNode.getElementsByTagName !== 'function') {
+                return [];
+            }
+
+            const seen = new Set();
+            const names = [];
+
+            const pushName = (rawValue) => {
+                const normalized = normalizeMentionedName(rawValue);
+                if (!normalized) {
+                    return;
+                }
+                const key = normalized.toLowerCase();
+                if (seen.has(key)) {
+                    return;
+                }
+                seen.add(key);
+                names.push(normalized);
+            };
+
+            const entryNodes = Array.from(containerNode.getElementsByTagName(entryTag) || []);
+            for (const entryNode of entryNodes) {
+                if (!entryNode || typeof entryNode.getElementsByTagName !== 'function') {
+                    continue;
+                }
+                const nameNode = entryNode.getElementsByTagName('name')?.[0] || null;
+                if (nameNode && typeof nameNode.textContent === 'string') {
+                    pushName(nameNode.textContent);
+                }
+            }
+
+            if (!names.length) {
+                const nameNodes = Array.from(containerNode.getElementsByTagName('name') || []);
+                for (const nameNode of nameNodes) {
+                    if (nameNode && typeof nameNode.textContent === 'string') {
+                        pushName(nameNode.textContent);
+                    }
+                }
+            }
+
+            if (!names.length && typeof containerNode.textContent === 'string') {
+                const rawText = containerNode.textContent;
+                rawText.split(/[,;\n]/).forEach(piece => pushName(piece));
+            }
+
+            return names;
+        };
 
         const skillCheckNode = root.getElementsByTagName('skillCheck')[0] || null;
         let skillCheck = null;
@@ -4684,7 +4754,9 @@ function parsePlausibilityOutcome(xmlSnippet) {
         return {
             type: type,
             reason,
-            skillCheck
+            skillCheck,
+            itemsMentioned: collectMentionedNames(root, 'itemsMentioned', 'item'),
+            abilitiesMentioned: collectMentionedNames(root, 'abilitiesMentioned', 'ability')
         };
     } catch (error) {
         console.warn('Failed to parse plausibility outcome:', error.message);
@@ -6655,6 +6727,9 @@ const rarityDefinitions = Thing.getAllRarityDefinitions();
         env.addGlobal('rarityDefinitions', rarityDefinitions);
     }
 });
+if (promptEnv && typeof promptEnv.addGlobal === 'function') {
+    promptEnv.addGlobal('getSystemPromptPrefix', resolveSystemPromptPrefix);
+}
 
 // Add JSON escape filter for ComfyUI templates
 imagePromptEnv.addFilter('json', function (str) {
@@ -11104,6 +11179,62 @@ function getSlopWordList() {
     }
 
     return cachedSlopWordList;
+}
+
+function getSystemPromptPrefixByPromptList() {
+    if (Array.isArray(cachedSystemPromptPrefixByPrompt)) {
+        return cachedSystemPromptPrefixByPrompt;
+    }
+
+    try {
+        const raw = fs.readFileSync(SYSTEM_PROMPT_PREFIX_BY_PROMPT_PATH, 'utf8');
+        const parsed = yaml.load(raw);
+        const entries = Array.isArray(parsed)
+            ? parsed
+            : (Array.isArray(parsed?.entries) ? parsed.entries : []);
+        cachedSystemPromptPrefixByPrompt = entries
+            .map(entry => {
+                if (!entry || typeof entry !== 'object') {
+                    return null;
+                }
+                const pattern = typeof entry.pattern === 'string' ? entry.pattern.trim() : '';
+                const prefix = typeof entry.prefix === 'string' ? entry.prefix.trim() : '';
+                if (!pattern || !prefix) {
+                    return null;
+                }
+                return { pattern, prefix };
+            })
+            .filter(Boolean);
+    } catch (error) {
+        console.warn('Failed to load system prompt prefix definitions:', error.message);
+        cachedSystemPromptPrefixByPrompt = [];
+    }
+
+    return cachedSystemPromptPrefixByPrompt;
+}
+
+function resolveSystemPromptPrefix(promptType) {
+    if (!promptType || typeof promptType !== 'string') {
+        return '';
+    }
+    const normalizedType = promptType.trim().toLowerCase();
+    if (!normalizedType) {
+        return '';
+    }
+    const entries = getSystemPromptPrefixByPromptList();
+    for (const entry of entries) {
+        if (!entry || typeof entry.pattern !== 'string') {
+            continue;
+        }
+        const pattern = entry.pattern.trim().toLowerCase();
+        if (!pattern) {
+            continue;
+        }
+        if (normalizedType.includes(pattern)) {
+            return typeof entry.prefix === 'string' ? entry.prefix : '';
+        }
+    }
+    return '';
 }
 
 function getNpcNameBlockedWords() {

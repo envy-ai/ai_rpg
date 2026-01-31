@@ -145,6 +145,68 @@ class Utils {
     return kgrams;
   }
 
+  static #containsSubgram(containerTokens, subTokens) {
+    if (!Array.isArray(containerTokens) || !Array.isArray(subTokens)) {
+      throw new TypeError('Utils.#containsSubgram requires token arrays.');
+    }
+    if (!subTokens.length || containerTokens.length < subTokens.length) {
+      return false;
+    }
+    for (let i = 0; i <= containerTokens.length - subTokens.length; i += 1) {
+      let matches = true;
+      for (let j = 0; j < subTokens.length; j += 1) {
+        if (containerTokens[i + j] !== subTokens[j]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static pruneContainedKgrams(ngrams) {
+    if (!Array.isArray(ngrams)) {
+      throw new TypeError('Utils.pruneContainedKgrams requires an array of n-gram strings.');
+    }
+    if (!ngrams.length) {
+      return [];
+    }
+    const candidates = ngrams.map((gram, index) => {
+      if (typeof gram !== 'string' || !gram.trim()) {
+        throw new TypeError('Utils.pruneContainedKgrams expects non-empty n-gram strings.');
+      }
+      const cleaned = gram.trim();
+      return { gram: cleaned, index, tokens: cleaned.split(/\s+/) };
+    });
+    candidates.sort((a, b) => {
+      const lengthDelta = b.tokens.length - a.tokens.length;
+      if (lengthDelta !== 0) {
+        return lengthDelta;
+      }
+      return a.index - b.index;
+    });
+
+    const kept = [];
+    for (const candidate of candidates) {
+      let contained = false;
+      for (const existing of kept) {
+        if (Utils.#containsSubgram(existing.tokens, candidate.tokens)) {
+          contained = true;
+          break;
+        }
+      }
+      if (!contained) {
+        kept.push(candidate);
+      }
+    }
+
+    kept.sort((a, b) => a.index - b.index);
+    return kept.map(item => item.gram);
+  }
+
   static hasKgramOverlap(a, b, { k = 10, minMatches = 1 } = {}) {
     if (typeof a !== 'string' || typeof b !== 'string') {
       throw new TypeError('Utils.hasKgramOverlap requires two string arguments.');
@@ -190,21 +252,43 @@ class Utils {
       resolvedMaxK = Math.min(tokensA.length, tokensB.length);
     }
 
-    const overlaps = new Set();
     const small = tokensA.length <= tokensB.length ? tokensA : tokensB;
     const large = small === tokensA ? tokensB : tokensA;
+    const overlaps = [];
+    const overlapSet = new Set();
+    const spans = [];
 
-    for (let k = minK; k <= resolvedMaxK; k += 1) {
+    for (let k = resolvedMaxK; k >= minK; k -= 1) {
       const smallKgrams = Utils.#buildKgramSet(small, k);
       for (let i = 0; i <= large.length - k; i += 1) {
         const gram = large.slice(i, i + k).join(' ');
-        if (smallKgrams.has(gram)) {
-          overlaps.add(gram);
+        if (!smallKgrams.has(gram)) {
+          continue;
         }
+        if (overlapSet.has(gram)) {
+          continue;
+        }
+
+        const start = i;
+        const end = i + k;
+        let overlapsExisting = false;
+        for (const span of spans) {
+          if (start < span.end && end > span.start) {
+            overlapsExisting = true;
+            break;
+          }
+        }
+        if (overlapsExisting) {
+          continue;
+        }
+
+        overlaps.push(gram);
+        overlapSet.add(gram);
+        spans.push({ start, end });
       }
     }
 
-    return Array.from(overlaps);
+    return overlaps;
   }
 
   static findKgramOverlap(a, b, { k = 10 } = {}) {
