@@ -143,7 +143,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null } = {}) {
         if (!LLMClient.#isInteractive()) {
             return null;
         }
@@ -155,6 +155,7 @@ class LLMClient {
         const continueDeadline = null; // set after first bytes arrive
         LLMClient.#streamProgress.active.set(id, {
             label: labelWithCounter,
+            model: model || null,
             bytes: 0,
             startTs,
             startDeadline,
@@ -225,6 +226,7 @@ class LLMClient {
             return {
                 id,
                 label: entry.label,
+                model: entry.model || null,
                 bytes: entry.bytes,
                 seconds: Math.round((now - entry.startTs) / 1000),
                 timeoutSeconds,
@@ -1090,7 +1092,8 @@ class LLMClient {
                         ? LLMClient.#trackStreamStart(metadataLabel, {
                             startTimeoutMs: streamStartTimeoutMs,
                             continueTimeoutMs: streamContinueTimeoutMs,
-                            isBackground: Boolean(runInBackground)
+                            isBackground: Boolean(runInBackground),
+                            model: resolvedModel
                         })
                         : null;
                     if (streamTrackerId) {

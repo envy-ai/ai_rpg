@@ -59,7 +59,9 @@ These characters are present and aware of the action:
 {% for npc in npcs %}- {{ npc.name }}
 {% endfor %}{% for member in party %}- {{ member.name }}
 {% endfor %}
-Pick ONE or TWO of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick (a maximum of two) characters who are IN THE PLAYER's PARTY to respond or act. If two characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
+Pick ONE, TWO, or AT MOST THREE (and only if having a third adds something meaningful) of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick characters who are IN THE PLAYER's PARTY to respond or act. If two or three characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
+
+If it's been several turns since a party member last spoke or acted, priotirize having them speak or act now, if it makes sense given the current situation.
 
 If moving to a new location or region, the above characters are present at the *origin* location as opposed to the destination location/region. In other words, these are the characters who are present at the *start* of the turn; if the player leaves, they won't be present at the destination unless they're in the party or they specifically move there in the prose.
 
@@ -77,9 +79,9 @@ Use this format:
 2. ...
 3. ...
 4. <finalProse>...</finalProse>#}
-First, you will perform a self-correction and brainstorming process
+You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
 
-Second, you will write the final, polished story continuation
+Follow these steps:
 
 1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt.
 
@@ -89,6 +91,8 @@ Second, you will write the final, polished story continuation
 - **Character Omniscience:** Identify any place where NPCs are aware of something they shouldn't be. Are they hearing whispered dialogue not intended for them? (Don't consider acoustics or other factors, just assume they don't hear it). Are they remembering something that they were absent for? Are they acting on knowledge they couldn't possibly have?
 - **Treknobabble:** Identify treknobabble or equivalent technobabble/magibabble. Propose clearer, more logical alternatives. Come up with something concrete that actually makes sense in-universe.
 - **Continuity and logic:** Identify any continuity errors, illogical actions, dialogue that doesn't fit character personality, or things that don't make sense given the characters' knowledge, personalities, and the situation.
+- **Forgotten party members:** If any party members haven't acted or spoken in several turns, identify them here and plan to work them into the conversation or action, if it makes sense given the situation. Don't force it; only include them if it makes sense.
+- **"Everybody checking in":** Identify any places where it feels like a bunch of characters are checking in in sequence. Pick 1, 2, or at most 3 (and only if having a third adds something meaningful) characters who would be most invested in what's going on to respond or act, and don't mention the rest. If three characters are talking, make sure it feels like a real conversation and not just a list of what everybody's doing this turn.
 - **Remaining guidelines:** Check the text against the remaining guidelines.
 
 3.{# Brainstorm new directions in whatever format feels the most comfortable: Propose 2-3 new actions, sensory details, or dialogue hooks that could be introduced right now to move the story forward in a fresh, logical way, while still adhering to the characters' personalities and this level of success/failure: "{{ success_or_failure }}". Consider whether the writing would be served well by incorporating any of the new directions you came up with. Think about whether if it would be more impactful if it were shorter. Check whatever you do decide to add (if anything) against the guidelines in the previous step. #} Write a second draft based on the above. 

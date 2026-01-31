@@ -39,12 +39,7 @@ Then, generate 3 short memories for each newly generated NPC, from their perspec
 Finally, check each newly generated NPC against the banned names, banned concepts, and ALL existing NPCs in the gameState. If any newly generated NPC matches one of these, generate a new NPC to replace it.
 </task>
 
-{% if setting.characterGenInstructions %}
-These user notes are important for generating the NPCs:
-<userNotes>
 {{ setting.characterGenInstructions }}
-</userNotes>
-{% endif %}
 
 Format your response as follows:
 

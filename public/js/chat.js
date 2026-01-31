@@ -2085,7 +2085,7 @@ class AIRPGChat {
         const table = document.createElement('table');
         table.className = 'prompt-progress-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        thead.innerHTML = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
         entries.forEach(entry => {
@@ -2107,6 +2107,8 @@ class AIRPGChat {
             cancelCell.appendChild(cancelButton);
             const labelCell = document.createElement('td');
             labelCell.textContent = entry.label || 'prompt';
+            const modelCell = document.createElement('td');
+            modelCell.textContent = entry.model || '-';
             const bytesCell = document.createElement('td');
             bytesCell.textContent = formatBytes(Number(entry.bytes));
             const secondsCell = document.createElement('td');
@@ -2121,6 +2123,7 @@ class AIRPGChat {
             retryCell.textContent = Number.isFinite(entry.retries) ? `${entry.retries}` : '0';
             row.appendChild(cancelCell);
             row.appendChild(labelCell);
+            row.appendChild(modelCell);
             row.appendChild(bytesCell);
             row.appendChild(secondsCell);
             row.appendChild(timeoutCell);
@@ -2130,6 +2133,9 @@ class AIRPGChat {
             tbody.appendChild(row);
         });
         table.appendChild(tbody);
+        const tableWrap = document.createElement('div');
+        tableWrap.className = 'prompt-progress-table-wrap';
+        tableWrap.appendChild(table);
 
         if (!this.promptProgressMessage) {
             const messageDiv = document.createElement('div');
@@ -2139,7 +2145,7 @@ class AIRPGChat {
             senderDiv.textContent = '⏳ AI Prompts';
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.appendChild(table);
+            contentDiv.appendChild(tableWrap);
             const timestampDiv = document.createElement('div');
             timestampDiv.className = 'message-timestamp';
             timestampDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
@@ -2152,7 +2158,7 @@ class AIRPGChat {
             const contentDiv = this.promptProgressMessage.querySelector('.message-content');
             if (contentDiv) {
                 contentDiv.innerHTML = '';
-                contentDiv.appendChild(table);
+                contentDiv.appendChild(tableWrap);
             }
             const tsDiv = this.promptProgressMessage.querySelector('.message-timestamp');
             if (tsDiv) {

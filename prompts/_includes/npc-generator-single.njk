@@ -8,12 +8,7 @@ Note that an NPC is defined loosely here, and may be a creature, monster, or any
 
 {% if oldItem %}Note that this NPC was created from the following item or scenery: "{{ oldItem.name }}", described as "{{ oldItem.description }}". The transformation is described as "{{ oldItem.transformationDescription }}". Use this as inspiration for the NPC's appearance, personality, and role.{% endif %}
 
-{% if setting.characterGenInstructions %}
-These user notes are important for generating the NPCs:
-<userNotes>
 {{ setting.characterGenInstructions }}
-</userNotes>
-{% endif %}
 
 {% if additionalInstructions %}Additional instructions from the user:
 {{ additionalInstructions }}{% endif %}

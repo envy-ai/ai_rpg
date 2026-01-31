@@ -3669,7 +3669,7 @@ body.dark .thing-toggle-hint {
   width: 100%;
   border-collapse: collapse;
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 75%;
 
   th,
   td {
@@ -3683,7 +3683,7 @@ body.dark .thing-toggle-hint {
     color: #bfdbfe;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    font-size: 12px;
+    font-size: 0.85em;
   }
 
   tbody {
@@ -3727,6 +3727,13 @@ body.dark .thing-toggle-hint {
       opacity: 0.45;
     }
   }
+}
+
+.prompt-progress-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
 }
 
 .form-actions {

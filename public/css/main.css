@@ -3433,7 +3433,7 @@ body.dark .thing-toggle-hint {
   width: 100%;
   border-collapse: collapse;
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 75%;
 }
 .prompt-progress-table th,
 .prompt-progress-table td {
@@ -3446,7 +3446,7 @@ body.dark .thing-toggle-hint {
   color: #bfdbfe;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 12px;
+  font-size: 0.85em;
 }
 .prompt-progress-table tbody tr:nth-child(odd) {
   background: rgba(255, 255, 255, 0.02);
@@ -3482,6 +3482,12 @@ body.dark .thing-toggle-hint {
 .prompt-progress-table .prompt-progress-cancel:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+.prompt-progress-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
 }
 
 .form-actions {
