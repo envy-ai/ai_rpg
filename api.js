@@ -612,6 +612,38 @@ module.exports = function registerApiRoutes(scope) {
             return segments;
         };
 
+        const isAssistantProseLikeEntry = (entry) => {
+            if (!entry || typeof entry !== 'object') {
+                return false;
+            }
+            if (entry.role !== 'assistant') {
+                return false;
+            }
+            const entryType = typeof entry.type === 'string' ? entry.type : null;
+            return entryType === 'player-action'
+                || entryType === 'npc-action'
+                || entryType === 'quest-reward'
+                || entryType === 'random-event'
+                || entryType === null;
+        };
+
+        const getAssistantProseHistorySegments = () => {
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for assistant prose analysis.');
+            }
+            const segments = [];
+            for (const entry of chatHistory) {
+                if (!isAssistantProseLikeEntry(entry)) {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                if (content) {
+                    segments.push(content);
+                }
+            }
+            return segments;
+        };
+
         const getFilteredSlopWords = async (prose) => {
             if (typeof prose !== 'string' || !prose.trim()) {
                 throw new Error('Slopword analysis requires non-empty prose.');
@@ -648,16 +680,36 @@ module.exports = function registerApiRoutes(scope) {
             return segments.slice(-Math.round(numericLimit));
         };
 
-        const collectRepeatedNgrams = (prose, { minK = 4, maxEntries = 20 } = {}) => {
-            if (typeof prose !== 'string' || !prose.trim()) {
-                return [];
+        const getRecentAssistantProseHistorySegments = (limit = 80) => {
+            const numericLimit = Number(limit);
+            if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
+                throw new RangeError('Assistant prose history limit must be a positive number.');
             }
-            const segments = getRecentSlopHistorySegments(maxEntries);
+            const segments = getAssistantProseHistorySegments();
             if (!segments.length) {
                 return [];
             }
+            return segments.slice(-Math.round(numericLimit));
+        };
+
+        const collectRepeatedNgrams = (prose, { minK = 3, maxEntries = 20, segments = null } = {}) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                return [];
+            }
+            let sourceSegments = null;
+            if (segments !== null && segments !== undefined) {
+                if (!Array.isArray(segments)) {
+                    throw new TypeError('collectRepeatedNgrams requires segments to be an array when provided.');
+                }
+                sourceSegments = segments;
+            } else {
+                sourceSegments = getRecentSlopHistorySegments(maxEntries);
+            }
+            if (!sourceSegments.length) {
+                return [];
+            }
             const overlaps = new Set();
-            for (const segment of segments) {
+            for (const segment of sourceSegments) {
                 if (typeof segment !== 'string' || !segment.trim()) {
                     continue;
                 }
@@ -670,6 +722,22 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             return Utils.pruneContainedKgrams(Array.from(overlaps));
+        };
+
+        const collectSlopNgrams = (prose) => {
+            const baseNgrams = collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 });
+            const supplementalSegments = getRecentAssistantProseHistorySegments(80);
+            const supplementalNgrams = collectRepeatedNgrams(prose, { minK: 6, segments: supplementalSegments });
+            if (!baseNgrams.length && !supplementalNgrams.length) {
+                return [];
+            }
+            if (!baseNgrams.length) {
+                return supplementalNgrams;
+            }
+            if (!supplementalNgrams.length) {
+                return baseNgrams;
+            }
+            return Utils.pruneContainedKgrams([...baseNgrams, ...supplementalNgrams]);
         };
 
         const buildSlopContextText = () => {
@@ -729,7 +797,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-            const slopNgramSet = new Set(collectRepeatedNgrams(currentProse, { minK: 4, maxEntries: 20 }));
+            const slopNgramSet = new Set(collectSlopNgrams(currentProse));
 
             const detectedSlopWords = Array.from(slopWordSet);
             const detectedSlopNgrams = Array.from(slopNgramSet);
@@ -833,7 +901,7 @@ module.exports = function registerApiRoutes(scope) {
                 currentProse = candidateProse;
 
                 const remainingWords = await getFilteredSlopWords(currentProse);
-                const remainingNgrams = collectRepeatedNgrams(currentProse, { minK: 4, maxEntries: 20 });
+                const remainingNgrams = collectSlopNgrams(currentProse);
                 if (!remainingWords.length && !remainingNgrams.length) {
                     break;
                 }
@@ -6789,6 +6857,9 @@ module.exports = function registerApiRoutes(scope) {
                     timeoutMs: baseTimeoutMilliseconds,
                     validateXML: false,
                 };
+                if (Globals.config.repetition_buster) {
+                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                }
 
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
@@ -8444,6 +8515,9 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     validateXML: false
                 };
+                if (promptType === 'player-action' && Globals.config.repetition_buster) {
+                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                }
 
                 if (Object.keys(additionalPayload).length) {
                     requestOptions.additionalPayload = additionalPayload;
@@ -9128,7 +9202,8 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
-                        let skipNpcEvents = Boolean(isForcedEventAction);
+                        let skipNpcTurns = Boolean(isForcedEventAction);
+                        const skipRandomEvents = Boolean(isForcedEventAction);
 
                         const takeNpcTurns = Globals.config.npc_turns?.enabled !== false;
 
@@ -9143,7 +9218,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (Globals.isInCombat()) {
                             if (Globals.config.combat_npc_turns?.enabled === false) {
                                 console.log('Combat NPC turns are disabled in configuration.');
-                                skipNpcEvents = true;
+                                skipNpcTurns = true;
                             } else {
                                 console.log('Using combat NPC turns configuration.');
                                 maxNpcsToAct = Number.isInteger(Globals.config.combat_npc_turns?.maxFriendlyNpcsToAct) && Globals.config.combat_npc_turns.maxFriendlyNpcsToAct > 0
@@ -9165,40 +9240,40 @@ module.exports = function registerApiRoutes(scope) {
                         const playerMovedThisTurn = Boolean(Globals.processedMove);
                         if (playerMovedThisTurn) {
                             console.log('Skipping NPC turns because the player moved this turn.');
-                            skipNpcEvents = true;
+                            skipNpcTurns = true;
                         }
 
                         if (!takeNpcTurns) {
                             console.log('NPC turns are disabled in configuration.');
-                            skipNpcEvents = true;
+                            skipNpcTurns = true;
                         } else if (maxNpcsToAct <= 0) {
                             console.log('NPC turns are disabled (maxNpcsToAct is 0).');
-                            skipNpcEvents = true;
+                            skipNpcTurns = true;
                         } else if (npcTurnFrequency <= 0) {
                             console.log('NPC turns are disabled (npcTurnFrequency is 0).');
-                            skipNpcEvents = true;
+                            skipNpcTurns = true;
                         } else if (npcTurnFrequency < 1) {
                             const roll = Math.random();
                             console.log(`NPC turn frequency check: rolled ${roll.toFixed(3)} for frequency ${npcTurnFrequency}`);
                             if (roll > npcTurnFrequency) {
-                                skipNpcEvents = true;
+                                skipNpcTurns = true;
                                 console.log('Skipping NPC turns this round due to frequency check.');
                             }
-                        } else if (skipNpcEvents) {
+                        } else if (skipNpcTurns) {
                             console.log('Skipping NPC turns due to forced event.');
                         } else {
                             console.log('NPC turns will be processed this round.');
                         }
 
-                        stream.status('npc_turns:pending', skipNpcEvents
-                            ? 'Skipping NPC turns and random events.'
+                        stream.status('npc_turns:pending', skipNpcTurns
+                            ? 'Skipping NPC turns.'
                             : 'Resolving NPC turns.');
 
                         // Set this to true so NPCs don't hijack player movement.
                         Globals.processedMove = true;
 
                         let npcTurns = null;
-                        if (!skipNpcEvents) {
+                        if (!skipNpcTurns) {
 
                             const roll = Math.random();
                             console.log(`NPC turn frequency check: rolled ${roll.toFixed(3)} for frequency ${npcTurnFrequency}`);
@@ -9207,15 +9282,17 @@ module.exports = function registerApiRoutes(scope) {
                                 npcTurns = await executeNpcTurnsAfterPlayer({
                                     location,
                                     stream,
-                                    skipNpcEvents,
+                                    skipNpcEvents: skipNpcTurns,
                                     entryCollector: newChatEntries,
                                     maxFriendlyNpcsToAct: maxNpcsToAct,
                                     maxHostileNpcsToAct,
                                     currentTurnLog
                                 });
                             }
-
-
+                        }
+                        if (skipRandomEvents) {
+                            console.log('Skipping random events due to forced event.');
+                        } else {
                             try {
                                 const randomEventResult = await withProcessedMoveSuspended(() => processRandomEvents({
                                     stream,
@@ -9234,7 +9311,7 @@ module.exports = function registerApiRoutes(scope) {
                                 console.debug(randomEventError);
                             }
                         }
-                        if (!skipNpcEvents && npcTurns && npcTurns.length) {
+                        if (npcTurns && npcTurns.length) {
                             responseData.npcTurns = npcTurns;
                             streamState.npcTurns = npcTurns.length;
 

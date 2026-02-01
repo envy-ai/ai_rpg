@@ -10,6 +10,7 @@ Slash Commands Quick Guide
   - Optional: `aliases` array; `validateArgs` inherited default checks types against `args`.
   - `args` entries: `{ name, type: 'string'|'integer'|'boolean', required: bool }`.
   - `usage` is auto-built from `args` (shown by `/help` via `SlashCommandBase.listCommands()`).
+  - Per-command docs live in `docs/slashcommands/` (base class: `docs/slashcommands/SlashCommandBase.md`).
 
 - Arg parsing (server)
   - Request body carries `args` (object) and `argsText` (raw string).

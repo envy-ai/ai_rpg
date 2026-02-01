@@ -328,6 +328,11 @@ class Region {
       }
     }
 
+    if (!regionShortDescription) {
+      const nameForLog = regionName || 'unknown';
+      console.warn(`[Region.fromXMLSnippet] Missing <shortDescription> for region "${nameForLog}".`);
+    }
+
     if (!regionName) {
       throw new Error('Region XML missing <regionName>');
     }

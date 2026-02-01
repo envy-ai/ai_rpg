@@ -199,6 +199,13 @@ class Location {
       ? locationData.shortDescription.trim()
       : '';
     const hasShortDescription = Boolean(parsedShortDescription);
+    if (!hasShortDescription) {
+      const locationName = locationData.name
+        || existingLocation?.name
+        || existingLocation?.id
+        || 'unknown';
+      console.warn(`[Location.fromXMLSnippet] Missing <shortDescription> for location "${locationName}".`);
+    }
 
     if (existingLocation) {
       if (!locationData.description || typeof locationData.description !== 'string') {

@@ -12736,6 +12736,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
         const itemNodes = collectTags.flatMap(tag => Array.from(doc.getElementsByTagName(tag)));
 
         const items = [];
+        const missingShortDescriptions = [];
 
         // Warn and return if no item nodes found
         if (itemNodes.length === 0) {
@@ -12885,6 +12886,12 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
             };
             //console.log('Creating entry for item:', nameNode.textContent.trim());
             const shortDescription = node.getElementsByTagName('shortDescription')[0]?.textContent?.trim() || '';
+            if (!shortDescription) {
+                const entryName = nameNode.textContent.trim();
+                if (entryName) {
+                    missingShortDescriptions.push(entryName);
+                }
+            }
 
             const entry = {
                 name: nameNode.textContent.trim(),
@@ -12914,6 +12921,14 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
 
             //console.log('Parsed item entry:', entry);
             items.push(entry);
+        }
+
+        if (missingShortDescriptions.length) {
+            const preview = missingShortDescriptions.slice(0, 10).join(', ');
+            const suffix = missingShortDescriptions.length > 10
+                ? ` (+${missingShortDescriptions.length - 10} more)`
+                : '';
+            console.warn(`parseThingsXml: ${missingShortDescriptions.length} item(s) missing <shortDescription>: ${preview}${suffix}`);
         }
 
         return items;

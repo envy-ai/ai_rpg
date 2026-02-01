@@ -196,7 +196,7 @@ combat_npc_turns:
   npcTurnFrequency: 1
 baseWeaponDamage: 5
 baseHealthPerLevel: 15
-repetition_buster: false
+repetition_buster: true
 slop_buster: true
 prose_length: 3-5 sentences
 # Number of events to check concurrently when processing text. Omit to do them all.

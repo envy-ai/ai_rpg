@@ -131,9 +131,11 @@ class Utils {
 
   static #normalizeKgramTokens(text) {
     return text
+      .toLowerCase()
+      .replace(/[^a-z0-9']+/gi, ' ')
       .split(/\s+/)
-      .map(t => t.trim().toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
-      .filter(Boolean)
+      .map(t => t.trim())
+      .filter(t => t && /[a-z0-9]/i.test(t))
       .filter(t => !COMMON_WORDS.has(t));
   }
 

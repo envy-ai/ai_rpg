@@ -826,6 +826,7 @@ class LLMClient {
         onResponse = null,
         validateXML = true,
         requiredTags = [],
+        requiredRegex = null,
         waitAfterError = 10,
         dumpReasoningToConsole = false,
         debug = false,
@@ -888,6 +889,7 @@ class LLMClient {
                 additionalPayload,
                 validateXML,
                 requiredTags,
+                requiredRegex,
                 waitAfterError,
                 dumpReasoningToConsole,
                 seed,
@@ -1081,6 +1083,33 @@ class LLMClient {
             let streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
+            const resolvedRequiredRegex = (() => {
+                if (!requiredRegex) {
+                    return null;
+                }
+                if (requiredRegex instanceof RegExp) {
+                    return requiredRegex;
+                }
+                if (typeof requiredRegex === 'string') {
+                    const trimmed = requiredRegex.trim();
+                    if (!trimmed) {
+                        return null;
+                    }
+                    if (trimmed.startsWith('/') && trimmed.lastIndexOf('/') > 0) {
+                        const lastSlash = trimmed.lastIndexOf('/');
+                        const pattern = trimmed.slice(1, lastSlash);
+                        const flags = trimmed.slice(lastSlash + 1);
+                        return new RegExp(pattern, flags);
+                    }
+                    return new RegExp(trimmed);
+                }
+                if (typeof requiredRegex === 'object' && requiredRegex.pattern) {
+                    const pattern = String(requiredRegex.pattern);
+                    const flags = requiredRegex.flags ? String(requiredRegex.flags) : undefined;
+                    return flags ? new RegExp(pattern, flags) : new RegExp(pattern);
+                }
+                throw new Error('requiredRegex must be a RegExp, a string, or { pattern, flags }.');
+            })();
             while (attempt <= retryAttempts) {
                 responseContent = '';
                 streamTrackerId = null;
@@ -1246,6 +1275,27 @@ class LLMClient {
                         thinkTags.forEach(tag => log(` - ${tag}`));
                     }
 
+                    if (resolvedRequiredRegex) {
+                        if (resolvedRequiredRegex.global || resolvedRequiredRegex.sticky) {
+                            resolvedRequiredRegex.lastIndex = 0;
+                        }
+                        if (!resolvedRequiredRegex.test(responseContent)) {
+                            const errorMsg = `Required regex ${resolvedRequiredRegex} did not match response (attempt ${attempt + 1}).`;
+                            const filePath = LLMClient.writeLogFile({
+                                prefix: 'missingRegex',
+                                metadataLabel,
+                                error: errorMsg,
+                                payload: responseContent || '',
+                                onFailureMessage: 'Failed to write missing regex log file'
+                            });
+                            if (filePath) {
+                                warn(`Missing regex response logged to ${filePath}`);
+                            }
+                            errorLog(errorMsg);
+                            throw new Error(errorMsg);
+                        }
+                    }
+
                     if (debug) {
                         try {
                             const fs = require('fs');
@@ -1277,6 +1327,7 @@ class LLMClient {
                                     waitAfterError,
                                     validateXML,
                                     requiredTags,
+                                    requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
                                     dumpReasoningToConsole
                                 },
                                 aiConfigOverride: aiConfig,
