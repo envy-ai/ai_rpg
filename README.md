@@ -14,15 +14,20 @@ AI RPG turns an OpenAI-compatible language model into a solo tabletop game maste
 - The ability to create your own world setting, with or without help from the AI
 - A detailed NPC memory system that keeps track of important memories of individual NPCs.
 - Numerical skill and ability checks with real RNG and AI-generated circumstance bonuses to ensure fair action resolution
-- A modifiable needs system that tracks, by default, food, rest, and mana.
+- A modifiable needs system that tracks, by default, food, rest, stamina, and mana.
 - A detailed under-the-hood disposition system that tracks separate axes for platonic friendship, romantic interest, trust, respect, etc, and moves slowly over time so you can get that "slow burn" feeling.
 - Detailed AI event processing so that the program can understand basically any action you throw at it.
+- Probably one of the best automatic systems for reducing repetetiveness and slop.
+- Summarization and context compression that divides the story by scene rather than by line to catch important plot beats and memorable NPC quotes.
+- "Take me there" - Upload images when you create new game settings, locations, regions, and NPCs, and let the AI create them for you.
+- Support for loading SillyTavern lorebooks
 - Probably some more stuff I don't remember right now
 
 ## Tips
 
 - Type whatever action you want to take!
 - NPC and item images have a small '...' menu in the upper right corner. Access some "creative mode" stuff there.
+- On the Map, shift+left click and drag to create new exits or exits to existing locations. Right click for a context menu to edit/delete exits and location/region stubs.
 - If you want to bypass plausibility checking, precede what you type with '!'. You can control the gane world and other characters this way, do things that are implausible, and bypass skill checks.
 - If you want to bypass the AI interpreting what you typed in prose along with bypassing plausibility checking, precede what you type with '!!'.
 - If you want to enter something into the chat log without affecting anything or having events called, precede what you type with '#'.
@@ -31,7 +36,7 @@ AI RPG turns an OpenAI-compatible language model into a solo tabletop game maste
 
 ## Caution
 
-This is still in alpha! Expect bugs! If you want to help, when you find something that doesn't work right, come up with a test case so we can debug.
+This is still in beta! Expect bugs! If you want to help, when you find something that doesn't work right, come up with a test case so we can debug.
 
 ## Prerequisites
 
@@ -49,8 +54,9 @@ This is still in alpha! Expect bugs! If you want to help, when you find somethin
 
 ### Known working LLMs
 
-- GLM 4.x
-- Deepseek 3.1 Terminus
+- Kimi K2.5 non-thinking (best for hard-hitting character moments)
+- GLM 4.x (4.6 makes fewer mistakes, 4.7 generates better prose and still has a pretty low error rate)
+- Deepseek 3.x (3.1 Terminus was specifically tested)
 - <a href='https://huggingface.co/mradermacher/Circuitry_24B_V.2-GGUF'>Circuitry 24B Q_6</a>
 - <a href='https://huggingface.co/TheDrummer/Gemma-3-R1-12B-v1-GGUF'>TheDrummer's Gemma 3 12B</a>
 - <a href='https://huggingface.co/bartowski/Goekdeniz-Guelmez_Josiefied-Qwen3-8B-abliterated-v1-GGUF'>Josiefied-Qwen3-8B-abliterated-v1 by Goekdeniz-Guelmez</a> in a pinch. It didn't really "get" region generation when I tested it.
@@ -69,7 +75,7 @@ Plenty of other LLMs will work as well. Some will not. Drop by the <a href='http
    mkdir airpg
    cd airpg
    git clone https://github.com/envy-ai/ai_rpg .
-   git checkout 1.0-beta2
+   git checkout 1.0-beta3
    ```
 
 4. Install dependencies:
@@ -142,3 +148,7 @@ Near future:
 Questions, feedback, or want to share your campaign? Join the Discord: https://discord.gg/XNGHc7b5Vs or visit our <a href='https://reddit.com/r/aiRPGofficial'>subreddit</a>.
 
 Happy adventuring!
+
+## Help sponsor development
+
+If you use my NanoGPT <a ref='https://nano-gpt.com/r/BfUz6hBK'>referral link</a>, you get a 5% discount and I get a referral bonus that helps me pay for my own AI usage for development and testing.
