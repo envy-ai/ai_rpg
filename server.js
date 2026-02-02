@@ -7883,6 +7883,18 @@ async function alterThingByPrompt({
     }
 
     const updatedItem = parsedItems[0];
+    const updatedShortDescriptionRaw = typeof updatedItem.shortDescription === 'string'
+        ? updatedItem.shortDescription.trim()
+        : '';
+    const existingShortDescriptionRaw = typeof thing.shortDescription === 'string'
+        ? thing.shortDescription.trim()
+        : '';
+    const metadataShortDescriptionRaw = typeof metadata.shortDescription === 'string'
+        ? metadata.shortDescription.trim()
+        : '';
+    const resolvedShortDescription = updatedShortDescriptionRaw
+        || existingShortDescriptionRaw
+        || metadataShortDescriptionRaw;
     const updatedBooleanFlags = extractThingBooleanFlags(updatedItem);
     const originalName = thing.name;
     const updatedName = typeof updatedItem.name === 'string' && updatedItem.name.trim()
@@ -7975,6 +7987,9 @@ async function alterThingByPrompt({
         relativeLevel,
         level: computedLevel
     };
+    if (resolvedShortDescription) {
+        updatedMetadata.shortDescription = resolvedShortDescription;
+    }
     if (Object.keys(updatedBooleanFlags).length) {
         Object.assign(updatedMetadata, updatedBooleanFlags);
     }
@@ -8061,6 +8076,9 @@ async function alterThingByPrompt({
     thing.level = computedLevel;
     thing.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
     thing.metadata = sanitizedMetadata;
+    if (resolvedShortDescription) {
+        thing.shortDescription = resolvedShortDescription;
+    }
 
     if (normalizedType === 'scenery') {
         thing.slot = null;

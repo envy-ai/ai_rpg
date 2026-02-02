@@ -45,3 +45,4 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Event prompts are grouped (locations, items, NPCs, misc) and run sequentially with structured parsing.
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
+- Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
