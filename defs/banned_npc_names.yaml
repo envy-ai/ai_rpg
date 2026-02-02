@@ -50,3 +50,4 @@ banned_npc_name_regexes:
   - "/Lira/"
   - "/Griz/"
   - "/Scuttl/"
+  - "/Glitch/"
