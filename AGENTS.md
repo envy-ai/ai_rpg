@@ -14,4 +14,7 @@
 - Lint/syntax check any files you alter, if applicable.
 - Be aware of things in Globals.js to avoid reinventing the wheel to get the current player, location, region, etc.
 - Make sure all new prompts are logged via LLMClient.logPrompt()
+- At the beginning of a session, read docs/developer_overview.md and docs/README.md
+- Make use of existing documentation to bring yourself up to date about code
 - When finished with a coding task, update any relevant documentation. If no relevant documentation exists, create some. Name the doc file after the name of the class (Location.js -> Location.md).
+- When updateing documentation, also update docs/README.md to reflect any changes or new items.
