@@ -45,6 +45,8 @@ const SettingInfo = require('./SettingInfo.js');
 
 // Import Region class
 const Region = require('./Region.js');
+// Import Faction class
+const Faction = require('./Faction.js');
 
 // Import image generation clients
 const ComfyUIClient = require('./ComfyUIClient.js');
@@ -1733,6 +1735,7 @@ function getSuggestedPlayerLevel(settingSnapshot = null) {
 const players = new Map(); // Store multiple players by ID
 const things = new Map(); // Store things (items and scenery) by ID
 const skills = new Map(); // Store skill definitions by name
+const factions = new Map(); // Store factions by ID
 
 // In-memory game world storage
 const gameLocations = new Map(); // Store Location instances by ID
@@ -2204,6 +2207,23 @@ function serializeNpcForClient(npc, options = {}) {
         attributes = {};
     }
 
+    let factionId = null;
+    try {
+        const rawFactionId = typeof npc.factionId === 'string' ? npc.factionId : null;
+        factionId = rawFactionId && rawFactionId.trim() ? rawFactionId.trim() : null;
+    } catch (_) {
+        factionId = null;
+    }
+
+    let factionStandings = {};
+    try {
+        if (typeof npc.getFactionStandings === 'function') {
+            factionStandings = npc.getFactionStandings() || {};
+        }
+    } catch (_) {
+        factionStandings = {};
+    }
+
     let unspentSkillPoints = null;
     try {
         if (typeof npc.getUnspentSkillPoints === 'function') {
@@ -2366,6 +2386,13 @@ function serializeNpcForClient(npc, options = {}) {
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer
     };
+
+    if (factionId) {
+        serialized.factionId = factionId;
+    }
+    if (factionStandings && typeof factionStandings === 'object') {
+        serialized.factionStandings = factionStandings;
+    }
 
     if (typeof npc.getCurrentQuests === 'function') {
         try {
@@ -5517,17 +5544,19 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     const settingSnapshot = getActiveSettingSnapshot();
     const normalizedDirectionHint = normalizeDirection(directionHint);
     const resolvedDirection = normalizedDirectionHint || directionKeyFromName(trimmedName);
+    const stubShortDescription = descriptionHint || `An unexplored area referred to as ${trimmedName}.`;
 
     const stub = new Location({
         name: trimmedName,
         description: null,
+        shortDescription: stubShortDescription,
         imageId: locationImageId,
         regionId: effectiveRegionId,
         isStub: true,
         stubMetadata: {
             originLocationId: originLocation?.id || null,
             originDirection: resolvedDirection,
-            shortDescription: descriptionHint || `An unexplored area referred to as ${trimmedName}.`,
+            shortDescription: stubShortDescription,
             locationPurpose: 'Area referenced during event-driven travel.',
             settingDescription: describeSettingForPrompt(settingSnapshot),
             regionId: effectiveRegionId,
@@ -5847,6 +5876,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     const regionEntryStub = new Location({
         name: stubName,
         description: null,
+        shortDescription: descriptionText,
         imageId: entryImageId,
         regionId: newRegionId,
         checkRegionId: false,
@@ -5964,6 +5994,7 @@ async function createStubNeighbors(location, context = {}) {
         const stub = new Location({
             name: stubName,
             description: null,
+            shortDescription: stubShortDescription,
             baseLevel: null,
             isStub: true,
             regionId: location.stubMetadata?.regionId || null,
@@ -6318,6 +6349,7 @@ async function expandRegionEntryStub(stubLocation) {
             const characterConcepts = extractRegionCharacterConcepts(stubResponse);
             const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
             const secrets = extractRegionSecrets(stubResponse);
+            const regionShortDescription = parseRegionStubShortDescription(stubResponse);
 
             console.log("Character concepts extracted for region NPC generation:", characterConcepts);
 
@@ -6347,6 +6379,7 @@ async function expandRegionEntryStub(stubLocation) {
                 id: targetRegionId,
                 name: pendingInfo?.name || metadata.targetRegionName || 'Uncharted Region',
                 description: pendingInfo?.description || metadata.targetRegionDescription || 'No description available.',
+                shortDescription: regionShortDescription,
                 locations: locationDefinitions.map(def => ({
                     name: def.name,
                     description: def.description,
@@ -13251,6 +13284,22 @@ function renderSkillsByNamePrompt(context = {}) {
     }
 }
 
+function renderFactionsPrompt(context = {}) {
+    try {
+        const templateName = 'faction-generator.xml.njk';
+        const hasNumFactions = Object.prototype.hasOwnProperty.call(context, 'numFactions');
+        const requestedCount = hasNumFactions ? context.numFactions : 5;
+
+        return promptEnv.render(templateName, {
+            settingDescription: context.settingDescription || 'A vibrant world of adventure.',
+            numFactions: requestedCount
+        });
+    } catch (error) {
+        console.error('Error rendering faction template:', error);
+        return null;
+    }
+}
+
 function parseSkillsXml(xmlContent) {
     try {
         const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
@@ -13285,6 +13334,160 @@ function parseSkillsXml(xmlContent) {
         console.warn('Failed to parse skills XML:', error.message);
         return [];
     }
+}
+
+function parseFactionsXml(xmlContent) {
+    const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(parserError.textContent);
+    }
+
+    const factionNodes = Array.from(doc.getElementsByTagName('faction'));
+    if (!factionNodes.length) {
+        throw new Error('Faction generation returned no <faction> entries.');
+    }
+
+    const extractList = (parent, containerTag, itemTag) => {
+        const container = parent.getElementsByTagName(containerTag)[0];
+        if (!container) {
+            return [];
+        }
+        return Array.from(container.getElementsByTagName(itemTag))
+            .map(node => node.textContent.trim())
+            .filter(Boolean);
+    };
+
+    const parsed = [];
+    const seenNames = new Set();
+    for (const node of factionNodes) {
+        const nameNode = node.getElementsByTagName('name')[0];
+        const name = nameNode ? nameNode.textContent.trim() : '';
+        if (!name) {
+            throw new Error('Faction entry missing a name.');
+        }
+        const nameKey = name.toLowerCase();
+        if (seenNames.has(nameKey)) {
+            throw new Error(`Duplicate faction name "${name}" in generation output.`);
+        }
+        seenNames.add(nameKey);
+
+        const tags = extractList(node, 'tags', 'tag');
+        if (!tags.length) {
+            throw new Error(`Faction "${name}" is missing tags.`);
+        }
+        const goals = extractList(node, 'goals', 'goal');
+        if (!goals.length) {
+            throw new Error(`Faction "${name}" is missing goals.`);
+        }
+        const homeRegionNode = node.getElementsByTagName('homeRegion')[0];
+        const homeRegionName = homeRegionNode ? homeRegionNode.textContent.trim() : null;
+
+        const assetsContainer = node.getElementsByTagName('assets')[0];
+        const assetNodes = assetsContainer
+            ? Array.from(assetsContainer.getElementsByTagName('asset'))
+            : [];
+        if (!assetNodes.length) {
+            throw new Error(`Faction "${name}" is missing assets.`);
+        }
+        const assets = assetNodes.map((assetNode, index) => {
+            const assetNameNode = assetNode.getElementsByTagName('name')[0];
+            const assetTypeNode = assetNode.getElementsByTagName('type')[0];
+            const assetDescriptionNode = assetNode.getElementsByTagName('description')[0];
+            const assetName = assetNameNode ? assetNameNode.textContent.trim() : '';
+            if (!assetName) {
+                throw new Error(`Faction "${name}" asset at index ${index} is missing a name.`);
+            }
+            const asset = { name: assetName };
+            const assetType = assetTypeNode ? assetTypeNode.textContent.trim() : '';
+            if (assetType) {
+                asset.type = assetType;
+            }
+            const assetDescription = assetDescriptionNode ? assetDescriptionNode.textContent.trim() : '';
+            if (assetDescription) {
+                asset.description = assetDescription;
+            }
+            return asset;
+        });
+
+        const relationsContainer = node.getElementsByTagName('relations')[0];
+        const relationNodes = relationsContainer
+            ? Array.from(relationsContainer.getElementsByTagName('relation'))
+            : [];
+        const relations = relationNodes.map((relationNode, index) => {
+            const targetNode = relationNode.getElementsByTagName('factionName')[0]
+                || relationNode.getElementsByTagName('name')[0];
+            const statusNode = relationNode.getElementsByTagName('status')[0];
+            const notesNode = relationNode.getElementsByTagName('notes')[0];
+            const targetName = targetNode ? targetNode.textContent.trim() : '';
+            if (!targetName) {
+                throw new Error(`Faction "${name}" relation at index ${index} is missing a factionName.`);
+            }
+            const status = statusNode ? statusNode.textContent.trim().toLowerCase() : '';
+            if (!status) {
+                throw new Error(`Faction "${name}" relation for "${targetName}" is missing a status.`);
+            }
+            if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
+                throw new Error(`Faction "${name}" relation for "${targetName}" has invalid status "${status}".`);
+            }
+            const notes = notesNode ? notesNode.textContent.trim() : '';
+            if (!notes) {
+                throw new Error(`Faction "${name}" relation for "${targetName}" is missing notes.`);
+            }
+            return { targetName, status, notes };
+        });
+
+        const tiersContainer = node.getElementsByTagName('reputationTiers')[0];
+        const tierNodes = tiersContainer
+            ? Array.from(tiersContainer.getElementsByTagName('tier'))
+            : [];
+        if (!tierNodes.length) {
+            throw new Error(`Faction "${name}" is missing reputation tiers.`);
+        }
+        const reputationTiers = tierNodes.map((tierNode, index) => {
+            const thresholdNode = tierNode.getElementsByTagName('threshold')[0];
+            const labelNode = tierNode.getElementsByTagName('label')[0];
+            const thresholdValue = thresholdNode ? Number(thresholdNode.textContent.trim()) : NaN;
+            if (!Number.isFinite(thresholdValue)) {
+                throw new Error(`Faction "${name}" reputation tier ${index + 1} is missing a numeric threshold.`);
+            }
+            const label = labelNode ? labelNode.textContent.trim() : '';
+            const perks = extractList(tierNode, 'perks', 'perk');
+            const penalties = extractList(tierNode, 'penalties', 'penalty');
+            return {
+                threshold: thresholdValue,
+                label,
+                perks,
+                penalties
+            };
+        });
+
+        parsed.push({
+            name,
+            tags,
+            goals,
+            homeRegionName: homeRegionName || null,
+            assets,
+            relations,
+            reputationTiers
+        });
+    }
+
+    return parsed;
+}
+
+function logFactionGeneration({ systemPrompt, generationPrompt, responseText }) {
+    if (typeof LLMClient.logPrompt !== 'function') {
+        return;
+    }
+    LLMClient.logPrompt({
+        prefix: 'faction_generation',
+        metadataLabel: 'faction_generation',
+        systemPrompt: systemPrompt || '',
+        generationPrompt: generationPrompt || '',
+        response: responseText || ''
+    });
 }
 
 function logSkillGeneration({ systemPrompt, generationPrompt, responseText, durationSeconds }) {
@@ -14531,6 +14734,132 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
         console.warn('Skill generation failed:', error.message);
         return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
     }
+}
+
+async function generateFactionsList({ count, settingDescription }) {
+    const numericCount = Number(count);
+    let safeCount = Number.isInteger(numericCount) && numericCount >= 0
+        ? numericCount
+        : null;
+    if (safeCount === null) {
+        console.warn('Faction count missing or invalid; defaulting to 5.');
+        safeCount = 5;
+    }
+    if (safeCount === 0) {
+        return [];
+    }
+
+    const renderedTemplate = renderFactionsPrompt({
+        settingDescription: settingDescription || 'A vibrant world of adventure.',
+        numFactions: safeCount
+    });
+
+    if (!renderedTemplate) {
+        throw new Error('Faction template render failed.');
+    }
+
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsedTemplate.systemPrompt;
+    const generationPrompt = parsedTemplate.generationPrompt;
+
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Faction template missing system or generation prompt.');
+    }
+
+    if (!config?.ai?.endpoint || !config.ai.apiKey || !config.ai.model) {
+        throw new Error('AI configuration missing for faction generation.');
+    }
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+
+    const factionResponse = await LLMClient.chatCompletion({
+        messages,
+        temperature: parsedTemplate.temperature,
+        metadataLabel: 'faction_generation'
+    });
+
+    logFactionGeneration({
+        systemPrompt,
+        generationPrompt,
+        responseText: factionResponse
+    });
+
+    const parsedFactions = parseFactionsXml(factionResponse);
+    if (!parsedFactions.length) {
+        throw new Error('Faction generation returned no usable factions.');
+    }
+    if (parsedFactions.length !== safeCount) {
+        throw new Error(`Faction generation returned ${parsedFactions.length} factions, expected ${safeCount}.`);
+    }
+
+    const normalizedNames = parsedFactions.map(entry => ({
+        name: entry.name,
+        key: entry.name.trim().toLowerCase()
+    }));
+    const nameLookup = new Map(normalizedNames.map(entry => [entry.key, entry.name]));
+    parsedFactions.forEach(entry => {
+        const entryKey = entry.name.trim().toLowerCase();
+        const expectedKeys = normalizedNames
+            .filter(candidate => candidate.key !== entryKey)
+            .map(candidate => candidate.key);
+        const providedKeys = new Set(
+            Array.isArray(entry.relations)
+                ? entry.relations
+                    .map(relation => (typeof relation?.targetName === 'string' ? relation.targetName.trim().toLowerCase() : ''))
+                    .filter(targetKey => targetKey && targetKey !== entryKey)
+                : []
+        );
+        const missingKeys = expectedKeys.filter(targetKey => !providedKeys.has(targetKey));
+        if (missingKeys.length) {
+            const missingNames = missingKeys.map(targetKey => nameLookup.get(targetKey) || targetKey);
+            console.warn(`Faction "${entry.name}" is missing relations for ${missingKeys.length} faction(s): ${missingNames.join(', ')}`);
+        }
+    });
+
+    const created = parsedFactions.map(entry => new Faction({
+        name: entry.name,
+        tags: entry.tags,
+        goals: entry.goals,
+        homeRegionName: entry.homeRegionName,
+        assets: entry.assets,
+        relations: {},
+        reputationTiers: entry.reputationTiers
+    }));
+
+    const nameToId = new Map();
+    created.forEach(faction => {
+        nameToId.set(faction.name.toLowerCase(), faction.id);
+    });
+
+    parsedFactions.forEach((entry, index) => {
+        const faction = created[index];
+        const relationMap = new Map();
+        for (const relation of entry.relations || []) {
+            const targetKey = typeof relation.targetName === 'string'
+                ? relation.targetName.trim().toLowerCase()
+                : '';
+            if (!targetKey) {
+                throw new Error(`Faction "${entry.name}" relation is missing a target name.`);
+            }
+            if (targetKey === faction.name.toLowerCase()) {
+                continue;
+            }
+            const targetId = nameToId.get(targetKey);
+            if (!targetId) {
+                throw new Error(`Faction "${entry.name}" relation references unknown faction "${relation.targetName}".`);
+            }
+            relationMap.set(targetId, {
+                status: relation.status,
+                notes: relation.notes
+            });
+        }
+        faction.relations = relationMap;
+    });
+
+    return created;
 }
 
 async function generateSkillsByNames({ skillNames = [], settingDescription }) {
@@ -17428,6 +17757,36 @@ async function renderRegionStubPrompt({ settingDescription, region, previousRegi
     }
 }
 
+function parseRegionStubShortDescription(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        throw new Error('Region stub response missing XML payload for shortDescription.');
+    }
+
+    const sanitize = (input) => `<root>${input}</root>`
+        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
+        .replace(/<\s*br\s*>/gi, '<br/>')
+        .replace(/<\s*hr\s*>/gi, '<hr/>');
+
+    let doc;
+    try {
+        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
+    } catch (error) {
+        throw new Error(`Failed to parse region stub XML for shortDescription: ${error.message}`);
+    }
+
+    if (!doc || doc.getElementsByTagName('parsererror')?.length) {
+        throw new Error('Region stub XML contained parser errors while reading shortDescription.');
+    }
+
+    const shortNode = doc.getElementsByTagName('shortDescription')[0] || null;
+    const shortDescription = shortNode?.textContent?.trim() || '';
+    if (!shortDescription) {
+        throw new Error('Region stub response missing <shortDescription>.');
+    }
+
+    return shortDescription;
+}
+
 function parseRegionStubLocations(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
         return [];
@@ -17696,12 +18055,13 @@ async function generateRegionExitStubs({
             stubName = candidateName;
         }
 
+        const stubShortDescription = `An unexplored path leading toward ${definition.name}.`;
         const stubMetadata = {
             originLocationId: sourceLocation.id,
             originRegionId: region.id,
             originDirection: normalizedDirection,
             regionId: newRegionId,
-            shortDescription: `An unexplored path leading toward ${definition.name}.`,
+            shortDescription: stubShortDescription,
             locationPurpose: `Entrance to ${definition.name}`,
             allowRename: false,
             isRegionEntryStub: true,
@@ -17728,6 +18088,7 @@ async function generateRegionExitStubs({
         const regionEntryStub = new Location({
             name: stubName,
             description: null,
+            shortDescription: stubShortDescription,
             regionId: newRegionId,
             checkRegionId: false,
             baseLevel: computedBaseLevel,
@@ -17925,6 +18286,7 @@ async function instantiateRegionLocations({
         const stub = new Location({
             name: blueprint.name,
             description: null,
+            shortDescription: blueprint.description,
             baseLevel: computedBaseLevel,
             isStub: true,
             regionId: region.id,
@@ -18787,6 +19149,7 @@ const apiScope = {
     LocationExit,
     Player,
     Region,
+    Faction,
     SettingInfo,
     Skill,
     Thing,
@@ -18806,6 +19169,7 @@ const apiScope = {
     createRegionStubFromEvent,
     generateSkillsList,
     generateSkillsByNames,
+    generateFactionsList,
     generateThingImage,
     generateItemsByNames,
     expandRegionEntryStub,
@@ -18848,6 +19212,7 @@ const apiScope = {
     pushChatEntry,
     players,
     skills,
+    factions,
     things,
     regions,
     gameLocations,

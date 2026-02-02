@@ -10,6 +10,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`.
 - Status/needs: `#statusEffects`, `#needBars`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`.
+- Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#elapsedTime`, `#lastVisitedTime`, `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#corpseCountdown`.
@@ -37,6 +38,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 
 ## Accessors (Grouped)
 - Identity and descriptors: `id`, `name`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`.
+- Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`.
 - Social/party: `partyMembers`, `isInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
@@ -56,6 +58,9 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getDisposition(targetId, type)`, `setDisposition(...)`, `increaseDisposition(...)`, `decreaseDisposition(...)`.
   - `getDispositionTowards(player, type)`, `setDispositionTowards(...)`.
   - `getDispositionIntensityTowards(...)`, `getDispositionTowardsCurrentPlayer(...)`, `setDispositionTowardsCurrentPlayer(...)`.
+- Factions:
+  - `getFactionStandings()`, `setFactionStandings(mapOrObject)`.
+  - `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `removeFactionStanding(factionId)`.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
   - `setAttribute(name, value)`.

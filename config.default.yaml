@@ -190,6 +190,8 @@ quests:
   enabled: true
 quest_checks:
   enabled: true
+factions:
+  count: 5
 combat_npc_turns:
   enabled: true
   maxNpcsToAct: 2

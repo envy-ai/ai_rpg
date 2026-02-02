@@ -12443,6 +12443,418 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        const normalizeFactionStringList = (value, label) => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (Array.isArray(value)) {
+                return value
+                    .map((entry, index) => {
+                        if (typeof entry !== 'string') {
+                            throw new Error(`${label} entry at index ${index} must be a string.`);
+                        }
+                        return entry.trim();
+                    })
+                    .filter(Boolean);
+            }
+            if (typeof value === 'string') {
+                return value
+                    .split(/[\n,]+/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean);
+            }
+            throw new Error(`${label} must be an array of strings or a newline-delimited string.`);
+        };
+
+        const normalizeFactionAssets = (value) => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (!Array.isArray(value)) {
+                throw new Error('Faction assets must be an array.');
+            }
+            return value.map((asset, index) => {
+                if (!asset || typeof asset !== 'object') {
+                    throw new Error(`Faction asset at index ${index} must be an object.`);
+                }
+                const name = typeof asset.name === 'string' ? asset.name.trim() : '';
+                if (!name) {
+                    throw new Error(`Faction asset at index ${index} is missing a name.`);
+                }
+                const type = typeof asset.type === 'string' ? asset.type.trim() : '';
+                const description = typeof asset.description === 'string' ? asset.description.trim() : '';
+                const normalized = { name };
+                if (type) normalized.type = type;
+                if (description) normalized.description = description;
+                return normalized;
+            });
+        };
+
+        const normalizeFactionTiers = (value) => {
+            if (value === null || value === undefined) {
+                return [];
+            }
+            if (!Array.isArray(value)) {
+                throw new Error('Faction reputationTiers must be an array.');
+            }
+            return value.map((tier, index) => {
+                if (!tier || typeof tier !== 'object') {
+                    throw new Error(`Faction reputation tier at index ${index} must be an object.`);
+                }
+                const threshold = Number(tier.threshold);
+                if (!Number.isFinite(threshold)) {
+                    throw new Error(`Faction reputation tier at index ${index} requires a numeric threshold.`);
+                }
+                const label = typeof tier.label === 'string' ? tier.label.trim() : '';
+                const perks = normalizeFactionStringList(tier.perks || [], 'Faction tier perks');
+                const penalties = normalizeFactionStringList(tier.penalties || [], 'Faction tier penalties');
+                return {
+                    threshold,
+                    label,
+                    perks,
+                    penalties
+                };
+            });
+        };
+
+        const normalizeFactionRelations = (value, { currentId = null } = {}) => {
+            if (value === null || value === undefined) {
+                return null;
+            }
+            if (typeof value !== 'object') {
+                throw new Error('Faction relations must be an object keyed by faction id.');
+            }
+
+            const relationMap = {};
+            for (const [rawId, relation] of Object.entries(value)) {
+                const targetId = typeof rawId === 'string' ? rawId.trim() : '';
+                if (!targetId) {
+                    throw new Error('Faction relation ids must be non-empty strings.');
+                }
+                if (currentId && targetId === currentId) {
+                    continue;
+                }
+                if (!(factions instanceof Map) || !factions.has(targetId)) {
+                    throw new Error(`Faction relation references unknown faction id "${targetId}".`);
+                }
+                if (!relation || typeof relation !== 'object') {
+                    throw new Error(`Faction relation for "${targetId}" must be an object.`);
+                }
+                const status = typeof relation.status === 'string' ? relation.status.trim().toLowerCase() : '';
+                if (!status) {
+                    throw new Error(`Faction relation for "${targetId}" is missing status.`);
+                }
+                if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
+                    throw new Error(`Faction relation for "${targetId}" has invalid status "${status}".`);
+                }
+                const notes = typeof relation.notes === 'string' ? relation.notes.trim() : '';
+                if (!notes) {
+                    throw new Error(`Faction relation for "${targetId}" is missing notes.`);
+                }
+                relationMap[targetId] = { status, notes };
+            }
+
+            return relationMap;
+        };
+
+        const serializeFactionForClient = (faction) => {
+            if (!faction) {
+                return null;
+            }
+            if (typeof faction.toJSON === 'function') {
+                return faction.toJSON();
+            }
+            return { ...faction };
+        };
+
+        app.get('/api/factions', (req, res) => {
+            try {
+                const list = Array.from(factions.values())
+                    .filter(Boolean)
+                    .map(serializeFactionForClient)
+                    .filter(Boolean)
+                    .sort((a, b) => {
+                        const nameA = (a.name || '').toLowerCase();
+                        const nameB = (b.name || '').toLowerCase();
+                        return nameA.localeCompare(nameB);
+                    });
+
+                const playerStandings = currentPlayer && typeof currentPlayer.getFactionStandings === 'function'
+                    ? currentPlayer.getFactionStandings()
+                    : {};
+
+                res.json({
+                    success: true,
+                    factions: list,
+                    playerStandings,
+                    playerId: currentPlayer?.id || null
+                });
+            } catch (error) {
+                console.error('Failed to list factions:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list factions.'
+                });
+            }
+        });
+
+        app.post('/api/factions', (req, res) => {
+            try {
+                const body = req.body || {};
+                const rawName = typeof body.name === 'string' ? body.name.trim() : '';
+                if (!rawName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Faction name is required.'
+                    });
+                }
+
+                const existingByName = typeof Faction?.getByName === 'function'
+                    ? Faction.getByName(rawName)
+                    : Array.from(factions.values()).find(entry => entry?.name?.toLowerCase() === rawName.toLowerCase());
+                if (existingByName) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Faction name "${rawName}" is already in use.`
+                    });
+                }
+
+                const tags = normalizeFactionStringList(body.tags, 'Faction tags');
+                const goals = normalizeFactionStringList(body.goals, 'Faction goals');
+                const assets = normalizeFactionAssets(body.assets);
+                const reputationTiers = normalizeFactionTiers(body.reputationTiers);
+                const relations = normalizeFactionRelations(body.relations);
+
+                const faction = new Faction({
+                    name: rawName,
+                    tags,
+                    goals,
+                    homeRegionName: typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : null,
+                    assets,
+                    relations: relations || {},
+                    reputationTiers
+                });
+
+                factions.set(faction.id, faction);
+
+                res.status(201).json({
+                    success: true,
+                    faction: serializeFactionForClient(faction)
+                });
+            } catch (error) {
+                console.error('Failed to create faction:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to create faction.'
+                });
+            }
+        });
+
+        app.put('/api/factions/:id', (req, res) => {
+            try {
+                const factionId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!factionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Faction id is required.'
+                    });
+                }
+                const faction = factions.get(factionId);
+                if (!faction) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Faction "${factionId}" not found.`
+                    });
+                }
+
+                const body = req.body || {};
+                const updates = {};
+
+                if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+                    const rawName = typeof body.name === 'string' ? body.name.trim() : '';
+                    if (!rawName) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Faction name must be a non-empty string.'
+                        });
+                    }
+                    const existingByName = typeof Faction?.getByName === 'function'
+                        ? Faction.getByName(rawName)
+                        : Array.from(factions.values()).find(entry => entry?.name?.toLowerCase() === rawName.toLowerCase());
+                    if (existingByName && existingByName.id !== factionId) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `Faction name "${rawName}" is already in use.`
+                        });
+                    }
+                    updates.name = rawName;
+                }
+
+                if (Object.prototype.hasOwnProperty.call(body, 'tags')) {
+                    updates.tags = normalizeFactionStringList(body.tags, 'Faction tags');
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'goals')) {
+                    updates.goals = normalizeFactionStringList(body.goals, 'Faction goals');
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'homeRegionName')) {
+                    const rawHome = typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : '';
+                    updates.homeRegionName = rawHome || null;
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'assets')) {
+                    updates.assets = normalizeFactionAssets(body.assets);
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'reputationTiers')) {
+                    updates.reputationTiers = normalizeFactionTiers(body.reputationTiers);
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'relations')) {
+                    updates.relations = normalizeFactionRelations(body.relations, { currentId: factionId }) || {};
+                }
+
+                faction.update(updates);
+
+                res.json({
+                    success: true,
+                    faction: serializeFactionForClient(faction)
+                });
+            } catch (error) {
+                console.error('Failed to update faction:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to update faction.'
+                });
+            }
+        });
+
+        app.delete('/api/factions/:id', (req, res) => {
+            try {
+                const factionId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!factionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Faction id is required.'
+                    });
+                }
+                const faction = factions.get(factionId);
+                if (!faction) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Faction "${factionId}" not found.`
+                    });
+                }
+
+                for (const otherFaction of factions.values()) {
+                    if (!otherFaction || otherFaction.id === factionId) {
+                        continue;
+                    }
+                    if (typeof otherFaction.removeRelation === 'function') {
+                        otherFaction.removeRelation(factionId);
+                    } else if (otherFaction.relations instanceof Map) {
+                        otherFaction.relations.delete(factionId);
+                    }
+                }
+
+                if (players instanceof Map) {
+                    for (const player of players.values()) {
+                        if (!player) {
+                            continue;
+                        }
+                        if (player.factionId === factionId) {
+                            player.factionId = null;
+                        }
+                        if (typeof player.removeFactionStanding === 'function') {
+                            player.removeFactionStanding(factionId);
+                        }
+                    }
+                }
+
+                if (gameLocations instanceof Map) {
+                    for (const location of gameLocations.values()) {
+                        if (location?.controllingFactionId === factionId) {
+                            location.controllingFactionId = null;
+                        }
+                    }
+                }
+
+                if (regions instanceof Map) {
+                    for (const region of regions.values()) {
+                        if (region?.controllingFactionId === factionId) {
+                            region.controllingFactionId = null;
+                        }
+                    }
+                }
+
+                factions.delete(factionId);
+                if (typeof Faction?.delete === 'function') {
+                    Faction.delete(factionId);
+                }
+
+                res.json({
+                    success: true,
+                    removed: serializeFactionForClient(faction)
+                });
+            } catch (error) {
+                console.error('Failed to delete faction:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to delete faction.'
+                });
+            }
+        });
+
+        app.put('/api/player/factions/:id/standing', (req, res) => {
+            try {
+                const factionId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+                if (!factionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Faction id is required.'
+                    });
+                }
+                if (!(factions instanceof Map) || !factions.has(factionId)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Faction "${factionId}" not found.`
+                    });
+                }
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player available.'
+                    });
+                }
+
+                const value = Object.prototype.hasOwnProperty.call(req.body || {}, 'value')
+                    ? req.body.value
+                    : undefined;
+                if (value === null) {
+                    if (typeof currentPlayer.removeFactionStanding === 'function') {
+                        currentPlayer.removeFactionStanding(factionId);
+                    }
+                } else {
+                    const numericValue = Number(value);
+                    if (!Number.isFinite(numericValue)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Faction standing value must be a finite number or null.'
+                        });
+                    }
+                    currentPlayer.setFactionStanding(factionId, numericValue);
+                }
+
+                res.json({
+                    success: true,
+                    factionId,
+                    standings: currentPlayer.getFactionStandings()
+                });
+            } catch (error) {
+                console.error('Failed to update faction standing:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to update faction standing.'
+                });
+            }
+        });
+
         // Get all named locations (summary list)
         app.get('/api/locations', (req, res) => {
             try {
@@ -12903,6 +13315,10 @@ module.exports = function registerApiRoutes(scope) {
             if (normalizedDescription && metadata.blueprintDescription !== normalizedDescription) {
                 metadata.blueprintDescription = normalizedDescription;
                 metadataChanged = true;
+            }
+
+            if (normalizedDescription && stubLocation.shortDescription !== normalizedDescription) {
+                stubLocation.shortDescription = normalizedDescription;
             }
 
             if (metadata.isRegionEntryStub) {
@@ -18007,6 +18423,15 @@ module.exports = function registerApiRoutes(scope) {
                 const numSkills = Number.isFinite(parsedSkillCount)
                     ? Math.max(0, Math.min(100, parsedSkillCount))
                     : fallbackSkillCount;
+                const rawFactionCount = config?.factions?.count;
+                const parsedFactionCount = Number.parseInt(rawFactionCount, 10);
+                let factionCount = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
+                    ? parsedFactionCount
+                    : null;
+                if (factionCount === null) {
+                    console.warn('config.factions.count missing or invalid; defaulting to 5.');
+                    factionCount = 5;
+                }
 
                 report('new_game:start', 'Preparing your adventure...');
                 report('new_game:reset', 'Clearing previous game state...');
@@ -18017,6 +18442,10 @@ module.exports = function registerApiRoutes(scope) {
                 gameLocationExits.clear();
                 regions.clear();
                 Region.clear();
+                factions.clear();
+                if (typeof Faction?.clear === 'function') {
+                    Faction.clear();
+                }
                 stubExpansionPromises.clear();
                 chatHistory.length = 0;
                 skills.clear();
@@ -18122,6 +18551,30 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 report('new_game:skills_ready', 'Skill library ready. Forging your hero...');
+
+                let generatedFactions = [];
+                if (factionCount > 0) {
+                    try {
+                        report('new_game:factions_generate', `Founding ${factionCount} factions...`);
+                        generatedFactions = await generateFactionsList({
+                            count: factionCount,
+                            settingDescription
+                        });
+                    } catch (factionError) {
+                        throw new Error(`Failed to generate factions: ${factionError.message}`);
+                    }
+
+                    factions.clear();
+                    for (const faction of generatedFactions) {
+                        if (faction && faction.id) {
+                            factions.set(faction.id, faction);
+                        }
+                    }
+                    report('new_game:factions_ready', 'Factions established.');
+                } else {
+                    factions.clear();
+                    report('new_game:factions_skipped', 'Faction generation disabled.');
+                }
 
                 // Create new player
                 const newPlayer = new Player({
@@ -18290,6 +18743,7 @@ module.exports = function registerApiRoutes(scope) {
                     player: newPlayer.toJSON(),
                     startingLocation: startingLocationData,
                     region: region.toJSON(),
+                    factions: generatedFactions.map(faction => (typeof faction?.toJSON === 'function' ? faction.toJSON() : faction)),
                     skills: generatedSkills.map(skill => skill.toJSON()),
                     gameState: {
                         totalPlayers: players.size,
@@ -18407,6 +18861,7 @@ module.exports = function registerApiRoutes(scope) {
                 things,
                 players,
                 skills,
+                factions,
                 currentSetting,
                 pendingRegionStubs
             });
@@ -18420,6 +18875,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalLocations = gameLocations.size;
             metadata.totalLocationExits = gameLocationExits.size;
             metadata.totalRegions = regions.size;
+            metadata.totalFactions = factions.size;
             metadata.chatHistoryLength = Array.isArray(chatHistory)
                 ? chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -18487,6 +18943,7 @@ module.exports = function registerApiRoutes(scope) {
                 things,
                 players,
                 skills,
+                factions,
                 jobQueue,
                 imageJobs,
                 pendingLocationImages,
@@ -18657,6 +19114,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalLocations = gameLocations.size;
             metadata.totalLocationExits = gameLocationExits.size;
             metadata.totalRegions = regions.size;
+            metadata.totalFactions = factions.size;
             metadata.chatHistoryLength = Array.isArray(chatHistory)
                 ? chatHistory.length
                 : (metadata.chatHistoryLength || 0);

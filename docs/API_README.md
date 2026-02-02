@@ -14,6 +14,7 @@ This is the high-level index for every Express route registered in `api.js`. The
 - `docs/api/chat.md` - chat endpoints
 - `docs/api/crafting.md` - crafting/salvage/harvest
 - `docs/api/game.md` - new game, save/load, summaries, short-description backfill
+- `docs/api/factions.md` - factions CRUD, relations, and player standings
 - `docs/api/images.md` - image generation and job tracking
 - `docs/api/locations.md` - locations, exits, stubs, map data, player move
 - `docs/api/map.md` - legacy pointer to map endpoints

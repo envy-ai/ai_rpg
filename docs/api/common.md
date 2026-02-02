@@ -95,6 +95,8 @@ Fields:
 - `currency` (number | null)
 - `experience` (number | null)
 - `needBars` (array of NeedBar)
+- `factionId` (string | null)
+- `factionStandings` (object map of `factionId -> number`)
 - `personality` (object | null)
 - `personalityType`, `personalityTraits`, `personalityNotes`
 - `createdAt`, `lastUpdated`
@@ -160,6 +162,7 @@ Fields:
   - `bidirectional`, `isVehicle`, `name`, `relativeName`, `vehicleType`
   - `exitObject` (LocationExit JSON)
 - `regionId`
+- `controllingFactionId` (string | null)
 - `createdAt`, `lastUpdated`
 - `isStub`, `hasGeneratedStubs`, `stubMetadata`
 - `npcIds`, `thingIds`
@@ -183,6 +186,7 @@ Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `locationBlueprints`, `locationIds`, `entranceLocationId`
 - `parentRegionId`, `createdAt`, `lastUpdated`
+- `controllingFactionId` (string | null)
 - `statusEffects`, `averageLevel`, `numImportantNPCs`
 - `randomEvents`, `characterConcepts`, `enemyConcepts`, `secrets`
 

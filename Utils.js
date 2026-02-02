@@ -12,6 +12,7 @@ let cachedRegionModule = null;
 let cachedThingModule = null;
 let cachedPlayerModule = null;
 let cachedSkillModule = null;
+let cachedFactionModule = null;
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -450,6 +451,13 @@ class Utils {
     return cachedSkillModule;
   }
 
+  static #getFactionModule() {
+    if (!cachedFactionModule) {
+      cachedFactionModule = require('./Faction.js');
+    }
+    return cachedFactionModule;
+  }
+
   static serializeGameState(context = {}) {
     const {
       currentPlayer = null,
@@ -461,6 +469,7 @@ class Utils {
       things = new Map(),
       players = new Map(),
       skills = new Map(),
+      factions = new Map(),
       currentSetting = null,
       pendingRegionStubs = null
     } = context;
@@ -524,6 +533,15 @@ class Utils {
       })
     );
 
+    serialized.factions = Object.fromEntries(
+      Array.from(factions.entries()).map(([id, faction]) => {
+        if (faction && typeof faction.toJSON === 'function') {
+          return [id, faction.toJSON()];
+        }
+        return [id, null];
+      })
+    );
+
     const availableSkills = Array.from(skills.values()).map(skill => {
       if (skill && typeof skill.toJSON === 'function') {
         return skill.toJSON();
@@ -545,6 +563,7 @@ class Utils {
       totalLocations: gameLocations.size,
       totalLocationExits: gameLocationExits.size,
       totalRegions: regions.size,
+      totalFactions: factions.size,
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
@@ -598,6 +617,7 @@ class Utils {
     ensureFile('images.json', serialized.generatedImages || {});
     ensureFile('things.json', serialized.things || {});
     ensureFile('allPlayers.json', serialized.players || {});
+    ensureFile('factions.json', serialized.factions || {});
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
@@ -635,6 +655,7 @@ class Utils {
       generatedImages: readJson('images.json', {}),
       things: readJson('things.json', {}),
       players: readJson('allPlayers.json', {}),
+      factions: readJson('factions.json', {}),
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
@@ -660,6 +681,7 @@ class Utils {
       things,
       players,
       skills,
+      factions,
       jobQueue,
       imageJobs,
       pendingLocationImages,
@@ -673,6 +695,7 @@ class Utils {
     const Thing = this.#getThingModule();
     const Player = this.#getPlayerModule();
     const Skill = this.#getSkillModule();
+    const Faction = this.#getFactionModule();
 
     this.loadChatSummaries(serialized.chatSummaries || {});
     const sceneSummaries = Globals.getSceneSummaries();
@@ -714,6 +737,24 @@ class Utils {
       }
     }
     Player.setAvailableSkills(skills);
+
+    if (factions?.clear) {
+      factions.clear();
+    }
+    if (typeof Faction?.clear === 'function') {
+      Faction.clear();
+    }
+    const factionsData = serialized.factions || {};
+    for (const [id, payload] of Object.entries(factionsData)) {
+      try {
+        const faction = Faction.fromJSON(payload);
+        if (faction && faction.id) {
+          factions.set(id, faction);
+        }
+      } catch (error) {
+        console.warn('Skipping invalid faction entry:', error.message);
+      }
+    }
 
     if (things?.clear) {
       things.clear();
@@ -789,6 +830,7 @@ class Utils {
         baseLevel: locationData.baseLevel ?? null,
         id: locationData.id,
         regionId: locationData.regionId ?? null,
+        controllingFactionId: locationData.controllingFactionId ?? null,
         checkRegionId: false,
         name: locationData.name ?? null,
         imageId: locationData.imageId ?? null,

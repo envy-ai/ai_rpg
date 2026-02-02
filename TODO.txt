@@ -1,1 +1,0 @@
-Calculate damage from attacks.  Damage should depend on absolute level, relative level, and how much damage the LLM says happens (graze, low, medium, high, critical, automatic kill).  The LLM will have the description of the attack, degree of success, as well as the weapon type, armor type, and other information to make an informed decision.

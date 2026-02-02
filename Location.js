@@ -32,6 +32,7 @@ class Location {
   #generationHints;
   #randomEvents;
   #regionId;
+  #controllingFactionId;
   #lastVisitedTime = null; // Decimal hour timestamp of last visit by player
   #characterConcepts = [];
   #enemyConcepts = [];
@@ -54,7 +55,7 @@ class Location {
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, checkRegionId = true, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -69,6 +70,10 @@ class Location {
 
     if (!regionId || typeof regionId !== 'string') {
       throw new Error('Location initialized without regionId');
+    }
+
+    if (controllingFactionId !== null && controllingFactionId !== undefined && typeof controllingFactionId !== 'string') {
+      throw new Error('Location controllingFactionId must be a string or null');
     }
 
     if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
@@ -97,6 +102,9 @@ class Location {
     this.#lastUpdated = this.#createdAt;
     this.#isStub = creatingStub;
     this.#regionId = regionId;
+    this.#controllingFactionId = typeof controllingFactionId === 'string' && controllingFactionId.trim()
+      ? controllingFactionId.trim()
+      : null;
     this.#visited = false;
     this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
@@ -368,6 +376,29 @@ class Location {
 
   get region() {
     return Region.get(this.#regionId) || null;
+  }
+
+  get controllingFactionId() {
+    return this.#controllingFactionId;
+  }
+
+  set controllingFactionId(value) {
+    if (value === null || value === undefined || value === '') {
+      if (this.#controllingFactionId !== null) {
+        this.#controllingFactionId = null;
+        this.#lastUpdated = new Date();
+      }
+      return;
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Location controllingFactionId must be a string or null.');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error('Location controllingFactionId must be a non-empty string or null.');
+    }
+    this.#controllingFactionId = trimmed;
+    this.#lastUpdated = new Date();
   }
 
   static get(locationId) {
@@ -720,6 +751,7 @@ class Location {
       visited: this.#visited,
       imageId: this.#imageId,
       regionId: this.#regionId,
+      controllingFactionId: this.#controllingFactionId,
       exitCount: this.#exits.size,
       availableDirections: this.getAvailableDirections(),
       createdAt: this.#createdAt.toISOString(),
@@ -767,6 +799,7 @@ class Location {
       visited: this.#visited,
       exits: exits,
       regionId: this.#regionId,
+      controllingFactionId: this.#controllingFactionId,
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString(),
       isStub: this.#isStub,

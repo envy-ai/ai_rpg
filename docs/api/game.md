@@ -14,6 +14,7 @@ Response:
   - `startingLocation`: LocationDetails + `pendingImageJobId` + `npcs`
   - `region`: Region JSON
   - `skills`: Skill[]
+  - `factions`: Faction[]
   - `gameState`: `{ totalPlayers, totalLocations, currentLocation, regionEntranceId }`
 - 400: `{ success: false, error }` (no active setting)
 - 500: `{ success: false, error, details }`

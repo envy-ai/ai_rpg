@@ -24,6 +24,7 @@
                 <button class="tab-button" id="tab-world-map-tab" data-tab="world-map" role="tab" aria-selected="false" aria-controls="tab-world-map">World Map</button>
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character">Character</button>
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests">Quests</button>
+                <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions">Factions</button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party">Party</button>
             </div>
 
@@ -465,6 +466,99 @@
                             <div class="quest-accordion quest-accordion--compact" id="questCompletedAccordion" role="list"></div>
                             <div class="quest-empty quest-empty--secondary" id="questCompletedEmpty">You have not completed any quests yet.</div>
                         </div>
+                    </div>
+                </section>
+                <section class="tab-panel" id="tab-factions" role="tabpanel" aria-labelledby="tab-factions-tab" hidden>
+                    <div class="factions-panel">
+                        <aside class="factions-sidebar">
+                            <div class="factions-sidebar-header">
+                                <div>
+                                    <h2>Factions</h2>
+                                    <p class="factions-subtitle">View, edit, and organize faction dynamics.</p>
+                                </div>
+                                <button type="button" class="btn btn-primary" id="factionAddButton">+ New</button>
+                            </div>
+                            <div class="faction-list" id="factionList"></div>
+                            <div class="faction-empty" id="factionEmpty">No factions created yet.</div>
+                        </aside>
+                        <section class="faction-detail">
+                            <div class="faction-detail-placeholder" id="factionDetailPlaceholder">Select a faction to view or edit.</div>
+                            <form id="factionForm" class="faction-form" hidden>
+                                <div class="faction-detail-header">
+                                    <div>
+                                        <h2 id="factionDetailTitle">Faction</h2>
+                                        <div class="faction-detail-meta" id="factionDetailMeta"></div>
+                                    </div>
+                                    <div class="faction-detail-actions">
+                                        <button type="button" class="btn btn-secondary" id="factionDeleteButton">Delete</button>
+                                        <button type="submit" class="btn btn-primary" id="factionSaveButton">Save Changes</button>
+                                    </div>
+                                </div>
+
+                                <div class="config-section">
+                                    <h2>Basics</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="factionName">Name</label>
+                                            <input type="text" id="factionName" name="name" required>
+                                            <span class="help-text">Unique name used across the world.</span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="factionHomeRegion">Home Region</label>
+                                            <input type="text" id="factionHomeRegion" name="homeRegionName">
+                                            <span class="help-text">Optional region name or theme anchor.</span>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label for="factionTags">Tags</label>
+                                            <textarea id="factionTags" name="tags" rows="2" placeholder="ideology, archetype, focus"></textarea>
+                                            <span class="help-text">Separate with commas or new lines.</span>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label for="factionGoals">Goals</label>
+                                            <textarea id="factionGoals" name="goals" rows="3" placeholder="Primary goals and ambitions."></textarea>
+                                            <span class="help-text">Separate with commas or new lines.</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="config-section">
+                                    <div class="faction-section-header">
+                                        <h2>Assets</h2>
+                                        <button type="button" class="btn btn-secondary small" id="factionAssetAddButton">Add Asset</button>
+                                    </div>
+                                    <div class="faction-assets" id="factionAssetsList"></div>
+                                </div>
+
+                                <div class="config-section">
+                                    <h2>Player Standing</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="factionStandingValue">Standing Value</label>
+                                            <input type="number" id="factionStandingValue" name="standing" step="1" placeholder="0">
+                                            <span class="help-text">Leave blank to remove standing entry.</span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="factionStandingTier">Resolved Tier</label>
+                                            <div id="factionStandingTier" class="form-static-value">—</div>
+                                            <span class="help-text">Computed from reputation tiers.</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="config-section">
+                                    <h2>Relations</h2>
+                                    <div class="faction-relations" id="factionRelationsList"></div>
+                                </div>
+
+                                <div class="config-section">
+                                    <div class="faction-section-header">
+                                        <h2>Reputation Tiers</h2>
+                                        <button type="button" class="btn btn-secondary small" id="factionTierAddButton">Add Tier</button>
+                                    </div>
+                                    <div class="faction-tiers" id="factionTiersList"></div>
+                                </div>
+                            </form>
+                        </section>
                     </div>
                 </section>
                 <section class="tab-panel" id="tab-party" role="tabpanel" aria-labelledby="tab-party-tab" hidden>
@@ -1485,6 +1579,7 @@
             // Initialize location display
             initLocationDisplay();
             initQuestPanel();
+            initFactionPanel();
             initPlayerOverviewSync();
             initPartyDisplay();
             await maybePromptSummaryStyle();
@@ -13218,6 +13313,8 @@
                     window.loadWorldMap?.();
                 } else if (tabName === 'party') {
                     window.refreshParty?.();
+                } else if (tabName === 'factions') {
+                    window.refreshFactions?.();
                 }
             };
             window.activateTab = activateTab;
@@ -17037,6 +17134,585 @@
                     }
                 });
             }
+        }
+
+        function initFactionPanel() {
+            const listEl = document.getElementById('factionList');
+            const emptyEl = document.getElementById('factionEmpty');
+            const placeholderEl = document.getElementById('factionDetailPlaceholder');
+            const formEl = document.getElementById('factionForm');
+            const titleEl = document.getElementById('factionDetailTitle');
+            const metaEl = document.getElementById('factionDetailMeta');
+            const addButton = document.getElementById('factionAddButton');
+            const deleteButton = document.getElementById('factionDeleteButton');
+            const assetAddButton = document.getElementById('factionAssetAddButton');
+            const tierAddButton = document.getElementById('factionTierAddButton');
+            const nameInput = document.getElementById('factionName');
+            const homeInput = document.getElementById('factionHomeRegion');
+            const tagsInput = document.getElementById('factionTags');
+            const goalsInput = document.getElementById('factionGoals');
+            const assetsList = document.getElementById('factionAssetsList');
+            const relationsList = document.getElementById('factionRelationsList');
+            const tiersList = document.getElementById('factionTiersList');
+            const standingInput = document.getElementById('factionStandingValue');
+            const standingTier = document.getElementById('factionStandingTier');
+
+            if (!listEl || !formEl) {
+                return;
+            }
+
+            const state = {
+                factions: [],
+                factionMap: new Map(),
+                playerStandings: {},
+                selectedId: null
+            };
+
+            const splitList = (value) => {
+                if (typeof value !== 'string') {
+                    return [];
+                }
+                return value
+                    .split(/[\n,]+/)
+                    .map(entry => entry.trim())
+                    .filter(Boolean);
+            };
+
+            const joinList = (entries) => {
+                if (!Array.isArray(entries)) {
+                    return '';
+                }
+                return entries.join('\n');
+            };
+
+            const resolveStandingTierLabel = (value, tiers = []) => {
+                if (!Number.isFinite(value)) {
+                    return '—';
+                }
+                const sorted = Array.isArray(tiers)
+                    ? tiers.slice().sort((a, b) => Number(a.threshold) - Number(b.threshold))
+                    : [];
+                let resolved = null;
+                for (const tier of sorted) {
+                    const threshold = Number(tier?.threshold);
+                    if (!Number.isFinite(threshold)) {
+                        continue;
+                    }
+                    if (value >= threshold) {
+                        resolved = tier;
+                    } else {
+                        break;
+                    }
+                }
+                return resolved?.label || '—';
+            };
+
+            const clearDetail = () => {
+                if (placeholderEl) {
+                    placeholderEl.removeAttribute('hidden');
+                }
+                formEl.setAttribute('hidden', '');
+                formEl.reset();
+                if (assetsList) assetsList.innerHTML = '';
+                if (relationsList) relationsList.innerHTML = '';
+                if (tiersList) tiersList.innerHTML = '';
+                if (standingTier) standingTier.textContent = '—';
+                state.selectedId = null;
+            };
+
+            const buildAssetRow = (asset = {}) => {
+                const row = document.createElement('div');
+                row.className = 'faction-asset-row';
+
+                const nameField = document.createElement('input');
+                nameField.type = 'text';
+                nameField.placeholder = 'Asset name';
+                nameField.value = asset.name || '';
+                nameField.className = 'faction-asset-name';
+
+                const typeField = document.createElement('input');
+                typeField.type = 'text';
+                typeField.placeholder = 'Type';
+                typeField.value = asset.type || '';
+                typeField.className = 'faction-asset-type';
+
+                const descField = document.createElement('textarea');
+                descField.rows = 2;
+                descField.placeholder = 'Short description';
+                descField.value = asset.description || '';
+                descField.className = 'faction-asset-description';
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn-link btn-sm';
+                removeButton.textContent = 'Remove';
+                removeButton.addEventListener('click', () => row.remove());
+
+                row.appendChild(nameField);
+                row.appendChild(typeField);
+                row.appendChild(descField);
+                row.appendChild(removeButton);
+                return row;
+            };
+
+            const buildTierRow = (tier = {}) => {
+                const row = document.createElement('div');
+                row.className = 'faction-tier-row';
+
+                const thresholdField = document.createElement('input');
+                thresholdField.type = 'number';
+                thresholdField.placeholder = 'Threshold';
+                thresholdField.value = Number.isFinite(Number(tier.threshold)) ? tier.threshold : '';
+                thresholdField.className = 'faction-tier-threshold';
+
+                const labelField = document.createElement('input');
+                labelField.type = 'text';
+                labelField.placeholder = 'Label';
+                labelField.value = tier.label || '';
+                labelField.className = 'faction-tier-label';
+
+                const perksField = document.createElement('textarea');
+                perksField.rows = 2;
+                perksField.placeholder = 'Perks (one per line)';
+                perksField.value = joinList(tier.perks || []);
+                perksField.className = 'faction-tier-perks';
+
+                const penaltiesField = document.createElement('textarea');
+                penaltiesField.rows = 2;
+                penaltiesField.placeholder = 'Penalties (one per line)';
+                penaltiesField.value = joinList(tier.penalties || []);
+                penaltiesField.className = 'faction-tier-penalties';
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn-link btn-sm';
+                removeButton.textContent = 'Remove';
+                removeButton.addEventListener('click', () => row.remove());
+
+                row.appendChild(thresholdField);
+                row.appendChild(labelField);
+                row.appendChild(perksField);
+                row.appendChild(penaltiesField);
+                row.appendChild(removeButton);
+                return row;
+            };
+
+            const buildRelationRow = (targetFaction, relation) => {
+                const row = document.createElement('div');
+                row.className = 'faction-relation-row';
+                row.dataset.targetId = targetFaction.id;
+
+                const nameField = document.createElement('div');
+                nameField.className = 'faction-relation-name';
+                nameField.textContent = targetFaction.name || targetFaction.id;
+
+                const statusField = document.createElement('select');
+                statusField.className = 'faction-relation-status';
+                const options = [
+                    { value: '', label: 'None' },
+                    { value: 'allied', label: 'Allied' },
+                    { value: 'neutral', label: 'Neutral' },
+                    { value: 'hostile', label: 'Hostile' },
+                    { value: 'rival', label: 'Rival' }
+                ];
+                options.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option.value;
+                    opt.textContent = option.label;
+                    statusField.appendChild(opt);
+                });
+                statusField.value = relation?.status || '';
+
+                const notesField = document.createElement('textarea');
+                notesField.rows = 2;
+                notesField.placeholder = 'Relationship notes';
+                notesField.className = 'faction-relation-notes';
+                notesField.value = relation?.notes || '';
+                notesField.disabled = !statusField.value;
+
+                statusField.addEventListener('change', () => {
+                    const hasStatus = Boolean(statusField.value);
+                    notesField.disabled = !hasStatus;
+                    if (!hasStatus) {
+                        notesField.value = '';
+                    }
+                });
+
+                const clearButton = document.createElement('button');
+                clearButton.type = 'button';
+                clearButton.className = 'btn btn-link btn-sm';
+                clearButton.textContent = 'Clear';
+                clearButton.addEventListener('click', () => {
+                    statusField.value = '';
+                    notesField.value = '';
+                    notesField.disabled = true;
+                });
+
+                row.appendChild(nameField);
+                row.appendChild(statusField);
+                row.appendChild(notesField);
+                row.appendChild(clearButton);
+                return row;
+            };
+
+            const renderList = () => {
+                listEl.innerHTML = '';
+                if (!Array.isArray(state.factions) || state.factions.length === 0) {
+                    if (emptyEl) emptyEl.style.display = 'block';
+                    return;
+                }
+                if (emptyEl) emptyEl.style.display = 'none';
+                state.factions.forEach(faction => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'faction-list-item';
+                    if (faction.id === state.selectedId) {
+                        button.classList.add('active');
+                    }
+                    const name = document.createElement('div');
+                    name.className = 'faction-list-name';
+                    name.textContent = faction.name || 'Unnamed Faction';
+
+                    const tags = document.createElement('div');
+                    tags.className = 'faction-list-tags';
+                    tags.textContent = Array.isArray(faction.tags) && faction.tags.length
+                        ? faction.tags.join(' · ')
+                        : 'No tags';
+
+                    button.appendChild(name);
+                    button.appendChild(tags);
+                    button.addEventListener('click', () => {
+                        state.selectedId = faction.id;
+                        renderList();
+                        renderDetail();
+                    });
+                    listEl.appendChild(button);
+                });
+            };
+
+            const renderDetail = () => {
+                const faction = state.factionMap.get(state.selectedId);
+                if (!faction) {
+                    clearDetail();
+                    return;
+                }
+                if (placeholderEl) {
+                    placeholderEl.setAttribute('hidden', '');
+                }
+                formEl.removeAttribute('hidden');
+
+                if (titleEl) {
+                    titleEl.textContent = faction.name || 'Faction';
+                }
+                if (metaEl) {
+                    metaEl.textContent = faction.id ? `ID: ${faction.id}` : '';
+                }
+                if (nameInput) nameInput.value = faction.name || '';
+                if (homeInput) homeInput.value = faction.homeRegionName || '';
+                if (tagsInput) tagsInput.value = joinList(faction.tags || []);
+                if (goalsInput) goalsInput.value = joinList(faction.goals || []);
+
+                if (assetsList) {
+                    assetsList.innerHTML = '';
+                    const assets = Array.isArray(faction.assets) ? faction.assets : [];
+                    if (assets.length) {
+                        assets.forEach(asset => assetsList.appendChild(buildAssetRow(asset)));
+                    } else {
+                        assetsList.appendChild(buildAssetRow());
+                    }
+                }
+
+                if (relationsList) {
+                    relationsList.innerHTML = '';
+                    const relations = faction.relations && typeof faction.relations === 'object' ? faction.relations : {};
+                    const others = state.factions.filter(entry => entry.id !== faction.id);
+                    if (others.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'faction-relation-empty';
+                        empty.textContent = 'No other factions to relate to yet.';
+                        relationsList.appendChild(empty);
+                    } else {
+                        others.forEach(other => {
+                            const relation = relations[other.id] || null;
+                            relationsList.appendChild(buildRelationRow(other, relation));
+                        });
+                    }
+                }
+
+                if (tiersList) {
+                    tiersList.innerHTML = '';
+                    const tiers = Array.isArray(faction.reputationTiers) ? faction.reputationTiers : [];
+                    if (tiers.length) {
+                        tiers.forEach(tier => tiersList.appendChild(buildTierRow(tier)));
+                    } else {
+                        tiersList.appendChild(buildTierRow());
+                    }
+                }
+
+                const standingValue = state.playerStandings?.[faction.id];
+                if (standingInput) {
+                    standingInput.value = Number.isFinite(standingValue) ? standingValue : '';
+                }
+                if (standingTier) {
+                    const numericStanding = Number.isFinite(standingValue) ? Number(standingValue) : NaN;
+                    standingTier.textContent = resolveStandingTierLabel(numericStanding, faction.reputationTiers || []);
+                }
+            };
+
+            const collectAssets = () => {
+                if (!assetsList) {
+                    return [];
+                }
+                const rows = Array.from(assetsList.querySelectorAll('.faction-asset-row'));
+                return rows.map(row => {
+                    const nameField = row.querySelector('.faction-asset-name');
+                    const typeField = row.querySelector('.faction-asset-type');
+                    const descField = row.querySelector('.faction-asset-description');
+                    const name = nameField ? nameField.value.trim() : '';
+                    const type = typeField ? typeField.value.trim() : '';
+                    const description = descField ? descField.value.trim() : '';
+
+                    if (!name && !type && !description) {
+                        return null;
+                    }
+                    if (!name) {
+                        throw new Error('All assets must include a name.');
+                    }
+                    const asset = { name };
+                    if (type) asset.type = type;
+                    if (description) asset.description = description;
+                    return asset;
+                }).filter(Boolean);
+            };
+
+            const collectRelations = () => {
+                if (!relationsList) {
+                    return {};
+                }
+                const rows = Array.from(relationsList.querySelectorAll('.faction-relation-row'));
+                const relations = {};
+                rows.forEach(row => {
+                    const targetId = row.dataset.targetId || '';
+                    const statusField = row.querySelector('.faction-relation-status');
+                    const notesField = row.querySelector('.faction-relation-notes');
+                    const status = statusField ? statusField.value.trim() : '';
+                    const notes = notesField ? notesField.value.trim() : '';
+                    if (!status) {
+                        return;
+                    }
+                    if (!notes) {
+                        throw new Error('All relations with a status require notes.');
+                    }
+                    relations[targetId] = { status, notes };
+                });
+                return relations;
+            };
+
+            const collectTiers = () => {
+                if (!tiersList) {
+                    return [];
+                }
+                const rows = Array.from(tiersList.querySelectorAll('.faction-tier-row'));
+                return rows.map(row => {
+                    const thresholdField = row.querySelector('.faction-tier-threshold');
+                    const labelField = row.querySelector('.faction-tier-label');
+                    const perksField = row.querySelector('.faction-tier-perks');
+                    const penaltiesField = row.querySelector('.faction-tier-penalties');
+                    const thresholdValue = thresholdField ? thresholdField.value.trim() : '';
+                    const label = labelField ? labelField.value.trim() : '';
+                    const perks = perksField ? splitList(perksField.value) : [];
+                    const penalties = penaltiesField ? splitList(penaltiesField.value) : [];
+
+                    if (!thresholdValue && !label && perks.length === 0 && penalties.length === 0) {
+                        return null;
+                    }
+                    const numericThreshold = Number(thresholdValue);
+                    if (!Number.isFinite(numericThreshold)) {
+                        throw new Error('Reputation tiers require a numeric threshold.');
+                    }
+                    return {
+                        threshold: numericThreshold,
+                        label,
+                        perks,
+                        penalties
+                    };
+                }).filter(Boolean);
+            };
+
+            const gatherFactionPayload = () => {
+                if (!nameInput || !nameInput.value.trim()) {
+                    throw new Error('Faction name is required.');
+                }
+                return {
+                    name: nameInput.value.trim(),
+                    homeRegionName: homeInput ? homeInput.value.trim() : '',
+                    tags: splitList(tagsInput ? tagsInput.value : ''),
+                    goals: splitList(goalsInput ? goalsInput.value : ''),
+                    assets: collectAssets(),
+                    relations: collectRelations(),
+                    reputationTiers: collectTiers()
+                };
+            };
+
+            const refreshFactions = async () => {
+                try {
+                    const response = await fetch('/api/factions', { cache: 'no-store' });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || 'Failed to fetch factions.');
+                    }
+                    state.factions = Array.isArray(data.factions) ? data.factions : [];
+                    state.factionMap = new Map(state.factions.map(faction => [faction.id, faction]));
+                    state.playerStandings = data.playerStandings && typeof data.playerStandings === 'object'
+                        ? data.playerStandings
+                        : {};
+
+                    if (state.selectedId && !state.factionMap.has(state.selectedId)) {
+                        state.selectedId = null;
+                    }
+                    if (!state.selectedId && state.factions.length > 0) {
+                        state.selectedId = state.factions[0].id;
+                    }
+                    renderList();
+                    renderDetail();
+                } catch (error) {
+                    console.warn('Failed to refresh factions:', error);
+                    if (emptyEl) {
+                        emptyEl.style.display = 'block';
+                        emptyEl.textContent = 'Failed to load factions.';
+                    }
+                    clearDetail();
+                }
+            };
+
+            window.refreshFactions = refreshFactions;
+
+            if (addButton) {
+                addButton.addEventListener('click', async () => {
+                    const name = window.prompt('Enter a name for the new faction:');
+                    const trimmed = typeof name === 'string' ? name.trim() : '';
+                    if (!trimmed) {
+                        return;
+                    }
+                    try {
+                        const response = await fetch('/api/factions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: trimmed })
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok || !data?.success) {
+                            throw new Error(data?.error || 'Failed to create faction.');
+                        }
+                        state.selectedId = data.faction?.id || null;
+                        await refreshFactions();
+                    } catch (error) {
+                        console.error('Failed to create faction:', error);
+                        window.alert(`Failed to create faction: ${error.message || error}`);
+                    }
+                });
+            }
+
+            if (deleteButton) {
+                deleteButton.addEventListener('click', async () => {
+                    const faction = state.factionMap.get(state.selectedId);
+                    if (!faction) {
+                        return;
+                    }
+                    const confirmed = window.confirm(`Delete faction "${faction.name || faction.id}"? This cannot be undone.`);
+                    if (!confirmed) {
+                        return;
+                    }
+                    try {
+                        const response = await fetch(`/api/factions/${encodeURIComponent(faction.id)}`, { method: 'DELETE' });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok || !data?.success) {
+                            throw new Error(data?.error || 'Failed to delete faction.');
+                        }
+                        state.selectedId = null;
+                        await refreshFactions();
+                    } catch (error) {
+                        console.error('Failed to delete faction:', error);
+                        window.alert(`Failed to delete faction: ${error.message || error}`);
+                    }
+                });
+            }
+
+            if (assetAddButton) {
+                assetAddButton.addEventListener('click', () => {
+                    if (assetsList) {
+                        assetsList.appendChild(buildAssetRow());
+                    }
+                });
+            }
+
+            if (tierAddButton) {
+                tierAddButton.addEventListener('click', () => {
+                    if (tiersList) {
+                        tiersList.appendChild(buildTierRow());
+                    }
+                });
+            }
+
+            if (standingInput) {
+                standingInput.addEventListener('input', () => {
+                    const faction = state.factionMap.get(state.selectedId);
+                    if (!standingTier || !faction) {
+                        return;
+                    }
+                    const rawValue = standingInput.value.trim();
+                    if (!rawValue) {
+                        standingTier.textContent = '—';
+                        return;
+                    }
+                    const numeric = Number(rawValue);
+                    standingTier.textContent = resolveStandingTierLabel(numeric, faction.reputationTiers || []);
+                });
+            }
+
+            formEl.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const factionId = state.selectedId;
+                if (!factionId) {
+                    window.alert('Select a faction to edit.');
+                    return;
+                }
+                try {
+                    const payload = gatherFactionPayload();
+                    const response = await fetch(`/api/factions/${encodeURIComponent(factionId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || !data?.success) {
+                        throw new Error(data?.error || 'Failed to update faction.');
+                    }
+
+                    const standingRaw = standingInput ? standingInput.value.trim() : '';
+                    const standingPayload = standingRaw === '' ? null : Number(standingRaw);
+                    if (standingRaw === '' || Number.isFinite(standingPayload)) {
+                        const standingResponse = await fetch(`/api/player/factions/${encodeURIComponent(factionId)}/standing`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ value: standingPayload })
+                        });
+                        const standingData = await standingResponse.json().catch(() => ({}));
+                        if (!standingResponse.ok || !standingData?.success) {
+                            throw new Error(standingData?.error || 'Failed to update faction standing.');
+                        }
+                    } else {
+                        throw new Error('Standing value must be a number or blank.');
+                    }
+
+                    await refreshFactions();
+                } catch (error) {
+                    console.error('Failed to save faction:', error);
+                    window.alert(`Failed to save faction: ${error.message || error}`);
+                }
+            });
+
+            refreshFactions();
         }
 
         function initPlayerOverviewSync() {

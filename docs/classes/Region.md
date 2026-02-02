@@ -7,7 +7,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `#id`, `#name`, `#description`, `#shortDescription`.
 - `#locationBlueprints`: blueprint definitions for generated locations.
 - `#locationIds`: ids for instantiated locations in the region.
-- `#entranceLocationId`, `#parentRegionId`.
+- `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
 - `#statusEffects`, `#randomEvents`, `#averageLevel`, `#relativeLevel`.
 - `#numImportantNPCs`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
 - `#lastVisitedTime`.
@@ -26,6 +26,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `name`, `description`, `shortDescription` (get/set).
 - `locationBlueprints`, `locationIds` (get/set).
 - `entranceLocationId`, `parentRegionId` (get/set).
+- `controllingFactionId` (get/set).
 - `randomEvents` (get/set), `addRandomEvent`, `removeRandomEvent`.
 - `numImportantNPCs` (get/set).
 - `relativeLevel` (get/set), `averageLevel` (get) with `setAverageLevel(level)`.
@@ -46,5 +47,6 @@ Represents a region containing multiple locations, with metadata like average le
 - `#normalizeStatusEffects(effects)`.
 
 ## Notes
+- Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `parentHierarchy` throws on circular references to surface data errors early.

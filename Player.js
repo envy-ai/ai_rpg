@@ -73,6 +73,8 @@ class Player {
     #characterArc = { shortTerm: '', longTerm: '' };
     #quests = [];
     #lastOutcomeSucceeded = null;
+    #factionId = null;
+    #factionStandings = new Map();
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -223,6 +225,52 @@ class Player {
         }
 
         return Object.keys(entries).length ? Object.freeze(entries) : null;
+    }
+
+    static #normalizeFactionId(value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value !== 'string') {
+            throw new Error('Faction id must be a string or null.');
+        }
+        const trimmed = value.trim();
+        return trimmed || null;
+    }
+
+    static #normalizeFactionStandings(source) {
+        const map = new Map();
+        if (source === null || source === undefined) {
+            return map;
+        }
+        const addEntry = (key, value) => {
+            if (typeof key !== 'string') {
+                throw new Error('Faction standings keys must be strings.');
+            }
+            const trimmedKey = key.trim();
+            if (!trimmedKey) {
+                throw new Error('Faction standings keys must be non-empty strings.');
+            }
+            const numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) {
+                throw new Error(`Faction standing for "${trimmedKey}" must be a finite number.`);
+            }
+            map.set(trimmedKey, numericValue);
+        };
+
+        if (source instanceof Map) {
+            for (const [key, value] of source.entries()) {
+                addEntry(key, value);
+            }
+            return map;
+        }
+        if (typeof source !== 'object') {
+            throw new Error('Faction standings must be a Map or object.');
+        }
+        for (const [key, value] of Object.entries(source)) {
+            addEntry(key, value);
+        }
+        return map;
     }
 
     static #buildNeedBarDefinition(id, config = {}) {
@@ -1055,6 +1103,8 @@ class Player {
         this.#imageId = options.imageId ?? null;
         this.#isNPC = Boolean(options.isNPC);
         this.#isHostile = this.#isNPC && Boolean(options.isHostile);
+        this.#factionId = Player.#normalizeFactionId(options.factionId);
+        this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
             ? Math.floor(options.elapsedTime)
             : 0;
@@ -1990,6 +2040,67 @@ class Player {
 
     get race() {
         return this.#race;
+    }
+
+    get factionId() {
+        return this.#factionId;
+    }
+
+    set factionId(value) {
+        this.#factionId = Player.#normalizeFactionId(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    getFactionStandings() {
+        return Object.fromEntries(this.#factionStandings);
+    }
+
+    setFactionStandings(standings) {
+        this.#factionStandings = Player.#normalizeFactionStandings(standings);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    getFactionStanding(factionId) {
+        if (typeof factionId !== 'string') {
+            return null;
+        }
+        const trimmed = factionId.trim();
+        if (!trimmed) {
+            return null;
+        }
+        const value = this.#factionStandings.get(trimmed);
+        return Number.isFinite(value) ? value : null;
+    }
+
+    setFactionStanding(factionId, value) {
+        if (typeof factionId !== 'string') {
+            throw new Error('Faction standing requires a string factionId.');
+        }
+        const trimmed = factionId.trim();
+        if (!trimmed) {
+            throw new Error('Faction standing requires a non-empty factionId.');
+        }
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            throw new Error('Faction standing value must be a finite number.');
+        }
+        this.#factionStandings.set(trimmed, numericValue);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    removeFactionStanding(factionId) {
+        if (typeof factionId !== 'string') {
+            return false;
+        }
+        const trimmed = factionId.trim();
+        if (!trimmed) {
+            return false;
+        }
+        const removed = this.#factionStandings.delete(trimmed);
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
     }
 
     get isHostile() {
@@ -3829,7 +3940,9 @@ class Player {
             lastUpdated: this.#lastUpdated,
             needBars: this.getNeedBars(),
             corpseCountdown: this.#corpseCountdown,
-            importantMemories: this.importantMemories
+            importantMemories: this.importantMemories,
+            factionId: this.#factionId,
+            factionStandings: this.getFactionStandings()
         };
 
         status.quests = this.#quests.map(quest => quest.toJSON());
@@ -3868,6 +3981,7 @@ class Player {
             isNPC: this.#isNPC,
             isHostile: this.#isHostile,
             isDead: this.#isDead,
+            factionId: this.#factionId,
             corpseCountdown: this.#corpseCountdown,
             inventory: Array.from(this.#inventory).map(thing => thing.id),
             partyMembers: Array.from(this.#partyMembers),
@@ -3896,6 +4010,7 @@ class Player {
             experience: this.#experience,
             currency: this.#currency,
             needBars: this.getNeedBars(),
+            factionStandings: this.getFactionStandings(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
             lastActionWasTravel: this.#lastActionWasTravel,
@@ -3930,6 +4045,8 @@ class Player {
             class: data.class,
             race: data.race,
             gender: data.gender,
+            factionId: data.factionId,
+            factionStandings: data.factionStandings,
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,

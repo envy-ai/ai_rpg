@@ -24,6 +24,7 @@ class Region {
   #averageLevel;
   #relativeLevel;
   #numImportantNPCs;
+  #controllingFactionId;
   #lastVisitedTime = null;  // Decimal hours since last visit by player.
   #randomEvents = [];
   #characterConcepts = [];
@@ -38,7 +39,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null } = {}) {
+  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -49,6 +50,10 @@ class Region {
 
     if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
       throw new Error('Region shortDescription must be a string or null');
+    }
+
+    if (controllingFactionId !== null && controllingFactionId !== undefined && typeof controllingFactionId !== 'string') {
+      throw new Error('Region controllingFactionId must be a string or null');
     }
 
     this.#id = id || Region.#generateId();
@@ -65,6 +70,9 @@ class Region {
       : null;
     this.#parentRegionId = parentRegionId && typeof parentRegionId === 'string'
       ? parentRegionId
+      : null;
+    this.#controllingFactionId = typeof controllingFactionId === 'string' && controllingFactionId.trim()
+      ? controllingFactionId.trim()
       : null;
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
@@ -210,6 +218,7 @@ class Region {
       locationIds: data.locationIds || [],
       entranceLocationId: data.entranceLocationId || null,
       parentRegionId: data.parentRegionId || null,
+      controllingFactionId: data.controllingFactionId || null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null,
       lastVisitedTime: data.lastVisitedTime || null,
@@ -719,6 +728,29 @@ class Region {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  get controllingFactionId() {
+    return this.#controllingFactionId;
+  }
+
+  set controllingFactionId(value) {
+    if (value === null || value === undefined || value === '') {
+      if (this.#controllingFactionId !== null) {
+        this.#controllingFactionId = null;
+        this.#lastUpdated = new Date().toISOString();
+      }
+      return;
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Region controllingFactionId must be a string or null.');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error('Region controllingFactionId must be a non-empty string or null.');
+    }
+    this.#controllingFactionId = trimmed;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   addLocation(locationId) {
     if (!locationId || typeof locationId !== 'string') {
       return;
@@ -739,6 +771,7 @@ class Region {
       locationIds: this.locationIds,
       entranceLocationId: this.#entranceLocationId,
       parentRegionId: this.#parentRegionId,
+      controllingFactionId: this.#controllingFactionId,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
       statusEffects: this.getStatusEffects(),

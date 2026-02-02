@@ -251,6 +251,252 @@ p:not(:last-child) {
   color: rgba(255, 255, 255, 0.72);
 }
 
+.factions-panel {
+  display: flex;
+  gap: 22px;
+  padding: 24px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.factions-sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(13, 16, 30, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(6, 9, 20, 0.35);
+  overflow: hidden;
+}
+
+.factions-sidebar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.factions-sidebar-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #fff;
+}
+
+.factions-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.faction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.faction-list-item {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease, border 0.2s ease;
+}
+.faction-list-item:hover, .faction-list-item:focus {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+.faction-list-item.active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.faction-list-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.faction-list-tags {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.faction-empty {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  padding: 16px 8px;
+}
+
+.faction-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 24px;
+  border-radius: 18px;
+  background: rgba(15, 18, 34, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(6, 9, 20, 0.35);
+  overflow: hidden;
+}
+
+.faction-detail-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.faction-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.faction-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.faction-detail-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+.faction-detail-meta {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.faction-detail-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.faction-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.faction-assets,
+.faction-relations,
+.faction-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.faction-assets input,
+.faction-assets textarea,
+.faction-relations select,
+.faction-relations textarea,
+.faction-tiers input,
+.faction-tiers textarea {
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: #333;
+  font-size: 16px;
+  transition: background 0.2s ease;
+}
+.faction-assets input::placeholder,
+.faction-assets textarea::placeholder,
+.faction-relations select::placeholder,
+.faction-relations textarea::placeholder,
+.faction-tiers input::placeholder,
+.faction-tiers textarea::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+.faction-assets input:focus,
+.faction-assets textarea:focus,
+.faction-relations select:focus,
+.faction-relations textarea:focus,
+.faction-tiers input:focus,
+.faction-tiers textarea:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.faction-asset-row,
+.faction-tier-row,
+.faction-relation-row {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+
+.faction-asset-row {
+  grid-template-columns: 1.2fr 0.8fr 1.6fr auto;
+}
+
+.faction-tier-row {
+  grid-template-columns: 0.7fr 1fr 1fr 1fr auto;
+}
+
+.faction-relation-row {
+  grid-template-columns: 1fr 0.6fr 1.4fr auto;
+}
+
+.faction-relation-name {
+  font-weight: 600;
+  color: #fff;
+  padding-top: 6px;
+}
+
+.faction-relation-empty {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 1100px) {
+  .factions-panel {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .factions-sidebar {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .faction-detail {
+    width: 100%;
+  }
+}
+
+@media (max-width: 900px) {
+  .faction-asset-row,
+  .faction-tier-row,
+  .faction-relation-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .quest-count-badge {
   display: inline-flex;
   align-items: center;
@@ -3529,6 +3775,19 @@ body.dark .thing-toggle-hint {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.btn.small, .btn.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+.btn.btn-link {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 4px 8px;
+}
+.btn.btn-link:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 .status-message {
