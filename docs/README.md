@@ -3,6 +3,7 @@
 This index lists every other Markdown file under `docs/` with a brief description.
 
 ## Root docs
+
 - [API_README.md](API_README.md) — High-level index of Express routes registered in `api.js`, pointing to detailed endpoint docs in `docs/api/`.
 - [developer_overview.md](developer_overview.md) — Quick-start developer overview of the game, architecture, and where to look first.
 - [potential_redundancies.md](potential_redundancies.md) — List of potential redundancies/inconsistencies found across docs and code, with suggested fixes.
@@ -11,14 +12,16 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [slop_and_repetition.md](slop_and_repetition.md) — Overview of slop checking and repetition-busting systems, detection logic, and key files.
 
 ## UI docs (`docs/ui`)
+
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
 - [ui/pages.md](ui/pages.md) — Route-to-template map with scripts and injected data.
-- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, and data flow.
-- [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals and overlays.
+- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, and LLM modal submit behavior.
+- [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays, including immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
 - [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries.
 
 ## API reference (`docs/api`)
+
 - [api/attributes.md](api/attributes.md) — Attributes endpoints; notes the duplicate route definitions in `api.js` and that only the first binds.
 - [api/chat.md](api/chat.md) — Chat endpoints, sorted by path; references shared payloads in `docs/api/common.md`.
 - [api/common.md](api/common.md) — Shared response shapes and conventions referenced by multiple endpoints.
@@ -39,6 +42,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/things.md](api/things.md) — Things and inventory endpoints; references shared payloads in `docs/api/common.md`.
 
 ## Class reference (`docs/classes`)
+
 - [classes/ComfyUIClient.md](classes/ComfyUIClient.md) — Client for ComfyUI servers: queue workflows, poll status, download images, and save results.
 - [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations.
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
@@ -65,10 +69,15 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization, stub maintenance).
 
 ## Design ideas (`docs/ideas`)
+
 - [ideas/DayNightCycle.md](ideas/DayNightCycle.md) — Design draft for a day/night cycle affecting danger, services, and NPC behavior.
 - [ideas/Factions.md](ideas/Factions.md) — Design draft for faction systems and emergent conflict/cooperation.
+- [ideas/dramatis_personae.md](ideas/dramatis_personae.md) — Brainstorm for a nemesis-style, setting-agnostic recurring NPC cast system.
+- [ideas/Vechicles2.md](ideas/Vechicles2.md) — Setting-agnostic vehicle brainstorm across items, scenery, NPCs, locations, and regions.
+- [ideas/vehicles.md](ideas/vehicles.md) — Brainstorm of vehicle concepts spanning items, scenery, NPCs, locations, and regions.
 
 ## Slash command reference (`docs/slashcommands`)
+
 - [slashcommands/Command.md](slashcommands/Command.md) — `/awardxp` command to grant experience points.
 - [slashcommands/ExportHistoryCommand.md](slashcommands/ExportHistoryCommand.md) — `/export_history` command to export chat history to text/HTML.
 - [slashcommands/GetConfigCommand.md](slashcommands/GetConfigCommand.md) — `/get` command to retrieve a nested config value.
@@ -83,6 +92,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [slashcommands/RespecAbilitiesCommand.md](slashcommands/RespecAbilitiesCommand.md) — `/respec_abilities` command to regenerate abilities from a start level.
 - [slashcommands/RpCommand.md](slashcommands/RpCommand.md) — `/rp` command to toggle roleplay mode and related config checks.
 - [slashcommands/SceneSummaryCommand.md](slashcommands/SceneSummaryCommand.md) — `/summarize` (alias `/scene_summary`) command to export scene summaries.
+- [slashcommands/ShortDescriptionCheckCommand.md](slashcommands/ShortDescriptionCheckCommand.md) — `/short_description_check` command to list missing short descriptions for regions, locations, things, and abilities.
 - [slashcommands/SetConfigCommand.md](slashcommands/SetConfigCommand.md) — `/set` command to update a nested config value at runtime.
 - [slashcommands/SlashCommandBase.md](slashcommands/SlashCommandBase.md) — Base class for slash commands: metadata, arg validation, and listing.
 - [slashcommands/SlopwordsCommand.md](slashcommands/SlopwordsCommand.md) — `/slopwords` command to report slop words over ppm thresholds.

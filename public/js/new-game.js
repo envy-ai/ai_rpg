@@ -319,46 +319,42 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         setFormEnabled(false);
         showOverlay();
-        if (window.disableNavigationGuard) window.disableNavigationGuard(true);
+        if (window.disableNavigationGuard) window.disableNavigationGuard(false);
 
         const requestId = generateRequestId();
         realtimeState.activeRequestId = requestId;
 
-        const response = await fetch('/api/new-game', {
+        const payload = {
+          playerName,
+          playerDescription,
+          playerClass,
+          playerRace,
+          startingLocation,
+          numSkills,
+          existingSkills,
+          startingCurrency,
+          clientId: realtimeState.clientId,
+          requestId
+        };
+
+        fetch('/api/new-game', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            playerName,
-            playerDescription,
-            playerClass,
-            playerRace,
-            startingLocation,
-            numSkills,
-            existingSkills,
-            startingCurrency,
-            clientId: realtimeState.clientId,
-            requestId
-          })
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).then(async (response) => {
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result?.success) {
+            const errMsg = result?.error || `Server error (${response.status})`;
+            console.error(`New game creation failed: ${errMsg}`);
+          }
+        }).catch((err) => {
+          console.error(`New game creation failed: ${err?.message || err}`);
         });
 
-        const result = await response.json();
-
-        if (!response.ok || !result?.success) {
-          const errMsg = result?.error || `Server error (${response.status})`;
-          alert(`New game creation failed: ${errMsg}`);
-          realtimeState.activeRequestId = null;
-          hideOverlay();
-          setFormEnabled(true);
-          if (window.disableNavigationGuard) window.disableNavigationGuard(false);
-          return;
-        }
-
-        // Success → disable guard then redirect back to chat
-        if (window.disableNavigationGuard) window.disableNavigationGuard(false);
-        realtimeState.activeRequestId = null;
-        window.location.assign('/');
+        window.location.assign('/#tab-adventure');
       } catch (err) {
-        alert(`New game creation failed: ${err?.message || err}`);
+        console.error(`Failed to submit new game request: ${err?.message || err}`);
         realtimeState.activeRequestId = null;
         hideOverlay();
         setFormEnabled(true);

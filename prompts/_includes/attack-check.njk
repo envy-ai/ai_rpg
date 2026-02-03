@@ -8,6 +8,11 @@ Character acting:
 {{ actionText }}
 </playerAction>
 
+These entities are present on the scene. This is not necessary an exhaustive list, but it contains no false positives:
+- {{ characterName }}
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% endif %}{% endfor %}
 <task>The character attempted the above action. Did the character attack anyone, either barehanded, with a weapon, or using an ability? For something to be an attack, it must have a reasonable potential to cause injury. Pushing, shoving, or similar actions are not attacks. In this case, respond with the N/A response below.
 
 If a character is making a non-barehanded attack, it must be with a weapon/item or ability that the character has in their possession. Be somewhat strict about this requirement. If the character doesn't have a weapon or item in their inventory that is reasonably suitable for the attack, or if the ability they are using is not one they have, then the action is an attempted attack that fails automatically, and you should respond with a rejection.

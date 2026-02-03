@@ -11,23 +11,29 @@ Response:
 Create a new faction.
 
 Request:
-- Body: `{ name: string, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
+- Body: `{ name: string, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
 
 Response:
 - 201: `{ success: true, faction: Faction }`
 - 400: `{ success: false, error }`
 - 500: `{ success: false, error }`
 
+Notes:
+- Faction name `"None"` is reserved and cannot be created.
+
 ## PUT /api/factions/:id
 Update a faction.
 
 Request:
 - Path: `id` (faction id)
-- Body supports: `name`, `tags`, `goals`, `homeRegionName`, `assets`, `relations`, `reputationTiers`
+- Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `assets`, `relations`, `reputationTiers`
 
 Response:
 - 200: `{ success: true, faction: Faction }`
 - 400/404/500 with `{ success: false, error }`
+
+Notes:
+- Faction name `"None"` is reserved and cannot be set.
 
 ## DELETE /api/factions/:id
 Delete a faction, remove relations pointing to it, and clear affiliations/standings.

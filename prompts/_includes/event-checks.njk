@@ -17,20 +17,6 @@ Characters at location:
 Text to check for events:
 <textToCheck>{{ textToCheck }}</textToCheck>
 
-Event Checks:
-{%- set questions = eventQuestions | default([]) %}
-{%- for q in questions %}
-{{ loop.index }}. {{ q }}
-{% endfor %}
-
-Respond with a numbered list of answers corresponding to the event checks above, specifically checking the text inside the textToCheck tags (the remaining game history is provided strictly so you can infer things based on context). If an event did not occur, respond with "N/A" for that item. Keep answers concise and to the point. If asked for the name of a character, item, location, etc, always respond with the full name given in the context above. If there are multiple candidates for matching an item name, prefer the one that appears in the player or location inventory, and then the one that matches the name most exactly. Omit considering anything outside the textToCheck block. Answer the questions in a numbered list format, without any additional commentary or explanation. For example:
-
-1. ...
-2. ...
-3. ...
-4. ...
-[... and so on ...]
-
 Location/region rules:
 * A "region" is any group of locations that share a common theme or purpose, such as a building interior, a town, a biome, a dimension, a planet, etc. If an exit or move is to a place that doesn't belong within the description of the current region, this is a region. Being a piece of scenery doesn't preclude something from being a region; for instance, moving into a large building or structure (such as a castle, ship, or cave) is moving to a new region.
 * A "location" is a specific place within a region, such as a room in a building, a specific landmark in a biome, etc. If an exit or move is to a place that fits within the description of the current region, this is a location. Being a piece of scenery doesn't preclude something from being a location; for instance, moving into a small shed is moving to a new location.
@@ -44,3 +30,34 @@ Status effect vs. Alteration:
 * Do not mistake intense scenes (particularly during battles or sex) for physical transformations. Being overwhelmed with arousal, fear, pain, etc, is a status effect, not a physical transformation. Only *major* physical changes (such as the loss of a limb, turning into a different species, etc) count as alterations. Minor ones, such as wounds and physical manifestations of arousal are status effects. When we talk about a physical transformation, we mean a literal physical transformation of the body, not a metaphorical transofmration.
 * Body movements are never a physical transformation and are often not even status effects.
 * Characters are not items. If a question asks for an item, do not answer with a character, or vice-versa.
+
+Event Checks:
+{%- set questions = eventQuestions | default([]) %}
+{%- for q in questions %}
+{{ loop.index }}. {{ q }}
+{% endfor %}
+
+Respond with a numbered list of answers corresponding to the event checks above, specifically checking the text inside the textToCheck tags (the remaining game history is provided strictly so you can infer things based on context). If an event did not occur, respond with "N/A" for that item. Keep answers concise and to the point. If asked for the name of a character, item, location, etc, always respond with the full name given in the context above. If there are multiple candidates for matching an item name, prefer the one that appears in the player or location inventory, and then the one that matches the name most exactly. Omit considering anything outside the textToCheck block. Answer the questions in a numbered list format, without any additional commentary or explanation. Then, check over them and comment on whether you missed anything or whether formatted any answers incorrectly. Finally, and answer them again (making sure the formatting strictly follows what is specified in each question, and that you didn't miss anything). Enclose the second batch of answers in a &gt;final&gt; tag. For example:
+
+1. ...
+2. ...
+3. ...
+4. ...
+[... and so on ...]
+
+Did I miss anything? ...briefly list what you missed here, if anything...
+
+Did I list anything I shouldn't have? ...briefly list any false positives...
+
+Did I misfomat any answers? ...briefly list which answers you misformatted, if any...
+
+<final>
+1. ...
+2. ...
+3. ...
+4. ...
+[... and so on ...]
+</final>
+
+
+

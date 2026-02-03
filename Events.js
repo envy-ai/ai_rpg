@@ -1229,6 +1229,7 @@ class Events {
                     timeoutMs: this._baseTimeout,
                     temperature: 0,
                     validateXML: false,
+                    requiredRegex: /<final>[\s\S]*\S[\s\S]*<\/final>/i,
                     dumpReasoningToConsole: true,
                     stream: true,
                     // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
@@ -1260,7 +1261,8 @@ class Events {
         let globalIndex = 1;
 
         groupResponses.forEach(({ responseText, groupIndex }) => {
-            const numbered = this._extractNumberedResponses(responseText);
+            const finalBlock = this._extractFinalEventBlock(responseText);
+            const numbered = this._extractNumberedResponses(finalBlock);
             const group = EVENT_PROMPT_ORDER[groupIndex];
             group.forEach((definition, localIndex) => {
                 const answer = numbered.get(localIndex + 1) || "N/A";
@@ -1284,7 +1286,9 @@ class Events {
         const cleaned = this.cleanEventResponseText(combinedResponseText);
         const html = this.escapeHtml(cleaned).replace(/\n/g, "<br>");
 
-        const structured = this._parseEventPromptResponse(cleaned);
+        const structured = this._parseEventPromptResponse(cleaned, {
+            isFinalBlock: true,
+        });
         if (!allowEnvironmentalEffects) {
             if (Array.isArray(structured.parsed.environmental_status_damage)) {
                 structured.parsed.environmental_status_damage = [];
@@ -1948,8 +1952,14 @@ class Events {
         }
     }
 
-    static _parseEventPromptResponse(responseText) {
-        const numbered = this._extractNumberedResponses(responseText);
+    static _parseEventPromptResponse(responseText, { isFinalBlock = false } = {}) {
+        if (typeof responseText !== "string") {
+            throw new Error("Event check response must be a string.");
+        }
+        const finalBlock = isFinalBlock
+            ? responseText
+            : this._extractFinalEventBlock(responseText);
+        const numbered = this._extractNumberedResponses(finalBlock);
         const rawGroups = new Map();
         const parsedGroups = new Map();
 
@@ -2052,6 +2062,17 @@ class Events {
         return { rawEntries, parsed: parsedEntries };
     }
 
+    static _extractFinalEventBlock(responseText) {
+        if (typeof responseText !== "string") {
+            throw new Error("Event check response must be a string.");
+        }
+        const match = responseText.match(/<final>([\s\S]*?)<\/final>/i);
+        if (!match || !match[1] || !match[1].trim()) {
+            throw new Error("Event check response missing <final> block.");
+        }
+        return match[1].trim();
+    }
+
     static _extractNumberedResponses(responseText) {
         const cleaned = this.cleanEventResponseText(responseText);
         const lines = cleaned.split(/\n/);
@@ -2112,6 +2133,10 @@ class Events {
                 "alter_item",
             ])
             : null;
+
+        if (!omitNpcGeneration) {
+            await this._ensureNpcMentions(parsedEvents, context);
+        }
 
         /* Keeping this here for reference in case we want to backtrack. */
         /*
@@ -2193,6 +2218,248 @@ class Events {
         }
 
         return context;
+    }
+
+    static async _ensureNpcMentions(parsedEvents, context = {}) {
+        const parsed = parsedEvents?.parsed;
+        if (!parsed || typeof parsed !== "object") {
+            return;
+        }
+
+        const { ensureNpcByName, findActorByName } = this._deps;
+        if (
+            typeof ensureNpcByName !== "function" ||
+            typeof findActorByName !== "function"
+        ) {
+            throw new Error(
+                "Event NPC ensuring requires ensureNpcByName and findActorByName dependencies.",
+            );
+        }
+
+        const rawEntries = parsedEvents.rawEntries || {};
+        const namesToEnsure = new Map();
+        const playerAliases = new Set([
+            "player",
+            "the player",
+            "you",
+            "self",
+            "your character",
+        ]);
+
+        const currentPlayerName =
+            typeof this.currentPlayer?.name === "string"
+                ? this.currentPlayer.name.trim()
+                : "";
+        if (currentPlayerName) {
+            playerAliases.add(currentPlayerName.toLowerCase());
+        }
+
+        const registerName = (value) => {
+            const trimmed = normalizeString(value);
+            if (!trimmed) {
+                return;
+            }
+            const key = trimmed.toLowerCase();
+            if (playerAliases.has(key)) {
+                return;
+            }
+            if (!namesToEnsure.has(key)) {
+                namesToEnsure.set(key, trimmed);
+            }
+        };
+
+        const registerFromArray = (entries, extractor) => {
+            if (!Array.isArray(entries)) {
+                return;
+            }
+            for (const entry of entries) {
+                const names = extractor(entry);
+                if (Array.isArray(names)) {
+                    names.forEach(registerName);
+                } else {
+                    registerName(names);
+                }
+            }
+        };
+
+        const registerFromRaw = (raw, extractor) => {
+            if (typeof raw !== "string" || !raw.trim()) {
+                return;
+            }
+            splitPipeList(raw).forEach((entry) => {
+                const names = extractor(entry);
+                if (Array.isArray(names)) {
+                    names.forEach(registerName);
+                } else {
+                    registerName(names);
+                }
+            });
+        };
+
+        registerFromArray(parsed.attack_damage, (entry) => [
+            entry?.attacker,
+            entry?.target,
+        ]);
+        registerFromArray(parsed.alter_npc, (entry) => entry?.name);
+        registerFromArray(parsed.status_effect_change, (entry) => entry?.entity);
+        registerFromArray(parsed.environmental_status_damage, (entry) => entry?.name);
+        registerFromArray(parsed.needbar_change, (entry) => entry?.character);
+        registerFromArray(parsed.heal_recover, (entry) => [
+            entry?.character,
+            entry?.healer,
+            entry?.recipient,
+        ]);
+        registerFromArray(parsed.npc_arrival_departure, (entry) => {
+            const action =
+                typeof entry?.action === "string" ? entry.action.trim().toLowerCase() : "";
+            if (action === "left") {
+                return [];
+            }
+            return entry?.name;
+        });
+        registerFromArray(parsed.npc_first_appearance, (entry) => entry);
+        registerFromArray(parsed.party_change, (entry) => entry?.name);
+        registerFromArray(parsed.hostile_to_friendly, (entry) => entry?.name);
+        registerFromArray(parsed.transfer_item, (entry) => [
+            entry?.giver,
+            entry?.receiver,
+        ]);
+        registerFromArray(parsed.harvest_gather, (entry) => entry?.harvester);
+        registerFromArray(parsed.pick_up_item, (entry) => entry?.name);
+        registerFromArray(parsed.drop_item, (entry) => entry?.name);
+        registerFromArray(parsed.received_quest, (entry) => entry?.giver);
+
+        registerFromRaw(rawEntries.triggered_abilities, (entry) => {
+            const [name] = splitArrowParts(entry, 2);
+            return name ? name.trim() : "";
+        });
+        registerFromRaw(rawEntries.disposition_check, (entry) => {
+            const [name] = splitArrowParts(entry, 4);
+            return name ? name.trim() : "";
+        });
+
+        if (!namesToEnsure.size) {
+            return;
+        }
+
+        const resolvedNameMap = new Map();
+
+        for (const [key, originalName] of namesToEnsure.entries()) {
+            const existing = findActorByName(originalName);
+            if (existing) {
+                const existingName =
+                    typeof existing.name === "string" ? existing.name.trim() : "";
+                if (existingName && existingName !== originalName) {
+                    resolvedNameMap.set(key, existingName);
+                }
+                continue;
+            }
+
+            const ensuredNpc = await ensureNpcByName(originalName, context);
+            if (!ensuredNpc || typeof ensuredNpc.name !== "string") {
+                throw new Error(`Failed to ensure NPC "${originalName}".`);
+            }
+
+            const ensuredName = ensuredNpc.name.trim();
+            if (!ensuredName) {
+                throw new Error(`Ensured NPC "${originalName}" has no name.`);
+            }
+
+            if (ensuredName.toLowerCase() !== key) {
+                resolvedNameMap.set(key, ensuredName);
+            } else if (ensuredName !== originalName) {
+                resolvedNameMap.set(key, ensuredName);
+            }
+
+            this.newCharacters.add(ensuredName);
+            this.arrivedCharacters.add(ensuredName);
+        }
+
+        if (!resolvedNameMap.size) {
+            return;
+        }
+
+        const resolveName = (value) => {
+            const trimmed = normalizeString(value);
+            if (!trimmed) {
+                return value;
+            }
+            const key = trimmed.toLowerCase();
+            return resolvedNameMap.get(key) || value;
+        };
+
+        const updateArrayEntries = (entries, updater) => {
+            if (!Array.isArray(entries)) {
+                return;
+            }
+            entries.forEach((entry) => {
+                if (entry) {
+                    updater(entry);
+                }
+            });
+        };
+
+        updateArrayEntries(parsed.attack_damage, (entry) => {
+            entry.attacker = resolveName(entry.attacker);
+            entry.target = resolveName(entry.target);
+        });
+        updateArrayEntries(parsed.alter_npc, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.status_effect_change, (entry) => {
+            entry.entity = resolveName(entry.entity);
+        });
+        updateArrayEntries(parsed.environmental_status_damage, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.needbar_change, (entry) => {
+            entry.character = resolveName(entry.character);
+        });
+        updateArrayEntries(parsed.heal_recover, (entry) => {
+            if (entry.character) {
+                entry.character = resolveName(entry.character);
+            }
+            if (entry.healer) {
+                entry.healer = resolveName(entry.healer);
+            }
+            if (entry.recipient) {
+                entry.recipient = resolveName(entry.recipient);
+            }
+        });
+        updateArrayEntries(parsed.npc_arrival_departure, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        if (Array.isArray(parsed.npc_first_appearance)) {
+            parsed.npc_first_appearance = parsed.npc_first_appearance.map((name) =>
+                resolveName(name),
+            );
+        }
+        updateArrayEntries(parsed.party_change, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.hostile_to_friendly, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.transfer_item, (entry) => {
+            if (entry.giver) {
+                entry.giver = resolveName(entry.giver);
+            }
+            if (entry.receiver) {
+                entry.receiver = resolveName(entry.receiver);
+            }
+        });
+        updateArrayEntries(parsed.harvest_gather, (entry) => {
+            entry.harvester = resolveName(entry.harvester);
+        });
+        updateArrayEntries(parsed.pick_up_item, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.drop_item, (entry) => {
+            entry.name = resolveName(entry.name);
+        });
+        updateArrayEntries(parsed.received_quest, (entry) => {
+            entry.giver = resolveName(entry.giver);
+        });
     }
 
     static _buildParsers() {

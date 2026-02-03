@@ -26,7 +26,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Script: `public/js/new-game.js`.
 - Data injected by `server.js`:
   - `newGameDefaults`, `currentSetting`.
-- Notes: uses websocket status updates to drive the overlay spinner.
+- Notes: submits `/api/new-game` with a keepalive POST, then immediately navigates to `/#tab-adventure` while generation continues; websocket status updates drive the overlay spinner if the page remains visible.
 
 ## Server configuration
 - Route: `/config`

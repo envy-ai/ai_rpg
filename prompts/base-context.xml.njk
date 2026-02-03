@@ -111,6 +111,32 @@ The below context is an account of the current game state, including the setting
     </region>
     {% endfor %}
   </worldOutline>
+  <factions>
+    {% if factions and factions | length %}
+    <selectionNotes>Use the full faction name from this list. Use "None" if no faction applies.</selectionNotes>
+    {% for faction in factions %}
+    <faction>
+      <name>{{ faction.name }}</name>
+      {% if faction.shortDescription %}<shortDescription>{{ faction.shortDescription }}</shortDescription>{% endif %}
+      {% if faction.description %}<description>{{ faction.description }}</description>{% endif %}
+      {% if faction.tags and faction.tags | length %}
+      <tags>
+        {% for tag in faction.tags %}<tag>{{ tag }}</tag>{% endfor %}
+      </tags>
+      {% endif %}
+      {% if faction.goals and faction.goals | length %}
+      <goals>
+        {% for goal in faction.goals %}<goal>{{ goal }}</goal>{% endfor %}
+      </goals>
+      {% endif %}
+      {% if faction.homeRegionName %}<homeRegionName>{{ faction.homeRegionName }}</homeRegionName>{% endif %}
+    </faction>
+    {% endfor %}
+    {% else %}
+    <selectionNotes>No factions exist yet. Use "None" for faction fields.</selectionNotes>
+    {% endif %}
+    <noneOption>None</noneOption>
+  </factions>
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>

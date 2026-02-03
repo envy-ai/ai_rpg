@@ -1773,18 +1773,28 @@ function normalizeChatEntry(entry) {
     return entry;
 }
 
-function scrubGeneratedBrackets(text) {
+function scrubGeneratedBrackets(text, options = null) {
     if (typeof text !== 'string') {
         return text;
     }
+    let scrubEvents = true;
+    if (typeof options === 'boolean') {
+        scrubEvents = options;
+    } else if (options && typeof options === 'object') {
+        if (Object.prototype.hasOwnProperty.call(options, 'scrub_events')) {
+            scrubEvents = options.scrub_events !== false;
+        }
+    }
     // Remove leftover bracketed metadata and any trailing "Events" summaries or leading think blocks
-    return text
+    let cleaned = text
         .replace(/^\s*(?:\[[^\]]*]\s*)+/g, '')
         .replace(/\s*\[location:[^\]]*]/gi, '')
         .replace(/\s*\[seen by[^\]]*]/gi, '')
-        .replace(/^[\s\S]*?<\/think>\s*/i, '')
-        .replace(/\s*📋\s*Events[\s\S]*$/i, '')
-        .trim();
+        .replace(/^[\s\S]*?<\/think>\s*/i, '');
+    if (scrubEvents) {
+        cleaned = cleaned.replace(/\s*📋\s*Events[\s\S]*$/i, '');
+    }
+    return cleaned.trim();
 }
 
 Globals.scrubGeneratedBrackets = scrubGeneratedBrackets;
@@ -1846,11 +1856,15 @@ function collectNpcNamesForContext(entry = null) {
 
 function pushChatEntry(entry, collector = null, locationId = null) {
     if (entry && typeof entry === 'object') {
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        const scrubOptions = entryType === 'event-summary'
+            ? { scrub_events: false }
+            : null;
         if (typeof entry.content === 'string') {
-            entry.content = scrubGeneratedBrackets(entry.content);
+            entry.content = scrubGeneratedBrackets(entry.content, scrubOptions);
         }
         if (typeof entry.summary === 'string') {
-            entry.summary = scrubGeneratedBrackets(entry.summary);
+            entry.summary = scrubGeneratedBrackets(entry.summary, scrubOptions);
         }
     }
 
@@ -2534,6 +2548,15 @@ async function ensureNpcByName(name, context = {}) {
         return existing;
     }
 
+    let resolvedName = typeof name === 'string' ? name.trim() : '';
+    const shouldCapitalizeName = resolvedName && !/[A-Z]/.test(resolvedName);
+    if (shouldCapitalizeName) {
+        const capitalized = Utils.capitalizeProperNoun(resolvedName);
+        if (capitalized) {
+            resolvedName = capitalized;
+        }
+    }
+
     let resolvedLocation = context.location || null;
     if (!resolvedLocation && context.player?.currentLocation) {
         try {
@@ -2547,7 +2570,7 @@ async function ensureNpcByName(name, context = {}) {
     const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name));
 
     const generated = await generateNpcFromEvent({
-        name,
+        name: resolvedName || name,
         location: resolvedLocation,
         region: resolvedRegion,
         oldItem: context.oldItem || null
@@ -2563,6 +2586,20 @@ async function ensureNpcByName(name, context = {}) {
         region: resolvedRegion,
         existingNames
     });
+
+    if (shouldCapitalizeName && typeof generated?.name === 'string') {
+        const ensuredName = generated.name.trim();
+        if (ensuredName && !/[A-Z]/.test(ensuredName)) {
+            const capitalized = Utils.capitalizeProperNoun(ensuredName);
+            if (capitalized && capitalized !== ensuredName) {
+                if (typeof generated.setName === 'function') {
+                    generated.setName(capitalized);
+                } else {
+                    generated.name = capitalized;
+                }
+            }
+        }
+    }
 
     return generated;
 }
@@ -3794,6 +3831,32 @@ function buildBasePromptContext({
         settingContext.skills = skillNamesForPrompt;
     }
 
+    const factionSummaries = [];
+    if (factions instanceof Map && factions.size) {
+        for (const faction of factions.values()) {
+            if (!faction || typeof faction.name !== 'string') {
+                continue;
+            }
+            const name = faction.name.trim();
+            if (!name) {
+                continue;
+            }
+            if (name.toLowerCase() === 'none') {
+                console.warn('Faction name "None" is reserved; excluding from prompt context.');
+                continue;
+            }
+            factionSummaries.push({
+                name,
+                tags: Array.isArray(faction.tags) ? faction.tags : [],
+                goals: Array.isArray(faction.goals) ? faction.goals : [],
+                description: faction.description || null,
+                shortDescription: faction.shortDescription || null,
+                homeRegionName: faction.homeRegionName || null
+            });
+        }
+        factionSummaries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    }
+
     const context = {
         setting: settingContext,
         config: config,
@@ -3820,7 +3883,8 @@ function buildBasePromptContext({
         rarityDefinitions: Thing.getAllRarityDefinitions(),
         experiencePointValues,
         generatedThingRarity,
-        worldOutline
+        worldOutline,
+        factions: factionSummaries
     };
 
     populateNpcSelectedMemoriesSync(context);
@@ -6151,6 +6215,31 @@ async function expandRegionEntryStub(stubLocation) {
             return null;
         }
 
+        const rawStubFactionId = typeof stubLocation.controllingFactionId === 'string'
+            ? stubLocation.controllingFactionId.trim()
+            : '';
+        const stubControllingFactionId = rawStubFactionId || null;
+        if (stubControllingFactionId) {
+            if (!(factions instanceof Map) || !factions.has(stubControllingFactionId)) {
+                throw new Error(`Region stub "${stubLocation.id}" references unknown faction "${stubControllingFactionId}".`);
+            }
+        }
+
+        const applyStubControllingFaction = (targetRegion) => {
+            if (!stubControllingFactionId || !targetRegion) {
+                return;
+            }
+            const existingId = typeof targetRegion.controllingFactionId === 'string'
+                ? targetRegion.controllingFactionId.trim()
+                : '';
+            if (existingId && existingId !== stubControllingFactionId) {
+                throw new Error(`Region "${targetRegion.id}" already has controlling faction "${existingId}", cannot apply stub faction "${stubControllingFactionId}".`);
+            }
+            if (!existingId) {
+                targetRegion.controllingFactionId = stubControllingFactionId;
+            }
+        };
+
         const settingDescription = metadata.settingDescription || describeSettingForPrompt(getActiveSettingSnapshot());
         const themeHint = metadata.themeHint || null;
         let regionAverageLevel = null;
@@ -6221,6 +6310,7 @@ async function expandRegionEntryStub(stubLocation) {
 
                 const entranceLocation = resolveEntranceLocation(existingRegionByName);
                 if (entranceLocation) {
+                    applyStubControllingFaction(existingRegionByName);
                     if (originLocation && typeof originLocation.removeExit === 'function' && typeof originLocation.getAvailableDirections === 'function') {
                         for (const direction of originLocation.getAvailableDirections()) {
                             const exit = originLocation.getExit(direction);
@@ -6350,6 +6440,14 @@ async function expandRegionEntryStub(stubLocation) {
             const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
             const secrets = extractRegionSecrets(stubResponse);
             const regionShortDescription = parseRegionStubShortDescription(stubResponse);
+            const responseControllingFactionName = extractXmlTagValue(stubResponse, {
+                rootTag: 'region',
+                tagName: 'controllingFaction'
+            });
+            const responseFactionResolution = resolveFactionNameToId(responseControllingFactionName, {
+                allowBlank: Boolean(stubControllingFactionId),
+                fieldLabel: 'Region controlling faction'
+            });
 
             console.log("Character concepts extracted for region NPC generation:", characterConcepts);
 
@@ -6375,6 +6473,23 @@ async function expandRegionEntryStub(stubLocation) {
                 console.trace();
             }
 
+            const existingRegionFactionId = typeof region?.controllingFactionId === 'string'
+                ? region.controllingFactionId.trim()
+                : '';
+            if (stubControllingFactionId && responseFactionResolution.explicit && responseFactionResolution.id !== stubControllingFactionId) {
+                throw new Error(`Region "${targetRegionId}" stub faction "${stubControllingFactionId}" conflicts with generated faction "${responseFactionResolution.name || responseControllingFactionName}".`);
+            }
+            let resolvedControllingFactionId = stubControllingFactionId || null;
+            if (!resolvedControllingFactionId && responseFactionResolution.explicit) {
+                resolvedControllingFactionId = responseFactionResolution.id;
+            }
+            if (resolvedControllingFactionId && existingRegionFactionId && existingRegionFactionId !== resolvedControllingFactionId) {
+                throw new Error(`Region "${targetRegionId}" already has controlling faction "${existingRegionFactionId}", cannot apply "${resolvedControllingFactionId}".`);
+            }
+            if (!resolvedControllingFactionId && existingRegionFactionId) {
+                resolvedControllingFactionId = existingRegionFactionId;
+            }
+
             region = new Region({
                 id: targetRegionId,
                 name: pendingInfo?.name || metadata.targetRegionName || 'Uncharted Region',
@@ -6386,12 +6501,14 @@ async function expandRegionEntryStub(stubLocation) {
                     exits: def.exits,
                     relativeLevel: def.relativeLevel,
                     numNpcs: def.numNpcs,
-                    numHostiles: def.numHostiles
+                    numHostiles: def.numHostiles,
+                    controllingFaction: def.controllingFaction
                 })),
                 locationIds: [],
                 entranceLocationId: null,
                 parentRegionId: parentRegionId,
                 averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null,
+                controllingFactionId: resolvedControllingFactionId,
                 secrets,
                 numImportantNPCs
             });
@@ -6456,6 +6573,8 @@ async function expandRegionEntryStub(stubLocation) {
         if (!entranceLocation) {
             return null;
         }
+
+        applyStubControllingFaction(region);
 
         await finalizeRegionEntry({
             stubLocation,
@@ -9540,6 +9659,10 @@ async function generateNpcFromEvent({
         npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
         npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
 
+        const factionResolution = resolveFactionNameToId(npcData?.faction, {
+            fieldLabel: `NPC faction for "${npcData?.name || trimmedName || 'Unnamed NPC'}"`
+        });
+
         let portraitImageId = null;
         if (normalizedPortraitImageDataUrl) {
             const portraitSave = saveUploadedPortraitImage(normalizedPortraitImageDataUrl);
@@ -9564,6 +9687,7 @@ async function generateNpcFromEvent({
             location: resolvedLocation?.id || null,
             imageId: portraitImageId,
             attributes,
+            factionId: factionResolution.id,
             isNPC: true,
             isHostile: Boolean(npcData?.isHostile),
             healthAttribute: npcData?.healthAttribute,
@@ -10068,6 +10192,72 @@ function parseIntegerFromText(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resolveFactionNameToId(rawName, {
+    allowNone = true,
+    allowBlank = false,
+    fieldLabel = 'faction'
+} = {}) {
+    const trimmed = typeof rawName === 'string' ? rawName.trim() : '';
+    if (!trimmed) {
+        if (allowBlank) {
+            return { id: null, explicit: false, name: '' };
+        }
+        throw new Error(`${fieldLabel} is required. Use "None" if no faction applies.`);
+    }
+
+    if (allowNone && trimmed.toLowerCase() === 'none') {
+        return { id: null, explicit: true, name: 'None' };
+    }
+
+    let resolved = null;
+    if (typeof Faction?.getByName === 'function') {
+        resolved = Faction.getByName(trimmed);
+    }
+    if (!resolved && factions instanceof Map) {
+        for (const faction of factions.values()) {
+            if (faction?.name && faction.name.trim().toLowerCase() === trimmed.toLowerCase()) {
+                resolved = faction;
+                break;
+            }
+        }
+    }
+
+    if (!resolved) {
+        const available = factions instanceof Map
+            ? Array.from(factions.values())
+                .map(entry => (typeof entry?.name === 'string' ? entry.name.trim() : ''))
+                .filter(Boolean)
+                .filter(name => name.toLowerCase() !== 'none')
+            : [];
+        const suffix = available.length ? ` Available factions: ${available.join(', ')}.` : '';
+        throw new Error(`${fieldLabel} "${trimmed}" does not match any existing faction name.${suffix}`);
+    }
+
+    return { id: resolved.id, explicit: true, name: resolved.name };
+}
+
+function extractXmlTagValue(xmlContent, { rootTag = null, tagName } = {}) {
+    if (!xmlContent || typeof xmlContent !== 'string' || !tagName) {
+        return '';
+    }
+
+    const rootMatch = rootTag
+        ? xmlContent.match(new RegExp(`<${rootTag}>[\\s\\S]*?</${rootTag}>`, 'i'))
+        : null;
+    const snippet = rootMatch ? rootMatch[0] : xmlContent;
+
+    const xmlDoc = Utils.parseXmlDocument(snippet, 'text/xml');
+    const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+        throw new Error(`XML parsing error while reading <${tagName}>: ${parserError.textContent}`);
+    }
+
+    const rootNode = rootTag ? xmlDoc.getElementsByTagName(rootTag)[0] : xmlDoc;
+    const tagNode = rootNode ? rootNode.getElementsByTagName(tagName)[0] : null;
+    const value = tagNode && typeof tagNode.textContent === 'string' ? tagNode.textContent.trim() : '';
+    return value || '';
+}
+
 function parseLocationNpcs(xmlContent) {
     const result = { npcs: [], memories: new Map() };
     if (!xmlContent || typeof xmlContent !== 'string') {
@@ -10116,6 +10306,7 @@ function parseLocationNpcs(xmlContent) {
             const classNode = node.getElementsByTagName('class')[0];
             const raceNode = node.getElementsByTagName('race')[0];
             const genderNode = node.getElementsByTagName('gender')[0];
+            const factionNode = node.getElementsByTagName('faction')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
             const personalityNode = node.getElementsByTagName('personality')[0];
@@ -10132,6 +10323,7 @@ function parseLocationNpcs(xmlContent) {
             const shortDescription = shortDescriptionNode ? shortDescriptionNode.textContent.trim() : '';
             const role = roleNode ? roleNode.textContent.trim() : null;
             const gender = genderNode ? genderNode.textContent.trim() : null;
+            const faction = factionNode ? factionNode.textContent.trim() : '';
             const attributes = {};
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
             const healthAttribute = healthAttributeNode ? healthAttributeNode.textContent.trim() : null;
@@ -10194,6 +10386,7 @@ function parseLocationNpcs(xmlContent) {
                     class: className,
                     race,
                     gender,
+                    faction,
                     attributes,
                     relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                     healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
@@ -10258,6 +10451,7 @@ function parseRegionNpcs(xmlContent) {
             const raceNode = node.getElementsByTagName('race')[0];
             const genderNode = node.getElementsByTagName('gender')[0];
             const locationNode = node.getElementsByTagName('location')[0];
+            const factionNode = node.getElementsByTagName('faction')[0];
             const attributesNode = node.getElementsByTagName('attributes')[0];
             const relativeLevelNode = node.getElementsByTagName('relativeLevel')[0];
             const healthAttributeNode = node.getElementsByTagName('healthAttribute')[0];
@@ -10280,6 +10474,7 @@ function parseRegionNpcs(xmlContent) {
             const race = raceNode ? raceNode.textContent.trim() : null;
             const locationName = locationNode ? locationNode.textContent.trim() : null;
             const gender = genderNode ? genderNode.textContent.trim() : null;
+            const faction = factionNode ? factionNode.textContent.trim() : '';
 
             const attributes = {};
             if (attributesNode) {
@@ -10344,6 +10539,7 @@ function parseRegionNpcs(xmlContent) {
                 race,
                 gender,
                 location: locationName,
+                faction,
                 attributes,
                 relativeLevel: Number.isFinite(relativeLevel) ? Math.max(-10, Math.min(10, Math.round(relativeLevel))) : null,
                 healthAttribute: healthAttribute && healthAttribute.toLowerCase() !== 'n/a' ? healthAttribute : null,
@@ -13349,8 +13545,25 @@ function parseFactionsXml(xmlContent) {
         throw new Error('Faction generation returned no <faction> entries.');
     }
 
+    const getDirectChild = (parent, tagName) => {
+        if (!parent) {
+            return null;
+        }
+        const children = Array.from(parent.childNodes)
+            .filter(node => node && node.nodeType === 1);
+        return children.find(node => {
+            const nodeName = node.tagName || node.nodeName || '';
+            return nodeName === tagName;
+        }) || null;
+    };
+
+    const getDirectChildText = (parent, tagName) => {
+        const node = getDirectChild(parent, tagName);
+        return node ? node.textContent.trim() : '';
+    };
+
     const extractList = (parent, containerTag, itemTag) => {
-        const container = parent.getElementsByTagName(containerTag)[0];
+        const container = getDirectChild(parent, containerTag);
         if (!container) {
             return [];
         }
@@ -13362,8 +13575,7 @@ function parseFactionsXml(xmlContent) {
     const parsed = [];
     const seenNames = new Set();
     for (const node of factionNodes) {
-        const nameNode = node.getElementsByTagName('name')[0];
-        const name = nameNode ? nameNode.textContent.trim() : '';
+        const name = getDirectChildText(node, 'name');
         if (!name) {
             throw new Error('Faction entry missing a name.');
         }
@@ -13381,10 +13593,18 @@ function parseFactionsXml(xmlContent) {
         if (!goals.length) {
             throw new Error(`Faction "${name}" is missing goals.`);
         }
-        const homeRegionNode = node.getElementsByTagName('homeRegion')[0];
-        const homeRegionName = homeRegionNode ? homeRegionNode.textContent.trim() : null;
+        const homeRegionName = getDirectChildText(node, 'homeRegion') || null;
 
-        const assetsContainer = node.getElementsByTagName('assets')[0];
+        const description = getDirectChildText(node, 'description');
+        if (!description) {
+            throw new Error(`Faction "${name}" is missing description.`);
+        }
+        const shortDescription = getDirectChildText(node, 'shortDescription');
+        if (!shortDescription) {
+            throw new Error(`Faction "${name}" is missing shortDescription.`);
+        }
+
+        const assetsContainer = getDirectChild(node, 'assets');
         const assetNodes = assetsContainer
             ? Array.from(assetsContainer.getElementsByTagName('asset'))
             : [];
@@ -13411,7 +13631,7 @@ function parseFactionsXml(xmlContent) {
             return asset;
         });
 
-        const relationsContainer = node.getElementsByTagName('relations')[0];
+        const relationsContainer = getDirectChild(node, 'relations');
         const relationNodes = relationsContainer
             ? Array.from(relationsContainer.getElementsByTagName('relation'))
             : [];
@@ -13438,7 +13658,7 @@ function parseFactionsXml(xmlContent) {
             return { targetName, status, notes };
         });
 
-        const tiersContainer = node.getElementsByTagName('reputationTiers')[0];
+        const tiersContainer = getDirectChild(node, 'reputationTiers');
         const tierNodes = tiersContainer
             ? Array.from(tiersContainer.getElementsByTagName('tier'))
             : [];
@@ -13468,6 +13688,8 @@ function parseFactionsXml(xmlContent) {
             tags,
             goals,
             homeRegionName: homeRegionName || null,
+            description,
+            shortDescription,
             assets,
             relations,
             reputationTiers
@@ -14823,6 +15045,8 @@ async function generateFactionsList({ count, settingDescription }) {
         name: entry.name,
         tags: entry.tags,
         goals: entry.goals,
+        description: entry.description,
+        shortDescription: entry.shortDescription,
         homeRegionName: entry.homeRegionName,
         assets: entry.assets,
         relations: {},
@@ -15164,6 +15388,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const equipSettingDescription = describeSettingForPrompt(getActiveSettingSnapshot());
 
         for (const npcData of npcs) {
+            const factionResolution = resolveFactionNameToId(npcData?.faction, {
+                fieldLabel: `NPC faction for "${npcData?.name || 'Unnamed NPC'}"`
+            });
             const attributes = {};
             const attrSource = npcData.attributes || {};
             for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
@@ -15178,6 +15405,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 level: 1,
                 location: location.id,
                 attributes,
+                factionId: factionResolution.id,
                 class: npcData.class || null,
                 race: npcData.race,
                 isNPC: true,
@@ -15505,6 +15733,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const equipSettingDescription = describeSettingForPrompt(getActiveSettingSnapshot());
 
         for (const npcData of parsedNpcs) {
+            const factionResolution = resolveFactionNameToId(npcData?.faction, {
+                fieldLabel: `NPC faction for "${npcData?.name || 'Unnamed NPC'}"`
+            });
             const attributes = {};
             const attrSource = npcData.attributes || {};
             for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
@@ -15533,6 +15764,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 level: 1,
                 location: targetLocation ? targetLocation.id : null,
                 attributes,
+                factionId: factionResolution.id,
                 isNPC: true,
                 isHostile: Boolean(npcData.isHostile),
                 healthAttribute: npcData.healthAttribute,
@@ -17307,6 +17539,34 @@ async function generateLocationFromPrompt(options = {}) {
             throw new Error('Failed to parse location from AI response');
         }
 
+        const controllingFactionName = extractXmlTagValue(aiResponse, {
+            rootTag: 'location',
+            tagName: 'controllingFaction'
+        });
+        const factionResolution = resolveFactionNameToId(controllingFactionName, {
+            allowBlank: isStubExpansion,
+            fieldLabel: 'Location controlling faction'
+        });
+        const existingFactionId = typeof stubLocation?.controllingFactionId === 'string'
+            ? stubLocation.controllingFactionId.trim()
+            : '';
+
+        if (isStubExpansion) {
+            if (existingFactionId) {
+                if (factionResolution.explicit && factionResolution.id !== existingFactionId) {
+                    throw new Error(`Location "${location.id}" already has controlling faction "${existingFactionId}", cannot apply "${factionResolution.name || controllingFactionName}".`);
+                }
+                location.controllingFactionId = existingFactionId;
+            } else if (factionResolution.explicit) {
+                location.controllingFactionId = factionResolution.id;
+            }
+        } else {
+            if (!factionResolution.explicit) {
+                throw new Error('Location generation response missing <controllingFaction>. Use "None" if no faction controls this location.');
+            }
+            location.controllingFactionId = factionResolution.id;
+        }
+
         const apiDurationSeconds = (Date.now() - requestStart) / 1000;
 
         try {
@@ -17670,7 +17930,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     const stubRegions = Array.from(doc.getElementsByTagName('stubRegion'));
     const results = [];
 
-    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle }) => {
+    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction }) => {
         if (!name) {
             return;
         }
@@ -17681,7 +17941,8 @@ function parseRegionExitsResponse(xmlSnippet) {
             relativeLevel: Number.isFinite(parsedLevel) ? parsedLevel : 0,
             relationship: relationship || 'Adjacent',
             exitLocation,
-            exitVehicle: exitVehicle || null
+            exitVehicle: exitVehicle || null,
+            controllingFaction: controllingFaction || null
         });
     };
 
@@ -17706,8 +17967,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const relationship = getChildValue(stubNode, 'relationshipToCurrentRegion');
             const exitLocation = locationName || getChildValue(stubNode, 'exitLocation') || null;
             const exitVehicle = getChildValue(stubNode, 'exitVehicle');
+            const controllingFaction = getChildValue(stubNode, 'controllingFaction');
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction });
         }
     }
 
@@ -17723,8 +17985,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const relationship = getChildValue(node, 'relationshipToCurrentRegion');
             const exitLocation = getChildValue(node, 'exitLocation');
             const exitVehicle = getChildValue(node, 'exitVehicle');
+            const controllingFaction = getChildValue(node, 'controllingFaction');
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction });
         }
     }
 
@@ -17858,6 +18121,7 @@ function parseRegionStubLocations(xmlSnippet) {
         const relativeLevelRaw = getTagValue(node, 'relativeLevel');
         const numNpcsRaw = getTagValue(node, 'numNpcs');
         const numHostilesRaw = getTagValue(node, 'numHostiles');
+        const controllingFaction = getTagValue(node, 'controllingFaction');
         const exitsParent = node.getElementsByTagName('exits')?.[0];
         const exits = exitsParent
             ? Array.from(exitsParent.getElementsByTagName('exit'))
@@ -17875,7 +18139,8 @@ function parseRegionStubLocations(xmlSnippet) {
             exits,
             relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
             numNpcs: Number.isFinite(numNpcs) ? Math.max(0, Math.min(20, numNpcs)) : null,
-            numHostiles: Number.isFinite(numHostiles) ? Math.max(0, Math.min(20, numHostiles)) : null
+            numHostiles: Number.isFinite(numHostiles) ? Math.max(0, Math.min(20, numHostiles)) : null,
+            controllingFaction
         };
     }).filter(Boolean);
 }
@@ -17958,6 +18223,9 @@ async function generateRegionExitStubs({
         }
 
         const vehicleLabel = definition.exitVehicle || null;
+        const controllingFactionResolution = resolveFactionNameToId(definition.controllingFaction, {
+            fieldLabel: `Region controlling faction for "${definition.name || 'Unnamed Region'}"`
+        });
 
         const existingRegion = Region.getByName(definition.name);
         if (existingRegion) {
@@ -18093,6 +18361,7 @@ async function generateRegionExitStubs({
             checkRegionId: false,
             baseLevel: computedBaseLevel,
             isStub: true,
+            controllingFactionId: controllingFactionResolution.id,
             stubMetadata
         });
 
@@ -18133,7 +18402,8 @@ async function generateRegionExitStubs({
             sourceRegionId: region.id,
             exitLocationId: sourceLocation.id,
             entranceStubId: regionEntryStub.id,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            controllingFactionId: controllingFactionResolution.id
         });
 
         console.log(`🌐 Created pending region stub for "${regionEntryStub.name || definition.name}" linked to ${region.name}.`);
@@ -18282,6 +18552,9 @@ async function instantiateRegionLocations({
         const numHostiles = Number.isFinite(Number(blueprint.numHostiles))
             ? Math.max(0, Math.min(20, Math.round(Number(blueprint.numHostiles))))
             : null;
+        const controllingFactionResolution = resolveFactionNameToId(blueprint.controllingFaction, {
+            fieldLabel: `Location controlling faction for "${blueprint.name || 'Unnamed Location'}"`
+        });
 
         const stub = new Location({
             name: blueprint.name,
@@ -18290,6 +18563,7 @@ async function instantiateRegionLocations({
             baseLevel: computedBaseLevel,
             isStub: true,
             regionId: region.id,
+            controllingFactionId: controllingFactionResolution.id,
             checkRegionId: false,
             generationHints: {
                 numNpcs,
@@ -18626,6 +18900,17 @@ async function generateRegionFromPrompt(options = {}) {
 
         const region = Region.fromXMLSnippet(aiResponse);
         await ensureRegionNameAllowed(region);
+        const controllingFactionName = extractXmlTagValue(aiResponse, {
+            rootTag: 'region',
+            tagName: 'controllingFaction'
+        });
+        const factionResolution = resolveFactionNameToId(controllingFactionName, {
+            fieldLabel: 'Region controlling faction'
+        });
+        if (!factionResolution.explicit) {
+            throw new Error('Region generation response missing <controllingFaction>. Use "None" if no faction controls this region.');
+        }
+        region.controllingFactionId = factionResolution.id;
         const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });

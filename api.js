@@ -3037,6 +3037,7 @@ module.exports = function registerApiRoutes(scope) {
             const entry = {
                 role: 'assistant',
                 content: summaryText,
+                summary: summaryText,
                 timestamp: timestamp || new Date().toISOString(),
                 parentId: parentId || null,
                 type: 'event-summary',
@@ -10532,6 +10533,26 @@ module.exports = function registerApiRoutes(scope) {
             return locationData;
         }
 
+        function normalizeFactionIdInput(value, { fieldLabel = 'Faction' } = {}) {
+            if (value === null || value === undefined || value === '') {
+                return null;
+            }
+            if (typeof value !== 'string') {
+                throw new Error(`${fieldLabel} must be a string or null.`);
+            }
+            const trimmed = value.trim();
+            return trimmed || null;
+        }
+
+        function requireFactionExists(factionId, { fieldLabel = 'Faction' } = {}) {
+            if (!factionId) {
+                return;
+            }
+            if (!(factions instanceof Map) || !factions.has(factionId)) {
+                throw new Error(`${fieldLabel} "${factionId}" not found.`);
+            }
+        }
+
         function buildRegionParentOptions({ excludeId = null } = {}) {
             const options = [];
             for (const region of regions.values()) {
@@ -10577,8 +10598,10 @@ module.exports = function registerApiRoutes(scope) {
                     id: region.id,
                     name: region.name,
                     description: region.description,
+                    shortDescription: region.shortDescription || null,
                     parentRegionId: region.parentRegionId || null,
                     averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                    controllingFactionId: region.controllingFactionId || null,
                     secrets: Array.isArray(region.secrets) ? [...region.secrets] : []
                 };
 
@@ -10627,8 +10650,10 @@ module.exports = function registerApiRoutes(scope) {
                 const {
                     name,
                     description,
+                    shortDescription,
                     parentRegionId: parentRegionIdRaw,
-                    averageLevel: averageLevelRaw
+                    averageLevel: averageLevelRaw,
+                    controllingFactionId: controllingFactionIdRaw
                 } = body;
 
                 if (typeof name !== 'string') {
@@ -10680,6 +10705,22 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const hasControllingFaction = Object.prototype.hasOwnProperty.call(body, 'controllingFactionId');
+                let resolvedControllingFactionId = null;
+                if (hasControllingFaction) {
+                    try {
+                        resolvedControllingFactionId = normalizeFactionIdInput(controllingFactionIdRaw, {
+                            fieldLabel: 'Controlling faction'
+                        });
+                        requireFactionExists(resolvedControllingFactionId, { fieldLabel: 'Controlling faction' });
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
+
                 try {
                     const trimmedName = name.trim();
                     const trimmedDescription = description.trim();
@@ -10690,6 +10731,19 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: validationError?.message || 'Invalid region values'
                     });
+                }
+
+                if (shortDescription !== undefined) {
+                    if (shortDescription === null) {
+                        region.shortDescription = null;
+                    } else if (typeof shortDescription === 'string') {
+                        region.shortDescription = shortDescription.trim();
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Region short description must be a string or null'
+                        });
+                    }
                 }
 
                 if (parentRegionId !== undefined && parentRegionId !== region.parentRegionId) {
@@ -10719,13 +10773,26 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (hasControllingFaction) {
+                    try {
+                        region.controllingFactionId = resolvedControllingFactionId;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
+
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
                 const payload = {
                     id: region.id,
                     name: region.name,
                     description: region.description,
+                    shortDescription: region.shortDescription || null,
                     parentRegionId: region.parentRegionId || null,
-                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null
+                    averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
+                    controllingFactionId: region.controllingFactionId || null
                 };
 
                 let parentRegionName = null;
@@ -10786,6 +10853,7 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(404).json({ success: false, error: `Character with ID '${npcId}' not found` });
                 }
 
+                const body = req.body || {};
                 const {
                     name,
                     description,
@@ -10806,7 +10874,21 @@ module.exports = function registerApiRoutes(scope) {
                     personalityTraits,
                     personalityNotes,
                     statusEffects
-                } = req.body || {};
+                } = body;
+
+                const hasFactionId = Object.prototype.hasOwnProperty.call(body, 'factionId');
+                let resolvedFactionId = null;
+                if (hasFactionId) {
+                    try {
+                        resolvedFactionId = normalizeFactionIdInput(body.factionId, { fieldLabel: 'Faction' });
+                        requireFactionExists(resolvedFactionId, { fieldLabel: 'Faction' });
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid faction value'
+                        });
+                    }
+                }
 
                 if (typeof name === 'string' && name.trim()) {
                     npc.setName(name.trim());
@@ -10826,6 +10908,17 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (typeof shortDescription === 'string') {
                     npc.shortDescription = shortDescription;
+                }
+
+                if (hasFactionId) {
+                    try {
+                        npc.factionId = resolvedFactionId;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid faction value'
+                        });
+                    }
                 }
 
                 if (level !== undefined) {
@@ -12375,8 +12468,10 @@ module.exports = function registerApiRoutes(scope) {
                         id: canonicalRegion.id,
                         name: canonicalRegion.name,
                         description: canonicalRegion.description,
+                        shortDescription: canonicalRegion.shortDescription || null,
                         parentRegionId: canonicalRegion.parentRegionId || null,
                         averageLevel: Number.isFinite(canonicalRegion.averageLevel) ? canonicalRegion.averageLevel : null,
+                        controllingFactionId: canonicalRegion.controllingFactionId || null,
                         secrets: Array.isArray(canonicalRegion.secrets) ? [...canonicalRegion.secrets] : []
                     };
 
@@ -12517,6 +12612,23 @@ module.exports = function registerApiRoutes(scope) {
             });
         };
 
+        const normalizeOptionalFactionText = (value, label) => {
+            if (value === null) {
+                return null;
+            }
+            if (value === undefined) {
+                throw new Error(`${label} is required to be a string or null.`);
+            }
+            if (typeof value !== 'string') {
+                throw new Error(`${label} must be a non-empty string or null.`);
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                throw new Error(`${label} must be a non-empty string or null.`);
+            }
+            return trimmed;
+        };
+
         const normalizeFactionRelations = (value, { currentId = null } = {}) => {
             if (value === null || value === undefined) {
                 return null;
@@ -12608,6 +12720,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Faction name is required.'
                     });
                 }
+                if (rawName.toLowerCase() === 'none') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Faction name "None" is reserved. Choose another name.'
+                    });
+                }
 
                 const existingByName = typeof Faction?.getByName === 'function'
                     ? Faction.getByName(rawName)
@@ -12624,11 +12742,19 @@ module.exports = function registerApiRoutes(scope) {
                 const assets = normalizeFactionAssets(body.assets);
                 const reputationTiers = normalizeFactionTiers(body.reputationTiers);
                 const relations = normalizeFactionRelations(body.relations);
+                const description = Object.prototype.hasOwnProperty.call(body, 'description')
+                    ? normalizeOptionalFactionText(body.description, 'Faction description')
+                    : null;
+                const shortDescription = Object.prototype.hasOwnProperty.call(body, 'shortDescription')
+                    ? normalizeOptionalFactionText(body.shortDescription, 'Faction short description')
+                    : null;
 
                 const faction = new Faction({
                     name: rawName,
                     tags,
                     goals,
+                    description,
+                    shortDescription,
                     homeRegionName: typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : null,
                     assets,
                     relations: relations || {},
@@ -12678,6 +12804,12 @@ module.exports = function registerApiRoutes(scope) {
                             error: 'Faction name must be a non-empty string.'
                         });
                     }
+                    if (rawName.toLowerCase() === 'none') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Faction name "None" is reserved. Choose another name.'
+                        });
+                    }
                     const existingByName = typeof Faction?.getByName === 'function'
                         ? Faction.getByName(rawName)
                         : Array.from(factions.values()).find(entry => entry?.name?.toLowerCase() === rawName.toLowerCase());
@@ -12695,6 +12827,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (Object.prototype.hasOwnProperty.call(body, 'goals')) {
                     updates.goals = normalizeFactionStringList(body.goals, 'Faction goals');
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'description')) {
+                    updates.description = normalizeOptionalFactionText(body.description, 'Faction description');
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'shortDescription')) {
+                    updates.shortDescription = normalizeOptionalFactionText(body.shortDescription, 'Faction short description');
                 }
                 if (Object.prototype.hasOwnProperty.call(body, 'homeRegionName')) {
                     const rawHome = typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : '';
@@ -13059,8 +13197,24 @@ module.exports = function registerApiRoutes(scope) {
                 const hasOwn = Object.prototype.hasOwnProperty;
                 const hasName = hasOwn.call(body, 'name');
                 const hasDescription = hasOwn.call(body, 'description');
+                const hasShortDescription = hasOwn.call(body, 'shortDescription');
                 const hasLevel = hasOwn.call(body, 'level');
                 const hasStatusEffects = hasOwn.call(body, 'statusEffects');
+                const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
+                let resolvedControllingFactionId = null;
+                if (hasControllingFaction) {
+                    try {
+                        resolvedControllingFactionId = normalizeFactionIdInput(body.controllingFactionId, {
+                            fieldLabel: 'Controlling faction'
+                        });
+                        requireFactionExists(resolvedControllingFactionId, { fieldLabel: 'Controlling faction' });
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
 
                 if (!hasDescription) {
                     return res.status(400).json({ success: false, error: 'Description is required' });
@@ -13084,6 +13238,20 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const resolvedDescription = body.description.trim();
+                let resolvedShortDescription = location.shortDescription;
+                if (hasShortDescription) {
+                    if (body.shortDescription === null) {
+                        resolvedShortDescription = null;
+                    } else if (typeof body.shortDescription === 'string') {
+                        const trimmedShort = body.shortDescription.trim();
+                        resolvedShortDescription = trimmedShort || null;
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Short description must be a string or null'
+                        });
+                    }
+                }
 
                 const numericLevel = Number(body.level);
                 if (!Number.isFinite(numericLevel)) {
@@ -13111,8 +13279,20 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (hasControllingFaction) {
+                    try {
+                        location.controllingFactionId = resolvedControllingFactionId;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
+
                 const previousName = location.name;
                 const previousDescription = location.description;
+                const previousShortDescription = location.shortDescription || null;
                 const previousLevel = location.baseLevel;
                 const previousImageId = location.imageId;
 
@@ -13126,6 +13306,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (resolvedDescription !== previousDescription) {
                     location.description = resolvedDescription;
                     descriptionChanged = true;
+                }
+
+                let shortDescriptionChanged = false;
+                if (hasShortDescription && resolvedShortDescription !== previousShortDescription) {
+                    location.shortDescription = resolvedShortDescription;
+                    shortDescriptionChanged = true;
                 }
 
                 let levelChanged = false;
@@ -13159,6 +13345,7 @@ module.exports = function registerApiRoutes(scope) {
                     changes: {
                         name: nameChanged,
                         description: descriptionChanged,
+                        shortDescription: shortDescriptionChanged,
                         level: levelChanged
                     }
                 });
@@ -14053,6 +14240,7 @@ module.exports = function registerApiRoutes(scope) {
                         isRegionEntryStub: Boolean(stubLocation.stubMetadata?.isRegionEntryStub),
                         targetRegionId: targetRegionId || null,
                         targetRegionName,
+                        controllingFactionId: stubLocation.controllingFactionId || null,
                         npcs: npcSummaries
                     }
                 });
@@ -14140,6 +14328,17 @@ module.exports = function registerApiRoutes(scope) {
                     relativeLevel
                 });
 
+                if (hasControllingFaction) {
+                    try {
+                        stubLocation.controllingFactionId = resolvedControllingFactionId;
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
+
                 const stubMetadata = stubLocation.stubMetadata || {};
                 const targetRegionId = stubMetadata.targetRegionId || stubMetadata.regionId || null;
                 const targetRegionName = targetRegionId
@@ -14165,7 +14364,8 @@ module.exports = function registerApiRoutes(scope) {
                         relativeLevel: resolvedRelativeLevel,
                         isRegionEntryStub: Boolean(stubMetadata.isRegionEntryStub),
                         targetRegionId: targetRegionId || null,
-                        targetRegionName
+                        targetRegionName,
+                        controllingFactionId: stubLocation.controllingFactionId || null
                     }
                 });
             } catch (error) {
@@ -14463,6 +14663,7 @@ module.exports = function registerApiRoutes(scope) {
                 const seed = {
                     name: rawName,
                     description: normalizeSeedString(rawSeed.description),
+                    shortDescription: normalizeSeedString(rawSeed.shortDescription),
                     type: normalizeSeedString(rawSeed.type),
                     slot: normalizeSeedString(rawSeed.slot),
                     rarity: normalizeSeedString(rawSeed.rarity),
@@ -14542,6 +14743,14 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (!generatedThing) {
                     throw new Error('Failed to generate item.');
+                }
+
+                if (seed.shortDescription) {
+                    try {
+                        generatedThing.shortDescription = seed.shortDescription;
+                    } catch (shortDescriptionError) {
+                        console.warn('Failed to set short description on generated item:', shortDescriptionError.message);
+                    }
                 }
 
                 const locationData = buildLocationResponse(location);
@@ -16603,6 +16812,7 @@ module.exports = function registerApiRoutes(scope) {
                 const {
                     name,
                     description,
+                    shortDescription,
                     thingType,
                     imageId,
                     rarity,
@@ -16636,6 +16846,18 @@ module.exports = function registerApiRoutes(scope) {
                 if (description !== undefined) {
                     thing.description = description;
                     shouldRegenerateImage = true;
+                }
+                if (shortDescription !== undefined) {
+                    if (shortDescription === null) {
+                        thing.shortDescription = null;
+                    } else if (typeof shortDescription === 'string') {
+                        thing.shortDescription = shortDescription;
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Short description must be a string or null.'
+                        });
+                    }
                 }
                 if (thingType !== undefined) {
                     thing.thingType = thingType;

@@ -11,12 +11,14 @@ GUIDELINES:
 - Consider environmental storytelling and world-building details
 - Include atmospheric details like lighting, sounds, smells, or magical effects
 {% if config.location.maxNpcs > 1 %}- For the number of npcs, items, scenbery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. Fewer than that is usually normal (except for hostiles, which are often 0 in safe territory).{% endif %}
+- Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
 
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 
 <location>
   <name><!--A short name or title for the location--></name>
+  <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
   <description><!--1-2 paragraphs of description--></description>
   <relativeLevel><!--integer from -{{ config.location.levelVariation }} to {{ config.location.levelVariation }}, indicating the difficulty compared to the rest of the region--></relativeLevel>
   <numNpcs><!--Integer from 0 to {{ config.location.maxNpcs }}, indicating how many NPCs typically inhabit this location--></numNpcs>

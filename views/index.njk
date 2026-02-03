@@ -509,6 +509,16 @@
                                             <span class="help-text">Optional region name or theme anchor.</span>
                                         </div>
                                         <div class="form-group full-width">
+                                            <label for="factionShortDescription">Short Description</label>
+                                            <textarea id="factionShortDescription" name="shortDescription" rows="2" placeholder="One-sentence summary."></textarea>
+                                            <span class="help-text">Quick summary used in overviews.</span>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label for="factionDescription">Description</label>
+                                            <textarea id="factionDescription" name="description" rows="4" placeholder="Longer faction overview."></textarea>
+                                            <span class="help-text">Full description, goals, and context.</span>
+                                        </div>
+                                        <div class="form-group full-width">
                                             <label for="factionTags">Tags</label>
                                             <textarea id="factionTags" name="tags" rows="2" placeholder="ideology, archetype, focus"></textarea>
                                             <span class="help-text">Separate with commas or new lines.</span>
@@ -1088,6 +1098,11 @@
                         <input id="npcEditClass" type="text" autocomplete="off">
                     </div>
                     <div class="npc-edit-field">
+                        <label for="npcEditFaction">Faction</label>
+                        <select id="npcEditFaction"></select>
+                        <span class="npc-edit-help-text">Optional faction membership.</span>
+                    </div>
+                    <div class="npc-edit-field">
                         <label for="npcEditLevel">Level</label>
                         <input id="npcEditLevel" type="number" min="1" step="1">
                     </div>
@@ -1232,6 +1247,10 @@
                     <label for="thingEditDescription">Description</label>
                     <textarea id="thingEditDescription" rows="4"></textarea>
                 </div>
+                <div class="npc-edit-section" id="thingEditShortDescriptionGroup">
+                    <label for="thingEditShortDescription">Short Description</label>
+                    <input id="thingEditShortDescription" type="text" autocomplete="off">
+                </div>
                 <div class="npc-edit-section" id="thingEditNotesGroup" hidden>
                     <label for="thingEditNotes">Notes for generation</label>
                     <textarea id="thingEditNotes" rows="3" placeholder="Optional: Extra instructions for the item/scenery generator"></textarea>
@@ -1372,6 +1391,10 @@
                     <label for="locationEditDescription">Description</label>
                     <textarea id="locationEditDescription" name="description" rows="6" required></textarea>
                 </div>
+                <div class="location-edit-field" id="locationEditShortDescriptionGroup">
+                    <label for="locationEditShortDescription">Short Description</label>
+                    <input type="text" id="locationEditShortDescription" name="shortDescription" autocomplete="off">
+                </div>
                 <div class="location-edit-field" id="locationEditRelativeLevelGroup" hidden>
                     <label for="locationEditRelativeLevel">Relative Level</label>
                     <input type="number" id="locationEditRelativeLevel" name="relativeLevel" min="-10" max="10" step="1" placeholder="0">
@@ -1379,6 +1402,10 @@
                 <div class="location-edit-field">
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
+                </div>
+                <div class="location-edit-field">
+                    <label for="locationEditFaction">Controlling Faction</label>
+                    <select id="locationEditFaction"></select>
                 </div>
                 <div class="location-edit-field location-edit-field--static">
                     <span class="location-edit-label">Absolute Level</span>
@@ -1419,6 +1446,10 @@
                     <label for="regionEditDescription">Description</label>
                     <textarea id="regionEditDescription" name="description" rows="6" required></textarea>
                 </div>
+                <div class="location-edit-field" id="regionEditShortDescriptionGroup">
+                    <label for="regionEditShortDescription">Short Description</label>
+                    <input type="text" id="regionEditShortDescription" name="shortDescription" autocomplete="off">
+                </div>
                 <div class="location-edit-field">
                     <label for="regionEditParent">Parent Region</label>
                     <select id="regionEditParent" name="parentRegionId">
@@ -1428,6 +1459,10 @@
                 <div class="location-edit-field">
                     <label for="regionEditAverageLevel">Average Level</label>
                     <input type="number" id="regionEditAverageLevel" name="averageLevel" min="1" step="1" required>
+                </div>
+                <div class="location-edit-field">
+                    <label for="regionEditFaction">Controlling Faction</label>
+                    <select id="regionEditFaction"></select>
                 </div>
                 <footer class="location-edit-footer region-edit-footer">
                     <div class="location-edit-status region-edit-status" id="regionEditStatus" role="status" aria-live="polite"></div>
@@ -5001,10 +5036,13 @@
         let newExitPreferredRegionId = null;
         let newExitMapPosition = null;
         let newExitMapMode = false;
+        let newExitSubmitting = false;
         let editingRegionId = null;
         let editingExitContext = null;
         let locationEditMode = 'location';
         let stubEditContext = null;
+        let factionOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
+        let factionOptionsPromise = null;
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
         const addNpcNameInput = document.getElementById('addNpcName');
@@ -5024,6 +5062,7 @@
         const addNpcCloseBtn = document.getElementById('addNpcCloseBtn');
         const addNpcButton = document.getElementById('addNpcButton');
         const addThingButton = document.getElementById('addThingButton');
+        let addNpcSubmitting = false;
         const craftSceneryButton = document.getElementById('craftSceneryButton');
         const craftItemButton = document.getElementById('craftItemButton');
         const loadGameModal = document.getElementById('loadGameModal');
@@ -5040,6 +5079,7 @@
         const npcEditShortDescriptionInput = document.getElementById('npcEditShortDescription');
         const npcEditRaceInput = document.getElementById('npcEditRace');
         const npcEditClassInput = document.getElementById('npcEditClass');
+        const npcEditFactionSelect = document.getElementById('npcEditFaction');
         const npcEditLevelInput = document.getElementById('npcEditLevel');
         const npcEditHealthInput = document.getElementById('npcEditHealth');
         const npcEditMaxHealthDisplay = document.getElementById('npcEditMaxHealth');
@@ -5097,9 +5137,12 @@
         const locationEditForm = document.getElementById('locationEditForm');
         const locationEditNameInput = document.getElementById('locationEditName');
         const locationEditDescriptionInput = document.getElementById('locationEditDescription');
+        const locationEditShortDescriptionInput = document.getElementById('locationEditShortDescription');
+        const locationEditShortDescriptionGroup = document.getElementById('locationEditShortDescriptionGroup');
         const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditFactionSelect = document.getElementById('locationEditFaction');
         const locationEditAbsoluteLevel = document.getElementById('locationEditAbsoluteLevel');
         const locationEditStatus = document.getElementById('locationEditStatus');
         const locationEditCancelBtn = document.getElementById('locationEditCancelBtn');
@@ -5125,8 +5168,10 @@
         const regionEditForm = document.getElementById('regionEditForm');
         const regionEditNameInput = document.getElementById('regionEditName');
         const regionEditDescriptionInput = document.getElementById('regionEditDescription');
+        const regionEditShortDescriptionInput = document.getElementById('regionEditShortDescription');
         const regionEditParentSelect = document.getElementById('regionEditParent');
         const regionEditAverageLevelInput = document.getElementById('regionEditAverageLevel');
+        const regionEditFactionSelect = document.getElementById('regionEditFaction');
         const regionEditStatus = document.getElementById('regionEditStatus');
         const regionEditCancelBtn = document.getElementById('regionEditCancelBtn');
         const regionEditCloseBtn = document.getElementById('regionEditCloseBtn');
@@ -5163,6 +5208,8 @@
         const thingEditLevelInput = document.getElementById('thingEditLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingEditShortDescriptionInput = document.getElementById('thingEditShortDescription');
+        const thingEditShortDescriptionGroup = document.getElementById('thingEditShortDescriptionGroup');
         const thingEditNotesGroup = document.getElementById('thingEditNotesGroup');
         const thingEditNotesInput = document.getElementById('thingEditNotes');
         const thingOnHitSection = document.getElementById('thingOnHitSection');
@@ -5344,6 +5391,8 @@
         let craftingSourceThing = null;
         let craftingIsOpen = false;
         let salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
+        let craftingSubmitting = false;
+        let salvageSubmitting = false;
 
         let locationMenuContextOverride = null;
 
@@ -6061,8 +6110,18 @@
                     thingEditNotesGroup.setAttribute('hidden', '');
                 }
             }
+            if (thingEditShortDescriptionGroup) {
+                thingEditShortDescriptionGroup.removeAttribute('hidden');
+            }
             if (thingEditNotesInput) {
                 thingEditNotesInput.value = '';
+            }
+            if (thingEditShortDescriptionInput) {
+                thingEditShortDescriptionInput.disabled = false;
+                const resolvedShort = thing?.shortDescription ?? thing?.metadata?.shortDescription ?? '';
+                thingEditShortDescriptionInput.value = mode === 'edit'
+                    ? resolvedShort
+                    : '';
             }
 
             if (thingEditModalTitle) {
@@ -6327,6 +6386,144 @@
             } else if (type === 'success') {
                 npcEditStatus.classList.add('is-success');
             }
+        }
+
+        function normalizeFactionId(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            return trimmed || '';
+        }
+
+        async function loadFactionOptions({ force = false } = {}) {
+            if (!force && Array.isArray(factionOptionsCache?.list) && factionOptionsCache.list.length) {
+                return factionOptionsCache;
+            }
+            if (!force && factionOptionsPromise) {
+                return factionOptionsPromise;
+            }
+
+            factionOptionsPromise = (async () => {
+                const response = await fetch('/api/factions', { cache: 'no-store' });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                const list = Array.isArray(data.factions) ? data.factions : [];
+                const map = new Map();
+                list.forEach(entry => {
+                    if (entry && entry.id) {
+                        map.set(entry.id, entry);
+                    }
+                });
+                factionOptionsCache = {
+                    list,
+                    map,
+                    loadedAt: Date.now()
+                };
+                return factionOptionsCache;
+            })();
+
+            try {
+                return await factionOptionsPromise;
+            } finally {
+                factionOptionsPromise = null;
+            }
+        }
+
+        function resetFactionSelect(selectEl, noneLabel = 'None') {
+            if (!selectEl) {
+                return;
+            }
+            selectEl.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = noneLabel;
+            selectEl.appendChild(option);
+        }
+
+        async function populateFactionSelect(selectEl, {
+            selectedId = null,
+            includeNone = true,
+            noneLabel = 'None',
+            allowUnknown = true,
+            force = false
+        } = {}) {
+            if (!selectEl) {
+                return;
+            }
+
+            const desired = normalizeFactionId(selectedId ?? selectEl.dataset.selectedFactionId);
+            selectEl.dataset.selectedFactionId = desired;
+
+            if (includeNone) {
+                resetFactionSelect(selectEl, noneLabel);
+            } else {
+                selectEl.innerHTML = '';
+            }
+            selectEl.disabled = true;
+
+            try {
+                const { list, map } = await loadFactionOptions({ force });
+
+                list.forEach(entry => {
+                    if (!entry || !entry.id) {
+                        return;
+                    }
+                    const option = document.createElement('option');
+                    option.value = entry.id;
+                    option.textContent = entry.name || entry.id;
+                    selectEl.appendChild(option);
+                });
+
+                if (desired && allowUnknown && !(map instanceof Map && map.has(desired))) {
+                    const unknownOption = document.createElement('option');
+                    unknownOption.value = desired;
+                    unknownOption.textContent = `Unknown faction (${desired})`;
+                    selectEl.appendChild(unknownOption);
+                }
+
+                selectEl.value = desired || '';
+                selectEl.disabled = false;
+            } catch (error) {
+                console.warn('Failed to load factions:', error);
+                selectEl.innerHTML = '';
+                const option = document.createElement('option');
+                option.value = desired || '';
+                option.textContent = desired
+                    ? `Factions unavailable (current: ${desired})`
+                    : 'Factions unavailable';
+                selectEl.appendChild(option);
+                selectEl.value = desired || '';
+                selectEl.disabled = true;
+            }
+        }
+
+        async function resolveSelectedFactionId(selectEl, { label = 'faction' } = {}) {
+            if (!selectEl) {
+                return null;
+            }
+            const rawValue = normalizeFactionId(selectEl.value);
+            const fallbackValue = normalizeFactionId(selectEl.dataset.selectedFactionId);
+            const selectedValue = rawValue || (selectEl.disabled ? fallbackValue : rawValue);
+            if (!selectedValue) {
+                return null;
+            }
+
+            let directory = null;
+            try {
+                directory = await loadFactionOptions();
+            } catch (error) {
+                throw new Error(`Failed to load factions: ${error?.message || 'Unknown error'}`);
+            }
+
+            const map = directory?.map;
+            if (!(map instanceof Map) || !map.has(selectedValue)) {
+                throw new Error(`Selected ${label} "${selectedValue}" no longer exists. Choose another or None.`);
+            }
+
+            return selectedValue;
         }
 
         function clampDispositionValue(value, range = {}) {
@@ -7222,6 +7419,15 @@
             descriptionTextarea.value = ability.description || '';
 
             row.appendChild(main);
+            const shortDescriptionInput = document.createElement('input');
+            shortDescriptionInput.type = 'text';
+            shortDescriptionInput.className = 'npc-ability-short-description';
+            shortDescriptionInput.placeholder = 'Short description';
+            shortDescriptionInput.autocomplete = 'off';
+            shortDescriptionInput.required = true;
+            shortDescriptionInput.value = ability.shortDescription || '';
+
+            row.appendChild(shortDescriptionInput);
             row.appendChild(descriptionTextarea);
             npcEditAbilitiesContainer.appendChild(row);
             return row;
@@ -7384,6 +7590,11 @@
             if (npcEditClassInput) {
                 npcEditClassInput.value = npc.class || '';
             }
+            if (npcEditFactionSelect) {
+                populateFactionSelect(npcEditFactionSelect, {
+                    selectedId: npc.factionId || ''
+                });
+            }
             if (npcEditLevelInput) {
                 const numericLevel = Number.parseInt(npc.level, 10);
                 npcEditLevelInput.value = Number.isFinite(numericLevel) ? numericLevel : '';
@@ -7440,16 +7651,16 @@
             updateNpcEditStatus('');
 
             npcEditForm.dataset.npcId = currentNpcEditId || '';
-        npcEditModal.removeAttribute('hidden');
-        npcEditModal.setAttribute('aria-hidden', 'false');
-        npcEditBackdrop.removeAttribute('hidden');
-        document.body.classList.add('modal-open');
-        scrollModalToTop(npcEditModal);
+            npcEditModal.removeAttribute('hidden');
+            npcEditModal.setAttribute('aria-hidden', 'false');
+            npcEditBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(npcEditModal);
 
-        setTimeout(() => {
-            npcEditNameInput?.focus();
-        }, 50);
-    }
+            setTimeout(() => {
+                npcEditNameInput?.focus();
+            }, 50);
+        }
 
         function closeNpcEditModal() {
             if (!isNpcEditorAvailable()) {
@@ -8881,12 +9092,17 @@
                 event.preventDefault();
             }
 
+            if (addNpcSubmitting) {
+                alert('NPC creation is already in progress.');
+                return;
+            }
+
             if (!addNpcForm || !addNpcSaveBtn) {
                 return;
             }
 
             if (!lastRenderedLocation || !lastRenderedLocation.id) {
-                setAddNpcStatus('No active location is available for adding NPCs.', 'error');
+                alert('No active location is available for adding NPCs.');
                 return;
             }
 
@@ -8942,31 +9158,18 @@
             }
 
             const imageFile = addNpcImageInput?.files?.[0] || null;
-            let imageDataUrl = '';
-            let imageDataUrlOriginal = '';
-            if (imageFile) {
-                setAddNpcStatus('Preparing NPC image...', null);
-                try {
+            addNpcSubmitting = true;
+            closeAddNpcModal({ focusTrigger: false });
+            try {
+                if (imageFile) {
                     const imagePayload = await readAddNpcImageData(imageFile);
                     if (!imagePayload?.downscaledDataUrl || !imagePayload?.portraitDataUrl) {
                         throw new Error('NPC image processing failed.');
                     }
-                    imageDataUrl = imagePayload.downscaledDataUrl;
-                    imageDataUrlOriginal = imagePayload.portraitDataUrl;
-                } catch (error) {
-                    setAddNpcStatus(error?.message || 'Failed to read NPC image.', 'error');
-                    addNpcSaveBtn.disabled = false;
-                    return;
+                    payload.imageDataUrl = imagePayload.downscaledDataUrl;
+                    payload.imageDataUrlOriginal = imagePayload.portraitDataUrl;
                 }
-                payload.imageDataUrl = imageDataUrl;
-                payload.imageDataUrlOriginal = imageDataUrlOriginal;
-            }
 
-            setAddNpcStatus('Creating NPC…', null);
-            addNpcSaveBtn.disabled = true;
-
-            let overlayShown = false;
-            try {
                 const response = await fetch(`/api/locations/${encodeURIComponent(lastRenderedLocation.id)}/npcs`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -8978,22 +9181,15 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
 
-                closeAddNpcModal({ focusTrigger: false });
-                showLocationOverlay('Refreshing characters...');
-                overlayShown = true;
-
                 if (data.location) {
                     lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
                     await window.updateLocationDisplay(data.location);
                 }
             } catch (error) {
                 console.warn('Failed to create NPC:', error);
-                setAddNpcStatus(`Failed to create NPC: ${error?.message || 'Unknown error'}`, 'error');
-                addNpcSaveBtn.disabled = false;
+                alert(`Failed to create NPC: ${error?.message || 'Unknown error'}`);
             } finally {
-                if (overlayShown) {
-                    hideLocationOverlay();
-                }
+                addNpcSubmitting = false;
             }
         }
 
@@ -9532,6 +9728,11 @@
                 event.preventDefault();
             }
 
+            if (newExitSubmitting) {
+                alert('An exit request is already in progress.');
+                return;
+            }
+
             if (!newExitForm || !newExitSaveBtn) {
                 return;
             }
@@ -9542,7 +9743,7 @@
                 : (newExitOriginLocationId || lastRenderedLocation?.id || null);
 
             if (!activeLocationId) {
-                setNewExitStatus('No active location is available for managing exits.', 'error');
+                alert('No active location is available for managing exits.');
                 return;
             }
 
@@ -9560,8 +9761,7 @@
                 if (trimmedRelativeLevel) {
                     const parsedRelativeLevel = Number(trimmedRelativeLevel);
                     if (!Number.isFinite(parsedRelativeLevel)) {
-                        setNewExitStatus('Relative level must be a number.', 'error');
-                        newExitRelativeLevelInput?.focus();
+                        alert('Relative level must be a number.');
                         return;
                     }
                     relativeLevelValue = parsedRelativeLevel;
@@ -9569,8 +9769,7 @@
             }
 
             if (nameFieldsVisible && !name) {
-                setNewExitStatus('Please provide a name for the exit.', 'error');
-                newExitNameInput?.focus();
+                alert('Please provide a name for the exit.');
                 return;
             }
 
@@ -9595,51 +9794,6 @@
                 : creatingNewLocation
                     ? name || 'New location'
                     : '';
-
-            const shouldShowPlaceholder = !isEditing
-                && locationExitsList
-                && (!newExitMapMode
-                    || (lastRenderedLocation?.id && activeLocationId === lastRenderedLocation.id));
-            let placeholderButton = null;
-            if (shouldShowPlaceholder) {
-                const emptyState = locationExitsList.querySelector('.no-exits');
-                if (emptyState) {
-                    emptyState.remove();
-                }
-                placeholderButton = document.createElement('button');
-                placeholderButton.type = 'button';
-                placeholderButton.className = 'exit-button exit-button-pending';
-                placeholderButton.disabled = true;
-                let placeholderLabel = name;
-                if (!placeholderLabel) {
-                    if (creatingNewLocation) {
-                        placeholderLabel = locationName || 'New location';
-                    } else if (usingExistingLocation) {
-                        placeholderLabel = locationOption?.textContent?.trim() || locationOption?.value || 'Selected location';
-                    } else if (creatingNewRegion) {
-                        placeholderLabel = regionOption?.name || regionOption?.id || 'Selected region';
-                    } else {
-                        placeholderLabel = 'New Exit';
-                    }
-                }
-                placeholderButton.textContent = creatingNewRegion
-                    ? `${placeholderLabel} (region)`
-                    : placeholderLabel;
-                placeholderButton.dataset.pendingExit = 'true';
-                placeholderButton.classList.add('exit-button--unexplored');
-                locationExitsList.appendChild(placeholderButton);
-            }
-            const removePlaceholder = () => {
-                if (!isEditing && placeholderButton && placeholderButton.isConnected) {
-                    placeholderButton.remove();
-                    if (locationExitsList && !locationExitsList.querySelector('.exit-button')) {
-                        const emptyState = document.createElement('div');
-                        emptyState.className = 'no-exits';
-                        emptyState.textContent = 'No exits discovered yet.';
-                        locationExitsList.appendChild(emptyState);
-                    }
-                }
-            };
 
             const payload = { type };
             if (!usingExistingLocation || name) {
@@ -9669,12 +9823,10 @@
             let imageDataUrlOriginal = '';
             if (imageFile) {
                 if (!creatingNewRegion && !creatingNewLocation) {
-                    setNewExitStatus('Reference images are only supported when creating a new location or region.', 'error');
+                    alert('Reference images are only supported when creating a new location or region.');
                     removePlaceholder();
                     return;
                 }
-                setNewExitStatus('Preparing reference image...', null);
-                newExitSaveBtn.disabled = true;
                 try {
                     const imagePayload = await readNewExitImageData(imageFile);
                     if (!imagePayload?.downscaledDataUrl || !imagePayload?.originalDataUrl) {
@@ -9685,22 +9837,18 @@
                     payload.imageDataUrl = imageDataUrl;
                     payload.imageDataUrlOriginal = imageDataUrlOriginal;
                 } catch (error) {
-                    setNewExitStatus(error?.message || 'Failed to read reference image.', 'error');
-                    removePlaceholder();
-                    newExitSaveBtn.disabled = false;
+                    alert(error?.message || 'Failed to read reference image.');
                     return;
                 }
             }
-
-            setNewExitStatus(isEditing ? 'Updating exit…' : 'Creating exit…', null);
-            newExitSaveBtn.disabled = true;
 
             const clientId = window.AIRPG_CLIENT_ID || null;
             if (clientId) {
                 payload.clientId = clientId;
             }
 
-            let overlayShown = false;
+            newExitSubmitting = true;
+            closeNewExitModal();
             try {
                 const response = await fetch(`/api/locations/${encodeURIComponent(activeLocationId)}/exits`, {
                     method: 'POST',
@@ -9713,7 +9861,6 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
 
-                setNewExitStatus('', null);
                 newExitOptionsCache = null;
                 newExitRegionsById = new Map();
 
@@ -9740,10 +9887,6 @@
                             mapUpdated = false;
                         }
                     }
-
-                    closeNewExitModal();
-                    showLocationOverlay('Updating exits...');
-                    overlayShown = true;
 
                     if (shouldUpdateAdventure && data.location) {
                         lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
@@ -9791,10 +9934,6 @@
 
                     if (shouldRemoveOriginal && originalExitId) {
                         try {
-                            if (!overlayShown) {
-                                showLocationOverlay('Updating exits...');
-                                overlayShown = true;
-                            }
                             const deleteResponse = await fetch(`/api/locations/${encodeURIComponent(activeLocationId)}/exits/${encodeURIComponent(originalExitId)}`, {
                                 method: 'DELETE',
                                 headers: { 'Content-Type': 'application/json' },
@@ -9809,11 +9948,6 @@
                             console.warn('Failed to remove previous exit during edit:', deleteError);
                             alert(`Exit update succeeded, but removing the previous exit failed: ${deleteError?.message || deleteError}`);
                         }
-                    }
-
-                    if (!overlayShown) {
-                        showLocationOverlay('Updating exits...');
-                        overlayShown = true;
                     }
 
                     const locationPayload = finalLocation || (await (async () => {
@@ -9839,17 +9973,12 @@
                         window.loadRegionMap?.();
                     }
 
-                    closeNewExitModal();
                 }
             } catch (error) {
                 console.warn('Failed to create exit:', error);
-                setNewExitStatus(`${isEditing ? 'Failed to update exit' : 'Failed to create exit'}: ${error?.message || 'Unknown error'}`, 'error');
-                removePlaceholder();
+                alert(`${isEditing ? 'Failed to update exit' : 'Failed to create exit'}: ${error?.message || 'Unknown error'}`);
             } finally {
-                if (overlayShown) {
-                    hideLocationOverlay();
-                }
-                newExitSaveBtn.disabled = false;
+                newExitSubmitting = false;
             }
         }
 
@@ -10735,6 +10864,17 @@
                     payload.experience = parsedExperience;
                 }
 
+                if (npcEditFactionSelect) {
+                    try {
+                        const factionId = await resolveSelectedFactionId(npcEditFactionSelect, { label: 'faction' });
+                        payload.factionId = factionId;
+                    } catch (error) {
+                        updateNpcEditStatus(error?.message || 'Failed to validate faction.', 'error');
+                        npcEditFactionSelect?.focus();
+                        return;
+                    }
+                }
+
                 const attributes = getNpcAttributesFromInputs();
                 payload.attributes = attributes;
 
@@ -10761,21 +10901,29 @@
 
                 const abilityEntries = [];
                 if (npcEditAbilitiesContainer) {
-                    npcEditAbilitiesContainer.querySelectorAll('.npc-ability-row').forEach(row => {
+                    const abilityRows = npcEditAbilitiesContainer.querySelectorAll('.npc-ability-row');
+                    for (const row of abilityRows) {
                         const abilityName = row.querySelector('.npc-ability-name')?.value?.trim();
                         if (!abilityName) {
-                            return;
+                            continue;
                         }
                         const abilityType = row.querySelector('.npc-ability-type')?.value || 'Passive';
                         const abilityLevel = Number.parseInt(row.querySelector('.npc-ability-level')?.value ?? '', 10);
                         const abilityDescription = row.querySelector('.npc-ability-description')?.value?.trim() || '';
+                        const abilityShortDescription = row.querySelector('.npc-ability-short-description')?.value?.trim() || '';
+                        if (!abilityShortDescription) {
+                            updateNpcEditStatus('Ability short descriptions are required.', 'error');
+                            row.querySelector('.npc-ability-short-description')?.focus();
+                            return;
+                        }
                         abilityEntries.push({
                             name: abilityName,
                             type: abilityType,
                             level: Number.isFinite(abilityLevel) ? abilityLevel : 1,
-                            description: abilityDescription
+                            description: abilityDescription,
+                            shortDescription: abilityShortDescription
                         });
-                    });
+                    }
                 }
                 payload.abilities = abilityEntries;
 
@@ -10893,6 +11041,10 @@
                     if (descriptionValue) {
                         seed.description = descriptionValue;
                     }
+                    const shortDescriptionValue = thingEditShortDescriptionInput?.value?.trim();
+                    if (shortDescriptionValue) {
+                        seed.shortDescription = shortDescriptionValue;
+                    }
                     const notesValue = thingEditNotesInput?.value?.trim();
                     if (notesValue) {
                         seed.notes = notesValue;
@@ -10982,6 +11134,9 @@
 
                 if (thingEditDescriptionInput) {
                     payload.description = thingEditDescriptionInput.value ?? '';
+                }
+                if (thingEditShortDescriptionInput) {
+                    payload.shortDescription = thingEditShortDescriptionInput.value?.trim() ?? '';
                 }
 
                 if (thingEditTypeSelect) {
@@ -12502,14 +12657,6 @@
             };
         }
 
-        function toggleChatSendSpinner(isLoading) {
-            try {
-                window.AIRPG_CHAT?.setSendButtonLoading?.(Boolean(isLoading));
-            } catch (error) {
-                console.debug('Unable to toggle chat spinner:', error);
-            }
-        }
-
         async function refreshCraftingRelatedViews() {
             const refreshTasks = [];
             const enqueueRefresh = (operation, label) => {
@@ -12539,15 +12686,16 @@
         }
 
         async function submitCraftingRequest() {
+            if (craftingSubmitting) {
+                return;
+            }
             const payload = buildCraftingPayload();
             if (!payload.itemIds.length) {
                 return;
             }
 
-            const originalText = craftingActionButton?.innerHTML;
-            if (craftingActionButton) {
-                craftingActionButton.innerHTML = '<span class="button-spinner"></span> Processing...';
-            }
+            craftingSubmitting = true;
+            closeCraftingModal();
 
             try {
                 const response = await fetch('/api/craft', {
@@ -12558,22 +12706,14 @@
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result?.success) {
                     const errorMessage = result?.error || `Crafting failed (HTTP ${response.status})`;
-                    alert(errorMessage);
-                    return;
+                    throw new Error(errorMessage);
                 }
                 await refreshCraftingRelatedViews();
-                closeCraftingModal();
             } catch (error) {
                 console.warn('Crafting request failed:', error);
                 alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                if (craftingActionButton) {
-                    const fallbackLabel = currentCraftingMode === 'process'
-                        ? 'Process Item'
-                        : (currentCraftingTargetType === 'scenery' ? 'Craft Scenery' : 'Craft Item');
-                    craftingActionButton.innerHTML = originalText || fallbackLabel;
-                }
-                updateCraftingActionState();
+                craftingSubmitting = false;
             }
         }
 
@@ -12584,7 +12724,10 @@
                 alert(`Unable to ${isHarvestMode ? 'harvest' : 'salvage'} without a valid item.`);
                 return;
             }
-            toggleChatSendSpinner(true);
+            if (salvageSubmitting) {
+                return;
+            }
+            salvageSubmitting = true;
             try {
                 const actionLabel = isHarvestMode ? 'Harvest' : 'Salvage';
                 const payloadMode = normalizedMode;
@@ -12622,15 +12765,14 @@
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok || !result?.success) {
                     const errorMessage = result?.error || `${actionLabel} failed (HTTP ${response.status})`;
-                    alert(errorMessage);
-                    return;
+                    throw new Error(errorMessage);
                 }
                 await refreshCraftingRelatedViews();
             } catch (error) {
                 console.warn('Salvage request failed:', error);
                 alert(`${mode === 'harvest' ? 'Harvest' : 'Salvage'} failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                toggleChatSendSpinner(false);
+                salvageSubmitting = false;
             }
         }
 
@@ -14213,6 +14355,7 @@
             toggleLocationEditSection(locationEditLevelField, !isStubMode);
             toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
+            toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
 
             if (locationEditLevelInput) {
@@ -14226,6 +14369,12 @@
                 locationEditRelativeLevelInput.disabled = !isStubMode;
                 if (!isStubMode) {
                     locationEditRelativeLevelInput.value = '';
+                }
+            }
+            if (locationEditShortDescriptionInput) {
+                locationEditShortDescriptionInput.disabled = isStubMode;
+                if (isStubMode) {
+                    locationEditShortDescriptionInput.value = '';
                 }
             }
         }
@@ -14253,6 +14402,9 @@
             if (locationEditDescriptionInput) {
                 locationEditDescriptionInput.value = description;
             }
+            if (locationEditShortDescriptionInput) {
+                locationEditShortDescriptionInput.value = stubContext ? '' : (targetLocation.shortDescription || '');
+            }
             if (stubContext && locationEditRelativeLevelInput) {
                 const relativeLevelValue = resolveStubRelativeLevel(targetLocation);
                 locationEditRelativeLevelInput.value = Number.isFinite(relativeLevelValue)
@@ -14261,6 +14413,11 @@
             }
             if (!stubContext && locationEditLevelInput) {
                 locationEditLevelInput.value = numericLevel ?? '';
+            }
+            if (locationEditFactionSelect) {
+                populateFactionSelect(locationEditFactionSelect, {
+                    selectedId: targetLocation.controllingFactionId || ''
+                });
             }
             if (stubContext) {
                 renderLocationStatusEffects([]);
@@ -14374,12 +14531,28 @@
                     }
                 }
 
+                let controllingFactionId = null;
+                if (locationEditFactionSelect) {
+                    try {
+                        controllingFactionId = await resolveSelectedFactionId(locationEditFactionSelect, {
+                            label: 'controlling faction'
+                        });
+                    } catch (error) {
+                        setLocationEditStatus(error?.message || 'Failed to validate controlling faction.', 'error');
+                        locationEditFactionSelect?.focus();
+                        return;
+                    }
+                }
+
                 const payload = {
                     name: nameValue.trim(),
                     description: descriptionValue.trim()
                 };
                 if (relativeLevelValue !== null) {
                     payload.relativeLevel = relativeLevelValue;
+                }
+                if (locationEditFactionSelect) {
+                    payload.controllingFactionId = controllingFactionId;
                 }
 
                 setLocationEditStatus('Saving stub...', null);
@@ -14448,6 +14621,8 @@
 
             const descriptionValue = locationEditDescriptionInput?.value ?? '';
             payload.description = descriptionValue.trim();
+            const shortDescriptionValue = locationEditShortDescriptionInput?.value ?? '';
+            payload.shortDescription = shortDescriptionValue.trim();
 
             const levelValue = Number(locationEditLevelInput?.value ?? NaN);
             if (!Number.isFinite(levelValue) || levelValue < 1) {
@@ -14459,6 +14634,20 @@
 
             const statusEffectsValue = collectLocationStatusEffects();
             payload.statusEffects = statusEffectsValue;
+
+            let controllingFactionId = null;
+            if (locationEditFactionSelect) {
+                try {
+                    controllingFactionId = await resolveSelectedFactionId(locationEditFactionSelect, {
+                        label: 'controlling faction'
+                    });
+                } catch (error) {
+                    setLocationEditStatus(error?.message || 'Failed to validate controlling faction.', 'error');
+                    locationEditFactionSelect?.focus();
+                    return;
+                }
+                payload.controllingFactionId = controllingFactionId;
+            }
 
             setLocationEditStatus('Saving changes...', null);
             if (locationEditSaveBtn) {
@@ -15125,6 +15314,9 @@
                 if (regionEditDescriptionInput) {
                     regionEditDescriptionInput.value = data.region.description || '';
                 }
+                if (regionEditShortDescriptionInput) {
+                    regionEditShortDescriptionInput.value = data.region.shortDescription || '';
+                }
                 if (regionEditAverageLevelInput) {
                     const averaged = Number.isFinite(data.region.averageLevel)
                         ? Math.max(1, Math.round(data.region.averageLevel))
@@ -15132,6 +15324,11 @@
                     regionEditAverageLevelInput.value = averaged;
                 }
                 populateRegionParentOptions(data.parentOptions || [], data.region.parentRegionId || null);
+                if (regionEditFactionSelect) {
+                    populateFactionSelect(regionEditFactionSelect, {
+                        selectedId: data.region.controllingFactionId || ''
+                    });
+                }
                 setRegionEditStatus('', null);
                 if (regionEditSaveBtn) {
                     regionEditSaveBtn.disabled = false;
@@ -15214,9 +15411,23 @@
             const payload = {
                 name: nameValue.trim(),
                 description: descriptionValue.trim(),
+                shortDescription: (regionEditShortDescriptionInput?.value ?? '').trim(),
                 parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null,
                 averageLevel: normalizedAverageLevel
             };
+
+            if (regionEditFactionSelect) {
+                try {
+                    const controllingFactionId = await resolveSelectedFactionId(regionEditFactionSelect, {
+                        label: 'controlling faction'
+                    });
+                    payload.controllingFactionId = controllingFactionId;
+                } catch (error) {
+                    setRegionEditStatus(error?.message || 'Failed to validate controlling faction.', 'error');
+                    regionEditFactionSelect?.focus();
+                    return;
+                }
+            }
 
             setRegionEditStatus('Saving changes…', null);
             if (regionEditSaveBtn) {
@@ -17149,6 +17360,8 @@
             const tierAddButton = document.getElementById('factionTierAddButton');
             const nameInput = document.getElementById('factionName');
             const homeInput = document.getElementById('factionHomeRegion');
+            const shortDescriptionInput = document.getElementById('factionShortDescription');
+            const descriptionInput = document.getElementById('factionDescription');
             const tagsInput = document.getElementById('factionTags');
             const goalsInput = document.getElementById('factionGoals');
             const assetsList = document.getElementById('factionAssetsList');
@@ -17409,6 +17622,8 @@
                 }
                 if (nameInput) nameInput.value = faction.name || '';
                 if (homeInput) homeInput.value = faction.homeRegionName || '';
+                if (shortDescriptionInput) shortDescriptionInput.value = faction.shortDescription || '';
+                if (descriptionInput) descriptionInput.value = faction.description || '';
                 if (tagsInput) tagsInput.value = joinList(faction.tags || []);
                 if (goalsInput) goalsInput.value = joinList(faction.goals || []);
 
@@ -17543,9 +17758,13 @@
                 if (!nameInput || !nameInput.value.trim()) {
                     throw new Error('Faction name is required.');
                 }
+                const shortDescription = shortDescriptionInput ? shortDescriptionInput.value.trim() : '';
+                const description = descriptionInput ? descriptionInput.value.trim() : '';
                 return {
                     name: nameInput.value.trim(),
                     homeRegionName: homeInput ? homeInput.value.trim() : '',
+                    shortDescription: shortDescription || null,
+                    description: description || null,
                     tags: splitList(tagsInput ? tagsInput.value : ''),
                     goals: splitList(goalsInput ? goalsInput.value : ''),
                     assets: collectAssets(),

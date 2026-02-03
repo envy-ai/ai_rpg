@@ -6,6 +6,8 @@ If the <name> field is already filled in, repeat it exactly and do not change it
 
 Note that an NPC is defined loosely here, and may be a creature, monster, or any other entity that functions as a non-player character in a text-based RPG setting.
 
+Faction selection: use the full faction name from the <factions> list in the gameState. Use "None" if the NPC has no faction.
+
 {% if oldItem %}Note that this NPC was created from the following item or scenery: "{{ oldItem.name }}", described as "{{ oldItem.description }}". The transformation is described as "{{ oldItem.transformationDescription }}". Use this as inspiration for the NPC's appearance, personality, and role.{% endif %}
 
 {{ setting.characterGenInstructions }}
@@ -24,6 +26,7 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
             <role>{% if npc.role %}{{ npc.role  }}{% else %}<!--Clear role, job, or niche within the location.-->{% endif %}</role>
             <class>{% if npc.class %}{{ npc.class }}{% else %}<!--RPG class, vocation, or archetype.-->{% endif %}</class>
 
+            <faction><!-- Full faction name from the list or "None" --></faction>
             <race>{% if npc.race %}{{ npc.race }}{% else %}<!--Species or origin.-->{% endif %}</race>
 
             <gender>{% if npc.gender %}{{ npc.gender }}{% else %}<!--male, female, none, or other-->{% endif %}</gender>

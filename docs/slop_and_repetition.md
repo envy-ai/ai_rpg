@@ -47,6 +47,7 @@ Quick refresher on where these systems live and how they're wired.
 ### Notes
 - The rerun is only triggered for `player-action` responses (not NPC turns).
 - When repetition_buster is on, the server extracts `<finalProse>` from the model output for any `player-action` prompt.
+- Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<finalProse>` instructions).
 
 ## Slop checking + slop remover
 

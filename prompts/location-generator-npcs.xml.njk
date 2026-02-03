@@ -18,6 +18,8 @@ Here is a list of banned NPC concepts
 - Self-appointed guardian
 - Person who gives cryptic advice
 
+Faction selection: use the full faction name from the <factions> list in the gameState. Use "None" if the NPC has no faction.
+
 {#
 Here's a list of existing NPCs in other locations in this region:
 {% for npc in existingNpcsInOtherLocations %}- {{ npc.name }}: {{ npc.shortDescription }} 
@@ -57,6 +59,7 @@ Format your response as follows:
 <isHostile>true or false</isHostile>
 <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
 
+<faction>Full faction name from the list or "None"</faction>
 <race>their race (human, elf, android, etc)</race>
 
 <gender>male, female, none, or other</gender>

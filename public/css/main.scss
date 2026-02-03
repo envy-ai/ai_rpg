@@ -187,7 +187,9 @@ p:not(:last-child) {
   text-align: left;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease,
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
     transform 0.15s ease;
 
   &:hover,
@@ -214,7 +216,9 @@ p:not(:last-child) {
   padding: 10px 16px;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 
   &:hover,
   &:focus {
@@ -319,7 +323,9 @@ p:not(:last-child) {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   overflow: hidden;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 
   &:hover {
     transform: translateY(-2px);
@@ -534,7 +540,10 @@ p:not(:last-child) {
     rgba(255, 107, 150, 0.24)
   );
   box-shadow: 0 10px 24px rgba(255, 107, 150, 0.18);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease,
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
     border-color 0.15s ease;
 
   &:hover,
@@ -779,7 +788,9 @@ p:not(:last-child) {
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease,
+      transition:
+        transform 0.15s ease,
+        box-shadow 0.15s ease,
         background 0.15s ease;
     }
   }
@@ -1094,7 +1105,9 @@ p:not(:last-child) {
   padding: 8px 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease;
 }
 
 .tab-button:hover,
@@ -1263,7 +1276,10 @@ p:not(:last-child) {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 
@@ -1323,7 +1339,9 @@ p:not(:last-child) {
   text-align: left;
   line-height: 1.4;
   font-size: 0.9rem;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
 }
 
@@ -1398,7 +1416,10 @@ p:not(:last-child) {
   padding: 8px 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .location-exit-add-button:hover,
@@ -1434,7 +1455,10 @@ p:not(:last-child) {
   font-size: 0.95rem;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease,
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease,
     opacity 0.2s ease;
   background: rgba(148, 163, 184, 0.15);
   color: #e2e8f0;
@@ -1598,7 +1622,10 @@ p:not(:last-child) {
   padding: 8px 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .location-npc-add-button:hover,
@@ -1632,7 +1659,9 @@ p:not(:last-child) {
   text-align: left;
   cursor: pointer;
   font-weight: 600;
-  transition: background 0.2s ease, border 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease;
 }
 
 .exit-item {
@@ -1663,7 +1692,10 @@ p:not(:last-child) {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease, background 0.18s ease, border 0.18s ease,
+  transition:
+    opacity 0.18s ease,
+    background 0.18s ease,
+    border 0.18s ease,
     color 0.18s ease;
 }
 
@@ -1997,7 +2029,9 @@ p:not(:last-child) {
   padding: 10px 12px;
   color: $white;
   font-size: 0.95rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 
   &:focus {
     outline: none;
@@ -2092,7 +2126,9 @@ p:not(:last-child) {
   color: #e2e8f0;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease;
 
   &:hover:not(:disabled) {
     background: rgba(59, 130, 246, 0.35);
@@ -2152,7 +2188,10 @@ p:not(:last-child) {
   padding: 10px;
   min-width: 120px;
   max-width: 120px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border 0.2s ease;
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.35);
   z-index: 0;
 }
@@ -2485,7 +2524,9 @@ body.dark .thing-toggle-hint {
   flex-direction: column;
   gap: 8px;
   color: $white;
-  transition: border 0.2s ease, transform 0.2s ease;
+  transition:
+    border 0.2s ease,
+    transform 0.2s ease;
 
   &:hover {
     border-color: rgba(94, 234, 212, 0.35);
@@ -2547,7 +2588,9 @@ body.dark .thing-toggle-hint {
   flex-direction: column;
   gap: 10px;
   color: $white;
-  transition: border 0.2s ease, transform 0.2s ease;
+  transition:
+    border 0.2s ease,
+    transform 0.2s ease;
 
   &:hover,
   &:focus-within {
@@ -2772,7 +2815,10 @@ body.dark .thing-toggle-hint {
   font-size: 0.85rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: background 0.2s ease, border 0.2s ease, transform 0.2s ease,
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    transform 0.2s ease,
     box-shadow 0.2s ease;
   cursor: pointer;
 }
@@ -2845,7 +2891,8 @@ body.dark .thing-toggle-hint {
   background: rgba(15, 23, 42, 0.82);
   border: 1px solid rgba(248, 113, 113, 0.45);
   overflow: hidden;
-  box-shadow: 0 2px 6px rgba(248, 113, 113, 0.24),
+  box-shadow:
+    0 2px 6px rgba(248, 113, 113, 0.24),
     inset 0 0 6px rgba(15, 23, 42, 0.8);
   backdrop-filter: blur(2px);
 }
@@ -2907,7 +2954,8 @@ body.dark .thing-toggle-hint {
   bottom: 14px;
   height: 0.65rem;
   border-width: 1.5px;
-  box-shadow: 0 4px 10px rgba(248, 113, 113, 0.3),
+  box-shadow:
+    0 4px 10px rgba(248, 113, 113, 0.3),
     inset 0 0 8px rgba(15, 23, 42, 0.85);
 }
 
@@ -2961,13 +3009,11 @@ body.dark .thing-toggle-hint {
 .need-bar-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.35),
-      rgba(255, 255, 255, 0)
-    ),
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0)),
     var(--need-bar-color, #6c5ce7);
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.25),
+  box-shadow:
+    0 0 4px rgba(255, 255, 255, 0.25),
     0 0 10px 2px var(--need-bar-color, #6c5ce7);
   transition: width 0.25s ease;
 }
@@ -3308,7 +3354,9 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 
   &:hover {
     background: rgba(59, 130, 246, 0.6);
@@ -3340,7 +3388,10 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .message-insight-button:hover,
@@ -3804,7 +3855,9 @@ body.dark .thing-toggle-hint {
   padding: 12px 14px;
   color: $white;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease;
 
   &:hover,
   &:focus {
@@ -4327,7 +4380,10 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: center;
   font-size: 0.85rem;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
   z-index: 2;
 }
 
@@ -4358,7 +4414,9 @@ body.dark .thing-toggle-hint {
   opacity: 0;
   pointer-events: none;
   transform: translateY(-6px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
   z-index: 80;
 }
 
@@ -4382,7 +4440,9 @@ body.dark .thing-toggle-hint {
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .npc-card-menu-item:hover,
@@ -4481,7 +4541,9 @@ body.modal-open {
   height: 34px;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .modal__close:hover,
@@ -4578,7 +4640,9 @@ body.modal-open {
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.1s ease;
 }
 
 .quest-edit-button:hover,
@@ -4714,7 +4778,9 @@ body.modal-open {
   padding: 12px 14px;
   font-size: 0.95rem;
   resize: vertical;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 
   &:focus {
     border-color: rgba(129, 140, 248, 0.9);
@@ -4736,7 +4802,10 @@ body.modal-open {
   padding: 18px;
   text-align: center;
   color: #cbd5f5;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
 
   &--hover {
     border-color: rgba(129, 140, 248, 0.9);
@@ -4797,7 +4866,9 @@ body.modal-open {
     padding: 6px 12px;
     font-size: 0.85rem;
     cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease;
 
     &:hover,
     &:focus {
@@ -4847,6 +4918,7 @@ body.modal-open {
 
 .npc-edit-field input,
 .npc-edit-field select,
+.npc-edit-section input,
 .npc-edit-section textarea,
 .location-edit-field input,
 .location-edit-field select,
@@ -4858,6 +4930,7 @@ body.modal-open {
 .thing-edit-row textarea,
 .thing-edit-row select,
 .npc-skill-row input,
+.npc-ability-row input,
 .npc-ability-row textarea,
 .npc-ability-row select {
   border-radius: 10px;
@@ -4866,7 +4939,9 @@ body.modal-open {
   color: #f8fafc;
   padding: 10px 12px;
   font-size: 0.95rem;
-  transition: border 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .npc-edit-field input[type="file"] {
@@ -4878,6 +4953,7 @@ body.modal-open {
 }
 
 .npc-edit-field input:focus,
+.npc-edit-section input:focus,
 .npc-edit-section textarea:focus,
 .location-edit-field input:focus,
 .location-edit-field textarea:focus,
@@ -4889,6 +4965,7 @@ body.modal-open {
 .thing-edit-row textarea:focus,
 .thing-edit-row select:focus,
 .npc-skill-row input:focus,
+.npc-ability-row input:focus,
 .npc-ability-row textarea:focus,
 .npc-ability-row select:focus {
   outline: none;
@@ -4941,7 +5018,10 @@ body.modal-open {
   justify-content: center;
   appearance: none;
   cursor: pointer;
-  transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .modal-checkbox input[type="checkbox"]::after {
@@ -5008,7 +5088,10 @@ body.modal-open {
   padding: 8px 14px;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .npc-edit-add-btn {
@@ -5434,7 +5517,10 @@ body.modal-open {
   color: #dbeafe;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .npc-disposition-buttons button:hover,
@@ -5485,7 +5571,10 @@ body.modal-open {
   font-weight: 600;
   border: 1px solid;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .npc-disposition-cancel {
@@ -5607,7 +5696,10 @@ body.modal-open {
   color: #e0e7ff;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .npc-needs-buttons button:hover,
@@ -5916,7 +6008,10 @@ body.modal-open {
   font-weight: 600;
   border: 1px solid;
   cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    color 0.2s ease;
 }
 
 .new-exit-cancel {
@@ -6233,7 +6328,9 @@ body.modal-open {
 
 .inventory-drop-target {
   position: relative;
-  transition: outline-color 120ms ease, background-color 120ms ease;
+  transition:
+    outline-color 120ms ease,
+    background-color 120ms ease;
 }
 
 .inventory-drop-target.is-drop-hover {
@@ -6244,7 +6341,9 @@ body.modal-open {
 
 .party-drop-target {
   position: relative;
-  transition: outline-color 120ms ease, background-color 120ms ease;
+  transition:
+    outline-color 120ms ease,
+    background-color 120ms ease;
 }
 
 .party-drop-target.is-drop-hover {
@@ -6503,7 +6602,9 @@ body.modal-open {
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
-  transition: opacity 300ms ease, filter 300ms ease;
+  transition:
+    opacity 300ms ease,
+    filter 300ms ease;
   filter: saturate(120%) contrast(110%);
 
   &::after {

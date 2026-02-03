@@ -57,11 +57,16 @@ Request:
   - `description` (required string)
   - `level` (required number)
   - `name` (string or null, optional)
+  - `shortDescription` (string or null, optional)
+  - `controllingFactionId` (string or null, optional)
   - `statusEffects` (array or null, optional)
 
 Responses:
 - 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, changes: { name, description, level } }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
 ## POST /api/locations/:id/exits
 
@@ -110,7 +115,7 @@ Responses:
 ## POST /api/locations/:id/things
 
 Request:
-- Body: `{ seed: { name (required), description?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
+- Body: `{ seed: { name (required), description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
 
 Responses:
 - 200: `{ success: true, thing: ThingJson, location: LocationResponse, message }`
@@ -119,17 +124,20 @@ Responses:
 ## GET /api/stubs/:id
 
 Responses:
-- 200: `{ success: true, stub: { id, name, isRegionEntryStub, targetRegionId, targetRegionName, npcs } }`
+- 200: `{ success: true, stub: { id, name, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, npcs } }`
 - 400/404/500: `{ success: false, error }`
 
 ## PUT /api/stubs/:id
 
 Request:
-- Body: `name` (required), `description` (required), `relativeLevel?` (number)
+- Body: `name` (required), `description` (required), `relativeLevel?` (number), `controllingFactionId?` (string or null)
 
 Responses:
-- 200: `{ success: true, stub: { id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName } }`
+- 200: `{ success: true, stub: { id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId } }`
 - 400/404/500: `{ success: false, error }`
+
+Notes:
+- `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
 ## DELETE /api/stubs/:id
 

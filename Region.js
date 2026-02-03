@@ -102,6 +102,9 @@ class Region {
     const description = typeof blueprint.description === 'string'
       ? blueprint.description.trim()
       : '';
+    const controllingFaction = typeof blueprint.controllingFaction === 'string'
+      ? blueprint.controllingFaction.trim()
+      : null;
     const exits = Array.isArray(blueprint.exits)
       ? blueprint.exits
         .map(exit => {
@@ -157,7 +160,8 @@ class Region {
       aliases,
       relativeLevel,
       numNpcs,
-      numHostiles
+      numHostiles,
+      controllingFaction
     };
   }
 
@@ -364,6 +368,7 @@ class Region {
       const numNpcsNode = findDirectChild('numnpcs');
       const numHostilesNode = findDirectChild('numhostiles');
       const exitsNode = findDirectChild('exits');
+      const controllingFactionNode = findDirectChild('controllingfaction');
       let relativeLevel = null;
       let numNpcs = null;
       let numHostiles = null;
@@ -377,6 +382,7 @@ class Region {
       }
 
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
+      const controllingFaction = controllingFactionNode ? controllingFactionNode.textContent.trim() : null;
 
       if (relativeLevelNode) {
         const parsedRelative = Number(relativeLevelNode.textContent.trim());
@@ -421,7 +427,8 @@ class Region {
         aliases,
         relativeLevel,
         numNpcs,
-        numHostiles
+        numHostiles,
+        controllingFaction
       });
     });
 

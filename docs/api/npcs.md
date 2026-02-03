@@ -14,7 +14,7 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `unspentSkillPoints`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `unspentSkillPoints`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
 
 Response:
 - 200: `{ success: true, npc: NpcProfile, message }`
@@ -22,6 +22,7 @@ Response:
 
 Notes:
 - Unknown skills may trigger skill generation; canonical names are normalized before assignment.
+- `factionId` must reference an existing faction id or be `null` to clear membership.
 
 ## POST /api/npcs/:id/equipment
 Equip or unequip an item in an NPC's inventory.

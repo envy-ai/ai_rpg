@@ -12,7 +12,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 ## Public API (Static)
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
 - `runEventChecks({ textToCheck, stream, allowEnvironmentalEffects, isNpcTurn, _depth, followupQueue })`:
-  - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses responses, applies results.
+    - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
 - `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards.
@@ -32,6 +32,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`.
 - Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`.
 - Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_extractNumberedResponses`.
+- NPC ensuring: `_ensureNpcMentions`.
 - Aggregation/handler builders: `_buildAggregators`, `_buildHandlers`.
 - Location alteration: `_parseLocationAlterXml`, `_applyLocationAlteration`, `_logAlterLocation`, `_clearLocationImage`.
 - Quest generation: `_parseQuestXml`, `_logQuestGeneration`, `_generateQuestName`, `parseQuestObjectiveStatusXml`.
@@ -43,6 +44,9 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 
 ## Notes
 - Event prompts are grouped (locations, items, NPCs, misc) and run sequentially with structured parsing.
+- Event check responses must include a `<final>` block; `runEventChecks` enforces this via `requiredRegex` so the LLM client retries when it is missing.
+- Combined answers across groups are stitched into a single numbered list and parsed as the final block text (no extra `<final>` wrapper).
+- Before applying outcomes, event checks ensure referenced NPCs exist (excluding death/incapacitation and defeated-enemy mentions), so downstream handlers can resolve actors; ensured NPCs are title-cased when their source name contains no capital letters.
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.

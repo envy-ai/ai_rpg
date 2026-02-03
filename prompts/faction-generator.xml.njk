@@ -13,13 +13,16 @@ You are an AI game designer creating a faction roster for a tabletop-style RPG. 
 - Include a relation entry for every other faction using only: allied, neutral, hostile, rival.
 - Each relation needs a 1-sentence note describing the relationship.
 - Include reputation tiers with thresholds at -60, -20, 0, 20, 60.
+- Do not name any faction "None".
     </systemPrompt>
 
     <generationPrompt>
 Setting Overview:
 {{ settingDescription }}
 
-Generate exactly {{ numFactions }} factions in XML using this structure. All fields are required.:
+Step 1: Generate exactly {{ numFactions }} factions for this setting in whatever format you are most comfortable with, thinking about their unique identities, goals, and relationships.
+
+Step 2: Output them in XML using this structure. All fields are required.:
 <factions>
   <faction>
     <name>Faction Name</name>
@@ -30,6 +33,8 @@ Generate exactly {{ numFactions }} factions in XML using this structure. All fie
       <goal>Goal text.</goal>
     </goals>
     <homeRegion>Optional home region name</homeRegion>
+    <description>A description of the faction: their unique identities, goals, and relationships, etc. ~2 paragraphs.</description>
+    <shortDescription>1 sentence summary of the faction.</shortDescription>
     <relations>
       <relation>
         <factionName>Other Faction Name</factionName>

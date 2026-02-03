@@ -5,6 +5,8 @@ class Faction {
   #name;
   #tags;
   #goals;
+  #description;
+  #shortDescription;
   #homeRegionName;
   #relations;
   #assets;
@@ -30,6 +32,20 @@ class Faction {
     return entries
       .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
       .filter(entry => entry.length > 0);
+  }
+
+  static #normalizeOptionalText(value, label) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`${label} must be a non-empty string or null.`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`${label} must be a non-empty string or null.`);
+    }
+    return trimmed;
   }
 
   static #normalizeRelationEntry(value) {
@@ -141,15 +157,25 @@ class Faction {
     return normalized;
   }
 
+  static #isReservedName(name) {
+    if (typeof name !== 'string') {
+      return false;
+    }
+    return name.trim().toLowerCase() === 'none';
+  }
+
   constructor({
     id = null,
     name,
     tags = [],
     goals = [],
+    description = null,
+    shortDescription = null,
     homeRegionName = null,
     relations = null,
     assets = [],
-    reputationTiers = []
+    reputationTiers = [],
+    allowReservedName = false
   } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Faction name is required and must be a string.');
@@ -160,9 +186,14 @@ class Faction {
     if (!this.#name) {
       throw new Error('Faction name must be a non-empty string.');
     }
+    if (!allowReservedName && Faction.#isReservedName(this.#name)) {
+      throw new Error('Faction name "None" is reserved. Choose another name.');
+    }
 
     this.#tags = Faction.#normalizeStringList(tags);
     this.#goals = Faction.#normalizeStringList(goals);
+    this.#description = Faction.#normalizeOptionalText(description, 'Faction description');
+    this.#shortDescription = Faction.#normalizeOptionalText(shortDescription, 'Faction short description');
     this.#homeRegionName = typeof homeRegionName === 'string' ? homeRegionName.trim() : null;
     this.#relations = Faction.#normalizeRelations(relations);
     this.#assets = Faction.#normalizeAssets(assets);
@@ -179,6 +210,8 @@ class Faction {
   get name() { return this.#name; }
   get tags() { return [...this.#tags]; }
   get goals() { return [...this.#goals]; }
+  get description() { return this.#description; }
+  get shortDescription() { return this.#shortDescription; }
   get homeRegionName() { return this.#homeRegionName; }
   get relations() {
     return new Map(
@@ -199,6 +232,9 @@ class Faction {
     if (!trimmed) {
       throw new Error('Faction name must be a non-empty string.');
     }
+    if (Faction.#isReservedName(trimmed)) {
+      throw new Error('Faction name "None" is reserved. Choose another name.');
+    }
     Faction.#indexByName.delete(this.#name.toLowerCase());
     this.#name = trimmed;
     Faction.#indexByName.set(this.#name.toLowerCase(), this);
@@ -212,6 +248,16 @@ class Faction {
 
   set goals(value) {
     this.#goals = Faction.#normalizeStringList(value);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set description(value) {
+    this.#description = Faction.#normalizeOptionalText(value, 'Faction description');
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set shortDescription(value) {
+    this.#shortDescription = Faction.#normalizeOptionalText(value, 'Faction short description');
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -310,6 +356,8 @@ class Faction {
     return {
       id: this.#id,
       name: this.#name,
+      description: this.#description,
+      shortDescription: this.#shortDescription,
       tags: [...this.#tags],
       goals: [...this.#goals],
       homeRegionName: this.#homeRegionName,
@@ -333,10 +381,13 @@ class Faction {
       name: data.name,
       tags: data.tags,
       goals: data.goals,
+      description: data.description ?? null,
+      shortDescription: data.shortDescription ?? null,
       homeRegionName: data.homeRegionName,
       relations: data.relations,
       assets: data.assets,
-      reputationTiers: data.reputationTiers
+      reputationTiers: data.reputationTiers,
+      allowReservedName: true
     });
 
     if (typeof data.createdAt === 'string') {

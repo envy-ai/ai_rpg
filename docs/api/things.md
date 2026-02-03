@@ -36,7 +36,7 @@ Response:
 Update a thing.
 
 Request:
-- Body supports: `name`, `description`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags.
+- Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags.
 
 Response:
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
