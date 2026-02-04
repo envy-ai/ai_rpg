@@ -41,12 +41,12 @@
     {% set backIcon = '↩️' %}
     {% set inputPlaceholderName = 'Adventurer' %}
     {% set inputPlaceholderDesc = 'A brave soul embarking on a new adventure.' %}
-    {% set inputPlaceholderLoc = 'village, forest edge, harbor, etc.' %}
+    {% set inputPlaceholderLoc = 'e.g., Player apartment in a highrise in the upper city.' %}
     {% set submitLabel = 'Start New Game' %}
     {% set cancelLabel = 'Back to Chat' %}
     {% set helpName = 'Optional. Defaults to Adventurer.' %}
     {% set helpDesc = 'Optional. A sentence or two describing your character.' %}
-    {% set helpLoc = 'Optional. Influences the generated starting area.' %}
+    {% set helpLoc = 'Optional. Provide instructions for generating the starting location.' %}
     {% set ariaBusy = 'Starting new game, please wait' %}
     {% set ariaForm = 'New game form' %}
 {% set defaults = newGameDefaults or {} %}
@@ -138,8 +138,8 @@
                         </div>
 
         <div class="form-group full-width">
-            <label for="startingLocation">Starting Location</label>
-            <input type="text" id="startingLocation" name="startingLocation" placeholder="{{ inputPlaceholderLoc }}" value="{{ defaultStartingLocation }}">
+            <label for="startingLocation">Starting Location Generation Instructions</label>
+            <textarea id="startingLocation" name="startingLocation" rows="3" placeholder="{{ inputPlaceholderLoc }}">{{ defaultStartingLocation }}</textarea>
             <div class="help-text">{{ helpLoc }}</div>
         </div>
 

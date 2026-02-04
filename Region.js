@@ -102,6 +102,9 @@ class Region {
     const description = typeof blueprint.description === 'string'
       ? blueprint.description.trim()
       : '';
+    const shortDescription = typeof blueprint.shortDescription === 'string'
+      ? blueprint.shortDescription.trim()
+      : null;
     const controllingFaction = typeof blueprint.controllingFaction === 'string'
       ? blueprint.controllingFaction.trim()
       : null;
@@ -156,6 +159,7 @@ class Region {
     return {
       name,
       description,
+      shortDescription,
       exits,
       aliases,
       relativeLevel,
@@ -364,6 +368,7 @@ class Region {
 
       const locNameNode = findDirectChild('name');
       const locDescriptionNode = findDirectChild('description');
+      const locShortDescriptionNode = findDirectChild('shortdescription');
       const relativeLevelNode = findDirectChild('relativelevel');
       const numNpcsNode = findDirectChild('numnpcs');
       const numHostilesNode = findDirectChild('numhostiles');
@@ -382,7 +387,11 @@ class Region {
       }
 
       const locDescription = locDescriptionNode ? locDescriptionNode.textContent.trim() : '';
+      const locShortDescription = locShortDescriptionNode ? locShortDescriptionNode.textContent.trim() : '';
       const controllingFaction = controllingFactionNode ? controllingFactionNode.textContent.trim() : null;
+      if (!locShortDescription) {
+        console.warn(`[Region.fromXMLSnippet] Missing <shortDescription> for location "${locName}".`);
+      }
 
       if (relativeLevelNode) {
         const parsedRelative = Number(relativeLevelNode.textContent.trim());
@@ -423,6 +432,7 @@ class Region {
       return Region.#normalizeBlueprint({
         name: locName,
         description: locDescription,
+        shortDescription: locShortDescription,
         exits: exitEntries,
         aliases,
         relativeLevel,

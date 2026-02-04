@@ -5,7 +5,7 @@ Represents a region containing multiple locations, with metadata like average le
 
 ## Key State
 - `#id`, `#name`, `#description`, `#shortDescription`.
-- `#locationBlueprints`: blueprint definitions for generated locations.
+- `#locationBlueprints`: blueprint definitions for generated locations (now include per-location `shortDescription`).
 - `#locationIds`: ids for instantiated locations in the region.
 - `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
 - `#statusEffects`, `#randomEvents`, `#averageLevel`, `#relativeLevel`.
@@ -50,3 +50,4 @@ Represents a region containing multiple locations, with metadata like average le
 - Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `parentHierarchy` throws on circular references to surface data errors early.
+- Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`.

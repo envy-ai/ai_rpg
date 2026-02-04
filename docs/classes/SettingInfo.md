@@ -6,7 +6,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
 - Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`.
-- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultNumSkills`, `#defaultExistingSkills`.
+- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultNumSkills`, `#defaultExistingSkills`.
 - Lists: `#availableClasses`, `#availableRaces`.
 - Metadata: `#createdAt`, `#lastUpdated`.
 - Static indexes: `#indexByID`, `#indexByName`.

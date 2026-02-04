@@ -203,6 +203,79 @@ class Location {
     const randomEvents = Location.#normalizeRandomEvents(extractedRandomEvents);
     const randomEventsProvided = Boolean(randomEventsNode);
 
+    const stubMetadata = existingLocation?.stubMetadata || {};
+    const rawStubDescription = typeof stubMetadata.stubDescription === 'string' && stubMetadata.stubDescription.trim()
+      ? stubMetadata.stubDescription.trim()
+      : null;
+    const stubDescription = rawStubDescription
+      || (typeof stubMetadata.blueprintDescription === 'string' && stubMetadata.blueprintDescription.trim()
+        ? stubMetadata.blueprintDescription.trim()
+        : null)
+      || (typeof stubMetadata.shortDescription === 'string' && stubMetadata.shortDescription.trim()
+        ? stubMetadata.shortDescription.trim()
+        : null)
+      || (typeof existingLocation?.description === 'string' && existingLocation.description.trim()
+        ? existingLocation.description.trim()
+        : null)
+      || (typeof existingLocation?.shortDescription === 'string' && existingLocation.shortDescription.trim()
+        ? existingLocation.shortDescription.trim()
+        : null);
+    const stubShortDescription = (() => {
+      if (typeof stubMetadata.stubShortDescription === 'string' && stubMetadata.stubShortDescription.trim()) {
+        return stubMetadata.stubShortDescription.trim();
+      }
+      if (rawStubDescription) {
+        const candidate = typeof stubMetadata.shortDescription === 'string' ? stubMetadata.shortDescription.trim() : '';
+        if (candidate) {
+          return candidate;
+        }
+        const fallback = typeof existingLocation?.shortDescription === 'string' ? existingLocation.shortDescription.trim() : '';
+        if (fallback) {
+          return fallback;
+        }
+      }
+      return null;
+    })();
+    const stubRelativeLevel = Number.isFinite(stubMetadata.relativeLevel) ? stubMetadata.relativeLevel : null;
+    const stubBaseLevel = Number.isFinite(existingLocation?.baseLevel)
+      ? existingLocation.baseLevel
+      : (Number.isFinite(stubMetadata.computedBaseLevel) ? stubMetadata.computedBaseLevel : null);
+    const stubNumNpcs = existingLocation?.generationHints?.numNpcs ?? stubMetadata.numNpcs ?? null;
+    const stubNumHostiles = existingLocation?.generationHints?.numHostiles ?? stubMetadata.numHostiles ?? null;
+
+    const enforceAuthoritativeText = (fieldLabel, stubValue) => {
+      if (!stubValue) {
+        return;
+      }
+      const aiValue = typeof locationData[fieldLabel] === 'string'
+        ? locationData[fieldLabel].trim()
+        : '';
+      if (aiValue && aiValue !== stubValue) {
+        throw new Error(`Stub expansion returned ${fieldLabel} "${aiValue}" but stub requires "${stubValue}".`);
+      }
+      locationData[fieldLabel] = stubValue;
+    };
+
+    const enforceAuthoritativeNumber = (fieldLabel, stubValue) => {
+      if (!Number.isFinite(stubValue)) {
+        return;
+      }
+      const aiValue = Number.isFinite(locationData[fieldLabel]) ? locationData[fieldLabel] : null;
+      if (Number.isFinite(aiValue) && aiValue !== stubValue) {
+        throw new Error(`Stub expansion returned ${fieldLabel} ${aiValue} but stub requires ${stubValue}.`);
+      }
+      locationData[fieldLabel] = stubValue;
+    };
+
+    if (existingLocation) {
+      enforceAuthoritativeText('shortDescription', stubShortDescription);
+      enforceAuthoritativeText('description', stubDescription);
+      enforceAuthoritativeNumber('relativeLevel', stubRelativeLevel);
+      enforceAuthoritativeNumber('baseLevel', stubBaseLevel);
+      enforceAuthoritativeNumber('numNpcs', stubNumNpcs);
+      enforceAuthoritativeNumber('numHostiles', stubNumHostiles);
+    }
+
     const parsedShortDescription = typeof locationData.shortDescription === 'string'
       ? locationData.shortDescription.trim()
       : '';

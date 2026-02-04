@@ -3007,7 +3007,9 @@ function buildBasePromptContext({
             const regionLocationName = regionLocationDetails?.name || regionLocation?.name || locId;
             const regionLocationDescription = regionLocationDetails?.description
                 || regionLocation?.description
+                || regionLocation?.stubMetadata?.stubDescription
                 || regionLocation?.stubMetadata?.blueprintDescription
+                || regionLocation?.stubMetadata?.shortDescription
                 || '';
 
             regionLocations.push({
@@ -3024,7 +3026,7 @@ function buildBasePromptContext({
             regionLocations.push({
                 id: blueprint.name,
                 name: blueprint.name,
-                description: blueprint.description || ''
+                description: blueprint.description || blueprint.shortDescription || ''
             });
         }
     }
@@ -7200,7 +7202,11 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
             const lorebookManager = getLorebookManager();
             if (lorebookManager) {
                 const locationName = location?.name || '';
-                const locationDesc = location?.description || location?.stubMetadata?.blueprintDescription || '';
+                const locationDesc = location?.description
+                    || location?.stubMetadata?.stubDescription
+                    || location?.stubMetadata?.blueprintDescription
+                    || location?.stubMetadata?.shortDescription
+                    || '';
                 const regionName = region?.name || '';
                 const regionDesc = region?.description || '';
                 const characterName = character?.name || '';
@@ -7216,7 +7222,13 @@ async function generateInventoryForCharacter({ character, characterDescriptor = 
         const renderedTemplate = renderInventoryPrompt({
             setting: settingDescription,
             region: region ? { name: region.name, description: region.description } : null,
-            location: location ? { name: location.name, description: location.description || location.stubMetadata?.blueprintDescription } : null,
+            location: location ? {
+                name: location.name,
+                description: location.description
+                    || location.stubMetadata?.stubDescription
+                    || location.stubMetadata?.blueprintDescription
+                    || location.stubMetadata?.shortDescription
+            } : null,
             character: {
                 name: character.name,
                 role: characterDescriptor.role || characterDescriptor.class || 'citizen',
@@ -9421,7 +9433,11 @@ async function renderSingleNpcPrompt({
 
         const safeLocation = location ? {
             name: location.name || 'Unknown Location',
-            description: location.description || location.stubMetadata?.blueprintDescription || 'No description provided.'
+            description: location.description
+                || location.stubMetadata?.stubDescription
+                || location.stubMetadata?.blueprintDescription
+                || location.stubMetadata?.shortDescription
+                || 'No description provided.'
         } : {
             name: baseContext.currentLocation?.name || 'Unknown Location',
             description: baseContext.currentLocation?.description || 'No description provided.'
@@ -11208,7 +11224,10 @@ async function generateLevelUpAbilitiesForCharacter(character, { previousLevel =
             name: locationObj?.name || 'Unknown Location',
             description: (locationObj?.description && typeof locationObj.description === 'string'
                 ? locationObj.description.trim()
-                : locationObj?.stubMetadata?.blueprintDescription || 'No description provided.')
+                : locationObj?.stubMetadata?.stubDescription
+                    || locationObj?.stubMetadata?.blueprintDescription
+                    || locationObj?.stubMetadata?.shortDescription
+                    || 'No description provided.')
         };
 
         const regionObj = locationObj ? findRegionByLocationId(locationObj.id) : null;
@@ -14048,7 +14067,9 @@ async function ensureThingNamesAllowed({
         name: resolvedLocation.name || 'Unknown Location',
         description: resolvedLocation.description
             || resolvedLocation.stubMetadata?.shortDescription
+            || resolvedLocation.stubMetadata?.stubDescription
             || resolvedLocation.stubMetadata?.blueprintDescription
+            || resolvedLocation.stubMetadata?.shortDescription
             || 'No description provided.',
         region: resolvedRegion?.name
             || resolvedLocation.region
@@ -14432,7 +14453,9 @@ async function regenerateLocationName(location) {
         name: location.name || 'Unnamed Location',
         description: location.description
             || location.stubMetadata?.shortDescription
+            || location.stubMetadata?.stubDescription
             || location.stubMetadata?.blueprintDescription
+            || location.stubMetadata?.shortDescription
             || 'No description provided.',
         region: regionName,
         baseLevel
@@ -15615,7 +15638,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             return {
                 id: loc.id,
                 name: loc.name || loc.id,
-                description: loc.description || loc.stubMetadata?.blueprintDescription || 'No description provided.'
+                description: loc.description
+                    || loc.stubMetadata?.stubDescription
+                    || loc.stubMetadata?.blueprintDescription
+                    || loc.stubMetadata?.shortDescription
+                    || 'No description provided.'
             };
         });
 
@@ -16076,7 +16103,11 @@ function renderThingImagePrompt(thing) {
             regionName: region?.name || '',
             regionDescription: region?.description || '',
             locationName: location?.name || '',
-            locationDescription: location?.description || location?.stubMetadata?.blueprintDescription || '',
+            locationDescription: location?.description
+                || location?.stubMetadata?.stubDescription
+                || location?.stubMetadata?.blueprintDescription
+                || location?.stubMetadata?.shortDescription
+                || '',
             thingName: thing.name,
             thingType: metadata.itemType || thing.itemTypeDetail || thing.thingType,
             thingDescription: thing.description,
@@ -16374,6 +16405,16 @@ async function renderLocationGeneratorPrompt(options = {}) {
             originDirection: isStubExpansion ? (options.originDirection || null) : null,
             stubName: isStubExpansion ? (options.stubName || null) : null,
             stubId: isStubExpansion ? (options.stubId || null) : null,
+            stubShortDescription: isStubExpansion ? (options.stubShortDescription || null) : null,
+            stubDescription: isStubExpansion ? (options.stubDescription || null) : null,
+            stubRelativeLevel: isStubExpansion ? (options.stubRelativeLevel ?? null) : null,
+            stubBaseLevel: isStubExpansion ? (options.stubBaseLevel ?? null) : null,
+            stubControllingFaction: isStubExpansion ? (options.stubControllingFaction || null) : null,
+            stubHasShortDescription: isStubExpansion ? Boolean(options.stubHasShortDescription) : false,
+            stubHasDescription: isStubExpansion ? Boolean(options.stubHasDescription) : false,
+            stubHasRelativeLevel: isStubExpansion ? Boolean(options.stubHasRelativeLevel) : false,
+            stubHasBaseLevel: isStubExpansion ? Boolean(options.stubHasBaseLevel) : false,
+            stubHasControllingFaction: isStubExpansion ? Boolean(options.stubHasControllingFaction) : false,
             isStubExpansion,
             lorebookEntries,
             additionalLore: additionalLore,
@@ -17321,9 +17362,55 @@ async function generateLocationFromPrompt(options = {}) {
         if (isStubExpansion) {
             const stubNumNpcs = stubLocation?.generationHints?.numNpcs ?? stubMetadata.numNpcs ?? null;
             const stubNumHostiles = stubLocation?.generationHints?.numHostiles ?? stubMetadata.numHostiles ?? null;
+            const rawStubDescription = typeof stubMetadata.stubDescription === 'string' && stubMetadata.stubDescription.trim()
+                ? stubMetadata.stubDescription.trim()
+                : null;
+            const stubDescription = rawStubDescription
+                || (typeof stubMetadata.blueprintDescription === 'string' && stubMetadata.blueprintDescription.trim()
+                    ? stubMetadata.blueprintDescription.trim()
+                    : null)
+                || (typeof stubMetadata.shortDescription === 'string' && stubMetadata.shortDescription.trim()
+                    ? stubMetadata.shortDescription.trim()
+                    : null)
+                || (typeof stubLocation?.description === 'string' && stubLocation.description.trim()
+                    ? stubLocation.description.trim()
+                    : null)
+                || (typeof stubLocation?.shortDescription === 'string' && stubLocation.shortDescription.trim()
+                    ? stubLocation.shortDescription.trim()
+                    : null);
+            const stubShortDescription = (() => {
+                if (typeof stubMetadata.stubShortDescription === 'string' && stubMetadata.stubShortDescription.trim()) {
+                    return stubMetadata.stubShortDescription.trim();
+                }
+                if (rawStubDescription) {
+                    const candidate = typeof stubMetadata.shortDescription === 'string' ? stubMetadata.shortDescription.trim() : '';
+                    if (candidate) {
+                        return candidate;
+                    }
+                    const fallback = typeof stubLocation?.shortDescription === 'string' ? stubLocation.shortDescription.trim() : '';
+                    if (fallback) {
+                        return fallback;
+                    }
+                }
+                return null;
+            })();
+            const stubRelativeLevel = Number.isFinite(stubMetadata.relativeLevel) ? stubMetadata.relativeLevel : null;
+            const stubBaseLevel = Number.isFinite(stubLocation?.baseLevel)
+                ? stubLocation.baseLevel
+                : (Number.isFinite(stubMetadata.computedBaseLevel) ? stubMetadata.computedBaseLevel : null);
+            const stubControllingFactionId = typeof stubLocation?.controllingFactionId === 'string'
+                ? stubLocation.controllingFactionId.trim()
+                : '';
+            const stubControllingFaction = stubControllingFactionId
+                ? (typeof Faction?.getById === 'function'
+                    ? Faction.getById(stubControllingFactionId)?.name || null
+                    : (factions instanceof Map && factions.get(stubControllingFactionId)
+                        ? factions.get(stubControllingFactionId).name || null
+                        : null))
+                : null;
 
-            if (!templateOverrides.shortDescription && stubMetadata.shortDescription) {
-                templateOverrides.shortDescription = stubMetadata.shortDescription;
+            if (!templateOverrides.shortDescription && stubShortDescription) {
+                templateOverrides.shortDescription = stubShortDescription;
             }
             if (!templateOverrides.locationPurpose && stubMetadata.locationPurpose) {
                 templateOverrides.locationPurpose = stubMetadata.locationPurpose;
@@ -17349,6 +17436,36 @@ async function generateLocationFromPrompt(options = {}) {
             }
             if (templateOverrides.stubNumHostiles === undefined) {
                 templateOverrides.stubNumHostiles = stubNumHostiles;
+            }
+            if (templateOverrides.stubShortDescription === undefined) {
+                templateOverrides.stubShortDescription = stubShortDescription;
+            }
+            if (templateOverrides.stubDescription === undefined) {
+                templateOverrides.stubDescription = stubDescription;
+            }
+            if (templateOverrides.stubRelativeLevel === undefined) {
+                templateOverrides.stubRelativeLevel = stubRelativeLevel;
+            }
+            if (templateOverrides.stubBaseLevel === undefined) {
+                templateOverrides.stubBaseLevel = stubBaseLevel;
+            }
+            if (templateOverrides.stubControllingFaction === undefined) {
+                templateOverrides.stubControllingFaction = stubControllingFaction;
+            }
+            if (templateOverrides.stubHasShortDescription === undefined) {
+                templateOverrides.stubHasShortDescription = Boolean(stubShortDescription);
+            }
+            if (templateOverrides.stubHasDescription === undefined) {
+                templateOverrides.stubHasDescription = Boolean(stubDescription);
+            }
+            if (templateOverrides.stubHasRelativeLevel === undefined) {
+                templateOverrides.stubHasRelativeLevel = Number.isFinite(stubRelativeLevel);
+            }
+            if (templateOverrides.stubHasBaseLevel === undefined) {
+                templateOverrides.stubHasBaseLevel = Number.isFinite(stubBaseLevel);
+            }
+            if (templateOverrides.stubHasControllingFaction === undefined) {
+                templateOverrides.stubHasControllingFaction = Boolean(stubControllingFactionId);
             }
         } else if (!templateOverrides.playerLevel && currentPlayer?.level) {
             templateOverrides.playerLevel = currentPlayer.level;
@@ -17792,7 +17909,9 @@ function renderExistingRegionExitPrompt({ sourceRegion, sourceLocation, targetRe
                 name: sourceLocation?.name || sourceLocation?.id || 'Unknown Location',
                 summary: sourceLocation?.description
                     || sourceLocation?.stubMetadata?.shortDescription
+                    || sourceLocation?.stubMetadata?.stubDescription
                     || sourceLocation?.stubMetadata?.blueprintDescription
+                    || sourceLocation?.stubMetadata?.shortDescription
                     || 'No summary provided.'
             },
             targetRegion: {
@@ -17805,7 +17924,9 @@ function renderExistingRegionExitPrompt({ sourceRegion, sourceLocation, targetRe
                         .map(loc => ({
                             name: loc.name || loc.id,
                             description: loc.description
+                                || loc.stubMetadata?.stubDescription
                                 || loc.stubMetadata?.blueprintDescription
+                                || loc.stubMetadata?.shortDescription
                                 || loc.stubMetadata?.shortDescription
                                 || 'No description provided.'
                         }))
@@ -18607,6 +18728,10 @@ async function instantiateRegionLocations({
     const stubMap = new Map();
 
     for (const blueprint of region.locationBlueprints) {
+        const stubDescription = typeof blueprint.description === 'string' ? blueprint.description.trim() : '';
+        const stubShortDescription = typeof blueprint.shortDescription === 'string' && blueprint.shortDescription.trim()
+            ? blueprint.shortDescription.trim()
+            : null;
         const relativeLevel = Number.isFinite(blueprint.relativeLevel)
             ? blueprint.relativeLevel
             : 0;
@@ -18626,7 +18751,7 @@ async function instantiateRegionLocations({
         const stub = new Location({
             name: blueprint.name,
             description: null,
-            shortDescription: blueprint.description,
+            shortDescription: stubShortDescription,
             baseLevel: computedBaseLevel,
             isStub: true,
             regionId: region.id,
@@ -18639,7 +18764,9 @@ async function instantiateRegionLocations({
             stubMetadata: {
                 regionId: region.id,
                 regionName: region.name,
-                blueprintDescription: blueprint.description,
+                blueprintDescription: stubDescription,
+                stubDescription: stubDescription,
+                stubShortDescription: stubShortDescription,
                 suggestedRegionExits: (blueprint.exits || []).map(exit => {
                     if (!exit) {
                         return null;
@@ -18653,7 +18780,7 @@ async function instantiateRegionLocations({
                     return null;
                 }).filter(Boolean),
                 themeHint,
-                shortDescription: blueprint.description,
+                shortDescription: stubShortDescription,
                 locationPurpose: `Part of the ${region.name} region`,
                 allowRename: false,
                 relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,

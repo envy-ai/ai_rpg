@@ -48,7 +48,11 @@ Guidelines:
 
 If this region is a city, town, village, or other settlement, create at least three building exteriors as locations, each with a regionExit for the interior.
 
-{% if regionNotes %}Generate a region based on this description: "{{ regionNotes }}".{% endif %} Use the following XML structure exactly:
+{% if regionNotes %}Generate the region described here:
+
+"{{ regionNotes }}".
+
+{% endif %}Use the following XML structure exactly:
 
 {% if includeLocations %}
 <region>
@@ -63,10 +67,12 @@ If this region is a city, town, village, or other settlement, create at least th
     <!-- Only list **new** locations to add to the current region -->
 {% endif %}
     <!-- For each location below, follow the structure exactly once per location. -->
+    <!-- The description MUST be two paragraphs. The shortDescription MUST be one sentence. -->
     <!-- If this location is a building exterior, include a regionExits element with a stubRegion for the building interior. The description for this case should be of the place around the building, not the interior itself. As a rule, the name of building interiors should be "[building name] interior" -->
     <location>
       <name>Concise, evocative location name</name>
-      <description>Three sentence description emphasising sensory detail and interactive elements.</description>
+      <description>Two-paragraph description emphasising sensory detail and interactive elements.</description>
+      <shortDescription>One sentence summary of the location (do not repeat the name).</shortDescription>
       <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
       <relativeLevel>Integer from +0 to +3 relative to the region average</relativeLevel>
       <notesAboutExits>Brief explanation of which neighbouring locations this place connects to and why it makes sense.</notesAboutExits>

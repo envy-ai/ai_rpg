@@ -137,7 +137,7 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. If none, answer N/A.`,
+            prompt: `List all entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. If none, answer N/A.`,
         },
         {
             key: "npc_first_appearance",

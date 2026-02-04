@@ -1,22 +1,33 @@
-{% if originLocationName or originDescription %}
+{% if originLocationName or originDescription -%}
 <originLocation>
-  {% if originLocationName %}<name>{{ originLocationName }}</name>{% endif %}
-  {% if originDescription %}<description>{{ originDescription }}</description>{% endif %}
+  {% if originLocationName -%}<name>{{ originLocationName }}</name>{% endif %}
+  {% if originDescription -%}<description>{{ originDescription }}</description>{% endif %}
 </originLocation>
-{% endif %}
+{% endif -%}
 
-{% if stubName or stubId %}
+{% set stubHasNumNpcs = (stubNumNpcs is not none) %}
+{% set stubHasNumHostiles = (stubNumHostiles is not none) %}
+{% set stubHasAny = stubName or stubId or stubHasShortDescription or stubHasDescription or stubHasRelativeLevel or stubHasBaseLevel or stubHasControllingFaction or stubHasNumNpcs or stubHasNumHostiles %}
+
+{% if stubHasAny -%}
 <stub>
-  {% if stubId %}<id>{{ stubId }}</id>{% endif %}
-  {% if stubName %}<name>{{ stubName }}</name>{% endif %}
+  {% if stubId -%}<id>{{ stubId }}</id>{% endif %}
+  {% if stubName -%}<name>{{ stubName }}</name>{% endif %}
+  {% if stubHasShortDescription -%}<shortDescription>{{ stubShortDescription }}</shortDescription>{% endif %}
+  {% if stubHasDescription -%}<description>{{ stubDescription }}</description>{% endif %}
+  {% if stubHasRelativeLevel -%}<relativeLevel>{{ stubRelativeLevel }}</relativeLevel>{% endif %}
+  {% if stubHasBaseLevel -%}<baseLevel>{{ stubBaseLevel }}</baseLevel>{% endif %}
+  {% if stubHasControllingFaction -%}<controllingFaction>{% if stubControllingFaction %}{{ stubControllingFaction }}{% else %}(assigned; do not change){% endif %}</controllingFaction>{% endif %}
+  {% if stubHasNumNpcs -%}<numNpcs>{{ stubNumNpcs }}</numNpcs>{% endif %}
+  {% if stubHasNumHostiles -%}<numHostiles>{{ stubNumHostiles }}</numHostiles>{% endif %}
 </stub>
-{% endif %}
+{% endif -%}
 
 <task>You are an AI assistant that expands partially discovered locations in a fictional world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
 
-{% if hasImage %}A reference image is provided. Use it to guide the location's visual details, materials, lighting, and overall mood.{% endif %}
+{% if hasImage -%}A reference image is provided. Use it to guide the location's visual details, materials, lighting, and overall mood.{% endif %}
 
-{% if entryProse %}Here is how the location was described upon entry:
+{% if entryProse -%}Here is how the location was described upon entry:
 <entryProse>
 {{ entryProse }}
 </entryProse>
@@ -29,24 +40,28 @@ GUIDELINES:
 - The number of NPCs and hostiles should reflect the type of location as well as the current region. For instance, an upscale tavern might have 3-4 NPCs and 0 hostiles, while a seedy tavern may have 2 NPCs and 2 hostiles, and so on. A a deserted cave might have 0 NPCs and 1-3 hostiles. The player's residence should typically have 0 NPCs and 0 hostiles. An abandoned structure region might have 1 or 2 NPCs distributed among all locations, so consider the region when choosing these numbers. Conversly, a bustling city region might have many NPCs distributed among its locations, with crowded places having 4.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 - Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
+{% if stubHasAny -%}
 
-{% if setting.characterGenInstructions %}
+IMPORTANT: The fields shown in <stub> are authoritative. Do not include them in your output. Only fill in missing fields not listed in <stub>.
+{% endif -%}
+
+{% if setting.characterGenInstructions -%}
 When generating character concepts for this location, follow these additional user notes:
 <userNotes>
 {{ setting.characterGenInstructions }}
 </userNotes>
-{% endif %}
+{% endif -%}
 
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 
 <location>
-  <name><!-- A short name or title for the location --></name>
-  <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
-  <description><!-- 1-2 paragraphs of description --></description>
-  <relativeLevel><!-- integer from -3 to 3, indicating the difficulty compared to the rest of the region --></relativeLevel>
-  {% if stubNumNpcs is none %}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
-  {% if stubNumHostiles is none %}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
+  <name>{{ stubName }}</name>
+  {% if not stubHasControllingFaction -%}<controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>{% endif %}
+  {% if not stubHasDescription -%}<description><!-- 1-2 paragraphs of description --></description>{% endif %}
+  {% if not (stubHasRelativeLevel or stubHasBaseLevel) -%}<relativeLevel><!-- integer from -3 to 3, indicating the difficulty compared to the rest of the region --></relativeLevel>{% endif %}
+  {% if stubNumNpcs is none -%}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
+  {% if stubNumHostiles is none -%}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
   <numItems><!-- Integer from 0 to 4, indicating how many items typically can be found in this location --></numItems>
   <numScenery><!-- Integer from 2 to 4, indicating how many notable scenery features typically can be found in this location --></numScenery>
   <randomStoryEvents>
@@ -64,5 +79,5 @@ Return ONLY the following fields, in this format:
     - <!-- 1-2 sentence description of an enemy concept -->
     - <!-- 1-2 sentence description of an enemy concept -->
   </enemyConcepts>
-  <shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the location across clearly and concisely. Don't mention the location by name.--></shortDescription>
+  {% if not stubHasShortDescription -%}<shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the location across clearly and concisely. Don't mention the location by name.--></shortDescription>{% endif %}
 </location>

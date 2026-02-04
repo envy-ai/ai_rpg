@@ -48,7 +48,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
 - [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, and prompt wiring.
 - [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, and cancellation utilities.
-- [classes/Location.md](classes/Location.md) — Location model (description, exits, NPCs, items, status effects) with stub promotion support.
+- [classes/Location.md](classes/Location.md) — Location model (description, exits, NPCs, items, status effects) with stub promotion support and stub description/shortDescription prompting rules.
 - [classes/LocationExit.md](classes/LocationExit.md) — Connection between locations/regions, with optional vehicle semantics and bidirectional travel.
 - [classes/LorebookManager.md](classes/LorebookManager.md) — Lorebook manager for JSON lorebooks: load, enable/disable, keyword match, and prompt injection.
 - [classes/ModLoader.md](classes/ModLoader.md) — Mod loader for `mods/` with per-mod scope helpers, configs, and client asset discovery.
@@ -58,11 +58,11 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Quest.md](classes/Quest.md) — Quest model with objectives/rewards/giver info, completion state, and static indexes.
 - [classes/QuestConfirmationManager.md](classes/QuestConfirmationManager.md) — Manages async quest confirmations per client via `Globals.emitToClient`.
 - [classes/RealtimeHub.md](classes/RealtimeHub.md) — WebSocket hub for realtime updates with targeted send, broadcast, and typed emits.
-- [classes/Region.md](classes/Region.md) — Region model containing locations, metadata, random events, and status effects.
+- [classes/Region.md](classes/Region.md) — Region model containing locations, metadata, random events, and status effects, including per-location short descriptions in blueprints.
 - [classes/SanitizedStringMap.md](classes/SanitizedStringMap.md) — Map wrapper that normalizes string keys for case/punctuation-insensitive lookup.
 - [classes/SanitizedStringSet.md](classes/SanitizedStringSet.md) — Set wrapper that normalizes string values for case/punctuation-insensitive lookup.
 - [classes/SceneSummaries.md](classes/SceneSummaries.md) — Stores scene summaries from chat history and tracks scene ranges and NPC names.
-- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults) with persistence support.
+- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions) with persistence support.
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
 - [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration semantics.
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.

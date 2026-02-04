@@ -53,6 +53,8 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `#normalizeGenerationHints(hints)`.
 
 ## Notes
-- Stub locations seed `shortDescription` from stub metadata at creation, and that value persists through promotion unless overwritten by generated output.
+- Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration.
+- Legacy stubs without `stubDescription` continue to expand, but only their long description is fixed; the LLM still generates a short description.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
+- Stub expansion prompts include authoritative stub fields (description/shortDescription, relative/base level, controlling faction, numNpcs/numHostiles). When present, these fields are omitted from the LLM output and filled from the stub during parsing.
