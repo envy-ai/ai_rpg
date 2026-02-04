@@ -31,6 +31,12 @@ Status effect vs. Alteration:
 * Body movements are never a physical transformation and are often not even status effects.
 * Characters are not items. If a question asks for an item, do not answer with a character, or vice-versa.
 
+These characters are currently known by the system to be present. This is not necessary an exhaustive list, but it contains no false positives. Any entites present in textToCheck are also considered present; this list may not be completely up to date on all newly present characters.
+- {{ characterName }}
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% endif %}{% endfor %}
+
 Event Checks:
 {%- set questions = eventQuestions | default([]) %}
 {%- for q in questions %}

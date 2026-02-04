@@ -4030,6 +4030,10 @@ class AIRPGChat {
                 const modifier = formatSigned(attacker.attackSkill.value);
                 parts.push(modifier !== null ? modifier : String(attacker.attackSkill.value));
             }
+            if (typeof attacker.attackSkill.levelBonus === 'number' && attacker.attackSkill.levelBonus !== 0) {
+                const levelText = formatSigned(attacker.attackSkill.levelBonus) ?? attacker.attackSkill.levelBonus;
+                parts.push(`(Level bonus ${levelText})`);
+            }
             if (parts.length) {
                 lines.push(`<li><strong>Attack Skill:</strong> ${parts.join(' ')}</li>`);
             }
@@ -4067,6 +4071,10 @@ class AIRPGChat {
                 const modifier = formatSigned(defenseSkill.value);
                 defenceSegments.push(modifier !== null ? modifier : String(defenseSkill.value));
             }
+            if (typeof defenseSkill.levelBonus === 'number' && defenseSkill.levelBonus !== 0) {
+                const levelText = formatSigned(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
+                defenceSegments.push(`(Level bonus ${levelText})`);
+            }
             if (defenseSkill.source) {
                 defenceSegments.push(`[${this.escapeHtml(String(defenseSkill.source))}]`);
             }
@@ -4094,6 +4102,10 @@ class AIRPGChat {
                 if (typeof defenseSkill.value === 'number' && !Number.isNaN(defenseSkill.value)) {
                     const modifier = formatSigned(defenseSkill.value);
                     defenseSegments.push(modifier !== null ? modifier : String(defenseSkill.value));
+                }
+                if (typeof defenseSkill.levelBonus === 'number' && defenseSkill.levelBonus !== 0) {
+                    const levelText = formatSigned(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
+                    defenseSegments.push(`(Level bonus ${levelText})`);
                 }
 
                 const rawValueAvailable = typeof defenseSkill.rawValue === 'number' && !Number.isNaN(defenseSkill.rawValue);
@@ -4205,6 +4217,10 @@ class AIRPGChat {
                         skillText += `<br><small>${modDetails.join('<br>')}</small>`;
                     }
                 }
+                if (typeof roll.attackSkill.levelBonus === 'number' && roll.attackSkill.levelBonus !== 0) {
+                    const levelText = formatSigned(roll.attackSkill.levelBonus) ?? roll.attackSkill.levelBonus;
+                    skillText += `<br><small>Level bonus ${levelText}</small>`;
+                }
                 rollSegments.push(skillText);
             }
             if (roll.attackAttribute && typeof roll.attackAttribute.modifier === 'number') {
@@ -4271,6 +4287,10 @@ class AIRPGChat {
                 if (typeof damage.damageAttribute.modifier === 'number') {
                     const modifier = formatSigned(damage.damageAttribute.modifier);
                     parts.push(modifier !== null ? modifier : String(damage.damageAttribute.modifier));
+                }
+                if (typeof damage.damageAttribute.levelBonus === 'number' && damage.damageAttribute.levelBonus !== 0) {
+                    const levelText = formatSigned(damage.damageAttribute.levelBonus) ?? damage.damageAttribute.levelBonus;
+                    parts.push(`(Level bonus ${levelText})`);
                 }
                 if (parts.length) {
                     lines.push(`<li><strong>Damage Attribute:</strong> ${parts.join(' ')}</li>`);

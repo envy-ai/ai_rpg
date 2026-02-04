@@ -44,7 +44,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Class reference (`docs/classes`)
 
 - [classes/ComfyUIClient.md](classes/ComfyUIClient.md) — Client for ComfyUI servers: queue workflows, poll status, download images, and save results.
-- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations.
+- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including NPC name normalization details.
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
 - [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, and prompt wiring.
 - [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, and cancellation utilities.
@@ -66,7 +66,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
 - [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration semantics.
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.
-- [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization, stub maintenance).
+- [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization, stub maintenance, capitalizeProperNoun options).
 
 ## Design ideas (`docs/ideas`)
 

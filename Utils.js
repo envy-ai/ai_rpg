@@ -388,12 +388,31 @@ class Utils {
   }
 
   /* Capitalizes the first letter of each word in a string, except for small words that aren't supposed to be capitalized in titles (like "and", "the", "of", etc.), unless they are the first or last word. */
-  static capitalizeProperNoun(str) {
+  static capitalizeProperNoun(str, options = {}) {
+    if (options === null || Array.isArray(options) || typeof options !== "object") {
+      throw new TypeError("Utils.capitalizeProperNoun options must be an object.");
+    }
+    const { remove_articles = false } = options;
+    if (typeof remove_articles !== "boolean") {
+      throw new TypeError("Utils.capitalizeProperNoun remove_articles must be a boolean.");
+    }
     const smallWords = [
       "and", "the", "of", "in", "on", "at", "to", "for", "by", "with", "a", "an", "but", "or", "nor", "as", "from", "with"
     ];
     if (!str || typeof str !== "string") return "";
     const words = str.split(/\s+/);
+    if (remove_articles) {
+      const nonEmptyWords = words.filter((word) => word.length > 0);
+      if (nonEmptyWords.length > 1) {
+        const firstWord = nonEmptyWords[0].toLowerCase();
+        if (firstWord === "a" || firstWord === "an" || firstWord === "the") {
+          const firstIndex = words.findIndex((word) => word.length > 0);
+          if (firstIndex !== -1) {
+            words.splice(firstIndex, 1);
+          }
+        }
+      }
+    }
     return words
       .map((word, idx) => {
         const lower = word.toLowerCase();

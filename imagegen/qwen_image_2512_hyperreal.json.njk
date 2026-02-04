@@ -1,0 +1,272 @@
+{
+  "94": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "98": {
+    "inputs": {
+      "samples": [
+        "237",
+        0
+      ],
+      "vae": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "139": {
+    "inputs": {
+      "seed": 1099
+    },
+    "class_type": "Seed Everywhere",
+    "_meta": {
+      "title": "Seed Everywhere"
+    }
+  },
+  "227": {
+    "inputs": {
+      "text": "{{ image.prompt | json }}"
+    },
+    "class_type": "Text Multiline",
+    "_meta": {
+      "title": "Text Multiline"
+    }
+  },
+  "230": {
+    "inputs": {
+      "source": [
+        "256",
+        0
+      ],
+      "to_replace": "%",
+      "replace_with": " percent"
+    },
+    "class_type": "JWStringReplace",
+    "_meta": {
+      "title": "String Replace"
+    }
+  },
+  "233": {
+    "inputs": {
+      "ckpt_name": "qwen_image_2512_fp8_e4m3fn.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "234": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "235": {
+    "inputs": {
+      "format": "%Y-%m-%d-airpg/ComfyUI"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "237": {
+    "inputs": {
+      "seed": [
+        "139",
+        0
+      ],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "seeds_2",
+      "scheduler": "bong_tangent",
+      "denoise": 1,
+      "model": [
+        "268",
+        0
+      ],
+      "positive": [
+        "241",
+        0
+      ],
+      "negative": [
+        "240",
+        0
+      ],
+      "latent_image": [
+        "238",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "238": {
+    "inputs": {
+      "width": {{ image.width }},
+      "height": {{ image.height }},
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "240": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "234",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "241": {
+    "inputs": {
+      "text": [
+        "230",
+        0
+      ],
+      "clip": [
+        "234",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "242": {
+    "inputs": {
+      "lora_name": "qwen/Qwen_Snofs_1_3_xxx.safetensors",
+      "strength_model": 0.8,
+      "model": [
+        "243",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "243": {
+    "inputs": {
+      "lora_name": "qwen/Qwen-Image-2512-Lightning-8steps-V1.0-fp32.safetensors",
+      "strength_model": 1,
+      "model": [
+        "233",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "256": {
+    "inputs": {
+      "string_a": [
+        "227",
+        0
+      ],
+      "string_b": ""
+    },
+    "class_type": "Basic data handling: StringConcat",
+    "_meta": {
+      "title": "concat"
+    }
+  },
+  "260": {
+    "inputs": {
+      "text": "",
+      "anything": [
+        "266",
+        0
+      ]
+    },
+    "class_type": "easy showAnything",
+    "_meta": {
+      "title": "Show Any"
+    }
+  },
+  "265": {
+    "inputs": {
+      "lora_name": "qwen/qwen_image_nova.safetensors",
+      "strength_model": 0.0,
+      "model": [
+        "242",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "268": {
+    "inputs": {
+      "lora_name": "qwen/qwen_image_2512_anime_hyperreal_fixed2.safetensors",
+      "strength_model": 1,
+      "model": [
+        "265",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "266": {
+    "inputs": {
+      "label": "Final Prompt",
+      "text": [
+        "256",
+        0
+      ]
+    },
+    "class_type": "Text to Console",
+    "_meta": {
+      "title": "Text to Console"
+    }
+  },
+  "267": {
+    "inputs": {
+      "filename_prefix": [
+        "235",
+        0
+      ],
+      "images": [
+        "98",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

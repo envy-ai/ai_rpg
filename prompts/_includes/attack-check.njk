@@ -17,7 +17,9 @@ These entities are present on the scene. This is not necessary an exhaustive lis
 
 If a character is making a non-barehanded attack, it must be with a weapon/item or ability that the character has in their possession. Be somewhat strict about this requirement. If the character doesn't have a weapon or item in their inventory that is reasonably suitable for the attack, or if the ability they are using is not one they have, then the action is an attempted attack that fails automatically, and you should respond with a rejection.
 
-Note: For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors.</task>
+Every attack, regardless of if it's a weapon, barehanded, or ability-based, must have a corresponding skill and attribute chosen for the attack and damage calculation. Pick what makes the most sense.
+
+Note: For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors. Recent use of attacks or abilities does not in and of itself indicate fatigue. Fatigue is indicated specifically by need bars, such as stamina and/or mana. Likewise, the character's severity of injury is indicated by the character's health stat, not anything that may have recently occurred to the in the prose.</task>
 
 Format your answer as follows:
 
@@ -39,12 +41,12 @@ or
   <attacker>Full exact name of the attacker as seen in the location context ("player" if it was the player)</attacker>
   <defender>Full exact name of the defender as seen in the location context ("player" if it was the player)</defender>
   <attackerInfo>
-    <attackSkill>N/A or exact name of the skill used to successfully hit</attackSkill>
-    <damageAttribute>N/A or exact name of the attribute used for damage calculation</damageAttribute>
+    <attackSkill>Required: Exact name of the *skill* (*not ability*) used to successfully hit (pick most appropriate)</attackSkill>
+    <damageAttribute>Required: Exact name of the attribute used for damage calculation (pick most appropriate)</damageAttribute>
   </attackerInfo>
   <defenderInfo>
-    <evadeSkill>N/A or exact name of the skill used to dodge or evade. Perception skills are insufficient for this.</evadeSkill>
-    <deflectSkill>N/A or exact name of the skill used to parry, deflect, or block. Perception skills are insufficient for this.</deflectSkill>
+    <evadeSkill>N/A or exact name of the skill used to dodge or evade. Perception skills are insufficient for this. Pick most appropriate.</evadeSkill>
+    <deflectSkill>N/A or exact name of the skill used to parry, deflect, or block. Perception skills are insufficient for this. Pick most appropriate.</deflectSkill>
   </defenderInfo>
   <ability>N/A or exact name of the ability used</ability>
   <weapon>N/A or exact name of the weapon used (barehanded if none equipped or specified in the playerAction, or if using an ability)</weapon>

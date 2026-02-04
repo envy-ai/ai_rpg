@@ -1815,16 +1815,35 @@ function collectNpcNamesForContext(entry = null) {
         }
     };
 
-    let locationId = null;
+    const locationIds = new Set();
+    const addLocationId = (value) => {
+        if (typeof value !== 'string') {
+            return;
+        }
+        const trimmed = value.trim();
+        if (!trimmed) {
+            return;
+        }
+        locationIds.add(trimmed);
+    };
+
     if (entry && entry.locationId) {
-        locationId = entry.locationId;
-    } else if (entry?.metadata?.locationId) {
-        locationId = entry.metadata.locationId;
-    } else if (currentPlayer?.currentLocation) {
-        locationId = currentPlayer.currentLocation;
+        addLocationId(entry.locationId);
+    }
+    if (entry?.metadata?.locationId) {
+        addLocationId(entry.metadata.locationId);
+    }
+    if (entry?.metadata?.traveledToLocationId) {
+        addLocationId(entry.metadata.traveledToLocationId);
+    }
+    if (entry?.traveledToLocationId) {
+        addLocationId(entry.traveledToLocationId);
+    }
+    if (!locationIds.size && currentPlayer?.currentLocation) {
+        addLocationId(currentPlayer.currentLocation);
     }
 
-    if (locationId) {
+    for (const locationId of locationIds) {
         let locationRecord = gameLocations.get(locationId) || null;
         if (!locationRecord && typeof Location?.get === 'function') {
             try {
@@ -2549,11 +2568,18 @@ async function ensureNpcByName(name, context = {}) {
     }
 
     let resolvedName = typeof name === 'string' ? name.trim() : '';
-    const shouldCapitalizeName = resolvedName && !/[A-Z]/.test(resolvedName);
-    if (shouldCapitalizeName) {
-        const capitalized = Utils.capitalizeProperNoun(resolvedName);
+    let normalizedName = resolvedName;
+    if (resolvedName) {
+        const capitalized = Utils.capitalizeProperNoun(resolvedName, { remove_articles: true });
         if (capitalized) {
-            resolvedName = capitalized;
+            normalizedName = capitalized;
+        }
+    }
+
+    if (normalizedName) {
+        const existingNormalized = findActorByName(normalizedName);
+        if (existingNormalized) {
+            return existingNormalized;
         }
     }
 
@@ -2570,7 +2596,7 @@ async function ensureNpcByName(name, context = {}) {
     const existingNames = new SanitizedStringSet(Player.getAll().map(npc => npc.name));
 
     const generated = await generateNpcFromEvent({
-        name: resolvedName || name,
+        name: normalizedName || resolvedName || name,
         location: resolvedLocation,
         region: resolvedRegion,
         oldItem: context.oldItem || null
@@ -2587,10 +2613,10 @@ async function ensureNpcByName(name, context = {}) {
         existingNames
     });
 
-    if (shouldCapitalizeName && typeof generated?.name === 'string') {
+    if (typeof generated?.name === 'string') {
         const ensuredName = generated.name.trim();
-        if (ensuredName && !/[A-Z]/.test(ensuredName)) {
-            const capitalized = Utils.capitalizeProperNoun(ensuredName);
+        if (ensuredName) {
+            const capitalized = Utils.capitalizeProperNoun(ensuredName, { remove_articles: true });
             if (capitalized && capitalized !== ensuredName) {
                 if (typeof generated.setName === 'function') {
                     generated.setName(capitalized);
@@ -3505,11 +3531,12 @@ function buildBasePromptContext({
         }
         const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
         const seen = Array.isArray(metadata?.npcNames) ? metadata.npcNames : [];
+        const supplemental = collectNpcNamesForContext(entry);
         if (!presentCharactersForHistory.length) {
             return '';
         }
         const seenSet = new Set(
-            seen
+            [...seen, ...supplemental]
                 .map(name => (typeof name === 'string' ? name.trim() : ''))
                 .filter(Boolean)
         );
@@ -3552,7 +3579,44 @@ function buildBasePromptContext({
         return ` [location: ${locationName}]`;
     };
 
-    const relevantHistory = historyEntries.filter(entry => entry && (entry.content) && entry.type !== 'status-summary');
+    const formatEventSummaryEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return '';
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType !== 'event-summary') {
+            return '';
+        }
+        const items = Array.isArray(entry.summaryItems) ? entry.summaryItems : [];
+        if (!items.length) {
+            return '';
+        }
+        const title = typeof entry.summaryTitle === 'string' && entry.summaryTitle.trim()
+            ? entry.summaryTitle.trim()
+            : '📋 Events';
+        const lines = [title];
+        for (const item of items) {
+            if (!item) {
+                continue;
+            }
+            const icon = typeof item.icon === 'string' && item.icon ? item.icon : '•';
+            const text = typeof item.text === 'string' ? item.text : '';
+            lines.push(`• ${icon} ${text}`.trim());
+        }
+        return lines.join('\n').trim();
+    };
+
+    const shouldIncludeEntryInHistory = (entry) => {
+        if (!entry || entry.type === 'status-summary') {
+            return false;
+        }
+        if (entry.content) {
+            return true;
+        }
+        return Boolean(formatEventSummaryEntry(entry));
+    };
+
+    const relevantHistory = historyEntries.filter(shouldIncludeEntryInHistory);
 
     const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
     const limitedHistory = totalHistoryLimit > 0
@@ -3726,7 +3790,9 @@ function buildBasePromptContext({
             continue;
         }
         const contentText = typeof entry.content === 'string' ? entry.content.trim() : '';
-        if (!contentText) {
+        const fallbackText = contentText ? '' : formatEventSummaryEntry(entry);
+        const resolvedContent = contentText || fallbackText;
+        if (!resolvedContent) {
             continue;
         }
         const roleRaw = typeof entry.role === 'string' && entry.role.trim()
@@ -3738,7 +3804,7 @@ function buildBasePromptContext({
         const roleLabel = roleRaw.toLowerCase() === 'user'
             ? playerLabel
             : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw);
-        historySegments.push({ entry, line: `[${roleLabel}] ${contentText}` });
+        historySegments.push({ entry, line: `[${roleLabel}] ${resolvedContent}` });
     }
 
     const buildHistoryLines = (segments) => {
@@ -14999,6 +15065,7 @@ async function generateFactionsList({ count, settingDescription }) {
 
     const factionResponse = await LLMClient.chatCompletion({
         messages,
+        maxTokens: 30000,
         temperature: parsedTemplate.temperature,
         metadataLabel: 'faction_generation'
     });
@@ -19515,7 +19582,7 @@ const apiScope = {
     imageFileExists,
     realtimeHub,
     addJobSubscriber,
-    
+
 };
 
 function defineApiStateProperty(name, getter, setter) {

@@ -1684,6 +1684,63 @@ module.exports = function registerApiRoutes(scope) {
             throw new Error(`${contextLabel} is missing a valid locationId`);
         };
 
+        const applyTraveledToLocationMetadata = (entries, destinationId, contextLabel = 'travel destination') => {
+            const resolvedDestinationId = requireLocationId(destinationId, contextLabel);
+            const applyToEntry = (entry) => {
+                if (!entry || typeof entry !== 'object') {
+                    return;
+                }
+                const metadata = entry.metadata && typeof entry.metadata === 'object'
+                    ? entry.metadata
+                    : {};
+                metadata.traveledToLocationId = resolvedDestinationId;
+                entry.metadata = metadata;
+            };
+            if (Array.isArray(entries)) {
+                entries.forEach(applyToEntry);
+            } else {
+                applyToEntry(entries);
+            }
+        };
+
+        const collectTravelTurnEntries = ({
+            userEntry = null,
+            assistantEntry = null,
+            collector = null
+        } = {}) => {
+            const entries = new Set();
+            if (userEntry) {
+                entries.add(userEntry);
+            }
+            if (assistantEntry) {
+                entries.add(assistantEntry);
+            }
+            if (assistantEntry && assistantEntry.id && Array.isArray(collector)) {
+                for (const entry of collector) {
+                    if (!entry || !entry.parentId) {
+                        continue;
+                    }
+                    if (entry.parentId === assistantEntry.id) {
+                        entries.add(entry);
+                    }
+                }
+            }
+            return Array.from(entries);
+        };
+
+        const findMostRecentTravelEntry = () => {
+            if (!Array.isArray(chatHistory)) {
+                throw new Error('Chat history is unavailable for travel metadata updates.');
+            }
+            for (let idx = chatHistory.length - 1; idx >= 0; idx -= 1) {
+                const entry = chatHistory[idx];
+                if (entry && entry.role === 'user' && entry.travel === true) {
+                    return entry;
+                }
+            }
+            return null;
+        };
+
         const findMostRecentHistoryEntryWithRequestId = (collector = null, requestId = null) => {
             const targetId = typeof requestId === 'string' ? requestId.trim() : '';
             if (!targetId) {
@@ -1718,6 +1775,37 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return null;
+        };
+
+        const backfillTraveledToLocationIdsOnLoad = (entries) => {
+            if (!Array.isArray(entries)) {
+                throw new Error('Chat history is unavailable for travel metadata backfill.');
+            }
+            for (let idx = 0; idx < entries.length - 1; idx += 1) {
+                const entry = entries[idx];
+                const nextEntry = entries[idx + 1];
+                if (!entry || !nextEntry) {
+                    continue;
+                }
+                const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+                if (role !== 'user' && role !== 'assistant') {
+                    continue;
+                }
+                const metadata = entry.metadata && typeof entry.metadata === 'object'
+                    ? entry.metadata
+                    : null;
+                if (metadata && Object.prototype.hasOwnProperty.call(metadata, 'traveledToLocationId')) {
+                    continue;
+                }
+                const currentLocationId = typeof entry.locationId === 'string' ? entry.locationId.trim() : '';
+                const nextLocationId = typeof nextEntry.locationId === 'string' ? nextEntry.locationId.trim() : '';
+                if (!currentLocationId || !nextLocationId || currentLocationId === nextLocationId) {
+                    continue;
+                }
+                const updatedMetadata = metadata || {};
+                updatedMetadata.traveledToLocationId = nextLocationId;
+                entry.metadata = updatedMetadata;
+            }
         };
 
         const parseQuestRewardMessage = (text) => {
@@ -4467,7 +4555,14 @@ module.exports = function registerApiRoutes(scope) {
             const attackSkillName = sanitizeNamedValue(attackerInfo.attackSkill);
             const damageAttributeName = sanitizeNamedValue(attackerInfo.damageAttribute);
             const attackSkillInfo = resolveActorSkillInfo(attacker, attackSkillName);
-            const attackSkillValue = Number.isFinite(attackSkillInfo.value) ? attackSkillInfo.value : 0;
+            const attackSkillBaseValue = Number.isFinite(attackSkillInfo.value) ? attackSkillInfo.value : 0;
+            const attackerLevelRaw = Number(attacker?.level);
+            if (!Number.isFinite(attackerLevelRaw)) {
+                console.warn(`Attack check missing attacker level for ${attacker?.name || attacker?.id || 'unknown attacker'}.`);
+            }
+            const attackerLevel = Number.isFinite(attackerLevelRaw) ? attackerLevelRaw : 0;
+            const attackLevelBonus = attackerLevel > 0 ? Math.ceil(attackerLevel / 2) : 0;
+            const attackSkillValue = attackSkillBaseValue + attackLevelBonus;
 
             let attackAttributeName = null;
             const skillDefinition = attackSkillInfo.key ? resolveSkillDefinition(attackSkillInfo.key) : null;
@@ -4488,6 +4583,10 @@ module.exports = function registerApiRoutes(scope) {
             const damageAttributeInfo = damageAttributeName
                 ? resolveActorAttributeInfo(attacker, damageAttributeName)
                 : attackAttributeInfo;
+            const damageAttributeBaseModifier = Number.isFinite(damageAttributeInfo.modifier)
+                ? damageAttributeInfo.modifier
+                : 0;
+            const damageAttributeModifier = damageAttributeBaseModifier + attackLevelBonus;
 
             const rollResult = diceModule && typeof diceModule.rollDice === 'function'
                 ? diceModule.rollDice('1d20')
@@ -4510,22 +4609,35 @@ module.exports = function registerApiRoutes(scope) {
                 addDefenseCandidate('Deflect', 'fallback');
             }
 
-            let bestDefense = { name: null, value: 0, source: null };
+            const defenderLevelRaw = Number(defender?.level);
+            if (defender && !Number.isFinite(defenderLevelRaw)) {
+                console.warn(`Attack check missing defender level for ${defender?.name || defender?.id || 'unknown defender'}.`);
+            }
+            const defenderLevel = Number.isFinite(defenderLevelRaw) ? defenderLevelRaw : 0;
+            const defenseLevelBonus = defenderLevel > 0 ? Math.floor(defenderLevel / 2) : 0;
+
+            let bestDefense = { name: null, value: 0, source: null, baseValue: 0, levelBonus: 0 };
             if (defender) {
                 for (const candidate of defenseCandidates) {
                     const info = resolveActorSkillInfo(defender, candidate.name);
-                    const value = Number.isFinite(info.value) ? info.value : 0;
+                    const baseValue = Number.isFinite(info.value) ? info.value : 0;
+                    const applyLevelBonus = candidate.source === 'evade'
+                        || candidate.source === 'deflect'
+                        || candidate.source === 'fallback';
+                    const levelBonus = applyLevelBonus ? defenseLevelBonus : 0;
+                    const value = baseValue + levelBonus;
                     if (value > bestDefense.value) {
                         bestDefense = {
                             name: info.key || candidate.name,
                             value,
-                            source: candidate.source
+                            source: candidate.source,
+                            baseValue,
+                            levelBonus
                         };
                     }
                 }
             }
 
-            const defenderLevel = Number.isFinite(defender?.level) ? defender.level : 0;
             const defenseCap = defenderLevel + 5;
             const normalizedDefenseValue = Number.isFinite(bestDefense.value) ? bestDefense.value : 0;
             const cappedDefenseValue = Math.min(normalizedDefenseValue, defenseCap);
@@ -4553,9 +4665,7 @@ module.exports = function registerApiRoutes(scope) {
             if (hit) {
                 const baseWeaponDamage = weaponData.baseDamage;
                 const hitDegreeMultiplier = Math.min(.75 + hitDegreeRaw / 4, 2);
-                const attributeModifier = Number.isFinite(damageAttributeInfo.modifier)
-                    ? damageAttributeInfo.modifier
-                    : 0;
+                const attributeModifier = damageAttributeModifier;
                 const scaledDamage = baseWeaponDamage * hitDegreeMultiplier;
                 const preRoundedDamage = scaledDamage + attributeModifier;
                 const roundedDamageComponent = Math.round(preRoundedDamage);
@@ -4605,6 +4715,8 @@ module.exports = function registerApiRoutes(scope) {
                     attackSkill: {
                         name: attackSkillInfo.key,
                         value: attackSkillValue,
+                        baseValue: attackSkillBaseValue,
+                        levelBonus: attackLevelBonus,
                         modifiers: Array.isArray(attackSkillInfo.modifiers) ? attackSkillInfo.modifiers : []
                     },
                     attackAttribute: {
@@ -4625,6 +4737,8 @@ module.exports = function registerApiRoutes(scope) {
                         name: bestDefense.name,
                         value: cappedDefenseValue,
                         rawValue: normalizedDefenseValue,
+                        baseValue: Number.isFinite(bestDefense.baseValue) ? bestDefense.baseValue : normalizedDefenseValue,
+                        levelBonus: Number.isFinite(bestDefense.levelBonus) ? bestDefense.levelBonus : 0,
                         cap: defenseCap,
                         capped: defenseWasCapped,
                         source: bestDefense.source
@@ -4643,7 +4757,9 @@ module.exports = function registerApiRoutes(scope) {
                     weaponRarity: weaponData.rarity,
                     damageAttribute: {
                         name: damageAttributeInfo.key,
-                        modifier: damageAttributeInfo.modifier
+                        modifier: damageAttributeModifier,
+                        baseModifier: damageAttributeBaseModifier,
+                        levelBonus: attackLevelBonus
                     },
                     calculation: damageCalculation
                 },
@@ -7466,6 +7582,9 @@ module.exports = function registerApiRoutes(scope) {
             let locationMemoriesProcessed = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
+            let travelUserEntry = null;
+            let travelAssistantEntry = null;
+            let traveledToLocationId = null;
             eventsProcessedThisTurn = false;
             let promptTemplateName = null;
             let promptVariablesSnapshot = null;
@@ -7779,7 +7898,10 @@ module.exports = function registerApiRoutes(scope) {
                     if (stream.requestId) {
                         entryPayload.metadata = { requestId: stream.requestId };
                     }
-                    pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
+                    const storedUserEntry = pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
+                    if (isTravelMessage) {
+                        travelUserEntry = storedUserEntry;
+                    }
                 } else {
                     currentActionIsTravel = false;
                     previousActionWasTravel = false;
@@ -8619,6 +8741,9 @@ module.exports = function registerApiRoutes(scope) {
                         type: 'player-action',
                         locationId: aiResponseLocationId
                     }, newChatEntries, aiResponseLocationId);
+                    if (currentActionIsTravel) {
+                        travelAssistantEntry = aiResponseEntry;
+                    }
                     currentTurnLog.push(aiResponse);
 
                     if (slopRemovalInfo) {
@@ -8927,6 +9052,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (travelMetadataIsEventDriven && currentActionIsTravel) {
+                        traveledToLocationId = requireLocationId(travelMetadata?.exit?.destinationId, 'travel destination');
                         let travelAttemptSucceeded = false;
                         if (plausibilityType === 'trivial') {
                             travelAttemptSucceeded = true;
@@ -8967,6 +9093,8 @@ module.exports = function registerApiRoutes(scope) {
                                     if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
                                         currentPlayer.setLocation(destinationLocation);
                                     }
+
+                                    traveledToLocationId = destinationLocation?.id || traveledToLocationId;
 
                                     const normalizedName = typeof destinationName === 'string' && destinationName.trim()
                                         ? destinationName.trim()
@@ -9041,6 +9169,21 @@ module.exports = function registerApiRoutes(scope) {
                         parentId: aiResponseEntry?.id || null,
                         locationId: aiResponseLocationId
                     }, newChatEntries);
+
+                    if (currentActionIsTravel && travelMetadataIsEventDriven) {
+                        if (!traveledToLocationId) {
+                            throw new Error('Travel action is missing a destination for traveledToLocationId.');
+                        }
+                        const travelEntries = collectTravelTurnEntries({
+                            userEntry: travelUserEntry,
+                            assistantEntry: travelAssistantEntry,
+                            collector: newChatEntries
+                        });
+                        if (!travelEntries.length) {
+                            throw new Error('Travel action entries were not found for traveledToLocationId.');
+                        }
+                        applyTraveledToLocationMetadata(travelEntries, traveledToLocationId, 'travel destination');
+                    }
 
                     console.debug('[QuestDebug] processing questsAwarded:', responseData.questsAwarded);
                     if (Array.isArray(responseData.questsAwarded) && responseData.questsAwarded.length) {
@@ -14863,6 +15006,14 @@ module.exports = function registerApiRoutes(scope) {
 
                 currentPlayer.setLocation(destinationLocation.id);
 
+                if (currentPlayer?.lastActionWasTravel) {
+                    const travelEntry = findMostRecentTravelEntry();
+                    if (!travelEntry) {
+                        throw new Error('Travel action entry not found for traveledToLocationId.');
+                    }
+                    applyTraveledToLocationMetadata(travelEntry, destinationLocation.id, 'travel destination');
+                }
+
                 if (typeof currentPlayer.getPartyMembers === 'function') {
                     const partyMemberIds = currentPlayer.getPartyMembers();
                     if (Array.isArray(partyMemberIds) || partyMemberIds instanceof Set) {
@@ -19050,6 +19201,59 @@ module.exports = function registerApiRoutes(scope) {
                 : path.join(baseDir, trimmed);
         };
 
+        const resolveMostRecentSaveDir = (saveRootPath) => {
+            if (!saveRootPath || typeof saveRootPath !== 'string') {
+                throw new Error('Save root path is required to locate the most recent save.');
+            }
+            if (!fs.existsSync(saveRootPath)) {
+                return null;
+            }
+            const dirEntries = fs.readdirSync(saveRootPath, { withFileTypes: true })
+                .filter(entry => entry.isDirectory());
+            if (!dirEntries.length) {
+                return null;
+            }
+            let latest = null;
+            for (const entry of dirEntries) {
+                const fullPath = path.join(saveRootPath, entry.name);
+                let stats = null;
+                try {
+                    stats = fs.statSync(fullPath);
+                } catch (error) {
+                    console.warn('Failed to stat save directory:', fullPath, error?.message || error);
+                    continue;
+                }
+                const modifiedAt = Number.isFinite(stats.mtimeMs) ? stats.mtimeMs : 0;
+                if (!latest || modifiedAt > latest.modifiedAt) {
+                    latest = { path: fullPath, modifiedAt };
+                }
+            }
+            return latest ? latest.path : null;
+        };
+
+        const readLastChatHistoryEntryId = (saveDir) => {
+            if (!saveDir || typeof saveDir !== 'string') {
+                throw new Error('Save directory is required to read chat history.');
+            }
+            const filePath = path.join(saveDir, 'chatHistory.json');
+            if (!fs.existsSync(filePath)) {
+                return null;
+            }
+            try {
+                const raw = fs.readFileSync(filePath, 'utf8');
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed) || !parsed.length) {
+                    return null;
+                }
+                const lastEntry = parsed[parsed.length - 1];
+                const id = typeof lastEntry?.id === 'string' ? lastEntry.id.trim() : '';
+                return id || null;
+            } catch (error) {
+                console.warn('Failed to read chatHistory.json from save:', saveDir, error?.message || error);
+                return null;
+            }
+        };
+
         function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player to save');
@@ -19088,6 +19292,21 @@ module.exports = function registerApiRoutes(scope) {
                 pendingRegionStubs
             });
 
+            if (path.basename(saveRootPath) === 'autosaves') {
+                const mostRecentSaveDir = resolveMostRecentSaveDir(saveRootPath);
+                if (mostRecentSaveDir) {
+                    const lastSavedEntryId = readLastChatHistoryEntryId(mostRecentSaveDir);
+                    const currentHistory = Array.isArray(serialized.chatHistory) ? serialized.chatHistory : [];
+                    const currentLastEntry = currentHistory.length ? currentHistory[currentHistory.length - 1] : null;
+                    const currentLastEntryId = typeof currentLastEntry?.id === 'string'
+                        ? currentLastEntry.id.trim()
+                        : '';
+                    if (lastSavedEntryId && currentLastEntryId && lastSavedEntryId === currentLastEntryId) {
+                        serialized.chatHistory = currentHistory.slice(0, -1);
+                    }
+                }
+            }
+
             const metadata = serialized.metadata || {};
             serialized.metadata = metadata;
             metadata.saveName = saveName;
@@ -19098,8 +19317,8 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalLocationExits = gameLocationExits.size;
             metadata.totalRegions = regions.size;
             metadata.totalFactions = factions.size;
-            metadata.chatHistoryLength = Array.isArray(chatHistory)
-                ? chatHistory.length
+            metadata.chatHistoryLength = Array.isArray(serialized.chatHistory)
+                ? serialized.chatHistory.length
                 : (metadata.chatHistoryLength || 0);
             metadata.totalGeneratedImages = generatedImages.size;
             metadata.totalSkills = skills.size;
@@ -19172,6 +19391,7 @@ module.exports = function registerApiRoutes(scope) {
                 npcGenerationPromises,
                 pendingRegionStubs
             });
+            backfillTraveledToLocationIdsOnLoad(chatHistory);
 
             let metadata = hydrationResult.metadata || {};
             if (!metadata || typeof metadata !== 'object') {

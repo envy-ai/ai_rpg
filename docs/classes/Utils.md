@@ -7,7 +7,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - `intersection(setA, setB)`, `difference(setA, setB)`, `union(setA, setB)`.
 - `roundAwayFromZero(value)`.
 - `longestCommonSubstringLength(a, b)`.
-- `capitalizeProperNoun(str)`: title-cases and normalizes item/location names.
+- `capitalizeProperNoun(str, { remove_articles = false })`: title-cases and normalizes item/location names, optionally stripping a/an/the from the start.
 - K-gram utilities:
   - `pruneContainedKgrams(ngrams)`.
   - `hasKgramOverlap(a, b, { k, minMatches })`.

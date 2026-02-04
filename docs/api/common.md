@@ -25,7 +25,7 @@ Fields:
 - `travel`: boolean | undefined
 - `lastEditedAt`: ISO string | undefined (edited messages)
 - `ephemeral`: boolean | undefined (system-only entries)
-- `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, quest metadata, etc.)
+- `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, etc.)
 
 ## ActionResolution (resolveActionOutcome)
 Used by `/api/chat` (`actionResolution`) and `/api/craft` (`outcome`).

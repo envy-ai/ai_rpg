@@ -137,11 +137,11 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_first_appearance",
-            prompt: `Did any animate entities (NPCs, animals, monsters, robots, or anything else capable of moving on its own) appear for the first time on the scene, or become visible or known to the player, either as newly created entities or entities that were mentioned as already existing but had not been previously described in the scene context? If so, list the full names of those entities as seen in the location context (capitalized as Proper Nouns) separated by vertical bars. Otherwise, answer N/A.`,
+            prompt: `List all entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. If none, answer N/A.`,
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all entities (NPCs, animals, monsters, robots, etc.) that the player interacted with in textToCheck which aren't already listed in your answers above, in the player's party, or in the location's context. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
+            prompt: `List all entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
         },
         {
             key: "party_change",
