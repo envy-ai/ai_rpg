@@ -54,6 +54,18 @@ Fill in any empty fields with appropriate values that fit the context of the fil
 {% if hasImage %}Use the uploaded image as the primary reference and fill in the missing fields to generate the setting depicted in the image, aligning details like tone, technology, and atmosphere with what you see.{% endif %}
 Return only the completed XML structure without any additional commentary or explanation. The available setting fields are: name, description, theme, genre, startingLocationType, magicLevel, techLevel, tone, difficulty, currencyName, currencyNamePlural, currencyValueNotes, writingStyleNotes, baseContextPreamble, characterGenInstructions, playerStartingLevel, defaultPlayerName, defaultPlayerDescription, defaultStartingLocation, defaultStartingCurrency, defaultNumSkills, defaultExistingSkills, availableClasses, and availableRaces.
 
+When filling defaultStartingLocation, prefer this suggested multi-line format (with blank lines between lines):
+Region name: [name]
+
+Summary: [description]
+
+Rooms/Locations: [comma-separated list of rooms]
+
+Region exits: [comma-separated list of connected regions]
+
+When filling baseContextPreamble, prefer a single-line bracketed format like:
+[Title: The Verdant Metropolis; Tags: heroic, dark, edgy; Genre: sci-fi, adventure, dystopian]
+
 When populating currencyValueNotes, describe the relative value of the currency in terms of common goods and services in the setting, using 5 or 6 entries ordered from cheapest to most expensive with the format:
 
 [value]: [item]

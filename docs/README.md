@@ -14,9 +14,9 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## UI docs (`docs/ui`)
 
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
-- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts and injected data.
+- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes.
 - [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, and LLM modal submit behavior.
-- [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays, including immediate-close LLM modals.
+- [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
 - [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries.
 
@@ -38,7 +38,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/quests.md](api/quests.md) — Quest endpoints; references shared payloads in `docs/api/common.md`.
 - [api/regions.md](api/regions.md) — Region endpoints; references shared payloads in `docs/api/common.md`.
 - [api/serialization.md](api/serialization.md) — Legacy index for shared shapes; points to `docs/api/common.md` as authoritative.
-- [api/settings.md](api/settings.md) — Settings endpoints; references shared payloads in `docs/api/common.md`.
+- [api/settings.md](api/settings.md) — Settings endpoints (including AI fill-missing guidance); references shared payloads in `docs/api/common.md`.
 - [api/things.md](api/things.md) — Things and inventory endpoints; references shared payloads in `docs/api/common.md`.
 
 ## Class reference (`docs/classes`)
@@ -64,7 +64,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/SceneSummaries.md](classes/SceneSummaries.md) — Stores scene summaries from chat history and tracks scene ranges and NPC names.
 - [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions) with persistence support.
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
-- [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration semantics.
+- [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration parsing semantics.
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.
 - [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization, stub maintenance, capitalizeProperNoun options).
 

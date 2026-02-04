@@ -26,6 +26,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Script: `public/js/new-game.js`.
 - Data injected by `server.js`:
   - `newGameDefaults`, `currentSetting`.
+- Notes: the Starting Location Generation Instructions field uses a multiline placeholder template (region name, summary, rooms/locations, region exits).
 - Notes: submits `/api/new-game` with a keepalive POST, then immediately navigates to `/#tab-adventure` while generation continues; websocket status updates drive the overlay spinner if the page remains visible.
 
 ## Server configuration
@@ -43,6 +44,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Script: inline (settings CRUD is embedded in the template).
 - Data injected by `server.js`:
   - `currentPage` only. Data is loaded via `/api/settings` calls.
+- Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 
 ## Lorebooks manager
 - Route: `/lorebooks`

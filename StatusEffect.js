@@ -66,26 +66,54 @@ class StatusEffect {
         });
     }
 
-    #normalizeDuration(value) {
+    static normalizeDuration(value) {
         if (value === null || value === undefined) {
             return null;
         }
 
-        // If value is 'instant', treat as 1 turn
-        if (typeof value === 'string' && value.toLowerCase() === 'instant') {
-            return 1;
-        }
-
-        // If value is 'permanent', treat as -1 turns
-        if (typeof value === 'string' && value.toLowerCase() === 'permanent') {
-            return -1;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            const lower = trimmed.toLowerCase();
+            if (lower === 'instant') {
+                return 1;
+            }
+            if (lower === 'permanent' || lower === 'continuous') {
+                return -1;
+            }
+            if (lower === 'n/a' || lower === 'na' || lower === 'none') {
+                return null;
+            }
+            const numericMatch = trimmed.match(/-?\d+(?:\.\d+)?/);
+            if (!numericMatch) {
+                throw new Error(`StatusEffect duration "${value}" is invalid`);
+            }
+            const numeric = Number(numericMatch[0]);
+            if (!Number.isFinite(numeric)) {
+                throw new Error(`StatusEffect duration "${value}" is invalid`);
+            }
+            const rounded = Math.floor(numeric);
+            if (rounded < 0 && rounded !== -1) {
+                throw new Error('StatusEffect duration must be -1 (permanent) or a non-negative integer');
+            }
+            return rounded;
         }
 
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) {
-            return 1;
+            throw new Error(`StatusEffect duration "${value}" is invalid`);
         }
-        return Math.max(0, Math.floor(numeric));
+        const rounded = Math.floor(numeric);
+        if (rounded < 0 && rounded !== -1) {
+            throw new Error('StatusEffect duration must be -1 (permanent) or a non-negative integer');
+        }
+        return rounded;
+    }
+
+    #normalizeDuration(value) {
+        return StatusEffect.normalizeDuration(value);
     }
 
     update({ name, description, attributes, skills, needBars, duration } = {}) {
@@ -239,11 +267,7 @@ class StatusEffect {
             const durationText = textFromTag(node, 'duration');
             let duration = null;
             if (durationText !== null && durationText !== undefined && durationText.trim() !== '') {
-                const parsedDuration = Number(durationText);
-                if (!Number.isFinite(parsedDuration)) {
-                    throw new Error(`Status effect "${sourceDescription}" duration is invalid`);
-                }
-                duration = Math.max(0, Math.floor(parsedDuration));
+                duration = durationText.trim();
             }
 
             const attributes = Array.from(node.getElementsByTagName('attribute'))

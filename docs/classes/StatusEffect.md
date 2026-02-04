@@ -8,7 +8,8 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `description` is required and must be a non-empty string.
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
   - `needBars` is an array of `{ name, delta }`.
-  - `duration` accepts numbers, `'instant'` (treated as 1), `'permanent'` (treated as -1), or null.
+  - `duration` accepts numbers, strings with a numeric value (e.g. `"10 minutes"` → `10`), `'instant'` (treated as 1), `'permanent'`/`'continuous'` (treated as -1), or null.
+  - Invalid duration strings raise a clear error so malformed prompts are surfaced.
 
 ## Instance API
 - `update({ name, description, attributes, skills, needBars, duration })`: normalizes and updates fields in place.
@@ -25,7 +26,7 @@ Represents a temporary or permanent modifier applied to an entity, including att
 ## Private Helpers
 - `#normalizeModifiers(list, keyName)`: validates and normalizes attribute/skill modifier lists.
 - `#normalizeNeedBars(list)`: validates and normalizes need bar deltas.
-- `#normalizeDuration(value)`: converts duration inputs to integer turns or null.
+- `#normalizeDuration(value)`: converts duration inputs to integer turns or null (throws on invalid inputs).
 
 ## Notes
 - All normalizers throw clear errors on invalid structures or missing data.

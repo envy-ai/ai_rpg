@@ -4863,12 +4863,55 @@
                 return `<ul class="tooltip-thing-bonuses-list">${valid.join('')}</ul>`;
             };
 
-            const renderEffectSection = (effect, title) => {
+            const formatStatusEffectDuration = (durationValue) => {
+                if (durationValue === null || durationValue === undefined || durationValue === '') {
+                    return '';
+                }
+                const normalizeNumeric = (num) => {
+                    if (!Number.isFinite(num)) {
+                        return '';
+                    }
+                    if (num < 0) {
+                        return 'Permanent';
+                    }
+                    const rounded = Math.floor(num);
+                    return `${rounded} turn${rounded === 1 ? '' : 's'}`;
+                };
+
+                if (typeof durationValue === 'string') {
+                    const trimmed = durationValue.trim();
+                    if (!trimmed) {
+                        return '';
+                    }
+                    const lower = trimmed.toLowerCase();
+                    if (lower === 'permanent' || lower === 'continuous') {
+                        return 'Permanent';
+                    }
+                    if (lower === 'instant') {
+                        return '1 turn';
+                    }
+                    const parsed = Number(trimmed);
+                    if (Number.isFinite(parsed)) {
+                        return normalizeNumeric(parsed);
+                    }
+                    return trimmed;
+                }
+
+                const numeric = Number(durationValue);
+                return normalizeNumeric(numeric);
+            };
+
+            const renderEffectSection = (effect, title, { includeDuration = false } = {}) => {
                 if (!effect || (!effect.description && !effect.name)) {
                     return '';
                 }
                 const nameText = effect.name || '';
                 const description = effect.description || effect.text || effect.name || '';
+                const durationLabel = includeDuration ? formatStatusEffectDuration(effect.duration) : '';
+                const durationSuffix = durationLabel ? ` (Duration: ${durationLabel})` : '';
+                const descriptionText = description
+                    ? `${description}${durationSuffix}`
+                    : (durationSuffix ? durationSuffix.trim() : '');
                 const mods = (() => {
                     const combined = [
                         ...(Array.isArray(effect.attributes) ? effect.attributes : []),
@@ -4912,15 +4955,18 @@
                 return `
                     <div class="tooltip-thing-status">
                         <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
-                        <div class="tooltip-status-desc">${nameText ? `<strong>${escapeHtml(nameText)}</strong> – ` : ''}${escapeHtml(description)}</div>
+                        <div class="tooltip-status-desc">${nameText ? `<strong>${escapeHtml(nameText)}</strong> – ` : ''}${escapeHtml(descriptionText)}</div>
                         ${combinedList}
                     </div>
                 `;
             };
 
             const statusSections = [];
-            statusSections.push(renderEffectSection(thing.causeStatusEffectOnTarget, 'INFLICT STATUS EFFECT'));
-            statusSections.push(renderEffectSection(thing.causeStatusEffectOnEquipper, 'EQUIP STATUS EFFECT'));
+            const canEquip = normalizedType !== 'scenery' && isEquippableThing(thing);
+            statusSections.push(renderEffectSection(thing.causeStatusEffectOnTarget, 'INFLICT STATUS EFFECT', { includeDuration: true }));
+            if (canEquip) {
+                statusSections.push(renderEffectSection(thing.causeStatusEffectOnEquipper, 'EQUIP STATUS EFFECT'));
+            }
             const statusEffectsHtml = statusSections.filter(Boolean).join('');
             const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
             const bonusesHtml = attributeBonuses.length
@@ -5238,6 +5284,29 @@
         const thingEditCloseBtn = document.getElementById('thingEditCloseBtn');
         const thingEditSaveBtn = document.getElementById('thingEditSaveBtn');
         const thingEditStatus = document.getElementById('thingEditStatus');
+        const normalizeNeedBarKey = (value) => {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return '';
+            }
+            const lowered = trimmed.toLowerCase();
+            if (lowered === 'health') {
+                return 'health';
+            }
+            const needBars = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
+            const byId = needBars.find(entry => entry?.id && String(entry.id).trim().toLowerCase() === lowered);
+            if (byId?.id) {
+                return String(byId.id);
+            }
+            const byName = needBars.find(entry => entry?.name && String(entry.name).trim().toLowerCase() === lowered);
+            if (byName?.id) {
+                return String(byName.id);
+            }
+            return trimmed;
+        };
         const thingModifierTemplates = {
             buildOptions(selectEl) {
                 if (!selectEl) return;
@@ -5313,7 +5382,10 @@
                     } else if (initial.skill) {
                         select.value = `skill:${initial.skill}`;
                     } else if (initial.name) {
-                        select.value = `need:${initial.name}`;
+                        const needKey = normalizeNeedBarKey(initial.name);
+                        if (needKey) {
+                            select.value = `need:${needKey}`;
+                        }
                     }
                     const numeric = Number.isFinite(initial.modifier)
                         ? initial.modifier

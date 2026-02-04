@@ -41,7 +41,13 @@
     {% set backIcon = '↩️' %}
     {% set inputPlaceholderName = 'Adventurer' %}
     {% set inputPlaceholderDesc = 'A brave soul embarking on a new adventure.' %}
-    {% set inputPlaceholderLoc = 'e.g., Player apartment in a highrise in the upper city.' %}
+    {% set inputPlaceholderLoc -%}Region name: [name]
+
+Summary: [description]
+
+Rooms/Locations: [comma-separated list of rooms]
+
+Region exits: [comma-separated list of connected regions]{%- endset %}
     {% set submitLabel = 'Start New Game' %}
     {% set cancelLabel = 'Back to Chat' %}
     {% set helpName = 'Optional. Defaults to Adventurer.' %}

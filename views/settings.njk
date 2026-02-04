@@ -8,6 +8,14 @@
     <link rel="stylesheet" href="/css/settings.css">
 </head>
 <body>
+    {% set startingLocationPlaceholder -%}Region name: [name]
+
+Summary: [description]
+
+Rooms/Locations: [comma-separated list of rooms]
+
+Region exits: [comma-separated list of connected regions]{%- endset %}
+    {% set baseContextPreamblePlaceholder = '[Title: The Verdant Metropolis; Tags: heroic, dark, edgy; Genre: sci-fi, adventure, dystopian]' %}
     <div class="container">
         <div class="header">
             <h1>⚙️ Game Settings Manager</h1>
@@ -126,7 +134,7 @@
 
                     <div class="form-group">
                         <label for="defaultStartingLocation">Starting Location Generation Instructions</label>
-                        <textarea id="defaultStartingLocation" name="defaultStartingLocation" rows="3" placeholder="Describe how the starting location should be generated..."></textarea>
+                        <textarea id="defaultStartingLocation" name="defaultStartingLocation" rows="3" placeholder="{{ startingLocationPlaceholder }}"></textarea>
                         <div class="help-text">Prefills the starting location instructions on the New Game screen.</div>
                     </div>
 
@@ -180,7 +188,7 @@
 
                     <div class="form-group full-width">
                         <label for="baseContextPreamble">Base Context Preamble</label>
-                        <textarea id="baseContextPreamble" name="baseContextPreamble" rows="4" placeholder="Optional preamble for base-context prompts (title, tags, framing notes, etc)..."></textarea>
+                        <textarea id="baseContextPreamble" name="baseContextPreamble" rows="4" placeholder="{{ baseContextPreamblePlaceholder }}"></textarea>
                         <div class="help-text">Prepended to base-context prompts so the Game Master keeps the core framing in mind.</div>
                     </div>
 

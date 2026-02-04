@@ -37,6 +37,9 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#thingEditModal`: edit items/scenery (metadata, bonuses, on-hit/equip effects, flags).
   - Includes a short description field directly under the main description.
 - `#inventoryTooltip` and `#partyTooltip`: floating tooltips for entity cards.
+  - Item tooltips include inflicted status effect durations when available.
+  - Equip status effects only show for equippable items (slots set).
+  - Status effect need bar selectors normalize Health and need bar display names to their ids.
 
 ## Location and region editing
 
