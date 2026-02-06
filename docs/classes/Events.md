@@ -11,7 +11,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 
 ## Public API (Static)
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
-- `runEventChecks({ textToCheck, stream, allowEnvironmentalEffects, isNpcTurn, _depth, followupQueue })`:
+- `runEventChecks({ textToCheck, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, _depth, followupQueue })`:
     - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
@@ -50,3 +50,5 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
+- `item_inflict` events ignore the prompt-provided status effect text and instead apply the item's inflict effect (`causeStatusEffectOnTarget`) to the target when available.
+- `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes (useful for event-driven travel where movement is handled separately).

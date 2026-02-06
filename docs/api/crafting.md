@@ -33,3 +33,4 @@ Response:
 Notes:
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
+- Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.

@@ -4969,7 +4969,7 @@
             }
             const statusEffectsHtml = statusSections.filter(Boolean).join('');
             const attributeBonuses = getAttributeBonuses(thing).filter(Boolean);
-            const bonusesHtml = attributeBonuses.length
+            const bonusesHtml = canEquip && attributeBonuses.length
                 ? `<div class="tooltip-thing-bonuses">
                         <div class="tooltip-thing-bonuses-title">Attribute Bonuses</div>
                         <ul class="tooltip-thing-bonuses-list">
@@ -5083,6 +5083,7 @@
         let newExitMapPosition = null;
         let newExitMapMode = false;
         let newExitSubmitting = false;
+        const locationCache = {};
         let editingRegionId = null;
         let editingExitContext = null;
         let locationEditMode = 'location';
@@ -5463,8 +5464,9 @@
         let craftingSourceThing = null;
         let craftingIsOpen = false;
         let salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
-        let craftingSubmitting = false;
-        let salvageSubmitting = false;
+        // Allow concurrent craft/harvest requests; only dedupe identical payloads to avoid double-clicks.
+        const craftingRequestsInFlight = new Set();
+        const salvageRequestsInFlight = new Set();
 
         let locationMenuContextOverride = null;
 
@@ -12729,6 +12731,19 @@
             };
         }
 
+        function buildCraftingRequestKey(payload) {
+            if (!payload || !Array.isArray(payload.itemIds) || payload.itemIds.length === 0) {
+                return '';
+            }
+            const mode = payload.mode || 'craft';
+            const craftTargetType = payload.craftTargetType || '';
+            const stationThingId = payload.stationThingId || '';
+            const slotCount = Number.isFinite(payload.slotCount) ? payload.slotCount : 0;
+            const notes = payload.notes || '';
+            const itemIds = payload.itemIds.slice().sort();
+            return JSON.stringify({ mode, craftTargetType, stationThingId, slotCount, notes, itemIds });
+        }
+
         async function refreshCraftingRelatedViews() {
             const refreshTasks = [];
             const enqueueRefresh = (operation, label) => {
@@ -12758,15 +12773,18 @@
         }
 
         async function submitCraftingRequest() {
-            if (craftingSubmitting) {
-                return;
-            }
             const payload = buildCraftingPayload();
             if (!payload.itemIds.length) {
                 return;
             }
 
-            craftingSubmitting = true;
+            const requestKey = buildCraftingRequestKey(payload);
+            if (requestKey && craftingRequestsInFlight.has(requestKey)) {
+                return;
+            }
+            if (requestKey) {
+                craftingRequestsInFlight.add(requestKey);
+            }
             closeCraftingModal();
 
             try {
@@ -12785,8 +12803,18 @@
                 console.warn('Crafting request failed:', error);
                 alert(`Crafting failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                craftingSubmitting = false;
+                if (requestKey) {
+                    craftingRequestsInFlight.delete(requestKey);
+                }
             }
+        }
+
+        function buildSalvageRequestKey({ thingId, mode }) {
+            if (!thingId || typeof thingId !== 'string') {
+                return '';
+            }
+            const normalizedMode = mode === 'harvest' ? 'harvest' : 'salvage';
+            return `${normalizedMode}:${thingId}`;
         }
 
         async function submitSalvageRequest({ thingId, thing = null, mode = 'salvage', notes = '' } = {}) {
@@ -12796,10 +12824,13 @@
                 alert(`Unable to ${isHarvestMode ? 'harvest' : 'salvage'} without a valid item.`);
                 return;
             }
-            if (salvageSubmitting) {
+            const requestKey = buildSalvageRequestKey({ thingId, mode: normalizedMode });
+            if (requestKey && salvageRequestsInFlight.has(requestKey)) {
                 return;
             }
-            salvageSubmitting = true;
+            if (requestKey) {
+                salvageRequestsInFlight.add(requestKey);
+            }
             try {
                 const actionLabel = isHarvestMode ? 'Harvest' : 'Salvage';
                 const payloadMode = normalizedMode;
@@ -12844,7 +12875,9 @@
                 console.warn('Salvage request failed:', error);
                 alert(`${mode === 'harvest' ? 'Harvest' : 'Salvage'} failed: ${error?.message || 'Unknown error'}`);
             } finally {
-                salvageSubmitting = false;
+                if (requestKey) {
+                    salvageRequestsInFlight.delete(requestKey);
+                }
             }
         }
 
@@ -13580,8 +13613,6 @@
 
         function initLocationDisplay() {
             // Function to update location display
-        const locationCache = {};
-
         function resolveDestinationNameStrict(exit) {
             if (!exit) {
                 throw new Error('resolveDestinationNameStrict requires an exit object.');

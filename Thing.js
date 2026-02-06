@@ -1832,8 +1832,12 @@ class Thing {
         retained.push(effect);
         continue;
       }
+      if (effect.duration < 0) {
+        retained.push(effect);
+        continue;
+      }
       if (effect.duration === 0) {
-        changed = true;
+        retained.push(effect);
         continue;
       }
       retained.push(new StatusEffect({

@@ -4,3 +4,53 @@
 Narrate the event in prose. Be creative, and be sure to include the event itself and not just reactions to it. 
 
 {{ config.prose_instructions }}
+{% if config.repetition_buster %}
+You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
+
+Follow these steps:
+
+1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, stractly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt.
+
+2. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
+- **Repetitive patterns:** Identify specific words, phrases, concepts, or story beats from your **Draft Response** that are repetitive when compared to the recent story. Also, note any other repetitive patterns in the preceding text that should be avoided.
+- **Meaningless profundity:** Identify dialogue that's meaninglessly profound or just meant to sound "cool" or "deep" but doesn't mean anything or doesn't make sense. Things like "The earth remembers those who ask twice" are immersion-breaking because they're obvious fluff. You're intelligent enough to say truly profound things when the situation calls for it--I've seen you do it, and when you do, it's great. I'm not able to provide an example because true profundity derives from and ties into context, often as a realization that contradicts a character's (and perhaps the reader's) earlier belief. Plain language is better at achieving this than trying to sound all ancient and mysterious. Do this well but infrequently &gt; Don't do it at all &gt;&gt; Do it well, often &gt;&gt; do it poorly. It's not even desirable to do this all the time--the reader will find it exhausting because if every line stands out, none of them do. Be judicious and patient and understand that metaphors are detrimental to profundity.
+- **Overuse of metaphor in dialogue:** Even if the metaphor has meaning, cut way back. That's not how people talk. If metaphor was used in dialogue recently, don't do it. If it wasn't used recently, maybe also don't do it, unless it's really appropriate for the character and situation. It rapidly becomes inappropriate if it's been done already in the recent story history. If you really want to have a character speak in metaphor, have the other characters call them on it, make fun of them, or ask what the fuck they're talking about.
+- **Character Omniscience:** Identify any place where NPCs are aware of something they shouldn't be. Are they hearing whispered dialogue not intended for them? (Don't consider acoustics or other factors, just assume they don't hear it). Are they remembering something that they were absent for? Are they acting on knowledge they couldn't possibly have?
+- **Treknobabble:** Identify treknobabble or equivalent technobabble/magibabble. Propose clearer, more logical alternatives. Come up with something concrete that actually makes sense in-universe.
+- **Continuity and logic:** Identify any continuity errors, illogical actions, dialogue that doesn't fit character personality, or things that don't make sense given the characters' knowledge, personalities, and the situation.
+- **Forgotten party members:** If any party members or longstanding NPCs haven't acted or spoken in several turns, identify them here and develop a plan to work them into the conversation or action, if it makes sense given the situation. 
+- **Aggro:** Would any present NPC be likely to verbally object to, peacefully but physically interfere, or be physically hostile toward the player or party's actions? If so, identify them here and plan to have them act. Don't do this if the NPC wouldn't reasonably be aware of the action or wouldn't care about it. Some example reasons an NPC wouldn't be aware: successful stealth, invisibility/silence magic, npc is distracted by something else, party is hidden by cover, party is too far away to notice, etc. NPCs may also wait for a few turns and only act if the behavior continues. Use your judgement.
+- **Emotional thesis statements:** Identify moments where characters announce their emotional state or psychology directly ("That's what scares me," "It's terrifying," "That's the hard part," "I don't know how to feel about that"). Don't label a character's emotions or intent in prose ("He pulled her close, *not performing*," "'Stop that!' she said *angrily*", etc, my emphasis indicating the problem phrases). These declarative summaries flatten emotional texture. Plan alternatives: show the emotion through hesitation, deflection, physical tension, etc. Sometimes the most powerful version is letting the emotion remain implicit—if the reader can already feel it, the character doesn't need to name it. Trust the reader's emotional intelligence. They'll figure it out. Positive examples: **"We're done here," he said tersely.** or a normally tsundere character: **She hesitated for a moment, then relaxed and leaned into him.**
+- **"Everybody checking in":** Identify any places where it feels like a bunch of characters are checking in in sequence. Pick 1, 2, or at most 3 (and only if having a third adds something meaningful) characters who would be most invested in what's going on to respond or act, and don't mention the rest. If three characters are talking, make sure it feels like a real conversation and not just a list of what everybody's doing this turn. Don't use throw-away statements just to make a character talk; if someone has relevant feelings, knowledge, or experience, their voice will be more interesting. If someone would make a throwaway statement, skip it, or perhaps have them change the subject, be humorous, or add a new element to the discussion, as appropriate. This rule is about ensuring conversation flows naturally, not about excluding characters who would reasonably be involved.
+- **Success or failure adherence:** Check that the prose strictly adheres to the success_or_failure level provided, regardless of how hard the action is.
+- **Movement and travel:** Is the player moving to a new scene? If so, identify which characters and items are present in the origin scene, noting that they must only be present in the part of the prose that takes place prior to the player arriving at the destination. Exception: If a character is moving to the same location as the player, mention them in the destination portion as well (and optionally in the between portion). Do this in cases where, for example, a character is conversing with, fighting with, or pursuing the player. Note: Talking ain't traveling! If the Player simply *discusses* moving somewhere else, that's conversation, not movement!
+- **Remaining guidelines:** Check the text against the remaining guidelines.
+
+3. Write a second draft based on the above. 
+
+4. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel?
+
+Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above.
+
+Use this format: 
+1. ...
+2. ...
+3. ...
+4. ...
+<finalProse>...</finalProse>
+
+OR, if the player travels to a place that would constitute a different scene, answer as follows:
+
+1. ...
+2. ...
+3. ...
+4. ...
+<travelProse>
+  <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
+  <destination><!-- Full name of destination location. If the location is in an entirely different region, use this format: "region name|location name" --></destination>
+  <!-- ANY COMBINATION OF AT LEAST ONE OF THE BELOW. If no prose applies to one or two sections, omit them -->
+  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location --></originProse>
+  <betweenProse><!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) --></betweenProse>
+  <destinationProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location --></destinationProse>
+</travelProse>
+{% endif %}

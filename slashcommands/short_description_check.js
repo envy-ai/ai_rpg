@@ -70,7 +70,8 @@ class ShortDescriptionCheckCommand extends SlashCommandBase {
         warnings.push('Encountered null location entry.');
         continue;
       }
-      const stubShortDescription = location.stubMetadata?.shortDescription;
+      const stubShortDescription = location.stubMetadata?.stubShortDescription
+        || location.stubMetadata?.shortDescription;
       if (isMissingShortDescription(location.shortDescription) && isMissingShortDescription(stubShortDescription)) {
         const label = resolveLabel(location, 'Location');
         const stubSuffix = location.isStub ? ' (stub)' : '';

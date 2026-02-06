@@ -68,6 +68,10 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Track how item were interacted with, including changes in possession or state. Respond in this format: [item name] -> [action] -> [brief description]. Actions are one of:picked up, dropped, given to someone, taken from someone, put on (as in worn or donned), equipped, partially consumed, completely consumed, altered permanently, altered temporarily, aggregated. Important: For permanent physical changes to the item itself (e.g., broken, enchanted, upgraded), use altered permanently. Changes o the character wearing the item are not an alteration of the item. Note that this is for ITEMS, not CHARACTERS. Wrong: "Bob -> put on -> Jacket". Right: "Jacket -> put on -> Bob put on the Jacket"`,
         },
         {
+            key: "item_inflict",
+            prompt: `Did anyone use an item or have an item used on them that might activate or inflict that item's status effect? For example: eating or drinking something, applying a healing bandage to someone, injecting something, reading a cursed tome, and so on. If so, list them in this format: "[exact name of item] -> [exact name of target] -> [status effect]" separated by vertical bars. Otherwise, answer N/A.`,
+        },
+        {
             key: "item_to_npc",
             prompt: `Did any inanimate object (e.g., robot, drone, statue, furniture, machinery, or any other scenery) become capable of movement or act as an independent entity? If so, respond in this format: "[exact item or scenery name] -> [new npc/entity name] -> [5-10 word description of what happened]". Separate multiple entries with vertical bars. If none, respond N/A.`,
         },
@@ -137,15 +141,15 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. If none, answer N/A.`,
+            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. If none, answer N/A.`,
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
+            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
         },
         {
             key: "party_change",
-            prompt: `Is any entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
+            prompt: `Is any physically present entity (including ones you may have listed above) that is not listed in playerParty currently leading, following, or otherwise willingly accompanying the player? If yes, list "[npc name] -> joined". For anyone who began leading or following (even temporarily), also list them as "[npc name] -> joined". If anyone left the party, list "[npc name] -> left". Separate multiple entries with vertical bars. If no party status occurred, respond with N/A.`,
         },
         {
             key: "environmental_status_damage",
@@ -1102,6 +1106,7 @@ class Events {
         stream = null,
         allowEnvironmentalEffects = true,
         isNpcTurn = false,
+        suppressMoveEvents = false,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -1322,6 +1327,7 @@ class Events {
                 needBarChanges: [],
                 allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                 isNpcTurn: Boolean(isNpcTurn),
+                suppressMoveEvents: Boolean(suppressMoveEvents),
                 stream,
                 followupQueue: activeFollowupQueue,
                 _originatedFromEventChecks: true,
@@ -2133,6 +2139,9 @@ class Events {
                 "alter_item",
             ])
             : null;
+        const suppressedMoves = context?.suppressMoveEvents
+            ? new Set(["move_location", "move_new_location"])
+            : null;
 
         if (!omitNpcGeneration) {
             await this._ensureNpcMentions(parsedEvents, context);
@@ -2195,7 +2204,7 @@ class Events {
                 continue;
             }
             processedKeys.add(key);
-            if (suppressedNpc?.has(key) || suppressedItems?.has(key)) {
+            if (suppressedNpc?.has(key) || suppressedItems?.has(key) || suppressedMoves?.has(key)) {
                 continue;
             }
             const handler = this._handlers[key];
@@ -2324,6 +2333,7 @@ class Events {
             entry?.giver,
             entry?.receiver,
         ]);
+        registerFromArray(parsed.item_inflict, (entry) => entry?.target);
         registerFromArray(parsed.harvest_gather, (entry) => entry?.harvester);
         registerFromArray(parsed.pick_up_item, (entry) => entry?.name);
         registerFromArray(parsed.drop_item, (entry) => entry?.name);
@@ -2446,6 +2456,11 @@ class Events {
             }
             if (entry.receiver) {
                 entry.receiver = resolveName(entry.receiver);
+            }
+        });
+        updateArrayEntries(parsed.item_inflict, (entry) => {
+            if (entry.target) {
+                entry.target = resolveName(entry.target);
             }
         });
         updateArrayEntries(parsed.harvest_gather, (entry) => {
@@ -2627,6 +2642,20 @@ class Events {
                             record.reason = reason.trim();
                         }
                         return record;
+                    })
+                    .filter(Boolean),
+            item_inflict: (raw) =>
+                splitPipeList(raw)
+                    .map((entry) => {
+                        const [item, target, status] = splitArrowParts(entry, 3);
+                        if (!item || !target) {
+                            return null;
+                        }
+                        return {
+                            item: item.trim(),
+                            target: target.trim(),
+                            status: status ? status.trim() : null,
+                        };
                     })
                     .filter(Boolean),
             alter_item: (raw) =>
@@ -4276,6 +4305,101 @@ class Events {
                     this._removeItemFromInventories(item);
                     this._detachThingFromWorld(item);
                     this.destroyedItems.add(itemName);
+                }
+            },
+            item_inflict: async function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { findThingByName, findActorByName } = this._deps;
+                if (typeof findThingByName !== "function") {
+                    throw new Error(
+                        "item_inflict handler requires findThingByName dependency.",
+                    );
+                }
+                if (typeof findActorByName !== "function") {
+                    throw new Error(
+                        "item_inflict handler requires findActorByName dependency.",
+                    );
+                }
+
+                const normalizedEntries = [];
+                const missingItems = new Set();
+
+                for (const entry of entries) {
+                    if (!entry) {
+                        continue;
+                    }
+
+                    let itemName = "";
+                    let targetName = "";
+
+                    if (typeof entry === "string") {
+                        const [item, target] = splitArrowParts(entry, 3);
+                        itemName = item ? String(item).trim() : "";
+                        targetName = target ? String(target).trim() : "";
+                    } else {
+                        itemName =
+                            typeof entry.item === "string" ? entry.item.trim() : "";
+                        targetName =
+                            typeof entry.target === "string" ? entry.target.trim() : "";
+                    }
+
+                    if (!itemName || !targetName) {
+                        continue;
+                    }
+
+                    normalizedEntries.push({ itemName, targetName });
+
+                    if (!findThingByName(itemName)) {
+                        missingItems.add(itemName);
+                    }
+                }
+
+                if (missingItems.size) {
+                    await this._ensureItemsExist(
+                        Array.from(missingItems),
+                        context.location,
+                        { recordNewItems: false },
+                    );
+                }
+
+                for (const entry of normalizedEntries) {
+                    const item = findThingByName(entry.itemName);
+                    if (!item) {
+                        console.warn(
+                            `[item_inflict] Unable to locate item "${entry.itemName}".`,
+                        );
+                        continue;
+                    }
+                    const target = findActorByName(entry.targetName);
+                    if (!target || typeof target.addStatusEffect !== "function") {
+                        console.warn(
+                            `[item_inflict] Unable to locate target "${entry.targetName}" for "${entry.itemName}".`,
+                        );
+                        continue;
+                    }
+
+                    const effect =
+                        item.causeStatusEffectOnTarget
+                        || item.metadata?.causeStatusEffectOnTarget
+                        || (item.causeStatusEffect?.applyToTarget
+                            ? item.causeStatusEffect
+                            : null);
+                    if (!effect) {
+                        continue;
+                    }
+
+                    try {
+                        target.addStatusEffect(effect, effect.duration ?? 1);
+                        this.alteredCharacters.add(entry.targetName);
+                    } catch (error) {
+                        console.warn(
+                            `Failed to apply item_inflict status effect from "${entry.itemName}" to "${entry.targetName}":`,
+                            error?.message || error,
+                        );
+                    }
                 }
             },
             alter_item: async function (entries = [], context = {}) {

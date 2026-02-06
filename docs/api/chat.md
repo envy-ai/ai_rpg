@@ -42,7 +42,9 @@ Response (200):
   - `attackDamage`: object
   - `plausibility`: `{ type, reason }`
   - `eventChecks`: string (HTML summary)
+  - `eventChecksOrigin`, `eventChecksDestination`: string (HTML summaries when travel prose is split)
   - `events`: object | array
+  - `eventsOrigin`, `eventsDestination`: object | array (structured events when travel prose is split)
   - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`: arrays
   - `questsAwarded`, `questRewards`, `questObjectivesCompleted`, `followupEventChecks`: arrays
   - `npcTurns`: array (NPC turn payloads)
@@ -57,6 +59,9 @@ Variants:
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
 - Forced-event action: user message begins with `!!`; creative action begins with `!`. These alter processing but do not change the base response shape.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
+- When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.
+- If the travel prose destination does not match a known location, the server creates a stub destination (and exit) using the event-driven location creation flow.
+- Supplemental story info prompts append `supplemental-story-info` entries linked to the main turn entry; these are stored server-side for base-context prompts and are not sent to clients. They are kicked off alongside event + quest checks (using pre-event context) and do not block the response. Only one supplemental story info prompt runs at a time; additional requests are skipped while one is in flight.
 
 Errors:
 - 400: `{ error: string, requestId?, streamMeta? }` (missing `messages`, invalid `travelMetadata`, etc.)

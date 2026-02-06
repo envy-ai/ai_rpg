@@ -6,7 +6,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### What it does
 - Default is ON (`config.default.yaml` sets `repetition_buster: true`), but it can be toggled in config.
-- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs `<finalProse>...</finalProse>`. The server enforces a `requiredRegex` and extracts `finalProse` for player-action prompts (used for player actions and NPC narratives).
+- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs either `<finalProse>...</finalProse>` or `<travelProse>...</travelProse>`. The server enforces a `requiredRegex` and extracts the prose for player-action prompts (used for player actions and NPC narratives).
 - If `config.repetition_buster` is **disabled**, the server still checks for repetition against recent prose. When overlap is detected, it re-renders the player-action prompt with repetition_buster forced on and re-asks the model.
 
 ### Full step list (current prompt)
@@ -24,7 +24,7 @@ Quick refresher on where these systems live and how they're wired.
    - Success or failure adherence
    - Remaining guidelines
 3. Write a second draft based on the analysis.
-4. Analyze the second draft for issues, then output final prose inside `<finalProse>...</finalProse>` without introducing new content.
+4. Analyze the second draft for issues, then output final prose inside `<finalProse>...</finalProse>` without introducing new content. If the prompt requests travel prose, emit `<travelProse>` with `originProse`, `betweenProse`, and/or `destinationProse` instead.
 
 ### Detection logic
 - Overlap detection uses `Utils.findKgramOverlap(prior, response, { k: 6 })`.
@@ -46,7 +46,9 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Notes
 - The rerun is only triggered for `player-action` responses (not NPC turns).
-- When repetition_buster is on, the server extracts `<finalProse>` from the model output for any `player-action` prompt.
+- When repetition_buster is on, the server extracts `<finalProse>` or builds prose from `<travelProse>` for any `player-action` prompt, and logs the parsed XML as JSON for debugging. Random-event prompts use the same parser when repetition_buster is enabled.
+- If `<travelProse>` is returned, the server runs event checks on the origin and destination prose separately (move events suppressed), moves the player to the destination between them, and emits separate event summaries (applies to player-action and random-event flows).
+- Travel prose segments are normalized to remove leading indentation at paragraph starts before processing.
 - Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<finalProse>` instructions).
 
 ## Slop checking + slop remover

@@ -22,6 +22,10 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
 
+const HIDDEN_CHAT_ENTRY_TYPES = new Set(['supplemental-story-info']);
+const HIDDEN_CHAT_LABEL = 'Hidden from Player';
+const HIDDEN_CHAT_PREFIX = `[${HIDDEN_CHAT_LABEL}]`;
+
 // Import Player class
 const Player = require('./Player.js');
 
@@ -141,6 +145,27 @@ function pruneClientMessageHistory(history, pruneTo) {
     return history.slice(startIndex);
 }
 
+function isHiddenChatEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+        return false;
+    }
+    const entryType = typeof entry.type === 'string' ? entry.type.trim() : '';
+    return HIDDEN_CHAT_ENTRY_TYPES.has(entryType);
+}
+
+function formatHiddenSummaryLine(entry, text) {
+    if (!isHiddenChatEntry(entry) || typeof text !== 'string') {
+        return text;
+    }
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return text;
+    }
+    return trimmed.startsWith(HIDDEN_CHAT_PREFIX)
+        ? trimmed
+        : `${HIDDEN_CHAT_PREFIX} ${trimmed}`;
+}
+
 function filterOrphanedChatEntries(entries) {
     if (!Array.isArray(entries)) {
         throw new Error('Chat history must be an array before filtering.');
@@ -153,6 +178,10 @@ function filterOrphanedChatEntries(entries) {
 
     entries.forEach(entry => {
         if (!entry || typeof entry !== 'object') {
+            lastNonAttachmentId = null;
+            return;
+        }
+        if (isHiddenChatEntry(entry)) {
             lastNonAttachmentId = null;
             return;
         }
@@ -174,6 +203,9 @@ function filterOrphanedChatEntries(entries) {
 
     return entries.filter(entry => {
         if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        if (isHiddenChatEntry(entry)) {
             return false;
         }
         const entryType = entry.type || null;
@@ -587,17 +619,63 @@ function clearEntityJob(type, id, jobId = null) {
 function getWorldOutline() {
     // We need to populate worldOutline with regions and their locations
     let worldOutline = {
-        regions: {}
+        regions: []
     };
 
     // Iterate all regions
     let regionMap = Region.getIndexByName();
     // Get name of each region
     for (const [regionName, regionObj] of regionMap) {
-        worldOutline.regions[regionObj.name] = [];
-        for (const locationObj of regionObj.locations) {
-            worldOutline.regions[regionObj.name].push(locationObj.name);
+        const resolvedRegionName = typeof regionObj?.name === 'string' ? regionObj.name.trim() : '';
+        if (!resolvedRegionName) {
+            continue;
         }
+        const resolvedRegionShort = typeof regionObj.shortDescription === 'string'
+            ? regionObj.shortDescription.trim()
+            : '';
+        const regionLabel = resolvedRegionShort
+            ? `${resolvedRegionName} - ${resolvedRegionShort}`
+            : resolvedRegionName;
+        const regionEntry = {
+            name: resolvedRegionName,
+            shortDescription: resolvedRegionShort,
+            label: regionLabel,
+            locations: []
+        };
+        for (const locationObj of regionObj.locations) {
+            const locationName = typeof locationObj?.name === 'string' ? locationObj.name.trim() : '';
+            if (!locationName) {
+                continue;
+            }
+            let locationShort = typeof locationObj.shortDescription === 'string'
+                ? locationObj.shortDescription.trim()
+                : '';
+            if (!locationShort) {
+                const stubMeta = locationObj.stubMetadata || {};
+                const stubShort = typeof stubMeta.stubShortDescription === 'string'
+                    ? stubMeta.stubShortDescription.trim()
+                    : '';
+                if (stubShort) {
+                    locationShort = stubShort;
+                } else {
+                    const legacyShort = typeof stubMeta.shortDescription === 'string'
+                        ? stubMeta.shortDescription.trim()
+                        : '';
+                    if (legacyShort) {
+                        locationShort = legacyShort;
+                    }
+                }
+            }
+            const locationLabel = locationShort
+                ? `${locationName} - ${locationShort}`
+                : locationName;
+            regionEntry.locations.push({
+                name: locationName,
+                shortDescription: locationShort,
+                label: locationLabel
+            });
+        }
+        worldOutline.regions.push(regionEntry);
     }
     return worldOutline;
 }
@@ -1413,7 +1491,8 @@ async function initializeImageEngine() {
                 throw new Error(`ComfyUI returned status ${testResponse.status}`);
             }
         } catch (error) {
-            throw new Error(`ComfyUI initialization failed: ${error.message}`);
+            console.warn(`⚠️ ComfyUI initialization failed: ${error.message}`);
+            return;
         }
     } else if (engine === 'nanogpt') {
         try {
@@ -2700,23 +2779,23 @@ function pruneAndDecrementStatusEffects(entity) {
     }
 
     try {
-        if (typeof entity.clearExpiredStatusEffects === 'function') {
-            entity.clearExpiredStatusEffects();
-        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
-            const filtered = entity.getStatusEffects().filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
-            entity.setStatusEffects(filtered);
-        }
-
         if (typeof entity.tickStatusEffects === 'function') {
             entity.tickStatusEffects();
         } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
             const ticked = entity.getStatusEffects().map(effect => {
-                if (!Number.isFinite(effect.duration)) {
+                if (!Number.isFinite(effect.duration) || effect.duration <= 0) {
                     return effect;
                 }
                 return { ...effect, duration: effect.duration - 1 };
             });
             entity.setStatusEffects(ticked);
+        }
+
+        if (typeof entity.clearExpiredStatusEffects === 'function') {
+            entity.clearExpiredStatusEffects();
+        } else if (typeof entity.getStatusEffects === 'function' && typeof entity.setStatusEffects === 'function') {
+            const filtered = entity.getStatusEffects().filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
+            entity.setStatusEffects(filtered);
         }
     } catch (error) {
         console.warn('Failed to update status effects:', error.message);
@@ -2806,7 +2885,8 @@ function getEventPromptTemplates() {
 function buildBasePromptContext({
     locationOverride = null,
     omitInventoryItems = null,
-    omitAbilities = null
+    omitAbilities = null,
+    omitCraftHistory = null
 } = {}) {
     const baseContextConfig = config?.base_context ?? null;
     if (baseContextConfig !== null && baseContextConfig !== undefined && typeof baseContextConfig !== 'object') {
@@ -2837,6 +2917,11 @@ function buildBasePromptContext({
         omitAbilities,
         baseContextConfig?.omit_abilities,
         'base_context.omit_abilities'
+    );
+    const shouldOmitCraftHistory = resolveBooleanOption(
+        omitCraftHistory,
+        baseContextConfig?.omit_craft_history,
+        'base_context.omit_craft_history'
     );
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
@@ -2897,6 +2982,56 @@ function buildBasePromptContext({
             source = value;
         }
 
+        const normalizeModifierList = (list, keyName) => {
+            if (!Array.isArray(list)) {
+                return [];
+            }
+            const entries = [];
+            for (const entry of list) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const key = typeof entry[keyName] === 'string'
+                    ? entry[keyName].trim()
+                    : (typeof entry.name === 'string' ? entry.name.trim() : '');
+                if (!key) {
+                    continue;
+                }
+                const rawValue = entry.modifier ?? entry.bonus ?? entry.value;
+                const modifier = Number(rawValue);
+                if (!Number.isFinite(modifier)) {
+                    continue;
+                }
+                entries.push({ [keyName]: key, modifier });
+            }
+            return entries;
+        };
+
+        const normalizeNeedBars = (list) => {
+            if (!Array.isArray(list)) {
+                return [];
+            }
+            const entries = [];
+            for (const entry of list) {
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const name = typeof entry.name === 'string'
+                    ? entry.name.trim()
+                    : (typeof entry.bar === 'string' ? entry.bar.trim() : '');
+                if (!name) {
+                    continue;
+                }
+                const rawDelta = entry.delta ?? entry.modifier ?? entry.value;
+                const delta = Number(rawDelta);
+                if (!Number.isFinite(delta)) {
+                    continue;
+                }
+                entries.push({ name, delta });
+            }
+            return entries;
+        };
+
         const normalized = [];
         for (const entry of source) {
             if (!entry) continue;
@@ -2909,6 +3044,7 @@ function buildBasePromptContext({
             }
 
             if (typeof entry === 'object') {
+                const nameValue = typeof entry.name === 'string' ? entry.name.trim() : '';
                 const descriptionValue = typeof entry.description === 'string'
                     ? entry.description.trim()
                     : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
@@ -2928,10 +3064,31 @@ function buildBasePromptContext({
                     duration = 1;
                 }
 
-                normalized.push({
+                const effect = {
                     description: descriptionValue,
-                    duration: duration === null ? null : Math.max(0, duration)
-                });
+                    duration
+                };
+
+                if (nameValue) {
+                    effect.name = nameValue;
+                }
+
+                const attributes = normalizeModifierList(entry.attributes, 'attribute');
+                if (attributes.length) {
+                    effect.attributes = attributes;
+                }
+
+                const skills = normalizeModifierList(entry.skills, 'skill');
+                if (skills.length) {
+                    effect.skills = skills;
+                }
+
+                const needBars = normalizeNeedBars(entry.needBars);
+                if (needBars.length) {
+                    effect.needBars = needBars;
+                }
+
+                normalized.push(effect);
             }
         }
 
@@ -3515,6 +3672,81 @@ function buildBasePromptContext({
     }
 
     const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+
+    const isCraftActionLabel = (value) => {
+        if (typeof value !== 'string') {
+            return false;
+        }
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+        return normalized.startsWith('craft')
+            || normalized.startsWith('process')
+            || normalized.startsWith('salvage')
+            || normalized.startsWith('harvest');
+    };
+
+    const isCraftHistoryEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        const metadata = entry.metadata && typeof entry.metadata === 'object'
+            ? entry.metadata
+            : null;
+        if (metadata) {
+            if (isCraftActionLabel(metadata.actionType) || isCraftActionLabel(metadata.craftingMode)) {
+                return true;
+            }
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'event-summary') {
+            const title = typeof entry.summaryTitle === 'string' ? entry.summaryTitle.trim().toLowerCase() : '';
+            if (title.includes('crafting results') || title.includes('harvest results') || title.includes('salvage results')) {
+                return true;
+            }
+            const content = typeof entry.content === 'string' ? entry.content.trim().toLowerCase() : '';
+            if (content.startsWith('🛠️ crafting results')
+                || content.startsWith('🌾 harvest results')
+                || content.startsWith('♻️ salvage results')) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const filterCraftHistoryEntries = (entries) => {
+        const excludeIds = new Set();
+        entries.forEach(entry => {
+            if (!entry || !entry.id) {
+                return;
+            }
+            if (isCraftHistoryEntry(entry)) {
+                excludeIds.add(entry.id);
+            }
+        });
+        if (!excludeIds.size) {
+            return entries;
+        }
+        let added = true;
+        while (added) {
+            added = false;
+            for (const entry of entries) {
+                if (!entry || !entry.id) {
+                    continue;
+                }
+                if (entry.parentId && excludeIds.has(entry.parentId) && !excludeIds.has(entry.id)) {
+                    excludeIds.add(entry.id);
+                    added = true;
+                }
+            }
+        }
+        return entries.filter(entry => !excludeIds.has(entry?.id));
+    };
+
+    const effectiveHistoryEntries = shouldOmitCraftHistory
+        ? filterCraftHistoryEntries(historyEntries)
+        : historyEntries;
     const summaryConfig = config?.summaries || {};
     const rawMaxUnsummarized = Number(summaryConfig.max_unsummarized_log_entries);
     const maxUnsummarizedEntries = Number.isInteger(rawMaxUnsummarized) && rawMaxUnsummarized > 0
@@ -3581,6 +3813,36 @@ function buildBasePromptContext({
         return ` [location: ${locationName}]`;
     };
 
+    const EVENT_SUMMARY_STRIP_TOKEN = '🧪';
+
+    const isEventSummaryEntry = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        return entryType === 'event-summary';
+    };
+
+    const stripEventSummaryTokenLines = (text) => {
+        if (typeof text !== 'string') {
+            return '';
+        }
+        if (!text.includes(EVENT_SUMMARY_STRIP_TOKEN)) {
+            return text.trim();
+        }
+        const filtered = text
+            .split('\n')
+            .filter(line => !line.includes(EVENT_SUMMARY_STRIP_TOKEN));
+        return filtered.join('\n').trim();
+    };
+
+    const sanitizeEventSummaryText = (entry, text) => {
+        if (!isEventSummaryEntry(entry)) {
+            return typeof text === 'string' ? text : '';
+        }
+        return stripEventSummaryTokenLines(typeof text === 'string' ? text : '');
+    };
+
     const formatEventSummaryEntry = (entry) => {
         if (!entry || typeof entry !== 'object') {
             return '';
@@ -3603,9 +3865,13 @@ function buildBasePromptContext({
             }
             const icon = typeof item.icon === 'string' && item.icon ? item.icon : '•';
             const text = typeof item.text === 'string' ? item.text : '';
+            if (icon.includes(EVENT_SUMMARY_STRIP_TOKEN) || text.includes(EVENT_SUMMARY_STRIP_TOKEN)) {
+                continue;
+            }
             lines.push(`• ${icon} ${text}`.trim());
         }
-        return lines.join('\n').trim();
+        const joined = lines.join('\n').trim();
+        return stripEventSummaryTokenLines(joined);
     };
 
     const shouldIncludeEntryInHistory = (entry) => {
@@ -3613,12 +3879,18 @@ function buildBasePromptContext({
             return false;
         }
         if (entry.content) {
-            return true;
+            if (!isEventSummaryEntry(entry)) {
+                return true;
+            }
+            const sanitizedContent = sanitizeEventSummaryText(entry, entry.content);
+            if (sanitizedContent.trim()) {
+                return true;
+            }
         }
         return Boolean(formatEventSummaryEntry(entry));
     };
 
-    const relevantHistory = historyEntries.filter(shouldIncludeEntryInHistory);
+    const relevantHistory = effectiveHistoryEntries.filter(shouldIncludeEntryInHistory);
 
     const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
     const limitedHistory = totalHistoryLimit > 0
@@ -3726,12 +3998,22 @@ function buildBasePromptContext({
                 idx += 1;
                 continue;
             }
+            if (isHiddenChatEntry(entry)) {
+                const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+                const summaryLine = formatHiddenSummaryLine(entry, summaryText);
+                if (summaryLine) {
+                    segments.push({ entry, line: summaryLine });
+                }
+                idx += 1;
+                continue;
+            }
             const entryId = typeof entry.id === 'string' ? entry.id.trim() : '';
             const entryIndex = entryId ? entryIdToIndex.get(entryId) : null;
             if (!entryIndex) {
                 const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-                if (summaryText) {
-                    segments.push({ entry, line: summaryText });
+                const summaryLine = formatHiddenSummaryLine(entry, summaryText);
+                if (summaryLine) {
+                    segments.push({ entry, line: summaryLine });
                 }
                 idx += 1;
                 continue;
@@ -3743,8 +4025,9 @@ function buildBasePromptContext({
             const scene = scenes[sceneCursor];
             if (!scene || entryIndex < scene.startIndex || entryIndex > scene.endIndex) {
                 const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-                if (summaryText) {
-                    segments.push({ entry, line: summaryText });
+                const summaryLine = formatHiddenSummaryLine(entry, summaryText);
+                if (summaryLine) {
+                    segments.push({ entry, line: summaryLine });
                 }
                 idx += 1;
                 continue;
@@ -3780,10 +4063,12 @@ function buildBasePromptContext({
                 continue;
             }
             const summaryText = typeof entry.summary === 'string' ? entry.summary.trim() : '';
-            if (!summaryText) {
+            const sanitizedSummary = sanitizeEventSummaryText(entry, summaryText);
+            const summaryLine = formatHiddenSummaryLine(entry, sanitizedSummary);
+            if (!summaryLine) {
                 continue;
             }
-            historySegments.push({ entry, line: summaryText });
+            historySegments.push({ entry, line: summaryLine });
         }
     }
 
@@ -3791,7 +4076,8 @@ function buildBasePromptContext({
         if (!entry) {
             continue;
         }
-        const contentText = typeof entry.content === 'string' ? entry.content.trim() : '';
+        let contentText = typeof entry.content === 'string' ? entry.content.trim() : '';
+        contentText = sanitizeEventSummaryText(entry, contentText);
         const fallbackText = contentText ? '' : formatEventSummaryEntry(entry);
         const resolvedContent = contentText || fallbackText;
         if (!resolvedContent) {
@@ -3803,9 +4089,11 @@ function buildBasePromptContext({
         const playerLabel = (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim())
             ? currentPlayer.name.trim()
             : 'Player';
-        const roleLabel = roleRaw.toLowerCase() === 'user'
-            ? playerLabel
-            : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw);
+        const roleLabel = isHiddenChatEntry(entry)
+            ? HIDDEN_CHAT_LABEL
+            : (roleRaw.toLowerCase() === 'user'
+                ? playerLabel
+                : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw));
         historySegments.push({ entry, line: `[${roleLabel}] ${resolvedContent}` });
     }
 
@@ -4318,7 +4606,9 @@ function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
         }
         outputIndex += 1;
         const entryId = resolveEntryRecordId(entry);
-        const name = resolveRoleLabel(entry.role, playerName);
+        const name = isHiddenChatEntry(entry)
+            ? HIDDEN_CHAT_LABEL
+            : resolveRoleLabel(entry.role, playerName);
         indexedEntries.push({
             index: outputIndex,
             entryId,
@@ -6566,6 +6856,7 @@ async function expandRegionEntryStub(stubLocation) {
                 locations: locationDefinitions.map(def => ({
                     name: def.name,
                     description: def.description,
+                    shortDescription: def.shortDescription || null,
                     exits: def.exits,
                     relativeLevel: def.relativeLevel,
                     numNpcs: def.numNpcs,
@@ -9135,8 +9426,24 @@ async function ensureLocationShortDescriptions(locations, options = {}) {
     };
 
     const isMissingShortDescription = (location) => {
-        const raw = location?.shortDescription;
-        return !raw || !String(raw).trim();
+        if (!location || typeof location !== 'object') {
+            return true;
+        }
+        const raw = location.shortDescription;
+        if (raw && String(raw).trim()) {
+            return false;
+        }
+        const stubMeta = location.stubMetadata || {};
+        const stubShort = typeof stubMeta.stubShortDescription === 'string'
+            ? stubMeta.stubShortDescription.trim()
+            : '';
+        if (stubShort) {
+            return false;
+        }
+        const legacyShort = typeof stubMeta.shortDescription === 'string'
+            ? stubMeta.shortDescription.trim()
+            : '';
+        return !legacyShort;
     };
 
     const maxBatchSize = resolveShortDescriptionBatchSize();
@@ -18306,6 +18613,7 @@ function parseRegionStubLocations(xmlSnippet) {
     return locationNodes.map(node => {
         const name = getTagValue(node, 'name');
         const description = getTagValue(node, 'description') || '';
+        const shortDescription = getTagValue(node, 'shortDescription');
         const relativeLevelRaw = getTagValue(node, 'relativeLevel');
         const numNpcsRaw = getTagValue(node, 'numNpcs');
         const numHostilesRaw = getTagValue(node, 'numHostiles');
@@ -18324,6 +18632,7 @@ function parseRegionStubLocations(xmlSnippet) {
         return {
             name: name || 'Unnamed Location',
             description,
+            shortDescription: shortDescription || null,
             exits,
             relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
             numNpcs: Number.isFinite(numNpcs) ? Math.max(0, Math.min(20, numNpcs)) : null,

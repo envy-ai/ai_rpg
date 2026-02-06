@@ -573,6 +573,7 @@ module.exports = function registerApiRoutes(scope) {
 
         const shortDescriptionBackfillByClient = new Map();
         let shortDescriptionBackfillInProgress = false;
+        let supplementalStoryInfoInProgress = false;
         const normalizeSaveFileVersion = (value, fallback = 0) => {
             const numeric = Number(value);
             return Number.isFinite(numeric) ? numeric : fallback;
@@ -1013,6 +1014,332 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*br\s*>/gi, '<br/>')
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         }
+
+        const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>/i;
+
+        function stripToXmlPayload(input) {
+            if (typeof input !== 'string') {
+                throw new TypeError('stripToXmlPayload requires a string input.');
+            }
+            const start = input.indexOf('<');
+            const end = input.lastIndexOf('>');
+            if (start === -1 || end === -1 || end <= start) {
+                return '';
+            }
+            return input.slice(start, end + 1);
+        }
+
+        function xmlNodeToJson(node) {
+            if (!node) {
+                return null;
+            }
+            if (node.nodeType === 3) {
+                const text = typeof node.nodeValue === 'string' ? node.nodeValue.trim() : '';
+                return text ? text : null;
+            }
+            if (node.nodeType !== 1) {
+                return null;
+            }
+            const result = { tag: node.nodeName };
+            if (node.attributes && node.attributes.length) {
+                const attrs = {};
+                for (const attr of Array.from(node.attributes)) {
+                    attrs[attr.name] = attr.value;
+                }
+                result.attributes = attrs;
+            }
+            const children = Array.from(node.childNodes)
+                .map(child => xmlNodeToJson(child))
+                .filter(child => child !== null);
+            if (children.length === 1 && typeof children[0] === 'string') {
+                result.text = children[0];
+            } else if (children.length) {
+                result.children = children;
+            }
+            return result;
+        }
+
+        function trimLeadingParagraphSpaces(text) {
+            if (typeof text !== 'string') {
+                return '';
+            }
+            const lines = text.split('\n');
+            let atParagraphStart = true;
+            for (let i = 0; i < lines.length; i += 1) {
+                const line = lines[i];
+                if (line.trim() === '') {
+                    lines[i] = '';
+                    atParagraphStart = true;
+                    continue;
+                }
+                if (atParagraphStart) {
+                    lines[i] = line.replace(/^\s+/, '');
+                    atParagraphStart = false;
+                    continue;
+                }
+                lines[i] = line;
+            }
+            return lines.join('\n');
+        }
+
+        function parsePlayerActionProseFromXml(rawResponse, { logJson = false } = {}) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Player action response must be a string.');
+            }
+            const xmlPayload = stripToXmlPayload(rawResponse);
+            if (!xmlPayload) {
+                throw new Error('Player action response missing XML content.');
+            }
+            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
+            const errorNode = doc.getElementsByTagName('parsererror')[0];
+            if (errorNode) {
+                throw new Error(`Player action XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            }
+            if (logJson) {
+                const jsonPayload = xmlNodeToJson(doc.documentElement);
+                console.log('Parsed player action XML:', JSON.stringify(jsonPayload, null, 2));
+            }
+            const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
+            const finalText = finalNode ? (finalNode.textContent || '').trim() : '';
+            if (finalText) {
+                return { prose: finalText, travel: null };
+            }
+            const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
+            if (travelNode) {
+                const destinationTagNode = travelNode.getElementsByTagName('destination')[0] || null;
+                const destinationName = destinationTagNode ? (destinationTagNode.textContent || '').trim() : '';
+                if (!destinationName) {
+                    throw new Error('travelProse requires a destination.');
+                }
+                const originNode = travelNode.getElementsByTagName('originProse')[0] || null;
+                const betweenNode = travelNode.getElementsByTagName('betweenProse')[0] || null;
+                const destinationProseNode = travelNode.getElementsByTagName('destinationProse')[0] || null;
+                const origin = originNode ? trimLeadingParagraphSpaces(originNode.textContent || '').trim() : '';
+                const between = betweenNode ? trimLeadingParagraphSpaces(betweenNode.textContent || '').trim() : '';
+                const destinationProse = destinationProseNode ? trimLeadingParagraphSpaces(destinationProseNode.textContent || '').trim() : '';
+                const segments = [origin, between, destinationProse].filter(Boolean);
+                if (!segments.length) {
+                    throw new Error('travelProse requires at least one of originProse, betweenProse, or destinationProse.');
+                }
+                return {
+                    prose: segments.join('\n\n').trim(),
+                    travel: {
+                        destination: destinationName,
+                        originProse: origin || null,
+                        betweenProse: between || null,
+                        destinationProse: destinationProse || null
+                    }
+                };
+            }
+            throw new Error('Player action XML missing finalProse or travelProse.');
+        }
+
+        function parseSupplementalStoryInfoResponse(rawResponse) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Supplemental story info response must be a string.');
+            }
+            const xmlPayload = stripToXmlPayload(rawResponse);
+            if (!xmlPayload) {
+                throw new Error('Supplemental story info response missing XML content.');
+            }
+            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
+            const errorNode = doc.getElementsByTagName('parsererror')[0];
+            if (errorNode) {
+                throw new Error(`Supplemental story info XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            }
+            const notesNode = doc.getElementsByTagName('storyNotes')[0] || null;
+            const notes = notesNode ? (notesNode.textContent || '').trim() : '';
+            if (!notes) {
+                throw new Error('Supplemental story info response missing <storyNotes>.');
+            }
+            return notes;
+        }
+
+        async function runSupplementalStoryInfo({
+            locationOverride = null,
+            entryCollector = null,
+            parentEntryId = null,
+            locationId = null
+        } = {}) {
+            if (supplementalStoryInfoInProgress) {
+                console.info('Supplemental story info prompt already running; skipping new request.');
+                return null;
+            }
+            supplementalStoryInfoInProgress = true;
+            try {
+                if (!config?.ai) {
+                    console.warn('AI configuration missing; unable to run supplemental story info prompt.');
+                    return null;
+                }
+
+                const baseContext = await prepareBasePromptContext({ locationOverride });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'supplemental-story-info'
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Supplemental story info template missing prompts; skipping.');
+                    return null;
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'supplemental_story_info',
+                    validateXML: false
+                };
+
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'supplemental_story_info',
+                    metadataLabel: 'supplemental_story_info',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const storyNotes = parseSupplementalStoryInfoResponse(rawResponse);
+                if (!storyNotes) {
+                    console.warn('Supplemental story info response was empty.');
+                    return null;
+                }
+                if (!parentEntryId) {
+                    throw new Error('Supplemental story info requires a parent entry id.');
+                }
+
+                const resolvedLocationId = requireLocationId(
+                    locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                    'supplemental story info entry'
+                );
+                const entry = {
+                    role: 'assistant',
+                    content: storyNotes,
+                    summary: storyNotes,
+                    type: 'supplemental-story-info',
+                    parentId: parentEntryId,
+                    locationId: resolvedLocationId
+                };
+                return pushChatEntry(entry, entryCollector, resolvedLocationId);
+            } catch (error) {
+                console.warn('Failed to run supplemental story info prompt:', error.message);
+                return null;
+            } finally {
+                supplementalStoryInfoInProgress = false;
+            }
+        }
+
+        const resolveLocationByIdOrName = (value) => {
+            const trimmed = typeof value === 'string' ? value.trim() : '';
+            if (!trimmed) {
+                return null;
+            }
+            let location = null;
+            if (gameLocations instanceof Map && gameLocations.has(trimmed)) {
+                location = gameLocations.get(trimmed);
+            }
+            if (!location && typeof Location?.get === 'function') {
+                location = Location.get(trimmed);
+            }
+            if (!location && typeof Location?.findByName === 'function') {
+                location = Location.findByName(trimmed);
+            }
+            return location || null;
+        };
+
+        const resolveLocationInRegionByName = (region, locationName) => {
+            if (!region || typeof locationName !== 'string') {
+                return null;
+            }
+            const normalizedName = locationName.trim().toLowerCase();
+            if (!normalizedName) {
+                return null;
+            }
+            const regionLocations = Array.isArray(region.locations) ? region.locations : [];
+            for (const location of regionLocations) {
+                const name = typeof location?.name === 'string' ? location.name.trim().toLowerCase() : '';
+                if (name && name === normalizedName) {
+                    return location;
+                }
+            }
+            const regionLocationIds = Array.isArray(region.locationIds) ? region.locationIds : [];
+            for (const locationId of regionLocationIds) {
+                if (typeof locationId !== 'string') {
+                    continue;
+                }
+                if (locationId.trim().toLowerCase() === normalizedName) {
+                    return resolveLocationByIdOrName(locationId);
+                }
+            }
+            return null;
+        };
+
+        const resolveTravelProseDestination = async (destinationText, { allowCreate = false, originLocation = null } = {}) => {
+            const raw = typeof destinationText === 'string' ? destinationText.trim() : '';
+            if (!raw) {
+                throw new Error('Travel prose destination is missing.');
+            }
+            const parts = raw.split('|').map(part => part.trim()).filter(Boolean);
+            if (parts.length === 1) {
+                const location = resolveLocationByIdOrName(parts[0]);
+                if (!location) {
+                    if (!allowCreate) {
+                        throw new Error(`Travel prose destination "${raw}" did not match a known location.`);
+                    }
+                    if (!originLocation || typeof createLocationFromEvent !== 'function') {
+                        throw new Error(`Unable to create travel destination "${raw}".`);
+                    }
+                    const created = await createLocationFromEvent({
+                        name: parts[0],
+                        originLocation,
+                        descriptionHint: `Path leading to ${parts[0]}.`,
+                        expandStub: false
+                    });
+                    if (!created) {
+                        throw new Error(`Failed to create travel destination "${raw}".`);
+                    }
+                    return { location: created, region: null };
+                }
+                return { location, region: null };
+            }
+            if (parts.length === 2) {
+                const [regionName, locationName] = parts;
+                const region = typeof Region?.getByName === 'function' ? Region.getByName(regionName) : null;
+                if (!region) {
+                    throw new Error(`Travel prose destination region "${regionName}" not found.`);
+                }
+                const location = resolveLocationInRegionByName(region, locationName);
+                if (!location) {
+                    if (!allowCreate) {
+                        throw new Error(`Travel prose destination location "${locationName}" not found in region "${regionName}".`);
+                    }
+                    if (!originLocation || typeof createLocationFromEvent !== 'function') {
+                        throw new Error(`Unable to create travel destination "${locationName}" in region "${regionName}".`);
+                    }
+                    const created = await createLocationFromEvent({
+                        name: locationName,
+                        originLocation,
+                        descriptionHint: `Path leading to ${locationName}.`,
+                        expandStub: false,
+                        targetRegionId: region.id
+                    });
+                    if (!created) {
+                        throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
+                    }
+                    return { location: created, region };
+                }
+                return { location, region };
+            }
+            throw new Error(`Travel prose destination "${raw}" must be "location" or "region|location".`);
+        };
 
         function extractRandomEventSeeds(responseText) {
             if (!responseText || typeof responseText !== 'string') {
@@ -3302,6 +3629,277 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        const mergeEventArrays = (target, source) => {
+            if (!Array.isArray(source) || !source.length) {
+                return target;
+            }
+            if (!Array.isArray(target)) {
+                return source.slice();
+            }
+            target.push(...source);
+            return target;
+        };
+
+        const mergeNpcUpdates = (target, source) => {
+            if (!source || typeof source !== 'object') {
+                return target;
+            }
+            const merged = target && typeof target === 'object'
+                ? { ...target }
+                : { added: [], departed: [], movedLocations: [] };
+            ['added', 'departed', 'movedLocations'].forEach((key) => {
+                const existing = Array.isArray(merged[key]) ? merged[key] : [];
+                const incoming = Array.isArray(source[key]) ? source[key] : [];
+                if (!incoming.length) {
+                    merged[key] = existing;
+                    return;
+                }
+                const seen = new Set(existing);
+                const combined = existing.slice();
+                for (const entry of incoming) {
+                    if (!seen.has(entry)) {
+                        seen.add(entry);
+                        combined.push(entry);
+                    }
+                }
+                merged[key] = combined;
+            });
+            return merged;
+        };
+
+        const mergeStructuredEvents = (target, source) => {
+            if (!source || typeof source !== 'object') {
+                return target;
+            }
+            const merged = target && typeof target === 'object'
+                ? target
+                : { parsed: {}, rawEntries: {} };
+            if (!merged.parsed || typeof merged.parsed !== 'object') {
+                merged.parsed = {};
+            }
+            if (!merged.rawEntries || typeof merged.rawEntries !== 'object') {
+                merged.rawEntries = {};
+            }
+            const sourceParsed = source.parsed && typeof source.parsed === 'object'
+                ? source.parsed
+                : {};
+            Object.entries(sourceParsed).forEach(([key, value]) => {
+                if (value === undefined || value === null) {
+                    return;
+                }
+                if (Array.isArray(value)) {
+                    if (Array.isArray(merged.parsed[key])) {
+                        merged.parsed[key].push(...value);
+                    } else if (merged.parsed[key] !== undefined) {
+                        merged.parsed[key] = [merged.parsed[key], ...value];
+                    } else {
+                        merged.parsed[key] = value.slice();
+                    }
+                    return;
+                }
+                if (Array.isArray(merged.parsed[key])) {
+                    merged.parsed[key].push(value);
+                } else if (merged.parsed[key] !== undefined) {
+                    merged.parsed[key] = [merged.parsed[key], value];
+                } else {
+                    merged.parsed[key] = value;
+                }
+            });
+            const sourceRaw = source.rawEntries && typeof source.rawEntries === 'object'
+                ? source.rawEntries
+                : {};
+            Object.entries(sourceRaw).forEach(([key, value]) => {
+                const text = typeof value === 'string' ? value.trim() : '';
+                if (!text) {
+                    return;
+                }
+                const existing = typeof merged.rawEntries[key] === 'string'
+                    ? merged.rawEntries[key].trim()
+                    : '';
+                merged.rawEntries[key] = existing ? `${existing} | ${text}` : text;
+            });
+            return merged;
+        };
+
+        const mergeEventResults = (results) => {
+            if (!Array.isArray(results)) {
+                return null;
+            }
+            let merged = null;
+            results.forEach(result => {
+                if (!result) {
+                    return;
+                }
+                if (!merged) {
+                    merged = {
+                        raw: result.raw || '',
+                        html: result.html || '',
+                        structured: result.structured
+                            ? mergeStructuredEvents({ parsed: {}, rawEntries: {} }, result.structured)
+                            : { parsed: {}, rawEntries: {} },
+                        experienceAwards: Array.isArray(result.experienceAwards) ? result.experienceAwards.slice() : [],
+                        currencyChanges: Array.isArray(result.currencyChanges) ? result.currencyChanges.slice() : [],
+                        environmentalDamageEvents: Array.isArray(result.environmentalDamageEvents)
+                            ? result.environmentalDamageEvents.slice()
+                            : [],
+                        needBarChanges: Array.isArray(result.needBarChanges) ? result.needBarChanges.slice() : [],
+                        npcUpdates: result.npcUpdates ? mergeNpcUpdates(null, result.npcUpdates) : null,
+                        locationRefreshRequested: Boolean(result.locationRefreshRequested),
+                        questObjectivesCompleted: Array.isArray(result.questObjectivesCompleted)
+                            ? result.questObjectivesCompleted.slice()
+                            : [],
+                        questRewards: Array.isArray(result.questRewards) ? result.questRewards.slice() : [],
+                        questsAwarded: Array.isArray(result.questsAwarded) ? result.questsAwarded.slice() : [],
+                        followupResults: Array.isArray(result.followupResults) ? result.followupResults.slice() : []
+                    };
+                    return;
+                }
+                merged.raw = result.raw
+                    ? (merged.raw ? `${merged.raw}\n\n${result.raw}` : result.raw)
+                    : merged.raw;
+                merged.html = result.html
+                    ? (merged.html ? `${merged.html}<br><br>${result.html}` : result.html)
+                    : merged.html;
+                merged.structured = mergeStructuredEvents(merged.structured, result.structured);
+                merged.experienceAwards = mergeEventArrays(merged.experienceAwards, result.experienceAwards);
+                merged.currencyChanges = mergeEventArrays(merged.currencyChanges, result.currencyChanges);
+                merged.environmentalDamageEvents = mergeEventArrays(merged.environmentalDamageEvents, result.environmentalDamageEvents);
+                merged.needBarChanges = mergeEventArrays(merged.needBarChanges, result.needBarChanges);
+                merged.questObjectivesCompleted = mergeEventArrays(merged.questObjectivesCompleted, result.questObjectivesCompleted);
+                merged.questRewards = mergeEventArrays(merged.questRewards, result.questRewards);
+                merged.questsAwarded = mergeEventArrays(merged.questsAwarded, result.questsAwarded);
+                merged.followupResults = mergeEventArrays(merged.followupResults, result.followupResults);
+                merged.npcUpdates = mergeNpcUpdates(merged.npcUpdates, result.npcUpdates);
+                merged.locationRefreshRequested = Boolean(merged.locationRefreshRequested || result.locationRefreshRequested);
+            });
+            return merged;
+        };
+
+        async function runTravelProseEventChecks({
+            travelProsePayload,
+            location,
+            stream,
+            userInput = null,
+            travelMetadataIsEventDriven = false,
+            currentActionIsTravel = false,
+            resolveTravelContext = null,
+            traveledToLocationId = null,
+            originLabelFallback = 'Origin',
+            destinationLabelFallback = 'Destination'
+        } = {}) {
+            if (!travelProsePayload) {
+                return {
+                    eventResult: null,
+                    originEventResult: null,
+                    destinationEventResult: null,
+                    originEventLocationName: null,
+                    destinationEventLocationName: null,
+                    location,
+                    destinationLocation: null,
+                    traveledToLocationId
+                };
+            }
+
+            const originProse = typeof travelProsePayload.originProse === 'string'
+                ? travelProsePayload.originProse.trim()
+                : '';
+            const destinationProse = typeof travelProsePayload.destinationProse === 'string'
+                ? travelProsePayload.destinationProse.trim()
+                : '';
+
+            let destinationLocation = null;
+            let travelContext = null;
+
+            const originEventLocationName = location?.name
+                || (typeof currentPlayer?.getCurrentLocationName === 'function'
+                    ? currentPlayer.getCurrentLocationName()
+                    : null)
+                || originLabelFallback;
+
+            let originEventResult = null;
+            if (originProse) {
+                const originText = userInput ? `${userInput}\n\n${originProse}` : originProse;
+                originEventResult = await Events.runEventChecks({
+                    textToCheck: originText,
+                    stream,
+                    suppressMoveEvents: true
+                });
+            }
+
+            try {
+                if (travelMetadataIsEventDriven && currentActionIsTravel) {
+                    if (typeof resolveTravelContext !== 'function') {
+                        throw new Error('Travel context resolver is unavailable.');
+                    }
+                    travelContext = resolveTravelContext();
+                    destinationLocation = travelContext?.destinationLocation || null;
+                } else {
+                    if (typeof resolveTravelProseDestination !== 'function') {
+                        throw new Error('Travel prose destination resolver is unavailable.');
+                    }
+                    const resolvedDestination = await resolveTravelProseDestination(travelProsePayload.destination, {
+                        allowCreate: true,
+                        originLocation: location
+                    });
+                    destinationLocation = resolvedDestination.location;
+                }
+
+                if (!destinationLocation) {
+                    throw new Error('Travel prose destination could not be resolved.');
+                }
+
+                if (destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub) {
+                    if (typeof expandRegionEntryStub !== 'function') {
+                        throw new Error('Region entry stub expansion is unavailable.');
+                    }
+                    const expanded = await expandRegionEntryStub(destinationLocation);
+                    if (!expanded) {
+                        throw new Error('Expansion returned no location.');
+                    }
+                    destinationLocation = expanded;
+                    if (travelContext) {
+                        travelContext.destinationLocation = expanded;
+                    }
+                }
+
+                if (currentPlayer && destinationLocation && currentPlayer.currentLocation !== destinationLocation.id) {
+                    currentPlayer.setLocation(destinationLocation);
+                }
+
+                Globals.processedMove = true;
+                location = destinationLocation || location;
+            } catch (travelMoveError) {
+                throw new Error(`Failed to move for travel prose: ${travelMoveError.message || travelMoveError}`);
+            }
+
+            const destinationEventLocationName = destinationLocation?.name
+                || travelProsePayload.destination
+                || destinationLabelFallback;
+
+            let destinationEventResult = null;
+            if (destinationProse) {
+                const destinationText = (!originProse && userInput)
+                    ? `${userInput}\n\n${destinationProse}`
+                    : destinationProse;
+                destinationEventResult = await Events.runEventChecks({
+                    textToCheck: destinationText,
+                    stream,
+                    suppressMoveEvents: true
+                });
+            }
+
+            return {
+                eventResult: mergeEventResults([originEventResult, destinationEventResult]),
+                originEventResult,
+                destinationEventResult,
+                originEventLocationName,
+                destinationEventLocationName,
+                location,
+                destinationLocation,
+                traveledToLocationId: destinationLocation?.id || traveledToLocationId
+            };
+        }
+
         function recordSkillCheckEntry({ resolution, timestamp = null, parentId = null, locationId = null } = {}, collector = null) {
             if (!Array.isArray(chatHistory)) {
                 return null;
@@ -3508,7 +4106,8 @@ module.exports = function registerApiRoutes(scope) {
 
             try {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
-                const location = locationOverride || baseContext?.currentLocation || null;
+                let location = locationOverride || baseContext?.currentLocation || null;
+                const summaryLocation = location;
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType: 'random-event',
@@ -3541,6 +4140,9 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
+                if (Globals.config?.repetition_buster) {
+                    requestOptions.requiredRegex = playerActionProseRegex;
+                }
 
                 const rawResponse = await LLMClient.chatCompletion(requestOptions);
                 const durationSeconds = (Date.now() - start) / 1000;
@@ -3554,7 +4156,15 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 const parsedResponse = parseRandomEventResponse(rawResponse);
-                const narrativeText = (parsedResponse?.eventText || rawResponse || '').trim();
+                let travelProsePayload = null;
+                let narrativeText = '';
+                if (Globals.config?.repetition_buster) {
+                    const parsedProse = parsePlayerActionProseFromXml(rawResponse, { logJson: true });
+                    narrativeText = parsedProse.prose;
+                    travelProsePayload = parsedProse.travel;
+                } else {
+                    narrativeText = (parsedResponse?.eventText || rawResponse || '').trim();
+                }
                 const isAttack = Boolean(parsedResponse?.isAttack);
 
                 if (!narrativeText) {
@@ -3599,8 +4209,26 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 let eventChecks = null;
+                let originEventResult = null;
+                let destinationEventResult = null;
+                let originEventLocationName = null;
+                let destinationEventLocationName = null;
                 try {
-                    eventChecks = await Events.runEventChecks({ textToCheck: cleanedNarrative, stream });
+                    if (travelProsePayload) {
+                        const travelResult = await runTravelProseEventChecks({
+                            travelProsePayload,
+                            location,
+                            stream
+                        });
+                        eventChecks = travelResult.eventResult;
+                        originEventResult = travelResult.originEventResult;
+                        destinationEventResult = travelResult.destinationEventResult;
+                        originEventLocationName = travelResult.originEventLocationName;
+                        destinationEventLocationName = travelResult.destinationEventLocationName;
+                        location = travelResult.location;
+                    } else {
+                        eventChecks = await Events.runEventChecks({ textToCheck: cleanedNarrative, stream });
+                    }
                 } catch (eventCheckError) {
                     console.warn('Failed to apply random event checks:', eventCheckError.message);
                     console.debug(eventCheckError);
@@ -3621,6 +4249,18 @@ module.exports = function registerApiRoutes(scope) {
                 if (slopRemovalInfo) {
                     summary.slopRemoval = slopRemovalInfo;
                 }
+                if (originEventResult?.html) {
+                    summary.eventChecksOrigin = originEventResult.html;
+                }
+                if (destinationEventResult?.html) {
+                    summary.eventChecksDestination = destinationEventResult.html;
+                }
+                if (originEventResult?.structured) {
+                    summary.eventsOrigin = originEventResult.structured;
+                }
+                if (destinationEventResult?.structured) {
+                    summary.eventsDestination = destinationEventResult.structured;
+                }
 
                 if (eventChecks?.npcUpdates) {
                     summary.npcUpdates = eventChecks.npcUpdates;
@@ -3640,7 +4280,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 try {
-                    await summarizeChatEntry(randomEventEntry, { location, type: 'random-event' });
+                    await summarizeChatEntry(randomEventEntry, { location: summaryLocation, type: 'random-event' });
                 } catch (summaryError) {
                     console.warn('Failed to summarize random event entry:', summaryError.message);
                 }
@@ -3652,25 +4292,63 @@ module.exports = function registerApiRoutes(scope) {
                     summary.needBarChanges = eventChecks.needBarChanges;
                 }
 
-                recordEventSummaryEntry({
-                    label: '📋 Events – Random Event',
-                    events: summary.events,
-                    experienceAwards: summary.experienceAwards,
-                    currencyChanges: summary.currencyChanges,
-                    environmentalDamageEvents: summary.environmentalDamageEvents,
-                    needBarChanges: summary.needBarChanges,
-                    timestamp: summary.timestamp,
-                    parentId: randomEventEntry?.id || null,
-                    locationId: randomEventLocationId
-                }, entryCollector);
+                if (originEventResult || destinationEventResult) {
+                    if (originEventResult) {
+                        appendEventSummariesToChat({
+                            summaryLabel: `📋 Events – ${originEventLocationName}`,
+                            statusLabel: `🌀 Status Changes – ${originEventLocationName}`,
+                            events: originEventResult.structured || null,
+                            experienceAwards: originEventResult.experienceAwards || [],
+                            currencyChanges: originEventResult.currencyChanges || [],
+                            environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
+                            needBarChanges: originEventResult.needBarChanges || [],
+                            timestamp: summary.timestamp,
+                            parentId: randomEventEntry?.id || null,
+                            locationId: randomEventLocationId
+                        }, entryCollector);
+                    }
+                    if (destinationEventResult) {
+                        appendEventSummariesToChat({
+                            summaryLabel: `📋 Events – ${destinationEventLocationName}`,
+                            statusLabel: `🌀 Status Changes – ${destinationEventLocationName}`,
+                            events: destinationEventResult.structured || null,
+                            experienceAwards: destinationEventResult.experienceAwards || [],
+                            currencyChanges: destinationEventResult.currencyChanges || [],
+                            environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
+                            needBarChanges: destinationEventResult.needBarChanges || [],
+                            timestamp: summary.timestamp,
+                            parentId: randomEventEntry?.id || null,
+                            locationId: randomEventLocationId
+                        }, entryCollector);
+                    }
+                } else {
+                    recordEventSummaryEntry({
+                        label: '📋 Events – Random Event',
+                        events: summary.events,
+                        experienceAwards: summary.experienceAwards,
+                        currencyChanges: summary.currencyChanges,
+                        environmentalDamageEvents: summary.environmentalDamageEvents,
+                        needBarChanges: summary.needBarChanges,
+                        timestamp: summary.timestamp,
+                        parentId: randomEventEntry?.id || null,
+                        locationId: randomEventLocationId
+                    }, entryCollector);
 
-                recordStatusSummaryEntry({
-                    label: '🌀 Status Changes – Random Event',
-                    events: summary.events,
-                    timestamp: summary.timestamp,
-                    parentId: randomEventEntry?.id || null,
+                    recordStatusSummaryEntry({
+                        label: '🌀 Status Changes – Random Event',
+                        events: summary.events,
+                        timestamp: summary.timestamp,
+                        parentId: randomEventEntry?.id || null,
+                        locationId: randomEventLocationId
+                    }, entryCollector);
+                }
+
+                void runSupplementalStoryInfo({
+                    locationOverride: location,
+                    entryCollector,
+                    parentEntryId: randomEventEntry?.id || null,
                     locationId: randomEventLocationId
-                }, entryCollector);
+                });
 
                 return summary;
             } finally {
@@ -3689,6 +4367,12 @@ module.exports = function registerApiRoutes(scope) {
             if (frequencyConfig.enabled === false) {
                 console.info('Random events skipped: random_event_frequency.enabled is false.');
                 return null;
+            }
+
+            const multiplierRaw = Globals.config?.random_event_frequency_multiplier;
+            const multiplier = Number(multiplierRaw);
+            if (!Number.isFinite(multiplier) || multiplier <= 0) {
+                throw new Error('random_event_frequency_multiplier must be a positive number.');
             }
 
             const toPercent = (value) => {
@@ -3849,7 +4533,7 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const roll = Math.floor(Math.random() * 100) + 1;
+            const roll = (Math.floor(Math.random() * 100) + 1) / multiplier;
             let cumulative = 0;
             let selectedOption = null;
 
@@ -6975,7 +7659,7 @@ module.exports = function registerApiRoutes(scope) {
                     validateXML: false,
                 };
                 if (Globals.config.repetition_buster) {
-                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                    requestOptions.requiredRegex = playerActionProseRegex;
                 }
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -6996,10 +7680,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (Globals.config.repetition_buster) {
-                    const finalProseMatch = raw.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
-                    if (finalProseMatch && finalProseMatch[1]) {
-                        raw = finalProseMatch[1].trim();
-                    }
+                    const parsedProse = parsePlayerActionProseFromXml(raw, { logJson: true });
+                    raw = parsedProse.prose;
                 }
 
                 const debug = {
@@ -7197,14 +7879,6 @@ module.exports = function registerApiRoutes(scope) {
                             };
                         }
                     }
-
-                    let npcEventResult = null;
-                    try {
-                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false, isNpcTurn: true });
-                    } catch (error) {
-                        console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
-                    }
-
                     const npcTurnLocationId = requireLocationId(npcLocation?.id, 'npc turn entry');
                     const npcTurnEntry = pushChatEntry({
                         role: 'assistant',
@@ -7221,6 +7895,13 @@ module.exports = function registerApiRoutes(scope) {
                             parentId: npcTurnEntry?.id || null,
                             locationId: npcTurnLocationId
                         }, entryCollector);
+                    }
+
+                    let npcEventResult = null;
+                    try {
+                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false, isNpcTurn: true });
+                    } catch (error) {
+                        console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
 
                     const npcTurnResult = {
@@ -7314,6 +7995,13 @@ module.exports = function registerApiRoutes(scope) {
                             npcTurnResult.attackCheck = attackCheckForResult;
                         }
                     }
+
+                    void runSupplementalStoryInfo({
+                        locationOverride: npcLocation,
+                        entryCollector,
+                        parentEntryId: npcTurnEntry?.id || null,
+                        locationId: npcTurnLocationId
+                    });
 
                     results.push(npcTurnResult);
 
@@ -7543,6 +8231,7 @@ module.exports = function registerApiRoutes(scope) {
             };
             let playerActionStreamSent = false;
             const newChatEntries = [];
+            const getClientMessages = () => filterOrphanedChatEntries(newChatEntries);
 
             if (Array.isArray(statusNeedAdjustments) && statusNeedAdjustments.length) {
                 const lines = statusNeedAdjustments.map(entry => {
@@ -7803,7 +8492,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 delete payload.eventChecks;
+                delete payload.eventChecksOrigin;
+                delete payload.eventChecksDestination;
                 delete payload.events;
+                delete payload.eventsOrigin;
+                delete payload.eventsDestination;
                 delete payload.experienceAwards;
                 delete payload.currencyChanges;
                 delete payload.environmentalDamageEvents;
@@ -7926,7 +8619,7 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: '',
                         commentLogged: true,
-                        messages: newChatEntries
+                        messages: getClientMessages()
                     };
 
                     streamState.commentOnly = true;
@@ -8074,7 +8767,7 @@ module.exports = function registerApiRoutes(scope) {
                                     locationId: attackRejectionLocationId
                                 }, newChatEntries, attackRejectionLocationId);
 
-                                responseData.messages = newChatEntries;
+                                responseData.messages = getClientMessages();
                                 return respond(responseData);
                             }
 
@@ -8204,7 +8897,7 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    responseData.messages = newChatEntries;
+                    responseData.messages = getClientMessages();
                     return respond(responseData);
                 }
 
@@ -8616,7 +9309,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     */
 
-                    responseData.messages = newChatEntries;
+                    responseData.messages = getClientMessages();
 
                     return respond(responseData);
                 }
@@ -8639,7 +9332,7 @@ module.exports = function registerApiRoutes(scope) {
                     validateXML: false
                 };
                 if (promptType === 'player-action' && Globals.config.repetition_buster) {
-                    requestOptions.requiredRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>/i;
+                    requestOptions.requiredRegex = playerActionProseRegex;
                 }
 
                 if (Object.keys(additionalPayload).length) {
@@ -8652,6 +9345,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
                 let aiResponse = await LLMClient.chatCompletion(requestOptions);
+                let travelProsePayload = null;
                 //console.log("Player Prose Request Options:", requestOptions);
 
                 const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: 'player_action', streamEmitter: stream });
@@ -8682,11 +9376,9 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (promptType === 'player-action' && Globals.config.repetition_buster) {
-                        // extract final prose from numbered list
-                        const finalProseMatch = aiResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
-                        if (finalProseMatch && finalProseMatch[1]) {
-                            aiResponse = finalProseMatch[1].trim();
-                        }
+                        const parsedProse = parsePlayerActionProseFromXml(aiResponse, { logJson: true });
+                        aiResponse = parsedProse.prose;
+                        travelProsePayload = parsedProse.travel;
                     }
 
                     if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
@@ -8706,11 +9398,9 @@ module.exports = function registerApiRoutes(scope) {
                                     }
                                     let rerunResponse = await LLMClient.chatCompletion(rerunOptions);
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
-                                        const rerunMatch = rerunResponse.match(/<finalProse>([\s\S]*?)<\/finalProse>/i);
-                                        if (rerunMatch && rerunMatch[1]) {
-                                            rerunResponse = rerunMatch[1].trim();
-                                        }
-                                        aiResponse = rerunResponse.trim();
+                                        const parsedProse = parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
+                                        aiResponse = parsedProse.prose;
+                                        travelProsePayload = parsedProse.travel;
                                     }
                                 }
                             }
@@ -8816,8 +9506,19 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
+                    void runSupplementalStoryInfo({
+                        locationOverride: location,
+                        entryCollector: newChatEntries,
+                        parentEntryId: aiResponseEntry?.id || null,
+                        locationId: aiResponseLocationId
+                    });
+
                     let eventResult = null;
                     let questResult = null;
+                    let originEventResult = null;
+                    let destinationEventResult = null;
+                    let originEventLocationName = null;
+                    let destinationEventLocationName = null;
                     let userInput = null;
                     if (isForcedEventAction) {
                         eventResult = forcedEventResult;
@@ -8835,11 +9536,36 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                             }
 
-                            const textToCheck = userInput ? `${userInput}\n\n${aiResponse}` : aiResponse;
-                            [eventResult, questResult] = await Promise.all([
-                                Events.runEventChecks({ textToCheck, stream }),
-                                Events.runQuestChecks()
-                            ]);
+                            if (travelProsePayload) {
+                                const travelResult = await runTravelProseEventChecks({
+                                    travelProsePayload,
+                                    location,
+                                    stream,
+                                    userInput,
+                                    travelMetadataIsEventDriven,
+                                    currentActionIsTravel,
+                                    resolveTravelContext,
+                                    traveledToLocationId
+                                });
+                                eventResult = travelResult.eventResult;
+                                originEventResult = travelResult.originEventResult;
+                                destinationEventResult = travelResult.destinationEventResult;
+                                originEventLocationName = travelResult.originEventLocationName;
+                                destinationEventLocationName = travelResult.destinationEventLocationName;
+                                location = travelResult.location;
+                                traveledToLocationId = travelResult.traveledToLocationId || traveledToLocationId;
+                                questResult = await Events.runQuestChecks();
+                            } else {
+                                const textToCheck = userInput ? `${userInput}\n\n${aiResponse}` : aiResponse;
+                                [eventResult, questResult] = await Promise.all([
+                                    Events.runEventChecks({
+                                        textToCheck,
+                                        stream,
+                                        suppressMoveEvents: Boolean(currentActionIsTravel && travelMetadataIsEventDriven)
+                                    }),
+                                    Events.runQuestChecks()
+                                ]);
+                            }
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
@@ -8852,10 +9578,22 @@ module.exports = function registerApiRoutes(scope) {
                         if (eventResult.html) {
                             responseData.eventChecks = eventResult.html;
                         }
+                        if (originEventResult?.html) {
+                            responseData.eventChecksOrigin = originEventResult.html;
+                        }
+                        if (destinationEventResult?.html) {
+                            responseData.eventChecksDestination = destinationEventResult.html;
+                        }
                         if (eventResult.structured) {
                             responseData.events = eventResult.structured;
                             if (debugInfo) {
                                 debugInfo.eventStructured = eventResult.structured;
+                            }
+                            if (originEventResult?.structured) {
+                                responseData.eventsOrigin = originEventResult.structured;
+                            }
+                            if (destinationEventResult?.structured) {
+                                responseData.eventsDestination = destinationEventResult.structured;
                             }
                             if (currentPlayer && currentPlayer.currentLocation) {
                                 try {
@@ -9095,6 +9833,7 @@ module.exports = function registerApiRoutes(scope) {
                                     }
 
                                     traveledToLocationId = destinationLocation?.id || traveledToLocationId;
+                                    Globals.processedMove = true;
 
                                     const normalizedName = typeof destinationName === 'string' && destinationName.trim()
                                         ? destinationName.trim()
@@ -9156,19 +9895,52 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
 
-                    appendEventSummariesToChat({
-                        summaryLabel: '📋 Events – Player Turn',
-                        statusLabel: '🌀 Status Changes – Player Turn',
-                        events: responseData.events,
-                        experienceAwards: responseData.experienceAwards,
-                        currencyChanges: responseData.currencyChanges,
-                        environmentalDamageEvents: responseData.environmentalDamageEvents,
-                        needBarChanges: responseData.needBarChanges,
-                        plausibility: responseData.plausibility,
-                        timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
-                        parentId: aiResponseEntry?.id || null,
-                        locationId: aiResponseLocationId
-                    }, newChatEntries);
+                    if (originEventResult || destinationEventResult) {
+                        if (originEventResult) {
+                            appendEventSummariesToChat({
+                                summaryLabel: `📋 Events – ${originEventLocationName}`,
+                                statusLabel: `🌀 Status Changes – ${originEventLocationName}`,
+                                events: originEventResult.structured || null,
+                                experienceAwards: originEventResult.experienceAwards || [],
+                                currencyChanges: originEventResult.currencyChanges || [],
+                                environmentalDamageEvents: originEventResult.environmentalDamageEvents || [],
+                                needBarChanges: originEventResult.needBarChanges || [],
+                                plausibility: responseData.plausibility,
+                                timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                parentId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            }, newChatEntries);
+                        }
+                        if (destinationEventResult) {
+                            appendEventSummariesToChat({
+                                summaryLabel: `📋 Events – ${destinationEventLocationName}`,
+                                statusLabel: `🌀 Status Changes – ${destinationEventLocationName}`,
+                                events: destinationEventResult.structured || null,
+                                experienceAwards: destinationEventResult.experienceAwards || [],
+                                currencyChanges: destinationEventResult.currencyChanges || [],
+                                environmentalDamageEvents: destinationEventResult.environmentalDamageEvents || [],
+                                needBarChanges: destinationEventResult.needBarChanges || [],
+                                plausibility: null,
+                                timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                                parentId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            }, newChatEntries);
+                        }
+                    } else {
+                        appendEventSummariesToChat({
+                            summaryLabel: '📋 Events – Player Turn',
+                            statusLabel: '🌀 Status Changes – Player Turn',
+                            events: responseData.events,
+                            experienceAwards: responseData.experienceAwards,
+                            currencyChanges: responseData.currencyChanges,
+                            environmentalDamageEvents: responseData.environmentalDamageEvents,
+                            needBarChanges: responseData.needBarChanges,
+                            plausibility: responseData.plausibility,
+                            timestamp: aiResponseEntry?.timestamp || new Date().toISOString(),
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
+                        }, newChatEntries);
+                    }
 
                     if (currentActionIsTravel && travelMetadataIsEventDriven) {
                         if (!traveledToLocationId) {
@@ -9565,7 +10337,7 @@ module.exports = function registerApiRoutes(scope) {
                         stripStreamedEventArtifacts(responseData);
                     }
 
-                    responseData.messages = newChatEntries;
+                    responseData.messages = getClientMessages();
                     await respond(responseData);
                 } else {
                     await respond({ error: 'AI returned an empty response for player action.' }, 500);
@@ -15536,7 +16308,10 @@ module.exports = function registerApiRoutes(scope) {
                     thingType: thing.thingType
                 }));
 
-                const baseContext = await prepareBasePromptContext({ locationOverride: locationRecord });
+                const baseContext = await prepareBasePromptContext({
+                    locationOverride: locationRecord,
+                    omitCraftHistory: true
+                });
 
                 const promptPayload = {
                     ...baseContext,
@@ -19572,6 +20347,31 @@ module.exports = function registerApiRoutes(scope) {
 
             const ensureShortDescriptionsOnLoad = async () => {
                 const isMissingShortDescription = (value) => !value || !String(value).trim();
+                const resolveStubShortDescription = (location) => {
+                    if (!location || typeof location !== 'object') {
+                        return '';
+                    }
+                    const stubMeta = location.stubMetadata || {};
+                    const stubShort = typeof stubMeta.stubShortDescription === 'string'
+                        ? stubMeta.stubShortDescription.trim()
+                        : '';
+                    if (stubShort) {
+                        return stubShort;
+                    }
+                    const legacyShort = typeof stubMeta.shortDescription === 'string'
+                        ? stubMeta.shortDescription.trim()
+                        : '';
+                    return legacyShort;
+                };
+                const hasLocationShortDescription = (location) => {
+                    if (!location || typeof location !== 'object') {
+                        return false;
+                    }
+                    if (!isMissingShortDescription(location.shortDescription)) {
+                        return true;
+                    }
+                    return Boolean(resolveStubShortDescription(location));
+                };
                 const resolveShortDescriptionCounts = ({
                     thingsToCheck,
                     locationsToCheck,
@@ -19579,7 +20379,7 @@ module.exports = function registerApiRoutes(scope) {
                     abilitiesToCheck
                 }) => ({
                     pendingThings: thingsToCheck.filter(item => isMissingShortDescription(item?.shortDescription)).length,
-                    pendingLocations: locationsToCheck.filter(loc => isMissingShortDescription(loc?.shortDescription)).length,
+                    pendingLocations: locationsToCheck.filter(loc => !hasLocationShortDescription(loc)).length,
                     pendingRegions: regionsToCheck.filter(region => isMissingShortDescription(region?.shortDescription)).length,
                     pendingAbilities: abilitiesToCheck.filter(ability => isMissingShortDescription(ability?.shortDescription)).length
                 });
@@ -19613,7 +20413,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     const regionCounts = new Map();
                     for (const location of locations) {
-                        if (!isMissingShortDescription(location?.shortDescription)) {
+                        if (hasLocationShortDescription(location)) {
                             continue;
                         }
                         const region = resolveRegionForLocationEstimate(location);
@@ -19674,6 +20474,19 @@ module.exports = function registerApiRoutes(scope) {
                         continue;
                     }
                     abilitiesToCheck.push(...abilities);
+                }
+
+                for (const location of locationsToCheck) {
+                    if (!location || typeof location !== 'object') {
+                        continue;
+                    }
+                    if (!isMissingShortDescription(location.shortDescription)) {
+                        continue;
+                    }
+                    const stubShort = resolveStubShortDescription(location);
+                    if (stubShort) {
+                        location.shortDescription = stubShort;
+                    }
                 }
 
                 const counts = resolveShortDescriptionCounts({

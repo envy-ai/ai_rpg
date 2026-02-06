@@ -12,4 +12,4 @@ Slash command `/short_description_check` to list regions, locations, things, and
 - Outputs full names, marking stubs and including owner names for abilities.
 
 ## Notes
-- Uses location `stubMetadata.shortDescription` when present to avoid flagging stubbed locations that already have a short description.
+- Uses location `stubMetadata.stubShortDescription` (or legacy `stubMetadata.shortDescription`) when present to avoid flagging stubbed locations that already have a short description.

@@ -104,9 +104,10 @@ The below context is an account of the current game state, including the setting
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}
   <worldOutline>
-    {% for regionName, locations in worldOutline.regions %}
-    <region name="{{ regionName | escape }}">
-      {% for loc in locations %}<location>{{ loc }}</location>
+    {% for region in worldOutline.regions %}
+    <region name="{{ region.name | escape }}">
+      {{ region.label }}
+      {% for loc in region.locations %}<location>{{ loc.label }}</location>
       {% endfor %}
     </region>
     {% endfor %}

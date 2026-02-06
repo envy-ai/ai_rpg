@@ -9,6 +9,7 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
   - `needBars` is an array of `{ name, delta }`.
   - `duration` accepts numbers, strings with a numeric value (e.g. `"10 minutes"` → `10`), `'instant'` (treated as 1), `'permanent'`/`'continuous'` (treated as -1), or null.
+  - Any negative duration is treated as infinite and does not decrement; `0` means expired.
   - Invalid duration strings raise a clear error so malformed prompts are surfaced.
 
 ## Instance API

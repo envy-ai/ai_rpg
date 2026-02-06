@@ -9,6 +9,7 @@ slopwords:
   sings: default
   resonance: default
   harmonic: default
+  ozone: 0
 
   # Alphabetical list:
   absently: default

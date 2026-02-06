@@ -160,6 +160,7 @@ random_event_frequency:
   rare: 0.01
   regionSpecific: 0.05
   locationSpecific: 0.05
+random_event_frequency_multiplier: 1
 
 # If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
 event_checks:

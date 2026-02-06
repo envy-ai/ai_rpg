@@ -93,7 +93,29 @@ class Location {
     this.#id = id || Location.#generateId();
     this.#description = description && typeof description === 'string' ? description.trim() : null;
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
-    this.#shortDescription = normalizedShortDescription || null;
+    let resolvedStubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
+    let resolvedShortDescription = normalizedShortDescription;
+    if (creatingStub && !resolvedShortDescription) {
+      const stubShort = typeof resolvedStubMetadata?.stubShortDescription === 'string'
+        ? resolvedStubMetadata.stubShortDescription.trim()
+        : '';
+      const legacyShort = typeof resolvedStubMetadata?.shortDescription === 'string'
+        ? resolvedStubMetadata.shortDescription.trim()
+        : '';
+      resolvedShortDescription = stubShort || legacyShort || null;
+    }
+    if (creatingStub && resolvedShortDescription) {
+      if (!resolvedStubMetadata) {
+        resolvedStubMetadata = {};
+      }
+      if (!resolvedStubMetadata.stubShortDescription || !String(resolvedStubMetadata.stubShortDescription).trim()) {
+        resolvedStubMetadata.stubShortDescription = resolvedShortDescription;
+      }
+      if (!resolvedStubMetadata.shortDescription || !String(resolvedStubMetadata.shortDescription).trim()) {
+        resolvedStubMetadata.shortDescription = resolvedShortDescription;
+      }
+    }
+    this.#shortDescription = resolvedShortDescription || null;
     this.#name = name && typeof name === 'string' ? name.trim() : null;
     this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
@@ -106,7 +128,7 @@ class Location {
       ? controllingFactionId.trim()
       : null;
     this.#visited = false;
-    this.#stubMetadata = creatingStub && stubMetadata ? { ...stubMetadata } : creatingStub ? {} : null;
+    this.#stubMetadata = resolvedStubMetadata;
     this.#hasGeneratedStubs = Boolean(hasGeneratedStubs);
     this.#npcIds = Array.isArray(npcIds)
       ? [...new Set(npcIds.filter(id => typeof id === 'string'))]
@@ -243,6 +265,13 @@ class Location {
     const stubNumNpcs = existingLocation?.generationHints?.numNpcs ?? stubMetadata.numNpcs ?? null;
     const stubNumHostiles = existingLocation?.generationHints?.numHostiles ?? stubMetadata.numHostiles ?? null;
 
+    const normalizeAuthoritativeText = (value) => {
+      if (typeof value !== 'string') {
+        return '';
+      }
+      return value.replace(/\s+/g, ' ').trim();
+    };
+
     const enforceAuthoritativeText = (fieldLabel, stubValue) => {
       if (!stubValue) {
         return;
@@ -250,8 +279,15 @@ class Location {
       const aiValue = typeof locationData[fieldLabel] === 'string'
         ? locationData[fieldLabel].trim()
         : '';
-      if (aiValue && aiValue !== stubValue) {
-        throw new Error(`Stub expansion returned ${fieldLabel} "${aiValue}" but stub requires "${stubValue}".`);
+      const normalizedAi = normalizeAuthoritativeText(aiValue);
+      const normalizedStub = normalizeAuthoritativeText(stubValue);
+      if (aiValue && normalizedAi !== normalizedStub) {
+        if (normalizedAi.startsWith(normalizedStub)) {
+          console.warn(`Stub expansion expanded ${fieldLabel}; accepting AI text.`);
+          locationData[fieldLabel] = aiValue;
+          return;
+        }
+        console.warn(`Stub expansion returned ${fieldLabel} "${aiValue}" but stub requires "${stubValue}". Using stub value.`);
       }
       locationData[fieldLabel] = stubValue;
     };
@@ -262,7 +298,7 @@ class Location {
       }
       const aiValue = Number.isFinite(locationData[fieldLabel]) ? locationData[fieldLabel] : null;
       if (Number.isFinite(aiValue) && aiValue !== stubValue) {
-        throw new Error(`Stub expansion returned ${fieldLabel} ${aiValue} but stub requires ${stubValue}.`);
+        console.warn(`Stub expansion returned ${fieldLabel} ${aiValue} but stub requires ${stubValue}. Using stub value.`);
       }
       locationData[fieldLabel] = stubValue;
     };
@@ -1330,8 +1366,12 @@ class Location {
         retained.push(effect);
         continue;
       }
+      if (effect.duration < 0) {
+        retained.push(effect);
+        continue;
+      }
       if (effect.duration === 0) {
-        changed = true;
+        retained.push(effect);
         continue;
       }
       retained.push(new StatusEffect({

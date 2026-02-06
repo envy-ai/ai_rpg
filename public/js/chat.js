@@ -615,7 +615,7 @@ class AIRPGChat {
     }
 
     getAttachmentTypes() {
-        return new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover']);
+        return new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover', 'supplemental-story-info']);
     }
 
     getClientMessageHistoryConfig() {

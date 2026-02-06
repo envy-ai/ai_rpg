@@ -26,6 +26,12 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Player card (portrait, health, need bars, quick actions).
   - Party summary list.
 
+## Location name caching
+
+- Inline script maintains a `locationCache` (location id -> display name) used by exit rendering and stub updates.
+- Cache entries are refreshed when the current location is rendered, after exit creation responses, and when stubs are renamed.
+- `ensureLocationNameCached` fetches missing names for exits when needed.
+
 ## Core client controller (public/js/chat.js)
 
 - `AIRPGChat` owns chat history, input handling, and the websocket lifecycle.

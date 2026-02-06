@@ -857,7 +857,7 @@ class Region {
         const duration = Number.isFinite(Number(rawDuration)) ? Math.floor(Number(rawDuration)) : (rawDuration === null ? null : 1);
         normalized.push({
           description: descriptionValue,
-          duration: duration === null ? null : Math.max(0, duration)
+          duration
         });
       }
     }
@@ -938,11 +938,15 @@ class Region {
         retained.push({ ...effect });
         continue;
       }
-      if (effect.duration <= 0) {
-        changed = true;
+      if (effect.duration < 0) {
+        retained.push({ ...effect });
         continue;
       }
-      retained.push({ description: effect.description, duration: effect.duration - 1 });
+      if (effect.duration === 0) {
+        retained.push({ ...effect });
+        continue;
+      }
+      retained.push({ ...effect, duration: effect.duration - 1 });
       changed = true;
     }
     if (changed) {
@@ -953,7 +957,7 @@ class Region {
 
   clearExpiredStatusEffects() {
     const before = this.#statusEffects.length;
-    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration > 0);
+    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
     if (this.#statusEffects.length !== before) {
       this.#lastUpdated = new Date().toISOString();
     }

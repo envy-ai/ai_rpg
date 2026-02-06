@@ -20,9 +20,10 @@ Invalid regeneration mode "{{ mode }}". Expected "location" or "region".
 <context>
 {% include "_includes/setting-info.njk" %}
 <worldOutline>
-{% for regionName, locations in worldOutline.regions %}
-  <region name="{{ regionName | escape }}">
-    {% for loc in locations %}<location>{{ loc }}</location>
+{% for region in worldOutline.regions %}
+  <region name="{{ region.name | escape }}">
+    {{ region.label }}
+    {% for loc in region.locations %}<location>{{ loc.label }}</location>
     {% endfor %}
   </region>
 {% endfor %}

@@ -21,6 +21,7 @@ imagegen/qwen_image_2512_nova.json.njk
 # Lorebook state and data
 lorebooks/*.json
 lorebooks/lorebook-state.json
+.codex
 
 # Keep directory structure
 !lorebooks/.gitkeep

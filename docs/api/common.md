@@ -18,7 +18,7 @@ Fields:
 - `timestamp`: ISO string (generated if missing)
 - `parentId`: string | null
 - `locationId`: string (required; enforced by `pushChatEntry`)
-- `type`: string | null (examples: `player-action`, `event-summary`, `quest-reward`, `status-summary`)
+- `type`: string | null (examples: `player-action`, `event-summary`, `quest-reward`, `status-summary`, `supplemental-story-info` for hidden story-note attachments that stay server-side)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
 - `summaryItems`: array | null (event summaries)
@@ -71,6 +71,7 @@ Fields:
 - `skills`: array of `{ skill, modifier }`
 - `needBars`: array of `{ name, delta }`
 - `duration`: number | null (1 = instant, -1 = permanent)
+- Modifier arrays are only included when non-empty.
 
 ## NpcProfile (serializeNpcForClient)
 Returned in many player/NPC endpoints and location responses.

@@ -42,6 +42,7 @@ banned_npc_names:
   - Greta
   - Elowen
   - Jinx
+  - Vane
 banned_npc_name_regexes:
   - "/Kael/"
   - "/Fael/"

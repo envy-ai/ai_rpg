@@ -95,9 +95,6 @@ class StatusEffect {
                 throw new Error(`StatusEffect duration "${value}" is invalid`);
             }
             const rounded = Math.floor(numeric);
-            if (rounded < 0 && rounded !== -1) {
-                throw new Error('StatusEffect duration must be -1 (permanent) or a non-negative integer');
-            }
             return rounded;
         }
 
@@ -106,9 +103,6 @@ class StatusEffect {
             throw new Error(`StatusEffect duration "${value}" is invalid`);
         }
         const rounded = Math.floor(numeric);
-        if (rounded < 0 && rounded !== -1) {
-            throw new Error('StatusEffect duration must be -1 (permanent) or a non-negative integer');
-        }
         return rounded;
     }
 
