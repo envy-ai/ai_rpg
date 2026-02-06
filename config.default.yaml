@@ -198,6 +198,20 @@ combat_npc_turns:
   maxNpcsToAct: 2
   npcTurnFrequency: 1
 baseWeaponDamage: 5
+
+# Point pool formulas (character creation).
+# Variables: level, number_of_skills, number_of_attributes,
+#   attribute.<name>.value, attribute.<name>.bonus (base values),
+#   attribute_modified.<name>.value, attribute_modified.<name>.bonus (modified values),
+#   skill.<name> (lowercased with non-alphanumerics as underscores), infinity (constant = 1e100)
+# Functions: abs, round, floor, ceil, min, max, clamp(value, min, max)
+# Defaults below preserve the previous formulas.
+formulas:
+  character_creation:
+    attribute_pool_formula: "ceil(level * (number_of_attributes / 2))"
+    skill_pool_formula: "level * ceil(number_of_skills / 5)"
+    max_attribute: "infinity"
+    max_skill: "infinity"
 baseHealthPerLevel: 15
 repetition_buster: true
 slop_buster: true

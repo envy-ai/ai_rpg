@@ -1,0 +1,40 @@
+{% set skillSectionId = skillSectionId or 'newGameSkillsSection' %}
+{% set skillSectionHeading = skillSectionHeading or 'Skills' %}
+{% set skillPointsLabel = skillPointsLabel or 'Unspent Skill Points' %}
+{% set skillPointsHelp = skillPointsHelp
+  or 'Pool starts at level × ceil(skill count ÷ 5). Skills begin at rank 1; decrease to refund points.' %}
+{% set skillPointsRemainingId = skillPointsRemainingId or 'skillPointsRemaining' %}
+{% set skillPointsWarningId = skillPointsWarningId or 'skillPointsWarning' %}
+{% set skillPointsWarningStyle = skillPointsWarningStyle or 'color: #f44336; display: none;' %}
+{% set skillGridId = skillGridId or 'newGameSkillsGrid' %}
+{% set skillAddInputId = skillAddInputId or 'skillAddInput' %}
+{% set skillAddButtonId = skillAddButtonId or 'skillAddButton' %}
+{% set skillAddInputIdBottom = skillAddInputIdBottom or 'skillAddInputBottom' %}
+{% set skillAddButtonIdBottom = skillAddButtonIdBottom or 'skillAddButtonBottom' %}
+{% set skillAddHelpText = skillAddHelpText or 'Add or remove skills to include in the point pool.' %}
+
+<div class="config-section" id="{{ skillSectionId }}">
+    <h2>{{ skillSectionHeading }}</h2>
+    <div class="form-group">
+        <label for="{{ skillAddInputId }}">Add Skill</label>
+        <div class="skill-add-row">
+            <input type="text" id="{{ skillAddInputId }}" class="skill-add-input" placeholder="Skill name">
+            <button type="button" id="{{ skillAddButtonId }}" class="btn btn-secondary skill-add-button">Add Skill</button>
+        </div>
+        <div class="help-text">{{ skillAddHelpText }}</div>
+    </div>
+    <div class="form-group">
+        <label>{{ skillPointsLabel }}</label>
+        <div id="{{ skillPointsRemainingId }}" class="form-static-value">0</div>
+        <div class="help-text">{{ skillPointsHelp }}</div>
+        <div id="{{ skillPointsWarningId }}" class="help-text points-warning" style="{{ skillPointsWarningStyle }}"></div>
+    </div>
+    <div id="{{ skillGridId }}" class="skills-grid"></div>
+    <div class="form-group">
+        <label for="{{ skillAddInputIdBottom }}">Add Skill</label>
+        <div class="skill-add-row">
+            <input type="text" id="{{ skillAddInputIdBottom }}" class="skill-add-input" placeholder="Skill name">
+            <button type="button" id="{{ skillAddButtonIdBottom }}" class="btn btn-secondary skill-add-button">Add Skill</button>
+        </div>
+    </div>
+</div>

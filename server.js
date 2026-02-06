@@ -10,6 +10,8 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const Utils = require('./Utils.js');
+const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
+const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
 const SceneSummaries = require('./SceneSummaies.js');
 const {
@@ -71,6 +73,7 @@ const BANNED_NPC_NAMES_PATH = path.join(__dirname, 'defs', 'banned_npc_names.yam
 const BANNED_LOCATION_NAMES_PATH = path.join(__dirname, 'defs', 'banned_location_names.yaml');
 const SLOPWORDS_PATH = path.join(__dirname, 'defs', 'slopwords.yaml');
 const SYSTEM_PROMPT_PREFIX_BY_PROMPT_PATH = path.join(__dirname, 'defs', 'system_prompt_prefix_by_prompt.yaml');
+const DEFAULT_SKILLS_PATH = path.join(__dirname, 'defs', 'default_skills.yaml');
 let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
@@ -78,6 +81,32 @@ let cachedExperiencePointValues = null;
 let cachedSlopWordList = null;
 let cachedNpcNameBlockedWords = null;
 let cachedSystemPromptPrefixByPrompt = null;
+let cachedPointPoolFormulaRuntime = null;
+
+function loadDefaultSkillsForSettings() {
+    try {
+        const raw = fs.readFileSync(DEFAULT_SKILLS_PATH, 'utf8');
+        const parsed = yaml.load(raw);
+        if (!Array.isArray(parsed)) {
+            throw new Error('default_skills.yaml must be a YAML list of skill names.');
+        }
+        const skills = parsed.map((entry, index) => {
+            if (typeof entry !== 'string') {
+                throw new Error(`default_skills.yaml entry ${index + 1} must be a string.`);
+            }
+            return entry.trim();
+        }).filter(entry => entry.length > 0);
+
+        if (skills.length === 0) {
+            throw new Error('default_skills.yaml did not contain any skill names.');
+        }
+
+        return { skills, error: '' };
+    } catch (error) {
+        console.warn(`Failed to load default skills from ${DEFAULT_SKILLS_PATH}: ${error.message}`);
+        return { skills: [], error: error.message || 'Failed to load default skills.' };
+    }
+}
 
 const mergeDeep = (target, source) => {
     if (!source || typeof source !== 'object') {
@@ -1581,7 +1610,8 @@ function buildNewGameDefaults(settingSnapshot = null) {
         playerName: '',
         playerDescription: '',
         startingLocation: '',
-        numSkills: 20,
+        playerLevel: 1,
+        pointPoolFormulas: resolvePointPoolFormulas(config),
         existingSkills: [],
         availableClasses: [],
         availableRaces: [],
@@ -1606,10 +1636,10 @@ function buildNewGameDefaults(settingSnapshot = null) {
         ? settingSnapshot.defaultStartingLocation.trim()
         : '';
 
-    const parsedSkillCount = Number.parseInt(settingSnapshot.defaultNumSkills, 10);
-    defaults.numSkills = Number.isFinite(parsedSkillCount)
-        ? Math.max(0, Math.min(100, parsedSkillCount))
-        : defaults.numSkills;
+    const parsedPlayerLevel = Number(settingSnapshot.playerStartingLevel);
+    defaults.playerLevel = Number.isFinite(parsedPlayerLevel)
+        ? parsedPlayerLevel
+        : defaults.playerLevel;
 
     const existingSkills = Array.isArray(settingSnapshot.defaultExistingSkills)
         ? settingSnapshot.defaultExistingSkills
@@ -13966,6 +13996,9 @@ function parseFactionsXml(xmlContent) {
 
     const parsed = [];
     const seenNames = new Set();
+    const validRelationStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
+    const defaultRelationStatus = 'neutral';
+    const defaultRelationNotes = 'No explicit relationship provided.';
     for (const node of factionNodes) {
         const name = getDirectChildText(node, 'name');
         if (!name) {
@@ -14027,27 +14060,31 @@ function parseFactionsXml(xmlContent) {
         const relationNodes = relationsContainer
             ? Array.from(relationsContainer.getElementsByTagName('relation'))
             : [];
-        const relations = relationNodes.map((relationNode, index) => {
+        const relations = [];
+        relationNodes.forEach((relationNode, index) => {
             const targetNode = relationNode.getElementsByTagName('factionName')[0]
                 || relationNode.getElementsByTagName('name')[0];
             const statusNode = relationNode.getElementsByTagName('status')[0];
             const notesNode = relationNode.getElementsByTagName('notes')[0];
             const targetName = targetNode ? targetNode.textContent.trim() : '';
             if (!targetName) {
-                throw new Error(`Faction "${name}" relation at index ${index} is missing a factionName.`);
+                console.warn(`Faction "${name}" relation at index ${index} is missing a factionName; skipping relation.`);
+                return;
             }
-            const status = statusNode ? statusNode.textContent.trim().toLowerCase() : '';
+            const rawStatus = statusNode ? statusNode.textContent.trim().toLowerCase() : '';
+            let status = rawStatus;
             if (!status) {
-                throw new Error(`Faction "${name}" relation for "${targetName}" is missing a status.`);
+                status = defaultRelationStatus;
+                console.warn(`Faction "${name}" relation for "${targetName}" is missing status; defaulting to "${defaultRelationStatus}".`);
+            } else if (!validRelationStatuses.has(status)) {
+                console.warn(`Faction "${name}" relation for "${targetName}" has invalid status "${rawStatus}"; defaulting to "${defaultRelationStatus}".`);
+                status = defaultRelationStatus;
             }
-            if (!['allied', 'neutral', 'hostile', 'rival'].includes(status)) {
-                throw new Error(`Faction "${name}" relation for "${targetName}" has invalid status "${status}".`);
-            }
-            const notes = notesNode ? notesNode.textContent.trim() : '';
+            let notes = notesNode ? notesNode.textContent.trim() : '';
             if (!notes) {
-                throw new Error(`Faction "${name}" relation for "${targetName}" is missing notes.`);
+                notes = defaultRelationNotes;
             }
-            return { targetName, status, notes };
+            relations.push({ targetName, status, notes });
         });
 
         const tiersContainer = getDirectChild(node, 'reputationTiers');
@@ -15434,7 +15471,7 @@ async function generateFactionsList({ count, settingDescription }) {
         const missingKeys = expectedKeys.filter(targetKey => !providedKeys.has(targetKey));
         if (missingKeys.length) {
             const missingNames = missingKeys.map(targetKey => nameLookup.get(targetKey) || targetKey);
-            console.warn(`Faction "${entry.name}" is missing relations for ${missingKeys.length} faction(s): ${missingNames.join(', ')}`);
+            console.warn(`Faction "${entry.name}" is missing relations for ${missingKeys.length} faction(s): ${missingNames.join(', ')}. Defaulting them to neutral.`);
         }
     });
 
@@ -15458,23 +15495,37 @@ async function generateFactionsList({ count, settingDescription }) {
     parsedFactions.forEach((entry, index) => {
         const faction = created[index];
         const relationMap = new Map();
+        const defaultRelationNotes = 'No explicit relationship provided.';
+
+        for (const otherFaction of created) {
+            if (!otherFaction || otherFaction.id === faction.id) {
+                continue;
+            }
+            relationMap.set(otherFaction.id, {
+                status: 'neutral',
+                notes: defaultRelationNotes
+            });
+        }
+
         for (const relation of entry.relations || []) {
             const targetKey = typeof relation.targetName === 'string'
                 ? relation.targetName.trim().toLowerCase()
                 : '';
             if (!targetKey) {
-                throw new Error(`Faction "${entry.name}" relation is missing a target name.`);
+                console.warn(`Faction "${entry.name}" has a relation with no target name; skipping relation.`);
+                continue;
             }
             if (targetKey === faction.name.toLowerCase()) {
                 continue;
             }
             const targetId = nameToId.get(targetKey);
             if (!targetId) {
-                throw new Error(`Faction "${entry.name}" relation references unknown faction "${relation.targetName}".`);
+                console.warn(`Faction "${entry.name}" relation references unknown faction "${relation.targetName}"; defaulting to neutral.`);
+                continue;
             }
             relationMap.set(targetId, {
-                status: relation.status,
-                notes: relation.notes
+                status: relation.status || 'neutral',
+                notes: relation.notes || defaultRelationNotes
             });
         }
         faction.relations = relationMap;
@@ -19854,9 +19905,12 @@ app.post('/config', (req, res) => {
 
 // Settings management page
 app.get('/settings', (req, res) => {
+    const { skills: defaultExistingSkills, error: defaultExistingSkillsError } = loadDefaultSkillsForSettings();
     res.render('settings.njk', {
         title: 'Game Settings Manager',
-        currentPage: 'settings'
+        currentPage: 'settings',
+        defaultExistingSkills,
+        defaultExistingSkillsError
     });
 });
 

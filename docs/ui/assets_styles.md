@@ -37,3 +37,7 @@ Loaded on the chat page:
 - The chat UI relies on SCSS variables and mixins in `_globals.scss`.
 - `public/js/fitty-init.js` listens for `inventory:updated` and `location:updated`
   to reflow text after dynamic DOM updates.
+- Skill allocation controls use `.skill-add-row` for inline add inputs and
+  `.skill-remove-btn` for the compact remove button styling.
+- `.points-warning` reserves space for pool warning text so layout doesn't jump.
+- Pool warning visibility is toggled with `visibility` (not `display`) so that reserved help-text height remains stable.

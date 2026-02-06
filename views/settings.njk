@@ -144,16 +144,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         <div class="help-text">Prefills the Starting Currency field on the New Game screen.</div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="defaultNumSkills">Default Number of Skills</label>
-                        <input type="number" id="defaultNumSkills" name="defaultNumSkills" min="0" max="100" value="20">
-                        <div class="help-text">Prefills the number of skills to generate (0-100).</div>
-                    </div>
-
                     <div class="form-group full-width">
                         <label for="defaultExistingSkills">Default Existing Skills (one per line)</label>
                         <textarea id="defaultExistingSkills" name="defaultExistingSkills" rows="4" placeholder="Enter skill names..."></textarea>
-                        <div class="help-text">These skills will be added before new ones are generated.</div>
+                        <div class="help-text">These skills become the default skill list for new games.</div>
                     </div>
 
                     <div class="form-divider">Character Options</div>
@@ -273,6 +267,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         let selectedSettingId = null;
         let isEditMode = false;
         let appliedSetting = null;
+        const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
+        const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
         const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
         const autofillInstructionsInput = document.getElementById('autofillInstructionsInput');
         const autofillImageInput = document.getElementById('autofillImageInput');
@@ -280,6 +276,43 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         const autofillInstructionsCloseBtn = document.getElementById('autofillInstructionsCloseBtn');
         const autofillInstructionsConfirmBtn = document.getElementById('autofillInstructionsConfirmBtn');
         let pendingAutofillButton = null;
+
+        function getDefaultExistingSkillsList() {
+            if (defaultExistingSkillsLoadError) {
+                return [];
+            }
+            if (!Array.isArray(defaultExistingSkillsList)) {
+                return [];
+            }
+            return defaultExistingSkillsList
+                .map(skill => (typeof skill === 'string' ? skill.trim() : ''))
+                .filter(skill => skill.length > 0);
+        }
+
+        function getDefaultExistingSkillsText() {
+            return getDefaultExistingSkillsList().join('\n');
+        }
+
+        function applyDefaultExistingSkillsIfBlank() {
+            if (defaultExistingSkillsLoadError) {
+                return;
+            }
+            if (isEditMode) {
+                return;
+            }
+            const defaultExistingSkillsField = document.getElementById('defaultExistingSkills');
+            if (!defaultExistingSkillsField) {
+                return;
+            }
+            const currentValue = (defaultExistingSkillsField.value || '').trim();
+            if (currentValue.length > 0) {
+                return;
+            }
+            const defaultText = getDefaultExistingSkillsText();
+            if (defaultText) {
+                defaultExistingSkillsField.value = defaultText;
+            }
+        }
 
         function openAutofillInstructionsModal(triggerButton) {
             if (!autofillInstructionsModal) {
@@ -333,6 +366,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             await loadCurrentSetting();
             await refreshSettingsList();
             setupEventListeners();
+
+            if (defaultExistingSkillsLoadError) {
+                const warningMessage = `Warning: default skills could not be loaded. ${defaultExistingSkillsLoadError}`;
+                showMessage(warningMessage, 'error');
+                window.alert(warningMessage);
+            }
+            applyDefaultExistingSkillsIfBlank();
         });
 
         document.addEventListener('keydown', (event) => {
@@ -465,12 +505,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('defaultPlayerName', setting.defaultPlayerName || '');
             assignValue('defaultPlayerDescription', setting.defaultPlayerDescription || '');
             assignValue('defaultStartingLocation', setting.defaultStartingLocation || '');
-
-            const defaultNumSkillsParsed = Number.parseInt(setting.defaultNumSkills, 10);
-            assignValue(
-                'defaultNumSkills',
-                Number.isFinite(defaultNumSkillsParsed) ? String(defaultNumSkillsParsed) : '20'
-            );
 
             const joinLines = (value) => {
                 if (Array.isArray(value)) {
@@ -651,13 +685,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             });
 
             document.getElementById('playerStartingLevel').value = '1';
-            const defaultNumSkillsField = document.getElementById('defaultNumSkills');
-            if (defaultNumSkillsField) {
-                defaultNumSkillsField.value = '20';
-            }
             const defaultExistingSkillsField = document.getElementById('defaultExistingSkills');
             if (defaultExistingSkillsField) {
-                defaultExistingSkillsField.value = '';
+                defaultExistingSkillsField.value = getDefaultExistingSkillsText();
             }
             const availableClassesField = document.getElementById('availableClasses');
             if (availableClassesField) {
@@ -745,10 +775,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
                 // Convert playerStartingLevel to number
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;
-                const parsedDefaultNumSkills = Number.parseInt(settingData.defaultNumSkills, 10);
-                settingData.defaultNumSkills = Number.isFinite(parsedDefaultNumSkills)
-                    ? Math.max(0, Math.min(100, parsedDefaultNumSkills))
-                    : 20;
                 const parsedDefaultCurrency = parseInt(settingData.defaultStartingCurrency, 10);
                 settingData.defaultStartingCurrency = Number.isFinite(parsedDefaultCurrency) ? Math.max(0, parsedDefaultCurrency) : 0;
                 const defaultExistingSkillsText = settingData.defaultExistingSkills || '';
@@ -947,11 +973,21 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const formData = new FormData(form);
                 const settingPayload = Object.fromEntries(formData.entries());
                 settingPayload.playerStartingLevel = settingPayload.playerStartingLevel || '';
-                const parsedPayloadNumSkills = Number.parseInt(settingPayload.defaultNumSkills, 10);
-                settingPayload.defaultNumSkills = Number.isFinite(parsedPayloadNumSkills)
-                    ? Math.max(0, Math.min(100, parsedPayloadNumSkills))
-                    : '';
-                settingPayload.defaultExistingSkills = splitLines(settingPayload.defaultExistingSkills);
+                const rawSkillsText = settingPayload.defaultExistingSkills || '';
+                const currentSkills = splitLines(rawSkillsText);
+                const defaultSkillsList = getDefaultExistingSkillsList();
+                const defaultSkillSet = new Set(
+                    defaultSkillsList.map(skill => skill.toLowerCase())
+                );
+                const hasOnlyDefaultSkills = currentSkills.length > 0
+                    && currentSkills.every(skill => defaultSkillSet.has(skill.toLowerCase()));
+                const shouldAugmentSkills = defaultSkillsList.length > 0
+                    && (currentSkills.length === 0 || hasOnlyDefaultSkills);
+                const skillsForPrompt = (shouldAugmentSkills && currentSkills.length === 0)
+                    ? defaultSkillsList
+                    : currentSkills;
+
+                settingPayload.defaultExistingSkills = skillsForPrompt;
                 settingPayload.availableClasses = splitLines(settingPayload.availableClasses);
                 settingPayload.availableRaces = splitLines(settingPayload.availableRaces);
                 const parsedDefaultCurrency = parseInt(settingPayload.defaultStartingCurrency, 10);
@@ -963,6 +999,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     setting: settingPayload,
                     instructions: instructionsText
                 };
+                if (shouldAugmentSkills) {
+                    requestBody.augmentDefaultSkills = true;
+                }
                 if (imageDataUrl) {
                     requestBody.imageDataUrl = imageDataUrl;
                 }
@@ -1011,7 +1050,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     defaultPlayerDescription: filled.defaultPlayerDescription,
                     defaultStartingLocation: filled.defaultStartingLocation,
                     defaultStartingCurrency: filled.defaultStartingCurrency,
-                    defaultNumSkills: filled.defaultNumSkills,
                     defaultExistingSkills: filled.defaultExistingSkills,
                     availableClasses: filled.availableClasses,
                     availableRaces: filled.availableRaces,

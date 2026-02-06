@@ -10,6 +10,7 @@
 - Do not add clamping of any numeric values unless specifically asked.
 - Use VS code's internal functions when possible.
 - Always prefer updating scss files over css files. If no corresponding scss file exists, create one.
+- Whenever you modify any scss file, compile the corresponding css output before finishing the task.
 - Don't do anything with git unless specifically asked (if it's necessary, ask permission first).
 - Lint/syntax check any files you alter, if applicable.
 - Be aware of things in Globals.js to avoid reinventing the wheel to get the current player, location, region, etc.

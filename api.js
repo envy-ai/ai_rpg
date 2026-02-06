@@ -12,6 +12,8 @@ const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
+const FormulaEvaluator = require('./public/js/formula-evaluator.js');
+const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
     filterChatHistoryEntries,
     normalizeEntryText,
@@ -12836,11 +12838,68 @@ module.exports = function registerApiRoutes(scope) {
 
         // Get player stats page
         app.get('/player-stats', (req, res) => {
+            const availableSkills = Array.from(skills.values()).map(skill => skill.toJSON());
+            let defaultUnspentSkillPoints = 0;
+
+            if (!currentPlayer) {
+                try {
+                    const poolFormulas = resolvePointPoolFormulas(Globals.config || {});
+                    const evaluator = FormulaEvaluator.compile(poolFormulas.skill);
+                    const normalizeVariableKey = FormulaEvaluator.normalizeVariableKey;
+                    const tempPlayer = new Player();
+                    const attributeDefs = tempPlayer.attributeDefinitions || {};
+                    const attributeValues = {};
+                    const attributeModifiedValues = {};
+                    const attributeKeys = new Set();
+                    for (const [key, def] of Object.entries(attributeDefs)) {
+                        const fallback = Number.isFinite(def?.default) ? def.default : 10;
+                        const normalizedKey = normalizeVariableKey(key);
+                        if (attributeKeys.has(normalizedKey)) {
+                            throw new Error(`Duplicate attribute variable key '${normalizedKey}'.`);
+                        }
+                        attributeKeys.add(normalizedKey);
+                        attributeValues[normalizedKey] = {
+                            value: fallback,
+                            bonus: Math.floor((fallback - 10) / 2)
+                        };
+                        attributeModifiedValues[normalizedKey] = {
+                            value: fallback,
+                            bonus: Math.floor((fallback - 10) / 2)
+                        };
+                    }
+                    const skillValues = {};
+                    const skillKeys = new Set();
+                    for (const skill of availableSkills) {
+                        if (skill?.name) {
+                            const normalizedKey = normalizeVariableKey(skill.name);
+                            if (skillKeys.has(normalizedKey)) {
+                                throw new Error(`Duplicate skill variable key '${normalizedKey}'.`);
+                            }
+                            skillKeys.add(normalizedKey);
+                            skillValues[normalizedKey] = 1;
+                        }
+                    }
+                    const variables = {
+                        level: 1,
+                        number_of_skills: availableSkills.length,
+                        number_of_attributes: Object.keys(attributeValues).length,
+                        attribute: attributeValues,
+                        attribute_modified: attributeModifiedValues,
+                        skill: skillValues
+                    };
+                    defaultUnspentSkillPoints = evaluator(variables);
+                } catch (error) {
+                    console.error('Failed to evaluate skill point pool formula for player stats:', error.message || error);
+                    throw error;
+                }
+            }
+
             res.render('player-stats.njk', {
                 title: 'Player Stats Configuration',
                 player: currentPlayer ? serializeNpcForClient(currentPlayer) : null,
                 currentPage: 'player-stats',
-                availableSkills: Array.from(skills.values()).map(skill => skill.toJSON())
+                availableSkills,
+                defaultUnspentSkillPoints
             });
         });
 
@@ -18697,7 +18756,6 @@ module.exports = function registerApiRoutes(scope) {
                 defaultPlayerDescription: toStringValue(raw.defaultPlayerDescription),
                 defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
                 defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
-                defaultNumSkills: toNumberString(raw.defaultNumSkills),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 availableClasses: toStringArray(raw.availableClasses),
                 availableRaces: toStringArray(raw.availableRaces)
@@ -18781,7 +18839,6 @@ module.exports = function registerApiRoutes(scope) {
                 defaultPlayerDescription: getText('defaultPlayerDescription'),
                 defaultStartingLocation: getText('defaultStartingLocation'),
                 defaultStartingCurrency: toNumber(getText('defaultStartingCurrency')),
-                defaultNumSkills: toNumber(getText('defaultNumSkills')),
                 defaultExistingSkills: getList('defaultExistingSkills', 'skill'),
                 availableClasses: getList('availableClasses', 'class'),
                 availableRaces: getList('availableRaces', 'race')
@@ -18812,6 +18869,46 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             return merged;
+        }
+
+        function mergeAdditionalSkills(baseSkills, generatedSkills) {
+            const normalizeList = (value) => {
+                if (Array.isArray(value)) {
+                    return value;
+                }
+                if (typeof value === 'string') {
+                    return value.split(/\r?\n/);
+                }
+                return [];
+            };
+
+            const uniqueNormalized = (list) => {
+                const result = [];
+                const seen = new Set();
+                for (const entry of list) {
+                    if (typeof entry !== 'string') {
+                        continue;
+                    }
+                    const trimmed = entry.trim();
+                    if (!trimmed) {
+                        continue;
+                    }
+                    const key = trimmed.toLowerCase();
+                    if (seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    result.push(trimmed);
+                }
+                return result;
+            };
+
+            const baseNormalized = uniqueNormalized(normalizeList(baseSkills));
+            const baseKeys = new Set(baseNormalized.map(skill => skill.toLowerCase()));
+            const additionsNormalized = uniqueNormalized(normalizeList(generatedSkills));
+            const extras = additionsNormalized.filter(skill => !baseKeys.has(skill.toLowerCase()));
+
+            return [...baseNormalized, ...extras];
         }
 
         function logSettingAutofillPrompt({ systemPrompt, generationPrompt, additionalInstructions = '', responseText }) {
@@ -18903,6 +19000,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const shouldAugmentDefaultSkills = Boolean(req.body?.augmentDefaultSkills);
                 const additionalInstructions = typeof req.body?.instructions === 'string'
                     ? req.body.instructions.trim()
                     : '';
@@ -18988,6 +19086,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 const generatedSetting = parseSettingXmlResponse(aiMessage);
                 const mergedSetting = mergeSettingValues(normalizedSetting, generatedSetting);
+                if (shouldAugmentDefaultSkills) {
+                    mergedSetting.defaultExistingSkills = mergeAdditionalSkills(
+                        normalizedSetting.defaultExistingSkills,
+                        generatedSetting.defaultExistingSkills
+                    );
+                }
 
                 res.json({
                     success: true,
@@ -19530,11 +19634,26 @@ module.exports = function registerApiRoutes(scope) {
                     playerDescription,
                     playerClass: playerClassInput,
                     playerRace: playerRaceInput,
+                    playerLevel: playerLevelInput,
                     startingLocation,
-                    numSkills: numSkillsInput,
-                    existingSkills: existingSkillsInput,
-                    startingCurrency: startingCurrencyInput
+                    startingCurrency: startingCurrencyInput,
+                    attributes: attributesInput,
+                    skills: skillsInput,
+                    unspentSkillPoints: unspentSkillPointsInput
                 } = body;
+                const hasNumSkills = Object.prototype.hasOwnProperty.call(body, 'numSkills');
+                const hasExistingSkills = Object.prototype.hasOwnProperty.call(body, 'existingSkills');
+                if (hasNumSkills || hasExistingSkills) {
+                    const disallowed = [];
+                    if (hasNumSkills) disallowed.push('numSkills');
+                    if (hasExistingSkills) disallowed.push('existingSkills');
+                    const errorMessage = `New game requests no longer accept ${disallowed.join(', ')}. Configure skills in Game Settings instead.`;
+                    reportError(errorMessage);
+                    return res.status(400).json({
+                        success: false,
+                        error: errorMessage
+                    });
+                }
                 const activeSetting = getActiveSettingSnapshot();
                 if (!activeSetting) {
                     report('new_game:setting_missing', 'No active setting is loaded. Cannot start new game.');
@@ -19564,13 +19683,16 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedStartingCurrency = Number.isFinite(parsedStartingCurrency)
                     ? Math.max(0, parsedStartingCurrency)
                     : fallbackStartingCurrency;
-                const startingPlayerLevel = activeSetting?.playerStartingLevel || 1;
+                const parsedSettingLevel = Number(activeSetting?.playerStartingLevel);
+                const settingLevel = Number.isFinite(parsedSettingLevel) ? parsedSettingLevel : 1;
+                const parsedRequestedLevel = Number(playerLevelInput);
+                const fallbackLevel = Number.isFinite(Number(newGameDefaults.playerLevel))
+                    ? Number(newGameDefaults.playerLevel)
+                    : settingLevel;
+                const resolvedPlayerLevel = Number.isFinite(parsedRequestedLevel)
+                    ? parsedRequestedLevel
+                    : fallbackLevel;
                 const startingLocationStyle = resolveLocationStyle(activeSetting?.startingLocationType || resolvedStartingLocation, activeSetting);
-                const parsedSkillCount = Number.parseInt(numSkillsInput, 10);
-                const fallbackSkillCount = Math.max(0, Math.min(100, newGameDefaults.numSkills || 20));
-                const numSkills = Number.isFinite(parsedSkillCount)
-                    ? Math.max(0, Math.min(100, parsedSkillCount))
-                    : fallbackSkillCount;
                 const rawFactionCount = config?.factions?.count;
                 const parsedFactionCount = Number.parseInt(rawFactionCount, 10);
                 let factionCount = Number.isFinite(parsedFactionCount) && parsedFactionCount >= 0
@@ -19605,10 +19727,7 @@ module.exports = function registerApiRoutes(scope) {
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
 
-                const rawExistingSkills = typeof existingSkillsInput === 'undefined'
-                    ? newGameDefaults.existingSkills
-                    : existingSkillsInput;
-
+                const rawExistingSkills = newGameDefaults.existingSkills;
                 const existingSkillNames = Array.isArray(rawExistingSkills)
                     ? rawExistingSkills
                     : (typeof rawExistingSkills === 'string'
@@ -19631,19 +19750,6 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to generate detailed skills by name:', detailedError.message);
                         detailedExistingSkills = [];
                     }
-                }
-
-                let generatedSkills = [];
-                try {
-                    report('new_game:skills_generate', `Generating ${numSkills} new skills...`);
-                    generatedSkills = await generateSkillsList({
-                        count: numSkills,
-                        settingDescription,
-                        existingSkills: normalizedExistingSkills
-                    });
-                } catch (skillError) {
-                    console.warn('Failed to generate skills from prompt:', skillError.message);
-                    generatedSkills = [];
                 }
 
                 const combinedSkills = new Map();
@@ -19672,14 +19778,6 @@ module.exports = function registerApiRoutes(scope) {
                             description: '',
                             attribute: ''
                         }));
-                    }
-                }
-
-                for (const skill of generatedSkills) {
-                    if (!skill || !skill.name) continue;
-                    const key = skill.name.trim().toLowerCase();
-                    if (!combinedSkills.has(key)) {
-                        combinedSkills.set(key, skill);
                     }
                 }
 
@@ -19725,14 +19823,21 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 // Create new player
-                const newPlayer = new Player({
+                const customAttributes = attributesInput && typeof attributesInput === 'object' && !Array.isArray(attributesInput)
+                    ? attributesInput
+                    : null;
+                const customSkills = skillsInput && typeof skillsInput === 'object' && !Array.isArray(skillsInput)
+                    ? skillsInput
+                    : null;
+                const parsedUnspentSkillPoints = Number(unspentSkillPointsInput);
+                const playerOptions = {
                     name: resolvedPlayerName,
                     description: resolvedPlayerDescription,
                     class: resolvedPlayerClass,
                     race: resolvedPlayerRace,
-                    level: startingPlayerLevel,
+                    level: resolvedPlayerLevel,
                     currency: resolvedStartingCurrency,
-                    attributes: {
+                    attributes: customAttributes || {
                         strength: 10,
                         dexterity: 10,
                         constitution: 10,
@@ -19740,7 +19845,14 @@ module.exports = function registerApiRoutes(scope) {
                         wisdom: 10,
                         charisma: 10
                     }
-                });
+                };
+                if (customSkills) {
+                    playerOptions.skills = customSkills;
+                }
+                if (Number.isFinite(parsedUnspentSkillPoints)) {
+                    playerOptions.unspentSkillPoints = parsedUnspentSkillPoints;
+                }
+                const newPlayer = new Player(playerOptions);
                 if (typeof newPlayer.syncSkillsWithAvailable === 'function') {
                     newPlayer.syncSkillsWithAvailable();
                 }
@@ -20566,6 +20678,307 @@ module.exports = function registerApiRoutes(scope) {
         scope.performGameSave = performGameSave;
         scope.performGameLoad = performGameLoad;
 
+        const NEW_GAME_SETTINGS_DIRNAME = 'new-game-settings';
+        const NEW_GAME_SETTINGS_PAYLOAD_FILENAME = 'settings.json';
+        const NEW_GAME_SETTINGS_METADATA_FILENAME = 'metadata.json';
+        const NEW_GAME_SETTINGS_SAVE_VERSION = 1;
+
+        const normalizeNewGameSettingsString = (value, fieldName) => {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value !== 'string') {
+                const error = new Error(`${fieldName} must be a string.`);
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+            return value.trim();
+        };
+
+        const normalizeNewGameSettingsNumericRecord = (value, fieldName) => {
+            if (value === undefined || value === null) {
+                return {};
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                const error = new Error(`${fieldName} must be an object.`);
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+            const result = {};
+            for (const [rawKey, rawValue] of Object.entries(value)) {
+                if (typeof rawKey !== 'string') {
+                    continue;
+                }
+                const trimmedKey = rawKey.trim();
+                if (!trimmedKey) {
+                    const error = new Error(`${fieldName} contains an empty key.`);
+                    error.code = 'INVALID_NEW_GAME_SETTINGS';
+                    throw error;
+                }
+                const numericValue = Number(rawValue);
+                if (!Number.isFinite(numericValue)) {
+                    const error = new Error(`${fieldName}.${trimmedKey} must be a finite number.`);
+                    error.code = 'INVALID_NEW_GAME_SETTINGS';
+                    throw error;
+                }
+                result[trimmedKey] = numericValue;
+            }
+            return result;
+        };
+
+        const normalizeNewGameSettingsPayload = (settings) => {
+            if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+                const error = new Error('settings must be an object.');
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+
+            const parsedLevel = Number(settings.playerLevel);
+            const hasPlayerLevel = settings.playerLevel !== undefined && settings.playerLevel !== null && settings.playerLevel !== '';
+            if (hasPlayerLevel && !Number.isFinite(parsedLevel)) {
+                const error = new Error('playerLevel must be a finite number.');
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+
+            const parsedStartingCurrency = Number.parseInt(settings.startingCurrency, 10);
+            const hasStartingCurrency = settings.startingCurrency !== undefined && settings.startingCurrency !== null && settings.startingCurrency !== '';
+            if (hasStartingCurrency && !Number.isFinite(parsedStartingCurrency)) {
+                const error = new Error('startingCurrency must be a finite integer.');
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+
+            return {
+                playerName: normalizeNewGameSettingsString(settings.playerName, 'playerName'),
+                playerDescription: normalizeNewGameSettingsString(settings.playerDescription, 'playerDescription'),
+                playerClass: normalizeNewGameSettingsString(settings.playerClass, 'playerClass'),
+                playerRace: normalizeNewGameSettingsString(settings.playerRace, 'playerRace'),
+                playerLevel: hasPlayerLevel ? parsedLevel : 1,
+                startingLocation: normalizeNewGameSettingsString(settings.startingLocation, 'startingLocation'),
+                startingCurrency: hasStartingCurrency ? parsedStartingCurrency : 0,
+                attributes: normalizeNewGameSettingsNumericRecord(settings.attributes, 'attributes'),
+                skills: normalizeNewGameSettingsNumericRecord(settings.skills, 'skills')
+            };
+        };
+
+        const resolveNewGameSettingsRootPath = (baseDirectory = null) => {
+            const baseDir = baseDirectory || resolveBaseDirectory();
+            return path.join(baseDir, NEW_GAME_SETTINGS_DIRNAME);
+        };
+
+        const validateNewGameSettingsSaveName = (rawSaveName) => {
+            const normalized = typeof rawSaveName === 'string' ? rawSaveName.trim() : '';
+            if (!normalized) {
+                const error = new Error('Save name is required.');
+                error.code = 'SAVE_NAME_REQUIRED';
+                throw error;
+            }
+            if (normalized.includes('/') || normalized.includes('\\') || normalized.includes('..')) {
+                const error = new Error('Save name contains invalid path characters.');
+                error.code = 'INVALID_SAVE_NAME';
+                throw error;
+            }
+            return normalized;
+        };
+
+        const buildDefaultNewGameSettingsSaveName = (settings) => {
+            const settingSegment = sanitizeSaveNameSegment(currentSetting?.name, 'Setting');
+            const playerSegment = sanitizeSaveNameSegment(settings?.playerName, 'Adventurer');
+            const levelValue = Number(settings?.playerLevel);
+            const levelSegment = Number.isFinite(levelValue)
+                ? sanitizeSaveNameSegment(`Level-${levelValue}`, 'Level-1')
+                : 'Level-1';
+            return `${settingSegment}-${playerSegment}-${levelSegment}`;
+        };
+
+        const performNewGameSettingsSave = ({ requestedSaveName = null, settings } = {}) => {
+            const normalizedSettings = normalizeNewGameSettingsPayload(settings);
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveNewGameSettingsRootPath(baseDir);
+            fs.mkdirSync(saveRootPath, { recursive: true });
+
+            const trimmedRequestedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
+            const baseSaveName = trimmedRequestedName
+                ? sanitizeSaveNameSegment(trimmedRequestedName, null)
+                : buildDefaultNewGameSettingsSaveName(normalizedSettings);
+            if (!baseSaveName) {
+                const error = new Error('Failed to resolve a valid save name for new game settings.');
+                error.code = 'INVALID_SAVE_NAME';
+                throw error;
+            }
+
+            const timestampPrefix = new Date().toISOString().replace(/[:.]/g, '-');
+            const saveName = `${timestampPrefix}_${baseSaveName}`;
+            const saveDir = path.join(saveRootPath, saveName);
+            const settingsPath = path.join(saveDir, NEW_GAME_SETTINGS_PAYLOAD_FILENAME);
+            const metadataPath = path.join(saveDir, NEW_GAME_SETTINGS_METADATA_FILENAME);
+
+            if (fs.existsSync(saveDir)) {
+                const error = new Error(`Save '${saveName}' already exists.`);
+                error.code = 'SAVE_ALREADY_EXISTS';
+                throw error;
+            }
+
+            const metadata = {
+                saveName,
+                timestamp: new Date().toISOString(),
+                source: 'new_game_settings',
+                saveFileSaveVersion: NEW_GAME_SETTINGS_SAVE_VERSION,
+                playerName: normalizedSettings.playerName || null,
+                playerLevel: normalizedSettings.playerLevel,
+                startingLocation: normalizedSettings.startingLocation || null,
+                currentSettingId: currentSetting?.id || null,
+                currentSettingName: currentSetting?.name || null,
+                totalAttributes: Object.keys(normalizedSettings.attributes || {}).length,
+                totalSkills: Object.keys(normalizedSettings.skills || {}).length
+            };
+
+            fs.mkdirSync(saveDir, { recursive: false });
+            fs.writeFileSync(settingsPath, JSON.stringify(normalizedSettings, null, 2));
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+
+            return {
+                saveName,
+                saveDir,
+                metadata,
+                settings: normalizedSettings
+            };
+        };
+
+        const performNewGameSettingsLoad = (requestedSaveName) => {
+            const normalizedName = validateNewGameSettingsSaveName(requestedSaveName);
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveNewGameSettingsRootPath(baseDir);
+            const saveDir = path.join(saveRootPath, normalizedName);
+
+            if (!fs.existsSync(saveDir)) {
+                const error = new Error(`Saved new game settings '${normalizedName}' not found.`);
+                error.code = 'SAVE_NOT_FOUND';
+                throw error;
+            }
+
+            const settingsPath = path.join(saveDir, NEW_GAME_SETTINGS_PAYLOAD_FILENAME);
+            if (!fs.existsSync(settingsPath)) {
+                const error = new Error(`Save '${normalizedName}' is missing ${NEW_GAME_SETTINGS_PAYLOAD_FILENAME}.`);
+                error.code = 'SETTINGS_FILE_MISSING';
+                throw error;
+            }
+
+            let parsedSettings;
+            try {
+                const rawSettings = fs.readFileSync(settingsPath, 'utf8');
+                parsedSettings = JSON.parse(rawSettings);
+            } catch (error) {
+                const wrapped = new Error(`Failed to read saved settings '${normalizedName}': ${error.message}`);
+                wrapped.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw wrapped;
+            }
+            const normalizedSettings = normalizeNewGameSettingsPayload(parsedSettings);
+
+            const metadataPath = path.join(saveDir, NEW_GAME_SETTINGS_METADATA_FILENAME);
+            let metadata = {
+                saveName: normalizedName,
+                timestamp: null,
+                source: 'new_game_settings',
+                saveFileSaveVersion: NEW_GAME_SETTINGS_SAVE_VERSION
+            };
+            if (fs.existsSync(metadataPath)) {
+                try {
+                    const parsedMetadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                    if (parsedMetadata && typeof parsedMetadata === 'object' && !Array.isArray(parsedMetadata)) {
+                        metadata = {
+                            ...metadata,
+                            ...parsedMetadata,
+                            saveName: parsedMetadata.saveName || normalizedName
+                        };
+                    }
+                } catch (error) {
+                    const wrapped = new Error(`Failed to read metadata for '${normalizedName}': ${error.message}`);
+                    wrapped.code = 'INVALID_NEW_GAME_SETTINGS';
+                    throw wrapped;
+                }
+            }
+
+            return {
+                saveName: normalizedName,
+                saveDir,
+                metadata,
+                settings: normalizedSettings
+            };
+        };
+
+        const listNewGameSettingsSaves = () => {
+            const baseDir = resolveBaseDirectory();
+            const saveRootPath = resolveNewGameSettingsRootPath(baseDir);
+            if (!fs.existsSync(saveRootPath)) {
+                return {
+                    saves: [],
+                    directory: saveRootPath
+                };
+            }
+
+            const saveDirectories = fs.readdirSync(saveRootPath)
+                .filter(item => {
+                    const itemPath = path.join(saveRootPath, item);
+                    try {
+                        return fs.statSync(itemPath).isDirectory();
+                    } catch (_) {
+                        return false;
+                    }
+                });
+
+            const saves = saveDirectories.map(saveName => {
+                const saveDir = path.join(saveRootPath, saveName);
+                const metadataPath = path.join(saveDir, NEW_GAME_SETTINGS_METADATA_FILENAME);
+                if (!fs.existsSync(metadataPath)) {
+                    const error = new Error(`Saved settings '${saveName}' is missing ${NEW_GAME_SETTINGS_METADATA_FILENAME}.`);
+                    error.code = 'SETTINGS_METADATA_MISSING';
+                    throw error;
+                }
+
+                try {
+                    const parsed = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                        const error = new Error(`Saved settings '${saveName}' has invalid metadata format.`);
+                        error.code = 'INVALID_NEW_GAME_SETTINGS';
+                        throw error;
+                    }
+                    return {
+                        saveName,
+                        timestamp: null,
+                        source: 'new_game_settings',
+                        saveFileSaveVersion: NEW_GAME_SETTINGS_SAVE_VERSION,
+                        playerName: null,
+                        playerLevel: null,
+                        currentSettingName: null,
+                        totalAttributes: null,
+                        totalSkills: null,
+                        ...parsed,
+                        saveName: parsed.saveName || saveName
+                    };
+                } catch (error) {
+                    if (error?.code === 'INVALID_NEW_GAME_SETTINGS') {
+                        throw error;
+                    }
+                    const wrapped = new Error(`Failed to parse metadata for saved settings '${saveName}': ${error.message}`);
+                    wrapped.code = 'INVALID_NEW_GAME_SETTINGS';
+                    throw wrapped;
+                }
+            }).sort((a, b) => {
+                const first = new Date(a.timestamp || '').getTime();
+                const second = new Date(b.timestamp || '').getTime();
+                const safeFirst = Number.isFinite(first) ? first : 0;
+                const safeSecond = Number.isFinite(second) ? second : 0;
+                return safeSecond - safeFirst;
+            });
+
+            return {
+                saves,
+                directory: saveRootPath
+            };
+        };
+
         async function processShortDescriptionBackfill() {
             if (shortDescriptionBackfillInProgress) {
                 throw new Error('Short description backfill is already in progress.');
@@ -20629,6 +21042,81 @@ module.exports = function registerApiRoutes(scope) {
                 shortDescriptionBackfillInProgress = false;
             }
         }
+
+        app.post('/api/new-game/settings/save', (req, res) => {
+            try {
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const { saveName = null, settings = null } = body;
+                const result = performNewGameSettingsSave({
+                    requestedSaveName: saveName,
+                    settings
+                });
+                return res.json({
+                    success: true,
+                    saveName: result.saveName,
+                    saveDir: result.saveDir,
+                    metadata: result.metadata,
+                    message: `New game form settings saved as: ${result.saveName}`
+                });
+            } catch (error) {
+                console.error('Error saving new game form settings:', error);
+                const statusCode = (
+                    error.code === 'INVALID_NEW_GAME_SETTINGS'
+                    || error.code === 'INVALID_SAVE_NAME'
+                    || error.code === 'SAVE_ALREADY_EXISTS'
+                ) ? 400 : 500;
+                return res.status(statusCode).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.post('/api/new-game/settings/load', (req, res) => {
+            try {
+                const { saveName = null } = req.body || {};
+                const result = performNewGameSettingsLoad(saveName);
+                return res.json({
+                    success: true,
+                    saveName: result.saveName,
+                    metadata: result.metadata,
+                    settings: result.settings,
+                    message: `New game form settings loaded from: ${result.saveName}`
+                });
+            } catch (error) {
+                console.error('Error loading new game form settings:', error);
+                let statusCode = 500;
+                if (error.code === 'SAVE_NAME_REQUIRED' || error.code === 'INVALID_SAVE_NAME') {
+                    statusCode = 400;
+                } else if (error.code === 'SAVE_NOT_FOUND' || error.code === 'SETTINGS_FILE_MISSING') {
+                    statusCode = 404;
+                } else if (error.code === 'INVALID_NEW_GAME_SETTINGS') {
+                    statusCode = 400;
+                }
+                return res.status(statusCode).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.get('/api/new-game/settings/saves', (req, res) => {
+            try {
+                const result = listNewGameSettingsSaves();
+                return res.json({
+                    success: true,
+                    saves: result.saves,
+                    count: result.saves.length,
+                    directory: result.directory
+                });
+            } catch (error) {
+                console.error('Error listing new game form settings saves:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
 
         // Save current game state
         app.post('/api/save', (req, res) => {

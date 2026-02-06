@@ -1,0 +1,20 @@
+{% set attributeSectionId = attributeSectionId or 'newGameAttributesSection' %}
+{% set attributeSectionHeading = attributeSectionHeading or 'Attributes' %}
+{% set attributePointsLabel = attributePointsLabel or 'Attribute Points Remaining' %}
+{% set attributePointsHelp = attributePointsHelp
+  or 'Pool starts at level × (attributes ÷ 2). Lowering a stat below 10 refunds points; raising above 10 spends points. Attributes must stay between 1 and 20.' %}
+{% set attributePointsRemainingId = attributePointsRemainingId or 'attributePointsRemaining' %}
+{% set attributePointsWarningId = attributePointsWarningId or 'attributePointsWarning' %}
+{% set attributePointsWarningStyle = attributePointsWarningStyle or 'color: #f44336; display: none;' %}
+{% set attributeGridId = attributeGridId or 'attributeGrid' %}
+
+<div class="config-section" id="{{ attributeSectionId }}">
+    <h2>{{ attributeSectionHeading }}</h2>
+    <div class="form-group">
+        <label>{{ attributePointsLabel }}</label>
+        <div id="{{ attributePointsRemainingId }}" class="form-static-value">0</div>
+        <div class="help-text">{{ attributePointsHelp }}</div>
+        <div id="{{ attributePointsWarningId }}" class="help-text points-warning" style="{{ attributePointsWarningStyle }}"></div>
+    </div>
+    <div id="{{ attributeGridId }}" class="attributes-grid"></div>
+</div>

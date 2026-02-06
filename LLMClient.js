@@ -941,7 +941,7 @@ class LLMClient {
                 ? { ...additionalPayload }
                 : {};
 
-            payload.reasoning = true;
+            // payload.reasoning = true;
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
 
             if (aiConfig.frequency_penalty !== undefined && frequencyPenalty === null) {

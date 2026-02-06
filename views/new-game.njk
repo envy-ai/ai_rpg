@@ -25,6 +25,11 @@
             }
         }
     </script>
+    <script>
+        window.NEW_GAME_DEFAULTS = {{ (newGameDefaults or {}) | dump | safe }};
+    </script>
+    <script defer src="/js/formula-evaluator.js"></script>
+    <script defer src="/js/attribute-skill-allocator.js"></script>
     <script defer src="/js/new-game.js"></script>
     <meta name="robots" content="noindex, nofollow">
     <link rel="icon" href="data:,">
@@ -59,9 +64,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 {% set defaultPlayerName = defaults.playerName | default('') %}
 {% set defaultPlayerDescription = defaults.playerDescription | default('') %}
 {% set defaultStartingLocation = defaults.startingLocation | default('') %}
-{% set defaultNumSkills = defaults.numSkills | default(20) %}
+{% set defaultPlayerLevel = defaults.playerLevel | default(1) %}
 {% set defaultStartingCurrency = defaults.startingCurrency | default(0) %}
-    {% set defaultExistingSkills = (defaults.existingSkills or []) | join('\n') %}
     {% set availableClasses = defaults.availableClasses or [] %}
     {% set availableRaces = defaults.availableRaces or [] %}
     {% set defaultPlayerClass = defaults.playerClass | default('') %}
@@ -117,6 +121,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="help-text">{{ helpDesc }}</div>
                         </div>
 
+                        <div class="form-group">
+                            <label for="playerLevel">Starting Level</label>
+                            <input type="number" id="playerLevel" name="playerLevel" value="{{ defaultPlayerLevel }}" data-default-value="{{ defaultPlayerLevel }}">
+                            <div class="help-text">Controls attribute and skill point pools.</div>
+                        </div>
+
                         <div class="form-group full-width">
                             <label for="playerClassSelect">Class</label>
                             <select id="playerClassSelect" name="playerClassSelect" data-other-input="playerClassOther">
@@ -154,24 +164,35 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             <input type="number" id="startingCurrency" name="startingCurrency" min="0" value="{{ defaultStartingCurrency }}" data-default-value="{{ defaultStartingCurrency }}">
             <div class="help-text">Optional. How much money the player begins with.</div>
         </div>
-
-                        <div class="form-group">
-                            <label for="numSkills">Number of Skills</label>
-                            <input type="number" id="numSkills" name="numSkills" value="{{ defaultNumSkills }}" min="0" max="100" data-default-value="{{ defaultNumSkills }}">
-                            <div class="help-text">How many unique skills to generate (default 20).</div>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="existingSkills">Existing Skills (one per line)</label>
-                            <textarea id="existingSkills" name="existingSkills" rows="4" placeholder="Examples:\nSwordplay\nHerbal Lore\nArcane Theory">{{ defaultExistingSkills }}</textarea>
-                            <div class="help-text">Optional. These skills will be added to your character before any new skills are generated.</div>
-                        </div>
                     </div>
 
+                    {% set attributeSectionId = 'newGameAttributesSection' %}
+                    {% set attributeSectionHeading = 'Attributes' %}
+                    {% set attributePointsLabel = 'Attribute Points Remaining' %}
+                    {% set attributePointsHelp = 'Pool starts at level × (attributes ÷ 2). Lowering a stat below 10 refunds points; raising above 10 spends points. Attributes must stay between 1 and 20.' %}
+                    {% set attributePointsRemainingId = 'attributePointsRemaining' %}
+                    {% set attributePointsWarningId = 'attributePointsWarning' %}
+                    {% set attributePointsWarningStyle = 'color: #f44336; display: block; visibility: hidden;' %}
+                    {% set attributeGridId = 'attributeGrid' %}
+                    {% include "_includes/attribute-allocation.njk" %}
+
+                    {% set skillSectionId = 'newGameSkillsSection' %}
+                    {% set skillSectionHeading = 'Skills' %}
+                    {% set skillPointsLabel = 'Unspent Skill Points' %}
+                    {% set skillPointsHelp = 'Pool starts at level × ceil(skill count ÷ 5). Skills begin at rank 1; decrease to refund points.' %}
+                    {% set skillPointsRemainingId = 'skillPointsRemaining' %}
+                    {% set skillPointsWarningId = 'skillPointsWarning' %}
+                    {% set skillPointsWarningStyle = 'color: #f44336; display: block; visibility: hidden;' %}
+                    {% set skillGridId = 'newGameSkillsGrid' %}
+                    {% include "_includes/skill-allocation.njk" %}
+
                     <div class="form-actions">
+                        <button type="button" id="saveNewGameSettingsBtn" class="btn btn-secondary">💾 Save Form Settings</button>
+                        <button type="button" id="loadNewGameSettingsBtn" class="btn btn-secondary">📂 Load Form Settings</button>
                         <button type="submit" id="startBtn" class="btn btn-primary">{{ submitIcon }} {{ submitLabel }}</button>
                         <a class="btn btn-secondary" href="/">{{ backIcon }} {{ cancelLabel }}</a>
                     </div>
+                    <div id="newGameSettingsStatus" class="help-text" style="margin-top: 0.75rem;"></div>
                 </form>
             </div>
         </div>

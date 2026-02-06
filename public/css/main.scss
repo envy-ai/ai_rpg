@@ -2508,6 +2508,26 @@ body.dark .thing-toggle-hint {
   margin-top: 16px;
 }
 
+.points-warning {
+  min-height: 2.4em;
+}
+
+.skill-add-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: nowrap;
+
+  .skill-add-input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .skill-add-button {
+    flex: 0 0 auto;
+  }
+}
+
 .abilities-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -2604,6 +2624,31 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.skill-header .skill-remove-btn.btn-secondary {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-radius: 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  border-color: transparent;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    background-color: rgba(148, 163, 184, 0.2);
+    border-color: rgba(148, 163, 184, 0.35);
+  }
 }
 
 .skill-name {

@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Start a new game session.
 
 Request:
-- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `startingLocation`, `numSkills`, `existingSkills`, `startingCurrency`, `clientId`, `requestId`
+- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `unspentSkillPoints`, `clientId`, `requestId`
 
 Response:
 - 200: `{ success: true, message, player, startingLocation, region, skills, gameState }`
@@ -21,6 +21,36 @@ Response:
 
 Notes:
 - When `clientId` is provided, realtime status events are emitted during generation.
+- Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
+
+## POST /api/new-game/settings/save
+Save a New Game form configuration to disk.
+
+Request:
+- Body: `{ saveName?: string, settings: NewGameFormSettings }`
+  - `settings` supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`
+
+Response:
+- 200: `{ success: true, saveName, saveDir, metadata, message }`
+- 400/500 with `{ success: false, error }`
+
+## POST /api/new-game/settings/load
+Load a saved New Game form configuration.
+
+Request:
+- Body: `{ saveName: string }`
+
+Response:
+- 200: `{ success: true, saveName, metadata, settings, message }`
+- 400/404/500 with `{ success: false, error }`
+
+## GET /api/new-game/settings/saves
+List saved New Game form configurations.
+
+Response:
+- 200: `{ success: true, saves, count, directory }`
+  - `saves` entries include metadata such as `saveName`, `timestamp`, `playerName`, `playerLevel`, `currentSettingName`, `totalAttributes`, `totalSkills`
+- 500 with `{ success: false, error }`
 
 ## POST /api/save
 Save the current game.

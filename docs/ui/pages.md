@@ -23,11 +23,18 @@ This page maps routes to templates and the client scripts/styles they load.
 - Route: `/new-game`
 - Template: `views/new-game.njk`
 - Styles: `public/css/main.css` + page inline styles.
-- Script: `public/js/new-game.js`.
+- Scripts: `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/new-game.js`.
 - Data injected by `server.js`:
   - `newGameDefaults`, `currentSetting`.
 - Notes: the Starting Location Generation Instructions field uses a multiline placeholder template (region name, summary, rooms/locations, region exits).
 - Notes: submits `/api/new-game` with a keepalive POST, then immediately navigates to `/#tab-adventure` while generation continues; websocket status updates drive the overlay spinner if the page remains visible.
+- Notes: skills are pulled from the active setting (`defaultExistingSkills`) and displayed for allocation; the New Game form can add or remove skills and recalculates pools immediately.
+- Notes: attribute/skill allocation markup is included via `views/_includes/attribute-allocation.njk` and `views/_includes/skill-allocation.njk`.
+- Notes: skills are sorted alphabetically in the New Game allocation list.
+- Notes: the New Game form lets players adjust attribute and skill allocations via point pools; base pool formulas and max caps come from `config.formulas.character_creation` and are then adjusted by refunds/spend (attributes below/above 10, skills above rank 1). Pools can go negative but the submit button disables until overspending is resolved, and unspent points trigger a confirmation prompt.
+- Notes: pool formulas are evaluated after attribute definitions load so `attribute.*`/`skill.*` variables are available; evaluation errors surface in the warning area and disable form submission.
+- Notes: the New Game form includes `Save Form Settings` / `Load Form Settings` controls backed by `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`.
+- Notes: loading applies attributes/skills on a best-effort name match; any current attribute/skill without a matching loaded entry resets to its default value (attribute default stat, skill rank 1).
 
 ## Server configuration
 - Route: `/config`
@@ -45,6 +52,8 @@ This page maps routes to templates and the client scripts/styles they load.
 - Data injected by `server.js`:
   - `currentPage` only. Data is loaded via `/api/settings` calls.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
+- Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
+- Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.
 
 ## Lorebooks manager
 - Route: `/lorebooks`

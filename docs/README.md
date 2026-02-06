@@ -5,20 +5,21 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Root docs
 
 - [API_README.md](API_README.md) — High-level index of Express routes registered in `api.js`, pointing to detailed endpoint docs in `docs/api/`.
+- [config.md](config.md) — Configuration options for gameplay behavior (including point pool formulas).
 - [developer_overview.md](developer_overview.md) — Quick-start developer overview of the game, architecture, and where to look first.
 - [potential_redundancies.md](potential_redundancies.md) — List of potential redundancies/inconsistencies found across docs and code, with suggested fixes.
-- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental story info attachments/concurrency, event-summary filtering, and craft-history filtering).
+- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental story info attachments/concurrency, faction-relation neutral defaults during generation, event-summary filtering, and craft-history filtering).
 - [slash_commands.md](slash_commands.md) — Quick guide to slash command lifecycle, shape, arg parsing, interaction API, best practices, example, and testing.
 - [slop_and_repetition.md](slop_and_repetition.md) — Overview of slop checking and repetition-busting systems, including travel prose output normalization and detection logic.
 
 ## UI docs (`docs/ui`)
 
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
-- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes.
+- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove, remote new-game form settings save/load, shared allocation partials, and allocation pool behavior/timing).
 - [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, LLM modal submit behavior, and location exit caching.
 - [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details and attribute bonus visibility), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
-- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries.
+- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus notable UI class hooks like skill allocation controls and visibility-based warning spacing).
 
 ## API reference (`docs/api`)
 
@@ -27,7 +28,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/common.md](api/common.md) — Shared response shapes and conventions referenced by multiple endpoints (including StatusEffect modifier fields).
 - [api/crafting.md](api/crafting.md) — Crafting endpoints; references shared payloads in `docs/api/common.md`.
 - [api/factions.md](api/factions.md) — Faction listing and player standings endpoints.
-- [api/game.md](api/game.md) — Game lifecycle endpoints; references shared payloads in `docs/api/common.md`.
+- [api/game.md](api/game.md) — Game lifecycle endpoints (including new-game form settings save/load/list APIs); references shared payloads in `docs/api/common.md` and notes settings-sourced skills for new games.
 - [api/images.md](api/images.md) — Image generation and job endpoints; references job shapes in `docs/api/common.md`.
 - [api/locations.md](api/locations.md) — Location and exit endpoints; references shared shapes in `docs/api/serialization.md`.
 - [api/lorebooks.md](api/lorebooks.md) — Lorebook listing endpoints with metadata details.
@@ -38,7 +39,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/quests.md](api/quests.md) — Quest endpoints; references shared payloads in `docs/api/common.md`.
 - [api/regions.md](api/regions.md) — Region endpoints; references shared payloads in `docs/api/common.md`.
 - [api/serialization.md](api/serialization.md) — Legacy index for shared shapes; points to `docs/api/common.md` as authoritative.
-- [api/settings.md](api/settings.md) — Settings endpoints (including AI fill-missing guidance); references shared payloads in `docs/api/common.md`.
+- [api/settings.md](api/settings.md) — Settings endpoints (including AI fill-missing guidance and default-skill augmentation); references shared payloads in `docs/api/common.md`.
 - [api/things.md](api/things.md) — Things and inventory endpoints; references shared payloads in `docs/api/common.md`.
 
 ## Class reference (`docs/classes`)
@@ -47,7 +48,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including move suppression for event-driven travel, NPC name normalization details, and item inflict handling.
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
 - [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, and prompt wiring.
-- [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, and cancellation utilities.
+- [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, cancellation utilities, and request payload notes.
 - [classes/Location.md](classes/Location.md) — Location model (description, exits, NPCs, items, status effects) with stub promotion support, stub description/shortDescription prompting rules, and authoritative stub handling behavior.
 - [classes/LocationExit.md](classes/LocationExit.md) — Connection between locations/regions, with optional vehicle semantics and bidirectional travel.
 - [classes/LorebookManager.md](classes/LorebookManager.md) — Lorebook manager for JSON lorebooks: load, enable/disable, keyword match, and prompt injection.
@@ -62,7 +63,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/SanitizedStringMap.md](classes/SanitizedStringMap.md) — Map wrapper that normalizes string keys for case/punctuation-insensitive lookup.
 - [classes/SanitizedStringSet.md](classes/SanitizedStringSet.md) — Set wrapper that normalizes string values for case/punctuation-insensitive lookup.
 - [classes/SceneSummaries.md](classes/SceneSummaries.md) — Stores scene summaries from chat history and tracks scene ranges and NPC names.
-- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions) with persistence support.
+- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions and default skill lists) with persistence support.
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
 - [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration parsing/expiry semantics (negative=infinite, 0=expired).
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.

@@ -5,7 +5,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "scss:build:main": "npx sass public/css/main.scss public/css/main.css",
+    "scss:build:settings": "npx sass public/css/settings.scss public/css/settings.css",
+    "scss:build": "npm run scss:build:main && npm run scss:build:settings",
+    "scss:watch:main": "npx sass --watch public/css/main.scss public/css/main.css",
+    "scss:watch:settings": "npx sass --watch public/css/settings.scss public/css/settings.css",
+    "scss:watch": "npx sass --watch public/css/main.scss public/css/main.css public/css/settings.scss public/css/settings.css"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.8",

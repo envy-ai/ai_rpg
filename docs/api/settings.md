@@ -31,6 +31,7 @@ Request:
 Notes:
 - When autofilling `defaultStartingLocation`, the AI is guided to use the multiline template shown on the form (region name, summary, rooms/locations, region exits with blank lines).
 - When autofilling `baseContextPreamble`, the AI is guided to use a single-line bracketed format (e.g., `[Title: ...; Tags: ...; Genre: ...]`).
+- When autofilling `defaultExistingSkills` (and the list is empty or baseline-only), the AI is asked to add up to ~10 setting-specific skills to complement the baseline list.
 
 Response:
 - 200: `{ success: true, setting, raw }` (merged setting values and raw AI XML)

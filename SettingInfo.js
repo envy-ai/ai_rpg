@@ -35,7 +35,6 @@ class SettingInfo {
   #defaultPlayerName;
   #defaultPlayerDescription;
   #defaultStartingLocation;
-  #defaultNumSkills;
   #defaultExistingSkills;
   #createdAt;
   #lastUpdated;
@@ -137,10 +136,6 @@ class SettingInfo {
     this.#defaultPlayerName = typeof options.defaultPlayerName === 'string' ? options.defaultPlayerName : '';
     this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
-    const parsedDefaultSkillCount = Number.parseInt(options.defaultNumSkills, 10);
-    this.#defaultNumSkills = Number.isFinite(parsedDefaultSkillCount)
-      ? Math.max(0, Math.min(100, parsedDefaultSkillCount))
-      : 20;
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#availableClasses = SettingInfo.#normalizeStringList(options.availableClasses);
     this.#availableRaces = SettingInfo.#normalizeStringList(options.availableRaces);
@@ -185,7 +180,6 @@ class SettingInfo {
   get defaultPlayerName() { return this.#defaultPlayerName; }
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
   get defaultStartingLocation() { return this.#defaultStartingLocation; }
-  get defaultNumSkills() { return this.#defaultNumSkills; }
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
@@ -342,14 +336,6 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
-  set defaultNumSkills(value) {
-    const parsed = Number.parseInt(value, 10);
-    this.#defaultNumSkills = Number.isFinite(parsed)
-      ? Math.max(0, Math.min(100, parsed))
-      : 20;
-    this.#updateTimestamp();
-  }
-
   set defaultExistingSkills(value) {
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(value);
     this.#updateTimestamp();
@@ -458,7 +444,6 @@ class SettingInfo {
       defaultPlayerName: this.#defaultPlayerName,
       defaultPlayerDescription: this.#defaultPlayerDescription,
       defaultStartingLocation: this.#defaultStartingLocation,
-      defaultNumSkills: this.#defaultNumSkills,
       defaultExistingSkills: [...this.#defaultExistingSkills],
       availableClasses: [...this.#availableClasses],
       availableRaces: [...this.#availableRaces],

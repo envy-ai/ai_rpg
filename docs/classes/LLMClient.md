@@ -39,3 +39,4 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - Streaming progress is broadcast through `Globals.realtimeHub` when available.
 - Retries are built in; stream timeouts are incrementally increased on retry.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
+- The chat completion payload no longer forces `reasoning: true`; it is only sent when configured explicitly.
