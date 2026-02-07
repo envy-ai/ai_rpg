@@ -10,7 +10,10 @@ exports/*
 prompt_overrides/*
 autosaves/*
 temp/*
+tmp/
 tmp/*
+playwright-report/*
+test-results/*
 imagegen/test*
 **/*.old
 config.yaml.polaris

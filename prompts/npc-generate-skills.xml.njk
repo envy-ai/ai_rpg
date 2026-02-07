@@ -1,15 +1,27 @@
 <template>
-    <comment>This prompt runs after the location generator prompt and location NPC generator prompt, with the context from the previous prompts still incliuded, hence the lack of a system prompt and other context.</comment>
-    <role>NPC skill generator</role>
+    <comment>This prompt runs after NPC generation with prior context included, so it does not define its own system prompt.</comment>
+    <role>NPC progression generator</role>
 <generationPrompt>
 <skills>
 {% for skill in skills %}  <skill>
     <name>{{ skill.name }}</name>
-    <description>One sentence description of the skill.</description>
+    <description>{{ skill.description }}</description>
   </skill>
 {% endfor %}</skills>
+<attributes>
+{% for attribute in attributes %}  <attribute>
+    <name>{{ attribute.name }}</name>
+    <description>{{ attribute.description }}</description>
+  </attribute>
+{% endfor %}</attributes>
 
-For each NPC generated above, pick a set of 3 to 8 skills from the list above that fit the NPC's class, role, and personality. Output the skills in this format:
+For each NPC generated above, produce priority lists for both skills and attributes.
+
+- Skills: pick 3 to 8 fitting skills when skills are available.
+- Attributes: pick 2 to 6 fitting attributes when attributes are available.
+- Use priority values 1 to 3 only, where 3 means highest focus.
+- Priorities are relative, not exact point totals.
+- Use exact names from the lists above. Do not invent new skill or attribute names.
 
 <npcs>
   <npc>
@@ -17,10 +29,17 @@ For each NPC generated above, pick a set of 3 to 8 skills from the list above th
     <skills>
       <skill>
         <name>Exact name of the skill</name>
-        <priority>Integer from 1 to 3 indicating much the character prioritizes spending points on this skill</priority>
+        <priority>Integer 1-3 indicating how strongly this NPC prioritizes that skill</priority>
       </skill>
       [... more skills ...]
     </skills>
+    <attributes>
+      <attribute>
+        <name>Exact name of the attribute</name>
+        <priority>Integer 1-3 indicating how strongly this NPC prioritizes that attribute</priority>
+      </attribute>
+      [... more attributes ...]
+    </attributes>
   </npc>
   [... more NPCs ...]
 </npcs>

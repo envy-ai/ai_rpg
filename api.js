@@ -19193,6 +19193,36 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const requestedName = typeof updates?.name === 'string' ? updates.name.trim() : '';
+                const isRenameRequest = requestedName.length > 0 && requestedName !== setting.name;
+                if (isRenameRequest) {
+                    const existingSetting = SettingInfo.getByName(requestedName);
+                    if (existingSetting) {
+                        return res.status(409).json({
+                            success: false,
+                            error: 'Setting with this name already exists'
+                        });
+                    }
+
+                    const sourceData = setting.toJSON();
+                    delete sourceData.id;
+                    delete sourceData.createdAt;
+                    delete sourceData.lastUpdated;
+                    const createdSetting = new SettingInfo({
+                        ...sourceData,
+                        ...updates,
+                        name: requestedName
+                    });
+
+                    return res.status(201).json({
+                        success: true,
+                        setting: createdSetting.toJSON(),
+                        created: true,
+                        clonedFromId: setting.id,
+                        message: 'Setting name changed. Created a new setting with a new id.'
+                    });
+                }
+
                 if (updates.name && updates.name !== setting.name) {
                     const existingSetting = SettingInfo.getByName(updates.name);
                     if (existingSetting && existingSetting.id !== id) {
@@ -19231,12 +19261,30 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const deletedSavedFiles = SettingInfo.deleteSavedFilesById(id);
                 const deleted = SettingInfo.delete(id);
+                if (deleted && currentSetting?.id === id) {
+                    currentSetting = null;
+                    try {
+                        if (app && app.locals) {
+                            app.locals.currentSetting = null;
+                            app.locals.promptVariables = undefined;
+                        }
+                        if (typeof viewsEnv?.addGlobal === 'function') {
+                            viewsEnv.addGlobal('currentSetting', null);
+                            viewsEnv.addGlobal('promptVariables', undefined);
+                        }
+                        global.currentSetting = null;
+                    } catch (cleanupError) {
+                        console.warn('Failed to clear applied setting globals after delete:', cleanupError.message);
+                    }
+                }
 
                 if (deleted) {
                     res.json({
                         success: true,
-                        message: 'Setting deleted successfully'
+                        message: 'Setting deleted successfully',
+                        deletedSavedFiles: deletedSavedFiles.count
                     });
                 } else {
                     res.status(500).json({
@@ -20004,7 +20052,9 @@ module.exports = function registerApiRoutes(scope) {
                     startingLocation: startingLocationData,
                     region: region.toJSON(),
                     factions: generatedFactions.map(faction => (typeof faction?.toJSON === 'function' ? faction.toJSON() : faction)),
-                    skills: generatedSkills.map(skill => skill.toJSON()),
+                    skills: Array.from(skills.values()).map(skill => (
+                        typeof skill?.toJSON === 'function' ? skill.toJSON() : skill
+                    )),
                     gameState: {
                         totalPlayers: players.size,
                         totalLocations: gameLocations.size,

@@ -903,6 +903,16 @@
 
     const buildAttributeLookup = () => {
       const lookup = new Map();
+      const normalizeOptionalKey = (value) => {
+        if (typeof value !== 'string') {
+          return null;
+        }
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return null;
+        }
+        return normalizeVariableKey(trimmed);
+      };
       for (const definition of state.attributes.definitions) {
         const key = typeof definition?.key === 'string' ? definition.key.trim() : '';
         if (!key) {
@@ -915,10 +925,7 @@
           typeof definition?.abbr === 'string' ? definition.abbr : ''
         ];
         for (const candidate of candidates) {
-          if (typeof candidate !== 'string') {
-            continue;
-          }
-          const normalized = normalizeVariableKey(candidate);
+          const normalized = normalizeOptionalKey(candidate);
           if (!normalized) {
             continue;
           }
@@ -963,8 +970,12 @@
               continue;
             }
             const normalizedAttributeKey = normalizeVariableKey(attributeKey);
-            const normalizedLabel = normalizeVariableKey(definition?.label || '');
-            const normalizedAbbr = normalizeVariableKey(definition?.abbreviation || definition?.abbr || '');
+            const labelValue = typeof definition?.label === 'string' ? definition.label.trim() : '';
+            const abbreviationValue = typeof definition?.abbreviation === 'string'
+              ? definition.abbreviation.trim()
+              : (typeof definition?.abbr === 'string' ? definition.abbr.trim() : '');
+            const normalizedLabel = labelValue ? normalizeVariableKey(labelValue) : null;
+            const normalizedAbbr = abbreviationValue ? normalizeVariableKey(abbreviationValue) : null;
 
             let matchedEntry = null;
             const candidateKeys = [normalizedAttributeKey, normalizedLabel, normalizedAbbr]

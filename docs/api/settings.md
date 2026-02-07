@@ -60,14 +60,19 @@ Request:
 Response:
 - 200: `{ success: true, setting: SettingInfo, message }`
 - 201: `{ success: true, setting: SettingInfo, created: true, message }` (if not found; new setting created)
+- 201: `{ success: true, setting: SettingInfo, created: true, clonedFromId, message }` (when `name` changes; creates a new setting with a new id while keeping the original)
 - 400/404/409 with `{ success: false, error }`
 
 ## DELETE /api/settings/:id
 Delete a setting.
 
 Response:
-- 200: `{ success: true, message }`
+- 200: `{ success: true, message, deletedSavedFiles }`
 - 404/500 with `{ success: false, error }`
+
+Notes:
+- Deletion removes the setting from memory and also removes persisted setting files that match the deleted id.
+- If the deleted setting was currently applied, the current setting is cleared.
 
 ## POST /api/settings/:id/clone
 Clone a setting.

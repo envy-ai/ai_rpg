@@ -2,6 +2,29 @@
 
 This document covers config options that change game behavior beyond model/runtime settings.
 
+## CLI config override file
+
+You can layer an additional YAML file on top of `config.default.yaml` and `config.yaml` at startup:
+
+```bash
+node server.js --config-override ./tmp/local.override.yaml
+```
+
+You can also use:
+
+```bash
+node server.js --config-override=./tmp/local.override.yaml
+```
+
+Merge precedence is:
+
+1. `config.default.yaml`
+2. `config.yaml`
+3. `--config-override` file
+
+The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
+If the server is started with `--config-override`, `reload_config` keeps using the same override file.
+
 ## Character creation point pools
 
 `config.formulas.character_creation` controls the formulas used to calculate the base point pools for the New Game attribute and skill allocators.

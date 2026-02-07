@@ -798,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).then(async (response) => {
           const result = await response.json().catch(() => ({}));
           if (!response.ok || !result?.success) {
-            const errMsg = result?.error || `Server error (${response.status})`;
+            const errMsg = result?.details || result?.error || `Server error (${response.status})`;
             console.error(`New game creation failed: ${errMsg}`);
           }
         }).catch((err) => {

@@ -46,7 +46,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Event prompts are grouped (locations, items, NPCs, misc) and run sequentially with structured parsing.
 - Event check responses must include a `<final>` block; `runEventChecks` enforces this via `requiredRegex` so the LLM client retries when it is missing.
 - Combined answers across groups are stitched into a single numbered list and parsed as the final block text (no extra `<final>` wrapper).
-- Before applying outcomes, event checks ensure referenced NPCs exist (excluding death/incapacitation and defeated-enemy mentions), so downstream handlers can resolve actors; new NPC names are normalized via `Utils.capitalizeProperNoun` with leading-article stripping, while existing NPCs are left untouched.
+- Before applying outcomes, event checks ensure referenced NPCs exist (excluding death/incapacitation and defeated-enemy mentions), so downstream handlers can resolve actors; new NPC names are normalized via `Utils.capitalizeProperNoun` with leading-article stripping, while existing NPCs are left untouched. During ensure, if no exact name exists but the requested name is a leading token of an NPC currently in the same location (for example `Bob` vs `Bob Ross`), the first matching location NPC is reused instead of generating a new one.
 - `LLMClient.logPrompt` is always used for event-check logging; failures should surface loudly.
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.

@@ -25,7 +25,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `getPromptVariables()`: returns a reduced object for prompt templates.
 - `toString()`: returns `"name (theme/genre)"`.
 - `save(saveDir)`: writes to `saves/settings` (or provided dir) as JSON.
-- `deleteSavedFile(saveDir)`: deletes the file for this setting.
+- `deleteSavedFile(saveDir)`: deletes persisted files for this setting by id suffix match.
 
 ## Static API
 - `create(options)`.
@@ -34,6 +34,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `load(filepath)`: loads a single file.
 - `saveAll(saveDir)` / `loadAll(saveDir)`.
 - `listSavedSettings(saveDir)`: returns metadata for available settings on disk.
+- `deleteSavedFilesById(id, saveDir)`: removes persisted files matching `*_<id>.json`.
 
 ## Private Helpers
 - `#generateId()`: unique id generator.

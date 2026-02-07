@@ -5,17 +5,18 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Root docs
 
 - [API_README.md](API_README.md) — High-level index of Express routes registered in `api.js`, pointing to detailed endpoint docs in `docs/api/`.
-- [config.md](config.md) — Configuration options for gameplay behavior (including point pool formulas).
+- [config.md](config.md) — Configuration options for gameplay behavior (including point pool formulas and startup `--config-override` YAML layering).
 - [developer_overview.md](developer_overview.md) — Quick-start developer overview of the game, architecture, and where to look first.
 - [potential_redundancies.md](potential_redundancies.md) — List of potential redundancies/inconsistencies found across docs and code, with suggested fixes.
-- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental story info attachments/concurrency, faction-relation neutral defaults during generation, event-summary filtering, and craft-history filtering).
+- [playwright.md](playwright.md) — Playwright browser test setup and run commands for headless/headed Chromium, including same-user existing-X-session helper usage and the one-off new-game flow script with live console progress output and redirected `/api/new-game` request tracking.
+- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental story info attachments/concurrency, faction relation neutral defaults plus missing-asset tolerance during generation, formula-driven NPC skill/attribute progression with budget logging, event-summary filtering, and craft-history filtering).
 - [slash_commands.md](slash_commands.md) — Quick guide to slash command lifecycle, shape, arg parsing, interaction API, best practices, example, and testing.
 - [slop_and_repetition.md](slop_and_repetition.md) — Overview of slop checking and repetition-busting systems, including travel prose output normalization and detection logic.
 
 ## UI docs (`docs/ui`)
 
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
-- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove, remote new-game form settings save/load, shared allocation partials, and allocation pool behavior/timing).
+- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove, remote new-game form settings save/load, blank-safe attribute alias matching during load, settings rename/new-id behavior, persistent settings delete behavior, shared allocation partials, and allocation pool behavior/timing).
 - [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, LLM modal submit behavior, and location exit caching.
 - [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details and attribute bonus visibility), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
@@ -39,13 +40,13 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/quests.md](api/quests.md) — Quest endpoints; references shared payloads in `docs/api/common.md`.
 - [api/regions.md](api/regions.md) — Region endpoints; references shared payloads in `docs/api/common.md`.
 - [api/serialization.md](api/serialization.md) — Legacy index for shared shapes; points to `docs/api/common.md` as authoritative.
-- [api/settings.md](api/settings.md) — Settings endpoints (including AI fill-missing guidance and default-skill augmentation); references shared payloads in `docs/api/common.md`.
+- [api/settings.md](api/settings.md) — Settings endpoints (including AI fill-missing guidance, default-skill augmentation, rename-as-new-id updates, and persistent delete behavior); references shared payloads in `docs/api/common.md`.
 - [api/things.md](api/things.md) — Things and inventory endpoints; references shared payloads in `docs/api/common.md`.
 
 ## Class reference (`docs/classes`)
 
 - [classes/ComfyUIClient.md](classes/ComfyUIClient.md) — Client for ComfyUI servers: queue workflows, poll status, download images, and save results.
-- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including move suppression for event-driven travel, NPC name normalization details, and item inflict handling.
+- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including move suppression for event-driven travel, NPC name normalization details (including same-location leading-name resolution like `Bob` -> `Bob Ross`), and item inflict handling.
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
 - [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, and prompt wiring.
 - [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, cancellation utilities, and request payload notes.
@@ -63,7 +64,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/SanitizedStringMap.md](classes/SanitizedStringMap.md) — Map wrapper that normalizes string keys for case/punctuation-insensitive lookup.
 - [classes/SanitizedStringSet.md](classes/SanitizedStringSet.md) — Set wrapper that normalizes string values for case/punctuation-insensitive lookup.
 - [classes/SceneSummaries.md](classes/SceneSummaries.md) — Stores scene summaries from chat history and tracks scene ranges and NPC names.
-- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions and default skill lists) with persistence support.
+- [classes/SettingInfo.md](classes/SettingInfo.md) — Game setting/world configuration (theme/genre/prompts/defaults, including starting location instructions and default skill lists) with persistence support, including id-based saved-file deletion helpers.
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
 - [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration parsing/expiry semantics (negative=infinite, 0=expired).
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.

@@ -654,18 +654,37 @@ class SettingInfo {
     }
   }
 
+  static deleteSavedFilesById(id, saveDir = null) {
+    const normalizedId = typeof id === 'string' ? id.trim() : '';
+    if (!normalizedId) {
+      throw new Error('Setting id is required to delete saved setting files');
+    }
+
+    const dir = saveDir || path.join(__dirname, 'saves', 'settings');
+    if (!fs.existsSync(dir)) {
+      return { count: 0, files: [] };
+    }
+
+    const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const idSuffixPattern = new RegExp(`_${escapeRegex(normalizedId)}\\.json$`);
+    const matchingFiles = fs.readdirSync(dir)
+      .filter(filename => filename.endsWith('.json') && idSuffixPattern.test(filename));
+
+    const deletedFiles = [];
+    for (const filename of matchingFiles) {
+      const filepath = path.join(dir, filename);
+      fs.unlinkSync(filepath);
+      deletedFiles.push(filepath);
+    }
+
+    return { count: deletedFiles.length, files: deletedFiles };
+  }
+
   // Delete setting file
   deleteSavedFile(saveDir = null) {
     try {
-      const dir = saveDir || path.join(__dirname, 'saves', 'settings');
-      const filename = `${this.#name.replace(/[^a-zA-Z0-9]/g, '_')}_${this.#id}.json`;
-      const filepath = path.join(dir, filename);
-
-      if (fs.existsSync(filepath)) {
-        fs.unlinkSync(filepath);
-        return true;
-      }
-      return false;
+      const result = SettingInfo.deleteSavedFilesById(this.#id, saveDir);
+      return result.count > 0;
     } catch (error) {
       throw new Error(`Failed to delete setting file: ${error.message}`);
     }

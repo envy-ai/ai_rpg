@@ -621,6 +621,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     }
                     
                     await refreshSettingsList();
+                    await loadCurrentSetting();
                 } else {
                     showMessage('Error deleting setting: ' + data.error, 'error');
                 }
@@ -784,16 +785,16 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 
                 try {
                     let response;
-                    let savedId = null;
+                    let requestSettingId = null;
                     if (isEditMode) {
                         const settingId = settingData.id;
+                        requestSettingId = settingId;
                         delete settingData.id;
                         response = await fetch(`/api/settings/${settingId}`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(settingData)
                         });
-                        savedId = settingId;
                     } else {
                         response = await fetch('/api/settings', {
                             method: 'POST',
@@ -805,10 +806,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     const data = await response.json();
                     
                     if (data.success) {
-                        // Determine the ID to persist
-                        if (!savedId && data.setting && data.setting.id) {
-                            savedId = data.setting.id;
-                        }
+                        const savedId = (data.setting && data.setting.id)
+                            ? data.setting.id
+                            : requestSettingId;
 
                         let appliedSuccessfully = false;
 

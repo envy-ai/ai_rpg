@@ -35,6 +35,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: pool formulas are evaluated after attribute definitions load so `attribute.*`/`skill.*` variables are available; evaluation errors surface in the warning area and disable form submission.
 - Notes: the New Game form includes `Save Form Settings` / `Load Form Settings` controls backed by `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`.
 - Notes: loading applies attributes/skills on a best-effort name match; any current attribute/skill without a matching loaded entry resets to its default value (attribute default stat, skill rank 1).
+- Notes: attribute matching also checks definition label/abbreviation aliases; blank aliases are ignored so saved-form loading does not fail when optional alias fields are empty.
 
 ## Server configuration
 - Route: `/config`
@@ -54,6 +55,8 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 - Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
 - Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.
+- Notes: editing a setting and changing its name creates a new setting id (the original setting remains available).
+- Notes: deleting a setting removes both in-memory and persisted copies; deleted settings do not return after page refresh.
 
 ## Lorebooks manager
 - Route: `/lorebooks`

@@ -1,7 +1,61 @@
-<task>For the NPC named "{{ character.name }}", for each level between {{ character.previousLevel + 1 }} and {{ character.level }}, generate a set of a minimum of 2 abilities per level to a maximum of 4 abilities per level for each of those level(s) (for a total of {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities). Abilities should be unique and interesting, avoiding generic or overly broad abilities. Abilities should be level appropriate (level 1 is starting level and level 20+ is considered very high level). Abilities can be active, passive, or triggered, and should be more interesting than just an attribute bonus. Use your judgment to determine the number of abilities based on the NPC's race and class, and only generate them up to that NPC's current level. Character classes with fewer skills tend to have more abilities, and supernatural classes are often ability-based.</task>
+<task>For the character named "{{ character.name }}", process this level-up in one pass. The character advanced from level {{ character.previousLevel }} to level {{ character.level }}{% if levelsGained is not none %} ({{ levelsGained }} level{% if levelsGained != 1 %}s{% endif %} gained){% endif %}. Do not split this into one response per level.</task>
 
-If in need of ideas, consider the information provided in the context. Don't replicate the function of any abilities the character already has; however, you may create abilities that synergize with or enhance existing abilities. Abilities should pertain to the character's class, race, game history, personality, secrets, and/or role in the story.  Try to vary what you base them on (some should be class related, some should have to do with what they've done in the game history, and so on).
+{% if character.isNPC %}
+Generate three things for this NPC:
+1. Abilities: for each gained level, generate 2 to 4 abilities (total {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities across this entire level-up). Abilities should be unique, level-appropriate, and tied to class/race/history/personality.
+2. Skill priorities: pick 3 to 8 skills and assign priority 1 to 3.
+3. Attribute priorities: pick 2 to 6 attributes and assign priority 1 to 3.
 
-Output the abilities in this format:
+If in need of ideas, consider the information provided in context. Do not duplicate existing ability names. You may add abilities that synergize with existing abilities.
+
+<availableSkills>
+{% for skill in availableSkillsForPrompt %}  <skill>
+    <name>{{ skill.name }}</name>
+    <description>{{ skill.description }}</description>
+  </skill>
+{% endfor %}</availableSkills>
+<availableAttributes>
+{% for attribute in availableAttributesForPrompt %}  <attribute>
+    <name>{{ attribute.name }}</name>
+    <description>{{ attribute.description }}</description>
+  </attribute>
+{% endfor %}</availableAttributes>
+
+Output exactly in this XML structure:
+
+<npcs>
+  <npc>
+    <name>Character's full exact name</name>
+    <skills>
+      <skill>
+        <name>Exact name of the skill from availableSkills</name>
+        <priority>Integer 1-3</priority>
+      </skill>
+      [... more skills ...]
+    </skills>
+    <attributes>
+      <attribute>
+        <name>Exact name of the attribute from availableAttributes</name>
+        <priority>Integer 1-3</priority>
+      </attribute>
+      [... more attributes ...]
+    </attributes>
+    <abilities>
+      <ability>
+        <name>Exact name of the ability</name>
+        <description>One to two sentence description of the ability, including any special effects or conditions.</description>
+        <type>Active, Passive, or Triggered</type>
+        <level>Integer from 1 to 20 indicating the level at which the NPC gains this ability</level>
+        <shortDescription>5-10 word summary to reduce context vs full XML. Try to get the essence of the ability across clearly and concisely. Don't mention the ability by name or any stats, numbers, or level.</shortDescription>
+      </ability>
+      [... more abilities ...]
+    </abilities>
+  </npc>
+</npcs>
+{% else %}
+Generate abilities only for this character. For each gained level, generate 2 to 4 abilities (total {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities across this level-up). Abilities should be unique and level-appropriate.
+
+Output abilities in this format:
 
 {% include "_includes/ability-format.njk" %}
+{% endif %}

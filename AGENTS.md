@@ -11,6 +11,14 @@
 - Use VS code's internal functions when possible.
 - Always prefer updating scss files over css files. If no corresponding scss file exists, create one.
 - Whenever you modify any scss file, compile the corresponding css output before finishing the task.
+- Playwright run commands:
+  - `npm run test:e2e:headless` (default)
+  - `./playwright_scripts/run_on_existing_x_session.sh npm run test:e2e:headed` (preferred for headed runs when an existing X session is available for the same user)
+  - `npm run test:e2e:headed` (when a display/X server is available)
+  - `npm run test:e2e:headed:xvfb` (for headful runs in headless Linux environments with xvfb installed)
+- Store testing artifacts in `./tmp`.
+- Store temporary CLI config override YAML files in `./tmp`.
+- Store Playwright scripts in `./playwright_scripts` (do not put them in `./tmp`).
 - Don't do anything with git unless specifically asked (if it's necessary, ask permission first).
 - Lint/syntax check any files you alter, if applicable.
 - Be aware of things in Globals.js to avoid reinventing the wheel to get the current player, location, region, etc.
