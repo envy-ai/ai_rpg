@@ -726,9 +726,15 @@
                 </div>
                 <div class="npc-view-sections">
                     <section class="npc-view-section" id="npcViewAttributesSection">
-                        <h4>Attributes</h4>
-                        <dl class="npc-view-attributes" id="npcViewAttributes"></dl>
-                        <div class="npc-view-empty" id="npcViewAttributesEmpty">No attribute data available.</div>
+                        {% set attributeSectionId = 'npcViewAttributeAllocationSection' %}
+                        {% set attributeSectionHeading = 'Attributes' %}
+                        {% set attributePointsLabel = 'Unspent Attribute Points' %}
+                        {% set attributePointsHelp = 'You cannot reduce attributes below current values. Formula-based maximums still apply.' %}
+                        {% set attributePointsRemainingId = 'npcViewAttributePointsRemaining' %}
+                        {% set attributePointsWarningId = 'npcViewAttributePointsWarning' %}
+                        {% set attributePointsWarningStyle = 'color: #f44336; display: block; visibility: hidden;' %}
+                        {% set attributeGridId = 'npcViewAttributeGrid' %}
+                        {% include "_includes/attribute-allocation.njk" %}
                     </section>
                     <section class="npc-view-section" id="npcViewEquipmentSection">
                         <h4>Equipment</h4>
@@ -736,9 +742,26 @@
                         <div class="npc-view-empty" id="npcViewEquipmentEmpty">No equipment equipped.</div>
                     </section>
                     <section class="npc-view-section" id="npcViewSkillsSection">
-                        <h4>Skills</h4>
-                        <div class="npc-view-skills" id="npcViewSkills"></div>
-                        <div class="npc-view-empty" id="npcViewSkillsEmpty">No skill data available.</div>
+                        {% set skillSectionId = 'npcViewSkillAllocationSection' %}
+                        {% set skillSectionHeading = 'Skills' %}
+                        {% set skillPointsLabel = 'Unspent Skill Points' %}
+                        {% set skillPointsHelp = 'You cannot reduce skills below current values. Formula-based maximums still apply.' %}
+                        {% set skillPointsRemainingId = 'npcViewSkillPointsRemaining' %}
+                        {% set skillPointsWarningId = 'npcViewSkillPointsWarning' %}
+                        {% set skillPointsWarningStyle = 'color: #f44336; display: block; visibility: hidden;' %}
+                        {% set skillGridId = 'npcViewSkillsGrid' %}
+                        {% set skillAddInputId = 'npcViewSkillAddInput' %}
+                        {% set skillAddButtonId = 'npcViewSkillAddButton' %}
+                        {% set skillAddInputIdBottom = 'npcViewSkillAddInputBottom' %}
+                        {% set skillAddButtonIdBottom = 'npcViewSkillAddButtonBottom' %}
+                        {% set skillAddHelpText = 'Adding/removing skills is disabled in this view.' %}
+                        {% include "_includes/skill-allocation.njk" %}
+                    </section>
+                    <section class="npc-view-section npc-view-allocation-actions" id="npcViewAllocationActionsSection" hidden>
+                        <div class="npc-view-allocation-status" id="npcViewAllocationStatus" role="status" aria-live="polite"></div>
+                        <div class="npc-view-allocation-buttons">
+                            <button type="button" class="btn btn-primary" id="npcViewAllocationSaveBtn">Apply Point Changes</button>
+                        </div>
                     </section>
                     <section class="npc-view-section" id="npcViewAbilitiesSection">
                         <h4>Abilities</h4>
@@ -1548,6 +1571,8 @@
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
     <script src="/js/currency-utils.js"></script>
+    <script src="/js/formula-evaluator.js"></script>
+    <script src="/js/attribute-skill-allocator.js"></script>
     <script src="/vendor/nunjucks.js"></script>
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/js/chat.js"></script>
@@ -1559,6 +1584,7 @@
     {% endfor %}{% endfor %}{% endif %}
     <script>
         window.currentSetting = {{ (currentSetting or {}) | dump | safe }};
+        window.NPC_VIEW_POINT_POOL_FORMULAS = {{ (pointPoolFormulas or {}) | dump | safe }};
         window.rarityDefinitions = {{ (rarityDefinitions or []) | dump | safe }};
         window.CHECK_MOVE_PLAUSIBILITY = {{ (checkMovePlausibility or 'never') | dump | safe }};
         window.availableSkillsList = {{ (availableSkills or []) | dump | safe }};
@@ -5292,12 +5318,23 @@
         const npcViewExperience = document.getElementById('npcViewExperience');
         const npcViewDispositions = document.getElementById('npcViewDispositions');
         const npcViewDispositionsList = document.getElementById('npcViewDispositionsList');
-        const npcViewAttributes = document.getElementById('npcViewAttributes');
-        const npcViewAttributesEmpty = document.getElementById('npcViewAttributesEmpty');
+        const npcViewAttributeAllocationSection = document.getElementById('npcViewAttributeAllocationSection');
+        const npcViewAttributeGrid = document.getElementById('npcViewAttributeGrid');
+        const npcViewAttributePointsRemaining = document.getElementById('npcViewAttributePointsRemaining');
+        const npcViewAttributePointsWarning = document.getElementById('npcViewAttributePointsWarning');
         const npcViewEquipment = document.getElementById('npcViewEquipment');
         const npcViewEquipmentEmpty = document.getElementById('npcViewEquipmentEmpty');
-        const npcViewSkills = document.getElementById('npcViewSkills');
-        const npcViewSkillsEmpty = document.getElementById('npcViewSkillsEmpty');
+        const npcViewSkillAllocationSection = document.getElementById('npcViewSkillAllocationSection');
+        const npcViewSkillsGrid = document.getElementById('npcViewSkillsGrid');
+        const npcViewSkillPointsRemaining = document.getElementById('npcViewSkillPointsRemaining');
+        const npcViewSkillPointsWarning = document.getElementById('npcViewSkillPointsWarning');
+        const npcViewSkillAddInput = document.getElementById('npcViewSkillAddInput');
+        const npcViewSkillAddButton = document.getElementById('npcViewSkillAddButton');
+        const npcViewSkillAddInputBottom = document.getElementById('npcViewSkillAddInputBottom');
+        const npcViewSkillAddButtonBottom = document.getElementById('npcViewSkillAddButtonBottom');
+        const npcViewAllocationActionsSection = document.getElementById('npcViewAllocationActionsSection');
+        const npcViewAllocationStatus = document.getElementById('npcViewAllocationStatus');
+        const npcViewAllocationSaveBtn = document.getElementById('npcViewAllocationSaveBtn');
         const npcViewAbilities = document.getElementById('npcViewAbilities');
         const npcViewAbilitiesEmpty = document.getElementById('npcViewAbilitiesEmpty');
         const npcViewStatuses = document.getElementById('npcViewStatuses');
@@ -6474,6 +6511,9 @@
         let currentNpcInventory = [];
         let currentNpcInventoryNpcId = null;
         let currentNpcViewId = null;
+        let currentNpcViewIsPlayer = false;
+        let npcViewAllocator = null;
+        let npcViewAllocatorLevelField = null;
         let currentNpcDispositionId = null;
         let currentNpcDispositionData = null;
         let currentNpcNeedsTargetId = null;
@@ -10200,6 +10240,11 @@
             npcViewModal.setAttribute('aria-hidden', 'true');
             npcViewModal.setAttribute('hidden', '');
             currentNpcViewId = null;
+            currentNpcViewIsPlayer = false;
+            if (npcViewAllocationStatus) {
+                npcViewAllocationStatus.textContent = '';
+                npcViewAllocationStatus.classList.remove('is-error', 'is-success');
+            }
             const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
             const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
             const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
@@ -10821,6 +10866,12 @@
             });
         }
 
+        if (npcViewAllocationSaveBtn) {
+            npcViewAllocationSaveBtn.addEventListener('click', async () => {
+                await submitNpcViewAllocationChanges();
+            });
+        }
+
         if (thingEditCancelBtn) {
             thingEditCancelBtn.addEventListener('click', () => {
                 closeThingEditModal();
@@ -10980,11 +11031,6 @@
                 const parsedHealth = Number.parseInt(npcEditHealthInput?.value ?? '', 10);
                 if (Number.isFinite(parsedHealth)) {
                     payload.health = parsedHealth;
-                }
-
-                const parsedUnspent = Number.parseInt(npcEditUnspentInput?.value ?? '', 10);
-                if (Number.isFinite(parsedUnspent) && parsedUnspent >= 0) {
-                    payload.unspentSkillPoints = parsedUnspent;
                 }
 
                 const parsedCurrency = Number.parseInt(npcEditCurrencyInput?.value ?? '', 10);
@@ -13107,6 +13153,208 @@
             });
         }
 
+        function updateNpcViewAllocationStatus(message = '', type = null) {
+            if (!npcViewAllocationStatus) {
+                return;
+            }
+            npcViewAllocationStatus.textContent = message || '';
+            npcViewAllocationStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                npcViewAllocationStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                npcViewAllocationStatus.classList.add('is-success');
+            }
+        }
+
+        function resolveNpcViewAttributeValues(actor = {}) {
+            const values = {};
+            if (actor?.attributeInfo && typeof actor.attributeInfo === 'object') {
+                for (const [key, info] of Object.entries(actor.attributeInfo)) {
+                    const numeric = Number(info?.value);
+                    if (!Number.isFinite(numeric)) {
+                        continue;
+                    }
+                    values[key] = numeric;
+                }
+            } else if (actor?.attributes && typeof actor.attributes === 'object') {
+                for (const [key, value] of Object.entries(actor.attributes)) {
+                    const numeric = Number(value);
+                    if (!Number.isFinite(numeric)) {
+                        continue;
+                    }
+                    values[key] = numeric;
+                }
+            }
+            return values;
+        }
+
+        function resolveNpcViewSkillValues(actor = {}) {
+            const values = {};
+            if (Array.isArray(actor?.skills)) {
+                actor.skills.forEach(entry => {
+                    if (!entry) {
+                        return;
+                    }
+                    if (typeof entry === 'string') {
+                        if (!values[entry]) {
+                            values[entry] = 1;
+                        }
+                        return;
+                    }
+                    if (typeof entry.name === 'string' && entry.name.trim()) {
+                        const numeric = Number(entry.rank);
+                        values[entry.name] = Number.isFinite(numeric) ? numeric : 1;
+                    }
+                });
+                return values;
+            }
+            if (actor?.skills && typeof actor.skills === 'object') {
+                for (const [skillName, rank] of Object.entries(actor.skills)) {
+                    if (typeof skillName !== 'string' || !skillName.trim()) {
+                        continue;
+                    }
+                    const numeric = Number(rank);
+                    values[skillName] = Number.isFinite(numeric) ? numeric : 1;
+                }
+            }
+            return values;
+        }
+
+        async function ensureNpcViewAllocator({
+            level = 1,
+            skillNames = [],
+            attributeFloorValues = {},
+            skillFloorValues = {},
+            attributePoolBaseValue = null,
+            skillPoolBaseValue = null,
+            readOnly = true
+        } = {}) {
+            if (!window.AttributeSkillAllocator || typeof window.AttributeSkillAllocator.init !== 'function') {
+                throw new Error('AttributeSkillAllocator.init is unavailable.');
+            }
+            if (!npcViewAttributeGrid || !npcViewAttributePointsRemaining || !npcViewAttributePointsWarning) {
+                throw new Error('NPC view attribute allocation elements are unavailable.');
+            }
+            if (!npcViewSkillAllocationSection || !npcViewSkillsGrid || !npcViewSkillPointsRemaining || !npcViewSkillPointsWarning) {
+                throw new Error('NPC view skill allocation elements are unavailable.');
+            }
+
+            if (!npcViewAllocatorLevelField) {
+                npcViewAllocatorLevelField = document.createElement('input');
+                npcViewAllocatorLevelField.type = 'number';
+                npcViewAllocatorLevelField.min = '1';
+            }
+
+            const numericLevel = Number(level);
+            const safeLevel = Number.isFinite(numericLevel) ? numericLevel : 1;
+            npcViewAllocatorLevelField.value = String(safeLevel);
+            npcViewAllocatorLevelField.dataset.defaultValue = String(safeLevel);
+
+            const formulas = (window.NPC_VIEW_POINT_POOL_FORMULAS && typeof window.NPC_VIEW_POINT_POOL_FORMULAS === 'object')
+                ? window.NPC_VIEW_POINT_POOL_FORMULAS
+                : {};
+            const normalizedSkillNames = Array.isArray(skillNames)
+                ? skillNames.filter(name => typeof name === 'string' && name.trim())
+                : [];
+
+            npcViewAllocator = window.AttributeSkillAllocator.init({
+                levelField: npcViewAllocatorLevelField,
+                attributeGrid: npcViewAttributeGrid,
+                attributePointsDisplay: npcViewAttributePointsRemaining,
+                attributePointsWarning: npcViewAttributePointsWarning,
+                skillsSection: npcViewSkillAllocationSection,
+                skillsGrid: npcViewSkillsGrid,
+                skillPointsDisplay: npcViewSkillPointsRemaining,
+                skillPointsWarning: npcViewSkillPointsWarning,
+                addSkillInputs: [npcViewSkillAddInput, npcViewSkillAddInputBottom],
+                addSkillButtons: [npcViewSkillAddButton, npcViewSkillAddButtonBottom],
+                defaultSkillNames: normalizedSkillNames,
+                poolFormulas: formulas,
+                allowSkillAdd: false,
+                readOnly,
+                suppressPoolWarnings: readOnly,
+                attributePoolBaseValue,
+                skillPoolBaseValue,
+                attributeFloorValues,
+                skillFloorValues
+            });
+
+            await npcViewAllocator.ready;
+            return npcViewAllocator;
+        }
+
+        async function submitNpcViewAllocationChanges() {
+            if (!currentNpcViewIsPlayer || !currentNpcViewId) {
+                updateNpcViewAllocationStatus('Point changes can only be applied from the player view.', 'error');
+                return;
+            }
+            if (!npcViewAllocator) {
+                updateNpcViewAllocationStatus('Allocation controls are not ready.', 'error');
+                return;
+            }
+
+            const actor = getLatestPlayerData();
+            const actorLevel = Number(actor?.level);
+            const safeLevel = Number.isFinite(actorLevel) ? actorLevel : 1;
+            const pools = npcViewAllocator.refreshPools(safeLevel);
+            const attributePool = Number(pools?.attributePool);
+            const skillPool = Number(pools?.skillPool);
+            const hasNegativePool = (Number.isFinite(attributePool) && attributePool < 0)
+                || (Number.isFinite(skillPool) && skillPool < 0);
+            if (hasNegativePool) {
+                updateNpcViewAllocationStatus('Cannot apply changes while point pools are negative.', 'error');
+                return;
+            }
+
+            const hasUnspentPool = (Number.isFinite(attributePool) && attributePool > 0)
+                || (Number.isFinite(skillPool) && skillPool > 0);
+            if (hasUnspentPool) {
+                const confirmed = window.confirm('You still have unspent points. Apply changes anyway?');
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            const payload = {
+                attributes: npcViewAllocator.getAttributeValues(),
+                skills: npcViewAllocator.getSkillValues()
+            };
+
+            if (npcViewAllocationSaveBtn) {
+                npcViewAllocationSaveBtn.disabled = true;
+            }
+            updateNpcViewAllocationStatus('Applying point changes...');
+
+            try {
+                const response = await fetch('/api/player/update-stats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success || !result?.player) {
+                    throw new Error(result?.error || `Failed to update player (${response.status})`);
+                }
+
+                const updatedPlayer = result.player;
+                if (window.currentNpcData instanceof Map && updatedPlayer?.id) {
+                    window.currentNpcData.set(updatedPlayer.id, cloneActorRecord(updatedPlayer) || { ...updatedPlayer });
+                }
+                if (typeof updateChatPlayerPanel === 'function') {
+                    updateChatPlayerPanel(updatedPlayer);
+                }
+
+                updateNpcViewAllocationStatus('Point changes applied.', 'success');
+                await showNpcViewModal(updatedPlayer);
+            } catch (error) {
+                updateNpcViewAllocationStatus(error?.message || 'Failed to apply point changes.', 'error');
+            } finally {
+                if (npcViewAllocationSaveBtn) {
+                    npcViewAllocationSaveBtn.disabled = false;
+                }
+            }
+        }
+
         async function showNpcViewModal(npc) {
             if (!npc || !npcViewModal || !npcModalBackdrop) {
                 return;
@@ -13275,37 +13523,58 @@
                 });
             }
 
-            const attributeEntries = [];
-            if (latestNpc?.attributeInfo && typeof latestNpc.attributeInfo === 'object') {
-                for (const [key, info] of Object.entries(latestNpc.attributeInfo)) {
-                    const label = info?.label || formatAttributeName(key);
-                    const baseValue = Number.isFinite(Number(info?.value)) ? Number(info.value) : info?.value;
-                    const modValue = Number.isFinite(Number(info?.modifiedValue)) ? Number(info.modifiedValue) : baseValue;
-
-                    const baseText = (baseValue !== undefined && baseValue !== null) ? `${baseValue}` : '—';
-                    let modifierDetail = null;
-
-                    const delta = (Number.isFinite(modValue) && Number.isFinite(baseValue))
-                        ? modValue - baseValue
-                        : 0;
-                    const className = delta > 0
-                        ? 'npc-view-attr-mod higher'
-                        : (delta < 0 ? 'npc-view-attr-mod lower' : 'npc-view-attr-mod same');
-
-                    const modText = `(${modValue !== undefined && modValue !== null ? modValue : baseValue ?? '—'})`;
-                    modifierDetail = { text: modText, className };
-
-                    attributeEntries.push({ term: label, detail: baseText, modifierDetail });
-                }
-            } else if (latestNpc?.attributes && typeof latestNpc.attributes === 'object') {
-                for (const [key, value] of Object.entries(latestNpc.attributes)) {
-                    const label = formatAttributeName(key);
-                    const detail = Number.isFinite(Number(value)) ? Number(value) : (value ?? '—');
-                    attributeEntries.push({ term: label, detail });
+            const latestPlayerData = getLatestPlayerData();
+            const isPlayerView = Boolean(
+                latestNpc?.isNPC === false
+                || (latestPlayerData?.id && latestNpc?.id && latestPlayerData.id === latestNpc.id)
+            );
+            currentNpcViewIsPlayer = isPlayerView;
+            if (npcViewAllocationActionsSection) {
+                if (isPlayerView) {
+                    npcViewAllocationActionsSection.removeAttribute('hidden');
+                } else {
+                    npcViewAllocationActionsSection.setAttribute('hidden', '');
                 }
             }
-            attributeEntries.sort((a, b) => a.term.localeCompare(b.term));
-            renderDefinitionList(npcViewAttributes, npcViewAttributesEmpty, attributeEntries);
+            if (npcViewAllocationSaveBtn) {
+                npcViewAllocationSaveBtn.disabled = !isPlayerView;
+            }
+            if (!isPlayerView) {
+                updateNpcViewAllocationStatus('');
+            }
+
+            const attributeValues = resolveNpcViewAttributeValues(latestNpc);
+            const skillValues = resolveNpcViewSkillValues(latestNpc);
+            const skillNames = Object.keys(skillValues);
+            const safeLevel = Number.isFinite(levelValue) ? levelValue : 1;
+            const unspentAttributePoints = Number(latestNpc?.unspentAttributePoints);
+            const unspentSkillPoints = Number(latestNpc?.unspentSkillPoints);
+
+            try {
+                const allocator = await ensureNpcViewAllocator({
+                    level: safeLevel,
+                    skillNames,
+                    attributePoolBaseValue: isPlayerView && Number.isFinite(unspentAttributePoints)
+                        ? unspentAttributePoints
+                        : null,
+                    skillPoolBaseValue: isPlayerView && Number.isFinite(unspentSkillPoints)
+                        ? unspentSkillPoints
+                        : null,
+                    attributeFloorValues: isPlayerView ? attributeValues : {},
+                    skillFloorValues: isPlayerView ? skillValues : {},
+                    readOnly: !isPlayerView
+                });
+                allocator.applyLoadedValues({
+                    attributes: attributeValues,
+                    skills: skillValues
+                });
+                allocator.refreshPools(safeLevel);
+            } catch (error) {
+                console.warn('Failed to initialize NPC view allocation controls:', error?.message || error);
+                if (isPlayerView) {
+                    updateNpcViewAllocationStatus(error?.message || 'Failed to load point allocation controls.', 'error');
+                }
+            }
 
             const inventoryItems = Array.isArray(latestNpc?.inventory) ? latestNpc.inventory : [];
             const inventoryMap = new Map();
@@ -13353,73 +13622,6 @@
             }
             equipmentEntries.sort((a, b) => a.slotLabel.localeCompare(b.slotLabel));
             renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
-
-            const skillData = [];
-            if (latestNpc?.skills) {
-                if (Array.isArray(latestNpc.skills)) {
-                    latestNpc.skills.forEach(entry => {
-                        if (!entry) return;
-                        if (typeof entry === 'string') {
-                            skillData.push({ name: entry, rank: null });
-                        } else if (entry.name) {
-                            const rankValue = Number.isFinite(Number(entry.rank)) ? Number(entry.rank) : null;
-                            skillData.push({ name: entry.name, rank: rankValue });
-                        }
-                    });
-                } else if (latestNpc.skills && typeof latestNpc.skills === 'object') {
-                    for (const [skillName, rank] of Object.entries(latestNpc.skills)) {
-                        const rankValue = Number.isFinite(Number(rank)) ? Number(rank) : null;
-                        skillData.push({ name: skillName, rank: rankValue });
-                    }
-                }
-            }
-            skillData.sort((a, b) => a.name.localeCompare(b.name));
-            if (npcViewSkills) {
-                npcViewSkills.innerHTML = '';
-                if (!skillData.length) {
-                    npcViewSkills.setAttribute('hidden', '');
-                    if (npcViewSkillsEmpty) {
-                        npcViewSkillsEmpty.removeAttribute('hidden');
-                    }
-                } else {
-                    if (npcViewSkillsEmpty) {
-                        npcViewSkillsEmpty.setAttribute('hidden', '');
-                    }
-                    const table = document.createElement('table');
-                    table.className = 'npc-view-skills-table';
-                    const tbody = document.createElement('tbody');
-                    table.appendChild(tbody);
-
-                    skillData.forEach((entry, index) => {
-                        const row = document.createElement('tr');
-                        if ((index % 2) === 1) {
-                            row.classList.add('is-alt');
-                        }
-
-                        const nameCell = document.createElement('td');
-                        nameCell.className = 'npc-view-skill-name';
-                        nameCell.textContent = entry.name || 'Unknown Skill';
-
-                        const rankCell = document.createElement('td');
-                        rankCell.className = 'npc-view-skill-rank';
-                        if (entry.rank !== null && entry.rank !== undefined) {
-                            const numericRank = Number(entry.rank);
-                            rankCell.textContent = Number.isFinite(numericRank)
-                                ? `${numericRank > 0 ? '+' : ''}${numericRank}`
-                                : `${entry.rank}`;
-                        } else {
-                            rankCell.textContent = '—';
-                        }
-
-                        row.appendChild(nameCell);
-                        row.appendChild(rankCell);
-                        tbody.appendChild(row);
-                    });
-
-                    npcViewSkills.appendChild(table);
-                    npcViewSkills.removeAttribute('hidden');
-                }
-            }
 
             const abilityEntries = [];
             if (Array.isArray(latestNpc?.abilities)) {

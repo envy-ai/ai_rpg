@@ -8,6 +8,11 @@ const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
 const Quest = require('./Quest.js');
+const FormulaEvaluator = require('./public/js/formula-evaluator.js');
+const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
+
+const ATTRIBUTE_POOL_BASELINE_VALUE = 10;
+const SKILL_POOL_BASELINE_VALUE = 1;
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -93,6 +98,7 @@ class Player {
     static #instances = new Set();
     static #dispositionDefinitions = null;
     static #currentPlayerResolver = null;
+    static #pointPoolFormulaRuntime = null;
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
@@ -1466,6 +1472,186 @@ class Player {
         return Math.ceil(availableCount / 5);
     }
 
+    static #getPointPoolFormulaRuntime() {
+        const config = Globals && Globals.config && typeof Globals.config === 'object' ? Globals.config : null;
+        if (!config) {
+            throw new Error('Globals.config must be initialized before evaluating point pool formulas.');
+        }
+        if (!FormulaEvaluator || typeof FormulaEvaluator.compile !== 'function') {
+            throw new Error('FormulaEvaluator.compile is required to evaluate point pool formulas.');
+        }
+        if (typeof FormulaEvaluator.normalizeVariableKey !== 'function') {
+            throw new Error('FormulaEvaluator.normalizeVariableKey is required to evaluate point pool formulas.');
+        }
+
+        const formulas = resolvePointPoolFormulas(config);
+        const cacheKey = JSON.stringify(formulas);
+        if (!Player.#pointPoolFormulaRuntime || Player.#pointPoolFormulaRuntime.cacheKey !== cacheKey) {
+            Player.#pointPoolFormulaRuntime = {
+                cacheKey,
+                normalizeVariableKey: FormulaEvaluator.normalizeVariableKey,
+                attributePoolEvaluator: FormulaEvaluator.compile(formulas.attribute),
+                skillPoolEvaluator: FormulaEvaluator.compile(formulas.skill),
+                maxAttributeEvaluator: FormulaEvaluator.compile(formulas.maxAttribute),
+                maxSkillEvaluator: FormulaEvaluator.compile(formulas.maxSkill)
+            };
+        }
+        return Player.#pointPoolFormulaRuntime;
+    }
+
+    #buildPointPoolVariables(levelOverride = null) {
+        const runtime = Player.#getPointPoolFormulaRuntime();
+        const levelValue = Number.isFinite(levelOverride) ? Number(levelOverride) : Number(this.#level);
+        if (!Number.isFinite(levelValue)) {
+            throw new Error('Character level must be a finite number for point pool evaluation.');
+        }
+
+        const attributeNames = [];
+        const seenAttributeNames = new Set();
+        const addAttributeName = (rawName) => {
+            if (typeof rawName !== 'string') {
+                return;
+            }
+            const trimmed = rawName.trim();
+            if (!trimmed) {
+                return;
+            }
+            const key = trimmed.toLowerCase();
+            if (seenAttributeNames.has(key)) {
+                return;
+            }
+            seenAttributeNames.add(key);
+            attributeNames.push(trimmed);
+        };
+        for (const name of this.getAttributeNames()) {
+            addAttributeName(name);
+        }
+        for (const name of Object.keys(this.#attributes || {})) {
+            addAttributeName(name);
+        }
+
+        const attributeValues = {};
+        const attributeModifiedValues = {};
+        const seenAttributeKeys = new Set();
+        for (const attrName of attributeNames) {
+            const definition = this.getAttributeDefinition(attrName);
+            const fallbackValue = Number.isFinite(definition?.default)
+                ? Number(definition.default)
+                : ATTRIBUTE_POOL_BASELINE_VALUE;
+            const rawValue = this.getAttribute(attrName);
+            const value = Number.isFinite(rawValue) ? Number(rawValue) : fallbackValue;
+            const normalizedKey = runtime.normalizeVariableKey(attrName);
+            if (seenAttributeKeys.has(normalizedKey)) {
+                throw new Error(`Duplicate attribute variable key '${normalizedKey}'.`);
+            }
+            seenAttributeKeys.add(normalizedKey);
+            attributeValues[normalizedKey] = {
+                value,
+                bonus: Math.floor((value - ATTRIBUTE_POOL_BASELINE_VALUE) / 2)
+            };
+            attributeModifiedValues[normalizedKey] = {
+                value,
+                bonus: Math.floor((value - ATTRIBUTE_POOL_BASELINE_VALUE) / 2)
+            };
+        }
+
+        const skillNames = [];
+        const seenSkillNames = new Set();
+        const addSkillName = (rawName) => {
+            if (typeof rawName !== 'string') {
+                return;
+            }
+            const trimmed = rawName.trim();
+            if (!trimmed) {
+                return;
+            }
+            const key = trimmed.toLowerCase();
+            if (seenSkillNames.has(key)) {
+                return;
+            }
+            seenSkillNames.add(key);
+            skillNames.push(trimmed);
+        };
+        if (Player.availableSkills instanceof Map && Player.availableSkills.size > 0) {
+            for (const name of Player.availableSkills.keys()) {
+                addSkillName(name);
+            }
+        }
+        if (this.#skills instanceof Map && this.#skills.size > 0) {
+            for (const name of this.#skills.keys()) {
+                addSkillName(name);
+            }
+        }
+
+        const skillValues = {};
+        const seenSkillKeys = new Set();
+        for (const skillName of skillNames) {
+            const rawValue = this.getSkillValue(skillName);
+            const value = Number.isFinite(rawValue) ? Number(rawValue) : SKILL_POOL_BASELINE_VALUE;
+            const normalizedKey = runtime.normalizeVariableKey(skillName);
+            if (seenSkillKeys.has(normalizedKey)) {
+                throw new Error(`Duplicate skill variable key '${normalizedKey}'.`);
+            }
+            seenSkillKeys.add(normalizedKey);
+            skillValues[normalizedKey] = value;
+        }
+
+        return {
+            level: levelValue,
+            number_of_attributes: Object.keys(attributeValues).length,
+            number_of_skills: Object.keys(skillValues).length,
+            attribute: attributeValues,
+            attribute_modified: attributeModifiedValues,
+            skill: skillValues
+        };
+    }
+
+    #evaluatePointPoolState(levelOverride = null) {
+        const runtime = Player.#getPointPoolFormulaRuntime();
+        const variables = this.#buildPointPoolVariables(levelOverride);
+        const attributePool = runtime.attributePoolEvaluator(variables);
+        const skillPool = runtime.skillPoolEvaluator(variables);
+        const maxAttribute = runtime.maxAttributeEvaluator(variables);
+        const maxSkill = runtime.maxSkillEvaluator(variables);
+
+        if (!Number.isFinite(attributePool)) {
+            throw new Error('Attribute point pool formula must evaluate to a finite number.');
+        }
+        if (!Number.isFinite(skillPool)) {
+            throw new Error('Skill point pool formula must evaluate to a finite number.');
+        }
+        if (!Number.isFinite(maxAttribute)) {
+            throw new Error('Max attribute formula must evaluate to a finite number.');
+        }
+        if (!Number.isFinite(maxSkill)) {
+            throw new Error('Max skill formula must evaluate to a finite number.');
+        }
+
+        let attributeRemaining = attributePool;
+        for (const entry of Object.values(variables.attribute || {})) {
+            const value = Number(entry?.value);
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            attributeRemaining += ATTRIBUTE_POOL_BASELINE_VALUE - value;
+        }
+
+        let skillSpent = 0;
+        for (const value of Object.values(variables.skill || {})) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                continue;
+            }
+            skillSpent += Math.max(0, numeric - SKILL_POOL_BASELINE_VALUE);
+        }
+        const skillRemaining = skillPool - skillSpent;
+
+        return {
+            attributeRemaining,
+            skillRemaining
+        };
+    }
+
     #resolveThing(thingLike) {
         if (!thingLike) {
             return null;
@@ -2815,10 +3001,6 @@ class Player {
         this.#level += count;
 
         this.#health = this.#calculateBaseHealth();
-        const pointsPerLevel = this.#skillPointsPerLevel();
-        if (pointsPerLevel > 0) {
-            this.#unspentSkillPoints += pointsPerLevel;
-        }
         this.#lastUpdated = new Date().toISOString();
 
         if (Player.#levelUpHandler) {
@@ -3597,12 +3779,6 @@ class Player {
             this.#health = Math.max(0, Math.min(newMaxHealth, Math.round(newMaxHealth * healthRatio)));
         }
 
-        const pointsPerLevel = this.#skillPointsPerLevel();
-        if (pointsPerLevel > 0 && oldLevel !== this.#level) {
-            const delta = this.#level - oldLevel;
-            this.#unspentSkillPoints = Math.max(0, this.#unspentSkillPoints + (pointsPerLevel * delta));
-        }
-
         this.#lastUpdated = new Date().toISOString();
         return {
             oldLevel,
@@ -3943,8 +4119,8 @@ class Player {
             dispositionDefinitions: Player.dispositionDefinitions,
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
-            unspentSkillPoints: this.#unspentSkillPoints,
-            unspentAttributePoints: this.#unspentAttributePoints,
+            unspentSkillPoints: this.getUnspentSkillPoints(),
+            unspentAttributePoints: this.getUnspentAttributePoints(),
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
@@ -4002,8 +4178,8 @@ class Player {
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
-            unspentSkillPoints: this.#unspentSkillPoints,
-            unspentAttributePoints: this.#unspentAttributePoints,
+            unspentSkillPoints: this.getUnspentSkillPoints(),
+            unspentAttributePoints: this.getUnspentAttributePoints(),
             statusEffects: this.#getIntrinsicStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
@@ -4599,51 +4775,37 @@ class Player {
     }
 
     getUnspentSkillPoints() {
-        return this.#unspentSkillPoints;
+        const state = this.#evaluatePointPoolState(this.#level);
+        const remaining = Number(state?.skillRemaining);
+        if (!Number.isFinite(remaining)) {
+            throw new Error('Skill point remaining value must be finite.');
+        }
+        return Math.floor(remaining);
     }
 
     getUnspentAttributePoints() {
-        return this.#unspentAttributePoints;
+        const state = this.#evaluatePointPoolState(this.#level);
+        const remaining = Number(state?.attributeRemaining);
+        if (!Number.isFinite(remaining)) {
+            throw new Error('Attribute point remaining value must be finite.');
+        }
+        return Math.floor(remaining);
     }
 
     setUnspentSkillPoints(value) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric) || numeric < 0) {
-            throw new Error('Unspent skill points must be a non-negative number');
-        }
-        this.#unspentSkillPoints = Math.floor(numeric);
-        this.#lastUpdated = new Date().toISOString();
-        return this.#unspentSkillPoints;
+        throw new Error('Unspent skill points are formula-derived and cannot be set directly.');
     }
 
     setUnspentAttributePoints(value) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) {
-            throw new Error('Unspent attribute points must be a finite number');
-        }
-        this.#unspentAttributePoints = Math.floor(numeric);
-        this.#lastUpdated = new Date().toISOString();
-        return this.#unspentAttributePoints;
+        throw new Error('Unspent attribute points are formula-derived and cannot be set directly.');
     }
 
     adjustUnspentSkillPoints(delta) {
-        const numeric = Number(delta);
-        if (!Number.isFinite(numeric)) {
-            return this.#unspentSkillPoints;
-        }
-        this.#unspentSkillPoints = Math.max(0, Math.floor(this.#unspentSkillPoints + numeric));
-        this.#lastUpdated = new Date().toISOString();
-        return this.#unspentSkillPoints;
+        throw new Error('Unspent skill points are formula-derived and cannot be adjusted directly.');
     }
 
     adjustUnspentAttributePoints(delta) {
-        const numeric = Number(delta);
-        if (!Number.isFinite(numeric)) {
-            return this.#unspentAttributePoints;
-        }
-        this.#unspentAttributePoints = Math.floor(this.#unspentAttributePoints + numeric);
-        this.#lastUpdated = new Date().toISOString();
-        return this.#unspentAttributePoints;
+        throw new Error('Unspent attribute points are formula-derived and cannot be adjusted directly.');
     }
 
     increaseSkill(skillName, amount = 1) {
@@ -4663,13 +4825,12 @@ class Player {
             throw new Error('Amount must be a positive integer');
         }
 
-        if (this.#unspentSkillPoints < numeric) {
+        if (this.getUnspentSkillPoints() < numeric) {
             throw new Error('Not enough unspent skill points');
         }
 
         const current = this.#skills.get(trimmed) ?? 0;
         this.#skills.set(trimmed, current + numeric);
-        this.#unspentSkillPoints -= numeric;
         this.#lastUpdated = new Date().toISOString();
         return this.#skills.get(trimmed);
     }

@@ -124,12 +124,11 @@
                     <label for="unspent-skill-points-input">Unspent Skill Points</label>
                     <input type="number"
                            id="unspent-skill-points-input"
-                           name="unspentSkillPoints"
                            value="{{ player.unspentSkillPoints if player else defaultUnspentSkillPoints }}"
                            data-default="{{ player.unspentSkillPoints if player else defaultUnspentSkillPoints }}"
-                           min="0"
-                           form="player-stats-form">
-                    <span class="help-text">Allocate these as your character advances.</span>
+                           readonly
+                           aria-readonly="true">
+                    <span class="help-text">Calculated from level, skills, and formulas.</span>
                 </div>
                 <div class="skills-grid">
                     {% for skill in availableSkills %}

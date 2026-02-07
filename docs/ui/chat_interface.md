@@ -24,6 +24,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
+  - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; NPCs use the same sections in read-only mode.
   - Party summary list.
 
 ## Location name caching
@@ -69,6 +70,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/quest/edit` and `/api/player/quests/:id` (quest edit / abandon).
 - `/api/factions` + `/api/player/factions/:id/standing` (faction panel edits).
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
+- `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
 - `/api/map/region` and `/api/map/world` (map tabs).
 

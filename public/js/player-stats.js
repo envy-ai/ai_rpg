@@ -387,15 +387,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
-    // Extract unspent skill points
-    const unspentField = document.getElementById('unspent-skill-points-input');
-    if (unspentField) {
-      const points = parseInt(unspentField.value);
-      if (!isNaN(points)) {
-        playerData.unspentSkillPoints = points;
-      }
-    }
-
     playerData.statusEffects = collectPlayerStatusEffects();
 
     playerData.calculatedMaxHealth = calculateMaxHealthValue(playerData.level, playerData.attributes, playerHealthAttributeKey);
@@ -526,12 +517,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
-    if (data.unspentSkillPoints !== undefined) {
-      if (isNaN(data.unspentSkillPoints) || data.unspentSkillPoints < 0) {
-        return { valid: false, message: 'Unspent skill points must be zero or greater' };
-      }
-    }
-
     return { valid: true };
   }
 
@@ -602,7 +587,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const unspentField = document.getElementById('unspent-skill-points-input');
     if (unspentField) {
-      const nextValue = playerData.unspentSkillPoints ? parseInt(unspentField.value) : 0;
+      const parsed = Number(playerData.unspentSkillPoints);
+      const nextValue = Number.isFinite(parsed) ? Math.floor(parsed) : 0;
       unspentField.value = nextValue;
       unspentField.dataset.default = nextValue;
     }

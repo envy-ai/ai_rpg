@@ -14,7 +14,8 @@ Update an NPC's core data.
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `unspentSkillPoints`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
+- Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:
 - 200: `{ success: true, npc: NpcProfile, message }`

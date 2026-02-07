@@ -69,7 +69,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `increaseSkill(name, amount)`, `syncSkillsWithAvailable()`.
   - `getAbilities()`, `setAbilities(list)`, `addAbility(ability)`.
 - Progression:
-  - `levelUp(count)`.
+  - `levelUp(count)` (updates level/health only; point pools are formula-derived dynamically).
   - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
   - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
   - `addExperience(amount, raw)`, `addRawExperience(amount)`, `setExperience(value)`.
@@ -112,8 +112,11 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Dispositions: `#normalizeDispositionType`, `#sanitizePersonalityValue`, `#applyHostileDispositionsToCurrentPlayer`.
 - Inventory helpers: `#resolveThing`, `#addInventoryThing`, `#removeInventoryThing`, `#notifyNpcInventoryChange`.
 - XP: `#skillPointsPerLevel`, `#processExperienceOverflow`.
+- Point-pool formulas: `#buildPointPoolVariables`, `#evaluatePointPoolState`.
 
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
+- Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
+- Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) now throw by design.

@@ -69,6 +69,15 @@
   const init = (options = {}) => {
     const enableAttributes = options.enableAttributes !== false;
     const enableSkills = options.enableSkills !== false;
+    const allowSkillAdd = options.allowSkillAdd !== false;
+    const isReadOnly = options.readOnly === true;
+    const suppressPoolWarnings = options.suppressPoolWarnings === true || isReadOnly;
+    const attributePoolBaseValue = Number.isFinite(Number(options.attributePoolBaseValue))
+      ? Number(options.attributePoolBaseValue)
+      : null;
+    const skillPoolBaseValue = Number.isFinite(Number(options.skillPoolBaseValue))
+      ? Number(options.skillPoolBaseValue)
+      : null;
     const onPoolsUpdated = typeof options.onPoolsUpdated === 'function'
       ? options.onPoolsUpdated
       : null;
@@ -122,6 +131,36 @@
       throw new Error('AttributeSkillAllocator requires FormulaEvaluator.collectVariables to be available.');
     }
     const normalizeVariableKey = formulaEvaluator.normalizeVariableKey;
+    const normalizeFloorValues = (rawValues = {}, label = 'floor values') => {
+      if (rawValues === null || rawValues === undefined) {
+        return new Map();
+      }
+      if (!rawValues || typeof rawValues !== 'object' || Array.isArray(rawValues)) {
+        throw new Error(`AttributeSkillAllocator expected ${label} to be an object.`);
+      }
+      const result = new Map();
+      for (const [rawKey, rawValue] of Object.entries(rawValues)) {
+        if (typeof rawKey !== 'string') {
+          continue;
+        }
+        const trimmedKey = rawKey.trim();
+        if (!trimmedKey) {
+          continue;
+        }
+        const normalizedKey = normalizeVariableKey(trimmedKey);
+        if (!normalizedKey) {
+          continue;
+        }
+        const numeric = Number(rawValue);
+        if (!Number.isFinite(numeric)) {
+          continue;
+        }
+        result.set(normalizedKey, numeric);
+      }
+      return result;
+    };
+    const attributeFloorValues = normalizeFloorValues(options.attributeFloorValues, 'attribute floor values');
+    const skillFloorValues = normalizeFloorValues(options.skillFloorValues, 'skill floor values');
 
     const poolFormulas = options.poolFormulas || {};
     const attributePoolFormula = resolveFormulaString(
@@ -174,11 +213,13 @@
         values: new Map(),
         inputElements: new Map(),
         modifierElements: new Map(),
+        floorValues: new Map(),
         poolRemaining: 0
       },
       skills: {
         names: [],
         values: new Map(),
+        floorValues: new Map(),
         pointsPerLevel: 0,
         poolRemaining: 0
       }
@@ -205,6 +246,24 @@
         el.style.display = 'block';
         el.style.visibility = 'hidden';
       }
+    };
+
+    const getAttributeFloorValue = (attrKey) => {
+      if (typeof attrKey !== 'string' || !attrKey.trim()) {
+        return null;
+      }
+      const normalized = normalizeVariableKey(attrKey);
+      const floor = state.attributes.floorValues.get(normalized);
+      return Number.isFinite(floor) ? floor : null;
+    };
+
+    const getSkillFloorValue = (skillName) => {
+      if (typeof skillName !== 'string' || !skillName.trim()) {
+        return null;
+      }
+      const normalized = normalizeVariableKey(skillName);
+      const floor = state.skills.floorValues.get(normalized);
+      return Number.isFinite(floor) ? floor : null;
     };
 
     const getLevelValue = () => {
@@ -317,6 +376,19 @@
       if (!enableAttributes) {
         return 0;
       }
+      if (Number.isFinite(attributePoolBaseValue)) {
+        let spent = 0;
+        for (const [key, value] of state.attributes.values.entries()) {
+          const numeric = Number(value);
+          if (!Number.isFinite(numeric)) {
+            continue;
+          }
+          const floorValue = getAttributeFloorValue(key);
+          const baseline = Number.isFinite(floorValue) ? floorValue : attributeDefaultValue;
+          spent += Math.max(0, numeric - baseline);
+        }
+        return attributePoolBaseValue - spent;
+      }
       const attrCount = state.attributes.definitions.length
         || state.attributes.values.size
         || (attributeGrid ? attributeGrid.querySelectorAll('.attribute-group').length : 0);
@@ -347,6 +419,19 @@
       if (!enableSkills || !state.skills.names.length) {
         return 0;
       }
+      if (Number.isFinite(skillPoolBaseValue)) {
+        let spent = 0;
+        for (const [name, value] of state.skills.values.entries()) {
+          const numeric = Number(value);
+          if (!Number.isFinite(numeric)) {
+            continue;
+          }
+          const floorValue = getSkillFloorValue(name);
+          const baseline = Number.isFinite(floorValue) ? floorValue : 1;
+          spent += Math.max(0, numeric - baseline);
+        }
+        return skillPoolBaseValue - spent;
+      }
       const hasOverride = levelOverride !== null && levelOverride !== undefined && levelOverride !== '';
       const levelValue = hasOverride && Number.isFinite(Number(levelOverride))
         ? Number(levelOverride)
@@ -370,6 +455,22 @@
     const updatePoolWarnings = () => {
       const attrPool = Number(state.attributes.poolRemaining);
       const skillPool = Number(state.skills.poolRemaining);
+
+      if (suppressPoolWarnings) {
+        if (enableAttributes) {
+          setPointsWarning(attributePointsWarning, '');
+        }
+        if (enableSkills) {
+          setPointsWarning(skillPointsWarning, '');
+        }
+        if (onPoolsUpdated) {
+          onPoolsUpdated({
+            attributePool: enableAttributes ? state.attributes.poolRemaining : null,
+            skillPool: enableSkills ? state.skills.poolRemaining : null
+          });
+        }
+        return;
+      }
 
       if (enableAttributes) {
         if (Number.isFinite(attrPool) && attrPool < 0) {
@@ -441,9 +542,37 @@
 
     const addSkillInputs = normalizeElements(options.addSkillInputs);
     const addSkillButtons = normalizeElements(options.addSkillButtons);
+    if (!allowSkillAdd || isReadOnly) {
+      addSkillInputs.forEach(input => {
+        if (input && typeof input.closest === 'function') {
+          const group = input.closest('.form-group');
+          if (group) {
+            group.setAttribute('hidden', '');
+          }
+        }
+        if (input) {
+          input.disabled = true;
+        }
+      });
+      addSkillButtons.forEach(button => {
+        if (button && typeof button.closest === 'function') {
+          const group = button.closest('.form-group');
+          if (group) {
+            group.setAttribute('hidden', '');
+          }
+        }
+        if (button) {
+          button.disabled = true;
+        }
+      });
+    }
 
     const handleAttributeChange = (attrKey, input) => {
       if (!input || !attrKey) {
+        return;
+      }
+      if (isReadOnly) {
+        input.value = input.dataset.lastValue || input.value;
         return;
       }
       const previousValue = Number(input.dataset.lastValue);
@@ -454,8 +583,15 @@
       }
       const levelValue = getLevelValue();
       const maxAttribute = evaluateMaxAttribute(levelValue);
-      if (nextValue < attributeMinValue || nextValue > maxAttribute) {
-        setPointsWarning(attributePointsWarning, `Attributes must stay between ${attributeMinValue} and ${maxAttribute}.`);
+      const floorValue = getAttributeFloorValue(attrKey);
+      const minAllowed = Number.isFinite(floorValue)
+        ? Math.max(attributeMinValue, floorValue)
+        : attributeMinValue;
+      const maxAllowed = Number.isFinite(maxAttribute)
+        ? Math.max(maxAttribute, minAllowed)
+        : minAllowed;
+      if (nextValue < minAllowed || nextValue > maxAllowed) {
+        setPointsWarning(attributePointsWarning, `Attributes must stay between ${minAllowed} and ${maxAllowed}.`);
         input.value = Number.isFinite(previousValue) ? previousValue : attributeDefaultValue;
         return;
       }
@@ -477,6 +613,7 @@
       state.attributes.values = new Map();
       state.attributes.inputElements = new Map();
       state.attributes.modifierElements = new Map();
+      state.attributes.floorValues = new Map();
       attributeGrid.innerHTML = '';
 
       definitions.forEach(def => {
@@ -510,17 +647,28 @@
         input.id = `attr-${attrKey}`;
         input.name = `attributes.${attrKey}`;
         input.className = 'attribute-input';
-        input.min = String(attributeMinValue);
         const maxAttribute = evaluateMaxAttribute(getLevelValue());
-        input.max = String(Math.floor(maxAttribute));
-        input.value = String(attributeDefaultValue);
-        input.dataset.lastValue = String(attributeDefaultValue);
-        input.addEventListener('change', () => handleAttributeChange(attrKey, input));
+        const normalizedAttrKey = normalizeVariableKey(attrKey);
+        const floorValue = attributeFloorValues.get(normalizedAttrKey);
+        const minAllowed = Number.isFinite(floorValue)
+          ? Math.max(attributeMinValue, floorValue)
+          : attributeMinValue;
+        const maxAllowed = Number.isFinite(maxAttribute)
+          ? Math.max(Math.floor(maxAttribute), Math.floor(minAllowed))
+          : Math.floor(minAllowed);
+        input.min = String(minAllowed);
+        input.max = String(maxAllowed);
+        input.value = String(Number.isFinite(floorValue) ? floorValue : attributeDefaultValue);
+        input.dataset.lastValue = String(input.value);
+        input.disabled = isReadOnly;
+        if (!isReadOnly) {
+          input.addEventListener('change', () => handleAttributeChange(attrKey, input));
+        }
 
         const modifier = document.createElement('span');
         modifier.className = 'attribute-modifier';
         modifier.dataset.attr = attrKey;
-        modifier.textContent = formatAttributeModifier(attributeDefaultValue);
+        modifier.textContent = formatAttributeModifier(Number(input.value));
 
         inputGroup.appendChild(input);
         inputGroup.appendChild(modifier);
@@ -534,7 +682,8 @@
         group.appendChild(help);
 
         attributeGrid.appendChild(group);
-        state.attributes.values.set(attrKey, attributeDefaultValue);
+        state.attributes.floorValues.set(normalizedAttrKey, Number.isFinite(floorValue) ? floorValue : attributeMinValue);
+        state.attributes.values.set(attrKey, Number(input.value));
         state.attributes.inputElements.set(attrKey, input);
         state.attributes.modifierElements.set(attrKey, modifier);
       });
@@ -548,12 +697,21 @@
       if (!state.skills.values.has(name)) {
         return;
       }
+      if (isReadOnly) {
+        return;
+      }
       const current = Number(state.skills.values.get(name));
       const next = current + delta;
       const maxSkill = evaluateMaxSkill(getLevelValue());
-      const maxSkillValue = Math.floor(maxSkill);
-      if (delta < 0 && current <= 1) {
-        setPointsWarning(skillPointsWarning, 'Skills cannot go below rank 1.');
+      const floorValue = getSkillFloorValue(name);
+      const minAllowed = Number.isFinite(floorValue)
+        ? Math.max(1, floorValue)
+        : 1;
+      const maxSkillValue = Number.isFinite(maxSkill)
+        ? Math.max(Math.floor(maxSkill), Math.floor(minAllowed))
+        : Math.floor(minAllowed);
+      if (delta < 0 && current <= minAllowed) {
+        setPointsWarning(skillPointsWarning, `Skills cannot go below rank ${minAllowed}.`);
         return;
       }
       if (delta > 0 && next > maxSkillValue) {
@@ -576,6 +734,7 @@
       const names = normalizeSkillList(skillNames);
       names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       state.skills.names = names;
+      state.skills.floorValues = new Map();
       const valuesMap = new Map();
       if (existingValues instanceof Map) {
         for (const [key, value] of existingValues.entries()) {
@@ -598,8 +757,16 @@
       skillsSection.style.display = '';
 
       names.forEach(name => {
-        const existing = valuesMap.has(name) ? valuesMap.get(name) : 1;
-        const safeValue = Number.isFinite(existing) ? existing : 1;
+        const normalizedName = normalizeVariableKey(name);
+        const floorValue = skillFloorValues.get(normalizedName);
+        const minAllowed = Number.isFinite(floorValue)
+          ? Math.max(1, floorValue)
+          : 1;
+        state.skills.floorValues.set(normalizedName, minAllowed);
+        const existing = valuesMap.has(name) ? valuesMap.get(name) : minAllowed;
+        const safeValue = Number.isFinite(existing)
+          ? Math.max(existing, minAllowed)
+          : minAllowed;
         state.skills.values.set(name, safeValue);
 
         const card = document.createElement('div');
@@ -618,7 +785,12 @@
         removeBtn.className = 'btn btn-secondary small skill-remove-btn';
         removeBtn.textContent = '✕';
         removeBtn.setAttribute('aria-label', `Remove ${name}`);
-        removeBtn.addEventListener('click', () => removeSkill(name));
+        if (!allowSkillAdd || isReadOnly) {
+          removeBtn.disabled = true;
+          removeBtn.setAttribute('hidden', '');
+        } else {
+          removeBtn.addEventListener('click', () => removeSkill(name));
+        }
         header.appendChild(removeBtn);
 
         const valueRow = document.createElement('div');
@@ -639,14 +811,20 @@
         decBtn.className = 'btn btn-secondary small';
         decBtn.textContent = '➖';
         decBtn.setAttribute('aria-label', `Decrease ${name}`);
-        decBtn.addEventListener('click', () => adjustSkillValue(name, -1));
+        decBtn.disabled = isReadOnly;
+        if (!isReadOnly) {
+          decBtn.addEventListener('click', () => adjustSkillValue(name, -1));
+        }
 
         const incBtn = document.createElement('button');
         incBtn.type = 'button';
         incBtn.className = 'btn btn-secondary small';
         incBtn.textContent = '➕';
         incBtn.setAttribute('aria-label', `Increase ${name}`);
-        incBtn.addEventListener('click', () => adjustSkillValue(name, 1));
+        incBtn.disabled = isReadOnly;
+        if (!isReadOnly) {
+          incBtn.addEventListener('click', () => adjustSkillValue(name, 1));
+        }
 
         buttonGroup.appendChild(decBtn);
         buttonGroup.appendChild(incBtn);
@@ -671,6 +849,10 @@
     };
 
     const addSkill = (rawName) => {
+      if (!allowSkillAdd || isReadOnly) {
+        setSkillWarning('Adding skills is disabled.');
+        return false;
+      }
       if (!rawName) {
         setSkillWarning('Enter a skill name to add.');
         return false;
@@ -695,6 +877,10 @@
     };
 
     const removeSkill = (skillName) => {
+      if (!allowSkillAdd || isReadOnly) {
+        setSkillWarning('Removing skills is disabled.');
+        return;
+      }
       if (isSkillReferenced(skillName)) {
         setSkillWarning('This skill is referenced by a formula and cannot be removed.');
         return;
@@ -732,22 +918,24 @@
       }
     };
 
-    addSkillInputs.forEach(input => {
-      input.addEventListener('input', () => syncAddSkillInputs(input));
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          handleAddSkillInput(input);
-        }
+    if (allowSkillAdd && !isReadOnly) {
+      addSkillInputs.forEach(input => {
+        input.addEventListener('input', () => syncAddSkillInputs(input));
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            handleAddSkillInput(input);
+          }
+        });
       });
-    });
 
-    addSkillButtons.forEach((button, index) => {
-      button.addEventListener('click', () => {
-        const input = addSkillInputs[index] || addSkillInputs[0];
-        handleAddSkillInput(input);
+      addSkillButtons.forEach((button, index) => {
+        button.addEventListener('click', () => {
+          const input = addSkillInputs[index] || addSkillInputs[0];
+          handleAddSkillInput(input);
+        });
       });
-    });
+    }
 
     const handleLevelChange = () => {
       if (!levelField) {
@@ -761,16 +949,22 @@
         const maxAttribute = evaluateMaxAttribute(nextLevel);
         const maxAttributeValue = Math.floor(maxAttribute);
         attributeGrid.querySelectorAll('.attribute-input').forEach(input => {
-          input.max = String(maxAttributeValue);
+          const key = input.name?.replace(/^attributes\./, '') || input.id?.replace(/^attr-/, '');
+          const floorValue = key ? getAttributeFloorValue(key) : null;
+          const minAllowed = Number.isFinite(floorValue)
+            ? Math.max(attributeMinValue, floorValue)
+            : attributeMinValue;
+          const effectiveMax = Math.max(maxAttributeValue, Math.floor(minAllowed));
+          input.min = String(minAllowed);
+          input.max = String(effectiveMax);
           const current = Number(input.value);
-          if (Number.isFinite(current) && current > maxAttributeValue) {
-            input.value = String(maxAttributeValue);
-            const key = input.name?.replace(/^attributes\./, '') || input.id?.replace(/^attr-/, '');
+          if (Number.isFinite(current) && current > effectiveMax) {
+            input.value = String(effectiveMax);
             if (key) {
-              state.attributes.values.set(key, maxAttributeValue);
+              state.attributes.values.set(key, effectiveMax);
               const modifierEl = attributeGrid.querySelector(`.attribute-modifier[data-attr="${escapeSelector(key)}"]`);
               if (modifierEl) {
-                modifierEl.textContent = formatAttributeModifier(maxAttributeValue);
+                modifierEl.textContent = formatAttributeModifier(effectiveMax);
               }
             }
           }
@@ -830,7 +1024,14 @@
         const maxAttribute = evaluateMaxAttribute(getLevelValue());
         const maxAttributeValue = Math.floor(maxAttribute);
         attributeGrid.querySelectorAll('.attribute-input').forEach(input => {
-          input.max = String(maxAttributeValue);
+          const key = input.name?.replace(/^attributes\./, '') || input.id?.replace(/^attr-/, '');
+          const floorValue = key ? getAttributeFloorValue(key) : null;
+          const minAllowed = Number.isFinite(floorValue)
+            ? Math.max(attributeMinValue, floorValue)
+            : attributeMinValue;
+          const effectiveMax = Math.max(maxAttributeValue, Math.floor(minAllowed));
+          input.min = String(minAllowed);
+          input.max = String(effectiveMax);
         });
       }
       const initialLevel = getLevelValue();
@@ -996,21 +1197,27 @@
 
             const rawValue = matchedEntry ? Number(matchedEntry.value) : NaN;
             const isValid = Number.isFinite(rawValue)
-              && rawValue >= attributeMinValue
-              && rawValue <= maxAttributeValue;
+              && rawValue >= attributeMinValue;
             const nextValue = isValid ? rawValue : attributeDefaultValue;
+            const floorValue = getAttributeFloorValue(attributeKey);
+            const minAllowed = Number.isFinite(floorValue)
+              ? Math.max(attributeMinValue, floorValue)
+              : attributeMinValue;
+            const clampedValue = Math.max(nextValue, minAllowed);
+            const effectiveMax = Math.max(maxAttributeValue, Math.floor(minAllowed), Math.floor(clampedValue));
 
-            state.attributes.values.set(attributeKey, nextValue);
+            state.attributes.values.set(attributeKey, clampedValue);
 
             const input = state.attributes.inputElements.get(attributeKey);
             if (input) {
-              input.max = String(maxAttributeValue);
-              input.value = String(nextValue);
-              input.dataset.lastValue = String(nextValue);
+              input.min = String(minAllowed);
+              input.max = String(effectiveMax);
+              input.value = String(clampedValue);
+              input.dataset.lastValue = String(clampedValue);
             }
             const modifier = state.attributes.modifierElements.get(attributeKey);
             if (modifier) {
-              modifier.textContent = formatAttributeModifier(nextValue);
+              modifier.textContent = formatAttributeModifier(clampedValue);
             }
 
             if (matchedEntry && isValid) {
@@ -1028,8 +1235,6 @@
         }
 
         if (enableSkills) {
-          const maxSkill = evaluateMaxSkill(levelValue);
-          const maxSkillValue = Math.floor(maxSkill);
           const matchedSkillKeys = new Set();
           const nextSkillValues = new Map();
 
@@ -1040,10 +1245,13 @@
               matchedSkillKeys.add(normalizedSkillName);
             }
             const rawValue = incoming ? Number(incoming.value) : NaN;
+            const floorValue = getSkillFloorValue(skillName);
+            const minAllowed = Number.isFinite(floorValue)
+              ? Math.max(1, floorValue)
+              : 1;
             const isValid = Number.isFinite(rawValue)
-              && rawValue >= 1
-              && rawValue <= maxSkillValue;
-            const nextValue = isValid ? rawValue : 1;
+              && rawValue >= 1;
+            const nextValue = isValid ? Math.max(rawValue, minAllowed) : minAllowed;
             nextSkillValues.set(skillName, nextValue);
             if (incoming && isValid) {
               summary.skills.applied.push(skillName);

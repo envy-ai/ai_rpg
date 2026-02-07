@@ -746,12 +746,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const pools = allocator ? allocator.refreshPools() : { attributePool: null, skillPool: null };
       const attributePool = pools.attributePool;
       const skillPool = pools.skillPool;
-      const unspentAttributePoints = allocator && allocator.hasAttributes()
-        ? attributePool
-        : null;
-      const unspentSkillPoints = allocator && allocator.hasSkills()
-        ? skillPool
-        : null;
       if ((Number.isFinite(attributePool) && attributePool < 0) || (Number.isFinite(skillPool) && skillPool < 0)) {
         return;
       }
@@ -788,12 +782,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (Object.keys(skills).length > 0) {
           payload.skills = skills;
-        }
-        if (Number.isFinite(unspentSkillPoints)) {
-          payload.unspentSkillPoints = unspentSkillPoints;
-        }
-        if (Number.isFinite(unspentAttributePoints)) {
-          payload.unspentAttributePoints = unspentAttributePoints;
         }
 
         fetch('/api/new-game', {

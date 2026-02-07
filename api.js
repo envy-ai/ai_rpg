@@ -11841,7 +11841,6 @@ module.exports = function registerApiRoutes(scope) {
                     attributes,
                     skills: skillValues,
                     abilities,
-                    unspentSkillPoints,
                     currency,
                     experience,
                     isDead,
@@ -11863,6 +11862,13 @@ module.exports = function registerApiRoutes(scope) {
                             error: validationError?.message || 'Invalid faction value'
                         });
                     }
+                }
+
+                if (Object.prototype.hasOwnProperty.call(body, 'unspentSkillPoints')) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'unspentSkillPoints is formula-derived and cannot be set directly.'
+                    });
                 }
 
                 if (typeof name === 'string' && name.trim()) {
@@ -12059,17 +12065,6 @@ module.exports = function registerApiRoutes(scope) {
                         npc.setStatusEffects(statusEffects);
                     } catch (statusError) {
                         console.warn(`Failed to update status effects for NPC ${npcId}:`, statusError.message);
-                    }
-                }
-
-                if (unspentSkillPoints !== undefined) {
-                    const parsedPoints = Number.parseInt(unspentSkillPoints, 10);
-                    if (Number.isFinite(parsedPoints) && parsedPoints >= 0) {
-                        try {
-                            npc.setUnspentSkillPoints(parsedPoints);
-                        } catch (uspError) {
-                            console.warn(`Failed to set unspent skill points for NPC ${npcId}:`, uspError.message);
-                        }
                     }
                 }
 
@@ -13023,6 +13018,7 @@ module.exports = function registerApiRoutes(scope) {
         // Update player stats
         app.post('/api/player/update-stats', (req, res) => {
             try {
+                const body = req.body || {};
                 const {
                     name,
                     description,
@@ -13030,15 +13026,21 @@ module.exports = function registerApiRoutes(scope) {
                     health,
                     attributes,
                     skills: skillValues,
-                    unspentSkillPoints,
-                    unspentAttributePoints,
                     statusEffects
-                } = req.body;
+                } = body;
 
                 if (!currentPlayer) {
                     return res.status(404).json({
                         success: false,
                         error: 'No current player found. Please create a player first.'
+                    });
+                }
+
+                if (Object.prototype.hasOwnProperty.call(body, 'unspentSkillPoints')
+                    || Object.prototype.hasOwnProperty.call(body, 'unspentAttributePoints')) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Unspent points are formula-derived and cannot be set directly.'
                     });
                 }
 
@@ -13077,8 +13079,17 @@ module.exports = function registerApiRoutes(scope) {
                 // Update attributes
                 if (attributes && typeof attributes === 'object') {
                     for (const [attrName, value] of Object.entries(attributes)) {
-                        if (!isNaN(value) && value >= 3 && value <= 18) {
-                            currentPlayer.setAttribute(attrName, parseInt(value));
+                        const numeric = Number(value);
+                        if (!Number.isFinite(numeric)) {
+                            continue;
+                        }
+                        try {
+                            currentPlayer.setAttribute(attrName, numeric);
+                        } catch (attributeError) {
+                            return res.status(400).json({
+                                success: false,
+                                error: attributeError.message
+                            });
                         }
                     }
                 }
@@ -13091,15 +13102,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
-                    currentPlayer.setUnspentSkillPoints(parseInt(unspentSkillPoints));
-                }
-
-                if (unspentAttributePoints !== undefined && !isNaN(unspentAttributePoints)) {
-                    currentPlayer.setUnspentAttributePoints(Number.parseInt(unspentAttributePoints, 10));
-                }
-
-                if (Object.prototype.hasOwnProperty.call(req.body, 'statusEffects')) {
+                if (Object.prototype.hasOwnProperty.call(body, 'statusEffects')) {
                     if (Array.isArray(statusEffects)) {
                         try {
                             currentPlayer.setStatusEffects(statusEffects);
@@ -13191,6 +13194,7 @@ module.exports = function registerApiRoutes(scope) {
         // Create new player from stats form
         app.post('/api/player/create-from-stats', async (req, res) => {
             try {
+                const body = req.body || {};
                 const {
                     name,
                     description,
@@ -13198,10 +13202,8 @@ module.exports = function registerApiRoutes(scope) {
                     health,
                     attributes,
                     skills: skillValues,
-                    unspentSkillPoints,
-                    unspentAttributePoints,
                     statusEffects
-                } = req.body;
+                } = body;
 
                 // Validate required fields
                 if (!name || !name.trim()) {
@@ -13215,6 +13217,14 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({
                         success: false,
                         error: 'statusEffects must be an array when provided'
+                    });
+                }
+
+                if (Object.prototype.hasOwnProperty.call(body, 'unspentSkillPoints')
+                    || Object.prototype.hasOwnProperty.call(body, 'unspentAttributePoints')) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Unspent points are formula-derived and cannot be set directly.'
                     });
                 }
 
@@ -13242,14 +13252,6 @@ module.exports = function registerApiRoutes(scope) {
                             playerData.skills[skillName] = Math.max(0, parseInt(value));
                         }
                     }
-                }
-
-                if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
-                    playerData.unspentSkillPoints = Math.max(0, parseInt(unspentSkillPoints));
-                }
-
-                if (unspentAttributePoints !== undefined && !isNaN(unspentAttributePoints)) {
-                    playerData.unspentAttributePoints = Number.parseInt(unspentAttributePoints, 10);
                 }
 
                 if (Array.isArray(statusEffects)) {
@@ -19772,9 +19774,7 @@ module.exports = function registerApiRoutes(scope) {
                     startingLocation,
                     startingCurrency: startingCurrencyInput,
                     attributes: attributesInput,
-                    skills: skillsInput,
-                    unspentSkillPoints: unspentSkillPointsInput,
-                    unspentAttributePoints: unspentAttributePointsInput
+                    skills: skillsInput
                 } = body;
                 const hasNumSkills = Object.prototype.hasOwnProperty.call(body, 'numSkills');
                 const hasExistingSkills = Object.prototype.hasOwnProperty.call(body, 'existingSkills');
@@ -19783,6 +19783,15 @@ module.exports = function registerApiRoutes(scope) {
                     if (hasNumSkills) disallowed.push('numSkills');
                     if (hasExistingSkills) disallowed.push('existingSkills');
                     const errorMessage = `New game requests no longer accept ${disallowed.join(', ')}. Configure skills in Game Settings instead.`;
+                    reportError(errorMessage);
+                    return res.status(400).json({
+                        success: false,
+                        error: errorMessage
+                    });
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'unspentSkillPoints')
+                    || Object.prototype.hasOwnProperty.call(body, 'unspentAttributePoints')) {
+                    const errorMessage = 'New game requests cannot set unspent points directly; they are formula-derived from level/attributes/skills.';
                     reportError(errorMessage);
                     return res.status(400).json({
                         success: false,
@@ -19964,8 +19973,6 @@ module.exports = function registerApiRoutes(scope) {
                 const customSkills = skillsInput && typeof skillsInput === 'object' && !Array.isArray(skillsInput)
                     ? skillsInput
                     : null;
-                const parsedUnspentSkillPoints = Number(unspentSkillPointsInput);
-                const parsedUnspentAttributePoints = Number(unspentAttributePointsInput);
                 const playerOptions = {
                     name: resolvedPlayerName,
                     description: resolvedPlayerDescription,
@@ -19984,12 +19991,6 @@ module.exports = function registerApiRoutes(scope) {
                 };
                 if (customSkills) {
                     playerOptions.skills = customSkills;
-                }
-                if (Number.isFinite(parsedUnspentSkillPoints)) {
-                    playerOptions.unspentSkillPoints = parsedUnspentSkillPoints;
-                }
-                if (Number.isFinite(parsedUnspentAttributePoints)) {
-                    playerOptions.unspentAttributePoints = parsedUnspentAttributePoints;
                 }
                 const newPlayer = new Player(playerOptions);
                 if (typeof newPlayer.syncSkillsWithAvailable === 'function') {

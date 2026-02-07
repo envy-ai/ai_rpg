@@ -17,7 +17,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
 - [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove, remote new-game form settings save/load, blank-safe attribute alias matching during load, master-detail settings manager layout with tabbed editor sections and search/sort library controls, settings rename/new-id behavior, persistent settings delete behavior, shared allocation partials, and allocation pool behavior/timing).
-- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, player-point warning indicator behavior, LLM modal submit behavior, and location exit caching.
+- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, player-point warning indicator behavior, player-view modal point allocation flow, LLM modal submit behavior, and location exit caching.
 - [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details and attribute bonus visibility), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
 - [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus notable UI class hooks like skill allocation controls and visibility-based warning spacing).
@@ -36,7 +36,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [api/map.md](api/map.md) — Legacy index for map endpoints; points to newer docs.
 - [api/misc.md](api/misc.md) — Misc/utility endpoints (currently the image-gen feature flag).
 - [api/npcs.md](api/npcs.md) — NPC endpoints; references shared payloads in `docs/api/common.md`.
-- [api/players.md](api/players.md) — Player and party endpoints (including admin stats updates with optional unspent attribute points); references shared payloads in `docs/api/common.md`.
+- [api/players.md](api/players.md) — Player and party endpoints (including admin stats updates with optional unspent attribute points and definition-based attribute validation in `/api/player/update-stats`); references shared payloads in `docs/api/common.md`.
 - [api/quests.md](api/quests.md) — Quest endpoints; references shared payloads in `docs/api/common.md`.
 - [api/regions.md](api/regions.md) — Region endpoints; references shared payloads in `docs/api/common.md`.
 - [api/serialization.md](api/serialization.md) — Legacy index for shared shapes; points to `docs/api/common.md` as authoritative.
@@ -56,7 +56,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/ModLoader.md](classes/ModLoader.md) — Mod loader for `mods/` with per-mod scope helpers, configs, and client asset discovery.
 - [classes/NanoGPTImageClient.md](classes/NanoGPTImageClient.md) — NanoGPT image generation client that saves returned base64 images to disk.
 - [classes/OpenAIImageClient.md](classes/OpenAIImageClient.md) — OpenAI image generation client that saves returned base64 images to disk.
-- [classes/Player.md](classes/Player.md) — Player/NPC model (attributes, skills, unspent skill/attribute points, inventory, gear, needs, quests) with shared definitions.
+- [classes/Player.md](classes/Player.md) — Player/NPC model (attributes, skills, unspent skill/attribute points, inventory, gear, needs, quests) with shared definitions and formula-derived live point pools.
 - [classes/Quest.md](classes/Quest.md) — Quest model with objectives/rewards/giver info, completion state, and static indexes.
 - [classes/QuestConfirmationManager.md](classes/QuestConfirmationManager.md) — Manages async quest confirmations per client via `Globals.emitToClient`.
 - [classes/RealtimeHub.md](classes/RealtimeHub.md) — WebSocket hub for realtime updates with targeted send, broadcast, and typed emits.

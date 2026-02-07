@@ -12220,11 +12220,6 @@ function applyNpcSkillAllocations(npc, assignment, { points = null, maxSkill = n
         }
     }
 
-    if (!hasExplicitBudget && spent > 0 && typeof npc.setUnspentSkillPoints === 'function') {
-        const remainingPoints = Math.max(0, totalPoints - spent);
-        npc.setUnspentSkillPoints(remainingPoints);
-    }
-
     return spent;
 }
 
@@ -20599,6 +20594,7 @@ app.get('/', (req, res) => {
         player: currentPlayer ? currentPlayer.getStatus() : null,
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,
+        pointPoolFormulas: resolvePointPoolFormulas(config),
         rarityDefinitions,
         needBarDefinitions: Player.getNeedBarDefinitionsForContext(),
         checkMovePlausibility: Globals.config.check_move_plausibility || 'never',

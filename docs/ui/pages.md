@@ -8,7 +8,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Styles: `public/css/main.css`, `public/css/map.css`, plus mod styles if present.
 - Scripts (in order):
   - Vendor: `public/vendor/fitty.min.js`, `public/vendor/cytoscape*.js`, `public/vendor/layout-base.js`, `public/vendor/cose-base.js`, `public/vendor/nunjucks.js`, `public/vendor/markdown-it.min.js`.
-  - App: `public/js/fitty-init.js`, `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
+  - App: `public/js/fitty-init.js`, `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
   - Optional mod scripts from `ModLoader` (injected by `server.js`).
 - Inline script responsibilities:
   - Tab switching (`initTabs`), map triggers, party/faction/quest panels.
@@ -16,8 +16,10 @@ This page maps routes to templates and the client scripts/styles they load.
   - Image rendering helpers (`renderEntityImage`) and tooltip helpers.
 - Data injected by `server.js`:
   - `chatHistory`, `player`, `availableSkills`, `currentSetting`.
+  - `pointPoolFormulas`.
   - `rarityDefinitions`, `needBarDefinitions`, `checkMovePlausibility`.
   - `baseWeaponDamage`, `clientMessageHistory`, `saveMetadata`.
+- Notes: the player "View" modal reuses shared allocation partials for attributes/skills; NPCs use read-only controls, while players can spend points and submit through `/api/player/update-stats` (negative pools blocked, positive pools confirmed). Unspent pools are computed server-side from submitted level/attributes/skills.
 
 ## New game
 - Route: `/new-game`
@@ -31,7 +33,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: skills are pulled from the active setting (`defaultExistingSkills`) and displayed for allocation; the New Game form can add or remove skills and recalculates pools immediately.
 - Notes: attribute/skill allocation markup is included via `views/_includes/attribute-allocation.njk` and `views/_includes/skill-allocation.njk`.
 - Notes: skills are sorted alphabetically in the New Game allocation list.
-- Notes: the New Game form lets players adjust attribute and skill allocations via point pools; base pool formulas and max caps come from `config.formulas.character_creation` and are then adjusted by refunds/spend (attributes below/above 10, skills above rank 1). Pools can go negative but the submit button disables until overspending is resolved, and unspent points trigger a confirmation prompt.
+- Notes: the New Game form lets players adjust attribute and skill allocations via point pools; base pool formulas and max caps come from `config.formulas.character_creation` and are then adjusted by refunds/spend (attributes below/above 10, skills above rank 1). Pools can go negative but the submit button disables until overspending is resolved, and unspent points trigger a confirmation prompt. The form submits level/attributes/skills only; unspent values are derived server-side.
 - Notes: pool formulas are evaluated after attribute definitions load so `attribute.*`/`skill.*` variables are available; evaluation errors surface in the warning area and disable form submission.
 - Notes: the New Game form includes `Save Form Settings` / `Load Form Settings` controls backed by `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`.
 - Notes: loading applies attributes/skills on a best-effort name match; any current attribute/skill without a matching loaded entry resets to its default value (attribute default stat, skill rank 1).

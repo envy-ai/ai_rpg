@@ -5697,6 +5697,60 @@ body.modal-open {
   color: rgba(226, 232, 240, 0.92);
 }
 
+.npc-view-section .config-section {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.npc-view-section .config-section h2 {
+  margin: 0 0 12px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  font-size: 1rem;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.npc-view-section .config-section .form-group {
+  margin-bottom: 12px;
+}
+
+.npc-view-section .config-section .form-group:last-child {
+  margin-bottom: 0;
+}
+
+#npcViewAttributeGrid,
+#npcViewSkillsGrid {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.npc-view-allocation-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.npc-view-allocation-status {
+  min-height: 20px;
+  color: rgba(226, 232, 240, 0.86);
+}
+
+.npc-view-allocation-status.is-error {
+  color: #f87171;
+}
+
+.npc-view-allocation-status.is-success {
+  color: #34d399;
+}
+
+.npc-view-allocation-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .npc-view-attributes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

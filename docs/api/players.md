@@ -121,7 +121,9 @@ Response:
 Update player stats (admin-style edit).
 
 Request:
-- Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `unspentAttributePoints`, `statusEffects`
+- Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `statusEffects`
+- Rejects `unspentSkillPoints` and `unspentAttributePoints` (400) because pools are formula-derived at read time.
+- Attribute updates are validated by `Player.setAttribute(...)` definitions; the route no longer hard-limits values to a fixed `3..18` range.
 
 Response:
 - 200: `{ success: true, player: NpcProfile, message, imageNeedsUpdate }`
@@ -141,7 +143,8 @@ Response:
 Create a new player from a stats form and set as current.
 
 Request:
-- Body requires `name`; supports `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `unspentAttributePoints`, `statusEffects`
+- Body requires `name`; supports `description`, `level`, `health`, `attributes`, `skills`, `statusEffects`
+- Rejects `unspentSkillPoints` and `unspentAttributePoints` (400) because pools are formula-derived at read time.
 
 Response:
 - 200: `{ success: true, player: NpcProfile, message }`

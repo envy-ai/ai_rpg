@@ -93,6 +93,7 @@ Fields:
 - `intrinsicStatusEffects` (array of StatusEffect)
 - `unspentSkillPoints` (number | null)
 - `unspentAttributePoints` (number | null)
+  - These are derived values computed from current level/attributes/skills and configured formulas.
 - `inventory` (array of Thing JSON with equip info: `isEquipped`, `equippedSlot`)
 - `currency` (number | null)
 - `experience` (number | null)
