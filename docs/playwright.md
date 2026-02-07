@@ -45,6 +45,15 @@ node playwright_scripts/test_new_game_end_to_end.js
 This script now logs live progress milestones and streams server stdout/stderr to the console while long generation steps run.
 It also validates `/api/new-game` completion and fails fast when game creation reports an error.
 
+One-off settings-page capture + validation against an already-running server:
+
+```bash
+npm run playwright:settings:screenshot
+```
+
+This captures desktop/mobile screenshots and writes `tmp/playwright_settings_capture/result.json`.
+The script fails if the redesigned settings layout is not present.
+
 Headed Chromium with virtual display (Linux servers/containers):
 
 ```bash
@@ -76,6 +85,7 @@ You can override runtime values with environment variables:
 - `PLAYWRIGHT_PORT`
 - `PLAYWRIGHT_BASE_URL`
 - `PLAYWRIGHT_SKIP_WEBSERVER=1` (skip auto-start and target an already-running server)
+- `PLAYWRIGHT_SETTINGS_PATH` (path for settings capture script, defaults to `/settings`)
 
 ## Existing X Session Helper
 

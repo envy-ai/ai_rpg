@@ -28,7 +28,7 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Detection logic
 - Overlap detection uses `Utils.findKgramOverlap(prior, response, { k: 6 })`.
-- Token normalization lowercases, strips punctuation as word breaks (except apostrophes), and removes common words and contractions before k-gram matching (`COMMON_WORDS` in `Utils.js`).
+- Token normalization lowercases, strips punctuation as word breaks (except apostrophes), and removes common words and contractions before k-gram matching (`COMMON_WORDS` in `Utils.js`). Modal verbs `could`/`would` and their contractions are intentionally retained.
 - The server logs the offending overlap when detected.
 
 ### Key files / functions
@@ -64,11 +64,16 @@ Quick refresher on where these systems live and how they're wired.
   - Analyzer: `server.js` → `analyzeSlopwordsForText()` computes ppm against the provided text.
   - `api.js` → `getFilteredSlopWords()` runs the analyzer on combined slop history + current response, then filters to words present in the current response.
   - Slop history segments include `player-action`, `npc-action`, `quest-reward`, and `random-event` chat entries.
+- Configured ngrams:
+  - Source: `defs/slopwords.yaml` → `ngrams` (with per-entry ppm or `default`, using `ngram_default`).
+  - Analyzer: `server.js` → `analyzeConfiguredNgramsForText()` computes ppm over normalized tokens.
+  - Normalization matches overlap detection (`Utils.normalizeKgramTokens`): lowercase, punctuation stripping, and common-word removal while retaining `could`/`would` variants.
+  - `api.js` → `getFilteredConfiguredNgrams()` runs analyzer on combined slop history + current response, then filters to ngrams present in the current response.
 - Repeated n-grams:
   - `api.js` → `collectSlopNgrams()`, which combines two scans using `Utils.findKgramOverlaps()`.
   - Base scan: `minK: 3` across the last 20 slop history segments.
   - Supplemental scan: `minK: 6` across the last 80 assistant prose-like entries (`player-action`, `npc-action`, `quest-reward`, `random-event`, or null type).
-  - Merges results and prunes contained n-grams via `Utils.pruneContainedKgrams()`.
+  - Merges repetition-based ngrams with configured-PPM ngrams and prunes contained n-grams via `Utils.pruneContainedKgrams()`.
   - Uses the same punctuation stripping + `COMMON_WORDS` filtering as repetition detection.
 
 ### Slop remover flow
@@ -100,6 +105,10 @@ Quick refresher on where these systems live and how they're wired.
 
 ### Config switches
 - `config.slop_buster`: enables the slop removal pipeline.
+- `defs/slopwords.yaml`:
+  - `default` for slop words.
+  - `ngram_default` for configured ngrams.
+  - `slopwords` and `ngrams` maps support per-entry numeric ppm or `default`.
 
 ## Primary code map
 - Detection utilities: `Utils.js`
@@ -107,7 +116,7 @@ Quick refresher on where these systems live and how they're wired.
   - `findKgramOverlap()` / `findKgramOverlaps()` / `pruneContainedKgrams()`
 - Debug helper: `scripts/ngram_checker.js` (standalone k-gram overlap checker using the same normalization)
 - Slop words config: `defs/slopwords.yaml`
-- Slop analyzer: `server.js` → `analyzeSlopwordsForText()`
-- Slop removal + n-gram detection: `api.js` → `getFilteredSlopWords()`, `collectRepeatedNgrams()`, `buildSlopContextText()`, `applySlopRemoval()`
+- Slop analyzers: `server.js` → `analyzeSlopwordsForText()`, `analyzeConfiguredNgramsForText()`
+- Slop removal + n-gram detection: `api.js` → `getFilteredSlopWords()`, `getFilteredConfiguredNgrams()`, `collectRepeatedNgrams()`, `collectSlopNgrams()`, `buildSlopContextText()`, `applySlopRemoval()`
 - Repetition buster prompt: `prompts/_includes/player-action.njk`
 - UI insights: `public/js/chat.js` (🧹 icon)

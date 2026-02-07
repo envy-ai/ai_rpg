@@ -6,18 +6,19 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "scss:build:main": "npx sass public/css/main.scss public/css/main.css",
-    "scss:build:settings": "npx sass public/css/settings.scss public/css/settings.css",
+    "scss:build:main": "sass public/css/main.scss public/css/main.css",
+    "scss:build:settings": "sass public/css/settings.scss public/css/settings.css",
     "scss:build": "npm run scss:build:main && npm run scss:build:settings",
-    "scss:watch:main": "npx sass --watch public/css/main.scss public/css/main.css",
-    "scss:watch:settings": "npx sass --watch public/css/settings.scss public/css/settings.css",
-    "scss:watch": "npx sass --watch public/css/main.scss public/css/main.css public/css/settings.scss public/css/settings.css",
+    "scss:watch:main": "sass --watch public/css/main.scss public/css/main.css",
+    "scss:watch:settings": "sass --watch public/css/settings.scss public/css/settings.css",
+    "scss:watch": "sass --watch public/css/main.scss public/css/main.css public/css/settings.scss public/css/settings.css",
     "playwright:install": "playwright install chromium",
     "test:e2e": "playwright test",
     "test:e2e:headless": "playwright test --project=chromium",
     "test:e2e:headed": "playwright test --project=chromium-headed",
     "test:e2e:headed:xvfb": "xvfb-run -a playwright test --project=chromium-headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "playwright:settings:screenshot": "node playwright_scripts/capture_settings_page.js"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.8",
@@ -38,6 +39,7 @@
     "@playwright/test": "^1.58.2",
     "esbuild": "^0.25.9",
     "nodemon": "^3.0.1",
+    "sass": "^1.97.3",
     "vite": "^6.3.6"
   },
   "keywords": [

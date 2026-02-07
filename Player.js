@@ -41,6 +41,7 @@ class Player {
     #dispositions;
     #skills;
     #unspentSkillPoints;
+    #unspentAttributePoints;
     #statusEffects;
     #gearSlots;
     #gearSlotsByType;
@@ -1178,6 +1179,13 @@ class Player {
             this.#unspentSkillPoints = Math.max(0, Math.floor(providedPoints));
         } else {
             this.#unspentSkillPoints = this.#skillPointsPerLevel() * this.#level;
+        }
+
+        const providedAttributePoints = Number(options.unspentAttributePoints);
+        if (Number.isFinite(providedAttributePoints)) {
+            this.#unspentAttributePoints = Math.floor(providedAttributePoints);
+        } else {
+            this.#unspentAttributePoints = 0;
         }
 
         this.#statusEffects = this.#normalizeStatusEffects(options.statusEffects);
@@ -3936,6 +3944,7 @@ class Player {
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
+            unspentAttributePoints: this.#unspentAttributePoints,
             statusEffects: this.getStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
@@ -3994,6 +4003,7 @@ class Player {
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
             unspentSkillPoints: this.#unspentSkillPoints,
+            unspentAttributePoints: this.#unspentAttributePoints,
             statusEffects: this.#getIntrinsicStatusEffects(),
             gear: this.getGear(),
             gearSlotsByType: this.getGearSlotsByType(),
@@ -4064,6 +4074,7 @@ class Player {
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
             abilities: Array.isArray(data.abilities) ? data.abilities : (data.abilities && typeof data.abilities === 'object' ? data.abilities : []),
             unspentSkillPoints: data.unspentSkillPoints,
+            unspentAttributePoints: data.unspentAttributePoints,
             statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
             gear: data.gear && typeof data.gear === 'object' ? data.gear : null,
             healthAttribute: data.healthAttribute,
@@ -4591,6 +4602,10 @@ class Player {
         return this.#unspentSkillPoints;
     }
 
+    getUnspentAttributePoints() {
+        return this.#unspentAttributePoints;
+    }
+
     setUnspentSkillPoints(value) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric) || numeric < 0) {
@@ -4601,6 +4616,16 @@ class Player {
         return this.#unspentSkillPoints;
     }
 
+    setUnspentAttributePoints(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            throw new Error('Unspent attribute points must be a finite number');
+        }
+        this.#unspentAttributePoints = Math.floor(numeric);
+        this.#lastUpdated = new Date().toISOString();
+        return this.#unspentAttributePoints;
+    }
+
     adjustUnspentSkillPoints(delta) {
         const numeric = Number(delta);
         if (!Number.isFinite(numeric)) {
@@ -4609,6 +4634,16 @@ class Player {
         this.#unspentSkillPoints = Math.max(0, Math.floor(this.#unspentSkillPoints + numeric));
         this.#lastUpdated = new Date().toISOString();
         return this.#unspentSkillPoints;
+    }
+
+    adjustUnspentAttributePoints(delta) {
+        const numeric = Number(delta);
+        if (!Number.isFinite(numeric)) {
+            return this.#unspentAttributePoints;
+        }
+        this.#unspentAttributePoints = Math.floor(this.#unspentAttributePoints + numeric);
+        this.#lastUpdated = new Date().toISOString();
+        return this.#unspentAttributePoints;
     }
 
     increaseSkill(skillName, amount = 1) {

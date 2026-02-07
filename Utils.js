@@ -17,21 +17,21 @@ const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'being', 'but', 'by',
-  'can', 'could', 'did', 'do', 'does', 'doing', 'done', 'for', 'from', 'had',
+  'can', 'did', 'do', 'does', 'doing', 'done', 'for', 'from', 'had',
   'has', 'have', 'having', 'he', 'her', 'hers', 'him', 'his', 'i', 'if', 'in',
   'into', 'is', 'it', 'its', 'me', 'my', 'mine', 'no', 'not',
   'of', 'off', 'on', 'or', 'our', 'ours', 'out', 'she', 'should', 'so', 'than',
   'that', 'the', 'their', 'theirs', 'them', 'then', 'these', 'they', 'this',
   'those', 'to', 'too', 'under', 'up', 'us', 'very', 'was', 'we', 'were',
   'what', 'when', 'where', 'which', 'while', 'who', 'whom', 'why', 'will',
-  'with', 'without', 'would', 'you', 'your', 'yours',
-  "aren't", "can't", "couldn't", "didn't", "doesn't", "don't", "hadn't",
+  'with', 'without', 'you', 'your', 'yours',
+  "aren't", "can't", "didn't", "doesn't", "don't", "hadn't",
   "hasn't", "haven't", "he'd", "he'll", "he's", "i'd", "i'll", "i'm", "i've",
   "isn't", "it'd", "it'll", "it's", "let's", "mustn't", "shan't", "she'd",
   "she'll", "she's", "shouldn't", "that'd", "that'll", "that's", "there's",
   "they'd", "they'll", "they're", "they've", "we'd", "we'll", "we're", "we've",
   "weren't", "what's", "when's", "where's", "who's", "why's", "won't",
-  "wouldn't", "you'd", "you'll", "you're", "you've"
+  "you'd", "you'll", "you're", "you've"
 ]);
 
 class Utils {
@@ -138,6 +138,13 @@ class Utils {
       .map(t => t.trim())
       .filter(t => t && /[a-z0-9]/i.test(t))
       .filter(t => !COMMON_WORDS.has(t));
+  }
+
+  static normalizeKgramTokens(text) {
+    if (typeof text !== 'string') {
+      throw new TypeError('Utils.normalizeKgramTokens requires a string argument.');
+    }
+    return Utils.#normalizeKgramTokens(text);
   }
 
   static #buildKgramSet(tokens, k) {

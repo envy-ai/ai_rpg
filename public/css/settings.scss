@@ -1,17 +1,37 @@
 // Settings Page Styles
 // Game Settings Manager page specific styles
 
-// include _globals.scss
 @use "globals" as *;
 
-.settings-grid {
+.settings-workspace {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  margin-bottom: 2rem;
-  overflow: auto;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 1.4rem;
+  align-items: start;
+  margin-bottom: 1.5rem;
+}
 
-  // Custom scrollbar for container
+.settings-library-panel,
+.settings-editor-panel {
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 1.1rem;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.settings-library-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+
   &::-webkit-scrollbar {
     width: 8px;
   }
@@ -27,250 +47,435 @@
   }
 }
 
-.settings-list {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 1.5rem;
-  border-radius: 10px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.65rem;
+  }
 }
 
-.settings-form {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 1.5rem;
+.applied-setting-label {
+  margin: 0.35rem 0 0;
+  color: rgba(152, 255, 181, 0.92);
+  font-size: 0.86rem;
+}
+
+.btn-small-action {
+  padding: 0.5rem 0.8rem;
+  min-width: 74px;
+  font-size: 0.88rem;
+}
+
+.library-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.library-control {
+  label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: $white-90;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  input,
+  select {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.35);
+    color: $white;
+    font-size: 0.9rem;
+    padding: 0.6rem 0.7rem;
+
+    &:focus {
+      outline: none;
+      border-color: rgba(102, 126, 234, 0.85);
+      background: rgba(0, 0, 0, 0.45);
+    }
+  }
+}
+
+.selected-setting-panel {
+  border: 1px solid rgba(102, 126, 234, 0.35);
   border-radius: 10px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(102, 126, 234, 0.13);
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+
+  &.is-empty {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.selected-setting-info {
+  h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: $white;
+  }
+
+  p {
+    margin: 0.3rem 0 0;
+    color: $white-70;
+    font-size: 0.84rem;
+    line-height: 1.35;
+  }
+}
+
+.selected-setting-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+
+  .btn {
+    justify-content: center;
+    padding: 0.55rem 0.45rem;
+    min-height: 38px;
+  }
+}
+
+.selected-setting-description {
+  margin: 0;
+  color: $white-80;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  max-height: 128px;
+  overflow: auto;
+  white-space: pre-line;
+}
+
+.settings-list-items {
+  flex: 1;
+  overflow: visible;
+  padding-right: 0.2rem;
 }
 
 .setting-item {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1rem;
-  margin-bottom: 1rem;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  margin-bottom: 0.68rem;
+  padding: 0.82rem;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
-  transition: all 0.3s ease;
+  @include transition();
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
   }
 
   &.selected {
-    background: rgba(74, 144, 226, 0.3);
-    border-color: rgba(74, 144, 226, 0.8);
-  }
-
-  &.applied {
-    background: rgba(76, 175, 80, 0.2);
-    border-color: rgba(76, 175, 80, 0.6);
+    border-color: rgba(102, 126, 234, 0.95);
+    background: rgba(102, 126, 234, 0.24);
   }
 }
 
-.setting-header {
+.setting-item-main {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.setting-item-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
+  align-items: flex-start;
+  gap: 0.65rem;
 }
 
 .setting-name {
-  font-weight: bold;
-  font-size: 1.1rem;
-  color: #fff;
+  color: $white;
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.setting-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.setting-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+
+  &.applied {
+    background: rgba(76, 175, 80, 0.3);
+    color: rgba(196, 255, 205, 0.98);
+  }
+
+  &.selected {
+    background: rgba(102, 126, 234, 0.33);
+    color: rgba(203, 212, 255, 0.98);
+  }
 }
 
 .setting-meta {
-  font-size: 0.9rem;
-  color: #aaa;
+  color: $white-70;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.setting-actions {
+.settings-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $glass-bg;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $white-30;
+    border-radius: 4px;
+  }
+}
+
+.editor-intro {
+  margin: 0;
+  color: $white-80;
+  font-size: 0.89rem;
+}
+
+.editor-tabs {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.28rem;
+
+  &::-webkit-scrollbar {
+    height: 7px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $glass-bg;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $white-30;
+    border-radius: 4px;
+  }
 }
 
-.btn-small {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
-  border-radius: 4px;
-  border: none;
+.editor-tab-btn {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: $white-80;
+  padding: 0.52rem 0.88rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-edit {
-  background: rgba(74, 144, 226, 0.6);
-  color: white;
+  @include transition();
 
   &:hover {
-    background: rgba(74, 144, 226, 0.8);
+    background: rgba(255, 255, 255, 0.15);
+    color: $white;
+  }
+
+  &.is-active {
+    background: rgba(102, 126, 234, 0.45);
+    border-color: rgba(102, 126, 234, 0.88);
+    color: $white;
   }
 }
 
-.btn-clone {
-  background: rgba(52, 168, 83, 0.6);
-  color: white;
+#settingForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-height: 0;
+  padding-bottom: 7rem;
+}
 
-  &:hover {
-    background: rgba(52, 168, 83, 0.8);
+.editor-tab-panel {
+  display: none;
+
+  &.is-active {
+    display: block;
+    animation: fade-in 140ms ease-out;
   }
 }
 
-.btn-delete {
-  background: rgba(234, 67, 53, 0.6);
-  color: white;
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 
-  &:hover {
-    background: rgba(234, 67, 53, 0.8);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.btn-apply {
-  background: rgba(255, 193, 7, 0.6);
-  color: white;
-
-  &:hover {
-    background: rgba(255, 193, 7, 0.8);
-  }
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.1rem;
 }
 
 .form-group {
-  margin-bottom: 1rem;
+  margin: 0;
+
+  &.full-width {
+    grid-column: 1 / -1;
+  }
 
   label {
     display: block;
-    margin-bottom: 0.5rem;
-    color: #fff;
-    font-weight: 500;
+    margin-bottom: 0.38rem;
+    color: $white-90;
+    font-weight: 600;
+    font-size: 0.86rem;
   }
 
   input,
   select,
   textarea {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.3);
-    color: #fff;
-    font-size: 1rem;
+    padding: 0.68rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.36);
+    color: $white;
+    font-size: 0.95rem;
 
     &:focus {
       outline: none;
-      border-color: rgba(74, 144, 226, 0.8);
-      background: rgba(0, 0, 0, 0.5);
+      border-color: rgba(102, 126, 234, 0.88);
+      background: rgba(0, 0, 0, 0.45);
     }
   }
 
   textarea {
     resize: vertical;
-    min-height: 80px;
-  }
-}
-
-// Select with Other component
-.select-with-other {
-  select {
-    margin-bottom: 0;
-  }
-
-  .other-input {
-    margin-top: 0.5rem;
-    border-color: rgba(255, 165, 0, 0.3);
-    background: rgba(255, 165, 0, 0.1);
-
-    &:focus {
-      border-color: rgba(255, 165, 0, 0.8);
-      background: rgba(255, 165, 0, 0.2);
-    }
-
-    &::placeholder {
-      color: rgba(255, 255, 255, 0.5);
-    }
+    min-height: 90px;
+    line-height: 1.35;
   }
 }
 
 .help-text {
   font-size: 0.8rem;
-  color: #aaa;
-  margin-top: 0.25rem;
+  color: $white-70;
+  margin-top: 0.27rem;
+  line-height: 1.3;
 }
 
-.settings-autofill-modal {
-  .autofill-image-field {
-    margin-top: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+.preview-section {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  padding: 0.75rem;
+}
 
-    label {
-      color: #fff;
-      font-weight: 500;
-    }
+.preview-title {
+  font-weight: 700;
+  margin-bottom: 0.38rem;
+  color: $white;
+  font-size: 0.9rem;
+}
 
-    input[type="file"] {
-      border: 1px dashed rgba(255, 255, 255, 0.25);
-      border-radius: 6px;
-      padding: 0.6rem;
-      background: rgba(0, 0, 0, 0.25);
-      color: #fff;
-
-      &:focus {
-        outline: none;
-        border-color: rgba(74, 144, 226, 0.8);
-        background: rgba(0, 0, 0, 0.4);
-      }
-    }
-  }
+.editor-sticky-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.68rem;
+  padding: 0.86rem 0.8rem 0.76rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(28, 29, 52, 0) 0%, rgba(28, 29, 52, 0.88) 32%, rgba(28, 29, 52, 0.98) 100%);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 -10px 20px rgba(0, 0, 0, 0.18);
 }
 
 .button-group {
   display: flex;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  gap: 0.7rem;
+
+  .btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 .btn {
-  padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 5px;
-  font-size: 1rem;
+  border-radius: 7px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  min-height: 42px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  flex: 1;
-}
+  @include transition();
 
-.btn-primary {
-  background: rgba(74, 144, 226, 0.8);
-  color: white;
-
-  &:hover {
-    background: rgba(74, 144, 226, 1);
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 }
 
-.btn-secondary {
-  background: rgba(128, 128, 128, 0.6);
-  color: white;
+.btn-accent {
+  background: rgba(255, 185, 71, 0.85);
+  color: #1f1f22;
+  justify-content: center;
 
-  &:hover {
-    background: rgba(128, 128, 128, 0.8);
+  &:hover:not(:disabled) {
+    background: rgba(255, 185, 71, 1);
   }
 }
 
-.form-actions {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 1rem;
-  margin-top: 1rem;
+.btn-danger {
+  background: rgba(220, 73, 73, 0.84);
+  color: $white;
+
+  &:hover:not(:disabled) {
+    background: rgba(220, 73, 73, 1);
+  }
 }
 
 .status-message {
-  padding: 1rem;
-  border-radius: 5px;
-  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.85rem;
   display: none;
 
   &.status-success {
@@ -288,97 +493,108 @@
 
 .empty-state {
   text-align: center;
-  padding: 2rem;
-  color: #aaa;
-}
-
-.preview-section {
-  background: rgba(255, 255, 255, 0.05);
   padding: 1rem;
-  border-radius: 8px;
-  margin-top: 1rem;
+  color: $white-60;
+  line-height: 1.35;
 }
 
-.preview-title {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-  color: #fff;
-}
-
-.feature-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.feature-tag {
-  background: rgba(74, 144, 226, 0.3);
-  padding: 0.25rem 0.5rem;
-  border-radius: 15px;
-  font-size: 0.8rem;
-  color: #fff;
-}
-
-.current-setting-display {
-  background: rgba(76, 175, 80, 0.2);
-  border: 1px solid rgba(76, 175, 80, 0.6);
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-
-  .current-setting-title {
-    font-weight: bold;
-    color: #4caf50;
-    margin-bottom: 0.5rem;
-  }
-
-  .current-setting-details {
-    font-size: 0.9rem;
-    color: #ddd;
-  }
-}
-
-// Responsive design
-@media (max-width: 768px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .setting-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .setting-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .button-group {
+.settings-autofill-modal {
+  .autofill-image-field {
+    margin-top: 1rem;
+    display: flex;
     flex-direction: column;
     gap: 0.5rem;
 
-    .btn {
-      flex: none;
+    label {
+      color: $white;
+      font-weight: 500;
+    }
+
+    input[type='file'] {
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      border-radius: 6px;
+      padding: 0.6rem;
+      background: rgba(0, 0, 0, 0.25);
+      color: $white;
+
+      &:focus {
+        outline: none;
+        border-color: rgba(74, 144, 226, 0.8);
+        background: rgba(0, 0, 0, 0.4);
+      }
     }
   }
 }
 
-// Small mobile adjustments
-@media (max-width: 480px) {
-  .settings-list,
-  .settings-form {
-    padding: 1rem;
+@media (max-width: 1160px) {
+  .settings-workspace {
+    grid-template-columns: minmax(290px, 330px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .settings-workspace {
+    grid-template-columns: 1fr;
   }
 
-  .setting-item {
-    padding: 0.75rem;
+  .settings-library-panel,
+  .settings-editor-panel {
+    position: static;
+    min-height: unset;
+    max-height: 58vh;
   }
 
-  .btn-small {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
+  .selected-setting-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .selected-setting-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .editor-tab-btn {
+    padding: 0.5rem 0.74rem;
+    font-size: 0.8rem;
+  }
+
+  .editor-sticky-actions {
+    position: static;
+    background: none;
+    padding: 0.7rem 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  #settingForm {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-library-panel,
+  .settings-editor-panel {
+    padding: 0.85rem;
+    max-height: 56vh;
+  }
+
+  .library-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-small-action {
+    width: 100%;
   }
 }

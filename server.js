@@ -2123,6 +2123,13 @@ async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
         throw new Error(`Failed to parse slopwords YAML: ${error.message}`);
     }
 
+    if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigrams')) {
+        throw new Error('Slopwords config key "trigrams" is no longer supported. Rename it to "ngrams".');
+    }
+    if (Object.prototype.hasOwnProperty.call(slopConfig, 'trigram_default')) {
+        throw new Error('Slopwords config key "trigram_default" is no longer supported. Rename it to "ngram_default".');
+    }
+
     const overrideProvided = defaultPpmOverride !== null && defaultPpmOverride !== undefined;
     const resolvedOverride = overrideProvided ? Number(defaultPpmOverride) : null;
     if (overrideProvided && (!Number.isFinite(resolvedOverride) || resolvedOverride < 0)) {
@@ -2139,7 +2146,17 @@ async function loadSlopwordConfig({ defaultPpmOverride = null } = {}) {
         throw new Error('Slopwords list is missing or invalid.');
     }
 
-    return { defaultPpm, slopwords };
+    const ngramDefault = Number(slopConfig.ngram_default);
+    if (!Number.isFinite(ngramDefault) || ngramDefault < 0) {
+        throw new Error('Slopwords ngram_default ppm is missing or invalid.');
+    }
+
+    const ngrams = slopConfig.ngrams;
+    if (!ngrams || typeof ngrams !== 'object' || Array.isArray(ngrams)) {
+        throw new Error('Slopwords ngrams list is missing or invalid.');
+    }
+
+    return { defaultPpm, slopwords, ngramDefault, ngrams };
 }
 
 function tokenizeSlopText(text) {
@@ -2162,7 +2179,7 @@ function getSlopwordThreshold(rawLimit, defaultPpm, wordLabel) {
     }
     const numericLimit = Number(rawLimit);
     if (!Number.isFinite(numericLimit) || numericLimit < 0) {
-        throw new Error(`Invalid ppm limit for slopword "${wordLabel}".`);
+        throw new Error(`Invalid ppm limit for "${wordLabel}".`);
     }
     return numericLimit;
 }
@@ -2193,6 +2210,78 @@ async function analyzeSlopwordsForText(text, { defaultPpmOverride = null } = {})
             flagged.push(word);
         }
     }
+    return flagged;
+}
+
+function countNormalizedNgramOccurrences(tokens, ngramTokens) {
+    if (!Array.isArray(tokens) || !Array.isArray(ngramTokens)) {
+        throw new TypeError('Ngram counting requires token arrays.');
+    }
+    if (!ngramTokens.length || tokens.length < ngramTokens.length) {
+        return 0;
+    }
+
+    let count = 0;
+    for (let i = 0; i <= tokens.length - ngramTokens.length; i += 1) {
+        let matched = true;
+        for (let j = 0; j < ngramTokens.length; j += 1) {
+            if (tokens[i + j] !== ngramTokens[j]) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) {
+            count += 1;
+        }
+    }
+
+    return count;
+}
+
+function normalizeConfiguredNgramEntry(rawNgram) {
+    if (typeof rawNgram !== 'string' || !rawNgram.trim()) {
+        throw new Error('Ngrams list contains an invalid ngram entry.');
+    }
+    const normalizedTokens = Utils.normalizeKgramTokens(rawNgram);
+    if (normalizedTokens.length < 2) {
+        throw new Error(`Configured ngram "${rawNgram}" must contain at least 2 non-common tokens after normalization.`);
+    }
+    return {
+        normalizedTokens,
+        normalizedNgram: normalizedTokens.join(' ')
+    };
+}
+
+async function analyzeConfiguredNgramsForText(text) {
+    const tokens = Utils.normalizeKgramTokens(text);
+    if (!tokens.length) {
+        throw new Error('Configured ngram analysis requires a non-empty string.');
+    }
+
+    const { ngramDefault, ngrams } = await loadSlopwordConfig();
+    const normalizedEntryMap = new Map();
+    for (const [rawNgram, rawLimit] of Object.entries(ngrams)) {
+        const { normalizedTokens, normalizedNgram } = normalizeConfiguredNgramEntry(rawNgram);
+        if (normalizedEntryMap.has(normalizedNgram)) {
+            throw new Error(`Duplicate configured ngram after normalization: "${normalizedNgram}".`);
+        }
+        const allowedPpm = getSlopwordThreshold(rawLimit, ngramDefault, rawNgram);
+        normalizedEntryMap.set(normalizedNgram, {
+            normalizedTokens,
+            allowedPpm
+        });
+    }
+
+    const totalWords = tokens.length;
+    const flagged = [];
+    for (const [normalizedNgram, entry] of normalizedEntryMap.entries()) {
+        const count = countNormalizedNgramOccurrences(tokens, entry.normalizedTokens);
+        const ppm = (count / totalWords) * 1000000;
+        if (ppm > entry.allowedPpm) {
+            flagged.push(normalizedNgram);
+        }
+    }
+
     return flagged;
 }
 
@@ -2235,6 +2324,7 @@ async function analyzeChatSlopwords({ defaultPpmOverride = null } = {}) {
 
 Globals.analyzeChatSlopwords = analyzeChatSlopwords;
 Globals.analyzeSlopwordsForText = analyzeSlopwordsForText;
+Globals.analyzeConfiguredNgramsForText = analyzeConfiguredNgramsForText;
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -2440,6 +2530,15 @@ function serializeNpcForClient(npc, options = {}) {
         unspentSkillPoints = null;
     }
 
+    let unspentAttributePoints = null;
+    try {
+        if (typeof npc.getUnspentAttributePoints === 'function') {
+            unspentAttributePoints = npc.getUnspentAttributePoints();
+        }
+    } catch (_) {
+        unspentAttributePoints = null;
+    }
+
     let inventory = [];
     try {
         if (typeof npc.getInventoryItems === 'function') {
@@ -2581,6 +2680,7 @@ function serializeNpcForClient(npc, options = {}) {
         statusEffects,
         intrinsicStatusEffects,
         unspentSkillPoints,
+        unspentAttributePoints,
         inventory,
         currency,
         experience,

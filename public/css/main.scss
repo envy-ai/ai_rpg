@@ -2926,6 +2926,43 @@ body.dark .thing-toggle-hint {
   flex: 1 1 auto;
 }
 
+.chat-player-points-indicator {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 2.1rem;
+  height: 1.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  cursor: help;
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.45));
+}
+
+.chat-player-points-indicator[hidden] {
+  display: none !important;
+}
+
+.chat-player-points-indicator::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  background: linear-gradient(180deg, #fde047 0%, #f59e0b 100%);
+  border: 1px solid rgba(120, 53, 15, 0.9);
+}
+
+.chat-player-points-indicator-mark {
+  position: relative;
+  z-index: 1;
+  font-size: 1.4rem;
+  line-height: 1;
+  font-weight: 800;
+  color: #1f2937;
+  transform: translateY(3px);
+}
+
 .health-bar {
   position: absolute;
   left: 8px;

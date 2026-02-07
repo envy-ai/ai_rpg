@@ -6,7 +6,7 @@ Common payloads: see `docs/api/common.md`.
 Start a new game session.
 
 Request:
-- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `unspentSkillPoints`, `clientId`, `requestId`
+- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `unspentSkillPoints`, `unspentAttributePoints`, `clientId`, `requestId`
 
 Response:
 - 200: `{ success: true, message, player, startingLocation, region, skills, gameState }`

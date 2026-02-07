@@ -52,6 +52,9 @@ This page maps routes to templates and the client scripts/styles they load.
 - Script: inline (settings CRUD is embedded in the template).
 - Data injected by `server.js`:
   - `currentPage` only. Data is loaded via `/api/settings` calls.
+- Notes: uses a master-detail layout with a left settings library and a right editor panel.
+- Notes: the left panel includes search (`name/theme/genre/tone/difficulty`), sort controls, and selection-scoped actions (`Edit`, `Apply`, `Clone`, `Delete`), instead of per-row action buttons.
+- Notes: editor fields are grouped into tabbed sections (`Basics`, `New Game Defaults`, `Character Options`, `Prompt Guidance`, `Image Prefixes`) and a sticky action bar keeps `Clear`, `Create/Update`, and `Auto-Fill Blank Fields` visible while scrolling.
 - Notes: the default Starting Location Generation Instructions field mirrors the multiline placeholder used on the New Game form.
 - Notes: the Default Existing Skills field is prefilled from `defs/default_skills.yaml` when creating a new (blank) setting.
 - Notes: the auto-fill button can append up to ~10 setting-specific skills when the skills list is empty or baseline-only.

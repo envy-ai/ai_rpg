@@ -23,7 +23,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
 - **Sidebar** (`.chat-sidebar`):
-  - Player card (portrait, health, need bars, quick actions).
+  - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Party summary list.
 
 ## Location name caching

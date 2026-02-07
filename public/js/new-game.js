@@ -746,6 +746,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const pools = allocator ? allocator.refreshPools() : { attributePool: null, skillPool: null };
       const attributePool = pools.attributePool;
       const skillPool = pools.skillPool;
+      const unspentAttributePoints = allocator && allocator.hasAttributes()
+        ? attributePool
+        : null;
       const unspentSkillPoints = allocator && allocator.hasSkills()
         ? skillPool
         : null;
@@ -788,6 +791,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (Number.isFinite(unspentSkillPoints)) {
           payload.unspentSkillPoints = unspentSkillPoints;
+        }
+        if (Number.isFinite(unspentAttributePoints)) {
+          payload.unspentAttributePoints = unspentAttributePoints;
         }
 
         fetch('/api/new-game', {

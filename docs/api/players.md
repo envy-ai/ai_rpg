@@ -121,7 +121,7 @@ Response:
 Update player stats (admin-style edit).
 
 Request:
-- Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `statusEffects`
+- Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `unspentAttributePoints`, `statusEffects`
 
 Response:
 - 200: `{ success: true, player: NpcProfile, message, imageNeedsUpdate }`
@@ -141,7 +141,7 @@ Response:
 Create a new player from a stats form and set as current.
 
 Request:
-- Body requires `name`; supports `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `statusEffects`
+- Body requires `name`; supports `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `unspentAttributePoints`, `statusEffects`
 
 Response:
 - 200: `{ success: true, player: NpcProfile, message }`

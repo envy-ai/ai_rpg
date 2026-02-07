@@ -92,6 +92,7 @@ Fields:
 - `statusEffects` (array of StatusEffect)
 - `intrinsicStatusEffects` (array of StatusEffect)
 - `unspentSkillPoints` (number | null)
+- `unspentAttributePoints` (number | null)
 - `inventory` (array of Thing JSON with equip info: `isEquipped`, `equippedSlot`)
 - `currency` (number | null)
 - `experience` (number | null)
@@ -115,7 +116,7 @@ Highlights beyond `Player.toJSON()`:
 - `inventory` is expanded into full Thing JSON (with equip flags), plus `inventoryIds`
 - `partyMembers` (ids) and `partyMemberIds` (same list)
 - `dispositions`, `dispositionDefinitions`
-- `skills`, `abilities`, `unspentSkillPoints`
+- `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
 - `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
 - `needBars`, `corpseCountdown`, `importantMemories`

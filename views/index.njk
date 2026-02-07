@@ -171,6 +171,9 @@
                                     <h3 class="chat-sidebar-heading" id="chatPlayerName">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
                                         <div class="chat-player-portrait" id="chatPlayerPortrait">
+                                            <div class="chat-player-points-indicator" id="chatPlayerPointsIndicator" hidden aria-hidden="true">
+                                                <span class="chat-player-points-indicator-mark" aria-hidden="true">!</span>
+                                            </div>
                                             <div class="chat-player-portrait-image" id="chatPlayerPortraitImage">
                                                 <div class="chat-player-placeholder" aria-hidden="true">🧙</div>
                                             </div>
@@ -2452,9 +2455,64 @@
             return label.charAt(0).toUpperCase() + label.slice(1);
         }
 
+        function resolveUnspentPointCount(value) {
+            const numeric = Number.parseInt(value, 10);
+            return Number.isFinite(numeric) ? numeric : 0;
+        }
+
+        function formatUnspentPointLabel(count, typeLabel) {
+            const suffix = count === 1 ? '' : 's';
+            return `${count} unspent ${typeLabel} point${suffix}`;
+        }
+
+        function buildUnspentPointsTooltip(skillPoints, attributePoints) {
+            const parts = [];
+            if (skillPoints > 0) {
+                parts.push(formatUnspentPointLabel(skillPoints, 'skill'));
+            }
+            if (attributePoints > 0) {
+                parts.push(formatUnspentPointLabel(attributePoints, 'attribute'));
+            }
+            if (!parts.length) {
+                return '';
+            }
+            if (parts.length === 1) {
+                return `You have ${parts[0]}.`;
+            }
+            return `You have ${parts[0]} and ${parts[1]}.`;
+        }
+
+        function updateChatPlayerPointsIndicator(player = {}) {
+            const indicator = chatSidebarElements.pointsIndicator;
+            if (!indicator) {
+                return;
+            }
+
+            const skillPoints = resolveUnspentPointCount(player?.unspentSkillPoints);
+            const attributePoints = resolveUnspentPointCount(player?.unspentAttributePoints);
+            const shouldDisplay = skillPoints > 0 || attributePoints > 0;
+
+            if (!shouldDisplay) {
+                indicator.setAttribute('hidden', '');
+                indicator.setAttribute('aria-hidden', 'true');
+                indicator.removeAttribute('title');
+                return;
+            }
+
+            const tooltipText = buildUnspentPointsTooltip(skillPoints, attributePoints);
+            indicator.removeAttribute('hidden');
+            indicator.setAttribute('aria-hidden', 'false');
+            if (tooltipText) {
+                indicator.setAttribute('title', tooltipText);
+            } else {
+                indicator.removeAttribute('title');
+            }
+        }
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
+            pointsIndicator: document.getElementById('chatPlayerPointsIndicator'),
             portraitImage: document.getElementById('chatPlayerPortraitImage'),
             healthBar: document.getElementById('chatPlayerHealthBar'),
             healthBarFill: document.getElementById('chatPlayerHealthBarFill'),
@@ -2587,6 +2645,7 @@
             if (chatSidebarElements.description) {
                 chatSidebarElements.description.textContent = description;
             }
+            updateChatPlayerPointsIndicator(data);
 
             const portraitElement = chatSidebarElements.portraitImage || chatSidebarElements.portrait;
             if (portraitElement) {

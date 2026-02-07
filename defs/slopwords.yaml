@@ -1,8 +1,8 @@
-# The default allowable ppm for the words/trigrams listed below (trigrams are per million words, not per million trigrams)
+# The default allowable ppm for the words/ngrams listed below (ngrams are per million words, not per million ngram windows)
 default: 200
-trigram_default: 5
+ngram_default: 5
 
-# A list of slop words (trigrams are listed below as well) and their allowable parts per million before being flagged as repetitive
+# A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 slopwords:
   # Custom ones first:
   singing: default
@@ -1014,7 +1014,7 @@ slopwords:
   zyn'thra: default
   zyra: default
   zz'glorg: default
-trigrams:
+ngrams:
   "voice barely whisper": default
   "took deep breath": default
   "could help feel": default
@@ -1214,3 +1214,6 @@ trigrams:
   "horizon painting sky": default
   "casting eerie glow": default
   "long could remember": default
+  "jaw tightened": default
+  "jaw tightens": default
+  "jaw tightening": default

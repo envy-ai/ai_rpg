@@ -25,206 +25,255 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         <div id="statusMessage" class="status-message"></div>
 
-        <div class="settings-grid">
-            <!-- Settings List Panel -->
-            <div class="settings-list">
-                <div style="display: flex; align-items: center; margin-bottom: 1rem;">
-                    <h2>📋 Saved Settings</h2>
-                    
+        <div class="settings-workspace">
+            <aside class="settings-library-panel">
+                <div class="library-header">
+                    <div>
+                        <h2>📋 Saved Settings</h2>
+                        <p id="appliedSettingLabel" class="applied-setting-label">No setting currently applied.</p>
+                    </div>
+                    <button type="button" id="newSettingBtn" class="btn btn-secondary btn-small-action">+ New</button>
                 </div>
-                
-                <div id="settingsList">
-                    <div class="empty-state">
-                        <p>No settings created yet.<br>Create your first setting using the form →</p>
+
+                <div class="library-controls">
+                    <div class="library-control">
+                        <label for="settingsSearch">Search</label>
+                        <input type="search" id="settingsSearch" placeholder="Name, theme, genre, tone, difficulty">
+                    </div>
+                    <div class="library-control">
+                        <label for="settingsSort">Sort</label>
+                        <select id="settingsSort">
+                            <option value="applied-first">Applied First</option>
+                            <option value="name-asc">Name (A-Z)</option>
+                            <option value="name-desc">Name (Z-A)</option>
+                            <option value="theme-genre">Theme / Genre</option>
+                        </select>
                     </div>
                 </div>
-            </div>
 
-            <!-- Settings Form Panel -->
-            <div class="settings-form">
+                <div id="selectedSettingPanel" class="selected-setting-panel is-empty">
+                    <div class="selected-setting-info">
+                        <h3 id="selectedSettingTitle">No setting selected</h3>
+                        <p id="selectedSettingMeta">Select a setting from the library to edit or apply it.</p>
+                    </div>
+                    <div class="selected-setting-actions">
+                        <button type="button" id="selectedEditBtn" class="btn btn-secondary">Edit</button>
+                        <button type="button" id="selectedApplyBtn" class="btn btn-primary">Apply</button>
+                        <button type="button" id="selectedCloneBtn" class="btn btn-secondary">Clone</button>
+                        <button type="button" id="selectedDeleteBtn" class="btn btn-danger">Delete</button>
+                    </div>
+                    <p id="selectedSettingDescription" class="selected-setting-description"></p>
+                </div>
+
+                <div id="settingsList" class="settings-list-items">
+                    <div class="empty-state">
+                        <p>No settings created yet.<br>Create your first setting using the editor.</p>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="settings-editor-panel">
                 <h2 id="formTitle">✨ Create New Setting</h2>
-                
+                <p class="editor-intro">Use tabs to focus on one slice of the setting at a time. All fields still save together.</p>
+
+                <div class="editor-tabs" role="tablist" aria-label="Setting editor sections">
+                    <button type="button" class="editor-tab-btn is-active" data-editor-tab="basics" aria-selected="true">Basics</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="defaults" aria-selected="false">New Game Defaults</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="characters" aria-selected="false">Character Options</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="prompts" aria-selected="false">Prompt Guidance</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="images" aria-selected="false">Image Prefixes</button>
+                </div>
+
                 <form id="settingForm">
                     <input type="hidden" id="settingId" name="id">
 
-                    <div class="form-group">
-                        <label for="name">Setting Name *</label>
-                        <input type="text" id="name" name="name" required>
-                        <div class="help-text">Unique name for this setting configuration</div>
-                    </div>
+                    <section class="editor-tab-panel is-active" data-editor-panel="basics">
+                        <div class="field-grid">
+                            <div class="form-group">
+                                <label for="name">Setting Name *</label>
+                                <input type="text" id="name" name="name" required>
+                                <div class="help-text">Unique name for this setting configuration.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="description">Description</label>
-                        <textarea id="description" name="description" rows="20" placeholder="Describe this setting and what makes it unique..."></textarea>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="description">Description</label>
+                                <textarea id="description" name="description" rows="12" placeholder="Describe this setting and what makes it unique..."></textarea>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="theme">World Theme *</label>
-                        <input type="text" id="theme" name="theme" required placeholder="e.g., Fantasy, Sci-Fi, Modern, Horror, Cyberpunk...">
-                        <div class="help-text">The overarching setting of the game world</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="theme">World Theme *</label>
+                                <input type="text" id="theme" name="theme" required placeholder="e.g., Fantasy, Sci-Fi, Modern, Horror, Cyberpunk...">
+                                <div class="help-text">The overarching setting of the game world.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="genre">Game Genre *</label>
-                        <input type="text" id="genre" name="genre" required placeholder="e.g., Adventure, Mystery, Combat, Exploration, Survival...">
-                        <div class="help-text">Primary style of gameplay focus</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="genre">Game Genre *</label>
+                                <input type="text" id="genre" name="genre" required placeholder="e.g., Adventure, Mystery, Combat, Exploration, Survival...">
+                                <div class="help-text">Primary style of gameplay focus.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="startingLocationType">Starting Location Type</label>
-                        <input type="text" id="startingLocationType" name="startingLocationType" placeholder="e.g., Tavern, Village, City, Wilderness, Ship...">
-                        <div class="help-text">Where adventures typically begin</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="startingLocationType">Starting Location Type</label>
+                                <input type="text" id="startingLocationType" name="startingLocationType" placeholder="e.g., Tavern, Village, City, Wilderness, Ship...">
+                                <div class="help-text">Where adventures typically begin.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="magicLevel">Magic Level</label>
-                        <input type="text" id="magicLevel" name="magicLevel" placeholder="e.g., High Magic, Low Magic, Rare, Ubiquitous, None...">
-                        <div class="help-text">How common magic is in the world</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="magicLevel">Magic Level</label>
+                                <input type="text" id="magicLevel" name="magicLevel" placeholder="e.g., High Magic, Low Magic, Rare, Ubiquitous, None...">
+                                <div class="help-text">How common magic is in the world.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="techLevel">Technology Level</label>
-                        <input type="text" id="techLevel" name="techLevel" placeholder="e.g., Medieval, Renaissance, Industrial, Modern, Futuristic...">
-                        <div class="help-text">Technological advancement of the world</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="techLevel">Technology Level</label>
+                                <input type="text" id="techLevel" name="techLevel" placeholder="e.g., Medieval, Renaissance, Industrial, Modern, Futuristic...">
+                                <div class="help-text">Technological advancement of the world.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="tone">Narrative Tone</label>
-                        <input type="text" id="tone" name="tone" placeholder="e.g., Heroic, Dark, Comedic, Gritty, Epic, Lighthearted...">
-                        <div class="help-text">Overall emotional atmosphere</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="tone">Narrative Tone</label>
+                                <input type="text" id="tone" name="tone" placeholder="e.g., Heroic, Dark, Comedic, Gritty, Epic, Lighthearted...">
+                                <div class="help-text">Overall emotional atmosphere.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="difficulty">Difficulty Level</label>
-                        <input type="text" id="difficulty" name="difficulty" placeholder="e.g., Easy, Normal, Hard, Lethal, Forgiving...">
-                        <div class="help-text">Challenge level and lethality</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="difficulty">Difficulty Level</label>
+                                <input type="text" id="difficulty" name="difficulty" placeholder="e.g., Easy, Normal, Hard, Lethal, Forgiving...">
+                                <div class="help-text">Challenge level and lethality.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="currencyName">Currency Name</label>
-                        <input type="text" id="currencyName" name="currencyName" placeholder="e.g., Credit, Coin, Gil">
-                        <div class="help-text">Singular name used when referencing a single unit of currency.</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="currencyName">Currency Name</label>
+                                <input type="text" id="currencyName" name="currencyName" placeholder="e.g., Credit, Coin, Gil">
+                                <div class="help-text">Singular name when referencing one unit of currency.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="currencyNamePlural">Currency Name (Plural)</label>
-                        <input type="text" id="currencyNamePlural" name="currencyNamePlural" placeholder="e.g., Credits, Coins, Gil">
-                        <div class="help-text">Plural form of the currency for amounts above one.</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="currencyNamePlural">Currency Name (Plural)</label>
+                                <input type="text" id="currencyNamePlural" name="currencyNamePlural" placeholder="e.g., Credits, Coins, Gil">
+                                <div class="help-text">Plural form used for amounts above one.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="playerStartingLevel">Player Starting Level</label>
-                        <input type="number" id="playerStartingLevel" name="playerStartingLevel" min="1" value="1">
-                        <div class="help-text">Level for new players</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="playerStartingLevel">Player Starting Level</label>
+                                <input type="number" id="playerStartingLevel" name="playerStartingLevel" min="1" value="1">
+                                <div class="help-text">Level for new players.</div>
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="form-divider">New Game Defaults</div>
+                    <section class="editor-tab-panel" data-editor-panel="defaults">
+                        <div class="field-grid">
+                            <div class="form-group">
+                                <label for="defaultPlayerName">Default Player Name</label>
+                                <input type="text" id="defaultPlayerName" name="defaultPlayerName" placeholder="e.g., Adventurer">
+                                <div class="help-text">Prefills the player name on the New Game screen.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="defaultPlayerName">Default Player Name</label>
-                        <input type="text" id="defaultPlayerName" name="defaultPlayerName" placeholder="e.g., Adventurer">
-                        <div class="help-text">Prefills the player name on the New Game screen.</div>
-                    </div>
+                            <div class="form-group">
+                                <label for="defaultStartingCurrency">Default Starting Currency</label>
+                                <input type="number" id="defaultStartingCurrency" name="defaultStartingCurrency" min="0" value="0">
+                                <div class="help-text">Prefills the Starting Currency field on the New Game screen.</div>
+                            </div>
 
-                    <div class="form-group full-width">
-                        <label for="defaultPlayerDescription">Default Player Description</label>
-                        <textarea id="defaultPlayerDescription" name="defaultPlayerDescription" rows="3" placeholder="Describe the default hero..."></textarea>
-                        <div class="help-text">Prefills the player description on the New Game screen.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="defaultPlayerDescription">Default Player Description</label>
+                                <textarea id="defaultPlayerDescription" name="defaultPlayerDescription" rows="4" placeholder="Describe the default hero..."></textarea>
+                                <div class="help-text">Prefills the player description on the New Game screen.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="defaultStartingLocation">Starting Location Generation Instructions</label>
-                        <textarea id="defaultStartingLocation" name="defaultStartingLocation" rows="3" placeholder="{{ startingLocationPlaceholder }}"></textarea>
-                        <div class="help-text">Prefills the starting location instructions on the New Game screen.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="defaultStartingLocation">Starting Location Generation Instructions</label>
+                                <textarea id="defaultStartingLocation" name="defaultStartingLocation" rows="5" placeholder="{{ startingLocationPlaceholder }}"></textarea>
+                                <div class="help-text">Prefills starting location instructions on the New Game screen.</div>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="defaultStartingCurrency">Default Starting Currency</label>
-                        <input type="number" id="defaultStartingCurrency" name="defaultStartingCurrency" min="0" value="0">
-                        <div class="help-text">Prefills the Starting Currency field on the New Game screen.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="defaultExistingSkills">Default Existing Skills (one per line)</label>
+                                <textarea id="defaultExistingSkills" name="defaultExistingSkills" rows="7" placeholder="Enter skill names..."></textarea>
+                                <div class="help-text">These skills become the default skill list for new games.</div>
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="form-group full-width">
-                        <label for="defaultExistingSkills">Default Existing Skills (one per line)</label>
-                        <textarea id="defaultExistingSkills" name="defaultExistingSkills" rows="4" placeholder="Enter skill names..."></textarea>
-                        <div class="help-text">These skills become the default skill list for new games.</div>
-                    </div>
+                    <section class="editor-tab-panel" data-editor-panel="characters">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <label for="availableClasses">Available Classes (one per line)</label>
+                                <textarea id="availableClasses" name="availableClasses" rows="7" placeholder="Warrior\nRanger\nArcane Scholar"></textarea>
+                                <div class="help-text">Classes the player can pick during character creation.</div>
+                            </div>
 
-                    <div class="form-divider">Character Options</div>
+                            <div class="form-group full-width">
+                                <label for="availableRaces">Available Races (one per line)</label>
+                                <textarea id="availableRaces" name="availableRaces" rows="7" placeholder="Human\nElf\nClockwork Automaton"></textarea>
+                                <div class="help-text">Races or species available for new characters.</div>
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="form-group full-width">
-                        <label for="availableClasses">Available Classes (one per line)</label>
-                        <textarea id="availableClasses" name="availableClasses" rows="4" placeholder="Warrior\nRanger\nArcane Scholar"></textarea>
-                        <div class="help-text">Classes the player can pick during character creation.</div>
-                    </div>
+                    <section class="editor-tab-panel" data-editor-panel="prompts">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <label for="currencyValueNotes">Currency Value Notes</label>
+                                <textarea id="currencyValueNotes" name="currencyValueNotes" rows="5" placeholder="Describe how valuable different amounts of currency are, typical wages, or trade conventions..."></textarea>
+                                <div class="help-text">Explain what typical amounts of money can buy or how wealth is perceived.</div>
+                            </div>
 
-                    <div class="form-group full-width">
-                        <label for="availableRaces">Available Races (one per line)</label>
-                        <textarea id="availableRaces" name="availableRaces" rows="4" placeholder="Human\nElf\nClockwork Automaton"></textarea>
-                        <div class="help-text">Races or species available for new characters.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="writingStyleNotes">Writing Style Notes</label>
+                                <textarea id="writingStyleNotes" name="writingStyleNotes" rows="5" placeholder="Provide storytelling tone, visual motifs, cultural details, or vibe notes for the Game Master..."></textarea>
+                                <div class="help-text">Additional guidance for narrative voice, aesthetic, or flavor details.</div>
+                            </div>
 
-                    <div class="form-divider">Worldbuilding Notes</div>
+                            <div class="form-group full-width">
+                                <label for="baseContextPreamble">Base Context Preamble</label>
+                                <textarea id="baseContextPreamble" name="baseContextPreamble" rows="5" placeholder="{{ baseContextPreamblePlaceholder }}"></textarea>
+                                <div class="help-text">Prepended to base-context prompts so the Game Master keeps core framing in mind.</div>
+                            </div>
 
-                    <div class="form-group full-width">
-                        <label for="currencyValueNotes">Currency Value Notes</label>
-                        <textarea id="currencyValueNotes" name="currencyValueNotes" rows="4" placeholder="Describe how valuable different amounts of currency are, typical wages, or trade conventions..."></textarea>
-                        <div class="help-text">Explain what typical amounts of money can buy or how wealth is perceived.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="characterGenInstructions">Character Generation Instructions</label>
+                                <textarea id="characterGenInstructions" name="characterGenInstructions" rows="5" placeholder="Optional extra guidance for NPC and character concept generation..."></textarea>
+                                <div class="help-text">Applied when generating NPCs and character concepts for this setting.</div>
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="form-group full-width">
-                        <label for="writingStyleNotes">Writing Style Notes</label>
-                        <textarea id="writingStyleNotes" name="writingStyleNotes" rows="4" placeholder="Provide storytelling tone, visual motifs, cultural details, or vibe notes for the Game Master..."></textarea>
-                        <div class="help-text">Additional guidance for narrative voice, aesthetic, or flavor details.</div>
-                    </div>
+                    <section class="editor-tab-panel" data-editor-panel="images">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixCharacter">Character Image Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixCharacter" name="imagePromptPrefixCharacter" rows="4" placeholder="Short guidance appended before character portrait prompts..."></textarea>
+                                <div class="help-text">Optional text prepended to character portrait prompts (e.g., art style, lighting, tone).</div>
+                            </div>
 
-                    <div class="form-divider">Prompt Guidance</div>
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixLocation">Location Image Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixLocation" name="imagePromptPrefixLocation" rows="4" placeholder="Short guidance for location images..."></textarea>
+                                <div class="help-text">Optional text prepended to location art prompts.</div>
+                            </div>
 
-                    <div class="form-group full-width">
-                        <label for="baseContextPreamble">Base Context Preamble</label>
-                        <textarea id="baseContextPreamble" name="baseContextPreamble" rows="4" placeholder="{{ baseContextPreamblePlaceholder }}"></textarea>
-                        <div class="help-text">Prepended to base-context prompts so the Game Master keeps the core framing in mind.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixItem">Item Image Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixItem" name="imagePromptPrefixItem" rows="4" placeholder="Short guidance for item renders..."></textarea>
+                                <div class="help-text">Optional text prepended to item illustration prompts.</div>
+                            </div>
 
-                    <div class="form-group full-width">
-                        <label for="characterGenInstructions">Character Generation Instructions</label>
-                        <textarea id="characterGenInstructions" name="characterGenInstructions" rows="4" placeholder="Optional extra guidance for NPC and character concept generation..."></textarea>
-                        <div class="help-text">Applied when generating NPCs and character concepts for this setting.</div>
-                    </div>
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixScenery">Scenery Image Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixScenery" name="imagePromptPrefixScenery" rows="4" placeholder="Short guidance for scenery/establishing shot art..."></textarea>
+                                <div class="help-text">Optional text prepended to scenery/background prompts.</div>
+                            </div>
+                        </div>
+                    </section>
 
-                    <div class="form-divider">Image Prompt Prefixes</div>
-
-                    <div class="form-group full-width">
-                        <label for="imagePromptPrefixCharacter">Character Image Prompt Prefix</label>
-                        <textarea id="imagePromptPrefixCharacter" name="imagePromptPrefixCharacter" rows="3" placeholder="Short guidance appended before character portrait prompts..."></textarea>
-                        <div class="help-text">Optional text prepended to character portrait prompts (e.g., art style, lighting, tone).</div>
-                    </div>
-
-                    <div class="form-group full-width">
-                        <label for="imagePromptPrefixLocation">Location Image Prompt Prefix</label>
-                        <textarea id="imagePromptPrefixLocation" name="imagePromptPrefixLocation" rows="3" placeholder="Short guidance for location images..."></textarea>
-                        <div class="help-text">Optional text prepended to location art prompts.</div>
-                    </div>
-
-                    <div class="form-group full-width">
-                        <label for="imagePromptPrefixItem">Item Image Prompt Prefix</label>
-                        <textarea id="imagePromptPrefixItem" name="imagePromptPrefixItem" rows="3" placeholder="Short guidance for item renders..."></textarea>
-                        <div class="help-text">Optional text prepended to item illustration prompts.</div>
-                    </div>
-
-                    <div class="form-group full-width">
-                        <label for="imagePromptPrefixScenery">Scenery Image Prompt Prefix</label>
-                        <textarea id="imagePromptPrefixScenery" name="imagePromptPrefixScenery" rows="3" placeholder="Short guidance for scenery/establishing shot art..."></textarea>
-                        <div class="help-text">Optional text prepended to scenery/background prompts.</div>
-                    </div>
-
-                    <!-- Preview Section -->
                     <div id="previewSection" class="preview-section" style="display: none;">
                         <div class="preview-title">Setting Preview</div>
                         <div id="previewContent"></div>
                     </div>
 
-                    <div class="form-actions">
+                    <div class="editor-sticky-actions">
                         <div class="button-group">
                             <button type="button" id="clearBtn" class="btn btn-secondary">Clear</button>
                             <button type="submit" id="submitBtn" class="btn btn-primary">Create Setting</button>
@@ -232,7 +281,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         <button type="button" id="generateBtn" class="btn btn-accent">✨ Auto-Fill Blank Fields</button>
                     </div>
                 </form>
-            </div>
+            </section>
         </div>
     </div>
 
@@ -267,6 +316,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         let selectedSettingId = null;
         let isEditMode = false;
         let appliedSetting = null;
+        let settingsSearchQuery = '';
+        let settingsSortMode = 'applied-first';
+        let activeEditorTab = 'basics';
         const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
         const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
         const autofillInstructionsModal = document.getElementById('autofillInstructionsModal');
@@ -386,10 +438,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             try {
                 const response = await fetch('/api/settings');
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    currentSettings = data.settings;
+                    currentSettings = Array.isArray(data.settings) ? data.settings : [];
+                    if (
+                        selectedSettingId &&
+                        !currentSettings.some((setting) => setting?.id === selectedSettingId)
+                    ) {
+                        selectedSettingId = null;
+                    }
                     renderSettingsList();
+                    updateSelectedSettingPanel();
                 }
             } catch (error) {
                 showMessage('Error loading settings: ' + error.message, 'error');
@@ -400,7 +459,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             try {
                 const response = await fetch('/api/settings/current');
                 const data = await response.json();
-                
+
                 if (!data.success) {
                     throw new Error(data.error || 'Failed to load current setting');
                 }
@@ -409,6 +468,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 updateCurrentSettingDisplay();
                 if (appliedSetting) {
                     applySettingToForm(appliedSetting, { markAsSelected: Boolean(appliedSetting.id) });
+                } else {
+                    updateSelectedSettingPanel();
                 }
             } catch (error) {
                 console.error('Could not load current setting:', error);
@@ -416,47 +477,220 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
         }
 
-        function updateCurrentSettingDisplay() {
-            const listHeader = document.querySelector('.settings-list h2');
-            if (appliedSetting) {
-                listHeader.innerHTML = `📋 Saved Settings <small style="color: #4CAF50;">(${appliedSetting.name} applied)</small>`;
-            } else {
-                listHeader.innerHTML = '📋 Saved Settings';
+        function escapeHtml(value) {
+            if (value === null || value === undefined) {
+                return '';
             }
+            return String(value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function getSelectedSetting() {
+            if (!selectedSettingId) {
+                return null;
+            }
+            return currentSettings.find((setting) => setting?.id === selectedSettingId) || null;
+        }
+
+        function getSettingMetaText(setting) {
+            if (!setting || typeof setting !== 'object') {
+                return 'No metadata available';
+            }
+            const parts = [];
+            const theme = typeof setting.theme === 'string' ? setting.theme.trim() : '';
+            const genre = typeof setting.genre === 'string' ? setting.genre.trim() : '';
+            const tone = typeof setting.tone === 'string' ? setting.tone.trim() : '';
+            const difficulty = typeof setting.difficulty === 'string' ? setting.difficulty.trim() : '';
+
+            if (theme || genre) {
+                parts.push(`${theme || 'Unknown Theme'} / ${genre || 'Unknown Genre'}`);
+            }
+            if (tone) {
+                parts.push(tone);
+            }
+            if (difficulty) {
+                parts.push(difficulty);
+            }
+
+            return parts.length ? parts.join(' • ') : 'No metadata available';
+        }
+
+        function getDisplayedSettings() {
+            const normalizedQuery = settingsSearchQuery.trim().toLowerCase();
+            let visible = currentSettings.slice();
+
+            if (normalizedQuery) {
+                visible = visible.filter((setting) => {
+                    const haystack = [
+                        setting?.name,
+                        setting?.theme,
+                        setting?.genre,
+                        setting?.tone,
+                        setting?.difficulty,
+                    ]
+                        .map((value) => (typeof value === 'string' ? value.toLowerCase() : ''))
+                        .join('\n');
+                    return haystack.includes(normalizedQuery);
+                });
+            }
+
+            const appliedId = typeof appliedSetting?.id === 'string' ? appliedSetting.id : '';
+            visible.sort((a, b) => {
+                const aName = (a?.name || '').toLowerCase();
+                const bName = (b?.name || '').toLowerCase();
+
+                if (settingsSortMode === 'name-asc') {
+                    return aName.localeCompare(bName);
+                }
+                if (settingsSortMode === 'name-desc') {
+                    return bName.localeCompare(aName);
+                }
+                if (settingsSortMode === 'theme-genre') {
+                    const aThemeGenre = `${(a?.theme || '').toLowerCase()} ${(a?.genre || '').toLowerCase()}`;
+                    const bThemeGenre = `${(b?.theme || '').toLowerCase()} ${(b?.genre || '').toLowerCase()}`;
+                    const byTheme = aThemeGenre.localeCompare(bThemeGenre);
+                    return byTheme !== 0 ? byTheme : aName.localeCompare(bName);
+                }
+
+                const aApplied = a?.id === appliedId ? 0 : 1;
+                const bApplied = b?.id === appliedId ? 0 : 1;
+                if (aApplied !== bApplied) {
+                    return aApplied - bApplied;
+                }
+                return aName.localeCompare(bName);
+            });
+
+            return visible;
+        }
+
+        function updateCurrentSettingDisplay() {
+            const appliedLabel = document.getElementById('appliedSettingLabel');
+            if (!appliedLabel) {
+                throw new Error('Expected element "appliedSettingLabel" to exist.');
+            }
+            if (appliedSetting && typeof appliedSetting.name === 'string' && appliedSetting.name.trim()) {
+                appliedLabel.textContent = `Currently applied: ${appliedSetting.name.trim()}`;
+            } else {
+                appliedLabel.textContent = 'No setting currently applied.';
+            }
+        }
+
+        function updateSelectedSettingPanel() {
+            const panel = document.getElementById('selectedSettingPanel');
+            const title = document.getElementById('selectedSettingTitle');
+            const meta = document.getElementById('selectedSettingMeta');
+            const description = document.getElementById('selectedSettingDescription');
+            const editBtn = document.getElementById('selectedEditBtn');
+            const applyBtn = document.getElementById('selectedApplyBtn');
+            const cloneBtn = document.getElementById('selectedCloneBtn');
+            const deleteBtn = document.getElementById('selectedDeleteBtn');
+
+            if (!panel || !title || !meta || !description || !editBtn || !applyBtn || !cloneBtn || !deleteBtn) {
+                throw new Error('Selected-setting panel is missing required elements.');
+            }
+
+            const selected = getSelectedSetting();
+            if (!selected) {
+                panel.classList.add('is-empty');
+                title.textContent = 'No setting selected';
+                meta.textContent = 'Select a setting from the library to edit or apply it.';
+                description.textContent = '';
+                editBtn.disabled = true;
+                applyBtn.disabled = true;
+                cloneBtn.disabled = true;
+                deleteBtn.disabled = true;
+                return;
+            }
+
+            panel.classList.remove('is-empty');
+            title.textContent = selected.name || 'Unnamed Setting';
+            const statusParts = [getSettingMetaText(selected)];
+            if (appliedSetting && appliedSetting.id === selected.id) {
+                statusParts.push('Applied');
+            }
+            meta.textContent = statusParts.join(' • ');
+            const rawDescription =
+                typeof selected.description === 'string' ? selected.description.trim() : '';
+            description.textContent = rawDescription || 'No description available.';
+
+            editBtn.disabled = false;
+            applyBtn.disabled = false;
+            cloneBtn.disabled = false;
+            deleteBtn.disabled = false;
         }
 
         function renderSettingsList() {
             const container = document.getElementById('settingsList');
-            
+            if (!container) {
+                throw new Error('Expected element "settingsList" to exist.');
+            }
+
             if (currentSettings.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <p>No settings created yet.<br>Create your first setting using the form →</p>
+                        <p>No settings created yet.<br>Create your first setting using the editor.</p>
                     </div>
                 `;
                 return;
             }
 
-            container.innerHTML = currentSettings.map(setting => `
-                <div class="setting-item ${selectedSettingId === setting.id ? 'selected' : ''} ${appliedSetting && appliedSetting.id === setting.id ? 'applied' : ''}" 
-                     onclick="selectSetting('${setting.id}')">
-                    <div class="setting-header">
-                        <div class="setting-name">
-                            ${setting.name}
-                            ${appliedSetting && appliedSetting.id === setting.id ? ' <span style="color: #4CAF50;">✓ Applied</span>' : ''}
-                        </div>
+            const visibleSettings = getDisplayedSettings();
+            if (visibleSettings.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>No settings matched your search.</p>
                     </div>
-                    <div class="setting-meta">
-                        ${setting.theme}/${setting.genre} • ${setting.tone} • ${setting.difficulty}
-                    </div>
-                    <div class="setting-actions">
-                        <button class="btn-small btn-edit" onclick="editSetting('${setting.id}'); event.stopPropagation();">Edit</button>
-                        <button class="btn-small btn-primary" onclick="applySetting('${setting.id}'); event.stopPropagation();">Apply</button>
-                        <button class="btn-small btn-clone" onclick="cloneSetting('${setting.id}'); event.stopPropagation();">Clone</button>
-                        <button class="btn-small btn-delete" onclick="deleteSetting('${setting.id}'); event.stopPropagation();">Delete</button>
-                    </div>
-                </div>
-            `).join('');
+                `;
+                return;
+            }
+
+            const appliedId = typeof appliedSetting?.id === 'string' ? appliedSetting.id : '';
+            container.innerHTML = visibleSettings
+                .map((setting) => {
+                    const isSelected = selectedSettingId === setting.id;
+                    const isApplied = appliedId && setting.id === appliedId;
+                    const badges = [];
+                    if (isApplied) {
+                        badges.push('<span class="setting-badge applied">Applied</span>');
+                    }
+                    if (isSelected) {
+                        badges.push('<span class="setting-badge selected">Selected</span>');
+                    }
+
+                    return `
+                        <button type="button" class="setting-item ${isSelected ? 'selected' : ''}" data-setting-id="${escapeHtml(setting.id || '')}">
+                            <span class="setting-item-main">
+                                <span class="setting-item-header">
+                                    <span class="setting-name">${escapeHtml(setting.name || 'Unnamed Setting')}</span>
+                                    <span class="setting-badges">${badges.join('')}</span>
+                                </span>
+                                <span class="setting-meta">${escapeHtml(getSettingMetaText(setting))}</span>
+                            </span>
+                        </button>
+                    `;
+                })
+                .join('');
+        }
+
+        function setActiveEditorTab(tabId) {
+            const panel = document.querySelector(`.editor-tab-panel[data-editor-panel="${tabId}"]`);
+            if (!panel) {
+                throw new Error(`Unknown editor tab: ${tabId}`);
+            }
+
+            activeEditorTab = tabId;
+            document.querySelectorAll('.editor-tab-btn').forEach((button) => {
+                const isActive = button.dataset.editorTab === tabId;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            document.querySelectorAll('.editor-tab-panel').forEach((tabPanel) => {
+                tabPanel.classList.toggle('is-active', tabPanel.dataset.editorPanel === tabId);
+            });
         }
 
         function applySettingToForm(setting, { markAsSelected = false } = {}) {
@@ -543,14 +777,19 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 submitBtn.textContent = 'Update Setting';
             }
 
+            setActiveEditorTab('basics');
             renderSettingsList();
+            updateSelectedSettingPanel();
             updatePreview();
         }
 
         function selectSetting(settingId) {
+            if (!settingId) {
+                throw new Error('selectSetting requires a settingId');
+            }
             selectedSettingId = settingId;
             renderSettingsList();
-            updatePreview();
+            updateSelectedSettingPanel();
         }
 
         function editSetting(settingId) {
@@ -714,7 +953,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (defaultStartingCurrencyField) {
                 defaultStartingCurrencyField.value = '0';
             }
+            setActiveEditorTab('basics');
             renderSettingsList();
+            updateSelectedSettingPanel();
             updatePreview();
         }
 
@@ -753,9 +994,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
             
             content.innerHTML = `
-                <strong>${name}</strong><br>
-                <small>${theme}/${genre} setting with ${tone} tone and ${difficulty} difficulty</small><br>
-                Magic: ${magicLevel} • Tech: ${techLevel}${extraLines.length ? `<br>${extraLines.join(' • ')}` : ''}
+                <strong>${escapeHtml(name)}</strong><br>
+                <small>${escapeHtml(theme)}/${escapeHtml(genre)} setting with ${escapeHtml(tone)} tone and ${escapeHtml(difficulty)} difficulty</small><br>
+                Magic: ${escapeHtml(magicLevel)} • Tech: ${escapeHtml(techLevel)}${extraLines.length ? `<br>${escapeHtml(extraLines.join(' • '))}` : ''}
             `;
         }
 
@@ -767,8 +1008,28 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function setupEventListeners() {
-            // Form submission
-            document.getElementById('settingForm').addEventListener('submit', async function(e) {
+            const settingForm = document.getElementById('settingForm');
+            if (!settingForm) {
+                throw new Error('Expected element "settingForm" to exist.');
+            }
+
+            const settingsListEl = document.getElementById('settingsList');
+            const settingsSearchEl = document.getElementById('settingsSearch');
+            const settingsSortEl = document.getElementById('settingsSort');
+            const newSettingBtn = document.getElementById('newSettingBtn');
+            const selectedEditBtn = document.getElementById('selectedEditBtn');
+            const selectedApplyBtn = document.getElementById('selectedApplyBtn');
+            const selectedCloneBtn = document.getElementById('selectedCloneBtn');
+            const selectedDeleteBtn = document.getElementById('selectedDeleteBtn');
+
+            if (!settingsListEl || !settingsSearchEl || !settingsSortEl || !newSettingBtn) {
+                throw new Error('Library controls are missing from the settings page.');
+            }
+            if (!selectedEditBtn || !selectedApplyBtn || !selectedCloneBtn || !selectedDeleteBtn) {
+                throw new Error('Selected-setting action controls are missing from the settings page.');
+            }
+
+            settingForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
                 const formData = new FormData(e.target);
@@ -853,12 +1114,88 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 }
             });
 
-            // Clear button
             document.getElementById('clearBtn').addEventListener('click', clearForm);
 
-            // Form change detection for preview
-            document.getElementById('settingForm').addEventListener('input', updatePreview);
-            document.getElementById('settingForm').addEventListener('change', updatePreview);
+            settingsListEl.addEventListener('click', (event) => {
+                const button = event.target.closest('.setting-item[data-setting-id]');
+                if (!button || !settingsListEl.contains(button)) {
+                    return;
+                }
+                const settingId = button.dataset.settingId;
+                if (!settingId) {
+                    throw new Error('Setting list item is missing data-setting-id.');
+                }
+                selectSetting(settingId);
+            });
+
+            settingsSearchEl.addEventListener('input', (event) => {
+                settingsSearchQuery = (event.target.value || '').trim();
+                renderSettingsList();
+                updateSelectedSettingPanel();
+            });
+
+            settingsSortEl.addEventListener('change', (event) => {
+                settingsSortMode = event.target.value || 'applied-first';
+                renderSettingsList();
+                updateSelectedSettingPanel();
+            });
+
+            newSettingBtn.addEventListener('click', () => {
+                clearForm();
+                const nameInput = document.getElementById('name');
+                if (nameInput) {
+                    nameInput.focus();
+                }
+            });
+
+            selectedEditBtn.addEventListener('click', () => {
+                const selected = getSelectedSetting();
+                if (!selected || !selected.id) {
+                    showMessage('Select a setting first.', 'error');
+                    return;
+                }
+                editSetting(selected.id);
+            });
+
+            selectedApplyBtn.addEventListener('click', async () => {
+                const selected = getSelectedSetting();
+                if (!selected || !selected.id) {
+                    showMessage('Select a setting first.', 'error');
+                    return;
+                }
+                await applySetting(selected.id);
+            });
+
+            selectedCloneBtn.addEventListener('click', async () => {
+                const selected = getSelectedSetting();
+                if (!selected || !selected.id) {
+                    showMessage('Select a setting first.', 'error');
+                    return;
+                }
+                await cloneSetting(selected.id);
+            });
+
+            selectedDeleteBtn.addEventListener('click', async () => {
+                const selected = getSelectedSetting();
+                if (!selected || !selected.id) {
+                    showMessage('Select a setting first.', 'error');
+                    return;
+                }
+                await deleteSetting(selected.id);
+            });
+
+            document.querySelectorAll('.editor-tab-btn').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const tabId = button.dataset.editorTab;
+                    if (!tabId) {
+                        throw new Error('Editor tab button is missing data-editor-tab.');
+                    }
+                    setActiveEditorTab(tabId);
+                });
+            });
+
+            settingForm.addEventListener('input', updatePreview);
+            settingForm.addEventListener('change', updatePreview);
 
             const generateBtn = document.getElementById('generateBtn');
             if (generateBtn) {
@@ -887,7 +1224,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 });
             }
 
-            // Save/Load buttons removed; auto behaviors implemented
+            setActiveEditorTab(activeEditorTab);
+            updateSelectedSettingPanel();
         }
 
         async function downscaleImageDataUrl(dataUrl, outputType) {

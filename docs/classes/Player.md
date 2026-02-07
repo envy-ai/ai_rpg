@@ -7,7 +7,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Identity: `#id`, `#name`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
 - Core stats: `#attributes`, `#level`, `#experience`, `#health`, `#healthAttribute`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
-- Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`.
+- Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Status/needs: `#statusEffects`, `#needBars`.
 - Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
@@ -70,6 +70,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getAbilities()`, `setAbilities(list)`, `addAbility(ability)`.
 - Progression:
   - `levelUp(count)`.
+  - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
+  - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
   - `addExperience(amount, raw)`, `addRawExperience(amount)`, `setExperience(value)`.
 - Health/combat:
   - `modifyHealth(amount, reason)`, `setHealthAttribute(attributeName)`.

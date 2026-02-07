@@ -671,6 +671,69 @@ module.exports = function registerApiRoutes(scope) {
             return flagged.filter(word => tokenSet.has(word));
         };
 
+        const containsNormalizedNgram = (tokens, ngramTokens) => {
+            if (!Array.isArray(tokens) || !Array.isArray(ngramTokens)) {
+                throw new TypeError('containsNormalizedNgram requires token arrays.');
+            }
+            if (!ngramTokens.length || tokens.length < ngramTokens.length) {
+                return false;
+            }
+            for (let i = 0; i <= tokens.length - ngramTokens.length; i += 1) {
+                let matches = true;
+                for (let j = 0; j < ngramTokens.length; j += 1) {
+                    if (tokens[i + j] !== ngramTokens[j]) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const getFilteredConfiguredNgrams = async (prose) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                throw new Error('Configured ngram analysis requires non-empty prose.');
+            }
+
+            const analyzer = Globals.analyzeConfiguredNgramsForText;
+            if (typeof analyzer !== 'function') {
+                throw new Error('Configured ngram analysis is unavailable on this server.');
+            }
+
+            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
+            const flagged = await analyzer(combinedText);
+            if (!Array.isArray(flagged)) {
+                throw new Error('Configured ngram analysis returned an invalid result.');
+            }
+            if (!flagged.length) {
+                return [];
+            }
+
+            const proseTokens = Utils.normalizeKgramTokens(prose);
+            if (!proseTokens.length) {
+                return [];
+            }
+
+            const matches = [];
+            for (const flaggedNgram of flagged) {
+                if (typeof flaggedNgram !== 'string' || !flaggedNgram.trim()) {
+                    throw new Error('Configured ngram analysis returned an invalid ngram entry.');
+                }
+                const normalizedTokens = Utils.normalizeKgramTokens(flaggedNgram);
+                if (normalizedTokens.length < 2) {
+                    throw new Error(`Configured ngram analysis returned an invalid normalized ngram: "${flaggedNgram}".`);
+                }
+                if (containsNormalizedNgram(proseTokens, normalizedTokens)) {
+                    matches.push(normalizedTokens.join(' '));
+                }
+            }
+
+            return Utils.pruneContainedKgrams(matches);
+        };
+
         const getRecentSlopHistorySegments = (limit = 20) => {
             const segments = getSlopHistorySegments();
             if (!segments.length) {
@@ -727,20 +790,15 @@ module.exports = function registerApiRoutes(scope) {
             return Utils.pruneContainedKgrams(Array.from(overlaps));
         };
 
-        const collectSlopNgrams = (prose) => {
+        const collectSlopNgrams = async (prose) => {
             const baseNgrams = collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 });
             const supplementalSegments = getRecentAssistantProseHistorySegments(80);
             const supplementalNgrams = collectRepeatedNgrams(prose, { minK: 6, segments: supplementalSegments });
-            if (!baseNgrams.length && !supplementalNgrams.length) {
+            const configuredNgrams = await getFilteredConfiguredNgrams(prose);
+            if (!baseNgrams.length && !supplementalNgrams.length && !configuredNgrams.length) {
                 return [];
             }
-            if (!baseNgrams.length) {
-                return supplementalNgrams;
-            }
-            if (!supplementalNgrams.length) {
-                return baseNgrams;
-            }
-            return Utils.pruneContainedKgrams([...baseNgrams, ...supplementalNgrams]);
+            return Utils.pruneContainedKgrams([...baseNgrams, ...supplementalNgrams, ...configuredNgrams]);
         };
 
         const buildSlopContextText = () => {
@@ -800,7 +858,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopWordSet = new Set(await getFilteredSlopWords(currentProse));
-            const slopNgramSet = new Set(collectSlopNgrams(currentProse));
+            const slopNgramSet = new Set(await collectSlopNgrams(currentProse));
 
             const detectedSlopWords = Array.from(slopWordSet);
             const detectedSlopNgrams = Array.from(slopNgramSet);
@@ -904,7 +962,7 @@ module.exports = function registerApiRoutes(scope) {
                 currentProse = candidateProse;
 
                 const remainingWords = await getFilteredSlopWords(currentProse);
-                const remainingNgrams = collectSlopNgrams(currentProse);
+                const remainingNgrams = await collectSlopNgrams(currentProse);
                 if (!remainingWords.length && !remainingNgrams.length) {
                     break;
                 }
@@ -12965,7 +13023,17 @@ module.exports = function registerApiRoutes(scope) {
         // Update player stats
         app.post('/api/player/update-stats', (req, res) => {
             try {
-                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints, statusEffects } = req.body;
+                const {
+                    name,
+                    description,
+                    level,
+                    health,
+                    attributes,
+                    skills: skillValues,
+                    unspentSkillPoints,
+                    unspentAttributePoints,
+                    statusEffects
+                } = req.body;
 
                 if (!currentPlayer) {
                     return res.status(404).json({
@@ -13025,6 +13093,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
                     currentPlayer.setUnspentSkillPoints(parseInt(unspentSkillPoints));
+                }
+
+                if (unspentAttributePoints !== undefined && !isNaN(unspentAttributePoints)) {
+                    currentPlayer.setUnspentAttributePoints(Number.parseInt(unspentAttributePoints, 10));
                 }
 
                 if (Object.prototype.hasOwnProperty.call(req.body, 'statusEffects')) {
@@ -13119,7 +13191,17 @@ module.exports = function registerApiRoutes(scope) {
         // Create new player from stats form
         app.post('/api/player/create-from-stats', async (req, res) => {
             try {
-                const { name, description, level, health, attributes, skills: skillValues, unspentSkillPoints, statusEffects } = req.body;
+                const {
+                    name,
+                    description,
+                    level,
+                    health,
+                    attributes,
+                    skills: skillValues,
+                    unspentSkillPoints,
+                    unspentAttributePoints,
+                    statusEffects
+                } = req.body;
 
                 // Validate required fields
                 if (!name || !name.trim()) {
@@ -13164,6 +13246,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (unspentSkillPoints !== undefined && !isNaN(unspentSkillPoints)) {
                     playerData.unspentSkillPoints = Math.max(0, parseInt(unspentSkillPoints));
+                }
+
+                if (unspentAttributePoints !== undefined && !isNaN(unspentAttributePoints)) {
+                    playerData.unspentAttributePoints = Number.parseInt(unspentAttributePoints, 10);
                 }
 
                 if (Array.isArray(statusEffects)) {
@@ -19687,7 +19773,8 @@ module.exports = function registerApiRoutes(scope) {
                     startingCurrency: startingCurrencyInput,
                     attributes: attributesInput,
                     skills: skillsInput,
-                    unspentSkillPoints: unspentSkillPointsInput
+                    unspentSkillPoints: unspentSkillPointsInput,
+                    unspentAttributePoints: unspentAttributePointsInput
                 } = body;
                 const hasNumSkills = Object.prototype.hasOwnProperty.call(body, 'numSkills');
                 const hasExistingSkills = Object.prototype.hasOwnProperty.call(body, 'existingSkills');
@@ -19878,6 +19965,7 @@ module.exports = function registerApiRoutes(scope) {
                     ? skillsInput
                     : null;
                 const parsedUnspentSkillPoints = Number(unspentSkillPointsInput);
+                const parsedUnspentAttributePoints = Number(unspentAttributePointsInput);
                 const playerOptions = {
                     name: resolvedPlayerName,
                     description: resolvedPlayerDescription,
@@ -19899,6 +19987,9 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (Number.isFinite(parsedUnspentSkillPoints)) {
                     playerOptions.unspentSkillPoints = parsedUnspentSkillPoints;
+                }
+                if (Number.isFinite(parsedUnspentAttributePoints)) {
+                    playerOptions.unspentAttributePoints = parsedUnspentAttributePoints;
                 }
                 const newPlayer = new Player(playerOptions);
                 if (typeof newPlayer.syncSkillsWithAvailable === 'function') {
