@@ -16,6 +16,7 @@ Response:
 
 Notes:
 - If an existing job is found, the endpoint returns 200 with `success: false` and `existingJob: true`.
+- The final image-generation prompt is automatically prepended with the active setting's `baseContextPreamble` (or `config.base_context_preamble` fallback) before job execution.
 
 ## POST /api/generate-image
 Legacy custom image generation endpoint.
@@ -30,6 +31,7 @@ Response:
 
 Notes:
 - The sync mode is explicitly marked as legacy in code.
+- The submitted prompt is automatically prepended with the active setting's `baseContextPreamble` (or `config.base_context_preamble` fallback) before job execution.
 
 ## GET /api/jobs/:jobId
 Fetch job status.

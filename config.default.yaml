@@ -162,6 +162,11 @@ random_event_frequency:
   locationSpecific: 0.05
 random_event_frequency_multiplier: 1
 
+# Supplemental story info prompt cadence:
+# - 0 = never run
+# - >0 = run every X turns, and also on turns where new NPCs or things are generated
+supplemental_story_info_prompt_frequency: 5
+
 # If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
 event_checks:
   enabled: true

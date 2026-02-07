@@ -41,9 +41,12 @@ Loaded on the chat page:
   Legacy classes (for example `.location-entity-*`, `.inventory-*`, `.npc-card-menu*`)
   are still emitted in templates/scripts for compatibility, but unified styles bind to
   the shared `entity-*` classes.
+- NPC memories/goals editors share `npc-list-editor-*` base classes for modal layout,
+  row controls, and actions; legacy `.npc-memories-*`/`.npc-goals-*` classes remain on
+  markup for compatibility.
 - Long names are handled client-side before render: when character/item/scenery
   names exceed 40 characters, the UI wraps the name in a `<span>` with
-  `font-size: 0.75em` and `line-height: 0.85`; regular names use line-height `1`.
+  `font-size: 0.75em` and `line-height: 0.85`; regular names use line-height `1.25`.
 - Skill allocation controls use `.skill-add-row` for inline add inputs and
   `.skill-remove-btn` for the compact remove button styling.
 - `.points-warning` reserves space for pool warning text so layout doesn't jump.

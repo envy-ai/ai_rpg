@@ -63,7 +63,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `removeFactionStanding(factionId)`.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
-  - `setAttribute(name, value)`.
+  - `setAttribute(name, value)` (if this increases max health, current health is increased by the same delta; decreases still clamp to max).
   - `getSkills()`, `getSkillValue(name)`, `setSkillValue(name, value)`.
   - `getSkillModifiers(name, { includeEquipped })`.
   - `increaseSkill(name, amount)`, `syncSkillsWithAvailable()`.

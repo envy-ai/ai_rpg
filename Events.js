@@ -1107,6 +1107,7 @@ class Events {
         allowEnvironmentalEffects = true,
         isNpcTurn = false,
         suppressMoveEvents = false,
+        allowMoveTurnAppearances = false,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -1328,6 +1329,7 @@ class Events {
                 allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                 isNpcTurn: Boolean(isNpcTurn),
                 suppressMoveEvents: Boolean(suppressMoveEvents),
+                allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
                 stream,
                 followupQueue: activeFollowupQueue,
                 _originatedFromEventChecks: true,
@@ -4847,7 +4849,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove) {
+                if (Globals.processedMove && !context.allowMoveTurnAppearances) {
                     // If we just processed a move, skip generating new items, as the location generator handles this
                     return;
                 }
@@ -4879,7 +4881,7 @@ class Events {
                     return;
                 }
 
-                if (Globals.processedMove) {
+                if (Globals.processedMove && !context.allowMoveTurnAppearances) {
                     // If we just processed a move, skip generating new scenery, as the location generator handles this
                     return;
                 }

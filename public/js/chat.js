@@ -712,8 +712,6 @@ class AIRPGChat {
         const latestPlayerAction = this.getLatestPlayerActionEntry();
         this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
 
-        const existingPromptProgress = this.promptProgressMessage;
-
         this.messageRegistry.clear();
         const fragment = document.createDocumentFragment();
 
@@ -818,9 +816,6 @@ class AIRPGChat {
             this.chatLog.appendChild(fragment);
         }
 
-        if (existingPromptProgress) {
-            this.chatLog.appendChild(existingPromptProgress);
-        }
         this.scrollToBottom();
     }
 
@@ -2050,24 +2045,45 @@ class AIRPGChat {
         if (!Array.isArray(entries)) {
             return;
         }
-        const canScroll = Boolean(this.chatLog);
-        const isNearBottom = canScroll
-            ? (this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop) <= 4
-            : false;
+
+        const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
 
         if (!entries.length) {
-            if (this.promptProgressHideTimer) {
-                clearTimeout(this.promptProgressHideTimer);
-                this.promptProgressHideTimer = null;
-            }
             if (this.promptProgressMessage) {
-                this.promptProgressHideTimer = setTimeout(() => {
-                    if (this.promptProgressMessage && this.promptProgressMessage.parentNode) {
-                        this.promptProgressMessage.parentNode.removeChild(this.promptProgressMessage);
-                    }
-                    this.promptProgressMessage = null;
-                    this.promptProgressHideTimer = null;
-                }, 3000);
+                const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
+                if (contentDiv) {
+                    const emptyTable = document.createElement('table');
+                    emptyTable.className = 'prompt-progress-table';
+                    const emptyHead = document.createElement('thead');
+                    emptyHead.innerHTML = tableHeaderHtml;
+                    const emptyBody = document.createElement('tbody');
+                    const placeholderRow = document.createElement('tr');
+                    placeholderRow.className = 'prompt-progress-placeholder-row';
+                    placeholderRow.setAttribute('hidden', '');
+                    placeholderRow.setAttribute('aria-hidden', 'true');
+                    emptyBody.appendChild(placeholderRow);
+                    emptyTable.appendChild(emptyHead);
+                    emptyTable.appendChild(emptyBody);
+                    const emptyWrap = document.createElement('div');
+                    emptyWrap.className = 'prompt-progress-table-wrap';
+                    emptyWrap.appendChild(emptyTable);
+                    contentDiv.innerHTML = '';
+                    contentDiv.appendChild(emptyWrap);
+                }
+                if (!this.promptProgressHideTimer) {
+                    this.promptProgressHideTimer = setTimeout(() => {
+                        if (!this.promptProgressMessage) {
+                            this.promptProgressHideTimer = null;
+                            return;
+                        }
+                        const livePlaceholderRow = this.promptProgressMessage.querySelector('tr.prompt-progress-placeholder-row');
+                        if (livePlaceholderRow && livePlaceholderRow.parentNode) {
+                            livePlaceholderRow.parentNode.removeChild(livePlaceholderRow);
+                        }
+                        this.promptProgressHideTimer = null;
+                    }, 5000);
+                }
             }
             return;
         }
@@ -2085,7 +2101,7 @@ class AIRPGChat {
         const table = document.createElement('table');
         table.className = 'prompt-progress-table';
         const thead = document.createElement('thead');
-        thead.innerHTML = '<tr><th class="prompt-progress-cancel-header"></th><th>Prompt</th><th>Model</th><th>Bytes</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Avg B/s</th><th>Retries</th></tr>';
+        thead.innerHTML = tableHeaderHtml;
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
         entries.forEach(entry => {
@@ -2138,41 +2154,65 @@ class AIRPGChat {
         tableWrap.appendChild(table);
 
         if (!this.promptProgressMessage) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message system-message prompt-progress-message';
-            const senderDiv = document.createElement('div');
-            senderDiv.className = 'message-sender';
-            senderDiv.textContent = '⏳ AI Prompts';
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            contentDiv.appendChild(tableWrap);
+            const overlay = document.createElement('aside');
+            overlay.className = 'prompt-progress-overlay';
+            overlay.setAttribute('aria-live', 'polite');
+            overlay.setAttribute('aria-label', 'AI prompt activity');
+
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'prompt-progress-overlay__header';
+
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'prompt-progress-overlay__meta';
+
+            const titleDiv = document.createElement('div');
+            titleDiv.className = 'prompt-progress-overlay__title';
+            titleDiv.textContent = '⏳ AI Prompts';
+
             const timestampDiv = document.createElement('div');
-            timestampDiv.className = 'message-timestamp';
-            timestampDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
-            messageDiv.appendChild(senderDiv);
-            messageDiv.appendChild(contentDiv);
-            messageDiv.appendChild(timestampDiv);
-            this.chatLog.appendChild(messageDiv);
-            this.promptProgressMessage = messageDiv;
+            timestampDiv.className = 'prompt-progress-overlay__timestamp';
+            timestampDiv.textContent = renderTimestamp();
+
+            const toggleButton = document.createElement('button');
+            toggleButton.type = 'button';
+            toggleButton.className = 'prompt-progress-overlay__toggle';
+            toggleButton.textContent = '−';
+            toggleButton.title = 'Contract prompt activity panel';
+            toggleButton.setAttribute('aria-label', 'Contract prompt activity panel');
+            toggleButton.setAttribute('aria-expanded', 'true');
+            toggleButton.addEventListener('click', () => {
+                const contracted = overlay.classList.toggle('is-contracted');
+                toggleButton.textContent = contracted ? '+' : '−';
+                toggleButton.title = contracted ? 'Expand prompt activity panel' : 'Contract prompt activity panel';
+                toggleButton.setAttribute('aria-label', toggleButton.title);
+                toggleButton.setAttribute('aria-expanded', contracted ? 'false' : 'true');
+            });
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'prompt-progress-overlay__content';
+            contentDiv.appendChild(tableWrap);
+
+            metaDiv.appendChild(titleDiv);
+            metaDiv.appendChild(timestampDiv);
+            headerDiv.appendChild(metaDiv);
+            headerDiv.appendChild(toggleButton);
+            overlay.appendChild(headerDiv);
+            overlay.appendChild(contentDiv);
+            document.body.appendChild(overlay);
+            this.promptProgressMessage = overlay;
         } else {
-            const contentDiv = this.promptProgressMessage.querySelector('.message-content');
+            if (!this.promptProgressMessage.isConnected) {
+                document.body.appendChild(this.promptProgressMessage);
+            }
+            const contentDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__content');
             if (contentDiv) {
                 contentDiv.innerHTML = '';
                 contentDiv.appendChild(tableWrap);
             }
-            const tsDiv = this.promptProgressMessage.querySelector('.message-timestamp');
+            const tsDiv = this.promptProgressMessage.querySelector('.prompt-progress-overlay__timestamp');
             if (tsDiv) {
-                tsDiv.textContent = new Date().toISOString().replace('T', ' ').replace('Z', '');
+                tsDiv.textContent = renderTimestamp();
             }
-            // Ensure the bubble stays at the bottom
-            if (this.promptProgressMessage.parentNode === this.chatLog) {
-                this.chatLog.removeChild(this.promptProgressMessage);
-            }
-            this.chatLog.appendChild(this.promptProgressMessage);
-        }
-
-        if (isNearBottom) {
-            this.scrollToBottom();
         }
     }
 

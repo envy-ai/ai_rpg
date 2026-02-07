@@ -1,0 +1,43 @@
+{
+  "playerName": "Baato",
+  "playerDescription": "A young human man.",
+  "playerClass": "Sorcerer",
+  "playerRace": "Human: Adaptable and balanced in all skills",
+  "playerLevel": 2,
+  "startingLocation": "Region name: Hollow's Edge Farmstead\n\nSummary: A dilapidated three-acre property at the southeastern fringe of Verdant Hollow, bordered by encroaching wildwoods to the east and the muddy track of Old Imperial Road to the west. The main house is a sagging two-story timber frame with a leaking thatch roof, a stone hearth clogged with bird nests, and a bedroom just large enough for a narrow bed and mounting desperation. The barn lists dangerously northward, its loft half-full of rotted straw and the unmistakable musk of some nocturnal squatter. A hand-dug well yields clean water, though the rope winch needs replacement. The eastern field shows promise—dark soil that breaks clean under a spade—but lies fallow under waist-high witchgrass. A collapsed toolshed, a small apple orchard of five gnarled trees, and a chicken coop missing its wire complete the inventory. Something with too many eyes watches from the treeline after dark.\n\nRooms/Locations: Leaning Barn, Well, Overgrown East Field, Collapsed Toolshed, Apple Orchard, Chicken Coop, Property Boundary (East Woods)\n\nRegion exits: Baato's Farmhouse, Verdant Hollow Town Center, Bleached Hills Trail, Wildwood Thicket",
+  "startingCurrency": 10,
+  "attributes": {
+    "strength": 10,
+    "dexterity": 10,
+    "constitution": 10,
+    "intelligence": 16,
+    "wisdom": 8,
+    "charisma": 12
+  },
+  "skills": {
+    "Alchemy": 1,
+    "Animal Care": 1,
+    "Bluff": 1,
+    "Brewing": 5,
+    "Charm": 1,
+    "Construction": 3,
+    "Cooking": 2,
+    "Crafting": 1,
+    "Engineering": 1,
+    "Exploration": 1,
+    "Farming": 1,
+    "Fishing": 1,
+    "Foraging": 3,
+    "Herbalism": 1,
+    "Magic": 7,
+    "Melee Combat": 1,
+    "Mining": 1,
+    "Negotiation": 1,
+    "Perception": 1,
+    "Ranged Combat": 5,
+    "Scavenging": 5,
+    "Smithing": 1,
+    "Stealth": 1,
+    "Tailoring": 1
+  }
+}

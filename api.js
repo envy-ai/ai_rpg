@@ -576,6 +576,7 @@ module.exports = function registerApiRoutes(scope) {
         const shortDescriptionBackfillByClient = new Map();
         let shortDescriptionBackfillInProgress = false;
         let supplementalStoryInfoInProgress = false;
+        let supplementalStoryInfoTurnCounter = 0;
         const normalizeSaveFileVersion = (value, fallback = 0) => {
             const numeric = Number(value);
             return Number.isFinite(numeric) ? numeric : fallback;
@@ -1213,6 +1214,30 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Supplemental story info response missing <storyNotes>.');
             }
             return notes;
+        }
+
+        function resolveSupplementalStoryInfoPromptFrequency() {
+            const rawFrequency = config?.supplemental_story_info_prompt_frequency;
+            if (rawFrequency === undefined || rawFrequency === null || rawFrequency === '') {
+                return 5;
+            }
+            const numericFrequency = Number(rawFrequency);
+            if (!Number.isFinite(numericFrequency) || numericFrequency < 0 || !Number.isInteger(numericFrequency)) {
+                throw new Error('supplemental_story_info_prompt_frequency must be an integer greater than or equal to 0.');
+            }
+            return numericFrequency;
+        }
+
+        function shouldRunSupplementalStoryInfoThisTurn({ generatedNpcOrThing = false } = {}) {
+            const frequency = resolveSupplementalStoryInfoPromptFrequency();
+            if (frequency === 0) {
+                return false;
+            }
+            supplementalStoryInfoTurnCounter += 1;
+            if (generatedNpcOrThing) {
+                return true;
+            }
+            return supplementalStoryInfoTurnCounter % frequency === 0;
         }
 
         async function runSupplementalStoryInfo({
@@ -3882,7 +3907,8 @@ module.exports = function registerApiRoutes(scope) {
                 originEventResult = await Events.runEventChecks({
                     textToCheck: originText,
                     stream,
-                    suppressMoveEvents: true
+                    suppressMoveEvents: true,
+                    allowMoveTurnAppearances: true
                 });
             }
 
@@ -3944,7 +3970,8 @@ module.exports = function registerApiRoutes(scope) {
                 destinationEventResult = await Events.runEventChecks({
                     textToCheck: destinationText,
                     stream,
-                    suppressMoveEvents: true
+                    suppressMoveEvents: true,
+                    allowMoveTurnAppearances: true
                 });
             }
 
@@ -4402,13 +4429,6 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: randomEventLocationId
                     }, entryCollector);
                 }
-
-                void runSupplementalStoryInfo({
-                    locationOverride: location,
-                    entryCollector,
-                    parentEntryId: randomEventEntry?.id || null,
-                    locationId: randomEventLocationId
-                });
 
                 return summary;
             } finally {
@@ -8056,13 +8076,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    void runSupplementalStoryInfo({
-                        locationOverride: npcLocation,
-                        entryCollector,
-                        parentEntryId: npcTurnEntry?.id || null,
-                        locationId: npcTurnLocationId
-                    });
-
                     results.push(npcTurnResult);
 
                     /*
@@ -8661,6 +8674,15 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 stream.status('player_action:context', 'Preparing game state for action.');
+
+                const turnStartNpcIds = new Set();
+                for (const [candidateId, candidate] of players.entries()) {
+                    if (!candidate || !candidate.isNPC) {
+                        continue;
+                    }
+                    turnStartNpcIds.add(candidateId);
+                }
+                const turnStartThingIds = new Set(Array.from(things.keys()));
 
                 let plausibilityInfo = null;
                 let attackCheckInfo = null;
@@ -9566,13 +9588,6 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    void runSupplementalStoryInfo({
-                        locationOverride: location,
-                        entryCollector: newChatEntries,
-                        parentEntryId: aiResponseEntry?.id || null,
-                        locationId: aiResponseLocationId
-                    });
-
                     let eventResult = null;
                     let questResult = null;
                     let originEventResult = null;
@@ -10348,6 +10363,31 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (npcTurnError) {
                         console.warn('Failed to process NPC turns after player action:', npcTurnError.message);
+                    }
+
+                    const generatedNpcIdsThisTurn = [];
+                    for (const [candidateId, candidate] of players.entries()) {
+                        if (!candidate || !candidate.isNPC) {
+                            continue;
+                        }
+                        if (!turnStartNpcIds.has(candidateId)) {
+                            generatedNpcIdsThisTurn.push(candidateId);
+                        }
+                    }
+                    const generatedThingIdsThisTurn = [];
+                    for (const candidateId of things.keys()) {
+                        if (!turnStartThingIds.has(candidateId)) {
+                            generatedThingIdsThisTurn.push(candidateId);
+                        }
+                    }
+                    const generatedNpcOrThing = generatedNpcIdsThisTurn.length > 0 || generatedThingIdsThisTurn.length > 0;
+                    if (shouldRunSupplementalStoryInfoThisTurn({ generatedNpcOrThing })) {
+                        void runSupplementalStoryInfo({
+                            locationOverride: location,
+                            entryCollector: newChatEntries,
+                            parentEntryId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId
+                        });
                     }
 
                     try {

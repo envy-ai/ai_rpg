@@ -25,6 +25,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#npcInventoryModal`: character inventory listing with filters.
 - `#npcViewModal`: character overview (attributes, gear, skills, abilities, status).
   - Attributes/skills now use the shared allocation partials from the New Game UI.
+  - Attribute and skill allocation areas no longer use nested internal scrollbars; they inherit the modal body's single scroll container.
   - NPCs render those controls in read-only mode.
   - Player view mode enables spending unspent attribute/skill points directly in the modal.
   - Player save flow blocks submit on negative pools and prompts confirmation if pools remain positive.

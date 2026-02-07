@@ -930,10 +930,18 @@ function saveUploadedLocationImage(dataUrl) {
 
 // Create a new image generation job
 function createImageJob(jobId, payload = {}) {
+    const normalizedPayload = (payload && typeof payload === 'object') ? { ...payload } : {};
+    if (Object.prototype.hasOwnProperty.call(normalizedPayload, 'prompt')) {
+        if (typeof normalizedPayload.prompt !== 'string') {
+            throw new Error('Image job prompt must be a string when provided.');
+        }
+        normalizedPayload.prompt = prependBaseContextPreamble(normalizedPayload.prompt);
+    }
+
     const job = {
         id: jobId,
         status: JOB_STATUS.QUEUED,
-        payload,
+        payload: normalizedPayload,
         progress: 0,
         message: 'Job queued for processing',
         createdAt: new Date().toISOString(),
@@ -945,8 +953,8 @@ function createImageJob(jobId, payload = {}) {
         subscribers: new Set()
     };
 
-    if (payload && payload.clientId) {
-        job.subscribers.add(payload.clientId);
+    if (normalizedPayload && normalizedPayload.clientId) {
+        job.subscribers.add(normalizedPayload.clientId);
     }
 
     imageJobs.set(jobId, job);
@@ -18217,45 +18225,83 @@ async function generatePlayerImage(player, options = {}) {
 }
 
 // Function to generate image prompt using LLM
+function resolveBaseContextPreambleForImagePrompts() {
+    const settingSnapshot = getActiveSettingSnapshot();
+    const settingPreamble = typeof settingSnapshot?.baseContextPreamble === 'string'
+        ? settingSnapshot.baseContextPreamble.trim()
+        : '';
+    if (settingPreamble) {
+        return settingPreamble;
+    }
+
+    const configPreamble = typeof config?.base_context_preamble === 'string'
+        ? config.base_context_preamble.trim()
+        : '';
+    return configPreamble;
+}
+
+function prependBaseContextPreamble(promptText) {
+    if (typeof promptText !== 'string') {
+        throw new TypeError('Image prompt text must be a string.');
+    }
+
+    const trimmedPrompt = promptText.trim();
+    if (!trimmedPrompt) {
+        return '';
+    }
+
+    const basePreamble = resolveBaseContextPreambleForImagePrompts();
+    if (!basePreamble) {
+        return trimmedPrompt;
+    }
+
+    if (
+        trimmedPrompt === basePreamble
+        || trimmedPrompt.startsWith(`${basePreamble}\n`)
+        || trimmedPrompt.startsWith(`${basePreamble}\r\n`)
+    ) {
+        return trimmedPrompt;
+    }
+
+    return `${basePreamble}\n\n${trimmedPrompt}`;
+}
+
 function applyImagePromptPrefix(promptText, prefixType = null) {
-    if (!promptText || typeof promptText !== 'string' || !prefixType) {
+    if (!promptText || typeof promptText !== 'string') {
         return typeof promptText === 'string' ? promptText : '';
     }
 
     const settingSnapshot = getActiveSettingSnapshot();
-    if (!settingSnapshot) {
-        return promptText.trim();
-    }
+    const trimmedPrompt = promptText.trim();
 
     const resolvedType = String(prefixType).toLowerCase();
     let prefix = '';
 
-    switch (resolvedType) {
-        case 'character':
-            prefix = settingSnapshot.imagePromptPrefixCharacter || '';
-            break;
-        case 'location':
-            prefix = settingSnapshot.imagePromptPrefixLocation || '';
-            break;
-        case 'item':
-            prefix = settingSnapshot.imagePromptPrefixItem || '';
-            break;
-        case 'scenery':
-            prefix = settingSnapshot.imagePromptPrefixScenery || '';
-            break;
-        default:
-            prefix = '';
-            break;
+    if (settingSnapshot) {
+        switch (resolvedType) {
+            case 'character':
+                prefix = settingSnapshot.imagePromptPrefixCharacter || '';
+                break;
+            case 'location':
+                prefix = settingSnapshot.imagePromptPrefixLocation || '';
+                break;
+            case 'item':
+                prefix = settingSnapshot.imagePromptPrefixItem || '';
+                break;
+            case 'scenery':
+                prefix = settingSnapshot.imagePromptPrefixScenery || '';
+                break;
+            default:
+                prefix = '';
+                break;
+        }
     }
 
     const trimmedPrefix = typeof prefix === 'string' ? prefix.trim() : '';
-    const trimmedPrompt = promptText.trim();
-
-    if (!trimmedPrefix) {
-        return trimmedPrompt;
-    }
-
-    return `${trimmedPrefix}\n\n${trimmedPrompt}`;
+    const combinedPrompt = trimmedPrefix
+        ? `${trimmedPrefix}\n\n${trimmedPrompt}`
+        : trimmedPrompt;
+    return prependBaseContextPreamble(combinedPrompt);
 }
 
 async function generateImagePromptFromTemplate(prompts, options = {}) {

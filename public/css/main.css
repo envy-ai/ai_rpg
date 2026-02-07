@@ -1331,6 +1331,7 @@ p:not(:last-child) {
 .location-exit-add-button:disabled,
 .button:disabled,
 .location-npc-add-button:disabled,
+.npc-adjustment-save-btn:disabled,
 .npc-disposition-save-btn:disabled,
 .npc-needs-save-btn:disabled {
   opacity: 0.55;
@@ -1410,6 +1411,7 @@ p:not(:last-child) {
 }
 
 .load-game-status[data-variant=error],
+.npc-adjustment-status.is-error,
 .npc-disposition-status.is-error,
 .npc-needs-status.is-error,
 .new-exit-status.is-error,
@@ -1420,6 +1422,7 @@ p:not(:last-child) {
 }
 
 .load-game-status[data-variant=success],
+.npc-adjustment-status.is-success,
 .npc-disposition-status.is-success,
 .npc-needs-status.is-success,
 .new-exit-status.is-success,
@@ -2140,7 +2143,7 @@ p:not(:last-child) {
   margin: 0;
   min-height: 80px;
   max-height: 80px;
-  line-height: 1;
+  line-height: 1.25;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -3480,7 +3483,6 @@ body.dark .thing-toggle-hint {
 .prompt-progress-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 6px;
   font-size: 75%;
 }
 .prompt-progress-table th,
@@ -3495,6 +3497,9 @@ body.dark .thing-toggle-hint {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   font-size: 0.85em;
+}
+.prompt-progress-table td {
+  color: #f8fafc;
 }
 .prompt-progress-table tbody tr:nth-child(odd) {
   background: rgba(255, 255, 255, 0.02);
@@ -3755,6 +3760,110 @@ body.dark .thing-toggle-hint {
   font-size: 0.9rem;
 }
 
+.prompt-progress-overlay {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: min(680px, 48vw);
+  height: 260px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.84), rgba(30, 41, 59, 0.84));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(8px);
+  z-index: 3400;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.prompt-progress-overlay:has(.prompt-progress-table tbody:empty) {
+  display: none;
+}
+
+.prompt-progress-overlay__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.prompt-progress-overlay__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prompt-progress-overlay__title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #dbeafe;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.prompt-progress-overlay__timestamp {
+  font-size: 0.7rem;
+  color: rgba(191, 219, 254, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-progress-overlay__toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.5);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.3s ease;
+}
+.prompt-progress-overlay__toggle:hover {
+  background: rgba(59, 130, 246, 0.4);
+}
+
+.prompt-progress-overlay.is-contracted {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.prompt-progress-overlay.is-contracted .prompt-progress-overlay__header {
+  border-bottom: 0;
+  padding: 0;
+  justify-content: center;
+}
+
+.prompt-progress-overlay.is-contracted .prompt-progress-overlay__meta,
+.prompt-progress-overlay.is-contracted .prompt-progress-overlay__content {
+  display: none;
+}
+
+.prompt-progress-overlay.is-contracted .prompt-progress-overlay__toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border-color: rgba(191, 219, 254, 0.6);
+}
+
+.prompt-progress-overlay__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 10px 10px;
+}
+
 @media (max-width: 1100px) {
   .factions-panel {
     flex-direction: column;
@@ -3778,10 +3887,18 @@ body.dark .thing-toggle-hint {
 .prompt-progress-table-wrap {
   max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   box-sizing: border-box;
 }
 
+@media (max-width: 900px) {
+  .prompt-progress-overlay {
+    width: min(560px, 100vw - 20px);
+    height: 220px;
+    right: 10px;
+    top: 10px;
+  }
+}
 .form-actions {
   margin-top: 30px;
   display: flex;
@@ -4831,6 +4948,7 @@ body.modal-open {
 }
 
 .npc-inventory-filter-radios,
+.npc-adjustment-control-row,
 .npc-disposition-control-row,
 .npc-needs-input-row {
   display: flex;
@@ -5013,8 +5131,11 @@ body.modal-open {
   max-width: 720px;
 }
 
-.npc-disposition-body,
-.npc-needs-body {
+.npc-needs-modal .modal__dialog {
+  max-width: 760px;
+}
+
+.npc-adjustment-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -5022,8 +5143,7 @@ body.modal-open {
   overflow: hidden;
 }
 
-.npc-disposition-summary,
-.npc-needs-summary {
+.npc-adjustment-summary {
   font-size: 0.9rem;
   line-height: 1.5;
   color: #cbd5f5;
@@ -5033,16 +5153,14 @@ body.modal-open {
   background: rgba(15, 23, 42, 0.55);
 }
 
-.npc-disposition-loading,
-.npc-needs-loading {
+.npc-adjustment-loading {
   font-size: 0.95rem;
   color: #cbd5f5;
   text-align: center;
   padding: 12px 0;
 }
 
-.npc-disposition-list,
-.npc-needs-list {
+.npc-adjustment-list {
   flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
@@ -5051,16 +5169,14 @@ body.modal-open {
   padding-right: 4px;
 }
 
-.npc-disposition-empty,
-.npc-needs-empty {
+.npc-adjustment-empty {
   text-align: center;
   color: #94a3b8;
   font-size: 0.9rem;
   padding: 20px 0;
 }
 
-.npc-disposition-entry {
-  background: rgba(15, 23, 42, 0.68);
+.npc-adjustment-entry {
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 12px;
   padding: 16px;
@@ -5069,18 +5185,36 @@ body.modal-open {
   gap: 12px;
 }
 
-.npc-disposition-heading {
+.npc-adjustment-entry--disposition {
+  background: rgba(15, 23, 42, 0.68);
+}
+
+.npc-adjustment-entry--needs {
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.npc-adjustment-heading {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   flex-wrap: wrap;
+  gap: 10px;
+}
+
+.npc-adjustment-heading--disposition {
   gap: 12px;
 }
 
-.npc-disposition-label {
+.npc-adjustment-label {
   font-size: 1rem;
   font-weight: 600;
   color: #e2e8f0;
+}
+
+.npc-adjustment-label--needs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .npc-disposition-intensity {
@@ -5088,24 +5222,23 @@ body.modal-open {
   color: #93c5fd;
 }
 
-.npc-disposition-description,
-.npc-needs-description {
+.npc-adjustment-description {
   font-size: 0.85rem;
   color: #cbd5f5;
   line-height: 1.5;
 }
 
-.npc-disposition-slider-row {
+.npc-adjustment-slider-row {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
 .npc-disposition-slider {
   width: 100%;
 }
 
-.npc-disposition-value-input,
-.npc-needs-value-input {
+.npc-adjustment-value-input {
   display: flex;
   flex-direction: column;
   min-width: 120px;
@@ -5113,8 +5246,7 @@ body.modal-open {
   font-size: 0.85rem;
 }
 
-.npc-disposition-value-input input,
-.npc-needs-value-input input {
+.npc-adjustment-value-input input {
   margin-top: 4px;
   background: rgba(15, 23, 42, 0.75);
   border: 1px solid rgba(148, 163, 184, 0.45);
@@ -5124,46 +5256,65 @@ body.modal-open {
   font-size: 0.95rem;
 }
 
-.npc-disposition-value-input input:focus {
+.npc-adjustment-value-input--disposition input:focus {
   border-color: rgba(96, 165, 250, 0.65);
   outline: none;
 }
 
-.npc-disposition-buttons,
-.npc-needs-buttons {
+.npc-adjustment-value-input--needs input:focus {
+  border-color: rgba(129, 140, 248, 0.65);
+  outline: none;
+}
+
+.npc-adjustment-buttons {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.npc-disposition-buttons button {
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(96, 165, 250, 0.4);
+.npc-adjustment-buttons button {
   border-radius: 6px;
   padding: 6px 12px;
-  color: #dbeafe;
   font-size: 0.85rem;
   cursor: pointer;
   transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
 }
 
-.npc-disposition-buttons button:hover,
-.npc-disposition-buttons button:focus {
+.npc-adjustment-buttons--disposition button {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: #dbeafe;
+}
+
+.npc-adjustment-buttons--disposition button:hover,
+.npc-adjustment-buttons--disposition button:focus {
   background: rgba(59, 130, 246, 0.28);
   border-color: rgba(59, 130, 246, 0.55);
   color: #ffffff;
   outline: none;
 }
 
-.npc-disposition-thresholds,
-.npc-needs-thresholds {
+.npc-adjustment-buttons--needs button {
+  background: rgba(129, 140, 248, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: #e0e7ff;
+}
+
+.npc-adjustment-buttons--needs button:hover,
+.npc-adjustment-buttons--needs button:focus {
+  background: rgba(99, 102, 241, 0.32);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #ffffff;
+  outline: none;
+}
+
+.npc-adjustment-thresholds {
   font-size: 0.75rem;
   color: #94a3b8;
   line-height: 1.4;
 }
 
-.npc-disposition-footer,
-.npc-needs-footer {
+.npc-adjustment-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -5173,23 +5324,19 @@ body.modal-open {
   border-top: 1px solid rgba(148, 163, 184, 0.28);
 }
 
-.npc-disposition-status,
-.npc-needs-status {
+.npc-adjustment-status {
   font-size: 0.85rem;
   color: #e2e8f0;
 }
 
-.npc-disposition-actions,
-.npc-needs-actions,
+.npc-adjustment-actions,
 .new-exit-actions {
   display: flex;
   gap: 10px;
 }
 
-.npc-disposition-cancel,
-.npc-disposition-save-btn,
-.npc-needs-cancel,
-.npc-needs-save-btn {
+.npc-adjustment-cancel,
+.npc-adjustment-save-btn {
   border-radius: 8px;
   padding: 8px 18px;
   font-weight: 600;
@@ -5198,63 +5345,32 @@ body.modal-open {
   transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
 }
 
-.npc-disposition-cancel {
+.npc-adjustment-cancel {
   background: transparent;
   border-color: rgba(148, 163, 184, 0.45);
   color: #cbd5f5;
 }
 
-.npc-disposition-cancel:hover,
-.npc-disposition-cancel:focus {
+.npc-adjustment-cancel:hover,
+.npc-adjustment-cancel:focus {
   background: rgba(148, 163, 184, 0.12);
   border-color: rgba(148, 163, 184, 0.6);
   color: #ffffff;
   outline: none;
 }
 
-.npc-disposition-save-btn {
+.npc-adjustment-save-btn--disposition {
   background: rgba(59, 130, 246, 0.22);
   border-color: rgba(59, 130, 246, 0.55);
   color: #e0f2fe;
 }
 
-.npc-disposition-save-btn:hover,
-.npc-disposition-save-btn:focus {
+.npc-adjustment-save-btn--disposition:hover,
+.npc-adjustment-save-btn--disposition:focus {
   background: rgba(59, 130, 246, 0.35);
   border-color: rgba(59, 130, 246, 0.75);
   color: #ffffff;
   outline: none;
-}
-
-.npc-needs-modal .modal__dialog {
-  max-width: 760px;
-}
-
-.npc-needs-entry {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.npc-needs-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.npc-needs-label {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #e2e8f0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .npc-needs-meta {
@@ -5284,12 +5400,6 @@ body.modal-open {
   width: 0;
 }
 
-.npc-needs-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .npc-needs-value-display {
   font-size: 0.85rem;
   color: #bfdbfe;
@@ -5300,63 +5410,27 @@ body.modal-open {
   flex: 1 1 auto;
 }
 
-.npc-needs-value-input input:focus {
-  border-color: rgba(129, 140, 248, 0.65);
-  outline: none;
-}
-
-.npc-needs-buttons button {
-  background: rgba(129, 140, 248, 0.15);
-  border: 1px solid rgba(129, 140, 248, 0.35);
-  border-radius: 6px;
-  padding: 6px 12px;
-  color: #e0e7ff;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: background 0.2s ease, border 0.2s ease, color 0.2s ease;
-}
-
-.npc-needs-buttons button:hover,
-.npc-needs-buttons button:focus {
-  background: rgba(99, 102, 241, 0.32);
-  border-color: rgba(99, 102, 241, 0.55);
-  color: #ffffff;
-  outline: none;
-}
-
-.npc-needs-cancel {
-  background: transparent;
-  border-color: rgba(148, 163, 184, 0.45);
-  color: #cbd5f5;
-}
-
-.npc-needs-cancel:hover,
-.npc-needs-cancel:focus {
-  background: rgba(148, 163, 184, 0.14);
-  border-color: rgba(148, 163, 184, 0.6);
-  color: #ffffff;
-  outline: none;
-}
-
-.npc-needs-save-btn {
+.npc-adjustment-save-btn--needs {
   background: rgba(129, 140, 248, 0.22);
   border-color: rgba(129, 140, 248, 0.55);
   color: #ede9fe;
 }
 
-.npc-needs-save-btn:hover,
-.npc-needs-save-btn:focus {
+.npc-adjustment-save-btn--needs:hover,
+.npc-adjustment-save-btn--needs:focus {
   background: rgba(129, 140, 248, 0.34);
   border-color: rgba(129, 140, 248, 0.75);
   color: #ffffff;
   outline: none;
 }
 
+.npc-list-editor-modal .modal__dialog,
 .npc-memories-modal .modal__dialog,
 .npc-goals-modal .modal__dialog {
   max-width: 700px;
 }
 
+.npc-list-editor-body,
 .npc-memories-body,
 .npc-goals-body {
   display: flex;
@@ -5364,6 +5438,7 @@ body.modal-open {
   gap: 1rem;
 }
 
+.npc-list-editor-help,
 .npc-memories-help,
 .npc-goals-help {
   margin: 0;
@@ -5371,6 +5446,7 @@ body.modal-open {
   color: #ffffff;
 }
 
+.npc-list-editor-list,
 .npc-memories-list,
 .npc-goals-list {
   display: flex;
@@ -5378,6 +5454,7 @@ body.modal-open {
   gap: 0.75rem;
 }
 
+.npc-list-editor-row,
 .npc-memory-row,
 .npc-goal-row {
   display: grid;
@@ -5390,12 +5467,14 @@ body.modal-open {
   padding: 0.5rem 0.75rem;
 }
 
+.npc-list-editor-row.dragging,
 .npc-memory-row.dragging,
 .npc-goal-row.dragging {
   opacity: 0.6;
   border-style: dashed;
 }
 
+.npc-list-editor-handle,
 .npc-memory-handle,
 .npc-goal-handle {
   display: inline-flex;
@@ -5411,12 +5490,14 @@ body.modal-open {
   user-select: none;
 }
 
+.npc-list-editor-handle:focus,
 .npc-memory-handle:focus,
 .npc-goal-handle:focus {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }
 
+.npc-list-editor-text,
 .npc-memory-text,
 .npc-goal-text {
   width: 100%;
@@ -5430,6 +5511,7 @@ body.modal-open {
   color: #0f172a;
 }
 
+.npc-list-editor-text:focus,
 .npc-memory-text:focus,
 .npc-goal-text:focus {
   outline: 2px solid #2563eb;
@@ -5437,6 +5519,7 @@ body.modal-open {
   box-shadow: inset 0 1px 4px rgba(15, 23, 42, 0.25);
 }
 
+.npc-list-editor-delete,
 .npc-memory-delete,
 .npc-goal-delete {
   align-self: center;
@@ -5450,6 +5533,8 @@ body.modal-open {
   justify-content: center;
 }
 
+.npc-list-editor-delete:hover,
+.npc-list-editor-delete:focus,
 .npc-memory-delete:hover,
 .npc-memory-delete:focus,
 .npc-goal-delete:hover,
@@ -5458,6 +5543,7 @@ body.modal-open {
   border-color: #991b1b;
 }
 
+.npc-list-editor-add,
 .npc-memories-add,
 .npc-goals-add {
   align-self: center;
@@ -5468,6 +5554,8 @@ body.modal-open {
   border: none;
 }
 
+.npc-list-editor-add:hover,
+.npc-list-editor-add:focus,
 .npc-memories-add:hover,
 .npc-memories-add:focus,
 .npc-goals-add:hover,
@@ -5475,6 +5563,7 @@ body.modal-open {
   background: #1e40af;
 }
 
+.npc-list-editor-footer,
 .npc-memories-footer,
 .npc-goals-footer {
   display: flex;
@@ -5484,28 +5573,34 @@ body.modal-open {
   padding: 0 0.5rem 0.75rem;
 }
 
+.npc-list-editor-status,
 .npc-memories-status,
 .npc-goals-status {
   min-height: 1.5rem;
   font-size: 0.95rem;
 }
 
+.npc-list-editor-status.is-error,
 .npc-memories-status.is-error,
 .npc-goals-status.is-error {
   color: #b91c1c;
 }
 
+.npc-list-editor-status.is-success,
 .npc-memories-status.is-success,
 .npc-goals-status.is-success {
   color: #047857;
 }
 
+.npc-list-editor-actions,
 .npc-memories-actions,
 .npc-goals-actions {
   display: flex;
   gap: 0.75rem;
 }
 
+.npc-list-editor-cancel,
+.npc-list-editor-save,
 .npc-memories-cancel,
 .npc-memories-save,
 .npc-goals-cancel,
@@ -5516,12 +5611,15 @@ body.modal-open {
   font-weight: 600;
 }
 
+.npc-list-editor-cancel,
 .npc-memories-cancel,
 .npc-goals-cancel {
   background: rgba(15, 23, 42, 0.08);
   color: #0f172a;
 }
 
+.npc-list-editor-cancel:hover,
+.npc-list-editor-cancel:focus,
 .npc-memories-cancel:hover,
 .npc-memories-cancel:focus,
 .npc-goals-cancel:hover,
@@ -5529,12 +5627,15 @@ body.modal-open {
   background: rgba(15, 23, 42, 0.12);
 }
 
+.npc-list-editor-save,
 .npc-memories-save,
 .npc-goals-save {
   background: #15803d;
   color: #fff;
 }
 
+.npc-list-editor-save:hover,
+.npc-list-editor-save:focus,
 .npc-memories-save:hover,
 .npc-memories-save:focus,
 .npc-goals-save:hover,
@@ -5542,6 +5643,7 @@ body.modal-open {
   background: #166534;
 }
 
+.npc-list-editor-save:disabled,
 .npc-memories-save:disabled,
 .npc-goals-save:disabled {
   opacity: 0.6;
@@ -5697,9 +5799,9 @@ body.modal-open {
 
 #npcViewAttributeGrid,
 #npcViewSkillsGrid {
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 4px;
+  max-height: none;
+  overflow-y: visible;
+  padding-right: 0;
 }
 
 .npc-view-allocation-actions {

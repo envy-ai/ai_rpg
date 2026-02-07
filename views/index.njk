@@ -789,17 +789,17 @@
                     <span aria-hidden="true">X</span>
                 </button>
             </header>
-            <form id="npcDispositionForm" class="modal__body npc-disposition-body" novalidate>
-                <div class="npc-disposition-summary" id="npcDispositionSummary"></div>
-                <div class="npc-disposition-loading" id="npcDispositionLoading" hidden>Loading dispositions…</div>
-                <div class="npc-disposition-list" id="npcDispositionList">
-                    <div class="npc-disposition-empty" id="npcDispositionEmpty">No disposition data available.</div>
+            <form id="npcDispositionForm" class="modal__body npc-adjustment-body npc-adjustment-body--disposition npc-disposition-body" novalidate>
+                <div class="npc-adjustment-summary npc-disposition-summary" id="npcDispositionSummary"></div>
+                <div class="npc-adjustment-loading npc-disposition-loading" id="npcDispositionLoading" hidden>Loading dispositions…</div>
+                <div class="npc-adjustment-list npc-disposition-list" id="npcDispositionList">
+                    <div class="npc-adjustment-empty npc-disposition-empty" id="npcDispositionEmpty">No disposition data available.</div>
                 </div>
-                <footer class="npc-disposition-footer">
-                    <div class="npc-disposition-status" id="npcDispositionStatus" role="status" aria-live="polite"></div>
-                    <div class="npc-disposition-actions">
-                        <button type="button" class="npc-disposition-cancel" id="npcDispositionCancelBtn">Cancel</button>
-                        <button type="submit" class="npc-disposition-save-btn" id="npcDispositionSaveBtn">Save Changes</button>
+                <footer class="npc-adjustment-footer npc-disposition-footer">
+                    <div class="npc-adjustment-status npc-disposition-status" id="npcDispositionStatus" role="status" aria-live="polite"></div>
+                    <div class="npc-adjustment-actions npc-disposition-actions">
+                        <button type="button" class="npc-adjustment-cancel npc-adjustment-cancel--disposition npc-disposition-cancel" id="npcDispositionCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-adjustment-save-btn npc-adjustment-save-btn--disposition npc-disposition-save-btn" id="npcDispositionSaveBtn">Save Changes</button>
                     </div>
                 </footer>
             </form>
@@ -813,17 +813,17 @@
                     <span aria-hidden="true">X</span>
                 </button>
             </header>
-            <form id="npcNeedsForm" class="modal__body npc-needs-body" novalidate>
-                <div class="npc-needs-summary" id="npcNeedsSummary"></div>
-                <div class="npc-needs-loading" id="npcNeedsLoading" hidden>Loading needs…</div>
-                <div class="npc-needs-list" id="npcNeedsList">
-                    <div class="npc-needs-empty" id="npcNeedsEmpty">No need bars available.</div>
+            <form id="npcNeedsForm" class="modal__body npc-adjustment-body npc-adjustment-body--needs npc-needs-body" novalidate>
+                <div class="npc-adjustment-summary npc-needs-summary" id="npcNeedsSummary"></div>
+                <div class="npc-adjustment-loading npc-needs-loading" id="npcNeedsLoading" hidden>Loading needs…</div>
+                <div class="npc-adjustment-list npc-needs-list" id="npcNeedsList">
+                    <div class="npc-adjustment-empty npc-needs-empty" id="npcNeedsEmpty">No need bars available.</div>
                 </div>
-                <footer class="npc-needs-footer">
-                    <div class="npc-needs-status" id="npcNeedsStatus" role="status" aria-live="polite"></div>
-                    <div class="npc-needs-actions">
-                        <button type="button" class="npc-needs-cancel" id="npcNeedsCancelBtn">Cancel</button>
-                        <button type="submit" class="npc-needs-save-btn" id="npcNeedsSaveBtn">Save Changes</button>
+                <footer class="npc-adjustment-footer npc-needs-footer">
+                    <div class="npc-adjustment-status npc-needs-status" id="npcNeedsStatus" role="status" aria-live="polite"></div>
+                    <div class="npc-adjustment-actions npc-needs-actions">
+                        <button type="button" class="npc-adjustment-cancel npc-adjustment-cancel--needs npc-needs-cancel" id="npcNeedsCancelBtn">Cancel</button>
+                        <button type="submit" class="npc-adjustment-save-btn npc-adjustment-save-btn--needs npc-needs-save-btn" id="npcNeedsSaveBtn">Save Changes</button>
                     </div>
                 </footer>
             </form>
@@ -890,7 +890,7 @@
             </footer>
         </div>
     </div>
-    <div id="npcMemoriesModal" class="modal npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="npcMemoriesModal" class="modal npc-list-editor-modal npc-list-editor-modal--memories npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="npcMemoriesModalTitle">Edit Memories</h2>
@@ -898,21 +898,21 @@
                     <span aria-hidden="true">X</span>
                 </button>
             </header>
-            <div class="modal__body npc-memories-body">
-                <p class="npc-memories-help">Update the character's important memories. Drag the handle to reorder entries.</p>
-                <div id="npcMemoriesList" class="npc-memories-list" role="list"></div>
-                <button type="button" class="npc-memories-add" id="npcMemoriesAddBtn">Add Memory</button>
+            <div class="modal__body npc-list-editor-body npc-list-editor-body--memories npc-memories-body">
+                <p class="npc-list-editor-help npc-list-editor-help--memories npc-memories-help">Update the character's important memories. Drag the handle to reorder entries.</p>
+                <div id="npcMemoriesList" class="npc-list-editor-list npc-list-editor-list--memories npc-memories-list" role="list"></div>
+                <button type="button" class="npc-list-editor-add npc-list-editor-add--memories npc-memories-add" id="npcMemoriesAddBtn">Add Memory</button>
             </div>
-            <footer class="modal__footer npc-memories-footer">
-                <div id="npcMemoriesStatus" class="npc-memories-status" role="status" aria-live="polite"></div>
-                <div class="npc-memories-actions">
-                    <button type="button" class="npc-memories-cancel" id="npcMemoriesCancelBtn">Cancel</button>
-                    <button type="button" class="npc-memories-save" id="npcMemoriesSaveBtn">Save</button>
+            <footer class="modal__footer npc-list-editor-footer npc-list-editor-footer--memories npc-memories-footer">
+                <div id="npcMemoriesStatus" class="npc-list-editor-status npc-list-editor-status--memories npc-memories-status" role="status" aria-live="polite"></div>
+                <div class="npc-list-editor-actions npc-list-editor-actions--memories npc-memories-actions">
+                    <button type="button" class="npc-list-editor-cancel npc-list-editor-cancel--memories npc-memories-cancel" id="npcMemoriesCancelBtn">Cancel</button>
+                    <button type="button" class="npc-list-editor-save npc-list-editor-save--memories npc-memories-save" id="npcMemoriesSaveBtn">Save</button>
                 </div>
             </footer>
         </div>
     </div>
-    <div id="npcGoalsModal" class="modal npc-goals-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="npcGoalsModal" class="modal npc-list-editor-modal npc-list-editor-modal--goals npc-goals-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="npcGoalsModalTitle">Edit Goals</h2>
@@ -920,16 +920,16 @@
                     <span aria-hidden="true">X</span>
                 </button>
             </header>
-            <div class="modal__body npc-goals-body">
-                <p class="npc-goals-help">Update the character's active goals. Drag the handle to reorder entries.</p>
-                <div id="npcGoalsList" class="npc-goals-list" role="list"></div>
-                <button type="button" class="npc-goals-add" id="npcGoalsAddBtn">Add Goal</button>
+            <div class="modal__body npc-list-editor-body npc-list-editor-body--goals npc-goals-body">
+                <p class="npc-list-editor-help npc-list-editor-help--goals npc-goals-help">Update the character's active goals. Drag the handle to reorder entries.</p>
+                <div id="npcGoalsList" class="npc-list-editor-list npc-list-editor-list--goals npc-goals-list" role="list"></div>
+                <button type="button" class="npc-list-editor-add npc-list-editor-add--goals npc-goals-add" id="npcGoalsAddBtn">Add Goal</button>
             </div>
-            <footer class="modal__footer npc-goals-footer">
-                <div id="npcGoalsStatus" class="npc-goals-status" role="status" aria-live="polite"></div>
-                <div class="npc-goals-actions">
-                    <button type="button" class="npc-goals-cancel" id="npcGoalsCancelBtn">Cancel</button>
-                    <button type="button" class="npc-goals-save" id="npcGoalsSaveBtn">Save</button>
+            <footer class="modal__footer npc-list-editor-footer npc-list-editor-footer--goals npc-goals-footer">
+                <div id="npcGoalsStatus" class="npc-list-editor-status npc-list-editor-status--goals npc-goals-status" role="status" aria-live="polite"></div>
+                <div class="npc-list-editor-actions npc-list-editor-actions--goals npc-goals-actions">
+                    <button type="button" class="npc-list-editor-cancel npc-list-editor-cancel--goals npc-goals-cancel" id="npcGoalsCancelBtn">Cancel</button>
+                    <button type="button" class="npc-list-editor-save npc-list-editor-save--goals npc-goals-save" id="npcGoalsSaveBtn">Save</button>
                 </div>
             </footer>
         </div>
@@ -6900,14 +6900,14 @@
                 entry.intensity = intensityLabel;
 
                 const card = document.createElement('div');
-                card.className = 'npc-disposition-entry';
+                card.className = 'npc-adjustment-entry npc-adjustment-entry--disposition npc-disposition-entry';
                 card.dataset.key = entry.key || '';
 
                 const heading = document.createElement('div');
-                heading.className = 'npc-disposition-heading';
+                heading.className = 'npc-adjustment-heading npc-adjustment-heading--disposition npc-disposition-heading';
 
                 const labelEl = document.createElement('div');
-                labelEl.className = 'npc-disposition-label';
+                labelEl.className = 'npc-adjustment-label npc-adjustment-label--disposition npc-disposition-label';
                 labelEl.textContent = entry.label || entry.key || 'Disposition';
                 heading.appendChild(labelEl);
 
@@ -6920,13 +6920,13 @@
 
                 if (entry.description) {
                     const descriptionEl = document.createElement('p');
-                    descriptionEl.className = 'npc-disposition-description';
+                    descriptionEl.className = 'npc-adjustment-description npc-disposition-description';
                     descriptionEl.textContent = entry.description;
                     card.appendChild(descriptionEl);
                 }
 
                 const sliderRow = document.createElement('div');
-                sliderRow.className = 'npc-disposition-slider-row';
+                sliderRow.className = 'npc-adjustment-slider-row npc-disposition-slider-row';
 
                 const slider = document.createElement('input');
                 slider.type = 'range';
@@ -6939,10 +6939,10 @@
                 card.appendChild(sliderRow);
 
                 const controlRow = document.createElement('div');
-                controlRow.className = 'npc-disposition-control-row';
+                controlRow.className = 'npc-adjustment-control-row npc-disposition-control-row';
 
                 const valueWrapper = document.createElement('label');
-                valueWrapper.className = 'npc-disposition-value-input';
+                valueWrapper.className = 'npc-adjustment-value-input npc-adjustment-value-input--disposition npc-disposition-value-input';
                 valueWrapper.textContent = 'Value';
 
                 const numberInput = document.createElement('input');
@@ -6955,7 +6955,7 @@
                 controlRow.appendChild(valueWrapper);
 
                 const buttonsWrapper = document.createElement('div');
-                buttonsWrapper.className = 'npc-disposition-buttons';
+                buttonsWrapper.className = 'npc-adjustment-buttons npc-adjustment-buttons--disposition npc-disposition-buttons';
 
                 const seenAdjustments = new Set();
                 const addAdjustmentButton = (delta, label) => {
@@ -6991,7 +6991,7 @@
                 const thresholdsLabel = formatDispositionThresholds(entry.thresholds);
                 if (thresholdsLabel) {
                     const thresholdsEl = document.createElement('div');
-                    thresholdsEl.className = 'npc-disposition-thresholds';
+                    thresholdsEl.className = 'npc-adjustment-thresholds npc-disposition-thresholds';
                     thresholdsEl.textContent = thresholdsLabel;
                     card.appendChild(thresholdsEl);
                 }
@@ -7180,14 +7180,14 @@
                 }
 
                 const card = document.createElement('div');
-                card.className = 'npc-needs-entry';
+                card.className = 'npc-adjustment-entry npc-adjustment-entry--needs npc-needs-entry';
                 card.dataset.needId = entry.id || '';
 
                 const heading = document.createElement('div');
-                heading.className = 'npc-needs-heading';
+                heading.className = 'npc-adjustment-heading npc-adjustment-heading--needs npc-needs-heading';
 
                 const labelEl = document.createElement('div');
-                labelEl.className = 'npc-needs-label';
+                labelEl.className = 'npc-adjustment-label npc-adjustment-label--needs npc-needs-label';
                 if (entry.icon) {
                     const iconEl = document.createElement('span');
                     iconEl.textContent = entry.icon;
@@ -7220,7 +7220,7 @@
 
                 if (entry.description) {
                     const descriptionEl = document.createElement('p');
-                    descriptionEl.className = 'npc-needs-description';
+                    descriptionEl.className = 'npc-adjustment-description npc-needs-description';
                     descriptionEl.textContent = entry.description;
                     card.appendChild(descriptionEl);
                 }
@@ -7236,7 +7236,7 @@
                 card.appendChild(progress);
 
                 const sliderRow = document.createElement('div');
-                sliderRow.className = 'npc-needs-slider-row';
+                sliderRow.className = 'npc-adjustment-slider-row npc-needs-slider-row';
 
                 const valueDisplay = document.createElement('span');
                 valueDisplay.className = 'npc-needs-value-display';
@@ -7254,10 +7254,10 @@
                 card.appendChild(sliderRow);
 
                 const inputRow = document.createElement('div');
-                inputRow.className = 'npc-needs-input-row';
+                inputRow.className = 'npc-adjustment-control-row npc-needs-input-row';
 
                 const valueWrapper = document.createElement('label');
-                valueWrapper.className = 'npc-needs-value-input';
+                valueWrapper.className = 'npc-adjustment-value-input npc-adjustment-value-input--needs npc-needs-value-input';
                 valueWrapper.textContent = 'Value';
                 const numberInput = document.createElement('input');
                 numberInput.type = 'number';
@@ -7269,7 +7269,7 @@
                 inputRow.appendChild(valueWrapper);
 
                 const buttonsWrapper = document.createElement('div');
-                buttonsWrapper.className = 'npc-needs-buttons';
+                buttonsWrapper.className = 'npc-adjustment-buttons npc-adjustment-buttons--needs npc-needs-buttons';
 
                 const addButton = (label, action, delta = 0) => {
                     const button = document.createElement('button');
@@ -7292,7 +7292,7 @@
 
                 const thresholdLabel = resolveNeedThreshold(entry.effectThresholds, normalizedValue);
                 const thresholdEl = document.createElement('div');
-                thresholdEl.className = 'npc-needs-thresholds';
+                thresholdEl.className = 'npc-adjustment-thresholds npc-needs-thresholds';
                 thresholdEl.textContent = thresholdLabel
                     ? `Current effect: ${thresholdLabel.name || thresholdLabel.effect || 'None'}`
                     : 'Current effect: None';
@@ -8068,18 +8068,18 @@
 
         function createNpcMemoryRow(value = '') {
             const row = document.createElement('div');
-            row.className = 'npc-memory-row';
+            row.className = 'npc-list-editor-row npc-list-editor-row--memories npc-memory-row';
             row.setAttribute('role', 'listitem');
 
             const handle = document.createElement('button');
             handle.type = 'button';
-            handle.className = 'npc-memory-handle';
+            handle.className = 'npc-list-editor-handle npc-list-editor-handle--memories npc-memory-handle';
             handle.setAttribute('aria-label', 'Reorder memory');
             handle.textContent = '≡';
             handle.draggable = true;
 
             const textarea = document.createElement('textarea');
-            textarea.className = 'npc-memory-text';
+            textarea.className = 'npc-list-editor-text npc-list-editor-text--memories npc-memory-text';
             textarea.rows = 3;
             textarea.value = value || '';
             textarea.addEventListener('input', () => {
@@ -8088,7 +8088,7 @@
 
             const deleteButton = document.createElement('button');
             deleteButton.type = 'button';
-            deleteButton.className = 'npc-memory-delete';
+            deleteButton.className = 'npc-list-editor-delete npc-list-editor-delete--memories npc-memory-delete';
             deleteButton.textContent = 'Delete';
             deleteButton.addEventListener('click', () => {
                 row.remove();
@@ -8130,18 +8130,18 @@
 
         function createNpcGoalRow(value = '') {
             const row = document.createElement('div');
-            row.className = 'npc-goal-row';
+            row.className = 'npc-list-editor-row npc-list-editor-row--goals npc-goal-row';
             row.setAttribute('role', 'listitem');
 
             const handle = document.createElement('button');
             handle.type = 'button';
-            handle.className = 'npc-goal-handle';
+            handle.className = 'npc-list-editor-handle npc-list-editor-handle--goals npc-goal-handle';
             handle.setAttribute('aria-label', 'Reorder goal');
             handle.textContent = '≡';
             handle.draggable = true;
 
             const textarea = document.createElement('textarea');
-            textarea.className = 'npc-goal-text';
+            textarea.className = 'npc-list-editor-text npc-list-editor-text--goals npc-goal-text';
             textarea.rows = 2;
             textarea.value = value || '';
             textarea.addEventListener('input', () => {
@@ -8150,7 +8150,7 @@
 
             const deleteButton = document.createElement('button');
             deleteButton.type = 'button';
-            deleteButton.className = 'npc-goal-delete';
+            deleteButton.className = 'npc-list-editor-delete npc-list-editor-delete--goals npc-goal-delete';
             deleteButton.textContent = 'Delete';
             deleteButton.addEventListener('click', () => {
                 row.remove();
@@ -8194,7 +8194,7 @@
             if (!npcMemoriesList) {
                 return [];
             }
-            return Array.from(npcMemoriesList.querySelectorAll('.npc-memory-text'))
+            return Array.from(npcMemoriesList.querySelectorAll('.npc-list-editor-text--memories'))
                 .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
                 .filter(entry => entry.length > 0);
         }
@@ -8266,7 +8266,7 @@
             }
             scrollModalToTop(npcMemoriesModal);
 
-            const firstField = npcMemoriesList?.querySelector('.npc-memory-text');
+            const firstField = npcMemoriesList?.querySelector('.npc-list-editor-text--memories');
             if (firstField) {
                 firstField.focus();
             }
@@ -8323,7 +8323,7 @@
             if (!npcGoalsList) {
                 return [];
             }
-            return Array.from(npcGoalsList.querySelectorAll('.npc-goal-text'))
+            return Array.from(npcGoalsList.querySelectorAll('.npc-list-editor-text--goals'))
                 .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
                 .filter(entry => entry.length > 0);
         }
@@ -8402,7 +8402,7 @@
             }
             scrollModalToTop(npcGoalsModal);
 
-            const firstField = npcGoalsList?.querySelector('.npc-goal-text');
+            const firstField = npcGoalsList?.querySelector('.npc-list-editor-text--goals');
             if (firstField) {
                 firstField.focus();
             }
@@ -10652,7 +10652,7 @@
                 }
                 const row = createNpcMemoryRow('');
                 npcMemoriesList.appendChild(row);
-                const textarea = row.querySelector('.npc-memory-text');
+                const textarea = row.querySelector('.npc-list-editor-text--memories');
                 if (textarea) {
                     textarea.focus();
                 }
@@ -10669,7 +10669,7 @@
                 if (event.dataTransfer) {
                     event.dataTransfer.dropEffect = 'move';
                 }
-                const targetRow = event.target.closest('.npc-memory-row');
+                const targetRow = event.target.closest('.npc-list-editor-row');
                 if (!targetRow) {
                     if (npcMemoriesList.lastElementChild !== draggedNpcMemoryRow) {
                         npcMemoriesList.appendChild(draggedNpcMemoryRow);
@@ -10733,7 +10733,7 @@
                 }
                 const row = createNpcGoalRow('');
                 npcGoalsList.appendChild(row);
-                const textarea = row.querySelector('.npc-goal-text');
+                const textarea = row.querySelector('.npc-list-editor-text--goals');
                 if (textarea) {
                     textarea.focus();
                 }
@@ -10750,7 +10750,7 @@
                 if (event.dataTransfer) {
                     event.dataTransfer.dropEffect = 'move';
                 }
-                const targetRow = event.target.closest('.npc-goal-row');
+                const targetRow = event.target.closest('.npc-list-editor-row');
                 if (!targetRow) {
                     if (npcGoalsList.lastElementChild !== draggedNpcGoalRow) {
                         npcGoalsList.appendChild(draggedNpcGoalRow);

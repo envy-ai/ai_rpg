@@ -55,7 +55,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history and quest panel).
-- `prompt_progress`, `prompt_progress_cleared` (LLM progress footer).
+- `prompt_progress`, `prompt_progress_cleared` (floating top-right prompt-progress overlay with cancel controls, a contract/expand toggle, and a 5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 ## Key API calls from the chat UI

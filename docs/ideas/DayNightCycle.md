@@ -85,9 +85,9 @@
 1. Define world time and calendar schemas; generate a named calendar per setting at game start.
 2. Add time tracking + calendar definition to Globals and save/load pipelines.
 3. Add segment/season calculator helpers and time advancement API.
-4. Attach schedule data to NPCs and services (with seasonal variations).
-5. Hook time advancement into action processing and rest.
-6. Update prompts to include time + date + season context.
+4. Hook time advancement into action processing and rest.
+5. Update prompts to include time + date + season context.
+6. Phase 2: Attach schedule data to NPCs and services (with seasonal variations).
 
 ## Suggested Fixes for Coherence
 
@@ -96,6 +96,8 @@
 - Ensure all LLM prompts using time context are logged via `LLMClient.logPrompt`.
 
 ## TODO: Remaining Implementation Steps (Detailed)
+
+PHASE 1
 
 1. **Schema + generation**
    - Define `CalendarDefinition` for months, weekdays, seasons, and holidays.
@@ -112,22 +114,23 @@
    - Include `worldTime` + calendar definition in save files and restore on load.
 
 4. **Action integration**
-   - Assign time costs to player actions and resting.
+   - Time spent doing actions is already supplied in an event prompt, but not used. Use it.
    - Advance time after actions and report segment/season changes.
 
-5. **NPC + services schedules**
-   - Add default schedule templates per NPC archetype and location type.
-   - Resolve availability based on current segment and season.
+5. **UI hooks**
+   - Add a small time + date indicator and segment/season transition notifications.
 
-6. **Event gating**
-   - Add time-window checks to event selection and quest triggers.
-   - Support calendar-date triggers (holidays, solstices, etc.).
-
-7. **Prompt context**
+6. **Prompt context**
    - Update base prompt context to include time/segment/season/date and lighting.
 
-8. **UI hooks**
-   - Add a small time + date indicator and segment/season transition notifications.
+PHASE 2 7. **NPC + services schedules**
+
+- Add default schedule templates per NPC archetype and location type.
+- Resolve availability based on current segment and season.
+
+8. **Event gating**
+   - Add time-window checks to event selection and quest triggers.
+   - Support calendar-date triggers (holidays, solstices, etc.).
 
 9. **Testing + validation**
    - Unit tests for segment/season resolution and time advancement.

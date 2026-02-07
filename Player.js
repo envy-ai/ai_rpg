@@ -2972,15 +2972,21 @@ class Player {
         // Validate using definition
         this.#validateAttributeValue(attributeName, value);
 
+        const maxHealthBefore = this.maxHealth;
         const oldValue = this.#attributes[attributeName];
         this.#attributes[attributeName] = value;
         this.#lastUpdated = new Date().toISOString();
 
-        // Check if this attribute affects health (specifically constitution)
+        // Keep current health aligned with max-health changes from attribute edits.
         const definition = this.getAttributeDefinition(attributeName);
         if (definition?.affects?.includes('health') || attributeName === this.#healthAttribute) {
-            if (this.#health > this.maxHealth) {
-                this.#health = this.maxHealth;
+            const maxHealthAfter = this.maxHealth;
+            const maxHealthDelta = maxHealthAfter - maxHealthBefore;
+
+            if (maxHealthDelta > 0) {
+                this.#health = Math.min(maxHealthAfter, this.#health + maxHealthDelta);
+            } else if (this.#health > maxHealthAfter) {
+                this.#health = maxHealthAfter;
             }
         }
 

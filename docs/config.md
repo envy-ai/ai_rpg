@@ -66,3 +66,15 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - `max_attribute` and `max_skill` are evaluated as caps for New Game allocation inputs.
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
+
+## Supplemental story info prompt frequency
+
+`supplemental_story_info_prompt_frequency` controls when hidden supplemental story-info prompts run after a player turn.
+
+```yaml
+supplemental_story_info_prompt_frequency: 5
+```
+
+- `0`: never run supplemental story info prompts.
+- `>0`: run every `X` turns (`X` = configured value), and also run on any turn where one or more new NPCs or things (items/scenery) were generated.
+- Value must be an integer `>= 0`; invalid values raise a runtime error when scheduling the prompt.
