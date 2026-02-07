@@ -20,7 +20,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, player-point warning indicator behavior, player-view modal point allocation flow, LLM modal submit behavior, and location exit caching.
 - [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details and attribute bonus visibility), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
-- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus notable UI class hooks like skill allocation controls and visibility-based warning spacing).
+- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus shared entity theming primitives with legacy markup compatibility notes, long-name downscale/line-height rendering behavior, skill allocation class hooks, and visibility-based warning spacing).
 
 ## API reference (`docs/api`)
 

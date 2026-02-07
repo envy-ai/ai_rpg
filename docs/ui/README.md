@@ -29,7 +29,7 @@ Routing is registered in `server.js` (most pages) and `api.js` (debug + player s
 - `public/js/` client scripts (chat, maps, lorebooks, settings logic, etc).
 - `public/css/` SCSS/CSS (global styles + page-specific overrides).
 - `public/templates/` client-side Nunjucks templates (currently `plausibility.njk`).
-- `public/vendor/` third-party libraries (cytoscape, fitty, markdown-it, nunjucks runtime).
+- `public/vendor/` third-party libraries (cytoscape, markdown-it, nunjucks runtime).
 
 ## Runtime globals injected on the chat page
 From `views/index.njk`:

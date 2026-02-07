@@ -7,8 +7,8 @@ This page maps routes to templates and the client scripts/styles they load.
 - Template: `views/index.njk`
 - Styles: `public/css/main.css`, `public/css/map.css`, plus mod styles if present.
 - Scripts (in order):
-  - Vendor: `public/vendor/fitty.min.js`, `public/vendor/cytoscape*.js`, `public/vendor/layout-base.js`, `public/vendor/cose-base.js`, `public/vendor/nunjucks.js`, `public/vendor/markdown-it.min.js`.
-  - App: `public/js/fitty-init.js`, `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
+  - Vendor: `public/vendor/cytoscape*.js`, `public/vendor/layout-base.js`, `public/vendor/cose-base.js`, `public/vendor/nunjucks.js`, `public/vendor/markdown-it.min.js`.
+  - App: `public/js/cytoscape-convex-hull.js`, `public/js/lightbox.js`, `public/js/image-manager.js`, `public/js/currency-utils.js`, `public/js/formula-evaluator.js`, `public/js/attribute-skill-allocator.js`, `public/js/chat.js`, `public/js/map.js`, `public/js/world-map.js`, `public/js/player-stats.js`.
   - Optional mod scripts from `ModLoader` (injected by `server.js`).
 - Inline script responsibilities:
   - Tab switching (`initTabs`), map triggers, party/faction/quest panels.
@@ -20,6 +20,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `rarityDefinitions`, `needBarDefinitions`, `checkMovePlausibility`.
   - `baseWeaponDamage`, `clientMessageHistory`, `saveMetadata`.
 - Notes: the player "View" modal reuses shared allocation partials for attributes/skills; NPCs use read-only controls, while players can spend points and submit through `/api/player/update-stats` (negative pools blocked, positive pools confirmed). Unspent pools are computed server-side from submitted level/attributes/skills.
+- Notes: client-side name rendering for character/item/scenery cards applies a `font-size: 0.75em` span when a name exceeds 40 characters.
 
 ## New game
 - Route: `/new-game`

@@ -45,13 +45,13 @@
                                             </div>
                                             <div class="location-tooltip" id="locationTooltip">Your current location will appear here when you start exploring.</div>
                                         </div>
-                                        <button type="button" class="location-image-menu-button" id="locationImageMenuButton" aria-haspopup="true" aria-expanded="false" aria-label="Location options">•••</button>
-                                        <div class="location-image-menu" id="locationImageMenu" hidden>
-                                            <button type="button" class="location-image-menu-item" id="locationImageEditButton">Edit Location</button>
-                                            <button type="button" class="location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
-                                            <button type="button" class="location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
-                                            <button type="button" class="location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
-                                            <button type="button" class="location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
+                                        <button type="button" class="entity-context-menu-button location-image-menu-button" id="locationImageMenuButton" aria-haspopup="true" aria-expanded="false" aria-label="Location options">•••</button>
+                                        <div class="entity-context-menu location-image-menu" id="locationImageMenu" hidden>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageEditButton">Edit Location</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationRegionEditButton">Edit Region</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
                                         </div>
                                     </div>
                                     <div class="location-info" id="locationInfo">
@@ -240,12 +240,12 @@
                         <div id="worldMapContainer" class="map-placeholder" aria-live="polite"></div>
                     </div>
                 </section>
-                <div class="map-location-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
-                    <button type="button" class="location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
-                    <button type="button" class="location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
-                    <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
-                    <button type="button" class="location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
-                    <button type="button" class="location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                <div class="map-location-context-menu entity-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
                 </div>
                 <section class="tab-panel" id="tab-character" role="tabpanel" aria-labelledby="tab-character-tab" hidden>
                     <div class="config-content character-panel">
@@ -1560,8 +1560,6 @@
         </div>
     </div>
 
-    <script src="/vendor/fitty.min.js"></script>
-    <script src="/js/fitty-init.js"></script>
     <script src="/vendor/cytoscape.min.js"></script>
     <script src="/vendor/layout-base.js"></script>
     <script src="/vendor/cose-base.js"></script>
@@ -1725,6 +1723,34 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         };
+
+        const LONG_NAME_CHARACTER_LIMIT = 40;
+        const LONG_NAME_FONT_SIZE = '0.75em';
+        const LONG_NAME_LINE_HEIGHT = '0.85';
+
+        function setRenderedName(target, value, fallbackText = '') {
+            if (!target) {
+                return;
+            }
+
+            const hasStringValue = typeof value === 'string' && value.trim().length > 0;
+            const text = hasStringValue
+                ? value
+                : (value !== null && value !== undefined && typeof value !== 'string'
+                    ? String(value)
+                    : String(fallbackText ?? ''));
+
+            target.textContent = '';
+            if (text.length > LONG_NAME_CHARACTER_LIMIT) {
+                const span = document.createElement('span');
+                span.style.fontSize = LONG_NAME_FONT_SIZE;
+                span.style.lineHeight = LONG_NAME_LINE_HEIGHT;
+                span.textContent = text;
+                target.appendChild(span);
+                return;
+            }
+            target.textContent = text;
+        }
 
         const tokenizeForMatch = (value) => {
             if (value === null || value === undefined) {
@@ -2188,12 +2214,12 @@
                 npcDataCache.set(npcId, cached);
 
                 const selector = `[data-npc-id="${escapeForSelector(npcId)}"]`;
-                document.querySelectorAll(`.location-entity-card.is-npc${selector}`).forEach(card => {
-                    const portrait = card.querySelector('.location-entity-icon');
+                document.querySelectorAll(`.entity-card.entity-card--npc${selector}, .location-entity-card.is-npc${selector}`).forEach(card => {
+                    const portrait = card.querySelector('.entity-icon, .location-entity-icon');
                     applyNpcDeathStyling(card, portrait, cached);
                 });
                 document.querySelectorAll(`.party-card${selector}`).forEach(card => {
-                    const portrait = card.querySelector('.location-entity-icon');
+                    const portrait = card.querySelector('.entity-icon, .location-entity-icon');
                     applyNpcDeathStyling(card, portrait, cached);
                 });
             });
@@ -2216,7 +2242,7 @@
                 npcDataCache.delete(npcId);
 
                 const selector = `[data-npc-id="${escapeForSelector(npcId)}"]`;
-                document.querySelectorAll(`.location-entity-card.is-npc${selector}`).forEach(card => card.remove());
+                document.querySelectorAll(`.entity-card.entity-card--npc${selector}, .location-entity-card.is-npc${selector}`).forEach(card => card.remove());
                 document.querySelectorAll(`.party-card${selector}`).forEach(card => card.remove());
             });
         }
@@ -2410,7 +2436,7 @@
                 try {
                     const actorCard = target.closest('[data-npc-id]');
                     const actorId = actorCard?.dataset?.npcId || window.currentPlayerData?.id || null;
-                    const actorName = actorCard?.querySelector('.location-entity-name')?.textContent
+                    const actorName = actorCard?.querySelector('.entity-name, .location-entity-name')?.textContent
                         || window.currentPlayerData?.name
                         || null;
                     console.debug('[HPChange]', {
@@ -2626,7 +2652,7 @@
 
             const name = data?.name || 'Unnamed Adventurer';
             if (chatSidebarElements.name) {
-                chatSidebarElements.name.textContent = name;
+                setRenderedName(chatSidebarElements.name, name, 'Unnamed Adventurer');
             }
 
             const levelLabel = Number.isFinite(data?.level) ? `Level ${data.level}` : 'Level ?';
@@ -2780,15 +2806,15 @@
                 const previous = member?.id ? npcDataCache.get(member.id) : null;
 
                 const card = document.createElement('div');
-                card.className = 'location-entity-card is-npc';
+                card.className = 'entity-card entity-card--npc location-entity-card is-npc';
                 if (member?.id) {
                     card.dataset.npcId = member.id;
                 }
 
                 const portrait = document.createElement('div');
-                portrait.className = 'location-entity-icon';
+                portrait.className = 'entity-icon location-entity-icon';
                 const portraitImage = document.createElement('div');
-                portraitImage.className = 'location-entity-image';
+                portraitImage.className = 'entity-image location-entity-image';
                 portrait.appendChild(portraitImage);
 
                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
@@ -2806,7 +2832,7 @@
                     imageId: member.imageId || null,
                     altText: member.name || 'Party member portrait',
                     placeholderIcon: '🎭',
-                    placeholderClass: 'location-entity-placeholder'
+                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
                 });
 
                 if (npcHealthBar) {
@@ -2832,8 +2858,8 @@
                 applyNpcDeathStyling(card, portrait, member);
 
                 const nameEl = document.createElement('div');
-                nameEl.className = 'location-entity-name';
-                nameEl.textContent = member.name || 'Unknown';
+                nameEl.className = 'entity-name location-entity-name';
+                setRenderedName(nameEl, member.name, 'Unknown');
                 card.appendChild(portrait);
                 card.appendChild(nameEl);
 
@@ -3847,7 +3873,7 @@
                 if (!destinationId || destinationId !== (window.lastRenderedLocation?.id || null)) {
                     card.remove();
                     const container = card.parentElement;
-                    const hasRemainingCards = container.querySelector('.location-entity-card');
+                    const hasRemainingCards = container.querySelector('.entity-card, .location-entity-card');
                     if (!hasRemainingCards) {
                         const emptyMessage = container.id === 'locationScenery'
                             ? 'No notable scenery present.'
@@ -4177,8 +4203,8 @@
                 return;
             }
 
-            const existingButton = card.querySelector('.thing-card-menu-button');
-            const existingMenu = card.querySelector('.thing-card-menu');
+            const existingButton = card.querySelector('.entity-context-menu-button, .thing-card-menu-button');
+            const existingMenu = card.querySelector('.entity-context-menu, .thing-card-menu');
             existingButton?.remove();
             existingMenu?.remove();
 
@@ -4187,7 +4213,7 @@
 
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'thing-card-menu-button';
+            button.className = 'entity-context-menu-button thing-card-menu-button';
             button.setAttribute('aria-haspopup', 'true');
             button.setAttribute('aria-expanded', 'false');
             button.setAttribute('aria-label', `More actions for ${thing.name || 'item'}`);
@@ -4198,11 +4224,11 @@
             button.appendChild(icon);
 
             const menu = document.createElement('div');
-            menu.className = 'thing-card-menu';
+            menu.className = 'entity-context-menu thing-card-menu';
 
             const editButton = document.createElement('button');
             editButton.type = 'button';
-            editButton.className = 'thing-card-menu-item';
+            editButton.className = 'entity-context-menu-item thing-card-menu-item';
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
@@ -4211,7 +4237,7 @@
             if (imageGenerationEnabled) {
                 regenerateImageButton = document.createElement('button');
                 regenerateImageButton.type = 'button';
-                regenerateImageButton.className = 'thing-card-menu-item';
+                regenerateImageButton.className = 'entity-context-menu-item thing-card-menu-item';
                 regenerateImageButton.textContent = 'Regenerate Image';
                 menu.appendChild(regenerateImageButton);
             }
@@ -4221,7 +4247,7 @@
             if (canDrop) {
                 dropButton = document.createElement('button');
                 dropButton.type = 'button';
-                dropButton.className = 'thing-card-menu-item';
+                dropButton.className = 'entity-context-menu-item thing-card-menu-item';
                 dropButton.textContent = 'Drop';
                 menu.appendChild(dropButton);
             }
@@ -4231,14 +4257,14 @@
             if (canPickup) {
                 pickupButton = document.createElement('button');
                 pickupButton.type = 'button';
-                pickupButton.className = 'thing-card-menu-item';
+                pickupButton.className = 'entity-context-menu-item thing-card-menu-item';
                 pickupButton.textContent = 'Put in Inventory';
                 menu.appendChild(pickupButton);
             }
 
             const teleportButton = document.createElement('button');
             teleportButton.type = 'button';
-            teleportButton.className = 'thing-card-menu-item';
+            teleportButton.className = 'entity-context-menu-item thing-card-menu-item';
             teleportButton.textContent = 'Teleport';
             menu.appendChild(teleportButton);
 
@@ -4247,7 +4273,7 @@
             if (allowDeletion) {
                 deleteButton = document.createElement('button');
                 deleteButton.type = 'button';
-                deleteButton.className = 'thing-card-menu-item thing-card-menu-item--danger';
+                deleteButton.className = 'entity-context-menu-item entity-context-menu-item--danger thing-card-menu-item thing-card-menu-item--danger';
                 deleteButton.textContent = 'Delete';
                 menu.appendChild(deleteButton);
             }
@@ -4614,7 +4640,7 @@
                                     const container = card.parentElement;
                                     card.remove();
 
-                                    const hasRemainingCards = container.querySelector('.location-entity-card');
+                                    const hasRemainingCards = container.querySelector('.entity-card, .location-entity-card');
                                     if (!hasRemainingCards) {
                                         const emptyMessage = container.id === 'locationScenery'
                                             ? 'No notable scenery present.'
@@ -4818,7 +4844,7 @@
             card.addEventListener('mousedown', suppressSelectionIfShiftDrop);
             card.addEventListener('click', async (event) => {
                 if (event.button === 0 && event.shiftKey && shiftDropContexts.has(options.context)) {
-                    if (event.target && event.target.closest('.thing-card-menu-button')) {
+                    if (event.target && event.target.closest('.entity-context-menu-button, .thing-card-menu-button')) {
                         return;
                     }
                     event.preventDefault();
@@ -5618,7 +5644,7 @@
                 locationImageWrapper.classList.add('context-menu-open');
             }
 
-            const firstItem = locationImageMenu.querySelector('.location-image-menu-item');
+            const firstItem = locationImageMenu.querySelector('.entity-context-menu-item, .location-image-menu-item');
             if (firstItem) {
                 requestAnimationFrame(() => {
                     if (locationImageMenuOpen) {
@@ -11686,7 +11712,7 @@
 
             filteredItems.forEach(item => {
                 const card = document.createElement('div');
-                card.className = 'location-entity-card inventory-card';
+                card.className = 'entity-card entity-card--item location-entity-card inventory-card';
 
                 const equipped = Boolean(item?.isEquipped || item?.equippedSlot);
                 if (equipped) {
@@ -11696,7 +11722,7 @@
                 const slotInfo = getItemSlotInfo(item);
 
                 const icon = document.createElement('div');
-                icon.className = 'inventory-icon';
+                icon.className = 'entity-icon inventory-icon';
                 renderEntityImage({
                     element: icon,
                     entityType: 'thing',
@@ -11704,13 +11730,13 @@
                     imageId: item.imageId || null,
                     altText: item.name || 'Inventory item',
                     placeholderIcon: item.thingType === 'scenery' ? '🏞️' : '🎁',
-                    placeholderClass: 'location-entity-placeholder',
+                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                     badges: getThingPropertyBadges(item)
                 });
 
                 const name = document.createElement('div');
-                name.className = 'inventory-name';
-                name.textContent = item.name || 'Unknown Item';
+                name.className = 'entity-name inventory-name';
+                setRenderedName(name, item.name, 'Unknown Item');
                 applyRarityClass(name, item.rarity);
 
                 const equippedSlot = slotInfo.equippedSlot;
@@ -12221,7 +12247,7 @@
                 ? window.currentNpcData
                 : (window.currentNpcData = new Map());
             const npcId = npc.id || null;
-            npcInventoryName.textContent = npc.name || 'Character';
+            setRenderedName(npcInventoryName, npc.name, 'Character');
             const items = Array.isArray(npc.inventory) ? npc.inventory : [];
             currentNpcInventory = items;
             currentNpcInventoryNpcId = npcId;
@@ -12262,7 +12288,7 @@
                         const freshItems = Array.isArray(data.npc.inventory) ? data.npc.inventory : [];
                         currentNpcInventory = freshItems;
                         currentNpcInventoryNpcId = npcId;
-                        npcInventoryName.textContent = data.npc.name || npcInventoryName.textContent;
+                        setRenderedName(npcInventoryName, data.npc.name, npcInventoryName.textContent);
                         if (npcInventoryModalTitle) {
                             const titleName = data.npc.name || 'Character';
                             npcInventoryModalTitle.textContent = `${formatPossessiveName(titleName, 'Character')} Inventory`;
@@ -12521,7 +12547,7 @@
                     craftingInventoryLookup.set(clone.id, clone);
                 }
                 const card = document.createElement('div');
-                card.className = 'location-entity-card inventory-card crafting-inventory-card';
+                card.className = 'entity-card entity-card--item location-entity-card inventory-card crafting-inventory-card';
                 card.tabIndex = 0;
                 if (clone.id) {
                     card.dataset.thingId = clone.id;
@@ -12530,7 +12556,7 @@
                 }
 
                 const icon = document.createElement('div');
-                icon.className = 'inventory-icon';
+                icon.className = 'entity-icon inventory-icon';
                 renderEntityImage({
                     element: icon,
                     entityType: 'thing',
@@ -12538,13 +12564,13 @@
                     imageId: clone.imageId || null,
                     altText: clone.name || 'Inventory item',
                     placeholderIcon: clone.thingType === 'scenery' ? '🏞️' : '🎁',
-                    placeholderClass: 'location-entity-placeholder',
+                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                     badges: getThingPropertyBadges(clone)
                 });
 
                 const name = document.createElement('div');
-                name.className = 'inventory-name';
-                name.textContent = clone.name || 'Unknown Item';
+                name.className = 'entity-name inventory-name';
+                setRenderedName(name, clone.name, 'Unknown Item');
                 applyRarityClass(name, clone.rarity);
 
                 const rawSlot = typeof clone.slot === 'string' ? clone.slot.trim() : '';
@@ -13424,7 +13450,7 @@
             }
 
             if (npcViewName) {
-                npcViewName.textContent = name;
+                setRenderedName(npcViewName, name, 'Unnamed Character');
             }
             if (npcViewDescription) {
                 npcViewDescription.textContent = description;
@@ -14018,14 +14044,14 @@
                 card.dataset.npcId = npcIdString;
                 card.dataset.npcMenuAttached = 'true';
 
-                const existingButton = card.querySelector('.npc-card-menu-button');
-                const existingMenu = card.querySelector('.npc-card-menu');
+                const existingButton = card.querySelector('.entity-context-menu-button, .npc-card-menu-button');
+                const existingMenu = card.querySelector('.entity-context-menu, .npc-card-menu');
                 existingButton?.remove();
                 existingMenu?.remove();
 
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'npc-card-menu-button';
+                button.className = 'entity-context-menu-button npc-card-menu-button';
                 button.setAttribute('aria-haspopup', 'true');
                 button.setAttribute('aria-expanded', 'false');
                 button.setAttribute('aria-label', `More actions for ${npc.name || 'NPC'}`);
@@ -14036,11 +14062,11 @@
                 button.appendChild(icon);
 
                 const menu = document.createElement('div');
-                menu.className = 'npc-card-menu';
+                menu.className = 'entity-context-menu npc-card-menu';
 
                 const viewButton = document.createElement('button');
                 viewButton.type = 'button';
-                viewButton.className = 'npc-card-menu-item';
+                viewButton.className = 'entity-context-menu-item npc-card-menu-item';
                 viewButton.textContent = 'View';
                 menu.appendChild(viewButton);
 
@@ -14049,26 +14075,26 @@
                 if (canRegeneratePortrait) {
                     regenerateImageButton = document.createElement('button');
                     regenerateImageButton.type = 'button';
-                    regenerateImageButton.className = 'npc-card-menu-item';
+                    regenerateImageButton.className = 'entity-context-menu-item npc-card-menu-item';
                     regenerateImageButton.textContent = 'Regenerate Image';
                     menu.appendChild(regenerateImageButton);
                 }
 
                 const editButton = document.createElement('button');
                 editButton.type = 'button';
-                editButton.className = 'npc-card-menu-item';
+                editButton.className = 'entity-context-menu-item npc-card-menu-item';
                 editButton.textContent = 'Edit';
                 menu.appendChild(editButton);
 
                 const inventoryButton = document.createElement('button');
                 inventoryButton.type = 'button';
-                inventoryButton.className = 'npc-card-menu-item';
+                inventoryButton.className = 'entity-context-menu-item npc-card-menu-item';
                 inventoryButton.textContent = 'Inventory';
                 menu.appendChild(inventoryButton);
 
                 const needsButton = document.createElement('button');
                 needsButton.type = 'button';
-                needsButton.className = 'npc-card-menu-item';
+                needsButton.className = 'entity-context-menu-item npc-card-menu-item';
                 needsButton.textContent = 'Needs';
                 menu.appendChild(needsButton);
 
@@ -14083,25 +14109,25 @@
                 if (npc && npc.isPlayer) {
                     teleportButton = document.createElement('button');
                     teleportButton.type = 'button';
-                    teleportButton.className = 'npc-card-menu-item';
+                    teleportButton.className = 'entity-context-menu-item npc-card-menu-item';
                     teleportButton.textContent = 'Teleport';
                     menu.appendChild(teleportButton);
                 } else if (npc && npc.isNPC) {
                     teleportButton = document.createElement('button');
                     teleportButton.type = 'button';
-                    teleportButton.className = 'npc-card-menu-item';
+                    teleportButton.className = 'entity-context-menu-item npc-card-menu-item';
                     teleportButton.textContent = 'Teleport';
                     menu.appendChild(teleportButton);
 
                     memoriesButton = document.createElement('button');
                     memoriesButton.type = 'button';
-                    memoriesButton.className = 'npc-card-menu-item';
+                    memoriesButton.className = 'entity-context-menu-item npc-card-menu-item';
                     memoriesButton.textContent = 'Memories';
                     menu.appendChild(memoriesButton);
 
                     goalsButton = document.createElement('button');
                     goalsButton.type = 'button';
-                    goalsButton.className = 'npc-card-menu-item';
+                    goalsButton.className = 'entity-context-menu-item npc-card-menu-item';
                     goalsButton.textContent = 'Goals';
                     menu.appendChild(goalsButton);
 
@@ -14109,32 +14135,32 @@
                     if (isInParty) {
                         dismissButton = document.createElement('button');
                         dismissButton.type = 'button';
-                        dismissButton.className = 'npc-card-menu-item';
+                        dismissButton.className = 'entity-context-menu-item npc-card-menu-item';
                         dismissButton.textContent = 'Dismiss';
                         menu.appendChild(dismissButton);
                     } else {
                         recruitButton = document.createElement('button');
                         recruitButton.type = 'button';
-                        recruitButton.className = 'npc-card-menu-item';
+                        recruitButton.className = 'entity-context-menu-item npc-card-menu-item';
                         recruitButton.textContent = 'Force Recruit';
                         menu.appendChild(recruitButton);
                     }
 
                     dispositionButton = document.createElement('button');
                     dispositionButton.type = 'button';
-                    dispositionButton.className = 'npc-card-menu-item';
+                    dispositionButton.className = 'entity-context-menu-item npc-card-menu-item';
                     dispositionButton.textContent = 'Dispositions';
                     menu.appendChild(dispositionButton);
 
                     killButton = document.createElement('button');
                     killButton.type = 'button';
-                    killButton.className = 'npc-card-menu-item npc-card-menu-item--danger';
+                    killButton.className = 'entity-context-menu-item entity-context-menu-item--danger npc-card-menu-item npc-card-menu-item--danger';
                     killButton.textContent = 'Kill';
                     menu.appendChild(killButton);
 
                     deleteButton = document.createElement('button');
                     deleteButton.type = 'button';
-                    deleteButton.className = 'npc-card-menu-item npc-card-menu-item--danger';
+                    deleteButton.className = 'entity-context-menu-item entity-context-menu-item--danger npc-card-menu-item npc-card-menu-item--danger';
                     deleteButton.textContent = 'Delete';
                     menu.appendChild(deleteButton);
                 }
@@ -16514,13 +16540,13 @@
                                 const previous = npc?.id ? npcDataCache.get(npc.id) : null;
 
                                 const card = document.createElement('div');
-                                card.className = 'location-entity-card is-npc';
+                                card.className = 'entity-card entity-card--npc location-entity-card is-npc';
 
                                 const portrait = document.createElement('div');
-                                portrait.className = 'location-entity-icon';
+                                portrait.className = 'entity-icon location-entity-icon';
 
                                 const portraitImage = document.createElement('div');
-                                portraitImage.className = 'location-entity-image';
+                                portraitImage.className = 'entity-image location-entity-image';
                                 portrait.appendChild(portraitImage);
 
                                 const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
@@ -16538,7 +16564,7 @@
                                     imageId: npc.imageId || null,
                                     altText: npc.name || 'NPC portrait',
                                     placeholderIcon: '🎭',
-                                    placeholderClass: 'location-entity-placeholder'
+                                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
                                 });
 
                                 if (npcHealthBar) {
@@ -16564,8 +16590,8 @@
                                 applyNpcDeathStyling(card, portrait, npc);
 
                                 const nameEl = document.createElement('div');
-                                nameEl.className = 'location-entity-name';
-                                nameEl.textContent = npc.name || 'Unknown NPC';
+                                nameEl.className = 'entity-name location-entity-name';
+                                setRenderedName(nameEl, npc.name, 'Unknown NPC');
                                 if (npc.isHostileToPlayer) {
                                     nameEl.classList.add('is-hostile');
                                 }
@@ -16632,10 +16658,10 @@
                             container.innerHTML = '';
                             collection.forEach(thing => {
                                 const card = document.createElement('div');
-                                card.className = `location-entity-card ${thing.thingType === 'scenery' ? 'is-scenery' : 'is-item'}`;
+                                card.className = `entity-card location-entity-card ${thing.thingType === 'scenery' ? 'entity-card--scenery is-scenery' : 'entity-card--item is-item'}`;
 
                                 const icon = document.createElement('div');
-                                icon.className = 'location-entity-icon';
+                                icon.className = 'entity-icon location-entity-icon';
                                 const placeholderIcon = thing.thingType === 'scenery' ? '🏞️' : '🎁';
                                 renderEntityImage({
                                     element: icon,
@@ -16644,13 +16670,13 @@
                                     imageId: thing.imageId || null,
                                     altText: thing.name || 'Location item',
                                     placeholderIcon,
-                                    placeholderClass: 'location-entity-placeholder',
+                                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                                     badges: getThingPropertyBadges(thing)
                                 });
 
                                 const nameEl = document.createElement('div');
-                                nameEl.className = 'location-entity-name';
-                                nameEl.textContent = thing.name || 'Unknown Object';
+                                nameEl.className = 'entity-name location-entity-name';
+                                setRenderedName(nameEl, thing.name, 'Unknown Object');
                                 applyRarityClass(nameEl, thing.rarity);
 
                                 card.appendChild(icon);
@@ -18465,7 +18491,7 @@
 
                     const name = document.createElement('div');
                     name.className = 'party-name';
-                    name.textContent = member.name || 'Unknown';
+                    setRenderedName(name, member.name, 'Unknown');
 
                     const role = document.createElement('div');
                     role.className = 'party-role';

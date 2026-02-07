@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Sword and Shield Icon</title>
+  <desc id="desc">A minimal icon with a transparent white shield and solid white sword.</desc>
+
+  <!-- Shield: single shape, no border, white at 50% opacity -->
+  <path
+    d="M128 18L208 48V114C208 171 175 213 128 238C81 213 48 171 48 114V48L128 18Z"
+    fill="#ffffff"
+    fill-opacity="0.5"/>
+
+  <!-- Sword: single shape, no border, white solid, angled at 30 degrees -->
+  <path
+    transform="rotate(30 128 128)"
+    d="M128 44L136 62L132 144L158 154L154 164L132 156L132 186L140 194L128 206L116 194L124 186L124 156L102 164L98 154L124 144L120 62Z"
+    fill="#ffffff"/>
+</svg>

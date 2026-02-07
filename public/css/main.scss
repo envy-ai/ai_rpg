@@ -2169,8 +2169,7 @@ p:not(:last-child) {
   }
 }
 
-.location-entity-card,
-.inventory-card {
+.entity-card {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2196,19 +2195,17 @@ p:not(:last-child) {
   z-index: 0;
 }
 
-.location-entity-card.context-menu-open,
-.inventory-card.context-menu-open {
+.entity-card.context-menu-open {
   z-index: 60;
 }
 
-.location-entity-card:is(:hover, :focus-within),
-.inventory-card:is(:hover, :focus-within) {
+.entity-card:is(:hover, :focus-within) {
   transform: translateY(-4px);
   border-color: rgba(148, 163, 184, 0.55);
   box-shadow: 0 18px 32px rgba(15, 23, 42, 0.45);
 }
 
-.location-entity-card.is-scenery {
+.entity-card--scenery {
   background: radial-gradient(
     circle at top,
     rgba(125, 211, 252, 0.2) 0%,
@@ -2217,8 +2214,7 @@ p:not(:last-child) {
   border-color: rgba(125, 211, 252, 0.5);
 }
 
-.location-entity-card.is-item,
-.inventory-card {
+.entity-card--item {
   background: radial-gradient(
     circle at top,
     rgba(59, 130, 246, 0.18) 0%,
@@ -2226,7 +2222,7 @@ p:not(:last-child) {
   );
 }
 
-.location-entity-card.is-npc {
+.entity-card--npc {
   background: radial-gradient(
     circle at top,
     rgba(236, 72, 153, 0.18) 0%,
@@ -2235,17 +2231,16 @@ p:not(:last-child) {
   border-color: rgba(236, 72, 153, 0.45);
 }
 
-.location-entity-card.is-npc.is-dead {
+.entity-card--npc.is-dead {
   opacity: 0.5;
 }
 
-.location-entity-card.is-npc.is-dragging {
+.entity-card--npc.is-dragging {
   opacity: 0.7;
   cursor: grabbing;
 }
 
-.location-entity-icon,
-.inventory-icon {
+.entity-icon {
   width: 94px;
   height: 94px;
   min-height: 94px;
@@ -2303,7 +2298,7 @@ p:not(:last-child) {
   }
 }
 
-.location-entity-image {
+.entity-image {
   width: 100%;
   height: 100%;
   display: flex;
@@ -2311,18 +2306,17 @@ p:not(:last-child) {
   justify-content: center;
 }
 
-.location-entity-card.is-npc .location-entity-icon {
+.entity-card--npc .entity-icon {
   border-color: rgba(236, 72, 153, 0.4);
 }
 
-.inventory-icon.has-image {
+.entity-icon.has-image {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
 }
 
-.location-entity-icon img,
-.inventory-icon img {
+.entity-icon img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2354,14 +2348,12 @@ p:not(:last-child) {
   line-height: 1;
 }
 
-.location-entity-placeholder,
-.inventory-icon-placeholder {
+.entity-icon-placeholder {
   font-size: 1.7rem;
   color: rgba(255, 255, 255, 0.7);
 }
 
-.location-entity-name,
-.inventory-name {
+.entity-name {
   font-weight: 600;
   color: #ffffff;
   font-size: 0.95rem;
@@ -2370,9 +2362,13 @@ p:not(:last-child) {
   margin: 0;
   min-height: 80px;
   max-height: 80px;
+  line-height: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.location-entity-name.is-hostile {
+.entity-name.is-hostile {
   color: #f87171;
 }
 
@@ -3205,7 +3201,7 @@ body.dark .thing-toggle-hint {
   justify-content: flex-start;
 }
 
-.chat-party-grid .location-entity-card {
+.chat-party-grid .entity-card {
   flex: 0 0 calc(50% - 8px);
   max-width: calc(50% - 8px);
 }
@@ -3231,7 +3227,7 @@ body.dark .thing-toggle-hint {
     width: 100%;
   }
 
-  .chat-party-grid .location-entity-card {
+  .chat-party-grid .entity-card {
     flex: 1 1 calc(33.33% - 10px);
     max-width: none;
   }
@@ -3242,7 +3238,7 @@ body.dark .thing-toggle-hint {
     min-width: 0;
   }
 
-  .chat-party-grid .location-entity-card {
+  .chat-party-grid .entity-card {
     flex: 1 1 calc(50% - 10px);
   }
 
@@ -4445,9 +4441,7 @@ body.dark .thing-toggle-hint {
   }
 }
 
-.npc-card-menu-button,
-.thing-card-menu-button,
-.location-image-menu-button {
+.entity-context-menu-button {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -4469,21 +4463,15 @@ body.dark .thing-toggle-hint {
   z-index: 2;
 }
 
-.npc-card-menu-button:hover,
-.npc-card-menu-button:focus,
-.thing-card-menu-button:hover,
-.thing-card-menu-button:focus,
-.location-image-menu-button:hover,
-.location-image-menu-button:focus {
+.entity-context-menu-button:hover,
+.entity-context-menu-button:focus {
   background: rgba(30, 41, 59, 0.9);
   border-color: rgba(148, 163, 184, 0.6);
   color: #ffffff;
   outline: none;
 }
 
-.npc-card-menu,
-.thing-card-menu,
-.location-image-menu {
+.entity-context-menu {
   position: absolute;
   top: 42px;
   right: 8px;
@@ -4502,17 +4490,13 @@ body.dark .thing-toggle-hint {
   z-index: 80;
 }
 
-.npc-card-menu.is-open,
-.thing-card-menu.is-open,
-.location-image-menu.is-open {
+.entity-context-menu.is-open {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
 }
 
-.npc-card-menu-item,
-.thing-card-menu-item,
-.location-image-menu-item {
+.entity-context-menu-item {
   width: 100%;
   border: none;
   background: transparent;
@@ -4527,29 +4511,19 @@ body.dark .thing-toggle-hint {
     color 0.15s ease;
 }
 
-.npc-card-menu-item:hover,
-.npc-card-menu-item:focus,
-.thing-card-menu-item:hover,
-.thing-card-menu-item:focus,
-.location-image-menu-item:hover,
-.location-image-menu-item:focus {
+.entity-context-menu-item:hover,
+.entity-context-menu-item:focus {
   background: rgba(59, 130, 246, 0.18);
   color: #ffffff;
   outline: none;
 }
 
-.npc-card-menu-item--danger,
-.thing-card-menu-item--danger,
-.location-image-menu-item--danger {
+.entity-context-menu-item--danger {
   color: #fca5a5;
 }
 
-.npc-card-menu-item--danger:hover,
-.npc-card-menu-item--danger:focus,
-.thing-card-menu-item--danger:hover,
-.thing-card-menu-item--danger:focus,
-.location-image-menu-item--danger:hover,
-.location-image-menu-item--danger:focus {
+.entity-context-menu-item--danger:hover,
+.entity-context-menu-item--danger:focus {
   background: rgba(248, 113, 113, 0.2);
   color: #ffe4e6;
 }
