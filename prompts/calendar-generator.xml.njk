@@ -1,0 +1,67 @@
+<template>
+  <description>Generate a calendar definition for the game world using setting context.</description>
+  <systemPrompt>You are an expert worldbuilder and systems designer.
+Return ONLY valid XML matching the required schema.
+Do not include markdown fences, explanations, or extra tags outside the schema.</systemPrompt>
+  <generationPrompt>
+Create a calendar definition for this setting:
+<setting>
+  <name>{{ setting.name | default('Unknown Setting', true) }}</name>
+  <description>{{ setting.description | default('', true) }}</description>
+  <theme>{{ setting.theme | default('', true) }}</theme>
+  <genre>{{ setting.genre | default('', true) }}</genre>
+  <tone>{{ setting.tone | default('', true) }}</tone>
+  <magicLevel>{{ setting.magicLevel | default('', true) }}</magicLevel>
+  <techLevel>{{ setting.techLevel | default('', true) }}</techLevel>
+  <startingLocationType>{{ setting.startingLocationType | default('', true) }}</startingLocationType>
+</setting>
+
+Requirements:
+1. Output exactly one &lt;calendarDefinition&gt; root element.
+2. Include 12 months under &lt;months&gt; with positive integer lengthDays.
+3. Include 7 weekdays under &lt;weekdays&gt;.
+4. Include 4 seasons under &lt;seasons&gt;.
+5. Include exactly 10 holidays under &lt;holidays&gt;.
+6. Each season must include a &lt;description&gt; field (1-2 concise sentences describing climate/atmosphere/typical conditions).
+7. Each holiday must include a &lt;description&gt; field (1-2 concise sentences describing what it commemorates and how it is observed).
+8. Ensure each month has seasonName matching one of the season names.
+9. If the setting can reasonably be assumed to be on Earth (modern, historical, or near-future Earth), use a standard Gregorian calendar:
+   - Months exactly: January (31), February (28), March (31), April (30), May (31), June (30), July (31), August (31), September (30), October (31), November (30), December (31).
+   - Weekdays exactly: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday.
+   - Seasons exactly: Spring, Summer, Autumn, Winter.
+10. If the setting is not reasonably Earth-based, keep names thematically appropriate to the setting.
+11. Ensure all output is setting-coherent and internally consistent.
+
+Schema:
+<calendarDefinition>
+  <yearName>...</yearName>
+  <months>
+    <month>
+      <name>...</name>
+      <lengthDays>30</lengthDays>
+      <seasonName>...</seasonName>
+    </month>
+  </months>
+  <weekdays>
+    <weekday>...</weekday>
+  </weekdays>
+  <seasons>
+    <season>
+      <name>...</name>
+      <description>...</description>
+      <startMonth>...</startMonth>
+      <startDay>1</startDay>
+      <dayLengthMinutes>720</dayLengthMinutes>
+    </season>
+  </seasons>
+  <holidays>
+    <holiday>
+      <name>...</name>
+      <description>...</description>
+      <month>...</month>
+      <day>15</day>
+    </holiday>
+  </holidays>
+</calendarDefinition>
+  </generationPrompt>
+</template>

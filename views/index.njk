@@ -34,6 +34,11 @@
                     <div class="adventure-content">
                         <div class="location-block">
                             <div class="container">
+                                <div class="world-time-indicator world-time-indicator--sidebar" id="worldTimeIndicator" hidden aria-live="polite">
+                                    <span class="world-time-indicator__time" id="worldTimeIndicatorTime">--:--</span>
+                                    <span class="world-time-indicator__date" id="worldTimeIndicatorDate">Unknown date</span>
+                                    <span class="world-time-indicator__meta" id="worldTimeIndicatorMeta">Unknown segment · Unknown season</span>
+                                </div>
                                 <div class="location-header">
                                     <h4>📍 <span class="location-name" id="locationName">Unknown Location</span></h4>
                                 </div>
@@ -1725,8 +1730,7 @@
         };
 
         const LONG_NAME_CHARACTER_LIMIT = 40;
-        const LONG_NAME_FONT_SIZE = '0.75em';
-        const LONG_NAME_LINE_HEIGHT = '0.85';
+        const LONG_NAME_CLASS = 'entity-name-long';
 
         function setRenderedName(target, value, fallbackText = '') {
             if (!target) {
@@ -1742,11 +1746,10 @@
 
             target.textContent = '';
             if (text.length > LONG_NAME_CHARACTER_LIMIT) {
-                const span = document.createElement('span');
-                span.style.fontSize = LONG_NAME_FONT_SIZE;
-                span.style.lineHeight = LONG_NAME_LINE_HEIGHT;
-                span.textContent = text;
-                target.appendChild(span);
+                const compactName = document.createElement('div');
+                compactName.className = LONG_NAME_CLASS;
+                compactName.textContent = text;
+                target.appendChild(compactName);
                 return;
             }
             target.textContent = text;
@@ -14014,6 +14017,12 @@
             if (locationNPCs) {
                 registerPartyDropTarget(locationNPCs, 'dismiss');
             }
+            if (locationScenery) {
+                registerThingTypeDropTarget(locationScenery, { targetType: 'scenery' });
+            }
+            if (locationItems) {
+                registerThingTypeDropTarget(locationItems, { targetType: 'item' });
+            }
 
             function closeNpcContextMenu() {
                 if (npcMenuState.openMenu) {
@@ -16168,16 +16177,27 @@
 
         const resetThingDragState = () => {
             draggedLocationThing = null;
-            document.querySelectorAll('.inventory-drop-target.is-drop-hover').forEach(el => {
+            document.querySelectorAll('.inventory-drop-target.is-drop-hover, .thing-type-drop-target.is-drop-hover').forEach(el => {
                 el.classList.remove('is-drop-hover');
             });
         };
+
+        function normalizeThingTypeForDrag(value) {
+            if (typeof value !== 'string') {
+                return 'item';
+            }
+            return value.trim().toLowerCase() === 'scenery' ? 'scenery' : 'item';
+        }
 
         async function handleGiveThingToOwner({ ownerId, ownerType }) {
             if (!draggedLocationThing || !draggedLocationThing.id || !ownerId) {
                 return;
             }
             try {
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (draggedType !== 'item') {
+                    throw new Error('Only item-type things can be moved into inventory. Drag scenery into the Items section to convert it first.');
+                }
                 const thingRecord = thingDataCache.get(draggedLocationThing.id) || draggedLocationThing.thing || { id: draggedLocationThing.id };
                 const result = await moveThingToInventory(thingRecord, {
                     ownerId,
@@ -16199,6 +16219,51 @@
             }
         }
 
+        async function handleConvertThingType({ targetType }) {
+            if (!draggedLocationThing || !draggedLocationThing.id) {
+                return;
+            }
+
+            const normalizedTargetType = normalizeThingTypeForDrag(targetType);
+            const currentType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+            if (currentType === normalizedTargetType) {
+                resetThingDragState();
+                return;
+            }
+
+            try {
+                const thingId = draggedLocationThing.id;
+                const thingRecord = thingDataCache.get(thingId) || draggedLocationThing.thing || { id: thingId };
+                const response = await fetch(`/api/things/${encodeURIComponent(thingId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ thingType: normalizedTargetType })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    throw new Error(result?.error || `Request failed with status ${response.status}`);
+                }
+
+                const updatedThing = result?.thing || { ...thingRecord, thingType: normalizedTargetType };
+                cacheThingData(updatedThing);
+                updateLocationThingReference(thingId, (entry) => {
+                    entry.thingType = normalizedTargetType;
+                    if (updatedThing && typeof updatedThing === 'object') {
+                        Object.assign(entry, updatedThing);
+                    }
+                });
+
+                if (window.lastRenderedLocation?.id && typeof window.loadCurrentLocation === 'function') {
+                    await window.loadCurrentLocation();
+                }
+            } catch (error) {
+                console.warn('Failed to convert thing type:', error);
+                window.alert(error?.message || 'Failed to convert thing type.');
+            } finally {
+                resetThingDragState();
+            }
+        }
+
         function registerInventoryDropTarget(element, { ownerId, ownerType }) {
             if (!element || !ownerId) {
                 return;
@@ -16207,12 +16272,16 @@
 
             element.addEventListener('dragover', (event) => {
                 if (!draggedLocationThing) return;
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (draggedType !== 'item') return;
                 event.preventDefault();
                 element.classList.add('is-drop-hover');
             });
 
             element.addEventListener('dragenter', (event) => {
                 if (!draggedLocationThing) return;
+                const draggedType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (draggedType !== 'item') return;
                 event.preventDefault();
                 element.classList.add('is-drop-hover');
             });
@@ -16225,6 +16294,42 @@
                 event.preventDefault();
                 element.classList.remove('is-drop-hover');
                 await handleGiveThingToOwner({ ownerId, ownerType });
+            });
+        }
+
+        function registerThingTypeDropTarget(element, { targetType }) {
+            if (!element) {
+                return;
+            }
+
+            const normalizedTargetType = normalizeThingTypeForDrag(targetType);
+            element.classList.add('thing-type-drop-target');
+            element.dataset.dropTargetType = normalizedTargetType;
+
+            element.addEventListener('dragover', (event) => {
+                if (!draggedLocationThing) return;
+                const currentType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (currentType === normalizedTargetType) return;
+                event.preventDefault();
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragenter', (event) => {
+                if (!draggedLocationThing) return;
+                const currentType = normalizeThingTypeForDrag(draggedLocationThing.thingType);
+                if (currentType === normalizedTargetType) return;
+                event.preventDefault();
+                element.classList.add('is-drop-hover');
+            });
+
+            element.addEventListener('dragleave', () => {
+                element.classList.remove('is-drop-hover');
+            });
+
+            element.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                element.classList.remove('is-drop-hover');
+                await handleConvertThingType({ targetType: normalizedTargetType });
             });
         }
 
@@ -16697,13 +16802,15 @@
                                     });
                                 }
 
-                                if (thing.thingType !== 'scenery' && thing.id) {
+                                if (thing.id) {
                                     card.draggable = true;
                                     card.dataset.thingId = thing.id;
+                                    card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
                                     card.addEventListener('dragstart', () => {
                                         draggedLocationThing = {
                                             id: thing.id,
                                             locationId: location.id || null,
+                                            thingType: normalizeThingTypeForDrag(thing.thingType),
                                             element: card,
                                             thing
                                         };

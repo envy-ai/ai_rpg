@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const loadNewGameSettingsBtn = document.getElementById('loadNewGameSettingsBtn');
   const newGameSettingsStatus = document.getElementById('newGameSettingsStatus');
   const startingCurrencyField = document.getElementById('startingCurrency');
+  const startTimeField = document.getElementById('startTime');
   const levelField = document.getElementById('playerLevel');
   const attributeGrid = document.getElementById('attributeGrid');
   const attributePointsDisplay = document.getElementById('attributePointsRemaining');
@@ -481,6 +482,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return 0;
   };
 
+  const resolveStartTimeForPayload = () => {
+    const startTimeRaw = (startTimeField?.value || '').trim();
+    const parsedStartTime = Number(startTimeRaw);
+    const fallbackStartTime = Number(startTimeField?.dataset?.defaultValue ?? '');
+    if (Number.isFinite(parsedStartTime)) {
+      return parsedStartTime;
+    }
+    if (Number.isFinite(fallbackStartTime)) {
+      return fallbackStartTime;
+    }
+    return 9;
+  };
+
   const buildSettingsSaveDefaultName = () => {
     const playerName = (document.getElementById('playerName')?.value || '').trim() || 'adventurer';
     const level = resolveLevelForPayload();
@@ -496,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
       playerClass: resolveSelectionValue(classSelect, classOtherInput),
       playerRace: resolveSelectionValue(raceSelect, raceOtherInput),
       playerLevel: resolveLevelForPayload(),
+      startTime: resolveStartTimeForPayload(),
       startingLocation: (document.getElementById('startingLocation')?.value || '').trim(),
       startingCurrency: resolveStartingCurrencyForPayload(),
       attributes: readyAllocator.getAttributeValues(),
@@ -525,6 +540,18 @@ document.addEventListener('DOMContentLoaded', () => {
       return fallbackCurrency;
     }
     return 0;
+  };
+
+  const resolveLoadedStartTimeValue = (savedSettings) => {
+    const fallbackStartTime = Number(startTimeField?.dataset?.defaultValue ?? '');
+    const parsed = Number(savedSettings?.startTime);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    if (Number.isFinite(fallbackStartTime)) {
+      return fallbackStartTime;
+    }
+    return 9;
   };
 
   const applyLoadedNewGameSettings = async (savedSettings) => {
@@ -560,6 +587,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (startingCurrencyField) {
       startingCurrencyField.value = String(resolveLoadedCurrencyValue(savedSettings));
+    }
+    if (startTimeField) {
+      startTimeField.value = String(resolveLoadedStartTimeValue(savedSettings));
     }
 
     applySelectValue(classSelect, classOtherInput, savedSettings.playerClass);
@@ -732,6 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : (Number.isFinite(fallbackLevel) ? fallbackLevel : null);
       const playerClass = resolveSelectionValue(classSelect, classOtherInput);
       const playerRace = resolveSelectionValue(raceSelect, raceOtherInput);
+      const startTime = resolveStartTimeForPayload();
       const startingCurrencyRaw = (startingCurrencyField?.value || '').trim();
       const parsedStartingCurrency = Number.parseInt(startingCurrencyRaw, 10);
       const fallbackStartingCurrency = Number.parseInt(startingCurrencyField?.dataset?.defaultValue ?? '', 10);
@@ -769,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
           playerDescription,
           playerClass,
           playerRace,
+          startTime,
           startingLocation,
           startingCurrency,
           clientId: realtimeState.clientId,

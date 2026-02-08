@@ -30,6 +30,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Data injected by `server.js`:
   - `newGameDefaults`, `currentSetting`.
 - Notes: the Starting Location Generation Instructions field uses a multiline placeholder template (region name, summary, rooms/locations, region exits).
+- Notes: the New Game form includes a `Start Time (24h hour)` field (`0`-`23`) with default `9` (09:00).
 - Notes: submits `/api/new-game` with a keepalive POST, then immediately navigates to `/#tab-adventure` while generation continues; websocket status updates drive the overlay spinner if the page remains visible.
 - Notes: skills are pulled from the active setting (`defaultExistingSkills`) and displayed for allocation; the New Game form can add or remove skills and recalculates pools immediately.
 - Notes: attribute/skill allocation markup is included via `views/_includes/attribute-allocation.njk` and `views/_includes/skill-allocation.njk`.

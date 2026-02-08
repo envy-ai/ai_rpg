@@ -6,7 +6,8 @@ Common payloads: see `docs/api/common.md`.
 Start a new game session.
 
 Request:
-- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
+- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
+  - `startTime` is a 24-hour integer hour (`0`-`23`) and defaults to `9` when omitted.
 - Rejects `unspentSkillPoints` and `unspentAttributePoints` (400) because pools are formula-derived at read time.
 
 Response:
@@ -23,13 +24,19 @@ Response:
 Notes:
 - When `clientId` is provided, realtime status events are emitted during generation.
 - Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
+- World calendar generation runs during new-game setup via an LLM prompt (`calendar_generation`).
+- The prompt explicitly instructs Earth-like settings to use a Gregorian calendar (standard month/day names and lengths, no leap-year handling).
+- The prompt requests season descriptions and 10 holiday entries, each with descriptions.
+- Gregorian fallback is still used if calendar generation fails.
+- New-game setup also runs a base-context intro prompt (`game_intro`) and appends its prose to chat history as a visible assistant entry (`type: game-intro`) before the first player turn.
+- If intro generation fails, setup continues; the server logs a warning and no intro entry is added.
 
 ## POST /api/new-game/settings/save
 Save a New Game form configuration to disk.
 
 Request:
 - Body: `{ saveName?: string, settings: NewGameFormSettings }`
-  - `settings` supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startingLocation`, `startingCurrency`, `attributes`, `skills`
+  - `settings` supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`
 
 Response:
 - 200: `{ success: true, saveName, saveDir, metadata, message }`
@@ -70,6 +77,9 @@ Response:
 - 200: `{ success: true, saveName, source, metadata, loadedData, message }`
   - `loadedData`: `{ currentPlayer: NpcProfile|null, totalPlayers, totalThings, totalLocations, totalLocationExits, chatHistoryLength, totalGeneratedImages, currentSetting }`
 - 400/404/500 with `{ success: false, error }`
+
+Notes:
+- If a save has no persisted `calendarDefinition`, the server generates one from the active setting via LLM (`calendar_generation`) using the same Earth-like => Gregorian prompt rule, then falls back to Gregorian if generation fails.
 
 ## GET /api/saves
 List available saves.

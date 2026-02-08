@@ -45,8 +45,9 @@ Loaded on the chat page:
   row controls, and actions; legacy `.npc-memories-*`/`.npc-goals-*` classes remain on
   markup for compatibility.
 - Long names are handled client-side before render: when character/item/scenery
-  names exceed 40 characters, the UI wraps the name in a `<span>` with
-  `font-size: 0.75em` and `line-height: 0.85`; regular names use line-height `1.25`.
+  names exceed 40 characters, the UI wraps the name in a `<div class="entity-name-long">`
+  so sizing/line-height is style-driven (`font-size: 0.75em`, `line-height: 0.85`, centered text);
+  regular names use line-height `1.25`.
 - Skill allocation controls use `.skill-add-row` for inline add inputs and
   `.skill-remove-btn` for the compact remove button styling.
 - `.points-warning` reserves space for pool warning text so layout doesn't jump.

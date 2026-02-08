@@ -5,31 +5,31 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Root docs
 
 - [API_README.md](API_README.md) — High-level index of Express routes registered in `api.js`, pointing to detailed endpoint docs in `docs/api/`.
-- [config.md](config.md) — Configuration options for gameplay behavior (including point pool formulas and startup `--config-override` YAML layering).
+- [config.md](config.md) — Configuration options for gameplay behavior (including point pool formulas, world-time config, supplemental/offscreen NPC prompt cadence, and startup `--config-override` YAML layering).
 - [developer_overview.md](developer_overview.md) — Quick-start developer overview of the game, architecture, and where to look first.
 - [potential_redundancies.md](potential_redundancies.md) — List of potential redundancies/inconsistencies found across docs and code, with suggested fixes.
 - [playwright.md](playwright.md) — Playwright browser test setup and run commands for headless/headed Chromium, including same-user existing-X-session helper usage, one-off new-game flow automation, and a one-off settings-page capture/validation script for live UI snapshots.
-- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental story info frequency/scheduling and concurrency behavior, faction relation neutral defaults plus missing-asset tolerance during generation, formula-driven NPC skill/attribute progression with budget logging, event-summary filtering, and craft-history filtering).
+- [server_llm_notes.md](server_llm_notes.md) — Deep notes on `server.js`, `api.js`, `Events.js`, and `LLMClient.js` responsibilities and flow (including ComfyUI init behavior, supplemental + offscreen NPC hidden-prompt scheduling behavior, calendar-generation prompt behavior including Earth-like => Gregorian guidance plus Gregorian fallback, faction relation neutral defaults plus missing-asset tolerance during generation, formula-driven NPC skill/attribute progression with budget logging, event-summary filtering, and craft-history filtering).
 - [slash_commands.md](slash_commands.md) — Quick guide to slash command lifecycle, shape, arg parsing, interaction API, best practices, example, and testing.
 - [slop_and_repetition.md](slop_and_repetition.md) — Overview of slop checking and repetition-busting systems, including configured-PPM ngram filtering (`defs/slopwords.yaml` `ngrams`), travel prose output normalization, and detection logic (including retained `could`/`would` variants in k-gram normalization).
 
 ## UI docs (`docs/ui`)
 
 - [ui/README.md](ui/README.md) — UI documentation index and scope.
-- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove, remote new-game form settings save/load, blank-safe attribute alias matching during load, master-detail settings manager layout with tabbed editor sections, stable tab pill sizing, container-scoped library/editor scrolling, and search/sort library controls, settings rename/new-id behavior, persistent settings delete behavior, shared allocation partials, and allocation pool behavior/timing).
-- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, player-point warning indicator behavior, player-view modal point allocation flow, floating prompt-progress overlay behavior (including contract/expand and a 5-second empty-state debounce via hidden placeholder row), LLM modal submit behavior, and location exit caching.
+- [ui/pages.md](ui/pages.md) — Route-to-template map with scripts, injected data, and key form notes (including default skills prefill, new-game skill add/remove plus start-time hour input, remote new-game form settings save/load, blank-safe attribute alias matching during load, master-detail settings manager layout with tabbed editor sections, stable tab pill sizing, container-scoped library/editor scrolling, and search/sort library controls, settings rename/new-id behavior, persistent settings delete behavior, shared allocation partials, and allocation pool behavior/timing).
+- [ui/chat_interface.md](ui/chat_interface.md) — Main chat UI layout, behavior, data flow, player-point warning indicator behavior, left-sidebar world-time indicator + transition summaries, player-view modal point allocation flow, floating prompt-progress overlay behavior (including contract/expand, header drag + resize handles, and a 2-second empty-state debounce via hidden placeholder row), location thing drag/drop behavior (item inventory drops plus item/scenery conversion between grids), LLM modal submit behavior, and location exit caching.
 - [ui/modals_overlays.md](ui/modals_overlays.md) — Inventory of chat-page modals/overlays and tooltip behaviors (including status effect selectors/details, attribute bonus visibility, and single-scroll character view allocation sections), plus immediate-close LLM modals.
 - [ui/maps.md](ui/maps.md) — Region and world map rendering and interactions.
-- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus shared entity theming primitives, shared `npc-list-editor-*` modal classes with legacy compatibility notes, long-name downscale with `1.25` base line-height rendering behavior, skill allocation class hooks, and visibility-based warning spacing).
+- [ui/assets_styles.md](ui/assets_styles.md) — Styling, assets, and vendor libraries (plus shared entity theming primitives, shared `npc-list-editor-*` modal classes with legacy compatibility notes, long-name downscale via `.entity-name-long` with `1.25` base line-height behavior for regular names, skill allocation class hooks, and visibility-based warning spacing).
 
 ## API reference (`docs/api`)
 
 - [api/attributes.md](api/attributes.md) — Attributes endpoints; notes the duplicate route definitions in `api.js` and that only the first binds.
-- [api/chat.md](api/chat.md) — Chat endpoints, sorted by path; documents travel-prose split event payloads (including move-turn `item_appear`/`scenery_appear` handling), destination stub creation, server-only supplemental story info entries with frequency rules, and references shared payloads in `docs/api/common.md`.
-- [api/common.md](api/common.md) — Shared response shapes and conventions referenced by multiple endpoints (including StatusEffect modifier fields and unspent attribute point fields on actor payloads).
-- [api/crafting.md](api/crafting.md) — Crafting endpoints; references shared payloads in `docs/api/common.md`.
+- [api/chat.md](api/chat.md) — Chat endpoints, sorted by path; documents travel-prose split event payloads (including move-turn `item_appear`/`scenery_appear` handling), world-time payloads, destination stub creation, server-only supplemental/offscreen hidden story-note entries and cadence rules (including server-side NPC relocation when offscreen activity marks `moved=true`), and references shared payloads in `docs/api/common.md`.
+- [api/common.md](api/common.md) — Shared response shapes and conventions referenced by multiple endpoints (including hidden ChatEntry types, StatusEffect modifier fields, and unspent attribute point fields on actor payloads).
+- [api/crafting.md](api/crafting.md) — Crafting endpoints (including `timeTaken`-driven world-time advancement with malformed-value fallback and minimum 1-minute advance); references shared payloads in `docs/api/common.md`.
 - [api/factions.md](api/factions.md) — Faction listing and player standings endpoints.
-- [api/game.md](api/game.md) — Game lifecycle endpoints (including new-game form settings save/load/list APIs and optional unspent attribute point input); references shared payloads in `docs/api/common.md` and notes settings-sourced skills for new games.
+- [api/game.md](api/game.md) — Game lifecycle endpoints (including new-game form settings save/load/list APIs, start-time hour input handling, calendar generation/regeneration behavior with Earth-like Gregorian prompt guidance plus season/holiday descriptions, and optional unspent attribute point input); references shared payloads in `docs/api/common.md` and notes settings-sourced skills for new games.
 - [api/images.md](api/images.md) — Image generation and job endpoints; references job shapes in `docs/api/common.md`, including automatic `baseContextPreamble` prepending for image prompts.
 - [api/locations.md](api/locations.md) — Location and exit endpoints; references shared shapes in `docs/api/serialization.md`.
 - [api/lorebooks.md](api/lorebooks.md) — Lorebook listing endpoints with metadata details.
@@ -46,9 +46,9 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Class reference (`docs/classes`)
 
 - [classes/ComfyUIClient.md](classes/ComfyUIClient.md) — Client for ComfyUI servers: queue workflows, poll status, download images, and save results.
-- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including move suppression for event-driven travel, move-turn appearance override support for `<travelProse>` checks, NPC name normalization details (including same-location leading-name resolution like `Bob` -> `Bob Ross`), and item inflict handling.
+- [classes/Events.md](classes/Events.md) — LLM-based event checks that parse structured outcomes and apply world mutations, including move suppression for event-driven travel, move-turn appearance override support for `<travelProse>` checks, NPC name normalization details (including same-location leading-name resolution like `Bob` -> `Bob Ross`), robust arrow-delimiter parsing (`->` and unicode arrows such as `→`), item inflict handling, and minimum one-minute advancement when `time_passed` is `0`.
 - [classes/Faction.md](classes/Faction.md) — Faction model with goals/tags/relations/assets/reputation and static indexes.
-- [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, and prompt wiring.
+- [classes/Globals.md](classes/Globals.md) — Centralized static state/helpers for current player, locations, regions, prompt wiring, and canonical world time/calendar utilities (including non-recursive world-time initialization/context flow, season/holiday descriptors in world-time context, and Gregorian fallback calendar generation).
 - [classes/LLMClient.md](classes/LLMClient.md) — LLM chat client with concurrency, streaming, retries, prompt logging, cancellation utilities, and request payload notes.
 - [classes/Location.md](classes/Location.md) — Location model (description, exits, NPCs, items, status effects) with stub promotion support, stub description/shortDescription prompting rules, and authoritative stub handling behavior.
 - [classes/LocationExit.md](classes/LocationExit.md) — Connection between locations/regions, with optional vehicle semantics and bidirectional travel.
@@ -68,7 +68,7 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [classes/Skill.md](classes/Skill.md) — Skill model with name, description, and optional attribute association.
 - [classes/StatusEffect.md](classes/StatusEffect.md) — Status effect model for modifiers, need-bar deltas, and duration parsing/expiry semantics (negative=infinite, 0=expired).
 - [classes/Thing.md](classes/Thing.md) — Item/scenery model with rarity, bonuses, status effects, placement, and indexes.
-- [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization, stub maintenance, capitalizeProperNoun options).
+- [classes/Utils.md](classes/Utils.md) — Utility helpers (set math, text similarity, XML parsing, serialization including world-time/calendar persistence, stub maintenance, capitalizeProperNoun options).
 
 ## Design ideas (`docs/ideas`)
 
@@ -81,8 +81,10 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 ## Slash command reference (`docs/slashcommands`)
 
 - [slashcommands/Command.md](slashcommands/Command.md) — `/awardxp` command to grant experience points.
-- [slashcommands/ClearSecretsCommand.md](slashcommands/ClearSecretsCommand.md) — `/clear_secrets` command to remove supplemental story info entries.
+- [slashcommands/CalendarInfoCommand.md](slashcommands/CalendarInfoCommand.md) — `/calendar_info` (alias `/calendar`) command to display in-game calendar details in markdown.
+- [slashcommands/ClearSecretsCommand.md](slashcommands/ClearSecretsCommand.md) — `/clear_secrets` command to remove hidden supplemental/offscreen story info entries.
 - [slashcommands/ExportHistoryCommand.md](slashcommands/ExportHistoryCommand.md) — `/export_history` command to export chat history to text/HTML.
+- [slashcommands/GameIntroCommand.md](slashcommands/GameIntroCommand.md) — `/game_intro` (alias `/intro`) command to generate and append intro narration.
 - [slashcommands/GetConfigCommand.md](slashcommands/GetConfigCommand.md) — `/get` command to retrieve a nested config value.
 - [slashcommands/HealCommand.md](slashcommands/HealCommand.md) — `/heal` (alias `/resurrect`) command to restore NPC health and clear death.
 - [slashcommands/HelpCommand.md](slashcommands/HelpCommand.md) — `/help` command to list available slash commands and usage.

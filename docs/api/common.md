@@ -18,7 +18,7 @@ Fields:
 - `timestamp`: ISO string (generated if missing)
 - `parentId`: string | null
 - `locationId`: string (required; enforced by `pushChatEntry`)
-- `type`: string | null (examples: `player-action`, `event-summary`, `quest-reward`, `status-summary`, `supplemental-story-info` for hidden story-note attachments that stay server-side)
+- `type`: string | null (examples: `player-action`, `event-summary`, `quest-reward`, `status-summary`, hidden server-only story-note attachments such as `supplemental-story-info`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
 - `summaryItems`: array | null (event summaries)

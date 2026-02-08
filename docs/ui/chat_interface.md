@@ -15,10 +15,14 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 ## Adventure tab structure
 
 - **Location panel** (`.location-block`):
+  - Compact world-time chip at the top (`#worldTimeIndicator`) showing `HH:MM`, date label, and segment/season.
   - Image + context menu for edit/summon/regenerate.
   - Exits list + "New Exit" button.
   - NPC list + "Add NPC" button.
   - Items/Scenery grids + "Craft" and "New Item/Scenery" buttons.
+  - Drag/drop behavior:
+    - Any location thing card can be dragged to an inventory drop target only when its type is `item`.
+    - Dragging a location card between the Items and Scenery grids converts its `thingType` (`item` <-> `scenery`) via `PUT /api/things/:id`.
 - **Chat panel** (`.chat-container`):
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
@@ -26,6 +30,10 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; NPCs use the same sections in read-only mode.
   - Party summary list.
+- **World-time chip** (`#worldTimeIndicator`):
+  - Rendered in the Adventure tab's left location panel (compact sidebar style).
+  - Shows canonical world time (`HH:MM`), date label, and current segment/season.
+  - Hidden until the first `worldTime` payload is received from `/api/chat/history` or `/api/chat`.
 
 ## Location name caching
 
@@ -55,8 +63,10 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history and quest panel).
-- `prompt_progress`, `prompt_progress_cleared` (floating top-right prompt-progress overlay with cancel controls, a contract/expand toggle, and a 5-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel controls, contract/expand toggle, drag handle on the header, native resize handle, and a 2-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
+
+`processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.
 
 ## Key API calls from the chat UI
 
@@ -72,6 +82,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills).
 - `/api/locations/:id` and `/api/locations/:id/exits` (location details + exit edits).
+- `/api/things/:id` (thing updates; location drag/drop uses this to convert item/scenery type).
 - `/api/map/region` and `/api/map/world` (map tabs).
 
 ## LLM prompt modals (immediate close)

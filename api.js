@@ -574,9 +574,19 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const shortDescriptionBackfillByClient = new Map();
+        const OFFSCREEN_NPC_ACTIVITY_DAILY_HOURS = [7, 19];
+        const OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR = 7;
+        const OFFSCREEN_NPC_ACTIVITY_WEEKLY_COUNT = 15;
+        const OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_COUNT = 5;
+        const OFFSCREEN_NPC_ACTIVITY_MAX_CANDIDATES = 80;
+
         let shortDescriptionBackfillInProgress = false;
         let supplementalStoryInfoInProgress = false;
         let supplementalStoryInfoTurnCounter = 0;
+        let offscreenNpcActivityInProgress = false;
+        let offscreenNpcActivityState = {
+            dailyMentionedNpcNamesByWeek: {}
+        };
         const normalizeSaveFileVersion = (value, fallback = 0) => {
             const numeric = Number(value);
             return Number.isFinite(numeric) ? numeric : fallback;
@@ -1216,6 +1226,333 @@ module.exports = function registerApiRoutes(scope) {
             return notes;
         }
 
+        function parseGameIntroResponse(rawResponse) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Game intro response must be a string.');
+            }
+            const xmlPayload = stripToXmlPayload(rawResponse);
+            if (!xmlPayload) {
+                throw new Error('Game intro response missing XML content.');
+            }
+            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
+            const errorNode = doc.getElementsByTagName('parsererror')[0];
+            if (errorNode) {
+                throw new Error(`Game intro XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            }
+            const introNode = doc.getElementsByTagName('introProse')[0] || null;
+            const introText = introNode ? trimLeadingParagraphSpaces(introNode.textContent || '').trim() : '';
+            if (!introText) {
+                throw new Error('Game intro response missing <introProse>.');
+            }
+            return introText;
+        }
+
+        function normalizeNpcNameKey(value) {
+            if (typeof value !== 'string') {
+                return '';
+            }
+            return value.trim().toLowerCase();
+        }
+
+        function normalizeOffscreenNpcActivityState(value) {
+            if (value === null || value === undefined) {
+                return { dailyMentionedNpcNamesByWeek: {} };
+            }
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                throw new TypeError('offscreen NPC activity state must be an object.');
+            }
+            const source = value.dailyMentionedNpcNamesByWeek;
+            const normalizedByWeek = {};
+            if (source !== null && source !== undefined) {
+                if (!source || typeof source !== 'object' || Array.isArray(source)) {
+                    throw new TypeError('offscreen NPC activity dailyMentionedNpcNamesByWeek must be an object map.');
+                }
+                for (const [rawWeekKey, names] of Object.entries(source)) {
+                    const numericWeek = Number(rawWeekKey);
+                    if (!Number.isInteger(numericWeek) || numericWeek < 0) {
+                        continue;
+                    }
+                    if (!Array.isArray(names)) {
+                        throw new TypeError(`offscreen NPC activity week "${rawWeekKey}" must contain an array of names.`);
+                    }
+                    const normalizedNames = Array.from(new Set(
+                        names
+                            .map(name => normalizeNpcNameKey(name))
+                            .filter(Boolean)
+                    ));
+                    if (normalizedNames.length) {
+                        normalizedByWeek[String(numericWeek)] = normalizedNames;
+                    }
+                }
+            }
+            return {
+                dailyMentionedNpcNamesByWeek: normalizedByWeek
+            };
+        }
+
+        function resetOffscreenNpcActivityState() {
+            offscreenNpcActivityState = { dailyMentionedNpcNamesByWeek: {} };
+        }
+
+        function getOffscreenNpcMentionedNamesForWeek(weekIndex) {
+            if (!Number.isInteger(weekIndex) || weekIndex < 0) {
+                return new Set();
+            }
+            const byWeek = offscreenNpcActivityState?.dailyMentionedNpcNamesByWeek;
+            if (!byWeek || typeof byWeek !== 'object' || Array.isArray(byWeek)) {
+                throw new TypeError('offscreen NPC activity state is invalid.');
+            }
+            const rawNames = byWeek[String(weekIndex)];
+            if (!Array.isArray(rawNames)) {
+                return new Set();
+            }
+            return new Set(rawNames
+                .map(name => normalizeNpcNameKey(name))
+                .filter(Boolean));
+        }
+
+        function pruneOffscreenNpcMentionWeeks(currentWeekIndex) {
+            if (!Number.isInteger(currentWeekIndex) || currentWeekIndex < 0) {
+                return;
+            }
+            const byWeek = offscreenNpcActivityState?.dailyMentionedNpcNamesByWeek;
+            if (!byWeek || typeof byWeek !== 'object' || Array.isArray(byWeek)) {
+                throw new TypeError('offscreen NPC activity state is invalid.');
+            }
+            for (const weekKey of Object.keys(byWeek)) {
+                const numericWeek = Number(weekKey);
+                if (!Number.isInteger(numericWeek)) {
+                    delete byWeek[weekKey];
+                    continue;
+                }
+                if (numericWeek < currentWeekIndex - 2 || numericWeek > currentWeekIndex + 1) {
+                    delete byWeek[weekKey];
+                }
+            }
+        }
+
+        function recordOffscreenNpcDailyMentions(names, weekIndex) {
+            if (!Number.isInteger(weekIndex) || weekIndex < 0) {
+                throw new RangeError('recordOffscreenNpcDailyMentions requires a non-negative week index.');
+            }
+            if (!Array.isArray(names)) {
+                throw new TypeError('recordOffscreenNpcDailyMentions requires an array of names.');
+            }
+            const byWeek = offscreenNpcActivityState?.dailyMentionedNpcNamesByWeek;
+            if (!byWeek || typeof byWeek !== 'object' || Array.isArray(byWeek)) {
+                throw new TypeError('offscreen NPC activity state is invalid.');
+            }
+            const key = String(weekIndex);
+            const existing = Array.isArray(byWeek[key]) ? byWeek[key] : [];
+            const merged = new Set(existing
+                .map(name => normalizeNpcNameKey(name))
+                .filter(Boolean));
+            for (const name of names) {
+                const normalized = normalizeNpcNameKey(name);
+                if (normalized) {
+                    merged.add(normalized);
+                }
+            }
+            byWeek[key] = Array.from(merged);
+            pruneOffscreenNpcMentionWeeks(weekIndex);
+        }
+
+        function resolveOffscreenNpcActivityDailyCount() {
+            const rawCount = config?.offscreen_npc_activity_prompt_count;
+            if (rawCount === undefined || rawCount === null || rawCount === '') {
+                return OFFSCREEN_NPC_ACTIVITY_DEFAULT_DAILY_COUNT;
+            }
+            const numericCount = Number(rawCount);
+            if (!Number.isFinite(numericCount) || !Number.isInteger(numericCount) || numericCount < 0) {
+                throw new Error('offscreen_npc_activity_prompt_count must be an integer greater than or equal to 0.');
+            }
+            return numericCount;
+        }
+
+        function resolveWorldTimeCycleLengthHours() {
+            const timeConfig = typeof Globals?.getTimeConfig === 'function'
+                ? Globals.getTimeConfig()
+                : null;
+            const cycleLengthHours = Number(timeConfig?.cycleLengthHours);
+            if (!Number.isFinite(cycleLengthHours) || cycleLengthHours <= 0) {
+                throw new Error('World time cycle length is invalid for offscreen NPC activity scheduling.');
+            }
+            return cycleLengthHours;
+        }
+
+        function normalizeWorldTimeForSchedule(worldTime, label = 'worldTime') {
+            if (!worldTime || typeof worldTime !== 'object' || Array.isArray(worldTime)) {
+                throw new TypeError(`${label} must be an object.`);
+            }
+            const dayIndex = Number(worldTime.dayIndex);
+            const timeHours = Number(worldTime.timeHours);
+            if (!Number.isFinite(dayIndex) || dayIndex < 0) {
+                throw new RangeError(`${label}.dayIndex must be a non-negative number.`);
+            }
+            if (!Number.isFinite(timeHours) || timeHours < 0) {
+                throw new RangeError(`${label}.timeHours must be a non-negative number.`);
+            }
+            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            let normalizedDayIndex = Math.floor(dayIndex);
+            let normalizedTimeHours = timeHours;
+            while (normalizedTimeHours >= cycleLengthHours) {
+                normalizedDayIndex += 1;
+                normalizedTimeHours -= cycleLengthHours;
+            }
+            return {
+                dayIndex: normalizedDayIndex,
+                timeHours: normalizedTimeHours
+            };
+        }
+
+        function collectCrossedDailyPromptPoints({ startWorldTime, endWorldTime }) {
+            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const start = normalizeWorldTimeForSchedule(startWorldTime, 'startWorldTime');
+            const end = normalizeWorldTimeForSchedule(endWorldTime, 'endWorldTime');
+            const startAbsolute = start.dayIndex * cycleLengthHours + start.timeHours;
+            const endAbsolute = end.dayIndex * cycleLengthHours + end.timeHours;
+            if (endAbsolute <= startAbsolute) {
+                return [];
+            }
+            const points = [];
+            for (let day = start.dayIndex; day <= end.dayIndex; day += 1) {
+                for (const hour of OFFSCREEN_NPC_ACTIVITY_DAILY_HOURS) {
+                    const absoluteHours = day * cycleLengthHours + hour;
+                    if (absoluteHours <= startAbsolute || absoluteHours > endAbsolute) {
+                        continue;
+                    }
+                    points.push({
+                        mode: 'daily',
+                        dayIndex: day,
+                        hour,
+                        absoluteHours,
+                        weekIndex: Math.floor(day / 7)
+                    });
+                }
+            }
+            points.sort((a, b) => a.absoluteHours - b.absoluteHours);
+            return points;
+        }
+
+        function collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime }) {
+            const cycleLengthHours = resolveWorldTimeCycleLengthHours();
+            const start = normalizeWorldTimeForSchedule(startWorldTime, 'startWorldTime');
+            const end = normalizeWorldTimeForSchedule(endWorldTime, 'endWorldTime');
+            const startAbsolute = start.dayIndex * cycleLengthHours + start.timeHours;
+            const endAbsolute = end.dayIndex * cycleLengthHours + end.timeHours;
+            if (endAbsolute <= startAbsolute) {
+                return [];
+            }
+            const points = [];
+            for (let day = start.dayIndex; day <= end.dayIndex; day += 1) {
+                if (day % 7 !== 0) {
+                    continue;
+                }
+                const absoluteHours = day * cycleLengthHours + OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR;
+                if (absoluteHours <= startAbsolute || absoluteHours > endAbsolute) {
+                    continue;
+                }
+                points.push({
+                    mode: 'weekly',
+                    dayIndex: day,
+                    hour: OFFSCREEN_NPC_ACTIVITY_WEEKLY_HOUR,
+                    absoluteHours,
+                    weekIndex: Math.floor(day / 7)
+                });
+            }
+            points.sort((a, b) => a.absoluteHours - b.absoluteHours);
+            return points;
+        }
+
+        function resolveOffscreenNpcActivityRunPlan({ startWorldTime, endWorldTime } = {}) {
+            if (!startWorldTime || !endWorldTime) {
+                return null;
+            }
+            const dailyCount = resolveOffscreenNpcActivityDailyCount();
+            const dailyPoints = dailyCount > 0
+                ? collectCrossedDailyPromptPoints({ startWorldTime, endWorldTime })
+                : [];
+            const weeklyPoints = collectCrossedWeeklyPromptPoints({ startWorldTime, endWorldTime });
+            const totalDue = dailyPoints.length + weeklyPoints.length;
+            if (totalDue <= 0) {
+                return null;
+            }
+            if (weeklyPoints.length > 0) {
+                return {
+                    point: weeklyPoints[0],
+                    skippedDueToSingleRunLimit: Math.max(0, totalDue - 1)
+                };
+            }
+            return {
+                point: dailyPoints[0],
+                skippedDueToSingleRunLimit: Math.max(0, totalDue - 1)
+            };
+        }
+
+        function parseOffscreenNpcActivityResponse(rawResponse) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Offscreen NPC activity response must be a string.');
+            }
+            const xmlPayload = stripToXmlPayload(rawResponse);
+            if (!xmlPayload) {
+                throw new Error('Offscreen NPC activity response missing XML content.');
+            }
+            const doc = Utils.parseXmlDocument(sanitizeForXml(xmlPayload), 'text/xml');
+            const errorNode = doc.getElementsByTagName('parsererror')[0];
+            if (errorNode) {
+                throw new Error(`Offscreen NPC activity XML parse error: ${errorNode.textContent || 'Unknown parse error'}`);
+            }
+            const reportNode = doc.getElementsByTagName('npcActivityReport')[0] || null;
+            if (!reportNode) {
+                throw new Error('Offscreen NPC activity response missing <npcActivityReport>.');
+            }
+            const npcNodes = Array.from(reportNode.childNodes || []).filter(node => (
+                node
+                && node.nodeType === 1
+                && typeof node.tagName === 'string'
+                && node.tagName.toLowerCase() === 'npc'
+            ));
+            if (!npcNodes.length) {
+                throw new Error('Offscreen NPC activity response contains no <npc> entries.');
+            }
+
+            const getNodeText = (parent, tagName) => {
+                if (!parent || !tagName) {
+                    return '';
+                }
+                const nodes = parent.getElementsByTagName(tagName);
+                if (!nodes || !nodes.length) {
+                    return '';
+                }
+                const text = nodes[0].textContent;
+                return typeof text === 'string' ? text.trim() : '';
+            };
+
+            const activities = [];
+            for (const [index, npcNode] of npcNodes.entries()) {
+                const name = getNodeText(npcNode, 'name');
+                if (!name) {
+                    throw new Error(`Offscreen NPC activity entry #${index + 1} is missing <name>.`);
+                }
+                const activitySummary = getNodeText(npcNode, 'activitySummary');
+                if (!activitySummary) {
+                    throw new Error(`Offscreen NPC activity entry #${index + 1} is missing <activitySummary>.`);
+                }
+                const movedText = getNodeText(npcNode, 'moved').toLowerCase();
+                const moved = movedText === 'true' || movedText === 'yes' || movedText === '1';
+                const regionName = getNodeText(npcNode, 'regionName');
+                const locationName = getNodeText(npcNode, 'locationName');
+                activities.push({
+                    name,
+                    activitySummary,
+                    moved,
+                    regionName: regionName || null,
+                    locationName: locationName || null
+                });
+            }
+            return activities;
+        }
+
         function resolveSupplementalStoryInfoPromptFrequency() {
             const rawFrequency = config?.supplemental_story_info_prompt_frequency;
             if (rawFrequency === undefined || rawFrequency === null || rawFrequency === '') {
@@ -1238,6 +1575,462 @@ module.exports = function registerApiRoutes(scope) {
                 return true;
             }
             return supplementalStoryInfoTurnCounter % frequency === 0;
+        }
+
+        function resolveRegionNameForLocationId(locationId) {
+            if (typeof locationId !== 'string' || !locationId.trim()) {
+                return null;
+            }
+            const location = gameLocations.get(locationId) || Location.get(locationId) || null;
+            if (!location) {
+                return null;
+            }
+            const region = location.region
+                || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
+                || (typeof findRegionByLocationId === 'function' ? findRegionByLocationId(location.id) : null)
+                || null;
+            const regionName = typeof region?.name === 'string' ? region.name.trim() : '';
+            return regionName || null;
+        }
+
+        function collectNpcLastMention(name) {
+            if (typeof name !== 'string' || !name.trim()) {
+                return null;
+            }
+            if (!Array.isArray(chatHistory) || !chatHistory.length) {
+                return null;
+            }
+            const normalizedName = name.trim().toLowerCase();
+            for (let index = chatHistory.length - 1; index >= 0; index -= 1) {
+                const entry = chatHistory[index];
+                if (!entry || typeof entry !== 'object') {
+                    continue;
+                }
+                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+                const haystack = `${content}\n${summary}`.toLowerCase();
+                if (!haystack.includes(normalizedName)) {
+                    continue;
+                }
+                const previewSource = content || summary;
+                const preview = previewSource.length > 220
+                    ? `${previewSource.slice(0, 220)}...`
+                    : previewSource;
+                return {
+                    index,
+                    timestamp: entry.timestamp || null,
+                    preview: preview || null
+                };
+            }
+            return null;
+        }
+
+        function collectOffscreenNpcCandidates({ excludedNameKeys = new Set() } = {}) {
+            const activeLocationId = typeof currentPlayer?.currentLocation === 'string'
+                ? currentPlayer.currentLocation.trim()
+                : '';
+            const activeLocation = activeLocationId
+                ? (gameLocations.get(activeLocationId) || Location.get(activeLocationId) || null)
+                : null;
+            const presentNpcIds = new Set(Array.isArray(activeLocation?.npcIds) ? activeLocation.npcIds : []);
+            const partyIds = new Set(
+                Array.isArray(currentPlayer?.party) ? currentPlayer.party : []
+            );
+            const candidates = [];
+            for (const [npcId, candidate] of players.entries()) {
+                if (!candidate || !candidate.isNPC) {
+                    continue;
+                }
+                if (!npcId || typeof npcId !== 'string') {
+                    continue;
+                }
+                if (partyIds.has(npcId) || presentNpcIds.has(npcId)) {
+                    continue;
+                }
+                if (typeof candidate.isAlive === 'function' && !candidate.isAlive()) {
+                    continue;
+                }
+                const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+                if (!name) {
+                    continue;
+                }
+                const normalizedName = normalizeNpcNameKey(name);
+                if (!normalizedName || excludedNameKeys.has(normalizedName)) {
+                    continue;
+                }
+                const locationId = typeof candidate.currentLocation === 'string' ? candidate.currentLocation.trim() : '';
+                const location = locationId
+                    ? (gameLocations.get(locationId) || Location.get(locationId) || null)
+                    : null;
+                const locationName = typeof location?.name === 'string' && location.name.trim()
+                    ? location.name.trim()
+                    : (locationId || null);
+                const regionName = resolveRegionNameForLocationId(locationId) || null;
+                const lastMention = collectNpcLastMention(name);
+                const level = Number(candidate.level);
+                const dispositionCount = Array.isArray(candidate.dispositionsTowardsPlayer)
+                    ? candidate.dispositionsTowardsPlayer.length
+                    : 0;
+                const score = (lastMention ? (1_000_000 + lastMention.index) : 0)
+                    + (Number.isFinite(level) ? level * 100 : 0)
+                    + dispositionCount;
+                candidates.push({
+                    id: npcId,
+                    name,
+                    currentRegionName: regionName,
+                    currentLocationName: locationName,
+                    lastMentionIndex: lastMention?.index ?? null,
+                    lastMentionTimestamp: lastMention?.timestamp ?? null,
+                    lastMentionPreview: lastMention?.preview ?? null,
+                    score
+                });
+            }
+            candidates.sort((a, b) => {
+                if (b.score !== a.score) {
+                    return b.score - a.score;
+                }
+                return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            });
+            return candidates;
+        }
+
+        function normalizeOffscreenLocationToken(value) {
+            if (typeof value !== 'string') {
+                return null;
+            }
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            const normalized = trimmed.toLowerCase();
+            if (
+                normalized === 'unknown'
+                || normalized === 'unknown region'
+                || normalized === 'unknown location'
+                || normalized === 'n/a'
+                || normalized === 'none'
+                || normalized === 'null'
+            ) {
+                return null;
+            }
+            return trimmed;
+        }
+
+        function resolveOffscreenNpcByName(name, candidateIdByNameKey = null) {
+            const normalizedName = normalizeNpcNameKey(name);
+            if (!normalizedName) {
+                return null;
+            }
+            if (candidateIdByNameKey instanceof Map && candidateIdByNameKey.has(normalizedName)) {
+                const candidateId = candidateIdByNameKey.get(normalizedName);
+                if (candidateId && players instanceof Map && players.has(candidateId)) {
+                    return players.get(candidateId);
+                }
+            }
+            if (typeof Player?.getByName === 'function') {
+                return Player.getByName(name) || null;
+            }
+            return null;
+        }
+
+        function resolveOffscreenActivityDestination({ regionName = null, locationName = null } = {}) {
+            const normalizedRegionName = normalizeOffscreenLocationToken(regionName);
+            const normalizedLocationName = normalizeOffscreenLocationToken(locationName);
+            if (!normalizedLocationName) {
+                return null;
+            }
+
+            let targetRegion = null;
+            let destination = null;
+            if (normalizedRegionName && typeof Region?.getByName === 'function') {
+                targetRegion = Region.getByName(normalizedRegionName) || null;
+                if (targetRegion) {
+                    destination = resolveLocationInRegionByName(targetRegion, normalizedLocationName);
+                }
+            }
+
+            if (!destination) {
+                destination = resolveLocationByIdOrName(normalizedLocationName);
+            }
+
+            return destination || null;
+        }
+
+        function applyOffscreenNpcActivityMovement({
+            activity = null,
+            mode = 'daily',
+            candidateIdByNameKey = null
+        } = {}) {
+            if (!activity || typeof activity !== 'object' || !activity.moved) {
+                return false;
+            }
+            const npc = resolveOffscreenNpcByName(activity.name, candidateIdByNameKey);
+            if (!npc || !npc.isNPC) {
+                console.warn(`[Offscreen NPC Activity] Could not resolve NPC for movement update: "${activity?.name || 'Unknown'}".`);
+                return false;
+            }
+            const destination = resolveOffscreenActivityDestination({
+                regionName: activity.regionName,
+                locationName: activity.locationName
+            });
+            if (!destination) {
+                console.warn(
+                    `[Offscreen NPC Activity] Movement update for "${npc.name}" could not resolve destination ` +
+                    `(region="${activity.regionName || ''}", location="${activity.locationName || ''}").`
+                );
+                return false;
+            }
+
+            const originLocationId = typeof npc.currentLocation === 'string'
+                ? npc.currentLocation.trim()
+                : '';
+            if (originLocationId && originLocationId === destination.id) {
+                return false;
+            }
+
+            const originLocation = originLocationId
+                ? (gameLocations.get(originLocationId) || Location.get(originLocationId) || null)
+                : null;
+            if (originLocation) {
+                if (typeof originLocation.removeNpcId === 'function') {
+                    originLocation.removeNpcId(npc.id);
+                } else if (Array.isArray(originLocation.npcIds)) {
+                    originLocation.npcIds = originLocation.npcIds.filter(id => id !== npc.id);
+                } else {
+                    throw new Error(
+                        `Unable to remove NPC "${npc.name}" from origin location "${originLocation.id}": removeNpcId is unavailable.`
+                    );
+                }
+            }
+
+            if (typeof destination.addNpcId === 'function') {
+                destination.addNpcId(npc.id);
+            } else if (Array.isArray(destination.npcIds)) {
+                if (!destination.npcIds.includes(npc.id)) {
+                    destination.npcIds.push(npc.id);
+                }
+            } else {
+                throw new Error(
+                    `Unable to add NPC "${npc.name}" to destination location "${destination.id}": addNpcId is unavailable.`
+                );
+            }
+
+            if (typeof npc.setLocation !== 'function') {
+                throw new Error(`NPC "${npc.name}" cannot be moved: setLocation is unavailable.`);
+            }
+            npc.setLocation(destination.id);
+
+            if (players instanceof Map) {
+                players.set(npc.id, npc);
+            }
+            if (gameLocations instanceof Map) {
+                if (originLocation?.id) {
+                    gameLocations.set(originLocation.id, originLocation);
+                }
+                if (destination.id) {
+                    gameLocations.set(destination.id, destination);
+                }
+            }
+
+            const destinationRegionName = resolveRegionNameForLocationId(destination.id) || 'Unknown Region';
+            const originLabel = originLocation?.name || originLocationId || 'Unknown Location';
+            const destinationLabel = destination.name || destination.id;
+            console.log(
+                `[Offscreen NPC Activity] Updated "${npc.name}" location (${mode}): ` +
+                `"${originLabel}" -> "${destinationRegionName} / ${destinationLabel}".`
+            );
+            return true;
+        }
+
+        async function runOffscreenNpcActivityPrompt({
+            mode = 'daily',
+            point = null,
+            parentEntryId = null,
+            locationOverride = null,
+            locationId = null,
+            entryCollector = null
+        } = {}) {
+            if (mode !== 'daily' && mode !== 'weekly') {
+                throw new Error(`Unsupported offscreen NPC activity mode "${mode}".`);
+            }
+            if (!parentEntryId) {
+                throw new Error('Offscreen NPC activity prompt requires a parent entry id.');
+            }
+            if (offscreenNpcActivityInProgress) {
+                console.info('Offscreen NPC activity prompt already running; skipping new request.');
+                return null;
+            }
+
+            const dailyCount = resolveOffscreenNpcActivityDailyCount();
+            if (mode === 'daily' && dailyCount <= 0) {
+                return null;
+            }
+            const targetCount = mode === 'weekly'
+                ? OFFSCREEN_NPC_ACTIVITY_WEEKLY_COUNT
+                : dailyCount;
+            if (!Number.isInteger(targetCount) || targetCount <= 0) {
+                return null;
+            }
+
+            offscreenNpcActivityInProgress = true;
+            try {
+                if (!config?.ai) {
+                    throw new Error('AI configuration missing; unable to run offscreen NPC activity prompt.');
+                }
+
+                const pointWeekIndex = Number.isInteger(point?.weekIndex) && point.weekIndex >= 0
+                    ? point.weekIndex
+                    : Math.floor(Number(Globals.getSerializedWorldTime()?.dayIndex || 0) / 7);
+                const excludedNameKeys = mode === 'weekly'
+                    ? getOffscreenNpcMentionedNamesForWeek(pointWeekIndex)
+                    : new Set();
+                const candidates = collectOffscreenNpcCandidates({ excludedNameKeys })
+                    .slice(0, OFFSCREEN_NPC_ACTIVITY_MAX_CANDIDATES);
+                if (!candidates.length) {
+                    return null;
+                }
+                const excludedNamesForPrompt = mode === 'weekly'
+                    ? Array.from(excludedNameKeys)
+                    : [];
+
+                const resolvedTargetCount = Math.min(targetCount, candidates.length);
+                const baseContext = await prepareBasePromptContext({ locationOverride });
+                const promptType = mode === 'weekly'
+                    ? 'offscreen-npc-activity-weekly'
+                    : 'offscreen-npc-activity-daily';
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType,
+                    npcActivityTargetCount: resolvedTargetCount,
+                    npcActivityCandidates: candidates,
+                    npcActivityExcludedNames: excludedNamesForPrompt,
+                    npcActivityWindowLabel: mode === 'weekly'
+                        ? 'over the past week'
+                        : 'since they were last mentioned'
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    throw new Error('Offscreen NPC activity prompt template is missing prompts.');
+                }
+
+                const metadataLabel = mode === 'weekly'
+                    ? 'offscreen_npc_activity_weekly'
+                    : 'offscreen_npc_activity_daily';
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel,
+                    validateXML: false
+                };
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: metadataLabel,
+                    metadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const parsedActivities = parseOffscreenNpcActivityResponse(rawResponse);
+                if (!Array.isArray(parsedActivities) || !parsedActivities.length) {
+                    return null;
+                }
+
+                const uniqueActivities = [];
+                const seenNameKeys = new Set();
+                for (const entry of parsedActivities) {
+                    const normalizedName = normalizeNpcNameKey(entry?.name);
+                    if (!normalizedName || seenNameKeys.has(normalizedName)) {
+                        continue;
+                    }
+                    seenNameKeys.add(normalizedName);
+                    uniqueActivities.push(entry);
+                    if (uniqueActivities.length >= resolvedTargetCount) {
+                        break;
+                    }
+                }
+                if (uniqueActivities.length < resolvedTargetCount) {
+                    throw new Error(
+                        `Offscreen NPC activity returned ${uniqueActivities.length} entries; expected ${resolvedTargetCount}.`
+                    );
+                }
+
+                const candidateIdByNameKey = new Map();
+                for (const candidate of candidates) {
+                    if (!candidate || typeof candidate !== 'object') {
+                        continue;
+                    }
+                    const normalizedName = normalizeNpcNameKey(candidate.name);
+                    if (!normalizedName || candidateIdByNameKey.has(normalizedName)) {
+                        continue;
+                    }
+                    candidateIdByNameKey.set(normalizedName, candidate.id);
+                }
+
+                for (const activity of uniqueActivities) {
+                    try {
+                        applyOffscreenNpcActivityMovement({
+                            activity,
+                            mode,
+                            candidateIdByNameKey
+                        });
+                    } catch (error) {
+                        console.warn(
+                            `[Offscreen NPC Activity] Failed to apply movement update for "${activity?.name || 'Unknown'}":`,
+                            error?.message || error
+                        );
+                    }
+                }
+
+                if (mode === 'daily') {
+                    recordOffscreenNpcDailyMentions(
+                        uniqueActivities.map(entry => entry.name),
+                        pointWeekIndex
+                    );
+                }
+
+                const heading = mode === 'weekly'
+                    ? '**Offscreen NPC Activity (Weekly)**'
+                    : '**Offscreen NPC Activity (Twice Daily)**';
+                const lines = [heading];
+                for (const activity of uniqueActivities) {
+                    const movementPrefix = activity.moved ? '[Moved] ' : '';
+                    lines.push(`- ${activity.name}: ${movementPrefix}${activity.activitySummary}`);
+                    const region = activity.regionName || 'Unknown Region';
+                    const locationName = activity.locationName || 'Unknown Location';
+                    lines.push(`  Region/Location: ${region} / ${locationName}`);
+                }
+                const notes = lines.join('\n');
+
+                const resolvedLocationId = requireLocationId(
+                    locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                    'offscreen npc activity entry'
+                );
+                const entry = {
+                    role: 'assistant',
+                    content: notes,
+                    summary: notes,
+                    type: mode === 'weekly'
+                        ? 'offscreen-npc-activity-weekly'
+                        : 'offscreen-npc-activity-daily',
+                    parentId: parentEntryId,
+                    locationId: resolvedLocationId
+                };
+                return pushChatEntry(entry, entryCollector, resolvedLocationId);
+            } catch (error) {
+                console.warn(`Failed to run offscreen NPC activity prompt (${mode}):`, error.message);
+                return null;
+            } finally {
+                offscreenNpcActivityInProgress = false;
+            }
         }
 
         async function runSupplementalStoryInfo({
@@ -1320,6 +2113,71 @@ module.exports = function registerApiRoutes(scope) {
             } finally {
                 supplementalStoryInfoInProgress = false;
             }
+        }
+
+        async function runGameIntroPrompt({
+            locationOverride = null,
+            entryCollector = null,
+            locationId = null
+        } = {}) {
+            if (!config?.ai) {
+                throw new Error('AI configuration missing; unable to run game intro prompt.');
+            }
+
+            const baseContext = await prepareBasePromptContext({ locationOverride });
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'game-intro'
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Game intro template missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'game_intro',
+                validateXML: false
+            };
+
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const rawResponse = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                prefix: 'game_intro',
+                metadataLabel: 'game_intro',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: parsedTemplate.generationPrompt || '',
+                response: rawResponse || '',
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            const introText = parseGameIntroResponse(rawResponse);
+            const resolvedLocationId = requireLocationId(
+                locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                'game intro entry'
+            );
+            const entry = {
+                role: 'assistant',
+                content: introText,
+                summary: introText,
+                type: 'game-intro',
+                locationId: resolvedLocationId
+            };
+            return pushChatEntry(entry, entryCollector, resolvedLocationId);
+        }
+
+        Globals.generateGameIntro = runGameIntroPrompt;
+
+        function buildWorldTimePayload({ transitions = [] } = {}) {
+            const normalizedTransitions = Array.isArray(transitions) ? transitions : [];
+            return Globals.getWorldTimeContext({ transitions: normalizedTransitions });
         }
 
         const resolveLocationByIdOrName = (value) => {
@@ -1492,6 +2350,39 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        const MIN_CRAFT_TIME_ADVANCE_HOURS = 1 / 60;
+
+        function parseCraftResultTimeTakenHours(rawTimeTaken, { resultLevel = 'unknown' } = {}) {
+            const levelLabel = typeof resultLevel === 'string' && resultLevel.trim()
+                ? resultLevel.trim().toLowerCase()
+                : 'unknown';
+
+            if (typeof rawTimeTaken !== 'string' || !rawTimeTaken.trim()) {
+                console.error(`Crafting result "${levelLabel}" is missing <timeTaken>; defaulting to ${MIN_CRAFT_TIME_ADVANCE_HOURS}h.`);
+                return MIN_CRAFT_TIME_ADVANCE_HOURS;
+            }
+
+            const trimmed = rawTimeTaken.trim();
+            const directNumber = Number(trimmed);
+            if (Number.isFinite(directNumber) && directNumber >= 0) {
+                return directNumber > 0 ? directNumber : MIN_CRAFT_TIME_ADVANCE_HOURS;
+            }
+
+            console.error(`Crafting result "${levelLabel}" has invalid <timeTaken> value "${trimmed}". Attempting units-stripped fallback.`);
+
+            const numericToken = trimmed.match(/[-+]?\d*\.?\d+/)?.[0] || '';
+            const strippedNumber = numericToken ? Number(numericToken) : NaN;
+            if (Number.isFinite(strippedNumber) && strippedNumber >= 0) {
+                const convertedHours = strippedNumber / 60;
+                if (convertedHours > 0) {
+                    return convertedHours;
+                }
+            }
+
+            console.error(`Crafting result "${levelLabel}" fallback parse failed for <timeTaken>="${trimmed}". Defaulting to ${MIN_CRAFT_TIME_ADVANCE_HOURS}h.`);
+            return MIN_CRAFT_TIME_ADVANCE_HOURS;
+        }
+
         async function parseCraftingResultsResponse(xmlContent) {
             const results = new Map();
             if (!xmlContent || typeof xmlContent !== 'string') {
@@ -1599,6 +2490,11 @@ module.exports = function registerApiRoutes(scope) {
                         : null;
 
                     const serializedResult = serializeXmlNode(resultNode) || '';
+                    const timeTakenNode = resultNode.getElementsByTagName('timeTaken')[0] || null;
+                    const timeTakenRaw = timeTakenNode && typeof timeTakenNode.textContent === 'string'
+                        ? timeTakenNode.textContent.trim()
+                        : null;
+                    const timeTakenHours = parseCraftResultTimeTakenHours(timeTakenRaw, { resultLevel: level });
 
                     results.set(level, {
                         rawXml: serializedResult || null,
@@ -1606,7 +2502,9 @@ module.exports = function registerApiRoutes(scope) {
                         item: parsedItem,
                         itemsRecovered: recoveredItems,
                         other: other && other.toLowerCase() !== 'n/a' ? other : null,
-                        abilities: parseAbilityEffects(serializedResult)
+                        abilities: parseAbilityEffects(serializedResult),
+                        timeTakenRaw,
+                        timeTakenHours
                     });
                 }
             } catch (error) {
@@ -3835,7 +4733,10 @@ module.exports = function registerApiRoutes(scope) {
                             : [],
                         questRewards: Array.isArray(result.questRewards) ? result.questRewards.slice() : [],
                         questsAwarded: Array.isArray(result.questsAwarded) ? result.questsAwarded.slice() : [],
-                        followupResults: Array.isArray(result.followupResults) ? result.followupResults.slice() : []
+                        followupResults: Array.isArray(result.followupResults) ? result.followupResults.slice() : [],
+                        timeProgress: result.timeProgress && typeof result.timeProgress === 'object'
+                            ? { ...result.timeProgress }
+                            : null
                     };
                     return;
                 }
@@ -3856,6 +4757,9 @@ module.exports = function registerApiRoutes(scope) {
                 merged.followupResults = mergeEventArrays(merged.followupResults, result.followupResults);
                 merged.npcUpdates = mergeNpcUpdates(merged.npcUpdates, result.npcUpdates);
                 merged.locationRefreshRequested = Boolean(merged.locationRefreshRequested || result.locationRefreshRequested);
+                if (result.timeProgress && typeof result.timeProgress === 'object') {
+                    merged.timeProgress = { ...result.timeProgress };
+                }
             });
             return merged;
         };
@@ -3891,6 +4795,7 @@ module.exports = function registerApiRoutes(scope) {
             const destinationProse = typeof travelProsePayload.destinationProse === 'string'
                 ? travelProsePayload.destinationProse.trim()
                 : '';
+            const suppressOriginTimeAdvance = Boolean(destinationProse);
 
             let destinationLocation = null;
             let travelContext = null;
@@ -3908,7 +4813,8 @@ module.exports = function registerApiRoutes(scope) {
                     textToCheck: originText,
                     stream,
                     suppressMoveEvents: true,
-                    allowMoveTurnAppearances: true
+                    allowMoveTurnAppearances: true,
+                    suppressTimeAdvance: suppressOriginTimeAdvance
                 });
             }
 
@@ -3971,7 +4877,8 @@ module.exports = function registerApiRoutes(scope) {
                     textToCheck: destinationText,
                     stream,
                     suppressMoveEvents: true,
-                    allowMoveTurnAppearances: true
+                    allowMoveTurnAppearances: true,
+                    suppressTimeAdvance: false
                 });
             }
 
@@ -4314,7 +5221,11 @@ module.exports = function registerApiRoutes(scope) {
                         destinationEventLocationName = travelResult.destinationEventLocationName;
                         location = travelResult.location;
                     } else {
-                        eventChecks = await Events.runEventChecks({ textToCheck: cleanedNarrative, stream });
+                        eventChecks = await Events.runEventChecks({
+                            textToCheck: cleanedNarrative,
+                            stream,
+                            suppressTimeAdvance: true
+                        });
                     }
                 } catch (eventCheckError) {
                     console.warn('Failed to apply random event checks:', eventCheckError.message);
@@ -7979,7 +8890,13 @@ module.exports = function registerApiRoutes(scope) {
 
                     let npcEventResult = null;
                     try {
-                        npcEventResult = await Events.runEventChecks({ textToCheck: npcResponse, stream, allowEnvironmentalEffects: false, isNpcTurn: true });
+                        npcEventResult = await Events.runEventChecks({
+                            textToCheck: npcResponse,
+                            stream,
+                            allowEnvironmentalEffects: false,
+                            isNpcTurn: true,
+                            suppressTimeAdvance: true
+                        });
                     } catch (error) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
                     }
@@ -8347,6 +9264,12 @@ module.exports = function registerApiRoutes(scope) {
             let travelUserEntry = null;
             let travelAssistantEntry = null;
             let traveledToLocationId = null;
+            let worldTimeAtTurnStart = null;
+            try {
+                worldTimeAtTurnStart = Globals.getSerializedWorldTime();
+            } catch (worldTimeSnapshotError) {
+                console.warn('Failed to snapshot world time at turn start:', worldTimeSnapshotError.message);
+            }
             eventsProcessedThisTurn = false;
             let promptTemplateName = null;
             let promptVariablesSnapshot = null;
@@ -8703,6 +9626,7 @@ module.exports = function registerApiRoutes(scope) {
                         commentLogged: true,
                         messages: getClientMessages()
                     };
+                    responseData.worldTime = buildWorldTimePayload();
 
                     streamState.commentOnly = true;
                     stream.status('player_action:complete', 'Comment logged; skipping processing.');
@@ -8826,6 +9750,7 @@ module.exports = function registerApiRoutes(scope) {
                                 const responseData = {
                                     response: attackRejectionReason
                                 };
+                                responseData.worldTime = buildWorldTimePayload();
 
                                 if (attackCheckInfo) {
                                     responseData.attackCheck = attackCheckInfo;
@@ -8915,6 +9840,7 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: rejectionReason
                     };
+                    responseData.worldTime = buildWorldTimePayload();
 
                     if (attackCheckInfo) {
                         responseData.attackCheck = attackCheckInfo;
@@ -9342,6 +10268,14 @@ module.exports = function registerApiRoutes(scope) {
                             plausibilityStructured: null,
                             eventStructured: forcedEventResult?.structured || null
                         };
+                    }
+
+                    const forcedTransitions = Array.isArray(forcedEventResult?.timeProgress?.transitions)
+                        ? forcedEventResult.timeProgress.transitions
+                        : [];
+                    responseData.worldTime = buildWorldTimePayload({ transitions: forcedTransitions });
+                    if (forcedEventResult?.timeProgress && typeof forcedEventResult.timeProgress === 'object') {
+                        responseData.timeProgress = forcedEventResult.timeProgress;
                     }
 
                     if (stream.requestId) {
@@ -10391,6 +11325,31 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     try {
+                        const worldTimeAtTurnEnd = Globals.getSerializedWorldTime();
+                        const offscreenRunPlan = resolveOffscreenNpcActivityRunPlan({
+                            startWorldTime: worldTimeAtTurnStart,
+                            endWorldTime: worldTimeAtTurnEnd
+                        });
+                        if (offscreenRunPlan?.point) {
+                            if (offscreenRunPlan.skippedDueToSingleRunLimit > 0) {
+                                console.info(
+                                    `Offscreen NPC activity scheduler skipped ${offscreenRunPlan.skippedDueToSingleRunLimit} due prompt(s) because only one run is allowed per turn.`
+                                );
+                            }
+                            void runOffscreenNpcActivityPrompt({
+                                mode: offscreenRunPlan.point.mode,
+                                point: offscreenRunPlan.point,
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId
+                            });
+                        }
+                    } catch (offscreenScheduleError) {
+                        console.warn('Failed to schedule offscreen NPC activity prompt:', offscreenScheduleError.message);
+                    }
+
+                    try {
                         await summarizePendingEntriesIfThresholdReached();
                     } catch (summaryBatchError) {
                         console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
@@ -10401,6 +11360,14 @@ module.exports = function registerApiRoutes(scope) {
                     for (const player of playersById.values()) {
                         //console.log(` - Finalizing turn for player ${player.name} (${player.id})`);
                         player.finalizeTurn();
+                    }
+
+                    const worldTimeTransitions = Array.isArray(eventResult?.timeProgress?.transitions)
+                        ? eventResult.timeProgress.transitions
+                        : [];
+                    responseData.worldTime = buildWorldTimePayload({ transitions: worldTimeTransitions });
+                    if (eventResult?.timeProgress && typeof eventResult.timeProgress === 'object') {
+                        responseData.timeProgress = eventResult.timeProgress;
                     }
 
                     if (stream.isEnabled && !playerActionStreamSent) {
@@ -10566,7 +11533,8 @@ module.exports = function registerApiRoutes(scope) {
             const filteredHistory = filterOrphanedChatEntries(prunedHistory);
             res.json({
                 history: filteredHistory,
-                count: chatHistory.length
+                count: chatHistory.length,
+                worldTime: buildWorldTimePayload()
             });
         });
 
@@ -17425,6 +18393,12 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                const selectedTimeTakenHours = Number(selectedResult.timeTakenHours);
+                const appliedTimeTakenHours = Number.isFinite(selectedTimeTakenHours) && selectedTimeTakenHours > 0
+                    ? selectedTimeTakenHours
+                    : MIN_CRAFT_TIME_ADVANCE_HOURS;
+                const craftingTimeProgress = Globals.advanceTime(appliedTimeTakenHours, { source: 'craft_action' });
+
                 res.json({
                     success: true,
                     outcome: actionOutcome,
@@ -17441,7 +18415,14 @@ module.exports = function registerApiRoutes(scope) {
                         type: plausibility.type,
                         reason: plausibility.reason || null
                     },
-                    unmatchedConsumedNames
+                    unmatchedConsumedNames,
+                    timeTakenHours: appliedTimeTakenHours,
+                    timeProgress: craftingTimeProgress,
+                    worldTime: buildWorldTimePayload({
+                        transitions: Array.isArray(craftingTimeProgress?.transitions)
+                            ? craftingTimeProgress.transitions
+                            : []
+                    })
                 });
             } catch (error) {
                 console.error('Error processing crafting request:', error);
@@ -19788,6 +20769,237 @@ module.exports = function registerApiRoutes(scope) {
 
         // ==================== NEW GAME FUNCTIONALITY ====================
 
+        function parseCalendarDefinitionXml(xmlContent) {
+            if (!xmlContent || typeof xmlContent !== 'string' || !xmlContent.trim()) {
+                throw new Error('Calendar generation response was empty.');
+            }
+
+            const trimmed = xmlContent.trim();
+            const snippetMatch = trimmed.match(/<calendarDefinition[\s\S]*<\/calendarDefinition>/i);
+            const xmlSnippet = snippetMatch ? snippetMatch[0] : trimmed;
+            const normalizedSnippet = xmlSnippet.replace(/^\s*<\?xml[\s\S]*?\?>\s*/i, '');
+            const wrapped = sanitizeXmlForDom(normalizedSnippet);
+            const doc = Utils.parseXmlDocument(wrapped, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`Calendar XML parsing error: ${parserError.textContent || 'unknown parser error'}`);
+            }
+
+            const calendarNode = doc.getElementsByTagName('calendarDefinition')[0];
+            if (!calendarNode) {
+                throw new Error('Calendar XML missing <calendarDefinition> root element.');
+            }
+
+            const getDirectChild = (parent, tagName) => {
+                if (!parent) {
+                    return null;
+                }
+                const children = Array.from(parent.childNodes || []);
+                return children.find(node =>
+                    node
+                    && node.nodeType === 1
+                    && node.tagName
+                    && node.tagName.toLowerCase() === tagName.toLowerCase()
+                ) || null;
+            };
+
+            const getText = (parent, tagName) => {
+                const node = getDirectChild(parent, tagName);
+                if (!node || typeof node.textContent !== 'string') {
+                    return '';
+                }
+                return node.textContent.trim();
+            };
+
+            const parseIntegerText = (value, fieldName) => {
+                const parsed = Number.parseInt(String(value || '').trim(), 10);
+                if (!Number.isFinite(parsed)) {
+                    throw new Error(`Calendar XML field ${fieldName} must be a finite integer.`);
+                }
+                return parsed;
+            };
+
+            const monthsNode = getDirectChild(calendarNode, 'months');
+            if (!monthsNode) {
+                throw new Error('Calendar XML missing <months>.');
+            }
+            const monthNodes = Array.from(monthsNode.childNodes || []).filter(node =>
+                node
+                && node.nodeType === 1
+                && node.tagName
+                && node.tagName.toLowerCase() === 'month'
+            );
+            if (!monthNodes.length) {
+                throw new Error('Calendar XML must define at least one <month>.');
+            }
+            const months = monthNodes.map((monthNode, index) => {
+                const name = getText(monthNode, 'name');
+                if (!name) {
+                    throw new Error(`Calendar month #${index + 1} is missing <name>.`);
+                }
+                const lengthDays = parseIntegerText(getText(monthNode, 'lengthDays'), `months.month[${index + 1}].lengthDays`);
+                const seasonName = getText(monthNode, 'seasonName');
+                return {
+                    name,
+                    lengthDays,
+                    seasonName: seasonName || null
+                };
+            });
+
+            const weekdaysNode = getDirectChild(calendarNode, 'weekdays');
+            if (!weekdaysNode) {
+                throw new Error('Calendar XML missing <weekdays>.');
+            }
+            const weekdays = Array.from(weekdaysNode.childNodes || [])
+                .filter(node =>
+                    node
+                    && node.nodeType === 1
+                    && node.tagName
+                    && node.tagName.toLowerCase() === 'weekday'
+                )
+                .map(node => (typeof node.textContent === 'string' ? node.textContent.trim() : ''))
+                .filter(Boolean);
+            if (!weekdays.length) {
+                throw new Error('Calendar XML must define at least one <weekday>.');
+            }
+
+            const seasonsNode = getDirectChild(calendarNode, 'seasons');
+            const seasons = seasonsNode
+                ? Array.from(seasonsNode.childNodes || [])
+                    .filter(node =>
+                        node
+                        && node.nodeType === 1
+                        && node.tagName
+                        && node.tagName.toLowerCase() === 'season'
+                    )
+                    .map((seasonNode, index) => {
+                        const name = getText(seasonNode, 'name');
+                        if (!name) {
+                            throw new Error(`Calendar season #${index + 1} is missing <name>.`);
+                        }
+                        const description = getText(seasonNode, 'description') || null;
+                        const startMonth = getText(seasonNode, 'startMonth') || null;
+                        const startDayText = getText(seasonNode, 'startDay');
+                        const dayLengthMinutesText = getText(seasonNode, 'dayLengthMinutes');
+                        const startDay = startDayText ? parseIntegerText(startDayText, `seasons.season[${index + 1}].startDay`) : 1;
+                        const dayLengthMinutes = dayLengthMinutesText
+                            ? parseIntegerText(dayLengthMinutesText, `seasons.season[${index + 1}].dayLengthMinutes`)
+                            : null;
+                        return {
+                            name,
+                            description,
+                            startMonth,
+                            startDay,
+                            dayLengthMinutes
+                        };
+                    })
+                : [];
+
+            const holidaysNode = getDirectChild(calendarNode, 'holidays');
+            const holidays = holidaysNode
+                ? Array.from(holidaysNode.childNodes || [])
+                    .filter(node =>
+                        node
+                        && node.nodeType === 1
+                        && node.tagName
+                        && node.tagName.toLowerCase() === 'holiday'
+                    )
+                    .map((holidayNode, index) => {
+                        const name = getText(holidayNode, 'name');
+                        if (!name) {
+                            throw new Error(`Calendar holiday #${index + 1} is missing <name>.`);
+                        }
+                        const description = getText(holidayNode, 'description') || null;
+                        const month = getText(holidayNode, 'month') || null;
+                        const dayText = getText(holidayNode, 'day');
+                        const day = dayText ? parseIntegerText(dayText, `holidays.holiday[${index + 1}].day`) : null;
+                        return {
+                            name,
+                            description,
+                            month,
+                            day
+                        };
+                    })
+                : [];
+
+            return {
+                yearName: getText(calendarNode, 'yearName') || 'Common Era',
+                months,
+                weekdays,
+                seasons,
+                holidays
+            };
+        }
+
+        async function generateCalendarDefinitionWithAi({ settingSnapshot = null } = {}) {
+            const settingDescription = describeSettingForPrompt(settingSnapshot);
+            const settingContext = {
+                name: typeof settingSnapshot?.name === 'string' ? settingSnapshot.name : '',
+                description: settingDescription,
+                theme: typeof settingSnapshot?.theme === 'string' ? settingSnapshot.theme : '',
+                genre: typeof settingSnapshot?.genre === 'string' ? settingSnapshot.genre : '',
+                tone: typeof settingSnapshot?.tone === 'string' ? settingSnapshot.tone : '',
+                magicLevel: typeof settingSnapshot?.magicLevel === 'string' ? settingSnapshot.magicLevel : '',
+                techLevel: typeof settingSnapshot?.techLevel === 'string' ? settingSnapshot.techLevel : '',
+                startingLocationType: typeof settingSnapshot?.startingLocationType === 'string'
+                    ? settingSnapshot.startingLocationType
+                    : ''
+            };
+            const renderedTemplate = promptEnv.render('calendar-generator.xml.njk', {
+                setting: settingContext
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            const systemPrompt = typeof parsedTemplate.systemPrompt === 'string'
+                ? parsedTemplate.systemPrompt.trim()
+                : '';
+            const generationPrompt = typeof parsedTemplate.generationPrompt === 'string'
+                ? parsedTemplate.generationPrompt.trim()
+                : '';
+
+            if (!systemPrompt || !generationPrompt) {
+                throw new Error('Calendar generation prompt template did not produce system/generation prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: generationPrompt }
+                ],
+                metadataLabel: 'calendar_generation'
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const responseText = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                metadataLabel: 'calendar_generation',
+                systemPrompt,
+                generationPrompt,
+                response: responseText,
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            return parseCalendarDefinitionXml(responseText);
+        }
+
+        async function resolveCalendarDefinitionForSetting({ settingSnapshot = null, report = null } = {}) {
+            const fallback = Globals.generateCalendarDefinition({
+                settingName: settingSnapshot?.name || null
+            });
+            try {
+                return await generateCalendarDefinitionWithAi({ settingSnapshot });
+            } catch (error) {
+                const message = error?.message || String(error);
+                console.warn('Calendar generation failed; using Gregorian fallback:', message);
+                if (typeof report === 'function') {
+                    report('new_game:calendar_fallback', `Calendar generation failed (${message}). Using Gregorian fallback.`);
+                }
+                return fallback;
+            }
+        }
+
         // Create a new game with fresh player and starting location
         app.post('/api/new-game', async (req, res) => {
             const requestStart = Date.now();
@@ -19811,6 +21023,7 @@ module.exports = function registerApiRoutes(scope) {
                     playerClass: playerClassInput,
                     playerRace: playerRaceInput,
                     playerLevel: playerLevelInput,
+                    startTime: startTimeInput,
                     startingLocation,
                     startingCurrency: startingCurrencyInput,
                     attributes: attributesInput,
@@ -19858,6 +21071,28 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedPlayerClass = rawPlayerClass || newGameDefaults.playerClass || 'Adventurer';
                 const resolvedPlayerRace = rawPlayerRace || newGameDefaults.playerRace || 'Human';
                 const resolvedStartingLocation = requestedStartingLocation || newGameDefaults.startingLocation;
+                const hasRequestedStartTime = startTimeInput !== undefined
+                    && startTimeInput !== null
+                    && `${startTimeInput}`.trim() !== '';
+                const parsedRequestedStartTime = Number(startTimeInput);
+                if (hasRequestedStartTime) {
+                    const isValidRequestedStartTime = Number.isFinite(parsedRequestedStartTime)
+                        && Number.isInteger(parsedRequestedStartTime)
+                        && parsedRequestedStartTime >= 0
+                        && parsedRequestedStartTime <= 23;
+                    if (!isValidRequestedStartTime) {
+                        const errorMessage = 'startTime must be an integer hour between 0 and 23.';
+                        reportError(errorMessage);
+                        return res.status(400).json({
+                            success: false,
+                            error: errorMessage
+                        });
+                    }
+                }
+                const fallbackStartTime = Number(newGameDefaults.startTime);
+                const resolvedStartTime = hasRequestedStartTime
+                    ? parsedRequestedStartTime
+                    : (Number.isFinite(fallbackStartTime) ? fallbackStartTime : 9);
                 const parsedStartingCurrency = Number.parseInt(startingCurrencyInput, 10);
                 const fallbackStartingCurrencySource = newGameDefaults.startingCurrency;
                 const fallbackStartingCurrencyParsed = Number.parseInt(fallbackStartingCurrencySource, 10);
@@ -19907,6 +21142,18 @@ module.exports = function registerApiRoutes(scope) {
                 Globals.saveFileSaveVersion = normalizeSaveFileVersion(Globals.currentSaveVersion, 0);
                 Globals.setSaveMetadata({ summaryStyle: 'scene' });
                 Globals.setCurrentSaveInfo(null);
+                supplementalStoryInfoTurnCounter = 0;
+                resetOffscreenNpcActivityState();
+                report('new_game:calendar', 'Generating world calendar...');
+                const calendarDefinition = await resolveCalendarDefinitionForSetting({
+                    settingSnapshot: activeSetting,
+                    report
+                });
+                Globals.resetWorldTime({
+                    settingName: activeSetting?.name || null,
+                    calendarDefinition
+                });
+                Globals.elapsedTime = resolvedStartTime;
 
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
@@ -20121,6 +21368,7 @@ module.exports = function registerApiRoutes(scope) {
                 // Store new player and set as current
                 players.set(newPlayer.id, newPlayer);
                 currentPlayer = newPlayer;
+                Globals.syncWorldTimeToPlayer(currentPlayer);
 
                 queueNpcAssetsForLocation(entranceLocation);
 
@@ -20176,6 +21424,18 @@ module.exports = function registerApiRoutes(scope) {
                 startingLocationData.pendingImageJobId = pendingLocationImages.get(entranceLocation.id) || null;
                 startingLocationData.npcs = buildNpcProfiles(entranceLocation);
 
+                report('new_game:intro', 'Writing opening scene...');
+                try {
+                    await runGameIntroPrompt({
+                        locationOverride: entranceLocation,
+                        locationId: entranceLocation.id
+                    });
+                    report('new_game:intro_ready', 'Opening scene added to chat history.');
+                } catch (introError) {
+                    console.warn('Failed to generate game intro during new game:', introError?.message || introError);
+                    report('new_game:intro_skipped', 'Opening scene generation failed; continuing without intro.');
+                }
+
                 report('new_game:complete', 'Adventure ready! Redirecting...');
                 res.json({
                     success: true,
@@ -20192,7 +21452,8 @@ module.exports = function registerApiRoutes(scope) {
                         totalLocations: gameLocations.size,
                         currentLocation: entranceLocation.name,
                         regionEntranceId: entranceLocation.id
-                    }
+                    },
+                    worldTime: buildWorldTimePayload()
                 });
                 const durationSeconds = (Date.now() - requestStart) / 1000;
                 console.log(`✅ /api/new-game completed in ${durationSeconds.toFixed(3)}s`);
@@ -20402,6 +21663,7 @@ module.exports = function registerApiRoutes(scope) {
             } else if (metadata.summaryStyle !== undefined) {
                 metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
             }
+            metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
                 ? (gameLocations.get(currentLocationId) || Location.get(currentLocationId) || null)
@@ -20472,6 +21734,7 @@ module.exports = function registerApiRoutes(scope) {
             console.log(`💾 Loaded save file version: ${Globals.saveFileSaveVersion} (metadata: ${metadata.saveFileSaveVersion ?? 'missing'})`);
             metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
             Globals.setSaveMetadata(metadata);
+            offscreenNpcActivityState = normalizeOffscreenNpcActivityState(metadata.offscreenNpcActivityState);
             Globals.setCurrentSaveInfo({
                 saveName: metadata.saveName || normalizedName,
                 saveDir,
@@ -20500,6 +21763,23 @@ module.exports = function registerApiRoutes(scope) {
                 currentSetting = null;
             }
 
+            const saveMissingCalendarDefinition = serialized.calendarDefinition === null
+                || serialized.calendarDefinition === undefined;
+            if (saveMissingCalendarDefinition) {
+                const settingSnapshot = currentSetting && typeof currentSetting.toJSON === 'function'
+                    ? currentSetting.toJSON()
+                    : currentSetting;
+                const generatedCalendarDefinition = await resolveCalendarDefinitionForSetting({
+                    settingSnapshot
+                });
+                const existingWorldTime = Globals.getSerializedWorldTime();
+                Globals.hydrateWorldTime({
+                    worldTime: existingWorldTime,
+                    calendarDefinition: generatedCalendarDefinition,
+                    settingName: settingSnapshot?.name || null
+                });
+            }
+
             let resolvedPlayer = null;
             if (metadata.playerId && players.has(metadata.playerId)) {
                 resolvedPlayer = players.get(metadata.playerId);
@@ -20522,6 +21802,7 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof Player.register === 'function') {
                 Player.register(currentPlayer);
             }
+            Globals.syncWorldTimeToPlayer(currentPlayer);
 
             const KNOWN_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
             const hasImage = (imageId) => {
@@ -20847,7 +22128,8 @@ module.exports = function registerApiRoutes(scope) {
                 totalGeneratedImages: generatedImages.size,
                 currentSetting: currentSetting && typeof currentSetting.toJSON === 'function'
                     ? currentSetting.toJSON()
-                    : (currentSetting || null)
+                    : (currentSetting || null),
+                worldTime: buildWorldTimePayload()
             };
 
             return {
@@ -20931,12 +22213,27 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
 
+            const parsedStartTime = Number(settings.startTime);
+            const hasStartTime = settings.startTime !== undefined && settings.startTime !== null && settings.startTime !== '';
+            if (hasStartTime) {
+                const isValidStartTime = Number.isFinite(parsedStartTime)
+                    && Number.isInteger(parsedStartTime)
+                    && parsedStartTime >= 0
+                    && parsedStartTime <= 23;
+                if (!isValidStartTime) {
+                    const error = new Error('startTime must be an integer hour between 0 and 23.');
+                    error.code = 'INVALID_NEW_GAME_SETTINGS';
+                    throw error;
+                }
+            }
+
             return {
                 playerName: normalizeNewGameSettingsString(settings.playerName, 'playerName'),
                 playerDescription: normalizeNewGameSettingsString(settings.playerDescription, 'playerDescription'),
                 playerClass: normalizeNewGameSettingsString(settings.playerClass, 'playerClass'),
                 playerRace: normalizeNewGameSettingsString(settings.playerRace, 'playerRace'),
                 playerLevel: hasPlayerLevel ? parsedLevel : 1,
+                startTime: hasStartTime ? parsedStartTime : 9,
                 startingLocation: normalizeNewGameSettingsString(settings.startingLocation, 'startingLocation'),
                 startingCurrency: hasStartingCurrency ? parsedStartingCurrency : 0,
                 attributes: normalizeNewGameSettingsNumericRecord(settings.attributes, 'attributes'),

@@ -43,5 +43,6 @@ Collection of static utility helpers used across the server: set math, text simi
 - Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`.
 
 ## Notes
+- `serializeGameState`/`writeSerializedGameState` also persist canonical world time and calendar definition (`worldTime.json`, `calendarDefinition.json`), and hydration restores them through `Globals.hydrateWorldTime(...)`.
 - `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, and stubs into a consistent save/load flow.
 - Pending region stubs are aggressively validated; missing ids or duplicates throw explicit errors.

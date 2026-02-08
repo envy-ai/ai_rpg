@@ -78,3 +78,37 @@ supplemental_story_info_prompt_frequency: 5
 - `0`: never run supplemental story info prompts.
 - `>0`: run every `X` turns (`X` = configured value), and also run on any turn where one or more new NPCs or things (items/scenery) were generated.
 - Value must be an integer `>= 0`; invalid values raise a runtime error when scheduling the prompt.
+
+## Offscreen NPC activity prompt count
+
+`offscreen_npc_activity_prompt_count` controls the twice-daily hidden "what are they doing right now" NPC activity prompt size.
+
+```yaml
+offscreen_npc_activity_prompt_count: 5
+```
+
+- Runs when world time crosses `07:00` and `19:00`.
+- The configured value controls how many non-present NPCs the twice-daily prompt requests.
+- `0` disables the twice-daily prompt.
+- Weekly offscreen NPC activity still runs independently (fixed at 15 NPCs).
+- If elapsed time crosses multiple scheduled offscreen prompt checkpoints in one turn, only one offscreen prompt is run for that turn.
+
+## World time
+
+`time` controls the canonical world clock configuration. Internally, the server tracks world time in decimal hours (`worldTime.timeHours`), while config inputs are minute-based.
+
+```yaml
+time:
+  cycleLengthMinutes: 1440
+  tickMinutes: 15
+  segmentBoundaries:
+    dawn: 360
+    day: 480
+    dusk: 1080
+    night: 1200
+```
+
+- `cycleLengthMinutes`: total minutes in a full day cycle.
+- `tickMinutes`: baseline tick value for systems that need default advancement.
+- `segmentBoundaries`: map of `segmentName -> startMinute` within the cycle.
+- Segment boundaries must be within `[0, cycleLengthMinutes)`.

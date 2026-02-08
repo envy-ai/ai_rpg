@@ -72,6 +72,16 @@ class AIRPGChat {
         window.AIRPG_CHAT = this;
         this.promptProgressMessage = null;
         this.promptProgressHideTimer = null;
+        this.promptProgressDragState = {
+            active: false,
+            pointerId: null,
+            offsetX: 0,
+            offsetY: 0
+        };
+        this.worldTimeIndicator = document.getElementById('worldTimeIndicator');
+        this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
+        this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
+        this.worldTimeIndicatorMeta = document.getElementById('worldTimeIndicatorMeta');
     }
 
     setupQuestConfirmationModal() {
@@ -468,12 +478,95 @@ class AIRPGChat {
             const data = await response.json();
 
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+            if (data?.worldTime && typeof data.worldTime === 'object') {
+                this.updateWorldTimeIndicator(data.worldTime);
+            }
             await this.checkShortDescriptionBackfill();
             await this.tryRunPendingRedo();
         } catch (error) {
             console.log('No existing history to load:', error.message);
             this.reportPendingRedoError(`Redo pending but chat history failed to load: ${error.message || error}`);
         }
+    }
+
+    updateWorldTimeIndicator(worldTime) {
+        if (!worldTime || typeof worldTime !== 'object') {
+            return;
+        }
+        if (!this.worldTimeIndicator) {
+            return;
+        }
+
+        const timeLabel = typeof worldTime.timeLabel === 'string' && worldTime.timeLabel.trim()
+            ? worldTime.timeLabel.trim()
+            : '--:--';
+        const dateLabel = typeof worldTime.dateLabel === 'string' && worldTime.dateLabel.trim()
+            ? worldTime.dateLabel.trim()
+            : 'Unknown date';
+        const segment = typeof worldTime.segment === 'string' && worldTime.segment.trim()
+            ? worldTime.segment.trim()
+            : 'Unknown segment';
+        const season = typeof worldTime.season === 'string' && worldTime.season.trim()
+            ? worldTime.season.trim()
+            : 'Unknown season';
+
+        if (this.worldTimeIndicatorTime) {
+            this.worldTimeIndicatorTime.textContent = timeLabel;
+        }
+        if (this.worldTimeIndicatorDate) {
+            this.worldTimeIndicatorDate.textContent = dateLabel;
+        }
+        if (this.worldTimeIndicatorMeta) {
+            this.worldTimeIndicatorMeta.textContent = `${segment} · ${season}`;
+        }
+
+        this.worldTimeIndicator.removeAttribute('hidden');
+    }
+
+    renderWorldTimeTransitions(transitions = [], requestId = null) {
+        if (!Array.isArray(transitions) || !transitions.length) {
+            return;
+        }
+
+        const context = requestId ? this.getRequestContext(requestId) : null;
+        const seen = context && context.renderedTimeTransitions instanceof Set
+            ? context.renderedTimeTransitions
+            : null;
+
+        transitions.forEach((transition, index) => {
+            if (!transition || typeof transition !== 'object') {
+                return;
+            }
+            const type = typeof transition.type === 'string' ? transition.type.trim().toLowerCase() : '';
+            if (!type) {
+                return;
+            }
+
+            const from = typeof transition.from === 'string' ? transition.from.trim() : '';
+            const to = typeof transition.to === 'string' ? transition.to.trim() : '';
+            if (!to) {
+                return;
+            }
+
+            const key = `${type}:${from}:${to}:${transition.atDayIndex ?? ''}:${transition.atTimeHours ?? ''}:${index}`;
+            if (seen && seen.has(key)) {
+                return;
+            }
+            if (seen) {
+                seen.add(key);
+            }
+
+            if (type === 'segment') {
+                const fromText = from ? `from ${from} ` : '';
+                this.addEventSummary('🕒', `Time shifted ${fromText}to ${to}.`);
+                return;
+            }
+
+            if (type === 'season') {
+                const fromText = from ? `from ${from} ` : '';
+                this.addEventSummary('🍂', `Season changed ${fromText}to ${to}.`);
+            }
+        });
     }
 
     async checkShortDescriptionBackfill() {
@@ -2041,6 +2134,64 @@ class AIRPGChat {
         }
     }
 
+    bindPromptProgressOverlayInteractions(overlay, header, toggleButton) {
+        if (!overlay || !header || overlay.dataset.dragBound === 'true') {
+            return;
+        }
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const onPointerMove = (event) => {
+            if (!this.promptProgressDragState.active || event.pointerId !== this.promptProgressDragState.pointerId) {
+                return;
+            }
+            const overlayRect = overlay.getBoundingClientRect();
+            const maxLeft = Math.max(0, window.innerWidth - overlayRect.width);
+            const maxTop = Math.max(0, window.innerHeight - overlayRect.height);
+            const targetLeft = clamp(event.clientX - this.promptProgressDragState.offsetX, 0, maxLeft);
+            const targetTop = clamp(event.clientY - this.promptProgressDragState.offsetY, 0, maxTop);
+            overlay.style.left = `${targetLeft}px`;
+            overlay.style.top = `${targetTop}px`;
+            overlay.style.right = 'auto';
+            overlay.classList.add('is-dragging');
+        };
+
+        const stopDragging = (event) => {
+            if (!this.promptProgressDragState.active) {
+                return;
+            }
+            if (event && event.pointerId !== undefined && event.pointerId !== this.promptProgressDragState.pointerId) {
+                return;
+            }
+            this.promptProgressDragState.active = false;
+            this.promptProgressDragState.pointerId = null;
+            overlay.classList.remove('is-dragging');
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', stopDragging);
+            window.removeEventListener('pointercancel', stopDragging);
+        };
+
+        header.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) {
+                return;
+            }
+            if (toggleButton && toggleButton.contains(event.target)) {
+                return;
+            }
+            const rect = overlay.getBoundingClientRect();
+            this.promptProgressDragState.active = true;
+            this.promptProgressDragState.pointerId = event.pointerId;
+            this.promptProgressDragState.offsetX = event.clientX - rect.left;
+            this.promptProgressDragState.offsetY = event.clientY - rect.top;
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', stopDragging);
+            window.addEventListener('pointercancel', stopDragging);
+            event.preventDefault();
+        });
+
+        overlay.dataset.dragBound = 'true';
+    }
+
     renderPromptProgress(entries = []) {
         if (!Array.isArray(entries)) {
             return;
@@ -2082,7 +2233,7 @@ class AIRPGChat {
                             livePlaceholderRow.parentNode.removeChild(livePlaceholderRow);
                         }
                         this.promptProgressHideTimer = null;
-                    }, 5000);
+                    }, 2000);
                 }
             }
             return;
@@ -2198,6 +2349,7 @@ class AIRPGChat {
             headerDiv.appendChild(toggleButton);
             overlay.appendChild(headerDiv);
             overlay.appendChild(contentDiv);
+            this.bindPromptProgressOverlayInteractions(overlay, headerDiv, toggleButton);
             document.body.appendChild(overlay);
             this.promptProgressMessage = overlay;
         } else {
@@ -2318,6 +2470,7 @@ class AIRPGChat {
                 requestId,
                 playerActionRendered: false,
                 renderedNpcTurns: new Set(),
+                renderedTimeTransitions: new Set(),
                 streamed: {
                     playerAction: false
                 },
@@ -4616,6 +4769,16 @@ class AIRPGChat {
 
         if (payload.streamMeta && context) {
             context.streamMeta = payload.streamMeta;
+        }
+
+        if (payload.worldTime && typeof payload.worldTime === 'object') {
+            this.updateWorldTimeIndicator(payload.worldTime);
+            const transitions = Array.isArray(payload.worldTime.transitions)
+                ? payload.worldTime.transitions
+                : [];
+            if (transitions.length) {
+                this.renderWorldTimeTransitions(transitions, requestId || null);
+            }
         }
 
         let shouldRefreshLocation = false;

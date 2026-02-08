@@ -7,7 +7,7 @@ class ClearSecretsCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Remove all hidden supplemental story info entries from chat history.';
+    return 'Remove hidden supplemental/offscreen NPC story info entries from chat history.';
   }
 
   static get args() {
@@ -37,6 +37,11 @@ class ClearSecretsCommand extends SlashCommandBase {
 
     const removedEntryIds = [];
     let removedCount = 0;
+    const removableTypes = new Set([
+      'supplemental-story-info',
+      'offscreen-npc-activity-daily',
+      'offscreen-npc-activity-weekly'
+    ]);
 
     for (let index = chatHistory.length - 1; index >= 0; index -= 1) {
       const entry = chatHistory[index];
@@ -44,7 +49,7 @@ class ClearSecretsCommand extends SlashCommandBase {
         continue;
       }
       const entryType = typeof entry.type === 'string' ? entry.type.trim() : '';
-      if (entryType !== 'supplemental-story-info') {
+      if (!removableTypes.has(entryType)) {
         continue;
       }
       if (entry.id) {

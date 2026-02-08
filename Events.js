@@ -196,13 +196,17 @@ const EVENT_PROMPT_ORDER = [
             prompt: `Did any NPC's disposition toward the player change in a significant way? If so, respond with "[exact name of NPC] -> [how they felt before] -> [how they feel now] -> [reason in one sentence]". If multiple NPCs' dispositions changed, separate multiple entries with vertical bars. Otherwise, respond N/A.  If they feel the same way as they did before, the change isn't significant and shouldn't be listed here.`,
         },
         {
+            key: "dummy_event",
+            prompt: `Did anything happen this turn (such as an activity, a night of sleep, travel, etc) that would cause time to pass? If yes, describe it in 10 words or less, along with how long it took. Answer N/A if no. Examples: "Took road to town (15 minutes)", "cooked dinner (30 minutes)", "slept for 8 hours (8 hours)", "Moved from town square to tavern (5 minutes)", "waited for someone to arrive (45 minutes)", "Dropped a letter off at the mailbox and talked to passerby (3 minutes)", "Spoke a few sentences (1 minute)", etc. Time can pass even without explicit duration statements. Consider whether described actions (prayer, conversation, travel, crafting, etc.) inherently require time to complete. Don't round down to zero just because something only takes a couple of minutes.`,
+        },
+        {
             key: "time_passed",
-            prompt: `In decimal hours, how much time has passed since the last turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.`,
+            prompt: `In decimal hours, how much time passed this turn (e.g., 0.5 for half an hour, 1.25 for one hour and fifteen minutes) 8.0 for eight hours, 24.0 for a day, etc.)? If no time has passed, answer 0. Do not specify units.`,
         },
         {
             key: "triggered_abilities",
             prompt: `Were any character's triggered abilities triggered this turn? If so, list them in the format "[exact character name] -> [exact ability name]", separated by '|' if multiple. If none, answer N/A.`,
-        },
+        } /*,
         {
             key: "dummy_event",
             prompt: `Did any of the answers to the above questions feel ambiguous? Which ones, and why?`,
@@ -210,7 +214,7 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "dummy_event",
             prompt: `Taken as a whole, do any of your answers conflict with other answers? Which ones, and why?`,
-        },
+        },*/
     ],
 ];
 
@@ -253,6 +257,33 @@ function parsePositiveDecimal(value) {
     return numeric;
 }
 
+function parseNonNegativeDecimal(value) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (typeof value === "number") {
+        if (!Number.isFinite(value) || value < 0) {
+            return null;
+        }
+        return value;
+    }
+    if (typeof value !== "string") {
+        return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return null;
+    }
+    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) {
+        return null;
+    }
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return null;
+    }
+    return numeric;
+}
+
 function splitPipeList(raw) {
     if (isBlank(raw)) {
         return [];
@@ -265,15 +296,26 @@ function splitPipeList(raw) {
         );
 }
 
+function normalizeArrowDelimiters(raw) {
+    if (typeof raw !== "string") {
+        return "";
+    }
+
+    const unescaped = raw.replace(/&gt;/gi, ">").replace(/&lt;/gi, "<");
+    return unescaped
+        .replace(/\s*(?:→|⇒|⟶|⟹|➜|➡)\s*/g, " -> ")
+        .replace(/\s*->\s*/g, " -> ")
+        .trim();
+}
+
 function splitArrowParts(raw, expectedParts) {
     if (isBlank(raw)) {
         return [];
     }
 
-    // unescape &gt; and &lt;
-    const unescaped = raw.replace(/&gt;/g, ">").replace(/&lt;/g, "<");
+    const normalized = normalizeArrowDelimiters(raw);
 
-    const parts = unescaped
+    const parts = normalized
         .split("->")
         .map((part) => part.trim())
         .filter(Boolean);
@@ -298,11 +340,9 @@ function splitArrowParts(raw, expectedParts) {
 }
 
 function stripAfterFirstArrow(raw) {
-    if (typeof raw !== "string") {
-        return "";
-    }
-    const arrowIndex = raw.indexOf("->");
-    const segment = arrowIndex === -1 ? raw : raw.slice(0, arrowIndex);
+    const normalized = normalizeArrowDelimiters(raw);
+    const arrowIndex = normalized.indexOf("->");
+    const segment = arrowIndex === -1 ? normalized : normalized.slice(0, arrowIndex);
     return segment.trim();
 }
 
@@ -823,6 +863,7 @@ class Events {
             stream: context.stream || null,
             allowEnvironmentalEffects,
             isNpcTurn: Boolean(context.isNpcTurn),
+            suppressTimeAdvance: true,
             _depth: 1,
         });
 
@@ -1108,6 +1149,7 @@ class Events {
         isNpcTurn = false,
         suppressMoveEvents = false,
         allowMoveTurnAppearances = false,
+        suppressTimeAdvance = false,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -1316,6 +1358,7 @@ class Events {
         let questsAwarded = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
+        let timeProgress = null;
 
         try {
             const outcomeContext = await this.applyEventOutcomes(structured, {
@@ -1330,6 +1373,7 @@ class Events {
                 isNpcTurn: Boolean(isNpcTurn),
                 suppressMoveEvents: Boolean(suppressMoveEvents),
                 allowMoveTurnAppearances: Boolean(allowMoveTurnAppearances),
+                suppressTimeAdvance: Boolean(suppressTimeAdvance),
                 stream,
                 followupQueue: activeFollowupQueue,
                 _originatedFromEventChecks: true,
@@ -1376,6 +1420,9 @@ class Events {
                 outcomeContext.completedQuestObjectives.length
             ) {
                 questObjectivesCompleted = outcomeContext.completedQuestObjectives;
+            }
+            if (outcomeContext?.timeProgress && typeof outcomeContext.timeProgress === "object") {
+                timeProgress = outcomeContext.timeProgress;
             }
         } catch (error) {
             console.warn("Failed to apply event outcomes:", error.message);
@@ -1461,6 +1508,7 @@ class Events {
                             stream,
                             allowEnvironmentalEffects,
                             isNpcTurn,
+                            suppressTimeAdvance: true,
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
                         });
@@ -1578,6 +1626,7 @@ class Events {
             questRewards,
             questsAwarded,
             followupResults,
+            timeProgress,
         };
     }
 
@@ -2515,10 +2564,7 @@ class Events {
                             return null;
                         }
 
-                        const rawParts = entry
-                            .split("->")
-                            .map((part) => part.trim())
-                            .filter(Boolean);
+                        const rawParts = splitArrowParts(entry);
                         if (!rawParts.length) {
                             return null;
                         }
@@ -2604,7 +2650,7 @@ class Events {
                 return Number.isFinite(amount) ? amount : null;
             },
             time_passed: (raw) => {
-                const value = parsePositiveDecimal(raw);
+                const value = parseNonNegativeDecimal(raw);
                 return value !== null ? value : null;
             },
             in_combat: (raw) => {
@@ -2842,10 +2888,7 @@ class Events {
             npc_arrival_departure: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
-                        const parts = entry
-                            .split("->")
-                            .map((part) => part.trim())
-                            .filter(Boolean);
+                        const parts = splitArrowParts(entry);
 
                         if (parts.length < 2) {
                             return null;
@@ -2883,12 +2926,7 @@ class Events {
                     .filter(Boolean),
             npc_first_appearance: (raw) =>
                 splitPipeList(raw)
-                    .map((entry) => {
-                        if (typeof entry !== "string") return "";
-                        const arrowIndex = entry.indexOf("->");
-                        const sliced = arrowIndex >= 0 ? entry.slice(0, arrowIndex) : entry;
-                        return sliced.trim();
-                    })
+                    .map((entry) => stripAfterFirstArrow(entry))
                     .filter(Boolean),
             party_change: (raw) =>
                 splitPipeList(raw)
@@ -3042,12 +3080,12 @@ class Events {
                         if (typeof entry !== "string") {
                             return null;
                         }
-                        const parts = entry.split("->").map((segment) => segment.trim());
+                        const parts = splitArrowParts(entry);
                         if (parts.length === 5) {
                             parts.shift();
                             return parts.join(" -> ").trim();
                         }
-                        return entry.trim();
+                        return normalizeArrowDelimiters(entry);
                     })
                     .filter(Boolean);
             },
@@ -4163,9 +4201,13 @@ class Events {
                     console.trace();
                     return;
                 }
-                Globals.elapsedTime += amount;
+                if (context.isNpcTurn || context.suppressTimeAdvance) {
+                    return;
+                }
 
-                context.timeProgress = { amount, total: Globals.elapsedTime };
+                const advancementAmount = amount === 0 ? (1 / 60) : amount;
+                const advancement = Globals.advanceTime(advancementAmount, { source: "event_check" });
+                context.timeProgress = advancement;
             },
             in_combat: function (flag, context = {}) {
                 //console.log(`Processing in_combat event: ${JSON.stringify(flag)}`);

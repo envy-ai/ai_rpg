@@ -1113,7 +1113,7 @@ class Player {
         this.#factionId = Player.#normalizeFactionId(options.factionId);
         this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
-            ? Math.floor(options.elapsedTime)
+            ? options.elapsedTime
             : 0;
 
         const personalityOption = options.personality && typeof options.personality === 'object'
@@ -4275,7 +4275,7 @@ class Player {
         });
 
         if (Number.isFinite(data.elapsedTime)) {
-            player.#elapsedTime = Math.max(0, Math.floor(data.elapsedTime));
+            player.#elapsedTime = Math.max(0, data.elapsedTime);
         } else {
             player.#elapsedTime = 0;
         }

@@ -66,6 +66,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 {% set defaultStartingLocation = defaults.startingLocation | default('') %}
 {% set defaultPlayerLevel = defaults.playerLevel | default(1) %}
 {% set defaultStartingCurrency = defaults.startingCurrency | default(0) %}
+{% set defaultStartTime = defaults.startTime | default(9) %}
     {% set availableClasses = defaults.availableClasses or [] %}
     {% set availableRaces = defaults.availableRaces or [] %}
     {% set defaultPlayerClass = defaults.playerClass | default('') %}
@@ -125,6 +126,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <label for="playerLevel">Starting Level</label>
                             <input type="number" id="playerLevel" name="playerLevel" value="{{ defaultPlayerLevel }}" data-default-value="{{ defaultPlayerLevel }}">
                             <div class="help-text">Controls attribute and skill point pools.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="startTime">Start Time (24h hour)</label>
+                            <input type="number" id="startTime" name="startTime" min="0" max="23" step="1" value="{{ defaultStartTime }}" data-default-value="{{ defaultStartTime }}">
+                            <div class="help-text">Hour only. 9 means 09:00.</div>
                         </div>
 
                         <div class="form-group full-width">

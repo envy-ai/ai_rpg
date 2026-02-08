@@ -609,6 +609,9 @@ class Utils {
       }
     }
 
+    serialized.worldTime = Globals.getSerializedWorldTime();
+    serialized.calendarDefinition = Globals.getSerializedCalendarDefinition();
+
     serialized.chatSummaries = this.serializeChatSummaries();
 
     const sceneSummaries = Globals.getSceneSummaries();
@@ -647,6 +650,8 @@ class Utils {
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
+    ensureFile('worldTime.json', serialized.worldTime || {});
+    ensureFile('calendarDefinition.json', serialized.calendarDefinition || {});
 
     if (serialized.setting) {
       ensureFile('setting.json', serialized.setting);
@@ -687,7 +692,9 @@ class Utils {
       setting: readJson('setting.json', null),
       chatSummaries: readJson('chatSummaries.json', {}),
       sceneSummaries: readJson('sceneSummaries.json', {}),
-      pendingRegionStubs: readJson('pendingRegionStubs.json', {})
+      pendingRegionStubs: readJson('pendingRegionStubs.json', {}),
+      worldTime: readJson('worldTime.json', null),
+      calendarDefinition: readJson('calendarDefinition.json', null)
     };
 
     return serialized;
@@ -714,6 +721,12 @@ class Utils {
       npcGenerationPromises,
       pendingRegionStubs
     } = context;
+
+    Globals.hydrateWorldTime({
+      worldTime: serialized.worldTime || null,
+      calendarDefinition: serialized.calendarDefinition || null,
+      settingName: serialized.setting?.name || null
+    });
 
     const Location = this.#getLocationModule();
     const LocationExit = this.#getLocationExitModule();

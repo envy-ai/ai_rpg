@@ -162,10 +162,29 @@ random_event_frequency:
   locationSpecific: 0.05
 random_event_frequency_multiplier: 1
 
+# World time/calendar defaults
+time:
+  # Full day length in minutes (24h by default)
+  cycleLengthMinutes: 1440
+  # Default advancement size used by systems that need a baseline tick
+  tickMinutes: 15
+  # Named time-of-day segment boundaries in minutes from start of day
+  segmentBoundaries:
+    dawn: 360
+    day: 480
+    dusk: 1080
+    night: 1200
+
 # Supplemental story info prompt cadence:
 # - 0 = never run
 # - >0 = run every X turns, and also on turns where new NPCs or things are generated
 supplemental_story_info_prompt_frequency: 5
+
+# Offscreen NPC activity (what important non-present NPCs are doing):
+# - Runs at world-time 07:00 and 19:00 when those times are crossed by elapsed time.
+# - Number below controls how many NPCs to request in each twice-daily run.
+# - 0 disables the twice-daily offscreen NPC activity prompt.
+offscreen_npc_activity_prompt_count: 5
 
 # If this is false, no event checks will be performed. This will prevent prose from affecting anything in the game world. This also prevents quest completion checks.
 event_checks:

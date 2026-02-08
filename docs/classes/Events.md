@@ -53,3 +53,5 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `item_inflict` events ignore the prompt-provided status effect text and instead apply the item's inflict effect (`causeStatusEffectOnTarget`) to the target when available.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes (useful for event-driven travel where movement is handled separately).
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).
+- `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by `1/60` hour (1 minute) to avoid fully static clocks on zero-time turns.
+- Arrow-delimited event parsing accepts both ASCII `->` and unicode arrows (for example `→`), preventing malformed NPC/item names when models emit typographic arrows.

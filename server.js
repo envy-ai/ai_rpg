@@ -24,7 +24,11 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
 
-const HIDDEN_CHAT_ENTRY_TYPES = new Set(['supplemental-story-info']);
+const HIDDEN_CHAT_ENTRY_TYPES = new Set([
+    'supplemental-story-info',
+    'offscreen-npc-activity-daily',
+    'offscreen-npc-activity-weekly'
+]);
 const HIDDEN_CHAT_LABEL = 'Hidden from Player';
 const HIDDEN_CHAT_PREFIX = `[${HIDDEN_CHAT_LABEL}]`;
 
@@ -1683,6 +1687,7 @@ function buildNewGameDefaults(settingSnapshot = null) {
         playerName: '',
         playerDescription: '',
         startingLocation: '',
+        startTime: 9,
         playerLevel: 1,
         pointPoolFormulas: resolvePointPoolFormulas(config),
         existingSkills: [],
@@ -3201,6 +3206,9 @@ function buildBasePromptContext({
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
     const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
+    const worldTimeContext = Globals.ensureWorldTimeInitialized({
+        settingName: settingContext?.name || activeSetting?.name || null
+    });
     const generatedThingRarity = Thing.generateRandomRarityDefinition();
 
     const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
@@ -4497,6 +4505,7 @@ function buildBasePromptContext({
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
+        worldTime: worldTimeContext,
         Globals,
         saveFileSaveVersion: Number(Globals?.saveFileSaveVersion) || 0,
         omitInventoryItems: shouldOmitInventoryItems,

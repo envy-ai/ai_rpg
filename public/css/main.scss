@@ -2371,6 +2371,14 @@ p:not(:last-child) {
   word-break: break-word;
 }
 
+.entity-name-long {
+  display: block;
+  width: 100%;
+  font-size: 0.75em;
+  line-height: 0.85;
+  text-align: center;
+}
+
 .entity-name.is-hostile {
   color: #f87171;
 }
@@ -2525,6 +2533,57 @@ body.dark .thing-toggle-hint {
   .skill-add-button {
     flex: 0 0 auto;
   }
+}
+
+.world-time-indicator {
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(8, 14, 30, 0.58);
+  backdrop-filter: blur(4px);
+  color: rgba(255, 255, 255, 0.95);
+  text-align: center;
+}
+
+.world-time-indicator--sidebar {
+  border-color: rgba(129, 140, 248, 0.32);
+  background: linear-gradient(
+    165deg,
+    rgba(30, 41, 59, 0.9),
+    rgba(15, 23, 42, 0.88)
+  );
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.28);
+}
+
+.world-time-indicator[hidden] {
+  display: none;
+}
+
+.world-time-indicator__time {
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.world-time-indicator__date {
+  font-size: 0.74rem;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.world-time-indicator__meta {
+  font-size: 0.69rem;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: capitalize;
 }
 
 .abilities-grid {
@@ -4104,9 +4163,14 @@ body.dark .thing-toggle-hint {
 .prompt-progress-overlay {
   position: fixed;
   top: 16px;
-  right: 16px;
+  left: 16px;
+  right: auto;
   width: min(680px, 48vw);
   height: 260px;
+  min-width: 360px;
+  min-height: 140px;
+  max-width: calc(100vw - 12px);
+  max-height: calc(100vh - 12px);
   border-radius: 12px;
   border: 1px solid rgba(125, 211, 252, 0.35);
   background: linear-gradient(
@@ -4121,6 +4185,7 @@ body.dark .thing-toggle-hint {
   flex-direction: column;
   overflow: hidden;
   pointer-events: auto;
+  resize: both;
 }
 
 .prompt-progress-overlay:has(.prompt-progress-table tbody:empty) {
@@ -4134,6 +4199,7 @@ body.dark .thing-toggle-hint {
   gap: 10px;
   padding: 10px 12px 8px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  cursor: grab;
 }
 
 .prompt-progress-overlay__meta {
@@ -4181,8 +4247,11 @@ body.dark .thing-toggle-hint {
 .prompt-progress-overlay.is-contracted {
   width: 34px;
   height: 34px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: 999px;
   overflow: hidden;
+  resize: none;
 }
 
 .prompt-progress-overlay.is-contracted .prompt-progress-overlay__header {
@@ -4208,6 +4277,10 @@ body.dark .thing-toggle-hint {
   min-height: 0;
   overflow: auto;
   padding: 0 10px 10px;
+}
+
+.prompt-progress-overlay.is-dragging .prompt-progress-overlay__header {
+  cursor: grabbing;
 }
 
 @media (max-width: 1100px) {
@@ -4245,7 +4318,9 @@ body.dark .thing-toggle-hint {
   .prompt-progress-overlay {
     width: min(560px, calc(100vw - 20px));
     height: 220px;
-    right: 10px;
+    min-width: 280px;
+    left: 10px;
+    right: auto;
     top: 10px;
   }
 }
@@ -6553,6 +6628,29 @@ body.modal-open {
   outline: 2px dashed rgba(56, 189, 248, 0.7);
   outline-offset: 2px;
   background: rgba(56, 189, 248, 0.08);
+}
+
+.thing-type-drop-target {
+  position: relative;
+  transition:
+    outline-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.thing-type-drop-target.is-drop-hover {
+  outline: 2px dashed rgba(251, 191, 36, 0.72);
+  outline-offset: 2px;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.thing-type-drop-target[data-drop-target-type='scenery'].is-drop-hover {
+  outline-color: rgba(125, 211, 252, 0.75);
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.thing-type-drop-target[data-drop-target-type='item'].is-drop-hover {
+  outline-color: rgba(251, 191, 36, 0.72);
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .party-drop-target {
