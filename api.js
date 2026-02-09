@@ -2175,9 +2175,103 @@ module.exports = function registerApiRoutes(scope) {
 
         Globals.generateGameIntro = runGameIntroPrompt;
 
+        function resolveLocationHasWeatherForWorldTime(location) {
+            if (!location || typeof location !== 'object') {
+                return null;
+            }
+            if (typeof location.hasWeather === 'boolean') {
+                return location.hasWeather;
+            }
+            const details = location.details;
+            if (details && typeof details === 'object' && typeof details.hasWeather === 'boolean') {
+                return details.hasWeather;
+            }
+            const metadata = location.stubMetadata;
+            if (metadata && typeof metadata === 'object') {
+                if (typeof metadata.hasWeather === 'boolean') {
+                    return metadata.hasWeather;
+                }
+                if (typeof metadata.locationHasWeather === 'boolean') {
+                    return metadata.locationHasWeather;
+                }
+            }
+            const hints = location.generationHints;
+            if (hints && typeof hints === 'object' && typeof hints.hasWeather === 'boolean') {
+                return hints.hasWeather;
+            }
+            return null;
+        }
+
+        function resolveWeatherForWorldTimePayload(worldTimeContext) {
+            const locationId = typeof currentPlayer?.currentLocation === 'string'
+                ? currentPlayer.currentLocation.trim()
+                : '';
+            if (!locationId) {
+                return null;
+            }
+
+            const location = (gameLocations instanceof Map && gameLocations.has(locationId))
+                ? gameLocations.get(locationId)
+                : (typeof Location?.get === 'function' ? Location.get(locationId) : null);
+            if (!location) {
+                return null;
+            }
+
+            const hasWeatherAtLocation = resolveLocationHasWeatherForWorldTime(location);
+            if (hasWeatherAtLocation === false) {
+                return {
+                    weatherName: 'No local weather',
+                    weatherDescription: 'This location is sheltered from outdoor weather.'
+                };
+            }
+
+            const regionFromFinder = typeof findRegionByLocationId === 'function' && location.id
+                ? findRegionByLocationId(location.id)
+                : null;
+            const region = regionFromFinder
+                || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
+                || location.region
+                || null;
+            if (!region || typeof region.resolveCurrentWeather !== 'function') {
+                return null;
+            }
+
+            const dayIndex = Number(worldTimeContext?.dayIndex);
+            const timeHours = Number(worldTimeContext?.timeHours);
+            if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeHours) || timeHours < 0) {
+                throw new Error('World time context is invalid while resolving weather for payload.');
+            }
+            const cycleLengthHoursRaw = Number(config?.time?.cycle_length_hours);
+            const cycleLengthHours = Number.isFinite(cycleLengthHoursRaw) && cycleLengthHoursRaw > 0
+                ? cycleLengthHoursRaw
+                : 24;
+            const totalHours = (dayIndex * cycleLengthHours) + timeHours;
+
+            const resolved = region.resolveCurrentWeather({
+                seasonName: worldTimeContext?.season || null,
+                totalHours
+            }) || {};
+            const weatherName = typeof resolved.name === 'string' && resolved.name.trim()
+                ? resolved.name.trim()
+                : 'Unspecified weather';
+            const weatherDescription = typeof resolved.description === 'string' && resolved.description.trim()
+                ? resolved.description.trim()
+                : 'Weather conditions are not currently available.';
+            return {
+                weatherName,
+                weatherDescription
+            };
+        }
+
         function buildWorldTimePayload({ transitions = [] } = {}) {
             const normalizedTransitions = Array.isArray(transitions) ? transitions : [];
-            return Globals.getWorldTimeContext({ transitions: normalizedTransitions });
+            const context = Globals.getWorldTimeContext({ transitions: normalizedTransitions });
+            const weather = resolveWeatherForWorldTimePayload(context);
+            if (weather && typeof weather === 'object') {
+                context.weatherName = weather.weatherName;
+                context.weatherDescription = weather.weatherDescription;
+            }
+            return context;
         }
 
         const resolveLocationByIdOrName = (value) => {
@@ -16498,6 +16592,21 @@ module.exports = function registerApiRoutes(scope) {
                 const hasOwn = Object.prototype.hasOwnProperty;
                 const hasName = hasOwn.call(body, 'name');
                 const hasDescription = hasOwn.call(body, 'description');
+                const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
+                let resolvedControllingFactionId = null;
+                if (hasControllingFaction) {
+                    try {
+                        resolvedControllingFactionId = normalizeFactionIdInput(body.controllingFactionId, {
+                            fieldLabel: 'Controlling faction'
+                        });
+                        requireFactionExists(resolvedControllingFactionId, { fieldLabel: 'Controlling faction' });
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError?.message || 'Invalid controlling faction value'
+                        });
+                    }
+                }
 
                 if (!hasName) {
                     return res.status(400).json({
@@ -20971,6 +21080,14 @@ module.exports = function registerApiRoutes(scope) {
                 return parsed;
             };
 
+            const parseNumberText = (value, fieldName) => {
+                const parsed = Number(String(value || '').trim());
+                if (!Number.isFinite(parsed)) {
+                    throw new Error(`Calendar XML field ${fieldName} must be a finite number.`);
+                }
+                return parsed;
+            };
+
             const monthsNode = getDirectChild(calendarNode, 'months');
             if (!monthsNode) {
                 throw new Error('Calendar XML missing <months>.');
@@ -21037,12 +21154,37 @@ module.exports = function registerApiRoutes(scope) {
                         const dayLengthMinutes = dayLengthMinutesText
                             ? parseIntegerText(dayLengthMinutesText, `seasons.season[${index + 1}].dayLengthMinutes`)
                             : null;
+                        const timeDescriptionsNode = getDirectChild(seasonNode, 'timeDescriptions');
+                        const timeDescriptions = timeDescriptionsNode
+                            ? Array.from(timeDescriptionsNode.childNodes || [])
+                                .filter(node =>
+                                    node
+                                    && node.nodeType === 1
+                                    && node.tagName
+                                    && node.tagName.toLowerCase() === 'timedescription'
+                                )
+                                .map((timeDescriptionNode, tdIndex) => {
+                                    const timeOfDayText = getText(timeDescriptionNode, 'timeOfDay');
+                                    const descriptionText = getText(timeDescriptionNode, 'description');
+                                    if (!timeOfDayText) {
+                                        throw new Error(`Calendar season #${index + 1} timeDescription #${tdIndex + 1} is missing <timeOfDay>.`);
+                                    }
+                                    if (!descriptionText) {
+                                        throw new Error(`Calendar season #${index + 1} timeDescription #${tdIndex + 1} is missing <description>.`);
+                                    }
+                                    return {
+                                        timeOfDay: parseNumberText(timeOfDayText, `seasons.season[${index + 1}].timeDescriptions.timeDescription[${tdIndex + 1}].timeOfDay`),
+                                        description: descriptionText
+                                    };
+                                })
+                            : [];
                         return {
                             name,
                             description,
                             startMonth,
                             startDay,
-                            dayLengthMinutes
+                            dayLengthMinutes,
+                            timeDescriptions
                         };
                     })
                 : [];

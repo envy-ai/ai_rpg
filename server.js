@@ -3162,6 +3162,123 @@ function getEventPromptTemplates() {
     }
 }
 
+function buildNpcRepresentationSummaryForPrompt() {
+    const normalizeValue = (value, { splitOnColon = false } = {}) => {
+        if (typeof value !== 'string') {
+            return 'Unknown';
+        }
+        let normalized = value.trim();
+        if (!normalized) {
+            return 'Unknown';
+        }
+        if (splitOnColon) {
+            const colonIndex = normalized.indexOf(':');
+            if (colonIndex > -1) {
+                const beforeColon = normalized.slice(0, colonIndex).trim();
+                if (beforeColon) {
+                    normalized = beforeColon;
+                }
+            }
+        }
+        normalized = normalized.replace(/\s+/g, ' ');
+        return normalized || 'Unknown';
+    };
+
+    const increment = (map, key) => {
+        const current = map.get(key) || 0;
+        map.set(key, current + 1);
+    };
+
+    const races = new Map();
+    const classes = new Map();
+
+    for (const actor of players.values()) {
+        if (!actor || actor.isNPC !== true) {
+            continue;
+        }
+        increment(races, normalizeValue(actor.race, { splitOnColon: true }));
+        increment(classes, normalizeValue(actor.class));
+    }
+
+    const sortEntries = (sourceMap) => Array.from(sourceMap.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => {
+            if (b.count !== a.count) {
+                return b.count - a.count;
+            }
+            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        });
+
+    return {
+        totalNpcs: Array.from(classes.values()).reduce((sum, count) => sum + count, 0),
+        races: sortEntries(races),
+        classes: sortEntries(classes)
+    };
+}
+
+function resolveLocationHasWeather(location) {
+    if (!location || typeof location !== 'object') {
+        return null;
+    }
+    if (typeof location.hasWeather === 'boolean') {
+        return location.hasWeather;
+    }
+
+    const details = typeof location.getDetails === 'function' ? location.getDetails() : location;
+    if (details && typeof details.hasWeather === 'boolean') {
+        return details.hasWeather;
+    }
+
+    const metadata = location.stubMetadata && typeof location.stubMetadata === 'object'
+        ? location.stubMetadata
+        : (details?.stubMetadata && typeof details.stubMetadata === 'object' ? details.stubMetadata : null);
+    const hints = location.generationHints && typeof location.generationHints === 'object'
+        ? location.generationHints
+        : (details?.generationHints && typeof details.generationHints === 'object' ? details.generationHints : null);
+    if (metadata) {
+        if (typeof metadata.hasWeather === 'boolean') {
+            return metadata.hasWeather;
+        }
+        if (typeof metadata.locationHasWeather === 'boolean') {
+            return metadata.locationHasWeather;
+        }
+    }
+    if (hints && typeof hints.hasWeather === 'boolean') {
+        return hints.hasWeather;
+    }
+
+    return null;
+}
+
+function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
+    const hasWeatherAtLocation = resolveLocationHasWeather(location);
+    if (hasWeatherAtLocation === false) {
+        return {
+            name: 'No local weather',
+            description: 'This location is sheltered from outdoor weather.'
+        };
+    }
+
+    if (!region || typeof region.resolveCurrentWeather !== 'function') {
+        return {
+            name: 'Unspecified weather',
+            description: 'Weather has not been defined for this region.'
+        };
+    }
+
+    const timeConfig = Globals.getTimeConfig();
+    const dayIndex = Number(worldTimeContext?.dayIndex);
+    const timeHours = Number(worldTimeContext?.timeHours);
+    if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeHours) || timeHours < 0) {
+        throw new Error('World time context is invalid while resolving regional weather.');
+    }
+    const totalHours = (dayIndex * timeConfig.cycleLengthHours) + timeHours;
+    return region.resolveCurrentWeather({
+        seasonName: worldTimeContext?.season || null,
+        totalHours
+    });
+}
+
 function buildBasePromptContext({
     locationOverride = null,
     omitInventoryItems = null,
@@ -3209,6 +3326,27 @@ function buildBasePromptContext({
     const worldTimeContext = Globals.ensureWorldTimeInitialized({
         settingName: settingContext?.name || activeSetting?.name || null
     });
+    const calendarDefinition = Globals.getSerializedCalendarDefinition();
+    const calendarSeasons = Array.isArray(calendarDefinition?.seasons)
+        ? calendarDefinition.seasons
+            .map(season => {
+                if (!season || typeof season !== 'object') {
+                    return null;
+                }
+                const name = typeof season.name === 'string' ? season.name.trim() : '';
+                if (!name) {
+                    return null;
+                }
+                const description = typeof season.description === 'string'
+                    ? season.description.trim()
+                    : '';
+                return {
+                    name,
+                    description: description || null
+                };
+            })
+            .filter(Boolean)
+        : [];
     const generatedThingRarity = Thing.generateRandomRarityDefinition();
 
     const needBarDefinitions = Player.getNeedBarDefinitionsForContext();
@@ -4518,6 +4656,18 @@ function buildBasePromptContext({
         factionSummaries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     }
 
+    const regionalWeather = resolveRegionWeatherForPrompt({
+        region,
+        location,
+        worldTimeContext
+    });
+    const worldTimeContextWithConditions = {
+        ...worldTimeContext,
+        weatherName: regionalWeather?.name || 'Unspecified weather',
+        weatherDescription: regionalWeather?.description || 'Weather conditions are not currently available.',
+        lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'
+    };
+
     const context = {
         setting: settingContext,
         config: config,
@@ -4527,7 +4677,7 @@ function buildBasePromptContext({
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
-        worldTime: worldTimeContext,
+        worldTime: worldTimeContextWithConditions,
         Globals,
         saveFileSaveVersion: Number(Globals?.saveFileSaveVersion) || 0,
         omitInventoryItems: shouldOmitInventoryItems,
@@ -4545,6 +4695,8 @@ function buildBasePromptContext({
         rarityDefinitions: Thing.getAllRarityDefinitions(),
         experiencePointValues,
         generatedThingRarity,
+        npcRepresentation: buildNpcRepresentationSummaryForPrompt(),
+        calendarSeasons,
         worldOutline,
         factions: factionSummaries
     };
@@ -7831,6 +7983,7 @@ async function expandRegionEntryStub(stubLocation) {
 
             const locationDefinitions = parseRegionStubLocations(stubResponse);
             const exitDefinitions = parseRegionExitsResponse(stubResponse);
+            const weatherDefinition = parseRegionWeatherResponse(stubResponse);
             const characterConcepts = extractRegionCharacterConcepts(stubResponse);
             const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
             const secrets = extractRegionSecrets(stubResponse);
@@ -7898,7 +8051,8 @@ async function expandRegionEntryStub(stubLocation) {
                     relativeLevel: def.relativeLevel,
                     numNpcs: def.numNpcs,
                     numHostiles: def.numHostiles,
-                    controllingFaction: def.controllingFaction
+                    controllingFaction: def.controllingFaction,
+                    hasWeather: def.hasWeather
                 })),
                 locationIds: [],
                 entranceLocationId: null,
@@ -7906,7 +8060,8 @@ async function expandRegionEntryStub(stubLocation) {
                 averageLevel: Number.isFinite(regionAverageLevel) ? regionAverageLevel : null,
                 controllingFactionId: resolvedControllingFactionId,
                 secrets,
-                numImportantNPCs
+                numImportantNPCs,
+                weather: weatherDefinition
             });
 
             regions.set(region.id, region);
@@ -9743,6 +9898,7 @@ function renderLocationNpcPrompt(location, options = {}) {
         }
 
         const settingContext = buildSettingPromptContext(getActiveSettingSnapshot());
+        const npcRepresentation = buildNpcRepresentationSummaryForPrompt();
 
         return promptEnv.render(templateName, {
             locationName: location.name || 'Unknown Location',
@@ -9758,6 +9914,7 @@ function renderLocationNpcPrompt(location, options = {}) {
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
             bannedWords: options.bannedWords || getNpcPromptBannedWords(),
             lorebookEntries,
+            npcRepresentation,
             setting: settingContext
         });
     } catch (error) {
@@ -9797,6 +9954,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             : null;
 
         const settingContext = buildSettingPromptContext(getActiveSettingSnapshot());
+        const npcRepresentation = buildNpcRepresentationSummaryForPrompt();
 
         return promptEnv.render(templateName, {
             region: region,
@@ -9807,6 +9965,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             characterConcepts: options.characterConcepts || [],
             config: Globals.config || {},
             lorebookEntries,
+            npcRepresentation,
             numImportantNPCs,
             setting: settingContext
         });
@@ -19711,6 +19870,17 @@ function parseRegionStubShortDescription(xmlSnippet) {
     return shortDescription;
 }
 
+function parseRegionWeatherResponse(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+        throw new Error('Region weather response must be a non-empty XML string.');
+    }
+    try {
+        return Region.parseWeatherDefinitionFromXmlSnippet(xmlSnippet);
+    } catch (error) {
+        throw new Error(`Failed to parse region weather definition: ${error.message}`);
+    }
+}
+
 function parseRegionStubLocations(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
         return [];
@@ -19776,6 +19946,23 @@ function parseRegionStubLocations(xmlSnippet) {
         return value || null;
     };
 
+    const parseBooleanTagValue = (value, fieldName) => {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        const lowered = String(value).trim().toLowerCase();
+        if (['true', '1', 'yes'].includes(lowered)) {
+            return true;
+        }
+        if (['false', '0', 'no'].includes(lowered)) {
+            return false;
+        }
+        throw new Error(`Invalid boolean value for ${fieldName}: "${value}"`);
+    };
+
     return locationNodes.map(node => {
         const name = getTagValue(node, 'name');
         const description = getTagValue(node, 'description') || '';
@@ -19783,6 +19970,7 @@ function parseRegionStubLocations(xmlSnippet) {
         const relativeLevelRaw = getTagValue(node, 'relativeLevel');
         const numNpcsRaw = getTagValue(node, 'numNpcs');
         const numHostilesRaw = getTagValue(node, 'numHostiles');
+        const hasWeatherRaw = getTagValue(node, 'hasWeather');
         const controllingFaction = getTagValue(node, 'controllingFaction');
         const exitsParent = node.getElementsByTagName('exits')?.[0];
         const exits = exitsParent
@@ -19794,6 +19982,7 @@ function parseRegionStubLocations(xmlSnippet) {
         const relativeLevel = Number.parseInt(relativeLevelRaw, 10);
         const numNpcs = Number.parseInt(numNpcsRaw, 10);
         const numHostiles = Number.parseInt(numHostilesRaw, 10);
+        const hasWeather = parseBooleanTagValue(hasWeatherRaw, `location "${name || 'Unnamed Location'}" hasWeather`);
 
         return {
             name: name || 'Unnamed Location',
@@ -19803,7 +19992,8 @@ function parseRegionStubLocations(xmlSnippet) {
             relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : 0,
             numNpcs: Number.isFinite(numNpcs) ? Math.max(0, Math.min(20, numNpcs)) : null,
             numHostiles: Number.isFinite(numHostiles) ? Math.max(0, Math.min(20, numHostiles)) : null,
-            controllingFaction
+            controllingFaction,
+            hasWeather
         };
     }).filter(Boolean);
 }
@@ -20219,6 +20409,9 @@ async function instantiateRegionLocations({
         const numHostiles = Number.isFinite(Number(blueprint.numHostiles))
             ? Math.max(0, Math.min(20, Math.round(Number(blueprint.numHostiles))))
             : null;
+        const hasWeather = typeof blueprint.hasWeather === 'boolean'
+            ? blueprint.hasWeather
+            : null;
         const controllingFactionResolution = resolveFactionNameToId(blueprint.controllingFaction, {
             fieldLabel: `Location controlling faction for "${blueprint.name || 'Unnamed Location'}"`
         });
@@ -20262,7 +20455,9 @@ async function instantiateRegionLocations({
                 regionAverageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
                 computedBaseLevel,
                 numNpcs,
-                numHostiles
+                numHostiles,
+                locationHasWeather: hasWeather,
+                hasWeather
             }
         });
 

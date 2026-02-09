@@ -548,6 +548,14 @@ The below context is an account of the current game state, including the setting
 
 {% include "_includes/" + promptType + ".njk" %}
 
+<currentConditions>
+  <weather>
+    <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>
+    <description>{{ worldTime.weatherDescription | default('', true) }}</description>
+  </weather>
+  <lightLevel>{{ worldTime.lightLevelDescription | default(worldTime.lighting, true) }}</lightLevel>
+</currentConditions>
+
 </generationPrompt>
 
 </template>

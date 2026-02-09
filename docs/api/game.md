@@ -26,7 +26,7 @@ Notes:
 - Skills are sourced from the active setting (`defaultExistingSkills`) and are not accepted in the request body.
 - World calendar generation runs during new-game setup via an LLM prompt (`calendar_generation`).
 - The prompt explicitly instructs Earth-like settings to use a Gregorian calendar (standard month/day names and lengths, no leap-year handling).
-- The prompt requests season descriptions and 10 holiday entries, each with descriptions.
+- The prompt requests season descriptions, per-season time-of-day lighting descriptions, and 10 holiday entries (with descriptions).
 - Gregorian fallback is still used if calendar generation fails.
 - New-game setup also runs a base-context intro prompt (`game_intro`) and appends its prose to chat history as a visible assistant entry (`type: game-intro`) before the first player turn.
 - If intro generation fails, setup continues; the server logs a warning and no intro entry is added.

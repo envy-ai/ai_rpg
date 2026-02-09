@@ -191,6 +191,19 @@ class Location {
 
     // Populate locationData with the text content of each child element
     const childNodes = Array.from(locationElem.childNodes);
+    const parseBooleanText = (rawValue, fieldName) => {
+      const lowered = String(rawValue || '').trim().toLowerCase();
+      if (!lowered) {
+        return null;
+      }
+      if (['true', '1', 'yes'].includes(lowered)) {
+        return true;
+      }
+      if (['false', '0', 'no'].includes(lowered)) {
+        return false;
+      }
+      throw new Error(`Invalid boolean value for ${fieldName}: "${rawValue}"`);
+    };
 
     for (const child of childNodes) {
       // Only process element nodes (nodeType 1)
@@ -208,6 +221,8 @@ class Location {
           locationData[child.tagName] = parseInt(value, 0);
         } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
           locationData[child.tagName] = parseInt(value, 0);
+        } else if (child.tagName === 'hasWeather') {
+          locationData[child.tagName] = parseBooleanText(value, 'location.hasWeather');
         } else {
           locationData[child.tagName] = value;
         }
@@ -384,6 +399,23 @@ class Location {
         }
         return resolveHint(parsedValue);
       };
+      const resolveBooleanHint = (...values) => {
+        for (const value of values) {
+          if (typeof value === 'boolean') {
+            return value;
+          }
+          if (typeof value === 'string') {
+            const lowered = value.trim().toLowerCase();
+            if (['true', '1', 'yes'].includes(lowered)) {
+              return true;
+            }
+            if (['false', '0', 'no'].includes(lowered)) {
+              return false;
+            }
+          }
+        }
+        return null;
+      };
 
       const promotionData = {
         description: locationData.description,
@@ -393,7 +425,8 @@ class Location {
           numItems: resolveHint(locationData.numItems, existingHints.numItems, stubHints.numItems),
           numScenery: resolveHint(locationData.numScenery, existingHints.numScenery, stubHints.numScenery),
           numNpcs: resolveHintPreserveExisting(locationData.numNpcs, existingHints.numNpcs, stubHints.numNpcs),
-          numHostiles: resolveHintPreserveExisting(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles)
+          numHostiles: resolveHintPreserveExisting(locationData.numHostiles, existingHints.numHostiles, stubHints.numHostiles),
+          hasWeather: resolveBooleanHint(locationData.hasWeather, existingHints.hasWeather, stubHints.hasWeather, stubHints.locationHasWeather)
         },
         randomEvents: randomEventsProvided ? randomEvents : undefined,
         npcIds: existingLocation.npcIds,
@@ -461,7 +494,8 @@ class Location {
         numItems: locationData.numItems,
         numScenery: locationData.numScenery,
         numNpcs: locationData.numNpcs,
-        numHostiles: locationData.numHostiles
+        numHostiles: locationData.numHostiles,
+        hasWeather: typeof locationData.hasWeather === 'boolean' ? locationData.hasWeather : null
       },
       randomEvents
     });
@@ -754,7 +788,8 @@ class Location {
         numItems: null,
         numScenery: null,
         numNpcs: null,
-        numHostiles: null
+        numHostiles: null,
+        hasWeather: null
       };
     }
     return { ...this.#generationHints };
@@ -1270,7 +1305,8 @@ class Location {
         numItems: null,
         numScenery: null,
         numNpcs: null,
-        numHostiles: null
+        numHostiles: null,
+        hasWeather: null
       };
     }
 
@@ -1285,11 +1321,31 @@ class Location {
       return Math.max(0, Math.min(20, Math.round(numeric)));
     };
 
+    const normalizeBoolean = (value) => {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (['true', '1', 'yes'].includes(lowered)) {
+          return true;
+        }
+        if (['false', '0', 'no'].includes(lowered)) {
+          return false;
+        }
+      }
+      throw new Error('Location generationHints.hasWeather must be a boolean when provided.');
+    };
+
     return {
       numItems: normalize(hints.numItems),
       numScenery: normalize(hints.numScenery),
       numNpcs: normalize(hints.numNpcs),
-      numHostiles: normalize(hints.numHostiles)
+      numHostiles: normalize(hints.numHostiles),
+      hasWeather: normalizeBoolean(hints.hasWeather)
     };
   }
 

@@ -10,6 +10,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
 - `#statusEffects`, `#randomEvents`, `#averageLevel`, `#relativeLevel`.
 - `#numImportantNPCs`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
+- `#weather`, `#weatherState` for region-level dynamic weather definitions/state.
 - `#lastVisitedTime`.
 
 ## Construction
@@ -20,6 +21,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `get indexById()` / `get indexByName()` / `getIndexById()` / `getIndexByName()`.
 - `clear()`.
 - `fromJSON(data)` / `fromXMLSnippet(xmlSnippet)`.
+- `parseWeatherDefinitionFromXmlSnippet(xmlSnippet)` to parse `<weather>` blocks without instantiating a region.
 - `get stubRegionCount()`: count of regions without location ids.
 
 ## Accessors
@@ -27,6 +29,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `locationBlueprints`, `locationIds` (get/set).
 - `entranceLocationId`, `parentRegionId` (get/set).
 - `controllingFactionId` (get/set).
+- `weather` (get/set), `weatherState` (get/set), `resolveCurrentWeather({ seasonName, totalHours })`.
 - `randomEvents` (get/set), `addRandomEvent`, `removeRandomEvent`.
 - `numImportantNPCs` (get/set).
 - `relativeLevel` (get/set), `averageLevel` (get) with `setAverageLevel(level)`.
@@ -45,9 +48,11 @@ Represents a region containing multiple locations, with metadata like average le
 - `#normalizeBlueprint(blueprint)`.
 - `#normalizeImportantNpcCount(value)`.
 - `#normalizeStatusEffects(effects)`.
+- weather normalization helpers for booleans, duration ranges, weather definitions/state.
 
 ## Notes
 - Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `parentHierarchy` throws on circular references to surface data errors early.
 - Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
+- Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time.

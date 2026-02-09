@@ -51,7 +51,14 @@ Schema:
       <description>...</description>
       <startMonth>...</startMonth>
       <startDay>1</startDay>
-      <dayLengthMinutes>720</dayLengthMinutes>
+      <dayLengthMinutes><!-- minutes of sunlight --></dayLengthMinutes>
+      <timeDescriptions>
+        <timeDescription>
+          <timeOfDay><!-- hour in 24-hour format, no units, for example 6 --></timeOfDay>
+          <description><!-- Short description of how light it is at that time, such as "very dark", "it's getting light", "bright daylight", "it's getting dark", "late twilight", etc. --></description>
+        </timeDescription>
+        <!-- repeat for as many times of day as needed to capture significant changes in lighting conditions throughout the day. description will apply until the next timeOfDay specified. Always start with 0 -->
+      </timeDescriptions>
     </season>
   </seasons>
   <holidays>
@@ -59,7 +66,7 @@ Schema:
       <name>...</name>
       <description>...</description>
       <month>...</month>
-      <day>15</day>
+      <day><!-- day of the month, no units or suffixes, ex. 15 --></day>
     </holiday>
   </holidays>
 </calendarDefinition>

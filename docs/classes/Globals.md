@@ -29,6 +29,7 @@ Centralized static state and helpers used across the server. Provides access to 
   - `advanceTime(hours, { source })`
   - `getTimeSegment(worldTime?)` / `getSeason(worldTime?)`
   - `getCalendarDate(worldTime?)`
+  - `getLightLevelDescription(worldTime?)`
   - `formatTime(worldTime?)` / `formatDate(worldTime?)`
   - `getWorldTimeContext({ transitions })`
   - `getSerializedWorldTime()` / `getSerializedCalendarDefinition()`
@@ -50,3 +51,6 @@ Centralized static state and helpers used across the server. Provides access to 
 - `getCalendarDate()` / `getWorldTimeContext()` include season descriptions and
   holiday context (name/description/month/day) when the current date matches a
   configured holiday.
+- `calendarDefinition.seasons[*].timeDescriptions` is normalized and used to
+  derive `worldTime.lightLevelDescription` (with segment-based lighting as
+  fallback when no seasonal time descriptions are present).

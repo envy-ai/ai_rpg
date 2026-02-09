@@ -25,6 +25,8 @@ class Region {
   #relativeLevel;
   #numImportantNPCs;
   #controllingFactionId;
+  #weather;
+  #weatherState;
   #lastVisitedTime = null;  // Decimal hours since last visit by player.
   #randomEvents = [];
   #characterConcepts = [];
@@ -39,7 +41,7 @@ class Region {
     return `region_${timestamp}_${random}`;
   }
 
-  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null } = {}) {
+  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, weather = null, weatherState = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -89,9 +91,188 @@ class Region {
     this.#characterConcepts = Array.isArray(characterConcepts) ? [...characterConcepts] : [];
     this.#enemyConcepts = Array.isArray(enemyConcepts) ? [...enemyConcepts] : [];
     this.#secrets = Array.isArray(secrets) ? [...secrets] : [];
+    this.#weather = Region.#normalizeWeatherDefinition(weather);
+    this.#weatherState = Region.#normalizeWeatherState(weatherState);
 
     Region.#indexById.set(this.#id, this);
     Region.#indexByName.set(this.#name.toLowerCase(), this);
+  }
+
+  static #normalizeBoolean(value, fieldName) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      if (!lowered) {
+        return null;
+      }
+      if (['true', '1', 'yes'].includes(lowered)) {
+        return true;
+      }
+      if (['false', '0', 'no'].includes(lowered)) {
+        return false;
+      }
+    }
+    throw new Error(`${fieldName} must be a boolean.`);
+  }
+
+  static #normalizeDurationRange(range, fieldName) {
+    if (!range || typeof range !== 'object' || Array.isArray(range)) {
+      throw new Error(`${fieldName} must be an object with minHours and maxHours.`);
+    }
+    const minHours = Number(range.minHours);
+    const maxHours = Number(range.maxHours);
+    if (!Number.isFinite(minHours) || !Number.isFinite(maxHours)) {
+      throw new Error(`${fieldName} must contain finite minHours and maxHours.`);
+    }
+    if (minHours <= 0 || maxHours <= 0) {
+      throw new Error(`${fieldName} minHours and maxHours must be greater than zero.`);
+    }
+    if (maxHours < minHours) {
+      throw new Error(`${fieldName} maxHours must be greater than or equal to minHours.`);
+    }
+    return {
+      minHours: Number(minHours.toFixed(4)),
+      maxHours: Number(maxHours.toFixed(4))
+    };
+  }
+
+  static #parseDurationRangeText(rawDurationRange, fieldName) {
+    const text = typeof rawDurationRange === 'string' ? rawDurationRange.trim() : '';
+    if (!text) {
+      throw new Error(`${fieldName} is required.`);
+    }
+    const [minTextRaw, maxTextRaw] = text.split('-');
+    const minText = (minTextRaw || '').trim();
+    const maxText = (maxTextRaw || '').trim();
+    const minHours = Number(minText);
+    const maxHours = Number(maxText || minText);
+    return Region.#normalizeDurationRange({ minHours, maxHours }, fieldName);
+  }
+
+  static #normalizeWeatherDefinition(weather = null) {
+    if (weather === null || weather === undefined) {
+      return {
+        hasDynamicWeather: false,
+        seasonWeather: []
+      };
+    }
+    if (typeof weather !== 'object' || Array.isArray(weather)) {
+      throw new Error('Region weather must be an object.');
+    }
+
+    const hasDynamicWeather = Region.#normalizeBoolean(weather.hasDynamicWeather, 'weather.hasDynamicWeather');
+    const seasonWeatherSource = weather.seasonWeather;
+    let seasonWeatherList = [];
+    if (seasonWeatherSource !== null && seasonWeatherSource !== undefined) {
+      if (!Array.isArray(seasonWeatherSource)) {
+        throw new Error('weather.seasonWeather must be an array.');
+      }
+      seasonWeatherList = seasonWeatherSource;
+    }
+
+    const seasonWeather = seasonWeatherList.map((seasonEntry, index) => {
+      if (!seasonEntry || typeof seasonEntry !== 'object' || Array.isArray(seasonEntry)) {
+        throw new Error(`weather.seasonWeather[${index}] must be an object.`);
+      }
+      const seasonName = typeof seasonEntry.seasonName === 'string' ? seasonEntry.seasonName.trim() : '';
+      if (!seasonName) {
+        throw new Error(`weather.seasonWeather[${index}] is missing seasonName.`);
+      }
+
+      const weatherTypesSource = seasonEntry.weatherTypes;
+      if (!Array.isArray(weatherTypesSource) || weatherTypesSource.length === 0) {
+        throw new Error(`weather.seasonWeather[${index}] must include at least one weatherTypes entry.`);
+      }
+      const weatherTypes = weatherTypesSource.map((typeEntry, typeIndex) => {
+        if (!typeEntry || typeof typeEntry !== 'object' || Array.isArray(typeEntry)) {
+          throw new Error(`weather.seasonWeather[${index}].weatherTypes[${typeIndex}] must be an object.`);
+        }
+        const name = typeof typeEntry.name === 'string' ? typeEntry.name.trim() : '';
+        const description = typeof typeEntry.description === 'string' ? typeEntry.description.trim() : '';
+        const relativeFrequency = Number(typeEntry.relativeFrequency);
+        if (!name) {
+          throw new Error(`weather.seasonWeather[${index}].weatherTypes[${typeIndex}] is missing name.`);
+        }
+        if (!description) {
+          throw new Error(`weather.seasonWeather[${index}].weatherTypes[${typeIndex}] is missing description.`);
+        }
+        if (!Number.isFinite(relativeFrequency) || relativeFrequency <= 0) {
+          throw new Error(`weather.seasonWeather[${index}].weatherTypes[${typeIndex}] has invalid relativeFrequency.`);
+        }
+
+        let durationRange = null;
+        if (typeof typeEntry.durationRange === 'string') {
+          durationRange = Region.#parseDurationRangeText(
+            typeEntry.durationRange,
+            `weather.seasonWeather[${index}].weatherTypes[${typeIndex}].durationRange`
+          );
+        } else if (typeEntry.durationRange && typeof typeEntry.durationRange === 'object') {
+          durationRange = Region.#normalizeDurationRange(
+            typeEntry.durationRange,
+            `weather.seasonWeather[${index}].weatherTypes[${typeIndex}].durationRange`
+          );
+        } else {
+          throw new Error(`weather.seasonWeather[${index}].weatherTypes[${typeIndex}] is missing durationRange.`);
+        }
+
+        return {
+          name,
+          description,
+          relativeFrequency,
+          durationRange
+        };
+      });
+
+      return {
+        seasonName,
+        weatherTypes
+      };
+    });
+
+    if (Boolean(hasDynamicWeather) && seasonWeather.length === 0) {
+      throw new Error('weather.hasDynamicWeather is true but no seasonWeather entries were provided.');
+    }
+
+    return {
+      hasDynamicWeather: Boolean(hasDynamicWeather),
+      seasonWeather
+    };
+  }
+
+  static #normalizeWeatherState(weatherState = null) {
+    if (weatherState === null || weatherState === undefined) {
+      return null;
+    }
+    if (typeof weatherState !== 'object' || Array.isArray(weatherState)) {
+      throw new Error('Region weatherState must be an object or null.');
+    }
+    const seasonName = typeof weatherState.seasonName === 'string' ? weatherState.seasonName.trim() : '';
+    const name = typeof weatherState.name === 'string' ? weatherState.name.trim() : '';
+    const description = typeof weatherState.description === 'string' ? weatherState.description.trim() : '';
+    const nextChangeHours = Number(weatherState.nextChangeHours);
+    const durationHours = Number(weatherState.durationHours);
+    if (!seasonName || !name || !description) {
+      throw new Error('Region weatherState must include seasonName, name, and description.');
+    }
+    if (!Number.isFinite(nextChangeHours) || nextChangeHours < 0) {
+      throw new Error('Region weatherState.nextChangeHours must be a non-negative number.');
+    }
+    if (!Number.isFinite(durationHours) || durationHours <= 0) {
+      throw new Error('Region weatherState.durationHours must be greater than zero.');
+    }
+
+    return {
+      seasonName,
+      name,
+      description,
+      nextChangeHours: Number(nextChangeHours.toFixed(4)),
+      durationHours: Number(durationHours.toFixed(4))
+    };
   }
 
   static #normalizeBlueprint(blueprint = {}) {
@@ -155,6 +336,7 @@ class Region {
 
     const numNpcs = normalizeCount(blueprint.numNpcs);
     const numHostiles = normalizeCount(blueprint.numHostiles);
+    const hasWeather = Region.#normalizeBoolean(blueprint.hasWeather, 'location blueprint hasWeather');
 
     return {
       name,
@@ -165,7 +347,8 @@ class Region {
       relativeLevel,
       numNpcs,
       numHostiles,
-      controllingFaction
+      controllingFaction,
+      hasWeather
     };
   }
 
@@ -235,6 +418,121 @@ class Region {
       enemyConcepts: Array.isArray(data.enemyConcepts) ? data.enemyConcepts : [],
       secrets: Array.isArray(data.secrets) ? data.secrets : [],
       numImportantNPCs: data.numImportantNPCs ?? null,
+      weather: data.weather ?? null,
+      weatherState: data.weatherState ?? null
+    });
+  }
+
+  static parseWeatherDefinitionFromXmlSnippet(xmlSnippet) {
+    if (!xmlSnippet || typeof xmlSnippet !== 'string') {
+      throw new Error('Region weather XML snippet must be a string.');
+    }
+
+    const regionMatch = xmlSnippet.match(/<region>[\s\S]*?<\/region>/i);
+    const regionXml = regionMatch ? regionMatch[0] : xmlSnippet;
+    const xmlDoc = Utils.parseXmlDocument(regionXml, 'text/xml');
+    const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+      throw new Error(`Region weather XML parsing error: ${parserError.textContent}`);
+    }
+
+    const regionElement = xmlDoc.getElementsByTagName('region')[0];
+    if (!regionElement) {
+      throw new Error('Region weather XML missing <region> root element.');
+    }
+
+    const weatherElement = Array.from(regionElement.childNodes || []).find(node =>
+      node
+      && node.nodeType === 1
+      && node.tagName
+      && node.tagName.toLowerCase() === 'weather'
+    ) || null;
+    if (!weatherElement) {
+      return {
+        hasDynamicWeather: false,
+        seasonWeather: []
+      };
+    }
+
+    const getDirectChild = (parent, tagName) => {
+      if (!parent) {
+        return null;
+      }
+      const lowered = tagName.toLowerCase();
+      return Array.from(parent.childNodes || []).find(node =>
+        node
+        && node.nodeType === 1
+        && node.tagName
+        && node.tagName.toLowerCase() === lowered
+      ) || null;
+    };
+
+    const getDirectChildren = (parent, tagName) => {
+      if (!parent) {
+        return [];
+      }
+      const lowered = tagName.toLowerCase();
+      return Array.from(parent.childNodes || []).filter(node =>
+        node
+        && node.nodeType === 1
+        && node.tagName
+        && node.tagName.toLowerCase() === lowered
+      );
+    };
+
+    const getText = (node, tagName) => {
+      const child = getDirectChild(node, tagName);
+      if (!child || typeof child.textContent !== 'string') {
+        return '';
+      }
+      return child.textContent.trim();
+    };
+
+    const hasDynamicWeatherText = getText(weatherElement, 'hasDynamicWeather');
+    const hasDynamicWeather = Region.#normalizeBoolean(hasDynamicWeatherText || false, 'weather.hasDynamicWeather');
+
+    const seasonWeather = getDirectChildren(weatherElement, 'seasonWeather').map((seasonNode, seasonIndex) => {
+      const seasonName = getText(seasonNode, 'seasonName');
+      if (!seasonName) {
+        throw new Error(`weather.seasonWeather[${seasonIndex}] is missing <seasonName>.`);
+      }
+      const weatherTypes = getDirectChildren(seasonNode, 'weatherType').map((typeNode, typeIndex) => {
+        const name = getText(typeNode, 'name');
+        const description = getText(typeNode, 'description');
+        const relativeFrequencyText = getText(typeNode, 'relativeFrequency');
+        const durationRangeText = getText(typeNode, 'durationRange');
+        if (!name) {
+          throw new Error(`weather.seasonWeather[${seasonIndex}].weatherType[${typeIndex}] is missing <name>.`);
+        }
+        if (!description) {
+          throw new Error(`weather.seasonWeather[${seasonIndex}].weatherType[${typeIndex}] is missing <description>.`);
+        }
+        if (!relativeFrequencyText) {
+          throw new Error(`weather.seasonWeather[${seasonIndex}].weatherType[${typeIndex}] is missing <relativeFrequency>.`);
+        }
+        if (!durationRangeText) {
+          throw new Error(`weather.seasonWeather[${seasonIndex}].weatherType[${typeIndex}] is missing <durationRange>.`);
+        }
+        return {
+          name,
+          description,
+          relativeFrequency: Number(relativeFrequencyText),
+          durationRange: Region.#parseDurationRangeText(
+            durationRangeText,
+            `weather.seasonWeather[${seasonIndex}].weatherType[${typeIndex}].durationRange`
+          )
+        };
+      });
+
+      return {
+        seasonName,
+        weatherTypes
+      };
+    });
+
+    return Region.#normalizeWeatherDefinition({
+      hasDynamicWeather,
+      seasonWeather
     });
   }
 
@@ -372,11 +670,13 @@ class Region {
       const relativeLevelNode = findDirectChild('relativelevel');
       const numNpcsNode = findDirectChild('numnpcs');
       const numHostilesNode = findDirectChild('numhostiles');
+      const hasWeatherNode = findDirectChild('hasweather');
       const exitsNode = findDirectChild('exits');
       const controllingFactionNode = findDirectChild('controllingfaction');
       let relativeLevel = null;
       let numNpcs = null;
       let numHostiles = null;
+      let hasWeather = null;
 
       let locName = locNameNode ? locNameNode.textContent.trim() : null;
       if (!locName && attrName) {
@@ -414,6 +714,10 @@ class Region {
         }
       }
 
+      if (hasWeatherNode) {
+        hasWeather = Region.#normalizeBoolean(hasWeatherNode.textContent?.trim(), `location "${locName}" hasWeather`);
+      }
+
       const exitEntries = exitsNode
         ? Array.from(exitsNode.getElementsByTagName('exit')).map(exitNode => {
           const destinationAttr = exitNode.getAttribute('destination');
@@ -438,7 +742,8 @@ class Region {
         relativeLevel,
         numNpcs,
         numHostiles,
-        controllingFaction
+        controllingFaction,
+        hasWeather
       });
     });
 
@@ -448,6 +753,7 @@ class Region {
         .map(node => (node.textContent || '').trim())
         .filter(Boolean)
       : [];
+    const regionWeather = Region.parseWeatherDefinitionFromXmlSnippet(regionXml);
 
     return new Region({
       name: regionName,
@@ -459,7 +765,8 @@ class Region {
       characterConcepts,
       enemyConcepts,
       secrets,
-      numImportantNPCs
+      numImportantNPCs,
+      weather: regionWeather
     });
   }
 
@@ -768,6 +1075,109 @@ class Region {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  get weather() {
+    return JSON.parse(JSON.stringify(this.#weather));
+  }
+
+  set weather(value) {
+    this.#weather = Region.#normalizeWeatherDefinition(value);
+    this.#weatherState = null;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get weatherState() {
+    if (!this.#weatherState) {
+      return null;
+    }
+    return { ...this.#weatherState };
+  }
+
+  set weatherState(value) {
+    this.#weatherState = Region.#normalizeWeatherState(value);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  #pickWeatherTypeForSeason(seasonEntry) {
+    if (!seasonEntry || !Array.isArray(seasonEntry.weatherTypes) || !seasonEntry.weatherTypes.length) {
+      throw new Error('Cannot choose weather type for an empty season weather definition.');
+    }
+    const totalWeight = seasonEntry.weatherTypes.reduce((sum, entry) => sum + Number(entry.relativeFrequency), 0);
+    if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+      throw new Error(`Region "${this.#name}" season "${seasonEntry.seasonName}" has invalid weather frequencies.`);
+    }
+    const roll = Math.random() * totalWeight;
+    let cursor = 0;
+    for (const weatherType of seasonEntry.weatherTypes) {
+      cursor += Number(weatherType.relativeFrequency);
+      if (roll <= cursor) {
+        return weatherType;
+      }
+    }
+    return seasonEntry.weatherTypes[seasonEntry.weatherTypes.length - 1];
+  }
+
+  resolveCurrentWeather({ seasonName = null, totalHours = null } = {}) {
+    const numericHours = Number(totalHours);
+    if (!Number.isFinite(numericHours) || numericHours < 0) {
+      throw new Error('Region.resolveCurrentWeather requires a non-negative totalHours value.');
+    }
+
+    const weatherConfig = this.#weather;
+    if (!weatherConfig || weatherConfig.hasDynamicWeather !== true) {
+      return {
+        name: 'No active weather',
+        description: 'Conditions are sheltered from weather effects.',
+        seasonName: seasonName || null,
+        dynamic: false
+      };
+    }
+
+    const normalizedSeasonName = typeof seasonName === 'string' ? seasonName.trim().toLowerCase() : '';
+    const seasonEntry = weatherConfig.seasonWeather.find(entry =>
+      typeof entry?.seasonName === 'string' && entry.seasonName.trim().toLowerCase() === normalizedSeasonName
+    ) || weatherConfig.seasonWeather[0] || null;
+
+    if (!seasonEntry || !Array.isArray(seasonEntry.weatherTypes) || !seasonEntry.weatherTypes.length) {
+      return {
+        name: 'No active weather',
+        description: 'Conditions are steady with no notable weather changes.',
+        seasonName: seasonName || null,
+        dynamic: false
+      };
+    }
+
+    const currentState = this.#weatherState;
+    const stateMatchesSeason = currentState
+      && typeof currentState.seasonName === 'string'
+      && currentState.seasonName.trim().toLowerCase() === seasonEntry.seasonName.trim().toLowerCase();
+    const stateStillValid = stateMatchesSeason
+      && Number.isFinite(currentState.nextChangeHours)
+      && numericHours < Number(currentState.nextChangeHours);
+
+    if (!stateStillValid) {
+      const weatherType = this.#pickWeatherTypeForSeason(seasonEntry);
+      const duration = weatherType.durationRange.minHours === weatherType.durationRange.maxHours
+        ? weatherType.durationRange.minHours
+        : weatherType.durationRange.minHours
+          + (Math.random() * (weatherType.durationRange.maxHours - weatherType.durationRange.minHours));
+      this.#weatherState = Region.#normalizeWeatherState({
+        seasonName: seasonEntry.seasonName,
+        name: weatherType.name,
+        description: weatherType.description,
+        durationHours: duration,
+        nextChangeHours: numericHours + duration
+      });
+      this.#lastUpdated = new Date().toISOString();
+    }
+
+    return {
+      name: this.#weatherState.name,
+      description: this.#weatherState.description,
+      seasonName: this.#weatherState.seasonName,
+      dynamic: true
+    };
+  }
+
   addLocation(locationId) {
     if (!locationId || typeof locationId !== 'string') {
       return;
@@ -798,6 +1208,8 @@ class Region {
       characterConcepts: [...this.#characterConcepts],
       enemyConcepts: [...this.#enemyConcepts],
       secrets: [...this.#secrets],
+      weather: this.weather,
+      weatherState: this.weatherState
     };
   }
 

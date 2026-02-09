@@ -12,8 +12,13 @@ Faction selection: use the full faction name from the <factions> list in the gam
 
 {{ setting.characterGenInstructions }}
 
+{% include "_includes/npc-race-class-representation.njk" %}
+
 {% if additionalInstructions %}Additional instructions from the user:
 {{ additionalInstructions }}{% endif %}
+
+{% set npcFinalRootTag = "npcInfo" %}
+{% include "_includes/npc-generation-contemplation-steps.njk" %}
 
 Respond in the below format, making sure that <npcInfo> is the root tag and encloses both <npcs> and <memories> elements.
     

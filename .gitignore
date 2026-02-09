@@ -15,7 +15,9 @@ tmp/*
 playwright-report/*
 test-results/*
 imagegen/test*
+imagegen/*2512*
 **/*.old
+new-game-settings/*
 config.yaml.polaris
 mods/*
 mods/scene-illustrations/data/*

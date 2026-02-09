@@ -4,6 +4,13 @@
 {% set includeLocations = mode in ['full', 'stub'] %}
 {% set includeConnections = mode != 'locations' %}
 
+{% if calendarSeasons and calendarSeasons | length %}
+Seasons in this world (name and description):
+{% for season in calendarSeasons %}
+  - {{ season.name }}{% if season.description %}: {{ season.description }}{% endif %}
+{% endfor %}
+{% endif %}
+
 <task>
 {% if isStub %}
 You are creating the region "{% if isStub %}{{ currentRegion.name }}{% else %}{{ regionName }}{% endif %}" described briefly below. Invent **new** locations that fit naturally within this region, without duplicating existing locations. Use judgments on how many new locations are appropriate (generally between {{ minLocations }} and {{ maxLocations }}, with larger places such as cities warranting more). Respect the established tone, geography, and level range. Describe how each new location connects to other locations in this region, explaining why those exits make sense. After defining the new locations, consider how this region links to other regions and propose any notable connected regions. If the region is not a building, ensure there are at least {{ minRegionExits }} non-'within' regionExit(s) among the locations.
@@ -62,6 +69,21 @@ If this region is a city, town, village, or other settlement, create at least th
   <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
   <relativeLevel>1</relativeLevel>{# Set to 1 to keep the AI from going nuts with high relative levels for locations. This value doesn't affect actual generation. #}
   <numImportantNPCs>Integer number of important NPCs distributed throughout the whole region (0-4, as appropriate)</numImportantNPCs>
+  <weather>
+    <hasDynamicWeather>Boolean true/false indicating whether dynamic weather effects occur in this region; generally true for outdoors and false for indoors</hasDynamicWeather>
+    <!-- omit the below weatherTypes section if hasDynamicWeather is false -->
+    <seasonWeather>      
+      <seasonName><!-- name of season --></seasonName>
+      <weatherType>
+        <name><!-- e.g., "Sunny", "Rainy", "Foggy", "Snowy", "Windy", "Overcast", etc. --></name>
+        <description><!-- Brief (10 words or less) description of this weather type as it appears in this region --></description>
+        <relativeFrequency><!-- Integer from 1 to 10 indicating how common this weather type is in this region --></relativeFrequency>
+        <durationRange><!-- duration range in unitless decimal hours, e.g. "0.5-2.0" for weather that typically lasts between half an hour and two hours --></durationRange>
+      </weatherType>
+      <!-- Repeat <weatherType> elements as needed. Add as many as make sense for the region, preferably including some rare ones -->
+    </seasonWeather>
+    <!-- Repeat <seasonWeather> for each season. -->
+  </weather>
   <locations>
 {% if isStub %}
     <!-- Only list **new** locations to add to the current region -->
@@ -73,6 +95,7 @@ If this region is a city, town, village, or other settlement, create at least th
       <name>Concise, evocative location name</name>
       <description>Two-paragraph description emphasising sensory detail and interactive elements.</description>
       <shortDescription>IMPORTANT: One sentence summary of the location (do not repeat the name).</shortDescription>
+      <hasWeather>Boolean true/false indicating whether dynamic weather effects occur here; generally true for outdoors and false for indoors</hasWeather>
       <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
       <relativeLevel>Integer from +0 to +3 relative to the region average</relativeLevel>
       <notesAboutExits>Brief explanation of which neighbouring locations this place connects to and why it makes sense.</notesAboutExits>

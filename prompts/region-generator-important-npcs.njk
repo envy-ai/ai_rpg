@@ -65,6 +65,11 @@ Finally, check each newly generated NPC against the banned names, banned concept
 
 {{ setting.characterGenInstructions }}
 
+{% include "_includes/npc-race-class-representation.njk" %}
+
+{% set npcFinalRootTag = "response" %}
+{% include "_includes/npc-generation-contemplation-steps.njk" %}
+
 Format your response as follows:
 
 <response>

@@ -2586,6 +2586,16 @@ body.dark .thing-toggle-hint {
   text-transform: capitalize;
 }
 
+.world-time-indicator__weather {
+  font-size: 0.66rem;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.world-time-indicator__weather[hidden] {
+  display: none;
+}
+
 .abilities-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

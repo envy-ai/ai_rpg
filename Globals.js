@@ -104,6 +104,48 @@ class Globals {
     };
   }
 
+  static #normalizeSeasonTimeDescriptions(timeDescriptions, { seasonName = null, seasonIndex = null } = {}) {
+    if (timeDescriptions === null || timeDescriptions === undefined) {
+      return [];
+    }
+    if (!Array.isArray(timeDescriptions)) {
+      const label = seasonName || `#${Number(seasonIndex) + 1}`;
+      throw new Error(`Calendar season ${label} timeDescriptions must be an array.`);
+    }
+
+    const normalized = [];
+    const seenTimes = new Set();
+    for (let index = 0; index < timeDescriptions.length; index += 1) {
+      const entry = timeDescriptions[index];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        const label = seasonName || `#${Number(seasonIndex) + 1}`;
+        throw new Error(`Calendar season ${label} timeDescription ${index + 1} must be an object.`);
+      }
+      const rawTimeOfDay = Number(entry.timeOfDay);
+      if (!Number.isFinite(rawTimeOfDay) || rawTimeOfDay < 0) {
+        const label = seasonName || `#${Number(seasonIndex) + 1}`;
+        throw new Error(`Calendar season ${label} timeDescription ${index + 1} has invalid timeOfDay.`);
+      }
+      const description = typeof entry.description === 'string' ? entry.description.trim() : '';
+      if (!description) {
+        const label = seasonName || `#${Number(seasonIndex) + 1}`;
+        throw new Error(`Calendar season ${label} timeDescription ${index + 1} is missing a description.`);
+      }
+
+      const timeOfDay = Number(rawTimeOfDay.toFixed(4));
+      const dedupeKey = String(timeOfDay);
+      if (seenTimes.has(dedupeKey)) {
+        const label = seasonName || `#${Number(seasonIndex) + 1}`;
+        throw new Error(`Calendar season ${label} has duplicate timeDescriptions for timeOfDay ${timeOfDay}.`);
+      }
+      seenTimes.add(dedupeKey);
+      normalized.push({ timeOfDay, description });
+    }
+
+    normalized.sort((a, b) => a.timeOfDay - b.timeOfDay);
+    return normalized;
+  }
+
   static #normalizeCalendarDefinition(definition) {
     if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
       throw new Error('Calendar definition must be an object.');
@@ -170,12 +212,17 @@ class Globals {
         const description = typeof season.description === 'string' && season.description.trim()
           ? season.description.trim()
           : null;
+        const timeDescriptions = Globals.#normalizeSeasonTimeDescriptions(season.timeDescriptions, {
+          seasonName: name,
+          seasonIndex: index
+        });
         return {
           name,
           description,
           startMonth,
           startDay,
-          dayLengthMinutes
+          dayLengthMinutes,
+          timeDescriptions
         };
       });
     } else {
@@ -185,7 +232,8 @@ class Globals {
         description: null,
         startMonth: months.find(month => month.seasonName === name)?.name || null,
         startDay: 1,
-        dayLengthMinutes: null
+        dayLengthMinutes: null,
+        timeDescriptions: []
       }));
     }
 
@@ -266,28 +314,56 @@ class Globals {
           description: 'Cold weather, long nights, and quieter roads as people stay close to shelter and heat.',
           startMonth: 'December',
           startDay: 1,
-          dayLengthMinutes: null
+          dayLengthMinutes: null,
+          timeDescriptions: [
+            { timeOfDay: 0, description: 'Deep night with minimal natural light.' },
+            { timeOfDay: 7, description: 'Muted dawn light begins to lift the darkness.' },
+            { timeOfDay: 9, description: 'Cold daylight with clear visibility.' },
+            { timeOfDay: 17, description: 'Late afternoon light fades quickly.' },
+            { timeOfDay: 19, description: 'Night returns with poor visibility.' }
+          ]
         },
         {
           name: 'Spring',
           description: 'Mild rain, fresh growth, and renewed travel as markets and communities become busier.',
           startMonth: 'March',
           startDay: 1,
-          dayLengthMinutes: null
+          dayLengthMinutes: null,
+          timeDescriptions: [
+            { timeOfDay: 0, description: 'Nighttime conditions with limited natural light.' },
+            { timeOfDay: 6, description: 'Early dawn as the sky brightens.' },
+            { timeOfDay: 8, description: 'Bright daytime light with good visibility.' },
+            { timeOfDay: 18, description: 'Evening light is fading toward dusk.' },
+            { timeOfDay: 20, description: 'Night settles in and visibility drops.' }
+          ]
         },
         {
           name: 'Summer',
           description: 'Warm to hot days, high activity, and long daylight hours favorable to travel and work.',
           startMonth: 'June',
           startDay: 1,
-          dayLengthMinutes: null
+          dayLengthMinutes: null,
+          timeDescriptions: [
+            { timeOfDay: 0, description: 'Short midsummer night with low visibility.' },
+            { timeOfDay: 5, description: 'Early dawn light spreads across the horizon.' },
+            { timeOfDay: 7, description: 'Strong daylight with excellent visibility.' },
+            { timeOfDay: 19, description: 'Long evening light starts to soften.' },
+            { timeOfDay: 21, description: 'Late twilight transitions into night.' }
+          ]
         },
         {
           name: 'Autumn',
           description: 'Cooling air, harvest routines, and shorter days as settlements prepare for winter.',
           startMonth: 'September',
           startDay: 1,
-          dayLengthMinutes: null
+          dayLengthMinutes: null,
+          timeDescriptions: [
+            { timeOfDay: 0, description: 'Dark overnight conditions with low visibility.' },
+            { timeOfDay: 6.5, description: 'Cool dawn light grows across the landscape.' },
+            { timeOfDay: 8.5, description: 'Clear daytime light suitable for travel and work.' },
+            { timeOfDay: 17.5, description: 'Dusk arrives as daylight recedes.' },
+            { timeOfDay: 19.5, description: 'Nightfall with reduced natural visibility.' }
+          ]
         }
       ],
       holidays: [
@@ -523,6 +599,12 @@ class Globals {
       return season.name.trim().toLowerCase() === seasonName.trim().toLowerCase();
     }) || null;
     const seasonDescription = seasonDefinition?.description || null;
+    const seasonTimeDescriptions = Array.isArray(seasonDefinition?.timeDescriptions)
+      ? seasonDefinition.timeDescriptions.map(entry => ({
+          timeOfDay: Number(entry.timeOfDay),
+          description: entry.description
+        }))
+      : [];
     const holidayDefinition = calendar.holidays.find((holiday) => {
       if (!holiday || typeof holiday !== 'object') {
         return false;
@@ -551,6 +633,7 @@ class Globals {
       weekday,
       seasonName,
       seasonDescription,
+      seasonTimeDescriptions,
       holiday
     };
   }
@@ -616,6 +699,38 @@ class Globals {
     }
   }
 
+  static getLightLevelDescription(worldTime = Globals.worldTime, { skipEnsure = false } = {}) {
+    if (!skipEnsure) {
+      Globals.ensureWorldTimeInitialized();
+    }
+    const normalizedWorldTime = Globals.#normalizeWorldTime(worldTime);
+    const date = Globals.getCalendarDate(normalizedWorldTime, { skipEnsure: true });
+    const segment = Globals.getTimeSegment(normalizedWorldTime, { skipEnsure: true });
+
+    const seasonTimeDescriptions = Array.isArray(date.seasonTimeDescriptions)
+      ? date.seasonTimeDescriptions
+      : [];
+    if (seasonTimeDescriptions.length) {
+      let selected = seasonTimeDescriptions[0];
+      for (const entry of seasonTimeDescriptions) {
+        if (!entry || !Number.isFinite(Number(entry.timeOfDay))) {
+          continue;
+        }
+        if (normalizedWorldTime.timeHours >= Number(entry.timeOfDay)) {
+          selected = entry;
+        } else {
+          break;
+        }
+      }
+      const description = typeof selected?.description === 'string' ? selected.description.trim() : '';
+      if (description) {
+        return description;
+      }
+    }
+
+    return Globals.getLightingDescription(segment);
+  }
+
   static getWorldTimeContext({ transitions = [], skipEnsure = false } = {}) {
     if (!skipEnsure) {
       Globals.ensureWorldTimeInitialized();
@@ -623,6 +738,7 @@ class Globals {
     const worldTime = Globals.#normalizeWorldTime(Globals.worldTime);
     const segment = Globals.getTimeSegment(worldTime, { skipEnsure: true });
     const date = Globals.getCalendarDate(worldTime, { skipEnsure: true });
+    const lightLevelDescription = Globals.getLightLevelDescription(worldTime, { skipEnsure: true });
     const context = {
       dayIndex: worldTime.dayIndex,
       timeHours: Number(worldTime.timeHours.toFixed(4)),
@@ -631,7 +747,8 @@ class Globals {
       seasonDescription: date.seasonDescription || null,
       timeLabel: Globals.formatTime(worldTime, { skipEnsure: true }),
       dateLabel: Globals.formatDate(worldTime, { skipEnsure: true }),
-      lighting: Globals.getLightingDescription(segment),
+      lighting: lightLevelDescription,
+      lightLevelDescription,
       holiday: date.holiday ? { ...date.holiday } : null,
       holidayName: date.holiday?.name || null,
       holidayDescription: date.holiday?.description || null,

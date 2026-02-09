@@ -82,6 +82,8 @@ class AIRPGChat {
         this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
         this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
         this.worldTimeIndicatorMeta = document.getElementById('worldTimeIndicatorMeta');
+        this.worldTimeIndicatorWeather = document.getElementById('worldTimeIndicatorWeather');
+        this.lastWorldTimeIndicatorState = null;
     }
 
     setupQuestConfirmationModal() {
@@ -479,7 +481,7 @@ class AIRPGChat {
 
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
             if (data?.worldTime && typeof data.worldTime === 'object') {
-                this.updateWorldTimeIndicator(data.worldTime);
+                this.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
             }
             await this.checkShortDescriptionBackfill();
             await this.tryRunPendingRedo();
@@ -489,7 +491,26 @@ class AIRPGChat {
         }
     }
 
-    updateWorldTimeIndicator(worldTime) {
+    normalizeWeatherNameForDisplay(name) {
+        if (typeof name !== 'string') {
+            return '';
+        }
+        const trimmed = name.trim();
+        if (!trimmed) {
+            return '';
+        }
+        const normalized = trimmed.toLowerCase();
+        if (
+            normalized === 'unspecified weather'
+            || normalized === 'unknown weather'
+            || normalized === 'no local weather'
+        ) {
+            return '';
+        }
+        return trimmed;
+    }
+
+    updateWorldTimeIndicator(worldTime, { emitTransitions = false } = {}) {
         if (!worldTime || typeof worldTime !== 'object') {
             return;
         }
@@ -509,6 +530,23 @@ class AIRPGChat {
         const season = typeof worldTime.season === 'string' && worldTime.season.trim()
             ? worldTime.season.trim()
             : 'Unknown season';
+        const weatherName = this.normalizeWeatherNameForDisplay(worldTime.weatherName);
+        const shouldShowWeather = Boolean(weatherName);
+        const lightLevel = typeof worldTime.lightLevelDescription === 'string' && worldTime.lightLevelDescription.trim()
+            ? worldTime.lightLevelDescription.trim()
+            : (typeof worldTime.lighting === 'string' && worldTime.lighting.trim()
+                ? worldTime.lighting.trim()
+                : '');
+
+        const previousState = this.lastWorldTimeIndicatorState;
+        if (emitTransitions && previousState) {
+            if (lightLevel && previousState.lightLevel && lightLevel !== previousState.lightLevel) {
+                this.addEventSummary('💡', `Light level changed from ${previousState.lightLevel} to ${lightLevel}.`);
+            }
+            if (weatherName && previousState.weatherName && weatherName !== previousState.weatherName) {
+                this.addEventSummary('🌦️', `Weather changed from ${previousState.weatherName} to ${weatherName}.`);
+            }
+        }
 
         if (this.worldTimeIndicatorTime) {
             this.worldTimeIndicatorTime.textContent = timeLabel;
@@ -519,6 +557,24 @@ class AIRPGChat {
         if (this.worldTimeIndicatorMeta) {
             this.worldTimeIndicatorMeta.textContent = `${segment} · ${season}`;
         }
+        if (this.worldTimeIndicatorWeather) {
+            if (shouldShowWeather) {
+                this.worldTimeIndicatorWeather.textContent = `Weather: ${weatherName}`;
+                this.worldTimeIndicatorWeather.removeAttribute('hidden');
+            } else {
+                this.worldTimeIndicatorWeather.textContent = '';
+                this.worldTimeIndicatorWeather.setAttribute('hidden', '');
+            }
+        }
+
+        this.lastWorldTimeIndicatorState = {
+            timeLabel,
+            dateLabel,
+            segment,
+            season,
+            lightLevel,
+            weatherName
+        };
 
         this.worldTimeIndicator.removeAttribute('hidden');
     }
@@ -4774,7 +4830,7 @@ class AIRPGChat {
         }
 
         if (payload.worldTime && typeof payload.worldTime === 'object') {
-            this.updateWorldTimeIndicator(payload.worldTime);
+            this.updateWorldTimeIndicator(payload.worldTime, { emitTransitions: true });
             const transitions = Array.isArray(payload.worldTime.transitions)
                 ? payload.worldTime.transitions
                 : [];

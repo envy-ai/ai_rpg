@@ -1,0 +1,16 @@
+NPC representation in the game so far (NPCs only):
+  Total NPCs tracked: {{ npcRepresentation.totalNpcs | default(0, true) }}
+  By race:
+{% if npcRepresentation and npcRepresentation.races and npcRepresentation.races.length %}
+{% for entry in npcRepresentation.races %}    - {{ entry.name }}: {{ entry.count }}
+{% endfor %}
+{% else %}    - None yet
+{% endif %}
+  By class:
+{% if npcRepresentation and npcRepresentation.classes and npcRepresentation.classes.length %}
+{% for entry in npcRepresentation.classes %}    - {{ entry.name }}: {{ entry.count }}
+{% endfor %}
+{% else %}    - None yet
+{% endif %}
+
+Keep new NPCs as varied as is reasonable based on this distribution, but do not force variety if it would weaken story coherence, location fit, or character plausibility. It's okay to use ones that aren't on the official setting list if they fit the setting and story we1. ll.

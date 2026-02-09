@@ -1,0 +1,13 @@
+You will now perform a self-correction and planning process before finalizing NPC output.
+
+Follow these steps and output them in free text:
+
+1. Draft Plan: Propose an initial NPC lineup and memory direction that fits the provided setting and scene context.
+2. Analysis and planning: Critique your draft plan for duplicate/near-duplicate NPCs, banned names/concepts, race/class overconcentration, weak faction fit, weak location fit, and poor narrative coherence. Identify concrete fixes.
+3. Revised Plan: Provide an improved concise plan that resolves the issues found in step 2.
+4. Final XML: Output one complete `<{{ npcFinalRootTag }}>...</{{ npcFinalRootTag }}>` block that follows the required schema exactly.
+
+Important constraints:
+- Steps 1-3 should be plain text analysis/planning.
+- In step 4, output only the final XML block (no markdown code fences).
+- Keep the final XML faithful to the revised plan from step 3.
