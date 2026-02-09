@@ -26,6 +26,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **Chat panel** (`.chat-container`):
   - Message list (`#chatLog`) with user/AI messages and event-summary batches.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
+  - Prefix actions preserve raw input markers in the API payload (`?`, `@`, `@@`, `@@@`) even though optimistic local entries render marker-stripped content.
 - **Sidebar** (`.chat-sidebar`):
   - Player card (portrait, health, need bars, quick actions, and a top-left warning triangle when unspent skill/attribute points are present).
   - Player "View" opens `#npcViewModal` in editable mode for attributes/skills using shared allocation partials; NPCs use the same sections in read-only mode.
@@ -63,7 +64,7 @@ The chat client listens on `/ws?clientId=...` and handles:
 - `location_exit_created`, `location_exit_deleted` (refresh location + map).
 - `image_job_update` (image job completion via `ImageGenerationManager`).
 - `chat_history_updated` (refresh history and quest panel).
-- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel controls, contract/expand toggle, drag handle on the header, native resize handle, and a 2-second hidden-placeholder-row debounce before the empty table state is hidden).
+- `prompt_progress`, `prompt_progress_cleared` (floating top-left prompt-progress overlay with cancel controls, contract/expand toggle, drag handle on the header, native resize handle, and a 3.5-second hidden-placeholder-row debounce before the empty table state is hidden).
 - `quest_confirmation_request` (modal prompt).
 
 `processChatPayload()` also consumes `payload.worldTime` from streamed/final chat responses, updates the world-time chip, and emits transition summaries (`segment`/`season`) into the event-summary flow.

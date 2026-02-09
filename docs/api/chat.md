@@ -76,6 +76,11 @@ Response (200):
 Variants:
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
 - Forced-event action: user message begins with `!!`; creative action begins with `!`. These alter processing but do not change the base response shape.
+- Question action: if the user message begins with `?`, the server routes through the `question` prompt template (`prompts/_includes/question.njk`) using the stripped question text (leading `?` and spaces removed for prompt rendering). It records chat entries as `type: user-question` (user) and `type: storyteller-answer` (assistant), skips event/random/NPC turn resolution for that request, bypasses slop-remover processing for that response, and returns a normal chat payload with the answer in `response`.
+- Generic prompt actions route through `prompts/_includes/generic-prompt.njk` with stripped marker text:
+  - `@...`: saved normally in chat history as `user-generic-prompt` + `generic-prompt-response`.
+  - `@@...`: saved in chat history, but marked so those entries are excluded from base-context history assembly.
+  - `@@@...`: not persisted in server chat history at all (ephemeral display only), and skipped in future base-context history.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 - When travel prose is returned, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`.
 - For `<travelProse>` turns, origin/destination event-check passes allow `item_appear` and `scenery_appear` outcomes to be applied even after movement is marked processed.

@@ -4161,6 +4161,12 @@ function buildBasePromptContext({
         if (!entry || entry.type === 'status-summary') {
             return false;
         }
+        const metadata = entry.metadata && typeof entry.metadata === 'object'
+            ? entry.metadata
+            : null;
+        if (metadata?.excludeFromBaseContextHistory === true) {
+            return false;
+        }
         if (entry.content) {
             if (!isEventSummaryEntry(entry)) {
                 return true;
@@ -4208,6 +4214,29 @@ function buildBasePromptContext({
     };
 
     const historySegments = [];
+    const playerLabel = (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim())
+        ? currentPlayer.name.trim()
+        : 'Player';
+
+    const resolveRoleLabelForHistory = (entry, roleRaw) => {
+        if (isHiddenChatEntry(entry)) {
+            return HIDDEN_CHAT_LABEL;
+        }
+        const entryType = typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        if (entryType === 'user-question') {
+            return 'User Question';
+        }
+        if (entryType === 'storyteller-answer') {
+            return 'Storyteller Answer';
+        }
+        if (roleRaw.toLowerCase() === 'user') {
+            return playerLabel;
+        }
+        if (roleRaw.toLowerCase() === 'assistant') {
+            return 'Storyteller';
+        }
+        return roleRaw;
+    };
 
     const buildSceneSummarySegments = (entries) => {
         if (!Array.isArray(entries) || entries.length === 0) {
@@ -4369,14 +4398,7 @@ function buildBasePromptContext({
         const roleRaw = typeof entry.role === 'string' && entry.role.trim()
             ? entry.role.trim()
             : 'system';
-        const playerLabel = (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim())
-            ? currentPlayer.name.trim()
-            : 'Player';
-        const roleLabel = isHiddenChatEntry(entry)
-            ? HIDDEN_CHAT_LABEL
-            : (roleRaw.toLowerCase() === 'user'
-                ? playerLabel
-                : (roleRaw.toLowerCase() === 'assistant' ? 'Storyteller' : roleRaw));
+        const roleLabel = resolveRoleLabelForHistory(entry, roleRaw);
         historySegments.push({ entry, line: `[${roleLabel}] ${resolvedContent}` });
     }
 

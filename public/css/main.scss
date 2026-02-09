@@ -3353,6 +3353,13 @@ body.dark .thing-toggle-hint {
     text-align: right;
   }
 
+  &.user-question-message {
+    background: rgba(71, 85, 105, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.48);
+    margin-left: auto;
+    text-align: right;
+  }
+
   &.npc-message {
     background: $npc-message-bg;
     margin-left: auto;

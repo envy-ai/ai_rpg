@@ -5787,6 +5787,9 @@ class Events {
                         continue;
                     }
                     if (entry.status === "dead") {
+                        if (actor.isNPC && actor.isDead) {
+                            continue;
+                        }
                         actor.modifyHealth(-Infinity, "Killed");
                         actor.isDead = true;
                         if (typeof actor.addStatusEffect === "function") {

@@ -3068,6 +3068,12 @@ body.dark .thing-toggle-hint {
   margin-left: auto;
   text-align: right;
 }
+.message.user-question-message {
+  background: rgba(71, 85, 105, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.48);
+  margin-left: auto;
+  text-align: right;
+}
 .message.npc-message {
   background: rgba(120, 220, 140, 0.35);
   margin-left: auto;

@@ -9535,8 +9535,47 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Store user message in history (last message from the request)
                 const userMessage = messages[messages.length - 1];
+                let originalUserContent = '';
+                let firstVisibleIndex = -1;
+                let trimmedVisibleContent = '';
+                let isQuestionAction = false;
+                let questionActionText = null;
+                let isGenericPromptAction = false;
+                let genericPromptText = null;
+                let genericPromptStorageMode = 'normal';
                 currentUserMessage = userMessage;
                 if (userMessage && userMessage.role === 'user') {
+                    originalUserContent = typeof userMessage.content === 'string' ? userMessage.content : '';
+                    firstVisibleIndex = typeof originalUserContent === 'string'
+                        ? originalUserContent.search(/\S/)
+                        : -1;
+                    trimmedVisibleContent = firstVisibleIndex > -1
+                        ? originalUserContent.slice(firstVisibleIndex)
+                        : '';
+                    isQuestionAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('?');
+                    questionActionText = isQuestionAction
+                        ? trimmedVisibleContent.slice(1).replace(/^\s+/, '')
+                        : null;
+                    let genericMarkerLength = 0;
+                    if (firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('@@@')) {
+                        genericMarkerLength = 3;
+                        genericPromptStorageMode = 'no_log';
+                    } else if (firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('@@')) {
+                        genericMarkerLength = 2;
+                        genericPromptStorageMode = 'hide_base_context';
+                    } else if (firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('@')) {
+                        genericMarkerLength = 1;
+                        genericPromptStorageMode = 'normal';
+                    }
+                    isGenericPromptAction = genericMarkerLength > 0;
+                    genericPromptText = isGenericPromptAction
+                        ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
+                        : null;
+                    if (isGenericPromptAction) {
+                        isQuestionAction = false;
+                        questionActionText = null;
+                    }
+
                     const isTravelMessage = rawTravelFlag === true;
                     currentActionIsTravel = isTravelMessage;
 
@@ -9578,18 +9617,35 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
-                    const entryPayload = {
-                        role: 'user',
-                        content: userMessage.content,
-                        travel: isTravelMessage,
-                        locationId: playerChatLocationId
-                    };
-                    if (stream.requestId) {
-                        entryPayload.metadata = { requestId: stream.requestId };
-                    }
-                    const storedUserEntry = pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
-                    if (isTravelMessage) {
-                        travelUserEntry = storedUserEntry;
+                    const shouldPersistUserEntry = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
+                    if (shouldPersistUserEntry) {
+                        const entryPayload = {
+                            role: 'user',
+                            content: isQuestionAction
+                                ? (questionActionText || '')
+                                : (isGenericPromptAction ? (genericPromptText || '') : userMessage.content),
+                            travel: isTravelMessage,
+                            locationId: playerChatLocationId
+                        };
+                        if (isQuestionAction) {
+                            entryPayload.type = 'user-question';
+                        } else if (isGenericPromptAction) {
+                            entryPayload.type = 'user-generic-prompt';
+                        }
+                        const metadata = {};
+                        if (stream.requestId) {
+                            metadata.requestId = stream.requestId;
+                        }
+                        if (isGenericPromptAction && genericPromptStorageMode === 'hide_base_context') {
+                            metadata.excludeFromBaseContextHistory = true;
+                        }
+                        if (Object.keys(metadata).length) {
+                            entryPayload.metadata = metadata;
+                        }
+                        const storedUserEntry = pushChatEntry(entryPayload, newChatEntries, playerChatLocationId);
+                        if (isTravelMessage) {
+                            travelUserEntry = storedUserEntry;
+                        }
                     }
                 } else {
                     currentActionIsTravel = false;
@@ -9613,11 +9669,6 @@ module.exports = function registerApiRoutes(scope) {
                 let actionResolution = null;
                 let attackDamageApplication = null;
 
-                const originalUserContent = typeof userMessage?.content === 'string' ? userMessage.content : '';
-                const firstVisibleIndex = typeof originalUserContent === 'string' ? originalUserContent.search(/\S/) : -1;
-                const trimmedVisibleContent = firstVisibleIndex > -1
-                    ? originalUserContent.slice(firstVisibleIndex)
-                    : '';
                 const isCommentOnlyAction = firstVisibleIndex > -1 && trimmedVisibleContent.startsWith('#');
 
                 if (isCommentOnlyAction) {
@@ -9663,6 +9714,8 @@ module.exports = function registerApiRoutes(scope) {
                     ? trimmedVisibleContent.slice(2).replace(/^\s+/, '')
                     : null;
                 const isCreativeModeAction = !isForcedEventAction
+                    && !isQuestionAction
+                    && !isGenericPromptAction
                     && firstVisibleIndex > -1
                     && trimmedVisibleContent.startsWith('!');
                 const creativeActionText = isCreativeModeAction
@@ -9673,7 +9726,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (typeof text !== 'string') {
                         return text;
                     }
-                    const match = text.match(/^([!#]+)/);
+                    const match = text.match(/^([!#?@]+)/);
                     if (!match) {
                         return text;
                     }
@@ -9684,12 +9737,20 @@ module.exports = function registerApiRoutes(scope) {
 
                 const sanitizedUserContent = isForcedEventAction
                     ? (forcedEventText || '')
-                    : (isCreativeModeAction ? (creativeActionText || '') : trimLeadingMarkers(originalUserContent));
+                    : (isCreativeModeAction
+                        ? (creativeActionText || '')
+                        : (isQuestionAction
+                            ? (questionActionText || '')
+                            : (isGenericPromptAction ? (genericPromptText || '') : trimLeadingMarkers(originalUserContent))));
 
                 if (isForcedEventAction) {
                     stream.status('player_action:forced_event', 'Processing forced event override.');
                 } else if (isCreativeModeAction) {
                     stream.status('player_action:creative', 'Processing creative mode action.');
+                } else if (isQuestionAction) {
+                    stream.status('player_action:question', 'Processing in-context question.');
+                } else if (isGenericPromptAction) {
+                    stream.status('player_action:generic_prompt', 'Processing generic prompt action.');
                 }
 
                 let templateTemperature = null;
@@ -9704,18 +9765,22 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const baseDebugInfo = {
-                    usedForcedEventAction: Boolean(isForcedEventAction)
+                    usedForcedEventAction: Boolean(isForcedEventAction),
+                    usedQuestionAction: Boolean(isQuestionAction),
+                    usedGenericPromptAction: Boolean(isGenericPromptAction),
+                    genericPromptStorageMode: isGenericPromptAction ? genericPromptStorageMode : null
                 };
                 const plausibilityChecksEnabled = Globals.config?.plausibility_checks?.enabled !== false;
                 let debugInfo = null;
                 let playerActionLogPayload = null;
+                const isPromptOnlyAction = isQuestionAction || isGenericPromptAction;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
                 if (currentPlayer && currentPlayer.currentLocation) {
                     location = Location.get(currentPlayer.currentLocation);
                 }
 
-                if (currentPlayer && userMessage && userMessage.role === 'user') {
+                if (currentPlayer && userMessage && userMessage.role === 'user' && !isPromptOnlyAction) {
                     try {
                         const tickResult = tickStatusEffectsForAction({ player: currentPlayer, location });
                         if (tickResult) {
@@ -9831,7 +9896,7 @@ module.exports = function registerApiRoutes(scope) {
                 const attackOutcome = attackContextForPlausibility?.outcome || null;
 
                 const plausibilityType = (plausibilityInfo?.structured?.type || '').trim().toLowerCase();
-                if (!isForcedEventAction && !isCreativeModeAction && plausibilityType === 'rejected') {
+                if (!isForcedEventAction && !isCreativeModeAction && !isPromptOnlyAction && plausibilityType === 'rejected') {
                     const rejectionReasonRaw = plausibilityInfo?.structured?.reason || 'Action rejected.';
                     const rejectionReason = typeof rejectionReasonRaw === 'string' && rejectionReasonRaw.trim().length
                         ? rejectionReasonRaw.trim()
@@ -9911,6 +9976,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (!isForcedEventAction
                     && !isCreativeModeAction
+                    && !isPromptOnlyAction
                     && attackContextForPlausibility?.isAttack
                     && attackOutcome?.hit
                     && plausibilityType === 'plausible') {
@@ -9971,89 +10037,108 @@ module.exports = function registerApiRoutes(scope) {
                         const templateName = 'base-context.xml.njk';
 
                         let additionalLore = '';
-                        const actionText = isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent;
+                        const actionText = isQuestionAction
+                            ? (questionActionText || '')
+                            : (isGenericPromptAction
+                                ? (genericPromptText || '')
+                                : (isCreativeModeAction ? (creativeActionText || '') : sanitizedUserContent));
 
-                        const currentLocation = baseContext.currentLocation || null;
-                        if (currentLocation && Array.isArray(currentLocation.exits)) {
-                            const exitNames = currentLocation.exits
-                                .map(exit => (exit && typeof exit.name === 'string' ? exit.name.trim() : ''))
-                                .filter(name => !!name);
-                            //console.log('found exits:', exitNames);
-                            //console.log('action text:', actionText);
-                            if (exitNames.length && actionText && typeof actionText === 'string') {
-                                const actionLower = actionText.toLowerCase();
-                                for (const exitName of exitNames) {
-                                    //console.log('checking exit:', exitName);
-                                    const exitLower = exitName.toLowerCase();
-                                    if (actionLower.includes(exitLower)) {
-                                        const matchedLocation = Location.findByName(exitName) || null;
-                                        //console.log('matched location:', matchedLocation.name);
-                                        if (matchedLocation) {
-                                            const stubDescription = matchedLocation.isStub
-                                                ? (typeof matchedLocation.stubMetadata?.shortDescription === 'string' && matchedLocation.stubMetadata.shortDescription.trim()
-                                                    ? matchedLocation.stubMetadata.shortDescription.trim()
-                                                    : typeof matchedLocation.stubMetadata?.blueprintDescription === 'string' && matchedLocation.stubMetadata.blueprintDescription.trim()
-                                                        ? matchedLocation.stubMetadata.blueprintDescription.trim()
-                                                        : null)
-                                                : null;
-                                            const locationDescription = typeof matchedLocation.description === 'string' && matchedLocation.description.trim()
-                                                ? matchedLocation.description.trim()
-                                                : stubDescription;
+                        let promptVariables = null;
+                        if (!isQuestionAction && !isGenericPromptAction) {
+                            const currentLocation = baseContext.currentLocation || null;
+                            if (currentLocation && Array.isArray(currentLocation.exits)) {
+                                const exitNames = currentLocation.exits
+                                    .map(exit => (exit && typeof exit.name === 'string' ? exit.name.trim() : ''))
+                                    .filter(name => !!name);
+                                //console.log('found exits:', exitNames);
+                                //console.log('action text:', actionText);
+                                if (exitNames.length && actionText && typeof actionText === 'string') {
+                                    const actionLower = actionText.toLowerCase();
+                                    for (const exitName of exitNames) {
+                                        //console.log('checking exit:', exitName);
+                                        const exitLower = exitName.toLowerCase();
+                                        if (actionLower.includes(exitLower)) {
+                                            const matchedLocation = Location.findByName(exitName) || null;
+                                            //console.log('matched location:', matchedLocation.name);
+                                            if (matchedLocation) {
+                                                const stubDescription = matchedLocation.isStub
+                                                    ? (typeof matchedLocation.stubMetadata?.shortDescription === 'string' && matchedLocation.stubMetadata.shortDescription.trim()
+                                                        ? matchedLocation.stubMetadata.shortDescription.trim()
+                                                        : typeof matchedLocation.stubMetadata?.blueprintDescription === 'string' && matchedLocation.stubMetadata.blueprintDescription.trim()
+                                                            ? matchedLocation.stubMetadata.blueprintDescription.trim()
+                                                            : null)
+                                                    : null;
+                                                const locationDescription = typeof matchedLocation.description === 'string' && matchedLocation.description.trim()
+                                                    ? matchedLocation.description.trim()
+                                                    : stubDescription;
 
-                                            if (!locationDescription) {
-                                                throw new Error(`Location ${matchedLocation.name || matchedLocation.id || 'unknown'} is missing description metadata`);
+                                                if (!locationDescription) {
+                                                    throw new Error(`Location ${matchedLocation.name || matchedLocation.id || 'unknown'} is missing description metadata`);
+                                                }
+
+                                                additionalLore += `Location -- ${matchedLocation.name}: ${locationDescription}`;
                                             }
-
-                                            additionalLore += `Location -- ${matchedLocation.name}: ${locationDescription}`;
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        // Add lorebook entries to additionalLore
-                        try {
-                            const lorebookManager = getLorebookManager();
-                            if (lorebookManager) {
-                                const locationName = baseContext.currentLocation?.name || '';
-                                const regionName = baseContext.currentRegion?.name || '';
-                                const npcNames = Array.isArray(baseContext.npcs) ? baseContext.npcs.map(n => n.name || '').join(' ') : '';
-                                const contextText = `${actionText} ${locationName} ${regionName} ${npcNames}`;
-                                const loreEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
-                                if (loreEntries.length > 0) {
-                                    const formattedLore = lorebookManager.formatEntriesForPrompt(loreEntries);
-                                    if (formattedLore) {
-                                        additionalLore += (additionalLore ? '\n\n' : '') + formattedLore;
+                            // Add lorebook entries to additionalLore
+                            try {
+                                const lorebookManager = getLorebookManager();
+                                if (lorebookManager) {
+                                    const locationName = baseContext.currentLocation?.name || '';
+                                    const regionName = baseContext.currentRegion?.name || '';
+                                    const npcNames = Array.isArray(baseContext.npcs) ? baseContext.npcs.map(n => n.name || '').join(' ') : '';
+                                    const contextText = `${actionText} ${locationName} ${regionName} ${npcNames}`;
+                                    const loreEntries = lorebookManager.findMatchingEntries(contextText, { maxTokens: 2000 });
+                                    if (loreEntries.length > 0) {
+                                        const formattedLore = lorebookManager.formatEntriesForPrompt(loreEntries);
+                                        if (formattedLore) {
+                                            additionalLore += (additionalLore ? '\n\n' : '') + formattedLore;
+                                        }
                                     }
                                 }
+                            } catch (err) {
+                                console.warn('[Lorebook] Failed to get entries for player action:', err.message);
                             }
-                        } catch (err) {
-                            console.warn('[Lorebook] Failed to get entries for player action:', err.message);
+
+                            console.log("additionalLore:", additionalLore);
+
+                            const mentionedItems = plausibilityInfo?.structured?.itemsMentioned;
+                            const mentionedAbilities = plausibilityInfo?.structured?.abilitiesMentioned;
+                            const itemContextXml = buildItemContextXml(mentionedItems);
+                            const abilityContextXml = buildAbilityContextXml(mentionedAbilities, {
+                                player: currentPlayer,
+                                location
+                            });
+
+                            promptVariables = {
+                                ...baseContext,
+                                promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
+                                actionText: actionText,
+                                characterName: 'The player',
+                                additionalLore: additionalLore.trim(),
+                                itemContext: itemContextXml,
+                                abilityContext: abilityContextXml
+                            };
+                        } else if (isQuestionAction) {
+                            promptVariables = {
+                                ...baseContext,
+                                promptType: 'question',
+                                question: actionText
+                            };
+                        } else {
+                            promptVariables = {
+                                ...baseContext,
+                                promptType: 'generic-prompt',
+                                prompt: actionText
+                            };
                         }
-
-                        console.log("additionalLore:", additionalLore);
-
-                        const mentionedItems = plausibilityInfo?.structured?.itemsMentioned;
-                        const mentionedAbilities = plausibilityInfo?.structured?.abilitiesMentioned;
-                        const itemContextXml = buildItemContextXml(mentionedItems);
-                        const abilityContextXml = buildAbilityContextXml(mentionedAbilities, {
-                            player: currentPlayer,
-                            location
-                        });
-
-                        const promptVariables = {
-                            ...baseContext,
-                            promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
-                            actionText: actionText,
-                            characterName: 'The player',
-                            additionalLore: additionalLore.trim(),
-                            itemContext: itemContextXml,
-                            abilityContext: abilityContextXml
-                        };
                         promptTemplateName = templateName;
                         promptVariablesSnapshot = promptVariables;
                         promptType = promptVariables.promptType;
-                        if (attackContextForPlausibility) {
+                        if (attackContextForPlausibility && !isPromptOnlyAction) {
                             const isAttack = Boolean(attackContextForPlausibility.isAttack);
                             const attackerDetails = attackContextForPlausibility.attacker || null;
                             const targetDetails = attackContextForPlausibility.target || null;
@@ -10078,7 +10163,7 @@ module.exports = function registerApiRoutes(scope) {
 
                         }
 
-                        if (!isCreativeModeAction) {
+                        if (!isCreativeModeAction && !isPromptOnlyAction) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';
                         }
 
@@ -10123,8 +10208,10 @@ module.exports = function registerApiRoutes(scope) {
                         // Store debug information
                         debugInfo = {
                             ...baseDebugInfo,
-                            usedPlayerTemplate: !isCreativeModeAction,
+                            usedPlayerTemplate: !isCreativeModeAction && !isPromptOnlyAction,
                             usedCreativeTemplate: isCreativeModeAction,
+                            usedQuestionTemplate: isQuestionAction,
+                            usedGenericPromptTemplate: isGenericPromptAction,
                             playerName: currentPlayer.name,
                             playerDescription: currentPlayer.description,
                             systemMessage: trimmedSystemPrompt,
@@ -10135,12 +10222,22 @@ module.exports = function registerApiRoutes(scope) {
                         if (isCreativeModeAction) {
                             debugInfo.creativeActionText = creativeActionText || '';
                         }
-                        if (!isCreativeModeAction) {
+                        if (isQuestionAction) {
+                            debugInfo.questionText = actionText;
+                        }
+                        if (isGenericPromptAction) {
+                            debugInfo.genericPromptText = actionText;
+                        }
+                        if (!isCreativeModeAction && !isPromptOnlyAction) {
                             debugInfo.actionOutcomeLabel = actionResolution?.label || 'success';
                         }
 
                         if (isCreativeModeAction) {
                             console.log('Using creative mode action template for:', currentPlayer.name);
+                        } else if (isQuestionAction) {
+                            console.log('Using question template for:', currentPlayer.name);
+                        } else if (isGenericPromptAction) {
+                            console.log(`Using generic prompt template for: ${currentPlayer.name} (${genericPromptStorageMode})`);
                         } else {
                             console.log('Using player action template for:', currentPlayer.name);
                         }
@@ -10168,6 +10265,8 @@ module.exports = function registerApiRoutes(scope) {
                             ...baseDebugInfo,
                             usedPlayerTemplate: false,
                             usedCreativeTemplate: false,
+                            usedQuestionTemplate: false,
+                            usedGenericPromptTemplate: false,
                             reason: currentPlayer ? 'No user message detected' : 'No current player set'
                         };
                     }
@@ -10338,9 +10437,12 @@ module.exports = function registerApiRoutes(scope) {
 
                 const metricsStart = Date.now();
                 let capturedResponse = null;
+                const promptMetadataLabel = promptType === 'question'
+                    ? 'question'
+                    : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
                 const requestOptions = {
                     messages: finalMessages,
-                    metadataLabel: 'player_action',
+                    metadataLabel: promptMetadataLabel,
                     metadata: { __aiMetricsStart: metricsStart },
                     onResponse: (response) => {
                         capturedResponse = response;
@@ -10364,14 +10466,17 @@ module.exports = function registerApiRoutes(scope) {
                 let travelProsePayload = null;
                 //console.log("Player Prose Request Options:", requestOptions);
 
-                const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: 'player_action', streamEmitter: stream });
+                const usageMetrics = emitAiUsageMetrics(capturedResponse, { label: promptMetadataLabel, streamEmitter: stream });
 
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {
 
                     if (playerActionLogPayload) {
+                        const promptLogPrefix = promptType === 'question'
+                            ? 'question'
+                            : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
                         LLMClient.logPrompt({
-                            prefix: 'player_action',
-                            metadataLabel: 'player_action',
+                            prefix: promptLogPrefix,
+                            metadataLabel: promptLogPrefix,
                             systemPrompt: playerActionLogPayload.systemPrompt || '',
                             generationPrompt: playerActionLogPayload.generationPrompt || '',
                             response: aiResponse,
@@ -10380,9 +10485,12 @@ module.exports = function registerApiRoutes(scope) {
                         });
                         playerActionLogPayload = null;
                     } else if (debugInfo?.systemMessage || debugInfo?.generationPrompt) {
+                        const promptLogPrefix = promptType === 'question'
+                            ? 'question'
+                            : (promptType === 'generic-prompt' ? 'generic_prompt' : 'player_action');
                         LLMClient.logPrompt({
-                            prefix: 'player_action',
-                            metadataLabel: 'player_action',
+                            prefix: promptLogPrefix,
+                            metadataLabel: promptLogPrefix,
                             systemPrompt: debugInfo.systemMessage || '',
                             generationPrompt: debugInfo.generationPrompt || '',
                             response: aiResponse,
@@ -10426,7 +10534,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     let slopRemovalInfo = null;
-                    if (Globals.config?.slop_buster === true) {
+                    if (Globals.config?.slop_buster === true && !isQuestionAction) {
                         const slopResult = await applySlopRemoval(aiResponse, { returnDiagnostics: true });
                         aiResponse = slopResult.text;
                         if (slopResult.ran) {
@@ -10441,18 +10549,30 @@ module.exports = function registerApiRoutes(scope) {
 
                     // Store AI response in history
                     const aiResponseLocationId = requireLocationId(location?.id || currentPlayer?.currentLocation, 'player action entry');
-                    const aiResponseEntry = pushChatEntry({
+                    const aiResponseEntryType = isQuestionAction
+                        ? 'storyteller-answer'
+                        : (isGenericPromptAction ? 'generic-prompt-response' : 'player-action');
+                    const shouldPersistGenericResponse = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
+                    const responseEntryPayload = {
                         role: 'assistant',
                         content: aiResponse,
-                        type: 'player-action',
+                        type: aiResponseEntryType,
                         locationId: aiResponseLocationId
-                    }, newChatEntries, aiResponseLocationId);
+                    };
+                    if (isGenericPromptAction && genericPromptStorageMode === 'hide_base_context') {
+                        responseEntryPayload.metadata = {
+                            excludeFromBaseContextHistory: true
+                        };
+                    }
+                    const aiResponseEntry = shouldPersistGenericResponse
+                        ? pushChatEntry(responseEntryPayload, newChatEntries, aiResponseLocationId)
+                        : null;
                     if (currentActionIsTravel) {
                         travelAssistantEntry = aiResponseEntry;
                     }
                     currentTurnLog.push(aiResponse);
 
-                    if (slopRemovalInfo) {
+                    if (slopRemovalInfo && aiResponseEntry) {
                         recordSlopRemovalEntry({
                             data: slopRemovalInfo,
                             parentId: aiResponseEntry?.id || null,
@@ -10460,10 +10580,12 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    try {
-                        await summarizeChatEntry(aiResponseEntry, { location, type: 'player-action' });
-                    } catch (summaryError) {
-                        console.warn('Failed to summarize player action entry:', summaryError.message);
+                    if (aiResponseEntry) {
+                        try {
+                            await summarizeChatEntry(aiResponseEntry, { location, type: aiResponseEntryType });
+                        } catch (summaryError) {
+                            console.warn('Failed to summarize player action entry:', summaryError.message);
+                        }
                     }
 
                     // Include debug information in response for development
@@ -10475,7 +10597,7 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.aiUsage = usageMetrics;
                     }
 
-                    if (aiResponseEntry.summary) {
+                    if (aiResponseEntry?.summary) {
                         responseData.summary = aiResponseEntry.summary;
                     }
 
@@ -10520,6 +10642,36 @@ module.exports = function registerApiRoutes(scope) {
                             streamState.playerAction = true;
                             playerActionStreamSent = true;
                         }
+                    }
+
+                    if (isPromptOnlyAction) {
+                        responseData.worldTime = buildWorldTimePayload();
+                        if (isGenericPromptAction && genericPromptStorageMode === 'no_log') {
+                            responseData.skipHistoryRefresh = true;
+                        }
+                        if (stream.requestId) {
+                            responseData.streamMeta = {
+                                ...streamState,
+                                enabled: stream.isEnabled,
+                                playerActionStreamed: Boolean(playerActionStreamSent),
+                                questionAction: Boolean(isQuestionAction),
+                                genericPromptAction: Boolean(isGenericPromptAction),
+                                genericPromptStorageMode: isGenericPromptAction ? genericPromptStorageMode : null
+                            };
+                        }
+                        stream.status('player_action:complete', isQuestionAction ? 'Question answered.' : 'Generic prompt completed.');
+                        stream.complete({
+                            hasNpcTurns: false,
+                            playerActionStreamed: Boolean(playerActionStreamSent),
+                            questionAction: Boolean(isQuestionAction),
+                            genericPromptAction: Boolean(isGenericPromptAction),
+                            genericPromptStorageMode: isGenericPromptAction ? genericPromptStorageMode : null
+                        });
+                        if (stream.isEnabled) {
+                            stripStreamedEventArtifacts(responseData);
+                        }
+                        responseData.messages = getClientMessages();
+                        return await respond(responseData);
                     }
 
                     let eventResult = null;

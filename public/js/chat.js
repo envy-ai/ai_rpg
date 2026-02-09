@@ -942,11 +942,13 @@ class AIRPGChat {
         }
 
         const messageDiv = document.createElement('div');
-        const role = entry.role === 'user'
-            ? 'user-message'
-            : entry.type === 'npc-action'
-                ? 'npc-message'
-                : 'ai-message';
+        const role = entry.type === 'user-question'
+            ? 'user-question-message'
+            : entry.role === 'user'
+                ? 'user-message'
+                : entry.type === 'npc-action'
+                    ? 'npc-message'
+                    : 'ai-message';
         messageDiv.className = `message ${role}`;
         messageDiv.dataset.timestamp = entry.timestamp || '';
 
@@ -2233,7 +2235,7 @@ class AIRPGChat {
                             livePlaceholderRow.parentNode.removeChild(livePlaceholderRow);
                         }
                         this.promptProgressHideTimer = null;
-                    }, 2000);
+                    }, 3500);
                 }
             }
             return;
@@ -4759,7 +4761,7 @@ class AIRPGChat {
     processChatPayload(requestId, payload, { fromStream = false } = {}) {
         const context = requestId ? this.ensureRequestContext(requestId) : null;
         if (!payload || typeof payload !== 'object') {
-            return { shouldRefreshLocation: false };
+            return { shouldRefreshLocation: false, skipHistoryRefresh: false };
         }
 
         this.flushEventBundle();
@@ -4782,6 +4784,7 @@ class AIRPGChat {
         }
 
         let shouldRefreshLocation = false;
+        let skipHistoryRefresh = Boolean(payload.skipHistoryRefresh);
 
         if (payload.locationRefreshRequested) {
             shouldRefreshLocation = true;
@@ -4867,7 +4870,7 @@ class AIRPGChat {
         }
         this.flushStatusBundle();
 
-        return { shouldRefreshLocation };
+        return { shouldRefreshLocation, skipHistoryRefresh };
     }
 
     renderNpcTurn(requestId, turn, index = 0) {
@@ -5213,11 +5216,72 @@ class AIRPGChat {
             return;
         }
 
-        const userEntry = this.normalizeLocalEntry({ role: 'user', content });
-        this.serverHistory.push(userEntry);
-        this.pruneServerHistoryIfNeeded();
-        this.chatHistory = [this.systemMessage, ...this.serverHistory];
-        this.renderChatHistory();
+        const firstVisibleIndex = typeof content === 'string' ? content.search(/\S/) : -1;
+        const trimmedVisibleContent = firstVisibleIndex > -1
+            ? content.slice(firstVisibleIndex)
+            : '';
+        const isQuestionEntry = trimmedVisibleContent.startsWith('?');
+        let genericMarkerLength = 0;
+        let genericPromptStorageMode = null;
+        if (trimmedVisibleContent.startsWith('@@@')) {
+            genericMarkerLength = 3;
+            genericPromptStorageMode = 'no_log';
+        } else if (trimmedVisibleContent.startsWith('@@')) {
+            genericMarkerLength = 2;
+            genericPromptStorageMode = 'hide_base_context';
+        } else if (trimmedVisibleContent.startsWith('@')) {
+            genericMarkerLength = 1;
+            genericPromptStorageMode = 'normal';
+        }
+        const isGenericPromptEntry = genericMarkerLength > 0;
+        const isNoLogGenericPromptEntry = isGenericPromptEntry && genericPromptStorageMode === 'no_log';
+        const normalizedUserContent = isQuestionEntry
+            ? trimmedVisibleContent.slice(1).replace(/^\s+/, '')
+            : (isGenericPromptEntry
+                ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
+                : content);
+
+        if (isNoLogGenericPromptEntry) {
+            this.addMessage('user', normalizedUserContent, false);
+        } else {
+            const userEntry = this.normalizeLocalEntry({
+                role: 'user',
+                type: isQuestionEntry
+                    ? 'user-question'
+                    : (isGenericPromptEntry ? 'user-generic-prompt' : undefined),
+                content: normalizedUserContent
+            });
+            this.serverHistory.push(userEntry);
+            this.pruneServerHistoryIfNeeded();
+            this.chatHistory = [this.systemMessage, ...this.serverHistory];
+            this.renderChatHistory();
+        }
+
+        const requestMessages = (() => {
+            const rawUserMessage = { role: 'user', content };
+            if (isNoLogGenericPromptEntry) {
+                return [...this.chatHistory, rawUserMessage];
+            }
+
+            const history = Array.isArray(this.chatHistory)
+                ? [...this.chatHistory]
+                : [];
+            if (!history.length) {
+                return [rawUserMessage];
+            }
+
+            const lastIndex = history.length - 1;
+            const lastMessage = history[lastIndex];
+            if (lastMessage && lastMessage.role === 'user') {
+                history[lastIndex] = {
+                    ...lastMessage,
+                    content
+                };
+                return history;
+            }
+
+            return [...history, rawUserMessage];
+        })();
 
         const requestId = this.generateRequestId();
         const context = this.ensureRequestContext(requestId);
@@ -5230,6 +5294,7 @@ class AIRPGChat {
 
         let shouldRefreshLocation = false;
         let finalizeMode = 'none';
+        let skipHistoryRefresh = isNoLogGenericPromptEntry;
 
         try {
             await this.waitForWebSocketReady(1000);
@@ -5239,7 +5304,7 @@ class AIRPGChat {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    messages: this.chatHistory,
+                    messages: requestMessages,
                     clientId: this.clientId,
                     requestId,
                     travel: Boolean(travel),
@@ -5257,6 +5322,7 @@ class AIRPGChat {
             } else {
                 const result = this.processChatPayload(requestId, data, { fromStream: false });
                 shouldRefreshLocation = result.shouldRefreshLocation || shouldRefreshLocation;
+                skipHistoryRefresh = skipHistoryRefresh || Boolean(result.skipHistoryRefresh);
 
                 if (!context.streamMeta || context.streamMeta.enabled === false) {
                     finalizeMode = 'afterRefresh';
@@ -5283,7 +5349,9 @@ class AIRPGChat {
             this.finalizeChatRequest(requestId);
         }
 
-        await this.refreshChatHistory();
+        if (!skipHistoryRefresh) {
+            await this.refreshChatHistory();
+        }
     }
 
     async sendMessage() {

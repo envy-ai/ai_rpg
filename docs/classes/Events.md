@@ -51,6 +51,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
 - `item_inflict` events ignore the prompt-provided status effect text and instead apply the item's inflict effect (`causeStatusEffectOnTarget`) to the target when available.
+- `death_incapacitation` skips `dead` outcomes for NPCs already marked dead, preventing duplicate death application.
 - `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes (useful for event-driven travel where movement is handled separately).
 - `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes).
 - `time_passed` accepts `0` from event checks; when this occurs, Events still advances canonical world time by `1/60` hour (1 minute) to avoid fully static clocks on zero-time turns.
