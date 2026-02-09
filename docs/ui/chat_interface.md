@@ -34,8 +34,9 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 - **World-time chip** (`#worldTimeIndicator`):
   - Rendered in the Adventure tab's left location panel (compact sidebar style).
   - Shows canonical world time (`HH:MM`), date label, and current segment/season.
+  - Shows the current light-level description as an unlabeled line when available.
   - Shows a bottom weather line (`Weather: <name>`) when a concrete local weather type is available.
-  - Emits event-summary updates when weather changes and when light-level descriptions cross into a new threshold/segment.
+  - Emits event-summary updates when weather changes and when light-level descriptions cross into a new threshold/segment; light-level updates are suppressed for locations marked as no local weather.
   - Hidden until the first `worldTime` payload is received from `/api/chat/history` or `/api/chat`.
 
 ## Location name caching

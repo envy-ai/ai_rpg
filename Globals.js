@@ -601,9 +601,9 @@ class Globals {
     const seasonDescription = seasonDefinition?.description || null;
     const seasonTimeDescriptions = Array.isArray(seasonDefinition?.timeDescriptions)
       ? seasonDefinition.timeDescriptions.map(entry => ({
-          timeOfDay: Number(entry.timeOfDay),
-          description: entry.description
-        }))
+        timeOfDay: Number(entry.timeOfDay),
+        description: entry.description
+      }))
       : [];
     const holidayDefinition = calendar.holidays.find((holiday) => {
       if (!holiday || typeof holiday !== 'object') {
@@ -619,11 +619,11 @@ class Globals {
     }) || null;
     const holiday = holidayDefinition
       ? {
-          name: holidayDefinition.name,
-          description: holidayDefinition.description || null,
-          month: holidayDefinition.month || month.name,
-          day: Number.isFinite(Number(holidayDefinition.day)) ? Number(holidayDefinition.day) : dayOfMonth
-        }
+        name: holidayDefinition.name,
+        description: holidayDefinition.description || null,
+        month: holidayDefinition.month || month.name,
+        day: Number.isFinite(Number(holidayDefinition.day)) ? Number(holidayDefinition.day) : dayOfMonth
+      }
       : null;
 
     return {
@@ -687,13 +687,13 @@ class Globals {
     const normalized = typeof segmentName === 'string' ? segmentName.trim().toLowerCase() : '';
     switch (normalized) {
       case 'dawn':
-        return 'Low dawn light with long shadows and improving visibility.';
+        return 'Low dawn light with long shadows';
       case 'day':
-        return 'Bright daylight with clear visibility.';
+        return 'Bright daylight';
       case 'dusk':
-        return 'Fading evening light with reduced visibility.';
+        return 'Fading evening light';
       case 'night':
-        return 'Dark nighttime conditions with poor natural visibility.';
+        return 'Dark nighttime conditions';
       default:
         return `Ambient light associated with ${segmentName || 'the current time segment'}.`;
     }

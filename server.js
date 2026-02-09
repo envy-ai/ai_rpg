@@ -4656,6 +4656,7 @@ function buildBasePromptContext({
         factionSummaries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     }
 
+    const hasLocalWeather = resolveLocationHasWeather(location) !== false;
     const regionalWeather = resolveRegionWeatherForPrompt({
         region,
         location,
@@ -4663,6 +4664,7 @@ function buildBasePromptContext({
     });
     const worldTimeContextWithConditions = {
         ...worldTimeContext,
+        hasLocalWeather,
         weatherName: regionalWeather?.name || 'Unspecified weather',
         weatherDescription: regionalWeather?.description || 'Weather conditions are not currently available.',
         lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'

@@ -24,7 +24,7 @@ Server & LLM Notes
   - If elapsed time crosses multiple offscreen checkpoints in one turn, only one offscreen prompt runs.
   - Offscreen activity entries with `moved=true` attempt server-side NPC relocation from the reported region/location fields, updating `currentLocation` and location NPC lists with server-console logging only (no client payload changes).
   - Hidden entries are stored server-side as `[Hidden from Player]` notes.
-  - Base-context now appends compact current conditions at the end of the prompt (`weather` name/description and `lightLevel` description). Region weather definitions are parsed from region-generation XML and persisted on `Region`.
+  - Base-context now appends compact current conditions at the end of the prompt (`time` in 24-hour `HH:MM`, plus `weather` name/description and `lightLevel` description only when the current location supports local weather). Region weather definitions are parsed from region-generation XML and persisted on `Region`.
   - The rest of turn handling still includes attack damage application, quest confirmations, random event seeds, NPC corpse cleanup, and structured debug info.
   - Random events are checked independently of NPC turn processing (forced-event actions still suppress random events), and rolls are scaled by `random_event_frequency_multiplier`.
   - On `<travelProse>` turns, split origin/destination event checks can apply `item_appear` and `scenery_appear` outcomes even after movement has been marked processed.

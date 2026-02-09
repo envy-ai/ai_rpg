@@ -82,6 +82,7 @@ class AIRPGChat {
         this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
         this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
         this.worldTimeIndicatorMeta = document.getElementById('worldTimeIndicatorMeta');
+        this.worldTimeIndicatorLightLevel = document.getElementById('worldTimeIndicatorLightLevel');
         this.worldTimeIndicatorWeather = document.getElementById('worldTimeIndicatorWeather');
         this.lastWorldTimeIndicatorState = null;
     }
@@ -530,6 +531,10 @@ class AIRPGChat {
         const season = typeof worldTime.season === 'string' && worldTime.season.trim()
             ? worldTime.season.trim()
             : 'Unknown season';
+        const rawWeatherName = typeof worldTime.weatherName === 'string' && worldTime.weatherName.trim()
+            ? worldTime.weatherName.trim()
+            : '';
+        const locationHasWeather = rawWeatherName.toLowerCase() !== 'no local weather';
         const weatherName = this.normalizeWeatherNameForDisplay(worldTime.weatherName);
         const shouldShowWeather = Boolean(weatherName);
         const lightLevel = typeof worldTime.lightLevelDescription === 'string' && worldTime.lightLevelDescription.trim()
@@ -540,7 +545,13 @@ class AIRPGChat {
 
         const previousState = this.lastWorldTimeIndicatorState;
         if (emitTransitions && previousState) {
-            if (lightLevel && previousState.lightLevel && lightLevel !== previousState.lightLevel) {
+            if (
+                locationHasWeather
+                && previousState.locationHasWeather
+                && lightLevel
+                && previousState.lightLevel
+                && lightLevel !== previousState.lightLevel
+            ) {
                 this.addEventSummary('💡', `Light level changed from ${previousState.lightLevel} to ${lightLevel}.`);
             }
             if (weatherName && previousState.weatherName && weatherName !== previousState.weatherName) {
@@ -556,6 +567,15 @@ class AIRPGChat {
         }
         if (this.worldTimeIndicatorMeta) {
             this.worldTimeIndicatorMeta.textContent = `${segment} · ${season}`;
+        }
+        if (this.worldTimeIndicatorLightLevel) {
+            if (lightLevel) {
+                this.worldTimeIndicatorLightLevel.textContent = lightLevel;
+                this.worldTimeIndicatorLightLevel.removeAttribute('hidden');
+            } else {
+                this.worldTimeIndicatorLightLevel.textContent = '';
+                this.worldTimeIndicatorLightLevel.setAttribute('hidden', '');
+            }
         }
         if (this.worldTimeIndicatorWeather) {
             if (shouldShowWeather) {
@@ -573,7 +593,8 @@ class AIRPGChat {
             segment,
             season,
             lightLevel,
-            weatherName
+            weatherName,
+            locationHasWeather
         };
 
         this.worldTimeIndicator.removeAttribute('hidden');

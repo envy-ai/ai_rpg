@@ -545,17 +545,18 @@ The below context is an account of the current game state, including the setting
   </abilityContext>
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
-
-{% include "_includes/" + promptType + ".njk" %}
-
 <currentConditions>
+  <time>{{ worldTime.timeLabel | default('--:--', true) }}</time>
+  {% if worldTime.hasLocalWeather %}
   <weather>
     <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>
     <description>{{ worldTime.weatherDescription | default('', true) }}</description>
   </weather>
   <lightLevel>{{ worldTime.lightLevelDescription | default(worldTime.lighting, true) }}</lightLevel>
+  {% endif %}
 </currentConditions>
 
+{% include "_includes/" + promptType + ".njk" %}
 </generationPrompt>
 
 </template>
